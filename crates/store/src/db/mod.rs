@@ -35,6 +35,7 @@ use crate::{
 mod migrations;
 #[macro_use]
 mod sql;
+pub use sql::Page;
 
 mod connection;
 mod pool_manager;
@@ -546,6 +547,21 @@ impl Db {
             .map_err(|err| {
                 DatabaseError::InteractError(format!("Database optimization task failed: {err}"))
             })?
+    }
+
+    /// Loads the network notes that have not been consumed yet, using pagination to limit the
+    /// number of notes returned.
+    pub(crate) async fn select_unconsumed_network_notes(
+        &self,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page)> {
+        self.pool
+            .get()
+            .await
+            .map_err(DatabaseError::MissingDbConnection)?
+            .interact(move |conn| sql::unconsumed_network_notes(&conn.transaction()?, page))
+            .await
+            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
     }
 
     // HELPERS

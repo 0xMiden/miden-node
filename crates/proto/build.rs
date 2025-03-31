@@ -5,7 +5,8 @@ use std::{
 
 use anyhow::Context;
 use miden_node_proto_build::{
-    block_producer_api_descriptor, rpc_api_descriptor, store_api_descriptor,
+    block_producer_api_descriptor, ntx_builder_api_descriptor, rpc_api_descriptor,
+    store_api_descriptor,
 };
 use tonic_build::FileDescriptorSet;
 
@@ -33,6 +34,7 @@ fn main() -> anyhow::Result<()> {
     generate_bindings(rpc_api_descriptor(), &dst_dir)?;
     generate_bindings(store_api_descriptor(), &dst_dir)?;
     generate_bindings(block_producer_api_descriptor(), &dst_dir)?;
+    generate_bindings(ntx_builder_api_descriptor(), &dst_dir)?;
 
     generate_mod_rs(&dst_dir).context("generating mod.rs")?;
 

@@ -26,7 +26,7 @@ use miden_objects::{
 
 use super::{AccountInfo, NoteRecord, NullifierInfo, sql};
 use crate::db::{
-    TransactionSummary, connection::Connection, migrations::apply_migrations, sql::PaginationToken,
+    TransactionSummary, connection::Connection, migrations::apply_migrations, sql::Page,
 };
 
 fn create_db() -> Connection {
@@ -398,27 +398,26 @@ fn sql_unconsumed_network_notes() {
     // Fetch all network notes by setting a limit larger than the amount available.
     let (result, _) = sql::unconsumed_network_notes(
         &db_tx,
-        PaginationToken::default(),
-        NonZeroUsize::new(N as usize * 10).unwrap(),
+        Page {
+            token: None,
+            size: NonZeroUsize::new(N as usize * 10).unwrap(),
+        },
     )
     .unwrap();
     assert_eq!(result, network_notes);
 
     // Check pagination works as expected.
     let limit = 5;
-    let mut token = PaginationToken::default();
+    let mut page = Page {
+        token: None,
+        size: NonZeroUsize::new(limit).unwrap(),
+    };
     network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_token) =
-            sql::unconsumed_network_notes(&db_tx, token, NonZeroUsize::new(limit).unwrap())
-                .unwrap();
-        token = new_token;
+        let (result, new_page) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
+        page = new_page;
         assert_eq!(result, expected);
     });
-
-    // Returns empty when paging past the total.
-    let (result, _) =
-        sql::unconsumed_network_notes(&db_tx, token, NonZeroUsize::new(100).unwrap()).unwrap();
-    assert!(result.is_empty());
+    assert!(page.token.is_none());
 
     // Consume every third network note and ensure these are now excluded from the results.
     let consumed = notes
@@ -434,12 +433,11 @@ fn sql_unconsumed_network_notes() {
         .filter(|(i, _)| i % 3 != 0)
         .map(|(_, note)| note.clone())
         .collect::<Vec<_>>();
-    let (result, _) = sql::unconsumed_network_notes(
-        &db_tx,
-        PaginationToken::default(),
-        NonZeroUsize::new(N as usize * 10).unwrap(),
-    )
-    .unwrap();
+    let page = Page {
+        token: None,
+        size: NonZeroUsize::new(N as usize * 10).unwrap(),
+    };
+    let (result, _) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
     assert_eq!(result, expected);
 }
 

@@ -2,7 +2,9 @@
 
 ## v0.9.0 (TBD)
 
+### Changes
 
+- Added stress test for `sync-state` endpoint (#661).
 
 ## v0.8.0 (2025-03-26)
 
@@ -41,7 +43,6 @@
 - [BREAKING] MSRV bumped to 1.85 (#727).
 - [BREAKING] Replaced `toml` configuration with CLI (#732).
 - [BREAKING] Renamed multiple `xxx_hash` to `xxx_commitment` in RPC API (#757).
-- Added stress test for `sync-state` endpoint (#661).
 
 ### Enhancements
 

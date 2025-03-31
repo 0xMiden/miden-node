@@ -43,6 +43,11 @@ pub enum Command {
         /// Iterations of the sync request.
         #[arg(short, long, value_name = "ITERATIONS", default_value = "1")]
         iterations: usize,
+
+        /// Concurrency level of the sync request. Represents the number of request that
+        /// can be sent in parallel.
+        #[arg(short, long, value_name = "CONCURRENCY", default_value = "1")]
+        concurrency: usize,
     },
 }
 
@@ -58,8 +63,8 @@ async fn main() {
         } => {
             seed_store(data_directory, num_accounts, public_accounts_percentage).await;
         },
-        Command::BenchSyncRequest { data_directory, iterations } => {
-            bench_sync_request(data_directory, iterations).await;
+        Command::BenchSyncRequest { data_directory, iterations, concurrency } => {
+            bench_sync_request(data_directory, iterations, concurrency).await;
         },
     }
 }

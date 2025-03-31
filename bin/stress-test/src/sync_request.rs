@@ -3,6 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures::{StreamExt, stream};
 use miden_lib::utils::Serializable;
 use miden_node_proto::generated::{
     account as account_proto, requests::SyncStateRequest, store::api_client::ApiClient,
@@ -18,40 +19,44 @@ use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use crate::seeding::{ACCOUNTS_FILENAME, start_store};
 
 /// Sends multiple sync requests to the store and measures the performance.
-pub async fn bench_sync_request(data_directory: PathBuf, iterations: usize) {
+pub async fn bench_sync_request(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     let start = Instant::now();
-
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
 
-    let mut store_api_client = start_store(data_directory).await;
+    let store_api_client = start_store(data_directory).await;
 
-    // read the account ids from the file. If iterations > accounts_file, repeat the account ids
     let accounts = fs::read_to_string(accounts_file).await.unwrap();
     let accounts: Vec<&str> = accounts.lines().collect();
     let mut account_ids = accounts.iter().cycle();
 
-    // send sync requests and measure performance
-    let mut timers_accumulator = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
-        // Take 3 account ids from the file and send a vec of them in the sync request
-        let account_id_1 = (*account_ids.next().unwrap()).to_string();
-        let account_id_2 = (*account_ids.next().unwrap()).to_string();
-        let account_id_3 = (*account_ids.next().unwrap()).to_string();
+    let tasks = stream::iter(0..iterations)
+        .map(|_| {
+            let mut api_client = store_api_client.clone();
 
-        timers_accumulator.push(
-            send_sync_request(
-                &mut store_api_client,
-                vec![account_id_1, account_id_2, account_id_3],
-            )
-            .await,
-        );
-    }
+            // take 3 account IDs
+            let account_id_1 = (*account_ids.next().unwrap()).to_string();
+            let account_id_2 = (*account_ids.next().unwrap()).to_string();
+            let account_id_3 = (*account_ids.next().unwrap()).to_string();
+            let account_batch = vec![account_id_1, account_id_2, account_id_3];
+
+            tokio::spawn(async move {
+                send_sync_request(&mut api_client, account_batch).await
+            })
+        })
+        .buffer_unordered(concurrency) // ensures at most `concurrency` tasks run at the same time
+        .collect::<Vec<_>>()
+        .await;
+
+    let timers_accumulator: Vec<Duration> = tasks.into_iter().map(|res| res.unwrap()).collect();
 
     let elapsed = start.elapsed();
     println!("Total sync request took: {elapsed:?}");
 
     let avg_time = timers_accumulator.iter().sum::<Duration>() / iterations as u32;
     println!("Average sync request took: {avg_time:?}");
+
+    let p95_time = compute_percentile(timers_accumulator, 95);
+    println!("P95 latency: {p95_time:?}");
 }
 
 /// Sends a single sync request to the store and returns the elapsed time.
@@ -82,4 +87,16 @@ async fn send_sync_request(
 
     assert!(sync_state_result.is_ok());
     elapsed
+}
+
+/// Computes a percentile from a list of durations.
+fn compute_percentile(mut times: Vec<Duration>, percentile: u32) -> Duration {
+    if times.is_empty() {
+        return Duration::ZERO;
+    }
+
+    times.sort_unstable();
+
+    let index = (percentile as usize * times.len()).div_ceil(100).saturating_sub(1);
+    times[index.min(times.len() - 1)]
 }

@@ -56,7 +56,7 @@ pub async fn bench_sync_request(data_directory: PathBuf, iterations: usize, conc
     println!("Average sync request took: {avg_time:?}");
 
     let p95_time = compute_percentile(timers_accumulator, 95);
-    println!("p95 latency: {p95_time:?}");
+    println!("P95 latency: {p95_time:?}");
 }
 
 /// Sends a single sync request to the store and returns the elapsed time.
@@ -97,6 +97,6 @@ fn compute_percentile(mut times: Vec<Duration>, percentile: u32) -> Duration {
 
     times.sort_unstable();
 
-    let index = ((percentile as f64 / 100.0) * times.len() as f64).ceil() as usize;
+    let index = (percentile as usize * times.len()).div_ceil(100).saturating_sub(1);
     times[index.min(times.len() - 1)]
 }

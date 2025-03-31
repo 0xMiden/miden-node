@@ -206,6 +206,13 @@ impl BlockBuilder {
     ) -> Result<ProvenBlock, BuildBlockError> {
         let proven_block = self.block_prover.prove(proposed_block).await?;
 
+        if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
+            return Err(BuildBlockError::SecurityLevelTooLow(
+                proven_block.proof_security_level(),
+                MIN_PROOF_SECURITY_LEVEL,
+            ));
+        }
+
         self.simulate_proving().await;
 
         Ok(proven_block)

@@ -1180,7 +1180,7 @@ dependencies = [
  "parking_lot",
  "portable-atomic",
  "quanta",
- "rand 0.9.0",
+ "rand 0.9.1",
  "smallvec",
  "spinning_top",
  "web-time",

@@ -147,6 +147,9 @@ pub enum BuildBatchError {
 
     #[error("failed to prove batch with remote prover")]
     RemoteProverError(#[source] RemoteProverError),
+
+    #[error("batch proof security level is too low: {0} < {1}")]
+    SecurityLevelTooLow(u32, u32),
 }
 
 // Block building errors
@@ -168,6 +171,8 @@ pub enum BuildBlockError {
     InjectedFailure,
     #[error("failed to prove block with remote prover")]
     RemoteProverError(#[source] RemoteProverError),
+    #[error("block proof security level is too low: {0} < {1}")]
+    SecurityLevelTooLow(u32, u32),
 }
 
 // Store errors

@@ -700,9 +700,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.32"
+version = "4.5.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6088f3ae8c3608d19260cd7445411865a485688711b78b5be70d78cd96136f83"
+checksum = "e958897981290da2a852763fe9cdb89cd36977a5d729023127095fa94d95e2ff"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -710,9 +710,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.32"
+version = "4.5.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22a7ef7f676155edfb82daa97f99441f3ebf4a58d5e32f295a56259f1b6facc8"
+checksum = "83b0f35019843db2160b5bb19ae09b4e6411ac33fc6a712003c33e03090e2489"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1610,9 +1610,9 @@ dependencies = [
 
 [[package]]
 name = "icu_locid_transform_data"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdc8ff3388f852bede6b579ad4e978ab004f139284d7b28715f773507b946f6e"
+checksum = "7515e6d781098bf9f7205ab3fc7e9709d34554ae0b21ddbcb5febfa4bc7df11d"
 
 [[package]]
 name = "icu_normalizer"
@@ -1634,9 +1634,9 @@ dependencies = [
 
 [[package]]
 name = "icu_normalizer_data"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8cafbf7aa791e9b22bec55a167906f9e1215fd475cd22adfcf660e03e989516"
+checksum = "c5e8338228bdc8ab83303f16b797e177953730f601a96c25d10cb3ab0daa0cb7"
 
 [[package]]
 name = "icu_properties"
@@ -1655,9 +1655,9 @@ dependencies = [
 
 [[package]]
 name = "icu_properties_data"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67a8effbc3dd3e4ba1afa8ad918d5684b8868b3b26500753effea8d2eed19569"
+checksum = "85fb8799753b75aee8d2a21d7c14d9f38921b54b3dbda10f5a3c7a7b82dba5e2"
 
 [[package]]
 name = "icu_provider"
@@ -2105,7 +2105,7 @@ dependencies = [
 
 [[package]]
 name = "miden-faucet"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "anyhow",
  "axum 0.8.1",
@@ -2203,7 +2203,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2225,7 +2225,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-block-producer"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "assert_matches",
  "async-trait",
@@ -2257,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "hex",
@@ -2275,7 +2275,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto-build"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "prost",
@@ -2285,7 +2285,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-rpc"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "miden-node-proto",
  "miden-node-utils",
@@ -2300,7 +2300,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-store"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "assert_matches",
  "deadpool",
@@ -2325,7 +2325,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-stress-test"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2354,7 +2354,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-utils"
-version = "0.8.0"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "figment",
@@ -2379,9 +2379,9 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb56355acfef551dc81f57667f01a46a37872e7590cb9a92d4efbb8933fe6ebb"
+checksum = "1ea350fdd6d025d2e4791ac0769bfbc04afca404fbb20f918354dcc758debd4c"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2458,9 +2458,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "629d10cd912c13e30ee85f5a96940bdaa7c2d43bd311d3181edfd240415f65c4"
+checksum = "a9f253174345a55a08229cc7eb0094f290d515c0a39f46eb807881da4ce40c9e"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -3532,9 +3532,9 @@ checksum = "917ce264624a4b4db1c364dcc35bfca9ded014d0a958cd47ad3e960e988ea51c"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.0"
+version = "0.103.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0aa4eeac2588ffff23e9d7a7e9b3f971c5fb5b7ebc9452745e0c232c64f83b2f"
+checksum = "fef8b8769aaccf73098557a87cd1816b4f9c7c16811c9c77142aa695c16f2c03"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -4585,9 +4585,9 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 
 [[package]]
 name = "value-bag"
-version = "1.10.0"
+version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ef4c4aa54d5d05a279399bfa921ec387b7aba77caf7a682ae8d86785b8fdad2"
+checksum = "943ce29a8a743eb10d6082545d861b24f9d1b160b7d741e0f2cdf726bec909c5"
 
 [[package]]
 name = "vcpkg"

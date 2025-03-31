@@ -285,7 +285,7 @@ fn build_transaction_arguments(
         .context("Failed to compile script")?;
 
     let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
-    transaction_args.extend_expected_output_notes(vec![output_note.clone()]);
+    transaction_args.extend_output_note_recipients(vec![output_note.clone()]);
 
     Ok(transaction_args)
 }

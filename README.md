@@ -41,10 +41,6 @@ make test
 Note that we do _not_ accept low-effort contributions or AI generated code. For typos and documentation errors please
 rather open an issue.
 
-## gRPC bindings
-
-The gRPC protobuf files for the Miden RPC API can be found in the [proto](/proto/README.md) directory.
-
 ## License
 
 This project is [MIT licensed](./LICENSE).

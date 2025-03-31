@@ -23,7 +23,7 @@ license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xPolygonMiden/miden-node"
 rust-version = "1.85"
-version      = "0.8.0"
+version      = "0.9.0"
 
 # Optimise the cryptography for faster tests involving account creation.
 [profile.test.package.miden-crypto]
@@ -36,13 +36,13 @@ http                      = { version = "1.3" }
 itertools                 = { version = "0.14" }
 miden-air                 = { version = "0.13" }
 miden-lib                 = { version = "0.8" }
-miden-node-block-producer = { path = "crates/block-producer", version = "0.8" }
-miden-node-proto          = { path = "crates/proto", version = "0.8" }
-miden-node-proto-build    = { path = "proto", version = "0.8" }
-miden-node-rpc            = { path = "crates/rpc", version = "0.8" }
-miden-node-store          = { path = "crates/store", version = "0.8" }
+miden-node-block-producer = { path = "crates/block-producer", version = "0.9" }
+miden-node-proto          = { path = "crates/proto", version = "0.9" }
+miden-node-proto-build    = { path = "proto", version = "0.9" }
+miden-node-rpc            = { path = "crates/rpc", version = "0.9" }
+miden-node-store          = { path = "crates/store", version = "0.9" }
 miden-node-test-macro     = { path = "crates/test-macro" }
-miden-node-utils          = { path = "crates/utils", version = "0.8" }
+miden-node-utils          = { path = "crates/utils", version = "0.9" }
 miden-objects             = { version = "0.8" }
 miden-processor           = { version = "0.13" }
 miden-tx                  = { version = "0.8" }

@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## v0.9.0 (TBD)
+
+### Changes
+
+- Added stress test for `sync-state` endpoint (#661).
+
+## v0.8.0 (2025-03-26)
 
 ### Enhancements
 
@@ -25,20 +31,18 @@
 
 ### Changes
 
-- [BREAKING] Updated minimum Rust version to 1.84.
-- Added stress test binary with seed-store command (#657).
 - [BREAKING] `Endpoint` configuration simplified to a single string (#654).
-- [BREAKING] Update `GetBlockInputs` RPC (#709).
+- Added stress test binary with seed-store command (#657).
 - [BREAKING] `CheckNullifiersByPrefix` now takes a starting block number (#707).
 - [BREAKING] Removed nullifiers from `SyncState` endpoint (#708).
+- [BREAKING] Update `GetBlockInputs` RPC (#709).
 - [BREAKING] Added `batch_prover_url` to block producer configuration (#701).
 - [BREAKING] Added `block_prover_url` to block producer configuration (#719).
+- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723). 
 - [BREAKING] Updated to Rust Edition 2024 (#727).
 - [BREAKING] MSRV bumped to 1.85 (#727).
-- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723). 
 - [BREAKING] Replaced `toml` configuration with CLI (#732).
 - [BREAKING] Renamed multiple `xxx_hash` to `xxx_commitment` in RPC API (#757).
-- Added stress test for `sync-state` endpoint (#661).
 
 ### Enhancements
 

@@ -16,18 +16,20 @@ version.workspace      = true
 workspace = true
 
 [dependencies]
-anyhow                    = { workspace = true }
-clap                      = { version = "4.5", features = ["derive", "string"] }
-miden-air                 = { workspace = true }
-miden-block-prover        = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-verified-tx", features = ["testing"] }
-miden-lib                 = { workspace = true }
+anyhow = { workspace = true }
+clap = { version = "4.5", features = ["derive", "string"] }
+miden-air = { workspace = true }
+miden-block-prover = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-verified-tx", features = [
+  "testing",
+] }
+miden-lib = { workspace = true }
 miden-node-block-producer = { workspace = true }
-miden-node-proto          = { workspace = true }
-miden-node-store          = { workspace = true }
-miden-node-utils          = { workspace = true }
-miden-objects             = { workspace = true, features = ["testing"] }
-rand                      = { version = "0.9" }
-rayon                     = { version = "1.5" }
-tokio                     = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
-tonic                     = { workspace = true }
-winterfell                = { version = "0.12" }
+miden-node-proto = { workspace = true }
+miden-node-store = { workspace = true }
+miden-node-utils = { workspace = true }
+miden-objects = { workspace = true, features = ["testing"] }
+rand = { version = "0.9" }
+rayon = { version = "1.5" }
+tokio = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+tonic = { workspace = true }
+winterfell = { version = "0.12" }

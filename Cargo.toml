@@ -35,7 +35,7 @@ assert_matches            = { version = "1.5" }
 http                      = { version = "1.3" }
 itertools                 = { version = "0.14" }
 miden-air                 = { version = "0.13" }
-miden-lib                 = { version = "0.8" }
+miden-lib                 = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-verified-tx" }
 miden-node-block-producer = { path = "crates/block-producer", version = "0.9" }
 miden-node-proto          = { path = "crates/proto", version = "0.9" }
 miden-node-proto-build    = { path = "proto", version = "0.9" }
@@ -43,9 +43,9 @@ miden-node-rpc            = { path = "crates/rpc", version = "0.9" }
 miden-node-store          = { path = "crates/store", version = "0.9" }
 miden-node-test-macro     = { path = "crates/test-macro" }
 miden-node-utils          = { path = "crates/utils", version = "0.9" }
-miden-objects             = { version = "0.8" }
+miden-objects             = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-verified-tx" }
 miden-processor           = { version = "0.13" }
-miden-tx                  = { version = "0.8" }
+miden-tx                  = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-verified-tx" }
 prost                     = { version = "0.13" }
 rand                      = { version = "0.9" }
 thiserror                 = { version = "2.0", default-features = false }

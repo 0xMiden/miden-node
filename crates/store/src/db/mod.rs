@@ -492,6 +492,7 @@ impl Db {
                     &notes,
                     block.created_nullifiers(),
                     block.updated_accounts(),
+                    block.transactions(),
                 )?;
 
                 let _ = allow_acquire.send(());
@@ -626,6 +627,7 @@ impl Db {
                             &[],
                             &[],
                             genesis_block.updated_accounts(),
+                            &[],
                         )?;
 
                         block_store.save_block_blocking(0.into(), &genesis_block.to_bytes())?;

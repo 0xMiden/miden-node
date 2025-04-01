@@ -239,7 +239,9 @@ impl State {
 
         let header = block.header();
 
-        let tx_commitment = BlockHeader::compute_tx_commitment(block.transactions());
+        let tx_commitment = BlockHeader::compute_tx_commitment(
+            block.transactions().iter().map(|tx| (tx.id(), tx.account_id())),
+        );
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
                 expected: tx_commitment,

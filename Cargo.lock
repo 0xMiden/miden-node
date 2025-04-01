@@ -2053,9 +2053,8 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27d1c33a2f543adb8a3f0425f540a4f4607ea5a61f681be2fe6f59d8fe53e356"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#fb028b95182116e9dcfc404485f4c3c53713cc2b"
 dependencies = [
  "miden-crypto",
  "miden-lib",
@@ -2147,9 +2146,8 @@ dependencies = [
 
 [[package]]
 name = "miden-lib"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ea3fdad9ad0e50f71f4be0e27479d2de800a9b9262810d0cbedaea30e3f450b"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#fb028b95182116e9dcfc404485f4c3c53713cc2b"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2379,9 +2377,8 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ea350fdd6d025d2e4791ac0769bfbc04afca404fbb20f918354dcc758debd4c"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#fb028b95182116e9dcfc404485f4c3c53713cc2b"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2427,9 +2424,8 @@ dependencies = [
 
 [[package]]
 name = "miden-proving-service-client"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ba272e6749ad8a146ff62dc621f396021d347257d948eac26e4493c0b9d3d341"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#fb028b95182116e9dcfc404485f4c3c53713cc2b"
 dependencies = [
  "async-trait",
  "getrandom 0.3.2",
@@ -2458,9 +2454,8 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a9f253174345a55a08229cc7eb0094f290d515c0a39f46eb807881da4ce40c9e"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#fb028b95182116e9dcfc404485f4c3c53713cc2b"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2476,9 +2471,8 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch-prover"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97c23d17fca6ad1ad88fcafd1cf4744523aac0b4d95fe3bfb5dad61f468424a5"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#fb028b95182116e9dcfc404485f4c3c53713cc2b"
 dependencies = [
  "miden-core",
  "miden-crypto",

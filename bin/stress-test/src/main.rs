@@ -33,7 +33,10 @@ use miden_objects::{
         rand::RpoRandomCoin,
     },
     note::{Note, NoteHeader, NoteId, NoteInclusionProof},
-    transaction::{InputNote, InputNotes, OutputNote, ProvenTransaction, ProvenTransactionBuilder},
+    transaction::{
+        InputNote, InputNotes, OutputNote, ProvenTransaction, ProvenTransactionBuilder,
+        TransactionHeader,
+    },
     vm::ExecutionProof,
 };
 use rand::Rng;
@@ -359,6 +362,7 @@ fn create_batch(txs: &[ProvenTransaction], block_ref: &BlockHeader) -> ProvenBat
         InputNotes::new(input_notes).unwrap(),
         output_notes,
         BlockNumber::from(u32::MAX),
+        txs.iter().map(TransactionHeader::from).collect(),
     )
 }
 

@@ -4,7 +4,7 @@ use miden_objects::{
     Digest,
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
     block::BlockNumber,
-    transaction::{InputNotes, ProvenTransaction},
+    transaction::{InputNotes, ProvenTransaction, TransactionHeader},
 };
 
 use crate::test_utils::MockProvenTxBuilder;
@@ -57,13 +57,14 @@ impl TransactionBatchConstructor for ProvenBatch {
         }
 
         ProvenBatch::new_unchecked(
-            BatchId::from_transactions(txs.into_iter()),
+            BatchId::from_transactions(txs.iter().copied()),
             Digest::default(),
             BlockNumber::GENESIS,
             account_updates,
             InputNotes::new_unchecked(input_notes),
             output_notes,
             BlockNumber::from(u32::MAX),
+            txs.into_iter().map(TransactionHeader::from).collect(),
         )
     }
 

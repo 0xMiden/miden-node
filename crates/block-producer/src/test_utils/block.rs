@@ -149,6 +149,7 @@ impl MockBlockBuilder {
             self.updated_accounts.unwrap_or_default(),
             created_notes,
             self.produced_nullifiers.unwrap_or_default(),
+            vec![],
         )
     }
 }

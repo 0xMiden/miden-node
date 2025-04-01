@@ -38,12 +38,7 @@ impl GenesisState {
                     AccountUpdateDetails::Private
                 };
 
-                BlockAccountUpdate::new(
-                    account.id(),
-                    account.commitment(),
-                    account_update_details,
-                    vec![],
-                )
+                BlockAccountUpdate::new(account.id(), account.commitment(), account_update_details)
             })
             .collect();
 
@@ -57,6 +52,8 @@ impl GenesisState {
 
         let empty_output_notes = Vec::new();
         let empty_block_note_tree = BlockNoteTree::empty();
+
+        let empty_transactions = Vec::new();
 
         let header = BlockHeader::new(
             self.version,
@@ -80,6 +77,7 @@ impl GenesisState {
             accounts,
             empty_output_notes,
             empty_nullifiers,
+            empty_transactions,
         ))
     }
 }

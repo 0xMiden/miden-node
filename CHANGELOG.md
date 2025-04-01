@@ -2,7 +2,7 @@
 
 ## v0.9.0 (TBD)
 
-
+- Adapt to the use of `TransactionHeader` in batches and blocks (#781).
 
 ## v0.8.0 (2025-03-26)
 

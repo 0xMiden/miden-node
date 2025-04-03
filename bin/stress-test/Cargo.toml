@@ -19,7 +19,7 @@ workspace = true
 anyhow = { workspace = true }
 clap = { version = "4.5", features = ["derive", "string"] }
 miden-air = { workspace = true }
-miden-block-prover = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-verified-tx", features = [
+miden-block-prover = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "next", features = [
   "testing",
 ] }
 miden-lib = { workspace = true }

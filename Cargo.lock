@@ -1813,7 +1813,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#55087f2f17361e6e25cc29b9235eb5e07244036c"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#85374fee025650465d3155b1261f4ca15ced7282"
 dependencies = [
  "miden-crypto",
  "miden-lib",
@@ -1905,7 +1905,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#55087f2f17361e6e25cc29b9235eb5e07244036c"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#85374fee025650465d3155b1261f4ca15ced7282"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2133,7 +2133,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#55087f2f17361e6e25cc29b9235eb5e07244036c"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#85374fee025650465d3155b1261f4ca15ced7282"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2180,7 +2180,7 @@ dependencies = [
 [[package]]
 name = "miden-proving-service-client"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#55087f2f17361e6e25cc29b9235eb5e07244036c"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#85374fee025650465d3155b1261f4ca15ced7282"
 dependencies = [
  "async-trait",
  "getrandom 0.3.2",
@@ -2210,7 +2210,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#55087f2f17361e6e25cc29b9235eb5e07244036c"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#85374fee025650465d3155b1261f4ca15ced7282"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2227,7 +2227,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-verified-tx#55087f2f17361e6e25cc29b9235eb5e07244036c"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#85374fee025650465d3155b1261f4ca15ced7282"
 dependencies = [
  "miden-core",
  "miden-crypto",
@@ -2305,9 +2305,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.8.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "29c72f6929239626840b28f919ce8981a317fc5dc63ce25c30d2ab372f94886f"
+checksum = "ff70ce3e48ae43fa075863cef62e8b43b71a4f2382229920e0df362592919430"
 dependencies = [
  "adler2",
 ]

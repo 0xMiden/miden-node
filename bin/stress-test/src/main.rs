@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 mod metrics;
 mod seeding;
-mod sync_request;
+mod sync_state;
 use clap::{Parser, Subcommand};
 use seeding::seed_store;
-use sync_request::bench_sync_request;
+use sync_state::test_sync_state;
 
 #[derive(Parser)]
 #[command(version)]
@@ -35,13 +35,13 @@ pub enum Command {
     },
 
     /// Benchmark the performance of the sync request.
-    BenchSyncRequest {
+    SyncState {
         /// Directory that contains the database dump file.
         #[arg(short, long, value_name = "DATA_DIRECTORY")]
         data_directory: PathBuf,
 
         /// Iterations of the sync request.
-        #[arg(short, long, value_name = "ITERATIONS", default_value = "1")]
+        #[arg(short, long, value_name = "ITERATIONS")]
         iterations: usize,
 
         /// Concurrency level of the sync request. Represents the number of request that
@@ -63,8 +63,8 @@ async fn main() {
         } => {
             seed_store(data_directory, num_accounts, public_accounts_percentage).await;
         },
-        Command::BenchSyncRequest { data_directory, iterations, concurrency } => {
-            bench_sync_request(data_directory, iterations, concurrency).await;
+        Command::SyncState { data_directory, iterations, concurrency } => {
+            test_sync_state(data_directory, iterations, concurrency).await;
         },
     }
 }

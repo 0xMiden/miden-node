@@ -19,11 +19,11 @@ use tonic::transport::Channel;
 
 use crate::{metrics::compute_percentile, seeding::ACCOUNTS_FILENAME};
 
-// SYNC STATE
+// LOAD TEST SYNC STATE
 // ================================================================================================
 
 /// Sends multiple sync requests to the store and measures the performance.
-pub async fn bench_sync_request(data_directory: PathBuf, iterations: usize, concurrency: usize) {
+pub async fn test_sync_state(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     let start = Instant::now();
 
     // load accounts from the dump file
@@ -79,13 +79,13 @@ pub async fn bench_sync_request(data_directory: PathBuf, iterations: usize, conc
     let timers_accumulator: Vec<Duration> = tasks.into_iter().map(|res| res.unwrap()).collect();
 
     let elapsed = start.elapsed();
-    println!("Total sync request took: {elapsed:?}");
+    println!("Total test took: {elapsed:?}");
 
     let avg_time = timers_accumulator.iter().sum::<Duration>() / iterations as u32;
-    println!("Average sync request took: {avg_time:?}");
+    println!("Average request took: {avg_time:?}");
 
     let p95_time = compute_percentile(timers_accumulator, 95);
-    println!("P95 latency: {p95_time:?}");
+    println!("P95 requests latency: {p95_time:?}");
 }
 
 /// Sends a single sync request to the store and returns the elapsed time.

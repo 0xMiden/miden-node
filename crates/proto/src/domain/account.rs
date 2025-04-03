@@ -5,7 +5,7 @@ use miden_objects::{
     Digest,
     account::{Account, AccountHeader, AccountId},
     block::BlockNumber,
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
+    crypto::{hash::rpo::RpoDigest, merkle::SmtProof},
     utils::{Deserializable, Serializable},
 };
 
@@ -155,16 +155,14 @@ impl TryInto<StorageMapKeysProof> for proto::requests::get_account_proofs_reques
 #[derive(Clone, Debug)]
 pub struct AccountWitnessRecord {
     pub account_id: AccountId,
-    pub initial_state_commitment: Digest,
-    pub proof: MerklePath,
+    pub proof: SmtProof,
 }
 
 impl From<AccountWitnessRecord> for proto::responses::AccountWitness {
     fn from(from: AccountWitnessRecord) -> Self {
         Self {
             account_id: Some(from.account_id.into()),
-            initial_state_commitment: Some(from.initial_state_commitment.into()),
-            proof: Some(Into::into(&from.proof)),
+            proof: Some(from.proof.into()),
         }
     }
 }
@@ -180,15 +178,8 @@ impl TryFrom<proto::responses::AccountWitness> for AccountWitnessRecord {
                 .account_id
                 .ok_or(proto::responses::AccountWitness::missing_field(stringify!(account_id)))?
                 .try_into()?,
-            initial_state_commitment: account_witness_record
-                .initial_state_commitment
-                .ok_or(proto::responses::AccountWitness::missing_field(stringify!(
-                    account_commitment
-                )))?
-                .try_into()?,
             proof: account_witness_record
                 .proof
-                .as_ref()
                 .ok_or(proto::responses::AccountWitness::missing_field(stringify!(proof)))?
                 .try_into()?,
         })

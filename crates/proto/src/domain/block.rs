@@ -112,13 +112,8 @@ impl From<BlockInputs> for GetBlockInputsResponse {
             account_witnesses: account_witnesses
                 .into_iter()
                 .map(|(id, witness)| {
-                    let (initial_state_commitment, proof) = witness.into_parts();
-                    AccountWitnessRecord {
-                        account_id: id,
-                        initial_state_commitment,
-                        proof,
-                    }
-                    .into()
+                    let proof = witness.into_proof();
+                    AccountWitnessRecord { account_id: id, proof }.into()
                 })
                 .collect(),
             nullifier_witnesses: nullifier_witnesses
@@ -151,13 +146,7 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .into_iter()
             .map(|entry| {
                 let witness_record: AccountWitnessRecord = entry.try_into()?;
-                Ok((
-                    witness_record.account_id,
-                    AccountWitness::new(
-                        witness_record.initial_state_commitment,
-                        witness_record.proof,
-                    ),
-                ))
+                Ok((witness_record.account_id, AccountWitness::new(witness_record.proof)))
             })
             .collect::<Result<BTreeMap<_, _>, ConversionError>>()?;
 

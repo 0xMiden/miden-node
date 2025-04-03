@@ -2,7 +2,7 @@ use std::io;
 
 use deadpool::managed::PoolError;
 use miden_objects::{
-    AccountDeltaError, AccountError, NoteError,
+    AccountDeltaError, AccountError, AccountTreeError, NoteError,
     account::AccountId,
     block::BlockNumber,
     crypto::{
@@ -108,7 +108,7 @@ pub enum StateInitializationError {
     #[error("failed to create nullifier tree")]
     FailedToCreateNullifierTree(#[from] NullifierTreeError),
     #[error("failed to create accounts tree")]
-    FailedToCreateAccountsTree(#[from] MerkleError),
+    FailedToCreateAccountsTree(#[source] AccountTreeError),
 }
 
 #[derive(Debug, Error)]

@@ -81,19 +81,15 @@ pub struct SyncNoteResponse {
     #[prost(message, repeated, tag = "4")]
     pub notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
 }
-/// An account returned as a response to the `GetBlockInputs`.
+/// An account witness returned as a response to the `GetBlockInputs`.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountWitness {
     /// The account ID.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// The latest account state commitment used as the initial state of the requested block.
-    /// This will be the zero digest if the account doesn't exist.
+    /// The SMT proof to verify the account's state commitment in the account tree.
     #[prost(message, optional, tag = "2")]
-    pub initial_state_commitment: ::core::option::Option<super::digest::Digest>,
-    /// Merkle path to verify the account's inclusion in the account tree.
-    #[prost(message, optional, tag = "3")]
-    pub proof: ::core::option::Option<super::merkle::MerklePath>,
+    pub proof: ::core::option::Option<super::smt::SmtOpening>,
 }
 /// A nullifier returned as a response to the `GetBlockInputs`.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -220,7 +216,7 @@ pub struct GetAccountStateDeltaResponse {
 /// Represents the result of getting account proofs.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetAccountProofsResponse {
-    /// Block number at which the state of the account was returned.
+    /// Block number at which the state of the accounts is returned.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
     /// List of account state infos for the requested account keys.
@@ -233,14 +229,11 @@ pub struct AccountProofsResponse {
     /// Account ID.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Account commitment.
+    /// Proof of inclusion for the account's current state commitment in the account tree.
     #[prost(message, optional, tag = "2")]
-    pub account_commitment: ::core::option::Option<super::digest::Digest>,
-    /// Authentication path from the `account_root` of the block header to the account.
-    #[prost(message, optional, tag = "3")]
-    pub account_proof: ::core::option::Option<super::merkle::MerklePath>,
+    pub proof: ::core::option::Option<super::smt::SmtOpening>,
     /// State header for public accounts. Filled only if `include_headers` flag is set to `true`.
-    #[prost(message, optional, tag = "4")]
+    #[prost(message, optional, tag = "3")]
     pub state_header: ::core::option::Option<AccountStateHeader>,
 }
 /// State header for public accounts.

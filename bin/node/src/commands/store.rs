@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{genesis::GenesisState, server::Store};
+use miden_node_store::{GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -16,34 +16,20 @@ use miden_objects::{
     crypto::dsa::rpo_falcon512::SecretKey,
 };
 use rand::{Rng, SeedableRng};
-use rand_chacha::{ChaCha20Rng, ChaChaRng};
-use serde::{Deserialize, Serialize};
+use rand_chacha::ChaCha20Rng;
 use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL};
 
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
-    /// Dumps the default genesis configuration to stdout.
-    ///
-    /// Use this as a starting point to modify the genesis data for `bootstrap`.
-    DumpGenesis,
-
     /// Bootstraps the blockchain database with the genesis block.
     ///
-    /// This populates the genesis block's data with the accounts and data listed in the
-    /// configuration file.
+    /// The genesis block contains a single public faucet account. The private key for this
+    /// account is written to the `accounts-directory` which can be used to control the account.
     ///
-    /// Each generated genesis account's data is also written to disk. This includes the private
-    /// key which can be used to create transactions for these accounts.
-    ///
-    /// See also: `dump-genesis`
+    /// This key is not required by the node and can be moved.
     Bootstrap {
-        /// Genesis configuration file.
-        ///
-        /// If not provided the default configuration is used.
-        #[arg(long, value_name = "FILE")]
-        config: Option<PathBuf>,
         /// Directory in which to store the database and raw block data.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
@@ -75,12 +61,9 @@ impl StoreCommand {
     /// Executes the subcommand as described by each variants documentation.
     pub async fn handle(self) -> anyhow::Result<()> {
         match self {
-            StoreCommand::DumpGenesis => Self::dump_default_genesis(),
-            StoreCommand::Bootstrap {
-                config,
-                data_directory,
-                accounts_directory,
-            } => Self::bootstrap(config, &data_directory, &accounts_directory),
+            StoreCommand::Bootstrap { data_directory, accounts_directory } => {
+                Self::bootstrap(&data_directory, &accounts_directory)
+            },
             // Note: open-telemetry is handled in main.
             StoreCommand::Start { url, data_directory, open_telemetry: _ } => {
                 Self::start(url, data_directory).await
@@ -111,163 +94,62 @@ impl StoreCommand {
             .context("Serving store")
     }
 
-    fn dump_default_genesis() -> anyhow::Result<()> {
-        let to_dump = toml::to_string(&GenesisConfig::default())
-            .context("failed to serialize the default genesis configuration")?;
-
-        println!("{to_dump}");
-        Ok(())
-    }
-
-    fn bootstrap(
-        genesis_input: Option<PathBuf>,
-        data_directory: &Path,
-        accounts_directory: &Path,
-    ) -> anyhow::Result<()> {
-        // Parse the genesis configuration input.
-        let input = if let Some(genesis_input) = genesis_input {
-            let input = std::fs::read_to_string(&genesis_input).with_context(|| {
-                format!("failed to read genesis configuration from {}", genesis_input.display())
-            })?;
-            toml::from_str(&input).context("failed to parse genesis configuration file")?
-        } else {
-            GenesisConfig::default()
-        };
-        let GenesisConfig { version, timestamp, accounts } = input;
-
-        // Generate the accounts.
-        let mut rng = ChaCha20Rng::from_seed(rand::random());
-        let n_accounts = accounts.as_ref().map(Vec::len).unwrap_or_default();
-        let accounts = accounts
-            .into_iter()
-            .flatten()
-            .enumerate()
-            .inspect(|(idx, _)| tracing::info!(index=%idx, total=n_accounts, "Generating account"))
-            .map(|(idx, input)| {
-                Self::generate_account(input, &mut rng)
-                    .with_context(|| format!("failed to generate account {idx}"))
-            })
-            .collect::<Result<Vec<AccountFile>, _>>()
-            .context("failed to generate accounts")?;
+    fn bootstrap(data_directory: &Path, accounts_directory: &Path) -> anyhow::Result<()> {
+        // Generate the genesis accounts.
+        let account_file =
+            Self::generate_genesis_account().context("failed to create genesis account")?;
 
         // Write account data to disk (including secrets).
         //
-        // Without this private accounts would be inaccessible by the user.
+        // Without this the accounts would be inaccessible by the user.
         // This is not used directly by the node, but rather by the owner / operator of the node.
-        for (idx, account) in accounts.iter().enumerate() {
-            let filepath = accounts_directory.join(format!("account_{idx}.mac"));
-            File::create_new(&filepath)
-                .and_then(|mut file| file.write_all(&account.to_bytes()))
-                .with_context(|| {
-                    format!("failed to write data for account {idx} to file {}", filepath.display())
-                })?;
-        }
-
-        // Write the genesis state to disk. This is used to seed the database's genesis block.
-        let accounts = accounts.into_iter().map(|account| account.account).collect();
-        let genesis_state = GenesisState::new(accounts, version, timestamp);
-        let genesis_output = data_directory.join(miden_node_store::GENESIS_STATE_FILENAME);
-        File::create_new(&genesis_output)
-            .and_then(|mut file| file.write_all(&genesis_state.to_bytes()))
+        let filepath = accounts_directory.join("account.mac");
+        File::create_new(&filepath)
+            .and_then(|mut file| file.write_all(&account_file.to_bytes()))
             .with_context(|| {
-                format!("failed to write genesis data to file {}", genesis_output.display())
-            })
+                format!("failed to write data for genesis account to file {}", filepath.display())
+            })?;
+
+        // Bootstrap the store database.
+        let version = 1;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current timestamp should be greater than unix epoch")
+            .as_secs()
+            .try_into()
+            .expect("timestamp should fit into u32");
+        let genesis_state = GenesisState::new(vec![account_file.account], version, timestamp);
+        Store::bootstrap(genesis_state, data_directory)
     }
 
-    fn generate_account(input: AccountInput, rng: &mut ChaChaRng) -> anyhow::Result<AccountFile> {
-        let AccountInput::BasicFungibleFaucet(input) = input;
+    fn generate_genesis_account() -> anyhow::Result<AccountFile> {
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
 
-        let (auth_scheme, auth_secret_key) = input.auth_scheme.gen_auth_keys(rng);
-
-        let storage_mode = input.storage_mode.as_str().try_into()?;
         let (mut account, account_seed) = create_basic_fungible_faucet(
             rng.random(),
             AccountIdAnchor::PRE_GENESIS,
-            TokenSymbol::try_from(input.token_symbol.as_str())?,
-            input.decimals,
-            Felt::try_from(input.max_supply)
-                .map_err(|err| anyhow::anyhow!("{err}"))
-                .context("failed to parse max supply")?,
-            storage_mode,
-            auth_scheme,
+            TokenSymbol::try_from("POL").expect("POL should be a valid token symbol"),
+            12,
+            Felt::from(1_000_000u32),
+            miden_objects::account::AccountStorageMode::Public,
+            AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;
 
-        // TODO: why do we do this?
+        // Force the account nonce to 1.
+        //
+        // By convention, a nonce of zero indicates a freshly generated local account that has yet
+        // to be deployed. An account is deployed onchain along with its first transaction which
+        // results in a non-zero nonce onchain.
+        //
+        // The genesis block is special in that accounts are "deplyed" without transactions and
+        // therefore we need bump the nonce manually to uphold this invariant.
         account.set_nonce(ONE).context("failed to set account nonce to 1")?;
 
-        Ok(AccountFile::new(account, Some(account_seed), auth_secret_key))
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GenesisConfig {
-    pub version: u32,
-    pub timestamp: u32,
-    pub accounts: Option<Vec<AccountInput>>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(tag = "type")]
-pub enum AccountInput {
-    BasicFungibleFaucet(BasicFungibleFaucetInputs),
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct BasicFungibleFaucetInputs {
-    pub auth_scheme: AuthSchemeInput,
-    pub token_symbol: String,
-    pub decimals: u8,
-    pub max_supply: u64,
-    pub storage_mode: String,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
-pub enum AuthSchemeInput {
-    RpoFalcon512,
-}
-
-impl AuthSchemeInput {
-    pub fn gen_auth_keys(self, rng: &mut ChaCha20Rng) -> (AuthScheme, AuthSecretKey) {
-        match self {
-            AuthSchemeInput::RpoFalcon512 => {
-                let secret = SecretKey::with_rng(&mut get_rpo_random_coin(rng));
-
-                (
-                    AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
-                    AuthSecretKey::RpoFalcon512(secret),
-                )
-            },
-        }
-    }
-}
-
-impl Default for GenesisConfig {
-    fn default() -> Self {
-        Self {
-            version: 1,
-            timestamp: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Current timestamp should be greater than unix epoch")
-                .as_secs() as u32,
-            accounts: Some(vec![AccountInput::BasicFungibleFaucet(BasicFungibleFaucetInputs {
-                auth_scheme: AuthSchemeInput::RpoFalcon512,
-                token_symbol: "POL".to_string(),
-                decimals: 12,
-                max_supply: 1_000_000,
-                storage_mode: "public".to_string(),
-            })]),
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Ensures that [`GenesisInput::default()`] is serializable since otherwise we panic in the
-    /// dump command.
-    #[tokio::test]
-    async fn dump_config_succeeds() {
-        StoreCommand::DumpGenesis.handle().await.unwrap();
+        Ok(AccountFile::new(
+            account,
+            Some(account_seed),
+            AuthSecretKey::RpoFalcon512(secret),
+        ))
     }
 }

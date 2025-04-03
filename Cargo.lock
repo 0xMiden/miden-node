@@ -2170,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "miden-faucet"
-version = "0.8.1"
+version = "0.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2286,10 +2286,7 @@ dependencies = [
  "miden-objects",
  "rand 0.9.0",
  "rand_chacha 0.9.0",
- "serde",
  "tokio",
- "toml",
- "tracing",
  "url",
 ]
 
@@ -2372,6 +2369,7 @@ dependencies = [
 name = "miden-node-store"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "assert_matches",
  "deadpool",
  "deadpool-sync",

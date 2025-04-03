@@ -1,14 +1,19 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    ops::Not,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
+use anyhow::Context;
 use miden_node_proto::generated::store::api_server;
 use miden_node_utils::{errors::ApiError, tracing::grpc::store_trace_fn};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
-    COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GENESIS_STATE_FILENAME, blocks::BlockStore, db::Db,
+    COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GenesisState, blocks::BlockStore, db::Db,
     server::db_maintenance::DbMaintenance, state::State,
 };
 
@@ -28,23 +33,53 @@ pub struct Store {
 }
 
 impl Store {
+    /// Bootstraps the Store, creating the database state and inserting the genesis block data.
+    #[instrument(
+        target = COMPONENT,
+        name = "store.bootstrap",
+        skip_all,
+        err,
+        fields(data_directory = %data_directory.display())
+    )]
+    pub fn bootstrap(genesis: GenesisState, data_directory: &Path) -> anyhow::Result<()> {
+        let genesis = genesis
+            .into_block()
+            .context("failed to convert genesis configuration into the genesis block")?;
+
+        let data_directory =
+            DataDirectory::load(data_directory.to_path_buf()).with_context(|| {
+                format!("failed to load data directory at {}", data_directory.display())
+            })?;
+        tracing::info!(target=COMPONENT, path=%data_directory.display(), "Data directory loaded");
+
+        let block_store = data_directory.block_store_dir();
+        let block_store =
+            BlockStore::bootstrap(block_store.clone(), &genesis).with_context(|| {
+                format!("failed to bootstrap block store at {}", block_store.display())
+            })?;
+        tracing::info!(target=COMPONENT, path=%block_store.display(), "Block store created");
+
+        // Create the genesis block and insert it into the database.
+        let database_filepath = data_directory.database_path();
+        Db::bootstrap(database_filepath.clone(), &genesis).with_context(|| {
+            format!("failed to bootstrap database at {}", database_filepath.display())
+        })?;
+        tracing::info!(target=COMPONENT, path=%database_filepath.display(), "Database created");
+
+        Ok(())
+    }
+
     /// Performs initialization tasks required before [`serve`](Self::serve) can be called.
     pub async fn init(listener: TcpListener, data_directory: PathBuf) -> Result<Self, ApiError> {
         info!(target: COMPONENT, endpoint=?listener, ?data_directory, "Loading database");
 
-        let block_store = data_directory.join("blocks");
-        let block_store = Arc::new(BlockStore::new(block_store).await?);
+        let data_directory = DataDirectory::load(data_directory)?;
 
-        let database_filepath = data_directory.join("miden-store.sqlite3");
-        let genesis_filepath = data_directory.join(GENESIS_STATE_FILENAME);
+        let block_store = Arc::new(BlockStore::load(data_directory.block_store_dir())?);
 
-        let db = Db::setup(
-            database_filepath,
-            &genesis_filepath.to_string_lossy(),
-            Arc::clone(&block_store),
-        )
-        .await
-        .map_err(|err| ApiError::ApiInitialisationFailed(err.to_string()))?;
+        let db = Db::load(data_directory.database_path())
+            .await
+            .map_err(|err| ApiError::ApiInitialisationFailed(err.to_string()))?;
 
         let state = Arc::new(
             State::load(db, block_store)
@@ -77,5 +112,35 @@ impl Store {
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .map_err(ApiError::ApiServeFailed)
+    }
+}
+
+/// Represents the store's data-directory and its content paths.
+///
+/// Used to keep our filepath assumptions in one location.
+pub struct DataDirectory(PathBuf);
+
+impl DataDirectory {
+    /// Creates a new [`DataDirectory`], ensuring that the directory exists and is accessible
+    /// insofar as is possible.
+    pub fn load(path: PathBuf) -> std::io::Result<Self> {
+        let meta = std::fs::metadata(&path)?;
+        if meta.is_dir().not() {
+            return Err(std::io::ErrorKind::NotConnected.into());
+        }
+
+        Ok(Self(path))
+    }
+
+    pub fn block_store_dir(&self) -> PathBuf {
+        self.0.join("blocks")
+    }
+
+    pub fn database_path(&self) -> PathBuf {
+        self.0.join("miden-store.sqlite3")
+    }
+
+    pub fn display(&self) -> std::path::Display<'_> {
+        self.0.display()
     }
 }

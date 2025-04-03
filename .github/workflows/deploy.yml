@@ -148,7 +148,7 @@ jobs:
           instance_id: ${{ secrets[env.instance-id] }}
           command: |
             sudo /usr/bin/miden-node bundled bootstrap --data-directory /opt/miden-node --accounts-directory /opt/miden-faucet; \
-            sudo /usr/bin/miden-faucet init -c /etc/opt/miden-faucet/miden-faucet.toml -f /opt/miden-faucet/account_0.mac; \
+            sudo /usr/bin/miden-faucet init -c /etc/opt/miden-faucet/miden-faucet.toml -f /opt/miden-faucet/account.mac; \
             sudo chown -R miden-node /opt/miden-node; \
             sudo chown -R miden-faucet /opt/miden-faucet;
 

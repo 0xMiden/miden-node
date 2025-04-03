@@ -78,11 +78,6 @@ impl Blockchain {
         block_number.into()
     }
 
-    /// Returns the chain length.
-    pub fn chain_length(&self) -> BlockNumber {
-        self.chain_tip().child()
-    }
-
     /// Returns the current peaks of the MMR.
     pub fn peaks(&self) -> MmrPeaks {
         self.0.peaks()

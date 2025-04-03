@@ -1886,8 +1886,7 @@ dependencies = [
  "tokio",
  "tokio-stream",
  "toml",
- "tonic 0.12.3",
- "tonic-web",
+ "tonic",
  "tower 0.5.2",
  "tower-http",
  "tracing",
@@ -2006,7 +2005,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic",
  "tower-http",
  "tracing",
  "url",
@@ -2027,7 +2026,7 @@ dependencies = [
  "prost-build",
  "protox",
  "thiserror 2.0.12",
- "tonic 0.12.3",
+ "tonic",
  "tonic-build",
 ]
 
@@ -2051,7 +2050,7 @@ dependencies = [
  "miden-tx",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic",
  "tracing",
 ]
 
@@ -2075,7 +2074,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
- "tonic 0.12.3",
+ "tonic",
  "tower-http",
  "tracing",
 ]
@@ -2097,7 +2096,7 @@ dependencies = [
  "rand 0.9.0",
  "rayon",
  "tokio",
- "tonic 0.12.3",
+ "tonic",
  "winterfell",
 ]
 
@@ -2124,7 +2123,7 @@ dependencies = [
  "rand 0.9.0",
  "serde",
  "thiserror 2.0.12",
- "tonic 0.12.3",
+ "tonic",
  "tracing",
  "tracing-forest",
  "tracing-opentelemetry",
@@ -2198,7 +2197,7 @@ dependencies = [
  "protox",
  "thiserror 2.0.12",
  "tokio",
- "tonic 0.12.3",
+ "tonic",
  "tonic-build",
  "tonic-web-wasm-client",
 ]
@@ -2577,7 +2576,7 @@ dependencies = [
  "prost",
  "thiserror 2.0.12",
  "tokio",
- "tonic 0.12.3",
+ "tonic",
 ]
 
 [[package]]
@@ -2589,7 +2588,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "prost",
- "tonic 0.12.3",
+ "tonic",
 ]
 
 [[package]]
@@ -3924,25 +3923,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tonic"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85839f0b32fd242bb3209262371d07feda6d780d16ee9d2bc88581b89da1549b"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "http 1.3.1",
- "http-body",
- "http-body-util",
- "percent-encoding",
- "pin-project",
- "tokio-stream",
- "tower-layer",
- "tower-service",
- "tracing",
-]
-
-[[package]]
 name = "tonic-build"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3954,24 +3934,6 @@ dependencies = [
  "prost-types",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tonic-web"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad8e4a5564e49598cbdefefb5b982c243b11009bdaf36ad59487c2253cb73379"
-dependencies = [
- "base64 0.22.1",
- "bytes",
- "http 1.3.1",
- "http-body",
- "pin-project",
- "tokio-stream",
- "tonic 0.13.0",
- "tower-layer",
- "tower-service",
- "tracing",
 ]
 
 [[package]]
@@ -3991,7 +3953,7 @@ dependencies = [
  "js-sys",
  "pin-project",
  "thiserror 1.0.69",
- "tonic 0.12.3",
+ "tonic",
  "tower-service",
  "wasm-bindgen",
  "wasm-bindgen-futures",

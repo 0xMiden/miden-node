@@ -167,3 +167,15 @@ fn get_store_size(dump_file: &Path) -> u64 {
         std::fs::metadata(format!("{}-wal", dump_file.to_str().unwrap())).unwrap().len();
     store_file_size + wal_file_size
 }
+
+/// Computes a percentile from a list of durations.
+pub fn compute_percentile(mut times: Vec<Duration>, percentile: u32) -> Duration {
+    if times.is_empty() {
+        return Duration::ZERO;
+    }
+
+    times.sort_unstable();
+
+    let index = (percentile as usize * times.len()).div_ceil(100).saturating_sub(1);
+    times[index.min(times.len() - 1)]
+}

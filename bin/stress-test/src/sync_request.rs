@@ -6,41 +6,70 @@ use std::{
 use futures::{StreamExt, stream};
 use miden_lib::utils::Serializable;
 use miden_node_proto::generated::{
-    account as account_proto, requests::SyncStateRequest, store::api_client::ApiClient,
+    account as account_proto, requests::SyncStateRequest, rpc::api_client::ApiClient,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_node_rpc::server::Rpc;
+use miden_node_store::server::Store;
 use miden_objects::{
     account::AccountId,
     note::{NoteExecutionMode, NoteTag},
 };
-use tokio::fs;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use tokio::{fs, net::TcpListener, task};
+use tonic::transport::Channel;
 
-use crate::seeding::{ACCOUNTS_FILENAME, start_store};
+use crate::{metrics::compute_percentile, seeding::ACCOUNTS_FILENAME};
+
+// SYNC STATE
+// ================================================================================================
 
 /// Sends multiple sync requests to the store and measures the performance.
 pub async fn bench_sync_request(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     let start = Instant::now();
+
+    // load accounts from the dump file
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
-
-    let store_api_client = start_store(data_directory).await;
-
     let accounts = fs::read_to_string(accounts_file).await.unwrap();
-    let accounts: Vec<&str> = accounts.lines().collect();
-    let mut account_ids = accounts.iter().cycle();
+    let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
+    // start store component
+    let store_addr = {
+        let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
+        let store_addr = grpc_store.local_addr().expect("Failed to get store address");
+        let store = Store::init(grpc_store, data_directory).await.expect("Failed to init store");
+        task::spawn(async move { store.serve().await.unwrap() });
+        store_addr
+    };
+
+    // create a block-producer listener without running the component, since it's not needed for the
+    // sync request
+    let block_producer_listener =
+        TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
+    let block_producer_addr =
+        block_producer_listener.local_addr().expect("Failed to get store address");
+
+    // start RPC component
+    let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
+    let rpc_url =
+        format!("http://{}", rpc_listener.local_addr().expect("Failed to get rpc address"));
+    let rpc = Rpc::init(rpc_listener, store_addr, block_producer_addr)
+        .await
+        .expect("Failed to init rpc");
+    task::spawn(async move {
+        rpc.serve().await.expect("Failed to serve rpc");
+    });
+
+    let rpc_client = ApiClient::connect(rpc_url).await.unwrap();
+
+    // Create a stream of tasks to send sync_state requests.
+    // Each request will have 3 account ids, 3 note tags and will be sent with block number 0.
     let tasks = stream::iter(0..iterations)
         .map(|_| {
-            let mut api_client = store_api_client.clone();
+            let mut client = rpc_client.clone();
 
-            // take 3 account IDs
-            let account_id_1 = (*account_ids.next().unwrap()).to_string();
-            let account_id_2 = (*account_ids.next().unwrap()).to_string();
-            let account_id_3 = (*account_ids.next().unwrap()).to_string();
-            let account_batch = vec![account_id_1, account_id_2, account_id_3];
+            let account_batch: Vec<AccountId> = account_ids.by_ref().take(3).collect();
 
             tokio::spawn(async move {
-                send_sync_request(&mut api_client, account_batch).await
+                send_sync_request(&mut client, account_batch).await
             })
         })
         .buffer_unordered(concurrency) // ensures at most `concurrency` tasks run at the same time
@@ -61,14 +90,9 @@ pub async fn bench_sync_request(data_directory: PathBuf, iterations: usize, conc
 
 /// Sends a single sync request to the store and returns the elapsed time.
 async fn send_sync_request(
-    api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
-    account_ids: Vec<String>,
+    api_client: &mut ApiClient<Channel>,
+    account_ids: Vec<AccountId>,
 ) -> Duration {
-    let account_ids = account_ids
-        .iter()
-        .map(|id| AccountId::from_hex(id).unwrap())
-        .collect::<Vec<_>>();
-
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id, NoteExecutionMode::Local).unwrap()))
@@ -82,21 +106,6 @@ async fn send_sync_request(
     let sync_request = SyncStateRequest { block_num: 0, note_tags, account_ids };
 
     let start = Instant::now();
-    let sync_state_result = api_client.sync_state(sync_request).await;
-    let elapsed = start.elapsed();
-
-    assert!(sync_state_result.is_ok());
-    elapsed
-}
-
-/// Computes a percentile from a list of durations.
-fn compute_percentile(mut times: Vec<Duration>, percentile: u32) -> Duration {
-    if times.is_empty() {
-        return Duration::ZERO;
-    }
-
-    times.sort_unstable();
-
-    let index = (percentile as usize * times.len()).div_ceil(100).saturating_sub(1);
-    times[index.min(times.len() - 1)]
+    api_client.sync_state(sync_request).await.unwrap();
+    start.elapsed()
 }

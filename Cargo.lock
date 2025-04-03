@@ -2335,6 +2335,7 @@ dependencies = [
  "miden-lib",
  "miden-node-block-producer",
  "miden-node-proto",
+ "miden-node-rpc",
  "miden-node-store",
  "miden-node-utils",
  "miden-objects",

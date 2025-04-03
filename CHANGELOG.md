@@ -4,7 +4,7 @@
 
 ### Changes
 
-- Added stress test for `sync-state` endpoint (#661).
+- Added stress test for `sync_state` endpoint (#661).
 
 ## v0.8.0 (2025-03-26)
 

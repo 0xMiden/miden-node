@@ -39,7 +39,6 @@ use rayon::{
     prelude::ParallelSlice,
 };
 use tokio::{fs, io::AsyncWriteExt, net::TcpListener, task};
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use winterfell::Proof;
 
 use crate::metrics::Metrics;
@@ -50,7 +49,6 @@ use crate::metrics::Metrics;
 const BATCHES_PER_BLOCK: usize = 16;
 const TRANSACTIONS_PER_BATCH: usize = 16;
 
-pub const STORE_FILENAME: &str = "miden-store.sqlite3";
 pub const ACCOUNTS_FILENAME: &str = "accounts.txt";
 
 // SEED STORE
@@ -64,31 +62,44 @@ pub async fn seed_store(
 ) {
     let start = Instant::now();
 
-    let database_filepath = data_directory.join(STORE_FILENAME);
+    // Recreate the data directory (it should be empty for store bootstrapping).
+    //
+    // Ignore the error since it will also error if it does not exist.
+    let _ = std::fs::remove_dir_all(&data_directory);
+    std::fs::create_dir_all(&data_directory).expect("created data directory");
+
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
-
-    // if the data_directory does not exist, create it
-    if !data_directory.exists() {
-        fs::create_dir_all(&data_directory)
-            .await
-            .expect("Failed to create data directory");
-    }
-
-    // if the database file exists, remove it
-    if database_filepath.exists() {
-        fs::remove_file(&database_filepath)
-            .await
-            .expect("Failed to remove database file");
-    }
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
     let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
+    Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
-    let store_api_client = start_store(data_directory, genesis_state.clone()).await;
-    let store_client = StoreClient::new(store_api_client);
+    // start the store
+    let store_addr = {
+        let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
+        let store_addr = grpc_store.local_addr().expect("Failed to get store address");
+        let store = Store::init(grpc_store, data_directory.clone())
+            .await
+            .expect("Failed to init store");
+        task::spawn(async move { store.serve().await.context("Serving store") });
+        store_addr
+    };
+
+    // connect to the store
+    let store_client = {
+        let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))
+            .unwrap()
+            .connect()
+            .await
+            .expect("Failed to connect to store");
+        let store_api_client = ApiClient::with_interceptor(channel, OtelInterceptor);
+        StoreClient::new(store_api_client)
+    };
 
     // start generating blocks
+    let data_directory =
+        miden_node_store::DataDirectory::load(data_directory).expect("data directory should exist");
     let genesis_header = genesis_state.into_block().unwrap().into_inner();
     let metrics = generate_blocks(
         num_accounts,
@@ -96,7 +107,7 @@ pub async fn seed_store(
         faucet,
         genesis_header,
         &store_client,
-        database_filepath,
+        data_directory.database_path(),
         accounts_filepath,
     )
     .await;
@@ -480,27 +491,4 @@ async fn get_block_inputs(
     let get_block_inputs_time = start.elapsed();
     metrics.add_get_block_inputs(get_block_inputs_time);
     inputs
-}
-
-/// Starts a store from a data directory on a random port. Returns the store API client.
-pub async fn start_store(
-    data_directory: PathBuf,
-    genesis: GenesisState,
-) -> ApiClient<InterceptedService<Channel, OtelInterceptor>> {
-    let store_addr = {
-        let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
-        let store_addr = grpc_store.local_addr().expect("Failed to get store address");
-        Store::bootstrap(genesis, &data_directory).unwrap();
-        let store = Store::init(grpc_store, data_directory).await.expect("Failed to init store");
-        task::spawn(async move { store.serve().await.context("Serving store") });
-        store_addr
-    };
-
-    let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))
-        .unwrap()
-        .connect()
-        .await
-        .expect("Failed to connect to store");
-
-    ApiClient::with_interceptor(channel, OtelInterceptor)
 }

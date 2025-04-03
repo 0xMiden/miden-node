@@ -42,6 +42,14 @@ use crate::{
     },
     errors::{DatabaseError, NoteSyncError, StateSyncError},
 };
+
+/// The page token and size to query from the DB.
+#[derive(Debug, Copy, Clone)]
+pub struct Page {
+    pub token: Option<u64>,
+    pub size: NonZeroUsize,
+}
+
 // ACCOUNT QUERIES
 // ================================================================================================
 
@@ -918,14 +926,12 @@ pub fn select_note_inclusion_proofs(
 ///
 /// # Returns
 ///
-/// A set of unconsumed network notes with maximum length of `limit` and a pagination token to get
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
 /// the next set.
-#[cfg_attr(not(test), expect(dead_code, reason = "gRPC method is not yet implemented"))]
 pub fn unconsumed_network_notes(
     transaction: &Transaction,
-    mut token: PaginationToken,
-    limit: NonZeroUsize,
-) -> Result<(Vec<NoteRecord>, PaginationToken)> {
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page)> {
     assert_eq!(
         NoteExecutionMode::Network as u8,
         0,
@@ -947,21 +953,22 @@ pub fn unconsumed_network_notes(
         NoteRecord::SELECT_COLUMNS
     ))?;
 
-    let mut rows = stmt.query(params![token.0, limit])?;
+    // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
+    // check if there are more notes for the next page.
+    let mut rows = stmt.query(params![page.token.unwrap_or(0), page.size.get() + 1])?;
 
-    let mut notes = Vec::with_capacity(limit.into());
+    page.token = None;
+    let mut notes = Vec::with_capacity(page.size.into());
     while let Some(row) = rows.next()? {
+        if notes.len() == page.size.get() {
+            page.token = Some(row.get::<_, u64>(11)?);
+            break;
+        }
         notes.push(NoteRecord::from_row(row)?);
-        // Increment by 1 because we are using rowid >=, and otherwise we would include the last
-        // element in the next page as well.
-        token.0 = row.get::<_, i64>(11)? + 1;
     }
 
-    Ok((notes, token))
+    Ok((notes, page))
 }
-
-#[derive(Default, Debug, Copy, Clone)]
-pub struct PaginationToken(i64);
 
 // BLOCK CHAIN QUERIES
 // ================================================================================================

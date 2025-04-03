@@ -1,6 +1,10 @@
-use std::{io::ErrorKind, path::PathBuf};
+use std::{io::ErrorKind, ops::Not, path::PathBuf};
 
+use miden_lib::utils::Serializable;
 use miden_objects::block::BlockNumber;
+use tracing::instrument;
+
+use crate::{COMPONENT, genesis::GenesisBlock};
 
 #[derive(Debug)]
 pub struct BlockStore {
@@ -8,8 +12,50 @@ pub struct BlockStore {
 }
 
 impl BlockStore {
-    pub async fn new(store_dir: PathBuf) -> Result<Self, std::io::Error> {
-        tokio::fs::create_dir_all(&store_dir).await?;
+    /// Creates a new [`BlockStore`], creating the directory and inserting the genesis block data.
+    ///
+    /// This _does not_ create any parent directories, so it is expected that the caller has already
+    /// created these.
+    ///
+    /// # Errors
+    ///
+    /// Uses [`std::fs::create_dir`] and therefore has the same error conditions.
+    #[instrument(
+        target = COMPONENT,
+        name = "store.block_store.bootstrap",
+        skip_all,
+        err,
+        fields(path = %store_dir.display()),
+    )]
+    pub fn bootstrap(store_dir: PathBuf, genesis_block: &GenesisBlock) -> std::io::Result<Self> {
+        std::fs::create_dir(&store_dir)?;
+
+        let block_store = Self { store_dir };
+        block_store.save_block_blocking(BlockNumber::GENESIS, &genesis_block.inner().to_bytes())?;
+
+        Ok(block_store)
+    }
+
+    /// Loads an existing [`BlockStore`].
+    ///
+    /// A new [`BlockStore`] can be created using [`BlockStore::bootstrap`].
+    ///
+    /// A best effort is made to ensure the directory exists and is accessible, but will still run
+    /// afoul of TOCTOU issues as these are impossible to rule out.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    ///   - the directory does not exist, or
+    ///   - the directory is not accessible, or
+    ///   - it is not a directory
+    ///
+    /// See also: [`std::fs::metadata`].
+    pub fn load(store_dir: PathBuf) -> std::io::Result<Self> {
+        let meta = std::fs::metadata(&store_dir)?;
+        if meta.is_dir().not() {
+            return Err(ErrorKind::NotADirectory.into());
+        }
 
         Ok(Self { store_dir })
     }
@@ -69,5 +115,9 @@ impl BlockStore {
         let epoch_path = block_path.parent().ok_or(std::io::Error::from(ErrorKind::NotFound))?;
 
         Ok((epoch_path.to_path_buf(), block_path))
+    }
+
+    pub fn display(&self) -> std::path::Display<'_> {
+        self.store_dir.display()
     }
 }

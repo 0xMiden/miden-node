@@ -28,7 +28,7 @@ miden-node-rpc            = { workspace = true }
 miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }
 miden-objects             = { workspace = true, features = ["testing"] }
-rand                      = { workspace = true}
+rand                      = { workspace = true }
 rayon                     = { version = "1.5" }
 tokio                     = { workspace = true, features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
 tonic                     = { workspace = true }

@@ -214,3 +214,49 @@ pub mod get_account_proofs_request {
         pub map_keys: ::prost::alloc::vec::Vec<super::super::digest::Digest>,
     }
 }
+/// Returns a list of unconsumed network notes using pagination.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetUnconsumedNetworkNotesRequest {
+    /// An opaque token used to paginate through the notes.
+    ///
+    /// This should be null on the first call, and set to the response
+    /// token until the response token is null, at which point all data
+    /// has been fetched.
+    #[prost(uint64, optional, tag = "1")]
+    pub page_token: ::core::option::Option<u64>,
+    /// Number of notes to retrieve per page.
+    #[prost(uint64, tag = "2")]
+    pub page_size: u64,
+}
+/// Submit a list of network notes to the network transaction builder.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SubmitNetworkNotesRequest {
+    /// Id of the transaction that created the notes.
+    #[prost(message, optional, tag = "1")]
+    pub transaction_id: ::core::option::Option<super::digest::Digest>,
+    /// The network notes to submit.
+    #[prost(message, repeated, tag = "2")]
+    pub note: ::prost::alloc::vec::Vec<super::note::Note>,
+}
+/// Update network transaction builder with transaction status changes.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateTransactionStatusRequest {
+    /// The list of updates for each transaction.
+    #[prost(message, repeated, tag = "1")]
+    pub updates: ::prost::alloc::vec::Vec<
+        update_transaction_status_request::TransactionUpdate,
+    >,
+}
+/// Nested message and enum types in `UpdateTransactionStatusRequest`.
+pub mod update_transaction_status_request {
+    /// Represents the update for a single transaction.
+    #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+    pub struct TransactionUpdate {
+        /// Id of the transaction to update.
+        #[prost(message, optional, tag = "1")]
+        pub transaction_id: ::core::option::Option<super::super::digest::Digest>,
+        /// New status of the transaction.
+        #[prost(enumeration = "super::super::transaction::TransactionStatus", tag = "2")]
+        pub status: i32,
+    }
+}

@@ -1,10 +1,9 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, create_dir_all},
     path::PathBuf,
-    sync::Arc,
 };
 
+use anyhow::Context;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
     generated::note as proto,
@@ -15,7 +14,6 @@ use miden_objects::{
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
     note::{NoteId, NoteInclusionProof, NoteMetadata, Nullifier},
     transaction::TransactionId,
-    utils::Serializable,
 };
 use sql::utils::{column_value_as_u64, read_block_number};
 use tokio::sync::oneshot;
@@ -23,18 +21,18 @@ use tracing::{info, info_span, instrument};
 
 use crate::{
     COMPONENT,
-    blocks::BlockStore,
     db::{
         migrations::apply_migrations,
         pool_manager::{Pool, SqlitePoolManager},
     },
-    errors::{DatabaseError, DatabaseSetupError, GenesisError, NoteSyncError, StateSyncError},
-    genesis::GenesisState,
+    errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
+    genesis::GenesisBlock,
 };
 
 mod migrations;
 #[macro_use]
 mod sql;
+pub use sql::Page;
 
 mod connection;
 mod pool_manager;
@@ -187,21 +185,37 @@ impl From<NoteRecord> for NoteSyncRecord {
 }
 
 impl Db {
-    /// Open a connection to the DB, apply any pending migrations, and ensure that the genesis block
-    /// is as expected and present in the database.
-    // TODO: This span is logged in a root span, we should connect it to the parent one.
+    /// Creates a new database and inserts the genesis block.
+    #[instrument(
+        target = COMPONENT,
+        name = "store.database.bootstrap",
+        skip_all,
+        fields(path=%database_filepath.display())
+        err,
+    )]
+    pub fn bootstrap(database_filepath: PathBuf, genesis: &GenesisBlock) -> anyhow::Result<()> {
+        // Create database.
+        //
+        // This will create the file if it does not exist, but will also happily open it if already
+        // exists. In the latter case we will error out when attempting to insert the genesis
+        // block so this isn't such a problem.
+        let mut conn = connection::Connection::open(database_filepath)
+            .context("failed to open a database connection")?;
+
+        // Run migrations.
+        apply_migrations(&mut conn).context("failed to apply database migrations")?;
+
+        // Insert genesis block data.
+        let db_tx = conn.transaction().context("failed to create database transaction")?;
+        let genesis = genesis.inner();
+        sql::apply_block(&db_tx, genesis.header(), &[], &[], genesis.updated_accounts())
+            .context("failed to insert genesis block")?;
+        db_tx.commit().context("failed to commit database transaction")
+    }
+
+    /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
-    pub async fn setup(
-        database_filepath: PathBuf,
-        genesis_filepath: &str,
-        block_store: Arc<BlockStore>,
-    ) -> Result<Self, DatabaseSetupError> {
-        info!(target: COMPONENT, ?database_filepath, "Connecting to the database");
-
-        if let Some(p) = database_filepath.parent() {
-            create_dir_all(p).map_err(DatabaseError::IoError)?;
-        }
-
+    pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
         let sqlite_pool_manager = SqlitePoolManager::new(database_filepath.clone());
         let pool = Pool::builder(sqlite_pool_manager).build()?;
 
@@ -217,10 +231,7 @@ impl Db {
             DatabaseError::InteractError(format!("Migration task failed: {err}"))
         })??;
 
-        let db = Db { pool };
-        db.ensure_genesis_block(genesis_filepath, block_store).await?;
-
-        Ok(db)
+        Ok(Db { pool })
     }
 
     /// Loads all the nullifiers from the DB.
@@ -548,82 +559,18 @@ impl Db {
             })?
     }
 
-    // HELPERS
-    // ---------------------------------------------------------------------------------------------
-
-    /// If the database is empty, generates and stores the genesis block. Otherwise, it ensures that
-    /// the genesis block in the database is consistent with the genesis block data in the
-    /// genesis JSON file.
-    #[instrument(target = COMPONENT, skip_all, err)]
-    async fn ensure_genesis_block(
+    /// Loads the network notes that have not been consumed yet, using pagination to limit the
+    /// number of notes returned.
+    pub(crate) async fn select_unconsumed_network_notes(
         &self,
-        genesis_filepath: &str,
-        block_store: Arc<BlockStore>,
-    ) -> Result<(), GenesisError> {
-        let genesis_block = {
-            let file_contents = fs::read(genesis_filepath).map_err(|source| {
-                GenesisError::FailedToReadGenesisFile {
-                    genesis_filepath: genesis_filepath.to_string(),
-                    source,
-                }
-            })?;
-
-            let genesis_state = GenesisState::read_from_bytes(&file_contents)
-                .map_err(GenesisError::GenesisFileDeserializationError)?;
-
-            genesis_state.into_block()?
-        };
-
-        let maybe_block_header_in_store = self
-            .select_block_header_by_block_num(Some(BlockNumber::GENESIS))
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page)> {
+        self.pool
+            .get()
             .await
-            .map_err(|err| GenesisError::SelectBlockHeaderByBlockNumError(err.into()))?;
-
-        let expected_genesis_header = genesis_block.header().clone();
-
-        match maybe_block_header_in_store {
-            Some(block_header_in_store) => {
-                // ensure that expected header is what's also in the store
-                if expected_genesis_header != block_header_in_store {
-                    Err(GenesisError::GenesisBlockHeaderMismatch {
-                        expected_genesis_header: Box::new(expected_genesis_header),
-                        block_header_in_store: Box::new(block_header_in_store),
-                    })?;
-                }
-            },
-            None => {
-                // add genesis header to store
-                self.pool
-                    .get()
-                    .await
-                    .map_err(DatabaseError::MissingDbConnection)?
-                    .interact(move |conn| -> Result<()> {
-                        // TODO: This span is logged in a root span, we should connect it to the
-                        // parent one.
-                        let span = info_span!(target: COMPONENT, "write_genesis_block_to_db");
-                        let guard = span.enter();
-
-                        let transaction = conn.transaction()?;
-                        sql::apply_block(
-                            &transaction,
-                            &expected_genesis_header,
-                            &[],
-                            &[],
-                            genesis_block.updated_accounts(),
-                        )?;
-
-                        block_store.save_block_blocking(0.into(), &genesis_block.to_bytes())?;
-
-                        transaction.commit()?;
-
-                        drop(guard);
-                        Ok(())
-                    })
-                    .await
-                    .map_err(GenesisError::ApplyBlockFailed)??;
-            },
-        }
-
-        Ok(())
+            .map_err(DatabaseError::MissingDbConnection)?
+            .interact(move |conn| sql::unconsumed_network_notes(&conn.transaction()?, page))
+            .await
+            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
     }
 }

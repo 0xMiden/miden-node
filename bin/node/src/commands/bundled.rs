@@ -3,7 +3,7 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 use anyhow::Context;
 use miden_node_block_producer::server::BlockProducer;
 use miden_node_rpc::server::Rpc;
-use miden_node_store::server::Store;
+use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
@@ -18,19 +18,11 @@ use super::{
 pub enum BundledCommand {
     /// Bootstraps the blockchain database with the genesis block.
     ///
-    /// This populates the genesis block's data with the accounts and data listed in the
-    /// configuration file.
+    /// The genesis block contains a single public faucet account. The private key for this
+    /// account is written to the `accounts-directory` which can be used to control the account.
     ///
-    /// Each generated genesis account's data is also written to disk. This includes the private
-    /// key which can be used to create transactions for these accounts.
-    ///
-    /// See also: `store dump-genesis`
+    /// This key is not required by the node and can be moved.
     Bootstrap {
-        /// Genesis configuration file.
-        ///
-        /// If not provided the default configuration is used.
-        #[arg(long, value_name = "FILE")]
-        config: Option<PathBuf>,
         /// Directory in which to store the database and raw block data.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
@@ -92,14 +84,9 @@ pub enum BundledCommand {
 impl BundledCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
         match self {
-            BundledCommand::Bootstrap {
-                config,
-                data_directory,
-                accounts_directory,
-            } => {
+            BundledCommand::Bootstrap { data_directory, accounts_directory } => {
                 // Currently the bundled bootstrap is identical to the store's bootstrap.
                 crate::commands::store::StoreCommand::Bootstrap {
-                    config,
                     data_directory,
                     accounts_directory,
                 }

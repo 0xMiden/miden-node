@@ -41,7 +41,7 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     blocks::BlockStore,
-    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate},
+    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate},
     errors::{
         ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError,
         GetBlockInputsError, InvalidBlockError, NoteSyncError, StateInitializationError,
@@ -76,11 +76,6 @@ impl Blockchain {
             .expect("chain_mmr always has, at least, the genesis block");
 
         block_number.into()
-    }
-
-    /// Returns the chain length.
-    pub fn chain_length(&self) -> BlockNumber {
-        self.chain_tip().child()
     }
 
     /// Returns the current peaks of the MMR.
@@ -984,6 +979,14 @@ impl State {
     /// Runs database optimization.
     pub async fn optimize_db(&self) -> Result<(), DatabaseError> {
         self.db.optimize().await
+    }
+
+    /// Returns the unprocessed network notes, along with the next pagination token.
+    pub async fn get_unconsumed_network_notes(
+        &self,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+        self.db.select_unconsumed_network_notes(page).await
     }
 }
 

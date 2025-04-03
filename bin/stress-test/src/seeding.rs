@@ -15,7 +15,7 @@ use miden_lib::{
 };
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client::ApiClient};
-use miden_node_store::{GENESIS_STATE_FILENAME, genesis::GenesisState, server::Store};
+use miden_node_store::{GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     Felt,
@@ -64,7 +64,6 @@ pub async fn seed_store(
 ) {
     let start = Instant::now();
 
-    let genesis_filepath = data_directory.join(GENESIS_STATE_FILENAME);
     let database_filepath = data_directory.join(STORE_FILENAME);
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
 
@@ -85,15 +84,12 @@ pub async fn seed_store(
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
     let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
-    fs::write(&genesis_filepath, genesis_state.to_bytes())
-        .await
-        .expect("Failed to write genesis state");
 
-    let store_api_client = start_store(data_directory).await;
+    let store_api_client = start_store(data_directory, genesis_state.clone()).await;
     let store_client = StoreClient::new(store_api_client);
 
     // start generating blocks
-    let genesis_header = genesis_state.into_block().unwrap();
+    let genesis_header = genesis_state.into_block().unwrap().into_inner();
     let metrics = generate_blocks(
         num_accounts,
         public_accounts_percentage,
@@ -489,10 +485,12 @@ async fn get_block_inputs(
 /// Starts a store from a data directory on a random port. Returns the store API client.
 pub async fn start_store(
     data_directory: PathBuf,
+    genesis: GenesisState,
 ) -> ApiClient<InterceptedService<Channel, OtelInterceptor>> {
     let store_addr = {
         let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
         let store_addr = grpc_store.local_addr().expect("Failed to get store address");
+        Store::bootstrap(genesis, &data_directory).unwrap();
         let store = Store::init(grpc_store, data_directory).await.expect("Failed to init store");
         task::spawn(async move { store.serve().await.context("Serving store") });
         store_addr

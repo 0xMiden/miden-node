@@ -9,7 +9,7 @@ use miden_node_proto::generated::{
     account as account_proto, requests::SyncStateRequest, rpc::api_client::ApiClient,
 };
 use miden_node_rpc::server::Rpc;
-use miden_node_store::server::Store;
+use miden_node_store::Store;
 use miden_objects::{
     account::AccountId,
     note::{NoteExecutionMode, NoteTag},

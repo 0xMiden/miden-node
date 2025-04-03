@@ -573,5 +573,4 @@ impl Db {
             .await
             .map_err(|err| DatabaseError::InteractError(err.to_string()))?
     }
-
 }

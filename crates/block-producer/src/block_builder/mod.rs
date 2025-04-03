@@ -319,8 +319,11 @@ impl TelemetryInjectorExt for ProposedBlock {
                 .expect("should have less than u32::MAX output notes"),
         );
 
-        let num_batch_created_notes =
-            self.batches().iter().fold(0, |acc, batch| acc + batch.output_notes().len());
+        let num_batch_created_notes = self
+            .batches()
+            .as_slice()
+            .iter()
+            .fold(0, |acc, batch| acc + batch.output_notes().len());
         span.set_attribute(
             "block.batches.output_notes.count",
             u32::try_from(num_batch_created_notes)

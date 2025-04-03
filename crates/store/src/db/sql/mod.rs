@@ -22,7 +22,7 @@ use miden_objects::{
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, NoteMetadata, NoteType, Nullifier},
-    transaction::TransactionId,
+    transaction::{OrderedTransactionHeaders, TransactionId},
     utils::serde::{Deserializable, Serializable},
 };
 use rusqlite::{params, types::Value};
@@ -1084,7 +1084,7 @@ pub fn select_all_block_headers(transaction: &Transaction) -> Result<Vec<BlockHe
 pub fn insert_transactions(
     transaction: &Transaction,
     block_num: BlockNumber,
-    accounts: &[BlockAccountUpdate],
+    transactions: &OrderedTransactionHeaders,
 ) -> Result<usize> {
     let mut stmt = transaction.prepare_cached(insert_sql!(transactions {
         transaction_id,
@@ -1092,15 +1092,12 @@ pub fn insert_transactions(
         block_num
     }))?;
     let mut count = 0;
-    for update in accounts {
-        let account_id = update.account_id();
-        for transaction_id in update.transactions() {
-            count += stmt.execute(params![
-                transaction_id.to_bytes(),
-                account_id.to_bytes(),
-                block_num.as_u32()
-            ])?;
-        }
+    for tx in transactions.as_slice() {
+        count += stmt.execute(params![
+            tx.id().to_bytes(),
+            tx.account_id().to_bytes(),
+            block_num.as_u32()
+        ])?;
     }
     Ok(count)
 }
@@ -1231,13 +1228,14 @@ pub fn apply_block(
     notes: &[(NoteRecord, Option<Nullifier>)],
     nullifiers: &[Nullifier],
     accounts: &[BlockAccountUpdate],
+    transactions: &OrderedTransactionHeaders,
 ) -> Result<usize> {
     let mut count = 0;
     // Note: ordering here is important as the relevant tables have FK dependencies.
     count += insert_block_header(transaction, block_header)?;
     count += upsert_accounts(transaction, accounts, block_header.block_num())?;
     count += insert_notes(transaction, notes)?;
-    count += insert_transactions(transaction, block_header.block_num(), accounts)?;
+    count += insert_transactions(transaction, block_header.block_num(), transactions)?;
     count += insert_nullifiers_for_block(transaction, nullifiers, block_header.block_num())?;
     Ok(count)
 }

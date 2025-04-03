@@ -163,9 +163,9 @@ impl StoreClient {
     ) -> Result<TransactionInputs, StoreError> {
         let message = GetTransactionInputsRequest {
             account_id: Some(proven_tx.account_id().into()),
-            nullifiers: proven_tx.get_nullifiers().map(Into::into).collect(),
+            nullifiers: proven_tx.nullifiers().map(Into::into).collect(),
             unauthenticated_notes: proven_tx
-                .get_unauthenticated_notes()
+                .unauthenticated_notes()
                 .map(|note| note.id().into())
                 .collect(),
         };

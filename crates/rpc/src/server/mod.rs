@@ -46,7 +46,7 @@ impl Rpc {
     pub async fn serve(self) -> Result<(), ApiError> {
         tonic::transport::Server::builder()
             .accept_http1(true)
-            .add_service(tonic_web::enable(self.api_service))
+            .add_service(self.api_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .map_err(ApiError::ApiServeFailed)

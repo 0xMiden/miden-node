@@ -159,7 +159,7 @@ pub async fn serve_stub(endpoint: &Url) -> Result<(), ApiError> {
 
     tonic::transport::Server::builder()
         .accept_http1(true)
-        .add_service(tonic_web::enable(api_service))
+        .add_service(api_service)
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await
         .map_err(ApiError::ApiServeFailed)

@@ -14,11 +14,25 @@ use crate::errors::GenesisError;
 // ================================================================================================
 
 /// Represents the state at genesis, which will be used to derive the genesis block.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenesisState {
     pub accounts: Vec<Account>,
     pub version: u32,
     pub timestamp: u32,
+}
+
+/// A type-safety wrapper ensuring that genesis block data can only be created from
+/// [`GenesisState`].
+pub struct GenesisBlock(ProvenBlock);
+
+impl GenesisBlock {
+    pub fn inner(&self) -> &ProvenBlock {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> ProvenBlock {
+        self.0
+    }
 }
 
 impl GenesisState {
@@ -27,7 +41,7 @@ impl GenesisState {
     }
 
     /// Returns the block header and the account SMT
-    pub fn into_block(self) -> Result<ProvenBlock, GenesisError> {
+    pub fn into_block(self) -> Result<GenesisBlock, GenesisError> {
         let accounts: Vec<BlockAccountUpdate> = self
             .accounts
             .iter()
@@ -72,13 +86,13 @@ impl GenesisState {
         // SAFETY: Header and accounts should be valid by construction.
         // No notes or nullifiers are created at genesis, which is consistent with the above empty
         // block note tree root and empty nullifier tree root.
-        Ok(ProvenBlock::new_unchecked(
+        Ok(GenesisBlock(ProvenBlock::new_unchecked(
             header,
             accounts,
             empty_output_notes,
             empty_nullifiers,
             empty_transactions,
-        ))
+        )))
     }
 }
 

@@ -2,6 +2,12 @@
 
 ## v0.9.0 (TBD)
 
+### Changes
+
+- [BREAKING] Simplified node bootstrapping (#776).
+  - Database is now created during bootstrap process instead of on first startup.
+  - Data directory is no longer created but is instead expected to exist.
+  - The genesis block can no longer be configured which also removes the `store dump-genesis` command.
 
 ## v0.8.0 (2025-03-26)
 

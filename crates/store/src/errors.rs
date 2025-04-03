@@ -1,11 +1,10 @@
 use std::io;
 
 use deadpool::managed::PoolError;
-use deadpool_sync::InteractError;
 use miden_objects::{
     AccountDeltaError, AccountError, NoteError,
     account::AccountId,
-    block::{BlockHeader, BlockNumber},
+    block::BlockNumber,
     crypto::{
         hash::rpo::RpoDigest,
         merkle::{MerkleError, MmrError},
@@ -115,15 +114,15 @@ pub enum StateInitializationError {
 #[derive(Debug, Error)]
 pub enum DatabaseSetupError {
     #[error("I/O error")]
-    IoError(#[from] io::Error),
+    Io(#[from] io::Error),
     #[error("database error")]
-    DatabaseError(#[from] DatabaseError),
+    Database(#[from] DatabaseError),
     #[error("genesis block error")]
-    GenesisBlockError(#[from] GenesisError),
+    GenesisBlock(#[from] GenesisError),
     #[error("pool build error")]
-    PoolBuildError(#[from] deadpool::managed::BuildError),
+    PoolBuild(#[from] deadpool::managed::BuildError),
     #[error("SQLite migration error")]
-    SqliteMigrationError(#[from] rusqlite_migration::Error),
+    SqliteMigration(#[from] rusqlite_migration::Error),
 }
 
 #[derive(Debug, Error)]
@@ -131,33 +130,14 @@ pub enum GenesisError {
     // ERRORS WITH AUTOMATIC CONVERSIONS FROM NESTED ERROR TYPES
     // ---------------------------------------------------------------------------------------------
     #[error("database error")]
-    DatabaseError(#[from] DatabaseError),
+    Database(#[from] DatabaseError),
     // TODO: Check if needed.
     #[error("block error")]
-    BlockError,
+    Block,
     #[error("merkle error")]
-    MerkleError(#[from] MerkleError),
+    Merkle(#[from] MerkleError),
     #[error("failed to deserialize genesis file")]
-    GenesisFileDeserializationError(#[from] DeserializationError),
-    #[error("retrieving genesis block header failed")]
-    SelectBlockHeaderByBlockNumError(#[from] Box<DatabaseError>),
-
-    // OTHER ERRORS
-    // ---------------------------------------------------------------------------------------------
-    #[error("apply block failed")]
-    ApplyBlockFailed(#[source] InteractError),
-    #[error("failed to read genesis file \"{genesis_filepath}\"")]
-    FailedToReadGenesisFile {
-        genesis_filepath: String,
-        source: io::Error,
-    },
-    #[error(
-        "block header in store doesn't match block header in genesis file. Expected {expected_genesis_header:?}, but store contained {block_header_in_store:?}"
-    )]
-    GenesisBlockHeaderMismatch {
-        expected_genesis_header: Box<BlockHeader>,
-        block_header_in_store: Box<BlockHeader>,
-    },
+    GenesisFileDeserialization(#[from] DeserializationError),
 }
 
 // ENDPOINT ERRORS

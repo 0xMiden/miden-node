@@ -18,7 +18,7 @@ use miden_lib::{
 };
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client::ApiClient};
-use miden_node_store::{GENESIS_STATE_FILENAME, genesis::GenesisState, server::Store};
+use miden_node_store::{GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     Felt,
@@ -44,7 +44,7 @@ use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     prelude::ParallelSlice,
 };
-use tokio::{fs, net::TcpListener, task};
+use tokio::{net::TcpListener, task};
 use winterfell::Proof;
 
 // CONSTANTS
@@ -52,8 +52,6 @@ use winterfell::Proof;
 
 const BATCHES_PER_BLOCK: usize = 16;
 const TRANSACTIONS_PER_BATCH: usize = 16;
-
-const STORE_FILENAME: &str = "miden-store.sqlite3";
 
 // CLI
 // ================================================================================================
@@ -99,35 +97,24 @@ async fn main() {
 async fn seed_store(data_directory: PathBuf, num_accounts: usize) {
     let start = Instant::now();
 
-    let genesis_filepath = data_directory.join(GENESIS_STATE_FILENAME);
-    let database_filepath = data_directory.join(STORE_FILENAME);
-
-    // if the data_directory does not exist, create it
-    if !data_directory.exists() {
-        fs::create_dir_all(&data_directory)
-            .await
-            .expect("Failed to create data directory");
-    }
-
-    // if the database file exists, remove it
-    if database_filepath.exists() {
-        fs::remove_file(&database_filepath)
-            .await
-            .expect("Failed to remove database file");
-    }
+    // Recreate the data directory (it should be empty for store bootstrapping).
+    //
+    // Ignore the error since it will also error if it does not exist.
+    let _ = std::fs::remove_dir_all(&data_directory);
+    std::fs::create_dir_all(&data_directory).expect("created data directory");
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
     let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
-    fs::write(&genesis_filepath, genesis_state.to_bytes())
-        .await
-        .expect("Failed to write genesis state");
+    Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
     let store_addr = {
         let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
         let store_addr = grpc_store.local_addr().expect("Failed to get store address");
-        let store = Store::init(grpc_store, data_directory).await.expect("Failed to init store");
+        let store = Store::init(grpc_store, data_directory.clone())
+            .await
+            .expect("Failed to init store");
         task::spawn(async move { store.serve().await.context("Serving store") });
         store_addr
     };
@@ -144,10 +131,17 @@ async fn seed_store(data_directory: PathBuf, num_accounts: usize) {
     };
 
     // start generating blocks
-    let genesis_header = genesis_state.into_block().unwrap();
-    let metrics =
-        generate_blocks(num_accounts, faucet, genesis_header, &store_client, database_filepath)
-            .await;
+    let data_directory =
+        miden_node_store::DataDirectory::load(data_directory).expect("data directory should exist");
+    let genesis_header = genesis_state.into_block().unwrap().into_inner();
+    let metrics = generate_blocks(
+        num_accounts,
+        faucet,
+        genesis_header,
+        &store_client,
+        data_directory.database_path(),
+    )
+    .await;
 
     println!("Total time: {:.3} seconds", start.elapsed().as_secs_f64());
     println!("{metrics}");

@@ -13,14 +13,6 @@ which can be accessed by appending `--help` to any of the commands.
 The first step in starting a new Miden network is to initialize the genesis block data. This is a once-off operation.
 
 ```sh
-# Write the default genesis configuration to a file.
-#
-# You can customize this file to add or remove accounts from the genesis block.
-# By default this includes a single public faucet account.
-#
-# This can be skipped if using the default configuration.
-miden-node store dump-genesis > genesis.toml
-
 # Create a folder to store the node's data.
 mkdir data 
 
@@ -32,19 +24,18 @@ mkdir accounts
 
 # Bootstrap the node.
 #
-# This generates the genesis data and stores it in `<data-directory>/genesis.dat`.
-# This is used by the node to create and verify the database during node startup.
+# This creates the node's database and initializes it with the genesis data.
 #
-# Account secrets are stored as `<accounts-directory>/account_xx.mac`
-# where `xx` is the index of the account in the configuration file.
+# The genesis block currently contains a single public faucet account. The
+# secret for this account is stored in the `<accounts-directory/account.mac>`
+# file. This file is not used by the node and should instead by used wherever
+# you intend to operate this faucet account. 
 #
-# These account files are not used by the node and should instead be used wherever
-# you intend to operate these accounts,
-# e.g. to run the `miden-faucet` (see Faucet section).
+# For example, you could operate a public faucet using our faucet reference 
+# implementation whose operation is described in a later section.
 miden-node bundled bootstrap \
   --data-directory data \
   --accounts-directory accounts \
-  --config genesis.toml  # This can be omitted to use the default config.
 ```
 
 ## Operation
@@ -78,10 +69,11 @@ Create a configuration file for the faucet.
 ```sh
 # This generates `miden-faucet.toml` which is used to configure the faucet.
 #
-# You can inspect and modify this if you want to make changes, e.g. to the website url.
+# You can inspect and modify this if you want to make changes
+# e.g. to the website url.
 miden-faucet init \
   --config-path miden-faucet.toml \
-  --faucet-account-path accounts/account_0.mac # Filename may be different if you created a new account.
+  --faucet-account-path accounts/account.mac 
 ```
 
 Run the faucet:

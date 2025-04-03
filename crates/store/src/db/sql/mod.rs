@@ -22,7 +22,7 @@ use miden_objects::{
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, NoteMetadata, NoteType, Nullifier},
-    transaction::{TransactionHeader, TransactionId},
+    transaction::{OrderedTransactionHeaders, TransactionId},
     utils::serde::{Deserializable, Serializable},
 };
 use rusqlite::{params, types::Value};
@@ -1084,7 +1084,7 @@ pub fn select_all_block_headers(transaction: &Transaction) -> Result<Vec<BlockHe
 pub fn insert_transactions(
     transaction: &Transaction,
     block_num: BlockNumber,
-    transactions: &[TransactionHeader],
+    transactions: &OrderedTransactionHeaders,
 ) -> Result<usize> {
     let mut stmt = transaction.prepare_cached(insert_sql!(transactions {
         transaction_id,
@@ -1092,7 +1092,7 @@ pub fn insert_transactions(
         block_num
     }))?;
     let mut count = 0;
-    for tx in transactions {
+    for tx in transactions.as_slice() {
         count += stmt.execute(params![
             tx.id().to_bytes(),
             tx.account_id().to_bytes(),
@@ -1228,7 +1228,7 @@ pub fn apply_block(
     notes: &[(NoteRecord, Option<Nullifier>)],
     nullifiers: &[Nullifier],
     accounts: &[BlockAccountUpdate],
-    transactions: &[TransactionHeader],
+    transactions: &OrderedTransactionHeaders,
 ) -> Result<usize> {
     let mut count = 0;
     // Note: ordering here is important as the relevant tables have FK dependencies.

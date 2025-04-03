@@ -7,7 +7,7 @@ use miden_objects::{
     },
     crypto::merkle::{Mmr, SimpleSmt},
     note::Nullifier,
-    transaction::OutputNote,
+    transaction::{OrderedTransactionHeaders, OutputNote},
 };
 
 use super::MockStoreSuccess;
@@ -149,7 +149,7 @@ impl MockBlockBuilder {
             self.updated_accounts.unwrap_or_default(),
             created_notes,
             self.produced_nullifiers.unwrap_or_default(),
-            vec![],
+            OrderedTransactionHeaders::new_unchecked(vec![]),
         )
     }
 }

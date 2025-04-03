@@ -5,6 +5,7 @@ use miden_objects::{
     block::{BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock},
     crypto::merkle::{MmrPeaks, SimpleSmt, Smt},
     note::Nullifier,
+    transaction::OrderedTransactionHeaders,
     utils::serde::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable},
 };
 
@@ -67,7 +68,7 @@ impl GenesisState {
         let empty_output_notes = Vec::new();
         let empty_block_note_tree = BlockNoteTree::empty();
 
-        let empty_transactions = Vec::new();
+        let empty_transactions = OrderedTransactionHeaders::new_unchecked(Vec::new());
 
         let header = BlockHeader::new(
             self.version,

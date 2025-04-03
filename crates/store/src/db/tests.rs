@@ -22,7 +22,7 @@ use miden_objects::{
         ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     },
-    transaction::{TransactionHeader, TransactionId},
+    transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId},
 };
 
 use super::{AccountInfo, NoteRecord, NullifierInfo, sql};
@@ -1146,7 +1146,7 @@ fn insert_transactions(conn: &mut Connection) -> usize {
         mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 1);
     let mock_tx2 =
         mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 2);
-    let transactions = vec![mock_tx1, mock_tx2];
+    let transactions = OrderedTransactionHeaders::new_unchecked(vec![mock_tx1, mock_tx2]);
 
     sql::upsert_accounts(&transaction, &account_updates, block_num).unwrap();
 

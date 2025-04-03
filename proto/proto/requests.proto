@@ -2,7 +2,9 @@ syntax = "proto3";
 package requests;
 
 import "account.proto";
+import "note.proto";
 import "digest.proto";
+import "transaction.proto";
 
 // Applies changes of a new block to the DB and in-memory data structures.
 message ApplyBlockRequest {
@@ -187,4 +189,41 @@ message GetAccountProofsRequest {
     // These are not associated with a specific account but rather, they will be matched against
     // all requested accounts.
     repeated digest.Digest code_commitments = 3;
+}
+
+// Returns a list of unconsumed network notes using pagination.
+message GetUnconsumedNetworkNotesRequest {
+    // An opaque token used to paginate through the notes.
+    //
+    // This should be null on the first call, and set to the response
+    // token until the response token is null, at which point all data
+    // has been fetched.
+    optional uint64 page_token = 1;
+
+    // Number of notes to retrieve per page.
+    uint64 page_size = 2;
+}
+
+// Submit a list of network notes to the network transaction builder.
+message SubmitNetworkNotesRequest {    
+    // Id of the transaction that created the notes.
+    digest.Digest transaction_id = 1;
+
+    // The network notes to submit.
+    repeated note.Note note = 2;
+}
+
+// Update network transaction builder with transaction status changes.
+message UpdateTransactionStatusRequest {
+    // Represents the update for a single transaction.
+    message TransactionUpdate {
+        // Id of the transaction to update.
+        digest.Digest transaction_id = 1;
+
+        // New status of the transaction.
+        transaction.TransactionStatus status = 2;
+    }
+
+    // The list of updates for each transaction.
+    repeated TransactionUpdate updates = 1;
 }

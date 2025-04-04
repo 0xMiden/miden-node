@@ -146,7 +146,11 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .into_iter()
             .map(|entry| {
                 let witness_record: AccountWitnessRecord = entry.try_into()?;
-                Ok((witness_record.account_id, AccountWitness::new(witness_record.proof)))
+                Ok((
+                    witness_record.account_id,
+                    AccountWitness::new(witness_record.proof)
+                        .expect("account witness record should contain a valid account witness"),
+                ))
             })
             .collect::<Result<BTreeMap<_, _>, ConversionError>>()?;
 

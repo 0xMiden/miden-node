@@ -1,11 +1,11 @@
 use miden_objects::{
-    ACCOUNT_TREE_DEPTH, Digest,
+    Digest,
     batch::ProvenBatch,
     block::{
-        BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, OutputNoteBatch,
-        ProvenBlock,
+        AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree,
+        OutputNoteBatch, ProvenBlock,
     },
-    crypto::merkle::{Mmr, SimpleSmt},
+    crypto::merkle::Mmr,
     note::Nullifier,
     transaction::{OrderedTransactionHeaders, OutputNote},
 };
@@ -34,7 +34,9 @@ pub async fn build_expected_block_header(
     let new_account_root = {
         let mut store_accounts = store.accounts.read().await.clone();
         for (&account_id, update) in updated_accounts {
-            store_accounts.insert(account_id.into(), update.final_state_commitment().into());
+            store_accounts
+                .insert(account_id, update.final_state_commitment())
+                .expect("error: duplicate account ID prefix");
         }
 
         store_accounts.root()
@@ -71,7 +73,7 @@ pub async fn build_expected_block_header(
 
 #[derive(Debug)]
 pub struct MockBlockBuilder {
-    store_accounts: SimpleSmt<ACCOUNT_TREE_DEPTH>,
+    store_accounts: AccountTree,
     store_chain_mmr: Mmr,
     last_block_header: BlockHeader,
 
@@ -105,7 +107,8 @@ impl MockBlockBuilder {
     pub fn account_updates(mut self, updated_accounts: Vec<BlockAccountUpdate>) -> Self {
         for update in &updated_accounts {
             self.store_accounts
-                .insert(update.account_id().into(), update.final_state_commitment().into());
+                .insert(update.account_id(), update.final_state_commitment())
+                .expect("error: duplicate account ID prefix");
         }
 
         self.updated_accounts = Some(updated_accounts);

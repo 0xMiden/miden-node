@@ -234,9 +234,7 @@ impl State {
 
         let header = block.header();
 
-        let tx_commitment = BlockHeader::compute_tx_commitment(
-            block.transactions().as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
-        );
+        let tx_commitment = block.transactions().commitment();
 
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {

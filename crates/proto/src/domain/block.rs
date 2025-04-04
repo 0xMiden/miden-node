@@ -4,7 +4,7 @@ use miden_objects::{
     block::{AccountWitness, BlockHeader, BlockInputs, NullifierWitness},
     note::{NoteId, NoteInclusionProof},
     transaction::ChainMmr,
-    utils::{Deserializable, Serializable},
+    utils::{Deserializable, DeserializationError, Serializable},
 };
 
 use crate::{
@@ -148,8 +148,12 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
                 let witness_record: AccountWitnessRecord = entry.try_into()?;
                 Ok((
                     witness_record.account_id,
-                    AccountWitness::new(witness_record.proof)
-                        .expect("account witness record should contain a valid account witness"),
+                    AccountWitness::new(witness_record.proof).map_err(|err| {
+                        ConversionError::deserialization_error(
+                            "AccountWitness",
+                            DeserializationError::InvalidValue(err.to_string()),
+                        )
+                    })?,
                 ))
             })
             .collect::<Result<BTreeMap<_, _>, ConversionError>>()?;

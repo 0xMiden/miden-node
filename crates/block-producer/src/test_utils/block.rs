@@ -36,7 +36,7 @@ pub async fn build_expected_block_header(
         for (&account_id, update) in updated_accounts {
             store_accounts
                 .insert(account_id, update.final_state_commitment())
-                .expect("error: duplicate account ID prefix");
+                .expect("account IDs should be unique");
         }
 
         store_accounts.root()
@@ -108,7 +108,7 @@ impl MockBlockBuilder {
         for update in &updated_accounts {
             self.store_accounts
                 .insert(update.account_id(), update.final_state_commitment())
-                .expect("error: duplicate account ID prefix");
+                .expect("account IDs should be unique");
         }
 
         self.updated_accounts = Some(updated_accounts);

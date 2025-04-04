@@ -6,16 +6,16 @@ use std::{
 use futures::{StreamExt, stream};
 use miden_lib::utils::Serializable;
 use miden_node_proto::generated::{
-    account as account_proto, requests::SyncStateRequest, rpc::api_client::ApiClient,
+    account as account_proto, requests::SyncStateRequest, store::api_client::ApiClient,
 };
-use miden_node_rpc::server::Rpc;
 use miden_node_store::Store;
+use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::AccountId,
     note::{NoteExecutionMode, NoteTag},
 };
 use tokio::{fs, net::TcpListener, task};
-use tonic::transport::Channel;
+use tonic::{service::interceptor::InterceptedService, transport::Channel};
 
 use crate::{metrics::compute_percentile, seeding::ACCOUNTS_FILENAME};
 
@@ -39,32 +39,18 @@ pub async fn test_sync_state(data_directory: PathBuf, iterations: usize, concurr
         task::spawn(async move { store.serve().await.unwrap() });
         store_addr
     };
-
-    // create a block-producer listener without running the component, since it's not needed for the
-    // sync request
-    let block_producer_listener =
-        TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
-    let block_producer_addr =
-        block_producer_listener.local_addr().expect("Failed to get store address");
-
-    // start RPC component
-    let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
-    let rpc_url =
-        format!("http://{}", rpc_listener.local_addr().expect("Failed to get rpc address"));
-    let rpc = Rpc::init(rpc_listener, store_addr, block_producer_addr)
+    let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))
+        .unwrap()
+        .connect()
         .await
-        .expect("Failed to init rpc");
-    task::spawn(async move {
-        rpc.serve().await.expect("Failed to serve rpc");
-    });
-
-    let rpc_client = ApiClient::connect(rpc_url).await.unwrap();
+        .expect("Failed to connect to store");
+    let store_client = ApiClient::with_interceptor(channel, OtelInterceptor);
 
     // Create a stream of tasks to send sync_state requests.
     // Each request will have 3 account ids, 3 note tags and will be sent with block number 0.
     let tasks = stream::iter(0..iterations)
         .map(|_| {
-            let mut client = rpc_client.clone();
+            let mut client = store_client.clone();
 
             let account_batch: Vec<AccountId> = account_ids.by_ref().take(3).collect();
 
@@ -90,7 +76,7 @@ pub async fn test_sync_state(data_directory: PathBuf, iterations: usize, concurr
 
 /// Sends a single sync request to the store and returns the elapsed time.
 async fn send_sync_request(
-    api_client: &mut ApiClient<Channel>,
+    api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
 ) -> Duration {
     let note_tags = account_ids

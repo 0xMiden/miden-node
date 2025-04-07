@@ -22,6 +22,7 @@ use miden_objects::{
         ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     },
+    transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId},
 };
 
 use super::{AccountInfo, NoteRecord, NullifierInfo, sql};
@@ -348,7 +349,6 @@ fn sql_unconsumed_network_notes() {
             account_id,
             account.commitment(),
             AccountUpdateDetails::New(account),
-            vec![],
         )],
         block_num,
     )
@@ -478,7 +478,6 @@ fn sql_select_accounts() {
                 account_id,
                 account_commitment,
                 AccountUpdateDetails::Private,
-                vec![],
             )],
             block_num,
         );
@@ -524,7 +523,6 @@ fn sql_public_account_details() {
             account.id(),
             account.commitment(),
             AccountUpdateDetails::New(account.clone()),
-            vec![],
         )],
         1.into(),
     )
@@ -572,7 +570,6 @@ fn sql_public_account_details() {
             account.id(),
             account.commitment(),
             AccountUpdateDetails::Delta(delta2.clone()),
-            vec![],
         )],
         2.into(),
     )
@@ -618,7 +615,6 @@ fn sql_public_account_details() {
             account.id(),
             account.commitment(),
             AccountUpdateDetails::Delta(delta3.clone()),
-            vec![],
         )],
         3.into(),
     )
@@ -903,7 +899,6 @@ fn db_account() {
             account_id.try_into().unwrap(),
             account_commitment,
             AccountUpdateDetails::Private,
-            vec![],
         )],
         block_num,
     )
@@ -1111,11 +1106,30 @@ fn num_to_nullifier(n: u64) -> Nullifier {
 }
 
 fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpdate {
-    BlockAccountUpdate::new(
+    BlockAccountUpdate::new(account_id, num_to_rpo_digest(num), AccountUpdateDetails::Private)
+}
+
+fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader {
+    let initial_state_commitment = RpoDigest::try_from([num, 0, 0, 0]).unwrap();
+    let final_account_commitment = RpoDigest::try_from([0, num, 0, 0]).unwrap();
+    let input_notes_commitment = RpoDigest::try_from([0, 0, num, 0]).unwrap();
+    let output_notes_commitment = RpoDigest::try_from([0, 0, 0, num]).unwrap();
+
+    TransactionHeader::new_unchecked(
+        TransactionId::new(
+            initial_state_commitment,
+            final_account_commitment,
+            input_notes_commitment,
+            output_notes_commitment,
+        ),
         account_id,
-        num_to_rpo_digest(num),
-        AccountUpdateDetails::Private,
-        vec![num_to_rpo_digest(num + 1000).into(), num_to_rpo_digest(num + 1001).into()],
+        initial_state_commitment,
+        final_account_commitment,
+        vec![num_to_nullifier(num)],
+        vec![NoteId::new(
+            RpoDigest::try_from([num, num, 0, 0]).unwrap(),
+            RpoDigest::try_from([0, 0, num, num]).unwrap(),
+        )],
     )
 }
 
@@ -1124,15 +1138,19 @@ fn insert_transactions(conn: &mut Connection) -> usize {
     create_block(conn, block_num);
 
     let transaction = conn.transaction().unwrap();
+    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
-    let account_updates = vec![mock_block_account_update(
-        AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(),
-        1,
-    )];
+    let account_updates = vec![mock_block_account_update(account_id, 1)];
+
+    let mock_tx1 =
+        mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 1);
+    let mock_tx2 =
+        mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 2);
+    let transactions = OrderedTransactionHeaders::new_unchecked(vec![mock_tx1, mock_tx2]);
 
     sql::upsert_accounts(&transaction, &account_updates, block_num).unwrap();
 
-    let count = sql::insert_transactions(&transaction, block_num, &account_updates).unwrap();
+    let count = sql::insert_transactions(&transaction, block_num, &transactions).unwrap();
     transaction.commit().unwrap();
 
     count

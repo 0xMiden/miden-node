@@ -276,7 +276,7 @@ impl MockStoreSuccess {
 
         let locked_notes = self.notes.read().await;
         let found_unauthenticated_notes = proven_tx
-            .get_unauthenticated_notes()
+            .unauthenticated_notes()
             .filter_map(|header| {
                 let id = header.id();
                 locked_notes.contains_key(&id).then_some(id)

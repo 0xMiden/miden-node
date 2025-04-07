@@ -2080,8 +2080,8 @@ dependencies = [
 name = "miden-node-stress-test"
 version = "0.9.0"
 dependencies = [
- "anyhow",
  "clap",
+ "futures",
  "miden-air",
  "miden-block-prover",
  "miden-lib",

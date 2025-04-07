@@ -26,7 +26,6 @@ miden-block-prover = { git = "https://github.com/0xPolygonMiden/miden-base.git",
 miden-lib = { workspace = true }
 miden-node-block-producer = { workspace = true }
 miden-node-proto = { workspace = true }
-miden-node-rpc = { workspace = true }
 miden-node-store = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects = { workspace = true, features = ["testing"] }

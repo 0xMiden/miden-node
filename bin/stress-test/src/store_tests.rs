@@ -43,7 +43,7 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
     let request = |_| {
         let mut client = store_client.clone();
         let account_batch: Vec<AccountId> = account_ids.by_ref().take(3).collect();
-        tokio::spawn(async move { send_sync_request(&mut client, account_batch, 0).await.0 })
+        tokio::spawn(async move { sync_state(&mut client, account_batch, 0).await.0 })
     };
 
     // create a stream of tasks to send sync_notes requests
@@ -60,7 +60,7 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
 /// Sends a single `sync_state` request to the store and returns a tuple with:
 /// - the elapsed time.
 /// - the response.
-pub async fn send_sync_request(
+pub async fn sync_state(
     api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
     block_num: u32,
@@ -98,10 +98,10 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
     let request = |_| {
         let mut client = store_client.clone();
         let account_batch: Vec<AccountId> = account_ids.by_ref().take(3).collect();
-        tokio::spawn(async move { request_sync_notes(&mut client, account_batch).await })
+        tokio::spawn(async move { sync_notes(&mut client, account_batch).await })
     };
 
-    // create a stream of tasks to send sync_notes requests
+    // create a stream of tasks to send the requests
     let timers_accumulator = stream::iter(0..iterations)
         .map(request)
         .buffer_unordered(concurrency)
@@ -113,7 +113,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
 }
 
 /// Sends a single `sync_notes` request to the store and returns the elapsed time.
-pub async fn request_sync_notes(
+pub async fn sync_notes(
     api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
 ) -> Duration {
@@ -148,12 +148,12 @@ pub async fn bench_check_nullifiers_by_prefix(
     let mut nullifier_prefixes: Vec<u32> = vec![];
     let mut current_block_num = 0;
     loop {
-        // sync request to get the accounts' notes
+        // get the accounts notes
         let (_, response) =
-            send_sync_request(&mut store_client, account_ids.clone(), current_block_num).await;
+            sync_state(&mut store_client, account_ids.clone(), current_block_num).await;
         let note_ids = response.notes.iter().map(|n| n.note_id.unwrap()).collect::<Vec<Digest>>();
 
-        // request to get the notes' nullifiers.
+        // get the notes nullifiers.
         let notes = store_client
             .get_notes_by_id(GetNotesByIdRequest { note_ids })
             .await
@@ -186,12 +186,10 @@ pub async fn bench_check_nullifiers_by_prefix(
 
         let nullifiers_batch: Vec<u32> = nullifiers.by_ref().take(10).collect();
 
-        tokio::spawn(async move {
-            send_check_nullifiers_by_prefix_request(&mut client, nullifiers_batch).await
-        })
+        tokio::spawn(async move { check_nullifiers_by_prefix(&mut client, nullifiers_batch).await })
     };
 
-    // create a stream of tasks to send sync_notes requests
+    // create a stream of tasks to send the requests
     let timers_accumulator = stream::iter(0..iterations)
         .map(request)
         .buffer_unordered(concurrency)
@@ -203,7 +201,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 }
 
 /// Sends a single `check_nullifiers_by_prefix` request to the store and returns the elapsed time.
-async fn send_check_nullifiers_by_prefix_request(
+async fn check_nullifiers_by_prefix(
     api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers: Vec<u32>,
 ) -> Duration {

@@ -1980,6 +1980,7 @@ dependencies = [
 name = "miden-node-block-producer"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "assert_matches",
  "async-trait",
  "futures",
@@ -2040,6 +2041,7 @@ dependencies = [
 name = "miden-node-rpc"
 version = "0.9.0"
 dependencies = [
+ "anyhow",
  "miden-node-proto",
  "miden-node-utils",
  "miden-objects",
@@ -2119,7 +2121,6 @@ dependencies = [
  "opentelemetry_sdk",
  "rand 0.9.0",
  "serde",
- "thiserror 2.0.12",
  "tonic",
  "tracing",
  "tracing-forest",

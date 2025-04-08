@@ -10,9 +10,10 @@ pub trait UrlExt: private::Sealed {
 
 impl UrlExt for url::Url {
     fn to_socket(&self) -> anyhow::Result<SocketAddr> {
-        self.socket_addrs(|| None)?.into_iter().next().with_context(|| {
-            format!("failed to convert url {} to socket address", self.to_string())
-        })
+        self.socket_addrs(|| None)?
+            .into_iter()
+            .next()
+            .with_context(|| format!("failed to convert url {self} to socket address"))
     }
 }
 

@@ -8,7 +8,6 @@
   - Database is now created during bootstrap process instead of on first startup.
   - Data directory is no longer created but is instead expected to exist.
   - The genesis block can no longer be configured which also removes the `store dump-genesis` command.
-- [BREAKING] Remove `ApiError` from `miden-node-utils` and use anyhow errors (#784).
 
 ## v0.8.0 (2025-03-26)
 

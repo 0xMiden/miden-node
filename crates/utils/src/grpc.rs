@@ -1,5 +1,7 @@
 use std::net::SocketAddr;
 
+use anyhow::Context;
+
 /// A sealed extension trait for [`url::Url`] that adds convenience functions for binding and
 /// connecting to the url.
 pub trait UrlExt: private::Sealed {
@@ -8,10 +10,9 @@ pub trait UrlExt: private::Sealed {
 
 impl UrlExt for url::Url {
     fn to_socket(&self) -> anyhow::Result<SocketAddr> {
-        self.socket_addrs(|| None)?
-            .into_iter()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("address resolution failed for {}", self.to_string()))
+        self.socket_addrs(|| None)?.into_iter().next().with_context(|| {
+            format!("failed to convert url {} to socket address", self.to_string())
+        })
     }
 }
 

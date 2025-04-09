@@ -39,7 +39,7 @@ pub enum Command {
     /// Benchmark the performance of the store endpoints.
     BenchmarkStore {
         /// Store endpoint to test against.
-        #[arg(value_name = "ENDPOINT")]
+        #[command(subcommand)]
         endpoint: Endpoint,
 
         /// Directory that contains the database dump file.
@@ -57,10 +57,13 @@ pub enum Command {
     },
 }
 
-/// Store endpoint.
-#[derive(clap::ValueEnum, Clone, Copy)]
+#[derive(Subcommand, Clone, Copy)]
 pub enum Endpoint {
-    CheckNullifiersByPrefix,
+    CheckNullifiersByPrefix {
+        /// Number of prefixes to send in each request.
+        #[arg(short, long, value_name = "PREFIXES", default_value = "10")]
+        prefixes: usize,
+    },
     SyncState,
     SyncNotes,
 }
@@ -83,8 +86,9 @@ async fn main() {
             iterations,
             concurrency,
         } => match endpoint {
-            Endpoint::CheckNullifiersByPrefix => {
-                bench_check_nullifiers_by_prefix(data_directory, iterations, concurrency, 10).await;
+            Endpoint::CheckNullifiersByPrefix { prefixes } => {
+                bench_check_nullifiers_by_prefix(data_directory, iterations, concurrency, prefixes)
+                    .await;
             },
             Endpoint::SyncState => {
                 bench_sync_state(data_directory, iterations, concurrency).await;

@@ -10,7 +10,7 @@ use miden_node_proto::generated::{
     requests::{
         CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
     },
-    responses::SyncStateResponse,
+    responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
     store::api_client::ApiClient,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
@@ -31,6 +31,12 @@ use crate::{
 // ================================================================================================
 
 /// Sends multiple `sync_state` requests to the store and prints the performance.
+///
+/// Arguments:
+/// - `data_directory`: directory that contains the database dump file and the accounts ids dump
+///   file.
+/// - `iterations`: number of requests to send.
+/// - `concurrency`: number of requests to send in parallel.
 pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     // load accounts from the dump file
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
@@ -43,18 +49,22 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
     let request = |_| {
         let mut client = store_client.clone();
         let account_batch: Vec<AccountId> = account_ids.by_ref().take(3).collect();
-        tokio::spawn(async move { sync_state(&mut client, account_batch, 0).await.0 })
+        tokio::spawn(async move { sync_state(&mut client, account_batch, 0).await })
     };
 
     // create a stream of tasks to send sync_notes requests
-    let timers_accumulator = stream::iter(0..iterations)
+    let (timers_accumulator, responses) = stream::iter(0..iterations)
         .map(request)
         .buffer_unordered(concurrency)
         .map(|res| res.unwrap())
-        .collect::<Vec<_>>()
+        .collect::<(Vec<_>, Vec<_>)>()
         .await;
 
     print_summary(timers_accumulator);
+
+    let average_notes_per_response =
+        responses.iter().map(|r| r.notes.len()).sum::<usize>() as f64 / responses.len() as f64;
+    println!("Average notes per response: {average_notes_per_response}");
 }
 
 /// Sends a single `sync_state` request to the store and returns a tuple with:
@@ -86,6 +96,12 @@ pub async fn sync_state(
 // ================================================================================================
 
 /// Sends multiple `sync_notes` requests to the store and prints the performance.
+///
+/// Arguments:
+/// - `data_directory`: directory that contains the database dump file and the accounts ids dump
+///   file.
+/// - `iterations`: number of requests to send.
+/// - `concurrency`: number of requests to send in parallel.
 pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     // load accounts from the dump file
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
@@ -113,6 +129,8 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
 }
 
 /// Sends a single `sync_notes` request to the store and returns the elapsed time.
+/// The note tags are generated from the account ids, so the request will contain a note tag for
+/// each account id, with a block number of 0.
 pub async fn sync_notes(
     api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
@@ -132,10 +150,18 @@ pub async fn sync_notes(
 // ================================================================================================
 
 /// Sends multiple `check_nullifiers_by_prefix` requests to the store and prints the performance.
+///
+/// Arguments:
+/// - `data_directory`: directory that contains the database dump file and the accounts ids dump
+///  file.
+/// - `iterations`: number of requests to send.
+/// - `concurrency`: number of requests to send in parallel.
+/// - `prefixes_per_request`: number of prefixes to send in each request.
 pub async fn bench_check_nullifiers_by_prefix(
     data_directory: PathBuf,
     iterations: usize,
     concurrency: usize,
+    prefixes_per_request: usize,
 ) {
     let mut store_client = start_store(data_directory.clone()).await;
 
@@ -180,34 +206,44 @@ pub async fn bench_check_nullifiers_by_prefix(
     }
     let mut nullifiers = nullifier_prefixes.into_iter().cycle();
 
-    // each request will have 10 prefixes and block number 0
+    // each request will have `prefixes_per_request` prefixes and block number 0
     let request = |_| {
         let mut client = store_client.clone();
 
-        let nullifiers_batch: Vec<u32> = nullifiers.by_ref().take(10).collect();
+        let nullifiers_batch: Vec<u32> = nullifiers.by_ref().take(prefixes_per_request).collect();
 
         tokio::spawn(async move { check_nullifiers_by_prefix(&mut client, nullifiers_batch).await })
     };
 
     // create a stream of tasks to send the requests
-    let timers_accumulator = stream::iter(0..iterations)
+    let (timers_accumulator, responses) = stream::iter(0..iterations)
         .map(request)
         .buffer_unordered(concurrency)
         .map(|res| res.unwrap())
-        .collect::<Vec<_>>()
+        .collect::<(Vec<_>, Vec<_>)>()
         .await;
 
     print_summary(timers_accumulator);
+
+    let average_nullifiers_per_response =
+        responses.iter().map(|r| r.nullifiers.len()).sum::<usize>() as f64 / responses.len() as f64;
+    println!("Average nullifiers per response: {average_nullifiers_per_response}");
 }
 
-/// Sends a single `check_nullifiers_by_prefix` request to the store and returns the elapsed time.
+/// Sends a single `check_nullifiers_by_prefix` request to the store and returns:
+/// - the elapsed time.
+/// - the response.
 async fn check_nullifiers_by_prefix(
     api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
-    nullifiers: Vec<u32>,
-) -> Duration {
-    let sync_request = CheckNullifiersByPrefixRequest { nullifiers, prefix_len: 16, block_num: 0 };
+    nullifiers_prefixes: Vec<u32>,
+) -> (Duration, CheckNullifiersByPrefixResponse) {
+    let sync_request = CheckNullifiersByPrefixRequest {
+        nullifiers: nullifiers_prefixes,
+        prefix_len: 16,
+        block_num: 0,
+    };
 
     let start = Instant::now();
-    api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
-    start.elapsed()
+    let response = api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
+    (start.elapsed(), response.into_inner())
 }

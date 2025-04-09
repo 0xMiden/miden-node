@@ -1,12 +1,13 @@
 use std::path::PathBuf;
 
+use clap::{Parser, Subcommand};
+use seeding::seed_store;
+use store_tests::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state};
+
 mod endpoints_metrics;
 mod seeding;
 mod seeding_metrics;
 mod store_tests;
-use clap::{Parser, Subcommand};
-use seeding::seed_store;
-use store_tests::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state};
 
 #[derive(Parser)]
 #[command(version)]
@@ -83,7 +84,7 @@ async fn main() {
             concurrency,
         } => match endpoint {
             Endpoint::CheckNullifiersByPrefix => {
-                bench_check_nullifiers_by_prefix(data_directory, iterations, concurrency).await;
+                bench_check_nullifiers_by_prefix(data_directory, iterations, concurrency, 10).await;
             },
             Endpoint::SyncState => {
                 bench_sync_state(data_directory, iterations, concurrency).await;

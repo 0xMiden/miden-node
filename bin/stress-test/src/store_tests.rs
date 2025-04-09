@@ -62,6 +62,7 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
 
     print_summary(timers_accumulator);
 
+    #[allow(clippy::cast_precision_loss)]
     let average_notes_per_response =
         responses.iter().map(|r| r.notes.len()).sum::<usize>() as f64 / responses.len() as f64;
     println!("Average notes per response: {average_notes_per_response}");
@@ -153,7 +154,7 @@ pub async fn sync_notes(
 ///
 /// Arguments:
 /// - `data_directory`: directory that contains the database dump file and the accounts ids dump
-///  file.
+///   file.
 /// - `iterations`: number of requests to send.
 /// - `concurrency`: number of requests to send in parallel.
 /// - `prefixes_per_request`: number of prefixes to send in each request.
@@ -225,6 +226,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 
     print_summary(timers_accumulator);
 
+    #[allow(clippy::cast_precision_loss)]
     let average_nullifiers_per_response =
         responses.iter().map(|r| r.nullifiers.len()).sum::<usize>() as f64 / responses.len() as f64;
     println!("Average nullifiers per response: {average_nullifiers_per_response}");

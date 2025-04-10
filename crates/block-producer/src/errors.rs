@@ -2,13 +2,12 @@ use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
 use miden_node_utils::formatting::format_opt;
 use miden_objects::{
-    Digest, ProposedBatchError, ProposedBlockError,
+    Digest, ProposedBatchError, ProposedBlockError, ProvenBatchError,
     block::BlockNumber,
     note::{NoteId, Nullifier},
     transaction::TransactionId,
 };
 use miden_proving_service_client::RemoteProverError;
-use miden_tx_batch_prover::errors::ProvenBatchError;
 use thiserror::Error;
 use tokio::task::JoinError;
 

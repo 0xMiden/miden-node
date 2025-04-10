@@ -1,0 +1,29 @@
+[package]
+authors.workspace      = true
+description            = "Miden node tests"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["miden", "node", "protobuf", "rpc"]
+license.workspace      = true
+name                   = "miden-node-tests"
+publish                = false
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+anyhow                    = { workspace = true }
+miden-node-block-producer = { workspace = true }
+miden-node-proto          = { workspace = true }
+miden-node-rpc            = { workspace = true }
+miden-node-store          = { workspace = true }
+tempfile                  = { version = "3.5" }
+tokio                     = { workspace = true, features = ["net"] }
+tonic                     = { workspace = true }
+
+[[test]]
+name = "integration"
+path = "integration/main.rs"

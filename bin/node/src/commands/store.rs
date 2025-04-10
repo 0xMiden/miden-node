@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{GenesisState, Store};
+use miden_node_store::GenesisState;
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -86,12 +86,7 @@ impl StoreCommand {
             .await
             .context("Failed to bind to store's gRPC URL")?;
 
-        Store::init(listener, data_directory)
-            .await
-            .context("Loading store")?
-            .serve()
-            .await
-            .context("Serving store")
+        miden_node_store::serve(listener, data_directory).await.context("Serving store")
     }
 
     fn bootstrap(data_directory: &Path, accounts_directory: &Path) -> anyhow::Result<()> {
@@ -119,7 +114,7 @@ impl StoreCommand {
             .try_into()
             .expect("timestamp should fit into u32");
         let genesis_state = GenesisState::new(vec![account_file.account], version, timestamp);
-        Store::bootstrap(genesis_state, data_directory)
+        miden_node_store::bootstrap(genesis_state, data_directory)
     }
 
     fn generate_genesis_account() -> anyhow::Result<AccountFile> {

@@ -9,7 +9,7 @@ mod server;
 mod state;
 
 pub use genesis::GenesisState;
-pub use server::{DataDirectory, Store};
+pub use server::{DataDirectory, bootstrap, serve};
 
 // CONSTANTS
 // =================================================================================================

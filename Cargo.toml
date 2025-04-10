@@ -10,6 +10,7 @@ members = [
   "crates/test-macro",
   "crates/utils",
   "proto",
+  "tests",
 ]
 
 resolver = "2"

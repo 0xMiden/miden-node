@@ -1,5 +1,4 @@
 use anyhow::Context;
-use miden_node_rpc::server::Rpc;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
@@ -52,10 +51,7 @@ impl RpcCommand {
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        Rpc::init(listener, store_url, block_producer_url)
-            .await
-            .context("Loading RPC")?
-            .serve()
+        miden_node_rpc::serve(listener, store_url, block_producer_url)
             .await
             .context("Serving RPC")
     }

@@ -1,9 +1,6 @@
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use anyhow::Context;
-use miden_node_block_producer::server::BlockProducer;
-use miden_node_rpc::server::Rpc;
-use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
@@ -150,30 +147,38 @@ impl BundledCommand {
         let mut join_set = JoinSet::new();
 
         // Start store. The store endpoint is available after loading completes.
-        let store = Store::init(grpc_store, data_directory).await.context("Loading store")?;
-        let store_id =
-            join_set.spawn(async move { store.serve().await.context("Serving store") }).id();
+        let store_id = join_set
+            .spawn(async move {
+                miden_node_store::serve(grpc_store, data_directory)
+                    .await
+                    .context("Serving store")
+            })
+            .id();
 
         // Start block-producer. The block-producer's endpoint is available after loading completes.
-        let block_producer = BlockProducer::init(
-            grpc_block_producer,
-            store_address,
-            batch_prover_url,
-            block_prover_url,
-            batch_interval,
-            block_interval,
-        )
-        .await
-        .context("Loading block-producer")?;
         let block_producer_id = join_set
-            .spawn(async move { block_producer.serve().await.context("Serving block-producer") })
+            .spawn(async move {
+                miden_node_block_producer::serve(
+                    grpc_block_producer,
+                    store_address,
+                    batch_prover_url,
+                    block_prover_url,
+                    batch_interval,
+                    block_interval,
+                )
+                .await
+                .context("Serving block-producer")
+            })
             .id();
 
         // Start RPC component.
-        let rpc = Rpc::init(grpc_rpc, store_address, block_producer_address)
-            .await
-            .context("Loading RPC")?;
-        let rpc_id = join_set.spawn(async move { rpc.serve().await.context("Serving RPC") }).id();
+        let rpc_id = join_set
+            .spawn(async move {
+                miden_node_rpc::serve(grpc_rpc, store_address, block_producer_address)
+                    .await
+                    .context("Serving RPC")
+            })
+            .id();
 
         // Lookup table so we can identify the failed component.
         let component_ids = HashMap::from([

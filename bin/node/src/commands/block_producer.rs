@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_block_producer::server::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
@@ -83,7 +82,7 @@ impl BlockProducerCommand {
             .await
             .context("Failed to bind to store's gRPC URL")?;
 
-        BlockProducer::init(
+        miden_node_block_producer::serve(
             listener,
             store_url,
             batch_prover_url,
@@ -92,10 +91,7 @@ impl BlockProducerCommand {
             block_interval,
         )
         .await
-        .context("Loading store")?
-        .serve()
-        .await
-        .context("Serving store")
+        .context("Failed to start serving block-producer")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

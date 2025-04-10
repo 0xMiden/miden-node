@@ -8,9 +8,9 @@ mod block_builder;
 mod domain;
 mod errors;
 mod mempool;
+mod server;
 pub mod store;
-
-pub mod server;
+pub use server::serve;
 
 // CONSTANTS
 // =================================================================================================

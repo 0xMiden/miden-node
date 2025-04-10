@@ -6,7 +6,6 @@ use std::{
 };
 
 mod metrics;
-use anyhow::Context;
 use clap::{Parser, Subcommand};
 use metrics::Metrics;
 use miden_air::{FieldElement, HashFunction};
@@ -17,9 +16,8 @@ use miden_lib::{
     utils::Serializable,
 };
 use miden_node_block_producer::store::StoreClient;
-use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client::ApiClient};
-use miden_node_store::{GenesisState, Store};
-use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_store::GenesisState;
 use miden_objects::{
     Felt,
     account::{
@@ -106,29 +104,24 @@ async fn seed_store(data_directory: PathBuf, num_accounts: usize) {
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
     let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
-    Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
+    miden_node_store::bootstrap(genesis_state.clone(), &data_directory)
+        .expect("store should bootstrap");
 
     // start the store
     let store_addr = {
         let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
         let store_addr = grpc_store.local_addr().expect("Failed to get store address");
-        let store = Store::init(grpc_store, data_directory.clone())
-            .await
-            .expect("Failed to init store");
-        task::spawn(async move { store.serve().await.context("Serving store") });
+        let dir = data_directory.clone();
+        task::spawn(async move {
+            miden_node_store::serve(grpc_store, dir)
+                .await
+                .expect("Failed to start serving store");
+        });
         store_addr
     };
 
     // connect to the store
-    let store_client = {
-        let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))
-            .unwrap()
-            .connect()
-            .await
-            .expect("Failed to connect to store");
-        let store_api_client = ApiClient::with_interceptor(channel, OtelInterceptor);
-        StoreClient::new(store_api_client)
-    };
+    let store_client = StoreClient::new(store_addr);
 
     // start generating blocks
     let data_directory =

@@ -4,7 +4,7 @@ use std::net::IpAddr;
 use miden_objects::{Digest, batch::BatchId, block::BlockNumber};
 use opentelemetry::{Key, Value, trace::Status};
 
-use crate::errors::ErrorReport;
+use crate::ErrorReport;
 
 /// Utility functions for converting types into [`opentelemetry::Value`].
 pub trait ToValue {

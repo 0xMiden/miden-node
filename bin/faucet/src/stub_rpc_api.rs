@@ -1,3 +1,4 @@
+use anyhow::Context;
 use miden_node_proto::generated::{
     block::BlockHeader,
     digest::Digest,
@@ -15,7 +16,6 @@ use miden_node_proto::generated::{
     },
     rpc::api_server,
 };
-use miden_node_utils::errors::ApiError;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
@@ -146,10 +146,10 @@ impl api_server::Api for StubRpcApi {
     }
 }
 
-pub async fn serve_stub(endpoint: &Url) -> Result<(), ApiError> {
+pub async fn serve_stub(endpoint: &Url) -> anyhow::Result<()> {
     let addr = endpoint
         .socket_addrs(|| None)
-        .map_err(ApiError::EndpointToSocketFailed)?
+        .context("failed to convert endpoint to socket address")?
         .into_iter()
         .next()
         .unwrap();
@@ -162,5 +162,5 @@ pub async fn serve_stub(endpoint: &Url) -> Result<(), ApiError> {
         .add_service(api_service)
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await
-        .map_err(ApiError::ApiServeFailed)
+        .context("failed to serve stub RPC API")
 }

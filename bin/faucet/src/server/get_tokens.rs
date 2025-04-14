@@ -5,7 +5,7 @@ use axum::{
 };
 use http::header;
 use http_body_util::Full;
-use miden_node_utils::errors::ErrorReport;
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     AccountIdError,
     account::AccountId,

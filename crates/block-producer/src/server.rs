@@ -1,11 +1,11 @@
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
+use anyhow::{Context, Result};
 use miden_node_proto::generated::{
     block_producer::api_server, requests::SubmitProvenTransactionRequest,
     responses::SubmitProvenTransactionResponse, store::api_client as store_client,
 };
 use miden_node_utils::{
-    errors::ApiError,
     formatting::{format_input_notes, format_output_notes},
     tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
 };
@@ -59,23 +59,20 @@ impl BlockProducer {
         block_prover: Option<Url>,
         batch_interval: Duration,
         block_interval: Duration,
-    ) -> Result<Self, ApiError> {
+    ) -> Result<Self> {
         info!(target: COMPONENT, endpoint=?listener, store=%store_address, "Initializing server");
 
         let store_url = format!("http://{store_address}");
-        let channel = tonic::transport::Endpoint::try_from(store_url)
-            .map_err(|err| ApiError::InvalidStoreUrl(err.to_string()))?
+        let channel = tonic::transport::Endpoint::try_from(store_url.clone())
+            .with_context(|| format!("failed to create store endpoint for {store_url}"))?
             .connect()
             .await
-            .map_err(|err| ApiError::DatabaseConnectionFailed(err.to_string()))?;
+            .with_context(|| format!("failed to connect to store on {store_url}"))?;
 
         let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
         let store = StoreClient::new(store);
 
-        let latest_header = store
-            .latest_header()
-            .await
-            .map_err(|err| ApiError::DatabaseConnectionFailed(err.to_string()))?;
+        let latest_header = store.latest_header().await.context("failed to get latest header")?;
         let chain_tip = latest_header.block_num();
 
         info!(target: COMPONENT, "Server initialized");

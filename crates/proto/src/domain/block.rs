@@ -111,9 +111,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
             latest_block_header: Some(prev_block_header.into()),
             account_witnesses: account_witnesses
                 .into_iter()
-                .map(|(id, witness)| {
-                    AccountWitnessRecord { account_id: id, witness: witness.into() }.into()
-                })
+                .map(|(id, witness)| AccountWitnessRecord { account_id: id, witness }.into())
                 .collect(),
             nullifier_witnesses: nullifier_witnesses
                 .into_iter()

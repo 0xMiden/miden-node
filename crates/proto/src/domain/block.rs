@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
 use miden_objects::{
-    block::{AccountWitness, BlockHeader, BlockInputs, NullifierWitness},
+    block::{BlockHeader, BlockInputs, NullifierWitness},
     note::{NoteId, NoteInclusionProof},
     transaction::ChainMmr,
-    utils::{Deserializable, DeserializationError, Serializable},
+    utils::{Deserializable, Serializable},
 };
 
 use crate::{
@@ -112,8 +112,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
             account_witnesses: account_witnesses
                 .into_iter()
                 .map(|(id, witness)| {
-                    let proof = witness.into_proof();
-                    AccountWitnessRecord { account_id: id, proof }.into()
+                    AccountWitnessRecord { account_id: id, witness: witness.into() }.into()
                 })
                 .collect(),
             nullifier_witnesses: nullifier_witnesses
@@ -146,15 +145,7 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .into_iter()
             .map(|entry| {
                 let witness_record: AccountWitnessRecord = entry.try_into()?;
-                Ok((
-                    witness_record.account_id,
-                    AccountWitness::new(witness_record.proof).map_err(|err| {
-                        ConversionError::deserialization_error(
-                            "AccountWitness",
-                            DeserializationError::InvalidValue(err.to_string()),
-                        )
-                    })?,
-                ))
+                Ok((witness_record.account_id, witness_record.witness))
             })
             .collect::<Result<BTreeMap<_, _>, ConversionError>>()?;
 

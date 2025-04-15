@@ -84,12 +84,20 @@ pub struct SyncNoteResponse {
 /// An account witness returned as a response to the `GetBlockInputs`.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountWitness {
-    /// The account ID.
+    /// Account ID for which this proof is requested.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// The SMT proof to verify the account's state commitment in the account tree.
+    /// The account ID within the proof, which may be different from the above account ID.
+    /// This can happen when the requested account ID's prefix matches the prefix of an existing
+    /// account ID in the tree. Then the witness will prove inclusion of this witness ID in the tree.
     #[prost(message, optional, tag = "2")]
-    pub proof: ::core::option::Option<super::smt::SmtOpening>,
+    pub witness_id: ::core::option::Option<super::account::AccountId>,
+    /// The state commitment whose inclusion the witness proves.
+    #[prost(message, optional, tag = "3")]
+    pub commitment: ::core::option::Option<super::digest::Digest>,
+    /// The merkle path of the state commitment in the account tree.
+    #[prost(message, optional, tag = "4")]
+    pub path: ::core::option::Option<super::merkle::MerklePath>,
 }
 /// A nullifier returned as a response to the `GetBlockInputs`.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -223,17 +231,14 @@ pub struct GetAccountProofsResponse {
     #[prost(message, repeated, tag = "2")]
     pub account_proofs: ::prost::alloc::vec::Vec<AccountProofsResponse>,
 }
-/// A single account proof returned as a response to the `GetAccountProofs`.
+/// A single account proof returned as a response to `GetAccountProofs`.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofsResponse {
-    /// Account ID.
+    /// The account witness for the current state commitment of the account ID.
     #[prost(message, optional, tag = "1")]
-    pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Proof of inclusion for the account's current state commitment in the account tree.
-    #[prost(message, optional, tag = "2")]
-    pub proof: ::core::option::Option<super::smt::SmtOpening>,
+    pub witness: ::core::option::Option<AccountWitness>,
     /// State header for public accounts. Filled only if `include_headers` flag is set to `true`.
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "2")]
     pub state_header: ::core::option::Option<AccountStateHeader>,
 }
 /// State header for public accounts.

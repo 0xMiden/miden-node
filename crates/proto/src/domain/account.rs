@@ -4,9 +4,9 @@ use miden_node_utils::formatting::format_opt;
 use miden_objects::{
     Digest,
     account::{Account, AccountHeader, AccountId},
-    block::BlockNumber,
-    crypto::{hash::rpo::RpoDigest, merkle::SmtProof},
-    utils::{Deserializable, Serializable},
+    block::{AccountWitness, BlockNumber},
+    crypto::hash::rpo::RpoDigest,
+    utils::{Deserializable, DeserializationError, Serializable},
 };
 
 use super::try_convert;
@@ -155,14 +155,16 @@ impl TryInto<StorageMapKeysProof> for proto::requests::get_account_proofs_reques
 #[derive(Clone, Debug)]
 pub struct AccountWitnessRecord {
     pub account_id: AccountId,
-    pub proof: SmtProof,
+    pub witness: AccountWitness,
 }
 
 impl From<AccountWitnessRecord> for proto::responses::AccountWitness {
     fn from(from: AccountWitnessRecord) -> Self {
         Self {
             account_id: Some(from.account_id.into()),
-            proof: Some(from.proof.into()),
+            witness_id: Some(from.witness.id().into()),
+            commitment: Some(from.witness.state_commitment().into()),
+            path: Some(from.witness.into_proof().into_parts().0.into()),
         }
     }
 }
@@ -173,15 +175,33 @@ impl TryFrom<proto::responses::AccountWitness> for AccountWitnessRecord {
     fn try_from(
         account_witness_record: proto::responses::AccountWitness,
     ) -> Result<Self, Self::Error> {
+        let witness_id = account_witness_record
+            .witness_id
+            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(witness_id)))?
+            .try_into()?;
+        let commitment = account_witness_record
+            .commitment
+            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(commitment)))?
+            .try_into()?;
+        let path = account_witness_record
+            .path
+            .as_ref()
+            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(path)))?
+            .try_into()?;
+
+        let witness = AccountWitness::new(witness_id, commitment, path).map_err(|err| {
+            ConversionError::deserialization_error(
+                "AccountWitness",
+                DeserializationError::InvalidValue(err.to_string()),
+            )
+        })?;
+
         Ok(Self {
             account_id: account_witness_record
                 .account_id
                 .ok_or(proto::responses::AccountWitness::missing_field(stringify!(account_id)))?
                 .try_into()?,
-            proof: account_witness_record
-                .proof
-                .ok_or(proto::responses::AccountWitness::missing_field(stringify!(proof)))?
-                .try_into()?,
+            witness,
         })
     }
 }

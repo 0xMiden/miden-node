@@ -134,8 +134,8 @@ pub enum GenesisError {
     // TODO: Check if needed.
     #[error("block error")]
     Block,
-    #[error("merkle error")]
-    Merkle(#[from] MerkleError),
+    #[error("failed to build genesis account tree")]
+    AccountTree(#[source] AccountTreeError),
     #[error("failed to deserialize genesis file")]
     GenesisFileDeserialization(#[from] DeserializationError),
 }

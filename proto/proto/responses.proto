@@ -88,11 +88,19 @@ message SyncNoteResponse {
 
 // An account witness returned as a response to the `GetBlockInputs`.
 message AccountWitness {
-    // The account ID.
+    // Account ID for which this proof is requested.
     account.AccountId account_id = 1;
 
-    // The SMT proof to verify the account's state commitment in the account tree.
-    smt.SmtOpening proof = 2;
+    // The account ID within the proof, which may be different from the above account ID.
+    // This can happen when the requested account ID's prefix matches the prefix of an existing
+    // account ID in the tree. Then the witness will prove inclusion of this witness ID in the tree.
+    account.AccountId witness_id = 2;
+
+    // The state commitment whose inclusion the witness proves.
+    digest.Digest commitment = 3;
+
+    // The merkle path of the state commitment in the account tree.
+    merkle.MerklePath path = 4;
 }
 
 // A nullifier returned as a response to the `GetBlockInputs`.
@@ -213,16 +221,13 @@ message GetAccountProofsResponse {
     repeated AccountProofsResponse account_proofs = 2;
 }
 
-// A single account proof returned as a response to the `GetAccountProofs`.
+// A single account proof returned as a response to `GetAccountProofs`.
 message AccountProofsResponse {
-    // Account ID.
-    account.AccountId account_id = 1;
-
-    // Proof of inclusion for the account's current state commitment in the account tree.
-    smt.SmtOpening proof = 2;
+    // The account witness for the current state commitment of one account ID.
+    AccountWitness witness = 1;
 
     // State header for public accounts. Filled only if `include_headers` flag is set to `true`.
-    optional AccountStateHeader state_header = 3;
+    optional AccountStateHeader state_header = 2;
 }
 
 // State header for public accounts.

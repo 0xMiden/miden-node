@@ -10,6 +10,7 @@ use std::{
 };
 
 use miden_node_proto::{
+    AccountWitnessRecord,
     domain::{
         account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
         batch::BatchInputs,
@@ -926,9 +927,10 @@ impl State {
                 let witness = inner_state.account_tree.open(account_id);
                 let state_header = state_headers.get(&account_id).cloned();
 
+                let witness_record = AccountWitnessRecord { account_id, witness };
+
                 AccountProofsResponse {
-                    account_id: Some(account_id.into()),
-                    proof: Some(witness.into_proof().into()),
+                    witness: Some(witness_record.into()),
                     state_header,
                 }
             })

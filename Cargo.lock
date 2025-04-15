@@ -1813,7 +1813,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#f62a18c80fdeac895ddbe5bc1672b0a593bfa925"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#83a567314f419402a2137ec1f32ca15acf3d6f59"
 dependencies = [
  "miden-crypto",
  "miden-lib",
@@ -1905,7 +1905,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#f62a18c80fdeac895ddbe5bc1672b0a593bfa925"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#83a567314f419402a2137ec1f32ca15acf3d6f59"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2133,7 +2133,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#f62a18c80fdeac895ddbe5bc1672b0a593bfa925"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#83a567314f419402a2137ec1f32ca15acf3d6f59"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2180,7 +2180,7 @@ dependencies = [
 [[package]]
 name = "miden-proving-service-client"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#f62a18c80fdeac895ddbe5bc1672b0a593bfa925"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#83a567314f419402a2137ec1f32ca15acf3d6f59"
 dependencies = [
  "async-trait",
  "getrandom 0.3.2",
@@ -2210,7 +2210,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#f62a18c80fdeac895ddbe5bc1672b0a593bfa925"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#83a567314f419402a2137ec1f32ca15acf3d6f59"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2227,7 +2227,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#f62a18c80fdeac895ddbe5bc1672b0a593bfa925"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-account-tree#83a567314f419402a2137ec1f32ca15acf3d6f59"
 dependencies = [
  "miden-core",
  "miden-crypto",

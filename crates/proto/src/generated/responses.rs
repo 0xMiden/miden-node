@@ -234,7 +234,7 @@ pub struct GetAccountProofsResponse {
 /// A single account proof returned as a response to `GetAccountProofs`.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofsResponse {
-    /// The account witness for the current state commitment of the account ID.
+    /// The account witness for the current state commitment of one account ID.
     #[prost(message, optional, tag = "1")]
     pub witness: ::core::option::Option<AccountWitness>,
     /// State header for public accounts. Filled only if `include_headers` flag is set to `true`.

@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-const SQLITE_TABLES: [&str; 11] = [
+const SQLITE_TABLES: [&str; 12] = [
     "account_deltas",
     "block_headers",
     "account_fungible_asset_deltas",
@@ -17,6 +17,7 @@ const SQLITE_TABLES: [&str; 11] = [
     "account_storage_slot_updates",
     "transactions",
     "accounts",
+    "scripts",
 ];
 
 /// Metrics struct to show the results of the stress test

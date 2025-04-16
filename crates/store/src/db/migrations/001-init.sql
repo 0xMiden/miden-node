@@ -40,11 +40,15 @@ CREATE TABLE notes (
     merkle_path    BLOB    NOT NULL,
     consumed       INTEGER NOT NULL, -- boolean
     nullifier      BLOB,             -- Only known for public notes, null for private notes
-    details        BLOB,
+    assets         BLOB,
+    inputs         BLOB,
+    script_root    BLOB,
+    serial_num     BLOB,
 
     PRIMARY KEY (block_num, batch_index, note_index),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
     FOREIGN KEY (sender) REFERENCES accounts(account_id),
+    FOREIGN KEY (script_root) REFERENCES scripts(script_root),
     CONSTRAINT notes_type_in_enum CHECK (note_type BETWEEN 1 AND 3),
     CONSTRAINT notes_execution_mode_in_enum CHECK (execution_mode BETWEEN 0 AND 1),
     CONSTRAINT notes_consumed_is_bool CHECK (execution_mode BETWEEN 0 AND 1),
@@ -57,6 +61,13 @@ CREATE INDEX idx_notes_sender ON notes(sender, block_num);
 CREATE INDEX idx_notes_tag ON notes(tag, block_num);
 CREATE INDEX idx_notes_nullifier ON notes(nullifier);
 CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed);
+
+CREATE TABLE scripts (
+    script_root BLOB NOT NULL,
+    script      BLOB NOT NULL,
+  
+    PRIMARY KEY (script_root)
+) STRICT, WITHOUT ROWID;
 
 CREATE TABLE account_deltas (
     account_id  BLOB NOT NULL,

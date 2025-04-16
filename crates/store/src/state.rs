@@ -29,7 +29,7 @@ use miden_objects::{
         hash::rpo::RpoDigest,
         merkle::{Mmr, MmrDelta, MmrError, MmrPeaks, MmrProof, PartialMmr, SmtProof},
     },
-    note::{NoteId, Nullifier},
+    note::{NoteDetails, NoteId, Nullifier},
     transaction::{ChainMmr, OutputNote},
     utils::Serializable,
 };
@@ -343,7 +343,9 @@ impl State {
             .output_notes()
             .map(|(note_index, note)| {
                 let (details, nullifier) = match note {
-                    OutputNote::Full(note) => (Some(note.to_bytes()), Some(note.nullifier())),
+                    OutputNote::Full(note) => {
+                        (Some(NoteDetails::from(note)), Some(note.nullifier()))
+                    },
                     OutputNote::Header(_) => (None, None),
                     note @ OutputNote::Partial(_) => {
                         return Err(InvalidBlockError::InvalidOutputNoteType(Box::new(

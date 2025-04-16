@@ -38,5 +38,6 @@ miden-lib             = { workspace = true, features = ["testing"] }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { workspace = true, features = ["tracing-forest"] }
 miden-objects         = { workspace = true, features = ["testing"] }
+rand                  = { version = "0.9" }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }

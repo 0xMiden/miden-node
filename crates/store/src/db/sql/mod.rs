@@ -781,6 +781,17 @@ pub fn insert_notes(
     Ok(count)
 }
 
+/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts holded by the
+/// notes passed as parameter. If the script root already exists in the DB, it will be ignored.
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
 pub fn insert_scripts(transaction: &Transaction, notes: &[&NoteRecord]) -> Result<usize> {
     let mut stmt =
         transaction.prepare_cached(insert_sql!(scripts { script_root, script } | IGNORE))?;

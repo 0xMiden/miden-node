@@ -23,6 +23,7 @@ miden-tx         = { workspace = true }
 tokio            = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
 tokio-stream     = { workspace = true, features = ["net"] }
 tonic            = { workspace = true }
+tonic-web        = { version = "0.12" }
 tracing          = { workspace = true }
 
 [dev-dependencies]

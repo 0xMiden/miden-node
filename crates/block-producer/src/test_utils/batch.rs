@@ -56,7 +56,7 @@ impl TransactionBatchConstructor for ProvenBatch {
             output_notes.extend(tx.output_notes().iter().cloned());
         }
 
-        ProvenBatch::new_unchecked(
+        ProvenBatch::new(
             BatchId::from_transactions(txs.iter().copied()),
             Digest::default(),
             BlockNumber::GENESIS,
@@ -68,6 +68,7 @@ impl TransactionBatchConstructor for ProvenBatch {
                 txs.into_iter().map(TransactionHeader::from).collect(),
             ),
         )
+        .unwrap()
     }
 
     fn from_notes_created(starting_account_index: u32, notes_per_tx: &[u64]) -> Self {

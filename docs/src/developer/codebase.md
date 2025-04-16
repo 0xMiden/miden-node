@@ -8,6 +8,7 @@ instead simply serve to enforce code organisation and decoupling.
 
 | Crate            | Description                                                                                                                                              |
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `node-builder`   | A builder crate that provides a programmatic way to configure and start Miden nodes with all their components.                                           |
 | `node`           | The node executable. Configure and run the node and its components.                                                                                      |
 | `faucet`         | A reference faucet app implementation used by the official Miden faucet.                                                                                 |
 | `block-producer` | Block-producer component implementation.                                                                                                                 |
@@ -17,7 +18,6 @@ instead simply serve to enforce code organisation and decoupling.
 | `rpc-proto`      | Contains the RPC protobuf definitions. Currently this is an awkward clone of `proto` because we re-use the definitions from the internal protobuf types. |
 | `utils`          | Variety of utility functionality.                                                                                                                        |
 | `test-macro`     | Provides a procedural macro to enable tracing in tests.                                                                                                  |
-
 
 -------
 

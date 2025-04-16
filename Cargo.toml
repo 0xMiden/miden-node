@@ -4,6 +4,7 @@ members = [
   "bin/node",
   "bin/stress-test",
   "crates/block-producer",
+  "crates/node-builder",
   "crates/proto",
   "crates/rpc",
   "crates/store",

@@ -1,0 +1,28 @@
+[package]
+authors.workspace      = true
+description            = "A library for programmatically starting up Miden node components"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["miden", "node", "protobuf", "rpc"]
+license.workspace      = true
+name                   = "miden-node-builder"
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow                    = "1.0"
+miden-node-block-producer = { path = "../block-producer" }
+miden-node-rpc            = { path = "../rpc" }
+miden-node-store          = { path = "../store" }
+miden-node-utils          = { path = "../utils" }
+tokio                     = { version = "1.0", features = ["full"] }
+tracing                   = "0.1"
+url                       = "2.0"
+
+[dev-dependencies]
+tempfile = "3.0"

@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 
+use anyhow::Context;
 use api::RpcService;
 use miden_node_proto::generated::rpc::api_server;
-use miden_node_utils::errors::ApiError;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tracing::info;
@@ -27,12 +27,12 @@ impl Rpc {
         listener: TcpListener,
         store: SocketAddr,
         block_producer: SocketAddr,
-    ) -> Result<Self, ApiError> {
+    ) -> anyhow::Result<Self> {
         info!(target: COMPONENT, endpoint=?listener, %store, %block_producer, "Initializing server");
 
         let api = api::RpcService::new(store, block_producer)
             .await
-            .map_err(|err| ApiError::ApiInitialisationFailed(err.to_string()))?;
+            .context("failed to initialize RPC service")?;
         let api_service = api_server::ApiServer::new(api);
 
         info!(target: COMPONENT, "Server initialized");
@@ -43,12 +43,12 @@ impl Rpc {
     /// Serves the RPC API.
     ///
     /// Note: this blocks until the server dies.
-    pub async fn serve(self) -> Result<(), ApiError> {
+    pub async fn serve(self) -> anyhow::Result<()> {
         tonic::transport::Server::builder()
             .accept_http1(true)
-            .add_service(self.api_service)
+            .add_service(tonic_web::enable(self.api_service))  // tonic_web::enable is needed to support grpc-web calls
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
-            .map_err(ApiError::ApiServeFailed)
+            .context("failed to serve RPC API")
     }
 }

@@ -5,11 +5,11 @@ use std::{
 };
 
 use miden_objects::{
-    ACCOUNT_TREE_DEPTH, Digest, EMPTY_WORD, ZERO,
+    Digest, EMPTY_WORD, Word, ZERO,
     account::AccountId,
     batch::ProvenBatch,
-    block::{BlockHeader, BlockNumber, OutputNoteBatch, ProvenBlock},
-    crypto::merkle::{Mmr, SimpleSmt, Smt},
+    block::{AccountTree, BlockHeader, BlockNumber, OutputNoteBatch, ProvenBlock},
+    crypto::merkle::{Mmr, Smt},
     note::{NoteId, NoteInclusionProof},
     transaction::ProvenTransaction,
 };
@@ -26,7 +26,7 @@ use crate::{
 /// Builds a [`MockStoreSuccess`]
 #[derive(Debug)]
 pub struct MockStoreSuccessBuilder {
-    accounts: Option<SimpleSmt<ACCOUNT_TREE_DEPTH>>,
+    accounts: Option<AccountTree>,
     notes: Option<Vec<OutputNoteBatch>>,
     produced_nullifiers: Option<BTreeSet<Digest>>,
     chain_mmr: Option<Mmr>,
@@ -36,16 +36,13 @@ pub struct MockStoreSuccessBuilder {
 impl MockStoreSuccessBuilder {
     pub fn from_batches<'a>(batches_iter: impl Iterator<Item = &'a ProvenBatch> + Clone) -> Self {
         let accounts_smt = {
-            let accounts = batches_iter
-                .clone()
-                .flat_map(|batch| {
-                    batch
-                        .account_updates()
-                        .iter()
-                        .map(|(account_id, update)| (account_id, update.initial_state_commitment()))
-                })
-                .map(|(account_id, commitment)| (account_id.prefix().into(), commitment.into()));
-            SimpleSmt::<ACCOUNT_TREE_DEPTH>::with_leaves(accounts).unwrap()
+            let accounts = batches_iter.clone().flat_map(|batch| {
+                batch
+                    .account_updates()
+                    .iter()
+                    .map(|(account_id, update)| (*account_id, update.initial_state_commitment()))
+            });
+            AccountTree::with_entries(accounts).unwrap()
         };
 
         Self {
@@ -58,12 +55,7 @@ impl MockStoreSuccessBuilder {
     }
 
     pub fn from_accounts(accounts: impl Iterator<Item = (AccountId, Digest)>) -> Self {
-        let accounts_smt = {
-            let accounts = accounts
-                .map(|(account_id, commitment)| (account_id.prefix().into(), commitment.into()));
-
-            SimpleSmt::<ACCOUNT_TREE_DEPTH>::with_leaves(accounts).unwrap()
-        };
+        let accounts_smt = AccountTree::with_entries(accounts).unwrap();
 
         Self {
             accounts: Some(accounts_smt),
@@ -107,7 +99,7 @@ impl MockStoreSuccessBuilder {
 
     pub fn build(self) -> MockStoreSuccess {
         let block_num = self.block_num.unwrap_or(1.into());
-        let accounts_smt = self.accounts.unwrap_or(SimpleSmt::new().unwrap());
+        let accounts_smt = self.accounts.unwrap_or_default();
         let notes = self.notes.unwrap_or_default();
         let block_note_tree = note_created_smt_from_note_batches(notes.iter());
         let note_root = block_note_tree.root();
@@ -168,7 +160,7 @@ impl MockStoreSuccessBuilder {
 
 pub struct MockStoreSuccess {
     /// Map account id -> account commitment
-    pub accounts: Arc<RwLock<SimpleSmt<ACCOUNT_TREE_DEPTH>>>,
+    pub accounts: Arc<RwLock<AccountTree>>,
 
     /// Stores the nullifiers of the notes that were consumed
     pub produced_nullifiers: Arc<RwLock<Smt>>,
@@ -202,7 +194,8 @@ impl MockStoreSuccess {
         // update accounts
         for update in block.updated_accounts() {
             locked_accounts
-                .insert(update.account_id().into(), update.final_state_commitment().into());
+                .insert(update.account_id(), update.final_state_commitment())
+                .expect("TODO: what should we do with this error?");
         }
         let header = block.header();
         debug_assert_eq!(locked_accounts.root(), header.account_root());
@@ -254,12 +247,12 @@ impl MockStoreSuccess {
         let locked_produced_nullifiers = self.produced_nullifiers.read().await;
 
         let account_commitment = {
-            let account_commitment = locked_accounts.get_leaf(&proven_tx.account_id().into());
+            let account_commitment = locked_accounts.get(proven_tx.account_id());
 
-            if account_commitment == EMPTY_WORD {
+            if Word::from(account_commitment) == EMPTY_WORD {
                 None
             } else {
-                Some(account_commitment.into())
+                Some(account_commitment)
             }
         };
 

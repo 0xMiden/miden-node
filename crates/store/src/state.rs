@@ -10,6 +10,7 @@ use std::{
 };
 
 use miden_node_proto::{
+    AccountWitnessRecord,
     domain::{
         account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
         batch::BatchInputs,
@@ -18,15 +19,15 @@ use miden_node_proto::{
 };
 use miden_node_utils::formatting::format_array;
 use miden_objects::{
-    ACCOUNT_TREE_DEPTH, AccountError,
+    AccountError,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
-    block::{AccountWitness, BlockHeader, BlockInputs, BlockNumber, NullifierWitness, ProvenBlock},
+    block::{
+        AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, NullifierWitness,
+        ProvenBlock,
+    },
     crypto::{
         hash::rpo::RpoDigest,
-        merkle::{
-            LeafIndex, Mmr, MmrDelta, MmrError, MmrPeaks, MmrProof, PartialMmr, SimpleSmt,
-            SmtProof, ValuePath,
-        },
+        merkle::{Mmr, MmrDelta, MmrError, MmrPeaks, MmrProof, PartialMmr, SmtProof},
     },
     note::{NoteId, Nullifier},
     transaction::{ChainMmr, OutputNote},
@@ -152,7 +153,7 @@ impl Blockchain {
 struct InnerState {
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: SimpleSmt<ACCOUNT_TREE_DEPTH>,
+    account_tree: AccountTree,
 }
 
 impl InnerState {
@@ -234,9 +235,8 @@ impl State {
 
         let header = block.header();
 
-        let tx_commitment = BlockHeader::compute_tx_commitment(
-            block.transactions().as_slice().iter().map(|tx| (tx.id(), tx.account_id())),
-        );
+        let tx_commitment = block.transactions().commitment();
+
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
                 expected: tx_commitment,
@@ -315,15 +315,13 @@ impl State {
 
             // compute update for account tree
             let account_tree_update = inner.account_tree.compute_mutations(
-                block.updated_accounts().iter().map(|update| {
-                    (
-                        LeafIndex::new_max_depth(update.account_id().prefix().into()),
-                        update.final_state_commitment().into(),
-                    )
-                }),
+                block
+                    .updated_accounts()
+                    .iter()
+                    .map(|update| (update.account_id(), update.final_state_commitment())),
             );
 
-            if account_tree_update.root() != header.account_root() {
+            if account_tree_update.as_mutation_set().root() != header.account_root() {
                 return Err(InvalidBlockError::NewBlockInvalidAccountRoot.into());
             }
 
@@ -791,13 +789,7 @@ impl State {
         let account_witnesses = account_ids
             .iter()
             .copied()
-            .map(|account_id| {
-                let ValuePath {
-                    value: latest_state_commitment,
-                    path: proof,
-                } = inner.account_tree.open(&account_id.into());
-                (account_id, AccountWitness::new(latest_state_commitment, proof))
-            })
+            .map(|account_id| (account_id, inner.account_tree.open(account_id)))
             .collect::<BTreeMap<AccountId, AccountWitness>>();
 
         // Fetch witnesses for all nullifiers. We don't check whether the nullifiers are spent or
@@ -826,10 +818,7 @@ impl State {
 
         let inner = self.inner.read().await;
 
-        let account_commitment = inner
-            .account_tree
-            .open(&LeafIndex::new_max_depth(account_id.prefix().into()))
-            .value;
+        let account_commitment = inner.account_tree.get(account_id);
 
         let nullifiers = nullifiers
             .iter()
@@ -935,14 +924,13 @@ impl State {
         let responses = account_ids
             .into_iter()
             .map(|account_id| {
-                let acc_leaf_idx = LeafIndex::new_max_depth(account_id.prefix().into());
-                let opening = inner_state.account_tree.open(&acc_leaf_idx);
+                let witness = inner_state.account_tree.open(account_id);
                 let state_header = state_headers.get(&account_id).cloned();
 
+                let witness_record = AccountWitnessRecord { account_id, witness };
+
                 AccountProofsResponse {
-                    account_id: Some(account_id.into()),
-                    account_commitment: Some(opening.value.into()),
-                    account_proof: Some(opening.path.into()),
+                    witness: Some(witness_record.into()),
                     state_header,
                 }
             })
@@ -1027,16 +1015,9 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 }
 
 #[instrument(target = COMPONENT, skip_all)]
-async fn load_accounts(
-    db: &mut Db,
-) -> Result<SimpleSmt<ACCOUNT_TREE_DEPTH>, StateInitializationError> {
-    let account_data: Vec<_> = db
-        .select_all_account_commitments()
-        .await?
-        .into_iter()
-        .map(|(id, account_commitment)| (id.prefix().into(), account_commitment.into()))
-        .collect();
+async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
+    let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
-    SimpleSmt::with_leaves(account_data)
+    AccountTree::with_entries(account_data)
         .map_err(StateInitializationError::FailedToCreateAccountsTree)
 }

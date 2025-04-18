@@ -1,9 +1,11 @@
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::{
-    ACCOUNT_TREE_DEPTH, Digest,
+    Digest,
     account::{Account, delta::AccountUpdateDetails},
-    block::{BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock},
-    crypto::merkle::{MmrPeaks, SimpleSmt, Smt},
+    block::{
+        AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock,
+    },
+    crypto::merkle::{MmrPeaks, Smt},
     note::Nullifier,
     transaction::OrderedTransactionHeaders,
     utils::serde::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable},
@@ -57,10 +59,12 @@ impl GenesisState {
             })
             .collect();
 
-        let account_smt: SimpleSmt<ACCOUNT_TREE_DEPTH> =
-            SimpleSmt::with_leaves(accounts.iter().map(|update| {
-                (update.account_id().prefix().into(), update.final_state_commitment().into())
-            }))?;
+        let account_smt = AccountTree::with_entries(
+            accounts
+                .iter()
+                .map(|update| (update.account_id(), update.final_state_commitment())),
+        )
+        .map_err(GenesisError::AccountTree)?;
 
         let empty_nullifiers: Vec<Nullifier> = Vec::new();
         let empty_nullifier_tree = Smt::new();

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use miden_objects::{
-    block::{AccountWitness, BlockHeader, BlockInputs, NullifierWitness},
+    block::{BlockHeader, BlockInputs, NullifierWitness},
     note::{NoteId, NoteInclusionProof},
     transaction::ChainMmr,
     utils::{Deserializable, Serializable},
@@ -111,15 +111,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
             latest_block_header: Some(prev_block_header.into()),
             account_witnesses: account_witnesses
                 .into_iter()
-                .map(|(id, witness)| {
-                    let (initial_state_commitment, proof) = witness.into_parts();
-                    AccountWitnessRecord {
-                        account_id: id,
-                        initial_state_commitment,
-                        proof,
-                    }
-                    .into()
-                })
+                .map(|(id, witness)| AccountWitnessRecord { account_id: id, witness }.into())
                 .collect(),
             nullifier_witnesses: nullifier_witnesses
                 .into_iter()
@@ -151,13 +143,7 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .into_iter()
             .map(|entry| {
                 let witness_record: AccountWitnessRecord = entry.try_into()?;
-                Ok((
-                    witness_record.account_id,
-                    AccountWitness::new(
-                        witness_record.initial_state_commitment,
-                        witness_record.proof,
-                    ),
-                ))
+                Ok((witness_record.account_id, witness_record.witness))
             })
             .collect::<Result<BTreeMap<_, _>, ConversionError>>()?;
 

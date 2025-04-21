@@ -2,12 +2,10 @@ use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 use seeding::seed_store;
-use store_tests::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state};
+use store::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state};
 
-mod endpoints_metrics;
 mod seeding;
-mod seeding_metrics;
-mod store_tests;
+mod store;
 
 #[derive(Parser)]
 #[command(version)]

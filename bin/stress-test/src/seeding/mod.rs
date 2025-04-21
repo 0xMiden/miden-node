@@ -5,6 +5,7 @@ use std::{
     time::Instant,
 };
 
+use metrics::SeedingMetrics;
 use miden_air::{FieldElement, HashFunction};
 use miden_block_prover::LocalBlockProver;
 use miden_lib::{
@@ -44,7 +45,7 @@ use tokio::{fs, io::AsyncWriteExt, net::TcpListener, task};
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use winterfell::Proof;
 
-use crate::seeding_metrics::SeedingMetrics;
+mod metrics;
 
 // CONSTANTS
 // ================================================================================================

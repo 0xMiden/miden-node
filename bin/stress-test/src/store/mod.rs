@@ -23,9 +23,11 @@ use tokio::fs;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 
 use crate::{
-    endpoints_metrics::print_summary,
     seeding::{ACCOUNTS_FILENAME, start_store},
+    store::metrics::print_summary,
 };
+
+mod metrics;
 
 // SYNC STATE
 // ================================================================================================

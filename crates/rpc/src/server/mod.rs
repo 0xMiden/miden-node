@@ -27,7 +27,7 @@ pub async fn serve(
 
     tonic::transport::Server::builder()
         .accept_http1(true)
-        .add_service(api_service)
+        .add_service(tonic_web::enable(api_service))  // tonic_web::enable is needed to support grpc-web calls
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await
         .context("failed to serve RPC API")

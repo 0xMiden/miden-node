@@ -341,7 +341,7 @@ fn create_batch(txs: &[ProvenTransaction], block_ref: &BlockHeader) -> ProvenBat
         .collect();
     let input_notes = txs.iter().flat_map(|tx| tx.input_notes().iter().cloned()).collect();
     let output_notes = txs.iter().flat_map(|tx| tx.output_notes().iter().cloned()).collect();
-    ProvenBatch::new_unchecked(
+    ProvenBatch::new(
         BatchId::from_transactions(txs.iter()),
         block_ref.commitment(),
         block_ref.block_num(),
@@ -351,6 +351,7 @@ fn create_batch(txs: &[ProvenTransaction], block_ref: &BlockHeader) -> ProvenBat
         BlockNumber::from(u32::MAX),
         OrderedTransactionHeaders::new_unchecked(txs.iter().map(TransactionHeader::from).collect()),
     )
+    .unwrap()
 }
 
 /// For each pair of account and note, creates a transaction that consumes the note.

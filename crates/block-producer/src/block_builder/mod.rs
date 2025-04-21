@@ -206,6 +206,13 @@ impl BlockBuilder {
     ) -> Result<ProvenBlock, BuildBlockError> {
         let proven_block = self.block_prover.prove(proposed_block).await?;
 
+        if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
+            return Err(BuildBlockError::SecurityLevelTooLow(
+                proven_block.proof_security_level(),
+                MIN_PROOF_SECURITY_LEVEL,
+            ));
+        }
+
         self.simulate_proving().await;
 
         Ok(proven_block)
@@ -309,21 +316,14 @@ impl TelemetryInjectorExt for ProposedBlock {
             u32::try_from(self.created_nullifiers().len())
                 .expect("should have less than u32::MAX created nullifiers"),
         );
-        let num_block_created_notes = self
-            .output_note_batches()
-            .iter()
-            .fold(0, |acc, output_notes| acc + output_notes.len());
+        let num_block_created_notes = self.batches().num_created_notes();
         span.set_attribute(
             "block.output_notes.count",
             u32::try_from(num_block_created_notes)
                 .expect("should have less than u32::MAX output notes"),
         );
 
-        let num_batch_created_notes = self
-            .batches()
-            .as_slice()
-            .iter()
-            .fold(0, |acc, batch| acc + batch.output_notes().len());
+        let num_batch_created_notes = self.batches().num_created_notes();
         span.set_attribute(
             "block.batches.output_notes.count",
             u32::try_from(num_batch_created_notes)

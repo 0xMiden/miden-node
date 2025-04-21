@@ -18,6 +18,7 @@ workspace = true
 tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { version = "0.1" }
 futures = { version = "0.3" }
 itertools = { workspace = true }

@@ -86,17 +86,21 @@ message SyncNoteResponse {
     repeated note.NoteSyncRecord notes = 4;
 }
 
-// An account returned as a response to the `GetBlockInputs`.
+// An account witness returned as a response to the `GetBlockInputs`.
 message AccountWitness {
-    // The account ID.
+    // Account ID for which this proof is requested.
     account.AccountId account_id = 1;
 
-    // The latest account state commitment used as the initial state of the requested block.
-    // This will be the zero digest if the account doesn't exist.
-    digest.Digest initial_state_commitment = 2;
+    // The account ID within the proof, which may be different from the above account ID.
+    // This can happen when the requested account ID's prefix matches the prefix of an existing
+    // account ID in the tree. Then the witness will prove inclusion of this witness ID in the tree.
+    account.AccountId witness_id = 2;
 
-    // Merkle path to verify the account's inclusion in the account tree.
-    merkle.MerklePath proof = 3;
+    // The state commitment whose inclusion the witness proves.
+    digest.Digest commitment = 3;
+
+    // The merkle path of the state commitment in the account tree.
+    merkle.MerklePath path = 4;
 }
 
 // A nullifier returned as a response to the `GetBlockInputs`.
@@ -210,22 +214,20 @@ message GetAccountStateDeltaResponse {
 
 // Represents the result of getting account proofs.
 message GetAccountProofsResponse {
-    // Block number at which the state of the account was returned.
+    // Block number at which the state of the accounts is returned.
     fixed32 block_num = 1;
+
     // List of account state infos for the requested account keys.
     repeated AccountProofsResponse account_proofs = 2;
 }
 
-// A single account proof returned as a response to the `GetAccountProofs`.
+// A single account proof returned as a response to `GetAccountProofs`.
 message AccountProofsResponse {
-    // Account ID.
-    account.AccountId account_id = 1;
-    // Account commitment.
-    digest.Digest account_commitment = 2;
-    // Authentication path from the `account_root` of the block header to the account.
-    merkle.MerklePath account_proof = 3;
+    // The account witness for the current state commitment of one account ID.
+    AccountWitness witness = 1;
+
     // State header for public accounts. Filled only if `include_headers` flag is set to `true`.
-    optional AccountStateHeader state_header = 4;
+    optional AccountStateHeader state_header = 2;
 }
 
 // State header for public accounts.

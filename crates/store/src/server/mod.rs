@@ -6,7 +6,7 @@ use std::{
 
 use anyhow::Context;
 use miden_node_proto::generated::store::api_server;
-use miden_node_utils::{errors::ApiError, tracing::grpc::store_trace_fn};
+use miden_node_utils::tracing::grpc::store_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
@@ -70,22 +70,19 @@ impl Store {
     }
 
     /// Performs initialization tasks required before [`serve`](Self::serve) can be called.
-    pub async fn init(listener: TcpListener, data_directory: PathBuf) -> Result<Self, ApiError> {
+    pub async fn init(listener: TcpListener, data_directory: PathBuf) -> anyhow::Result<Self> {
         info!(target: COMPONENT, endpoint=?listener, ?data_directory, "Loading database");
 
         let data_directory = DataDirectory::load(data_directory)?;
 
         let block_store = Arc::new(BlockStore::load(data_directory.block_store_dir())?);
 
-        let db = Db::load(data_directory.database_path())
-            .await
-            .map_err(|err| ApiError::ApiInitialisationFailed(err.to_string()))?;
+        let database_filepath = data_directory.database_path();
+        let db = Db::load(database_filepath.clone()).await.with_context(|| {
+            format!("failed to load database at {}", database_filepath.display())
+        })?;
 
-        let state = Arc::new(
-            State::load(db, block_store)
-                .await
-                .map_err(|err| ApiError::DatabaseConnectionFailed(err.to_string()))?,
-        );
+        let state = Arc::new(State::load(db, block_store).await.context("failed to load state")?);
 
         let db_maintenance_service =
             DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
@@ -103,7 +100,7 @@ impl Store {
     /// Serves the store's RPC API and DB maintenance background task.
     ///
     /// Note: this blocks until the server dies.
-    pub async fn serve(self) -> Result<(), ApiError> {
+    pub async fn serve(self) -> anyhow::Result<()> {
         tokio::spawn(self.db_maintenance_service.run());
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
@@ -111,7 +108,7 @@ impl Store {
             .add_service(self.api_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
-            .map_err(ApiError::ApiServeFailed)
+            .context("failed to serve store API")
     }
 }
 

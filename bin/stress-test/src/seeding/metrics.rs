@@ -17,7 +17,7 @@ const SQLITE_TABLES: [&str; 12] = [
     "account_storage_slot_updates",
     "transactions",
     "accounts",
-    "scripts",
+    "note_scripts",
 ];
 
 /// Metrics struct to show the results of the stress test

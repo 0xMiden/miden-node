@@ -706,7 +706,7 @@ pub fn select_all_notes(transaction: &Transaction) -> Result<Vec<NoteRecord>> {
     let mut stmt = transaction.prepare_cached(&format!(
         "SELECT {}
         FROM notes
-        LEFT JOIN scripts ON notes.script_root = scripts.script_root
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         ORDER BY block_num ASC",
         NoteRecord::SELECT_COLUMNS,
     ))?;
@@ -794,7 +794,7 @@ pub fn insert_notes(
 /// transaction.
 pub fn insert_scripts(transaction: &Transaction, notes: &[&NoteRecord]) -> Result<usize> {
     let mut stmt =
-        transaction.prepare_cached(insert_sql!(scripts { script_root, script } | IGNORE))?;
+        transaction.prepare_cached(insert_sql!(note_scripts { script_root, script } | IGNORE))?;
 
     let mut count = 0;
     for note in notes {
@@ -891,7 +891,7 @@ pub fn select_notes_by_id(
     let mut stmt = transaction.prepare_cached(&format!(
         "SELECT {} 
         FROM notes
-        LEFT JOIN scripts ON notes.script_root = scripts.script_root
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE note_id IN rarray(?1)",
         NoteRecord::SELECT_COLUMNS
     ))?;
@@ -985,7 +985,7 @@ pub fn unconsumed_network_notes(
         "
         SELECT {}, rowid 
         FROM notes
-        LEFT JOIN scripts ON notes.script_root = scripts.script_root
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
             execution_mode = 0 AND consumed = FALSE AND rowid >= ?
         ORDER BY rowid

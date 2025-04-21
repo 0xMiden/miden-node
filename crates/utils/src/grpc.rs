@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, sync::Arc};
 
 use anyhow::Context;
-use backoff::{Error as BackoffError, ExponentialBackoff, future::retry};
+use backoff::{Error as BackoffError, ExponentialBackoff, future::retry_notify};
 use tokio::sync::RwLock;
 use tonic::transport::{Channel, Endpoint, Error};
 use tracing::{error, info};
@@ -81,21 +81,19 @@ impl<T: Clone> LazyClient<T> {
         let url = format!("http://{}", self.address);
         let endpoint = Endpoint::try_from(url.clone())?;
 
-        let client = retry(ExponentialBackoff::default(), || async {
+        let connect = || async {
             match endpoint.connect().await {
                 Ok(channel) => Ok((self.constructor)(channel)),
-                Err(e) => {
-                    error!("failed to connect to {}: {}", url, e);
-                    Err(BackoffError::transient(e))
-                },
+                Err(e) => Err(BackoffError::transient(e)),
             }
-        })
-        .await?;
+        };
+        let notify = |err, dur| error!(%url, %err, ?dur, "gRPC connection failed, retrying");
+        let client = retry_notify(ExponentialBackoff::default(), connect, notify).await?;
 
         *lock = Some(client.clone());
         drop(lock);
 
-        info!("connection established to {}", url);
+        info!(%url, "gRPC connection established");
 
         Ok(client)
     }

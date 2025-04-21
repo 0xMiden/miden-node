@@ -28,29 +28,41 @@ use crate::{
     store::StoreClient,
 };
 
+/// Block producer's configuration.
+pub struct BlockProducerConfig {
+    /// The address of the store component.
+    pub store_address: SocketAddr,
+    /// The address of the batch prover component.
+    pub batch_prover: Option<Url>,
+    /// The address of the block prover component.
+    pub block_prover: Option<Url>,
+    /// The interval at which to produce batches.
+    pub batch_interval: Duration,
+    /// The interval at which to produce blocks.
+    pub block_interval: Duration,
+}
+
 /// Serves the block-producer RPC API, the batch-builder and the block-builder.
 ///
 /// Note: this blocks until one of the servers die.
-pub async fn serve(
-    listener: TcpListener,
-    store_address: SocketAddr,
-    batch_prover: Option<Url>,
-    block_prover: Option<Url>,
-    batch_interval: Duration,
-    block_interval: Duration,
-) -> anyhow::Result<()> {
-    info!(target: COMPONENT, endpoint=?listener, store=%store_address, "Initializing server");
+pub async fn serve(listener: TcpListener, config: BlockProducerConfig) -> anyhow::Result<()> {
+    info!(target: COMPONENT, endpoint=?listener, store=%config.store_address, "Initializing server");
 
-    let store = StoreClient::new(store_address);
+    let store = StoreClient::new(config.store_address);
 
     let latest_header = store.latest_header().await.context("failed to get latest header")?;
     let chain_tip = latest_header.block_num();
 
     info!(target: COMPONENT, "Server initialized");
 
-    let block_builder = BlockBuilder::new(store.clone(), block_prover, block_interval);
-    let batch_builder =
-        BatchBuilder::new(store.clone(), SERVER_NUM_BATCH_BUILDERS, batch_prover, batch_interval);
+    let block_builder =
+        BlockBuilder::new(store.clone(), config.block_prover, config.block_interval);
+    let batch_builder = BatchBuilder::new(
+        store.clone(),
+        SERVER_NUM_BATCH_BUILDERS,
+        config.batch_prover,
+        config.batch_interval,
+    );
     let mempool = Mempool::shared(
         chain_tip,
         BatchBudget::default(),

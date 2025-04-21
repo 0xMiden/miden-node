@@ -86,7 +86,9 @@ impl StoreCommand {
             .await
             .context("Failed to bind to store's gRPC URL")?;
 
-        miden_node_store::serve(listener, data_directory).await.context("Serving store")
+        miden_node_store::serve(listener, data_directory)
+            .await
+            .context("failed while serving store component")
     }
 
     fn bootstrap(data_directory: &Path, accounts_directory: &Path) -> anyhow::Result<()> {

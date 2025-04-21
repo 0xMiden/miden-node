@@ -151,23 +151,23 @@ impl BundledCommand {
             .spawn(async move {
                 miden_node_store::serve(grpc_store, data_directory)
                     .await
-                    .context("Serving store")
+                    .context("failed while serving store component")
             })
             .id();
 
         // Start block-producer. The block-producer's endpoint is available after loading completes.
+        let block_producer_config = miden_node_block_producer::BlockProducerConfig {
+            store_address,
+            batch_prover: batch_prover_url,
+            block_prover: block_prover_url,
+            batch_interval,
+            block_interval,
+        };
         let block_producer_id = join_set
             .spawn(async move {
-                miden_node_block_producer::serve(
-                    grpc_block_producer,
-                    store_address,
-                    batch_prover_url,
-                    block_prover_url,
-                    batch_interval,
-                    block_interval,
-                )
-                .await
-                .context("Serving block-producer")
+                miden_node_block_producer::serve(grpc_block_producer, block_producer_config)
+                    .await
+                    .context("failed while serving block-producer component")
             })
             .id();
 
@@ -176,7 +176,7 @@ impl BundledCommand {
             .spawn(async move {
                 miden_node_rpc::serve(grpc_rpc, store_address, block_producer_address)
                     .await
-                    .context("Serving RPC")
+                    .context("failed while serving RPC component")
             })
             .id();
 

@@ -7,7 +7,7 @@ use tokio::{net::TcpListener, runtime, task};
 use tonic::transport::Endpoint;
 
 #[tokio::test]
-async fn test_components_startup() {
+async fn component_startup_is_robust_to_network_failures() {
     // This test starts the store and RPC components and verifies that they
     // successfully connect to each other on startup and that they reconnect after the store is
     // restarted.

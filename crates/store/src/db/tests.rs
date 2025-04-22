@@ -340,6 +340,7 @@ fn sql_unconsumed_network_notes() {
     let account = mock_account_code_and_storage(
         AccountType::RegularAccountUpdatableCode,
         AccountStorageMode::Public,
+        NetworkAccount::Enabled,
         [],
     );
     let account_id = account.id();
@@ -510,6 +511,7 @@ fn sql_public_account_details() {
     let mut account = mock_account_code_and_storage(
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Public,
+        NetworkAccount::Disabled,
         [Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 150).unwrap()), nft1],
     );
 
@@ -1160,6 +1162,7 @@ fn insert_transactions(conn: &mut Connection) -> usize {
 fn mock_account_code_and_storage(
     account_type: AccountType,
     storage_mode: AccountStorageMode,
+    network: NetworkAccount,
     assets: impl IntoIterator<Item = Asset>,
 ) -> Account {
     let component_code = "\
@@ -1188,6 +1191,7 @@ fn mock_account_code_and_storage(
 
     AccountBuilder::new([0; 32])
         .account_type(account_type)
+        .network_account(network)
         .storage_mode(storage_mode)
         .with_assets(assets)
         .with_component(component)

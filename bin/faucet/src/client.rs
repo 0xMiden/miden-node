@@ -18,7 +18,10 @@ use miden_objects::{
         rand::RpoRandomCoin,
     },
     note::{Note, NoteType},
-    transaction::{ChainMmr, ExecutedTransaction, TransactionArgs, TransactionScript},
+    transaction::{
+        ChainMmr, ExecutedTransaction, ForeignAccountInputs, InputNote, InputNotes,
+        TransactionArgs, TransactionScript,
+    },
     utils::Deserializable,
     vm::AdviceMap,
 };
@@ -144,10 +147,17 @@ impl FaucetClient {
         .context("Failed to create P2ID note")?;
 
         let transaction_args = build_transaction_arguments(&output_note, note_type, asset)?;
+        self.data_store
+            .load_transaction_script(transaction_args.tx_script().expect("should have script"));
 
         let executed_tx = self
             .executor
-            .execute_transaction(self.id, 0.into(), &[], transaction_args)
+            .execute_transaction(
+                self.id,
+                0.into(),
+                InputNotes::<InputNote>::default(),
+                transaction_args,
+            )
             .context("Failed to execute transaction")?;
 
         Ok((executed_tx, output_note))
@@ -284,7 +294,12 @@ fn build_transaction_arguments(
     let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
         .context("Failed to compile script")?;
 
-    let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
+    let mut transaction_args = TransactionArgs::new(
+        Some(script),
+        None,
+        AdviceMap::new(),
+        Vec::<ForeignAccountInputs>::default(),
+    );
     transaction_args.extend_output_note_recipients(vec![output_note.clone()]);
 
     Ok(transaction_args)

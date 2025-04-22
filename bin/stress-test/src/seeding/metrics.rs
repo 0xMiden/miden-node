@@ -20,7 +20,7 @@ const SQLITE_TABLES: [&str; 11] = [
 ];
 
 /// Metrics struct to show the results of the stress test
-pub struct Metrics {
+pub struct SeedingMetrics {
     insertion_time_per_block: Vec<Duration>,
     get_block_inputs_time_per_block: Vec<Duration>,
     get_batch_inputs_time_per_block: Vec<Duration>,
@@ -31,7 +31,7 @@ pub struct Metrics {
     store_file: PathBuf,
 }
 
-impl Metrics {
+impl SeedingMetrics {
     /// Creates a new Metrics instance.
     pub fn new(store_file: PathBuf) -> Self {
         let initial_store_size = get_store_size(&store_file);
@@ -70,7 +70,7 @@ impl Metrics {
     }
 }
 
-impl Display for Metrics {
+impl Display for SeedingMetrics {
     #[allow(clippy::cast_precision_loss)]
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(
@@ -126,13 +126,6 @@ impl Display for Metrics {
                 "{block_index:<10} {insertion_time:<20} {block_query_time:<30} {batch_query_time:<30} {block_size:<20} {store_size_mb:<20.1}",
             )?;
         }
-
-        // Apply `VACUUM` to the store to reduce the size of the file
-        let _ = Command::new("sqlite3")
-            .arg(&self.store_file)
-            .arg("VACUUM;")
-            .output()
-            .expect("failed to execute process");
 
         // Print out the size of the tables in the store
         writeln!(f, "\nDatabase stats:")?;

@@ -2133,12 +2133,9 @@ dependencies = [
 name = "miden-node-tests"
 version = "0.9.0"
 dependencies = [
- "anyhow",
- "miden-node-block-producer",
  "miden-node-proto",
  "miden-node-rpc",
  "miden-node-store",
- "miden-node-utils",
  "tempfile",
  "tokio",
  "tonic",

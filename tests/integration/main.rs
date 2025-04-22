@@ -3,16 +3,13 @@ use miden_node_proto::generated::{
     rpc::api_client as rpc_client,
 };
 use miden_node_store::GenesisState;
-use miden_node_utils::logging::{OpenTelemetry, setup_tracing};
 use tokio::{net::TcpListener, runtime, task};
 use tonic::transport::Endpoint;
 
 #[tokio::test]
 async fn component_startup_is_robust_to_network_failures() {
-    setup_tracing(OpenTelemetry::Disabled).expect("failed to setup tracing");
-    // This test starts the store and RPC components and verifies that they
-    // successfully connect to each other on startup and that they reconnect after the store is
-    // restarted.
+    // This test starts the store and RPC components and verifies that they successfully
+    // connect to each other on startup and that they reconnect after the store is restarted.
 
     // get the addresses for the store and block producer
     let store_addr = {
@@ -56,8 +53,8 @@ async fn component_startup_is_robust_to_network_failures() {
             .expect("store should bootstrap");
         let dir = data_directory.path().to_path_buf();
         let store_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
-        // in order to later kill the store, we need to spawn a new runtime and run the store on it. That
-        // allows us to kill all the tasks spawned by the store when we kill the runtime.
+        // in order to later kill the store, we need to spawn a new runtime and run the store on it.
+        // That allows us to kill all the tasks spawned by the store when we kill the runtime.
         let store_runtime =
             runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
         store_runtime.spawn(async move {

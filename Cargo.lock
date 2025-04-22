@@ -397,9 +397,9 @@ checksum = "5c8214115b7bf84099f1309324e63141d4c5d7cc26862f97a0a857dbefe165bd"
 
 [[package]]
 name = "blake3"
-version = "1.8.1"
+version = "1.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "389a099b34312839e16420d499a9cad9650541715937ffbdd40d36f49e77eeb3"
+checksum = "3888aaa89e4b2a40fca9848e400f6a658a5a3978de7be858e209cafa8be9a4a0"
 dependencies = [
  "arrayref",
  "arrayvec",
@@ -536,9 +536,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.36"
+version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2df961d8c8a0d08aa9945718ccf584145eee3f3aa06cddbeac12933781102e04"
+checksum = "eccb054f56cbd38340b380d4a8e69ef1f02f1af43db2f0cc817a4774d80ae071"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -546,9 +546,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.36"
+version = "4.5.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "132dbda40fb6753878316a489d5a1242a8ef2f0d9e47ba01c951ea8aa7d013a5"
+checksum = "efd9466fac8543255d3b1fcad4762c5e116ffe808c8a3043d4263cd4fd4862a2"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1647,9 +1647,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.11"
+version = "0.2.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8355be11b20d696c8f18f6cc018c4e372165b1fa8126cef092399c9951984ffa"
+checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
 
 [[package]]
 name = "libredox"
@@ -1813,7 +1813,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#0b0a2d8d955772583767ba656dd85a36694fa1f1"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
 dependencies = [
  "miden-crypto",
  "miden-lib",
@@ -1906,7 +1906,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#0b0a2d8d955772583767ba656dd85a36694fa1f1"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2136,7 +2136,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#0b0a2d8d955772583767ba656dd85a36694fa1f1"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2183,7 +2183,7 @@ dependencies = [
 [[package]]
 name = "miden-proving-service-client"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#0b0a2d8d955772583767ba656dd85a36694fa1f1"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
 dependencies = [
  "async-trait",
  "getrandom 0.3.2",
@@ -2213,7 +2213,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#0b0a2d8d955772583767ba656dd85a36694fa1f1"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2230,7 +2230,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#0b0a2d8d955772583767ba656dd85a36694fa1f1"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
 dependencies = [
  "miden-core",
  "miden-crypto",

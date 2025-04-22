@@ -9,8 +9,8 @@ use miden_objects::{
     Felt, FieldElement, Word, ZERO,
     account::{
         Account, AccountBuilder, AccountComponent, AccountDelta, AccountId, AccountIdVersion,
-        AccountStorageDelta, AccountStorageMode, AccountType, AccountVaultDelta, StorageSlot,
-        delta::AccountUpdateDetails,
+        AccountStorageDelta, AccountStorageMode, AccountType, AccountVaultDelta, NetworkAccount,
+        StorageSlot, delta::AccountUpdateDetails,
     },
     asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
@@ -460,6 +460,7 @@ fn sql_select_accounts() {
             AccountIdVersion::Version0,
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Private,
+            NetworkAccount::Disabled,
         );
         let account_commitment = num_to_rpo_digest(u64::from(i));
         state.push(AccountInfo {

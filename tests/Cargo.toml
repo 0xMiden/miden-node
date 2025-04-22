@@ -20,6 +20,7 @@ miden-node-block-producer = { workspace = true }
 miden-node-proto          = { workspace = true }
 miden-node-rpc            = { workspace = true }
 miden-node-store          = { workspace = true }
+miden-node-utils         = { workspace = true }
 tempfile                  = { version = "3.5" }
 tokio                     = { workspace = true, features = ["net"] }
 tonic                     = { workspace = true }

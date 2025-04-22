@@ -20,14 +20,16 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::{grpc::LazyClient, tracing::grpc::OtelInterceptor};
+use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, account::AccountId,
     crypto::hash::rpo::RpoDigest, transaction::ProvenTransaction, utils::serde::Deserializable,
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
-    Request, Response, Status, service::interceptor::InterceptedService, transport::Channel,
+    Request, Response, Status,
+    service::interceptor::InterceptedService,
+    transport::{Channel, Error},
 };
 use tracing::{debug, info, instrument};
 
@@ -41,20 +43,37 @@ type BlockProducerClient =
     block_producer_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 
 pub struct RpcService {
-    store: LazyClient<StoreClient>,
-    block_producer: LazyClient<BlockProducerClient>,
+    store: StoreClient,
+    block_producer: BlockProducerClient,
 }
 
 impl RpcService {
-    pub(super) fn new(store_address: SocketAddr, block_producer_address: SocketAddr) -> Self {
-        Self {
-            store: LazyClient::new(store_address, |channel| {
-                store_client::ApiClient::with_interceptor(channel, OtelInterceptor)
-            }),
-            block_producer: LazyClient::new(block_producer_address, |channel| {
-                block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor)
-            }),
-        }
+    pub(super) fn new(
+        store_address: SocketAddr,
+        block_producer_address: SocketAddr,
+    ) -> Result<Self, Error> {
+        let store = {
+            let store_url = format!("http://{store_address}");
+            let channel = tonic::transport::Endpoint::try_from(store_url)?.connect_lazy();
+            let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+            store
+        };
+
+        let block_producer = {
+            let block_producer_url = format!("http://{block_producer_address}");
+            let channel = tonic::transport::Endpoint::try_from(block_producer_url)?.connect_lazy();
+            let block_producer =
+                block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            info!(
+                target: COMPONENT,
+                block_producer_endpoint = %block_producer_address,
+                "Block producer client initialized",
+            );
+            block_producer
+        };
+
+        Ok(Self { store, block_producer })
     }
 }
 
@@ -80,12 +99,7 @@ impl api_server::Api for RpcService {
                 .or(Err(Status::invalid_argument("Digest field is not in the modulus range")))?;
         }
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .check_nullifiers(request)
-            .await
+        self.store.clone().check_nullifiers(request).await
     }
 
     #[instrument(
@@ -101,12 +115,7 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<CheckNullifiersByPrefixResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .check_nullifiers_by_prefix(request)
-            .await
+        self.store.clone().check_nullifiers_by_prefix(request).await
     }
 
     #[instrument(
@@ -122,12 +131,7 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
         info!(target: COMPONENT, request = ?request.get_ref());
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .get_block_header_by_number(request)
-            .await
+        self.store.clone().get_block_header_by_number(request).await
     }
 
     #[instrument(
@@ -143,12 +147,7 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<SyncStateResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .sync_state(request)
-            .await
+        self.store.clone().sync_state(request).await
     }
 
     #[instrument(
@@ -164,12 +163,7 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<SyncNoteResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .sync_notes(request)
-            .await
+        self.store.clone().sync_notes(request).await
     }
 
     #[instrument(
@@ -191,12 +185,7 @@ impl api_server::Api for RpcService {
         let _: Vec<RpoDigest> = try_convert(note_ids)
             .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .get_notes_by_id(request)
-            .await
+        self.store.clone().get_notes_by_id(request).await
     }
 
     #[instrument(target = COMPONENT, name = "rpc:submit_proven_transaction", skip_all, err)]
@@ -217,12 +206,7 @@ impl api_server::Api for RpcService {
             Status::invalid_argument(format!("Invalid proof for transaction {}: {err}", tx.id()))
         })?;
 
-        self.block_producer
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .submit_proven_transaction(request)
-            .await
+        self.block_producer.clone().submit_proven_transaction(request).await
     }
 
     /// Returns details for public (public) account by id.
@@ -248,12 +232,7 @@ impl api_server::Api for RpcService {
             .try_into()
             .map_err(|err| Status::invalid_argument(format!("Invalid account id: {err}")))?;
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .get_account_details(request)
-            .await
+        self.store.clone().get_account_details(request).await
     }
 
     #[instrument(
@@ -271,12 +250,7 @@ impl api_server::Api for RpcService {
 
         debug!(target: COMPONENT, ?request);
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .get_block_by_number(request)
-            .await
+        self.store.clone().get_block_by_number(request).await
     }
 
     #[instrument(
@@ -294,12 +268,7 @@ impl api_server::Api for RpcService {
 
         debug!(target: COMPONENT, ?request);
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .get_account_state_delta(request)
-            .await
+        self.store.clone().get_account_state_delta(request).await
     }
 
     #[instrument(
@@ -330,11 +299,6 @@ impl api_server::Api for RpcService {
             ));
         }
 
-        self.store
-            .inner()
-            .await
-            .map_err(|_| Status::internal("connection error"))?
-            .get_account_proofs(request)
-            .await
+        self.store.clone().get_account_proofs(request).await
     }
 }

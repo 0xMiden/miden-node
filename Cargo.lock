@@ -2138,6 +2138,7 @@ dependencies = [
  "miden-node-proto",
  "miden-node-rpc",
  "miden-node-store",
+ "miden-node-utils",
  "tempfile",
  "tokio",
  "tonic",

@@ -20,7 +20,7 @@ pub async fn serve(
 ) -> anyhow::Result<()> {
     info!(target: COMPONENT, endpoint=?listener, %store, %block_producer, "Initializing server");
 
-    let api = api::RpcService::new(store, block_producer);
+    let api = api::RpcService::new(store, block_producer)?;
     let api_service = api_server::ApiServer::new(api);
 
     info!(target: COMPONENT, "Server initialized");

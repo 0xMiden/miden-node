@@ -26,7 +26,7 @@ itertools = { workspace = true }
 miden-block-prover = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-partial-blockchain" }
 miden-lib = { workspace = true }
 miden-node-proto = { workspace = true }
-miden-node-utils = { workspace = true }
+miden-node-utils = { workspace = true, features = ["testing"] }
 miden-objects = { workspace = true }
 miden-processor = { workspace = true }
 miden-proving-service-client = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-partial-blockchain", features = [
@@ -53,6 +53,7 @@ miden-objects         = { workspace = true, features = ["testing"] }
 miden-tx              = { workspace = true, features = ["testing"] }
 pretty_assertions     = "1.4"
 rand_chacha           = { version = "0.9", default-features = false }
+serial_test           = "3.2"
 tempfile              = { version = "3.5" }
 tokio                 = { workspace = true, features = ["test-util"] }
 winterfell            = { version = "0.12" }

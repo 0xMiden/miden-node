@@ -41,7 +41,7 @@ async fn component_startup_is_robust_to_network_failures() {
             .expect("Failed to create rpc client")
     };
 
-    // test: requests against RPC api should fail after the timout expires
+    // test: requests against RPC api should fail immediately
     let response = send_request(&mut rpc_client, 0).await;
     assert!(response.is_err());
 

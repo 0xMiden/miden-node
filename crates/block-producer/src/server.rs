@@ -50,8 +50,17 @@ pub async fn serve(listener: TcpListener, config: BlockProducerConfig) -> anyhow
 
     let store = StoreClient::new(config.store_address);
 
+    // we drop the tpc listener so that the block producer cannot accept connections until the store is responding
+    let block_producer_address = listener.local_addr().context("failed to get address")?;
+    drop(listener);
+
+    // this call blocks initialization until the store responds
     let latest_header = store.latest_header().await.context("failed to get latest header")?;
     let chain_tip = latest_header.block_num();
+
+    let listener = TcpListener::bind(block_producer_address)
+        .await
+        .context("failed to bind to block producer address")?;
 
     info!(target: COMPONENT, "Server initialized");
 

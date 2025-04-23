@@ -121,19 +121,21 @@ impl NoteRecord {
         let inputs = row.get_ref(11)?.as_blob_or_null()?;
         let script = row.get_ref(12)?.as_blob_or_null()?;
         let serial_num = row.get_ref(13)?.as_blob_or_null()?;
-        let details =
-            if assets.is_some() && inputs.is_some() && script.is_some() && serial_num.is_some() {
-                Some(NoteDetails::new(
-                    NoteAssets::read_from_bytes(assets.unwrap())?,
-                    NoteRecipient::new(
-                        Word::read_from_bytes(serial_num.unwrap())?,
-                        NoteScript::from_bytes(script.unwrap())?,
-                        NoteInputs::read_from_bytes(inputs.unwrap())?,
-                    ),
-                ))
-            } else {
-                None
-            };
+
+        let details = if let (Some(assets), Some(inputs), Some(script), Some(serial_num)) =
+            (assets, inputs, script, serial_num)
+        {
+            Some(NoteDetails::new(
+                NoteAssets::read_from_bytes(assets)?,
+                NoteRecipient::new(
+                    Word::read_from_bytes(serial_num)?,
+                    NoteScript::from_bytes(script)?,
+                    NoteInputs::read_from_bytes(inputs)?,
+                ),
+            ))
+        } else {
+            None
+        };
 
         let metadata =
             NoteMetadata::new(sender, note_type, tag.into(), execution_hint.try_into()?, aux)?;
@@ -157,7 +159,7 @@ impl From<NoteRecord> for proto::Note {
             note_id: Some(note.note_id.into()),
             metadata: Some(note.metadata.into()),
             merkle_path: Some(Into::into(&note.merkle_path)),
-            details: Some(note.details.to_bytes()),
+            details: note.details.as_ref().map(Serializable::to_bytes),
         }
     }
 }

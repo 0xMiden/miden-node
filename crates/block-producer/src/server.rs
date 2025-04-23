@@ -50,7 +50,8 @@ pub async fn serve(listener: TcpListener, config: BlockProducerConfig) -> anyhow
 
     let store = StoreClient::new(config.store_address);
 
-    // we drop the tpc listener so that the block producer cannot accept connections until the store is responding
+    // we drop the tpc listener so that the block producer cannot accept connections until the store
+    // is responding
     let block_producer_address = listener.local_addr().context("failed to get address")?;
     drop(listener);
 

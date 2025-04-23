@@ -45,16 +45,8 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
     let accounts = fs::read_to_string(accounts_file).await.unwrap();
     let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
-    let store_addr = start_store(data_directory).await;
-    let store_client = {
-        let store_addr = format!("http://{store_addr}");
-        let channel = Channel::from_shared(store_addr)
-            .expect("failed to create channel")
-            .connect()
-            .await
-            .expect("failed to connect to store");
-        ApiClient::with_interceptor(channel, OtelInterceptor)
-    };
+    let (store_client, _) = start_store(data_directory).await;
+
     // each request will have 3 account ids, 3 note tags and will be sent with block number 0
     let request = |_| {
         let mut client = store_client.clone();
@@ -119,16 +111,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
     let accounts = fs::read_to_string(accounts_file).await.unwrap();
     let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
-    let store_addr = start_store(data_directory).await;
-    let store_client = {
-        let store_addr = format!("http://{store_addr}");
-        let channel = Channel::from_shared(store_addr)
-            .expect("failed to create channel")
-            .connect()
-            .await
-            .expect("failed to connect to store");
-        ApiClient::with_interceptor(channel, OtelInterceptor)
-    };
+    let (store_client, _) = start_store(data_directory).await;
 
     // each request will have 3 note tags and will be sent with block number 0.
     let request = |_| {
@@ -183,16 +166,7 @@ pub async fn bench_check_nullifiers_by_prefix(
     concurrency: usize,
     prefixes_per_request: usize,
 ) {
-    let store_addr = start_store(data_directory.clone()).await;
-    let mut store_client = {
-        let store_addr = format!("http://{store_addr}");
-        let channel = Channel::from_shared(store_addr)
-            .expect("failed to create channel")
-            .connect()
-            .await
-            .expect("failed to connect to store");
-        ApiClient::with_interceptor(channel, OtelInterceptor)
-    };
+    let (mut store_client, _) = start_store(data_directory.clone()).await;
 
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
     let accounts = fs::read_to_string(accounts_file).await.unwrap();

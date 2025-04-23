@@ -60,6 +60,8 @@ impl<T: Clone> LazyClient<T> {
     ///
     /// This method checks if a client is already available, and if not, attempts to establish
     /// a connection using exponential backoff.
+    ///
+    /// Note: this blocks until the connection is established.
     pub async fn inner(&self) -> Result<T, Error> {
         if let Some(client) = self.inner.read().await.clone() {
             return Ok(client);

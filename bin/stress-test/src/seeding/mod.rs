@@ -15,8 +15,9 @@ use miden_lib::{
     utils::Serializable,
 };
 use miden_node_block_producer::store::StoreClient;
-use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client::ApiClient};
 use miden_node_store::{DataDirectory, GenesisState};
+use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     Felt,
     account::{
@@ -42,6 +43,7 @@ use rayon::{
     prelude::ParallelSlice,
 };
 use tokio::{fs, io::AsyncWriteExt, net::TcpListener, task};
+use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use winterfell::Proof;
 
 mod metrics;
@@ -78,7 +80,7 @@ pub async fn seed_store(
         .expect("store should bootstrap");
 
     // start the store
-    let store_addr = start_store(data_directory.clone()).await;
+    let (_, store_addr) = start_store(data_directory.clone()).await;
     let store_client = StoreClient::new(store_addr);
 
     // start generating blocks
@@ -483,15 +485,27 @@ async fn get_block_inputs(
     inputs
 }
 
-/// Runs the store with the given data directory. Returns a gRPC client to the store.
-pub async fn start_store(data_directory: PathBuf) -> SocketAddr {
+/// Runs the store with the given data directory. Returns a tuple with:
+/// - a gRPC client to access the store
+/// - the address of the store
+pub async fn start_store(
+    data_directory: PathBuf,
+) -> (ApiClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
     let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
     let store_addr = grpc_store.local_addr().expect("Failed to get store address");
     let dir = data_directory.clone();
+
     task::spawn(async move {
         miden_node_store::serve(grpc_store, dir)
             .await
             .expect("Failed to start serving store");
     });
-    store_addr
+
+    let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))
+        .unwrap()
+        .connect()
+        .await
+        .expect("Failed to connect to store");
+
+    (ApiClient::with_interceptor(channel, OtelInterceptor), store_addr)
 }

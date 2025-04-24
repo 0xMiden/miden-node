@@ -76,20 +76,19 @@ impl BlockProducerCommand {
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
 
-        let listener =
-            url.to_socket().context("Failed to extract socket address from store URL")?;
-        let listener = tokio::net::TcpListener::bind(listener)
-            .await
-            .context("Failed to bind to store's gRPC URL")?;
+        let block_producer_address = url
+            .to_socket()
+            .context("Failed to extract socket address from block producer URL")?;
 
         let block_producer_config = miden_node_block_producer::BlockProducerConfig {
+            block_producer_address,
             store_address,
             batch_prover: batch_prover_url,
             block_prover: block_prover_url,
             batch_interval,
             block_interval,
         };
-        miden_node_block_producer::serve(listener, block_producer_config)
+        miden_node_block_producer::serve(block_producer_config)
             .await
             .context("failed while serving block-producer component")
     }

@@ -30,6 +30,8 @@ use crate::{
 
 /// Block producer's configuration.
 pub struct BlockProducerConfig {
+    /// The address of the block producer component.
+    pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_address: SocketAddr,
     /// The address of the batch prover component.
@@ -45,21 +47,16 @@ pub struct BlockProducerConfig {
 /// Serves the block-producer RPC API, the batch-builder and the block-builder.
 ///
 /// Note: this blocks until one of the servers die.
-pub async fn serve(listener: TcpListener, config: BlockProducerConfig) -> anyhow::Result<()> {
-    info!(target: COMPONENT, endpoint=?listener, store=%config.store_address, "Initializing server");
+pub async fn serve(config: BlockProducerConfig) -> anyhow::Result<()> {
+    info!(target: COMPONENT, endpoint=?config.block_producer_address, store=%config.store_address, "Initializing server");
 
     let store = StoreClient::new(config.store_address);
-
-    // we drop the tpc listener so that the block producer cannot accept connections until the store
-    // is responding
-    let block_producer_address = listener.local_addr().context("failed to get address")?;
-    drop(listener);
 
     // this call blocks initialization until the store responds
     let latest_header = store.latest_header().await.context("failed to get latest header")?;
     let chain_tip = latest_header.block_num();
 
-    let listener = TcpListener::bind(block_producer_address)
+    let listener = TcpListener::bind(config.block_producer_address)
         .await
         .context("failed to bind to block producer address")?;
 

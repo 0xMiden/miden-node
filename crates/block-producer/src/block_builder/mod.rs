@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use futures::{FutureExt, never::Never};
 use miden_block_prover::LocalBlockProver;
-use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
 use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
@@ -12,6 +12,7 @@ use miden_objects::{
 use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
+use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{Span, info, instrument};
 use url::Url;
 
@@ -22,6 +23,9 @@ use crate::{
 
 // BLOCK BUILDER
 // =================================================================================================
+
+type NtxClient =
+    miden_node_proto::ntx_builder::Client<InterceptedService<Channel, OtelInterceptor>>;
 
 pub struct BlockBuilder {
     pub block_interval: Duration,
@@ -37,6 +41,11 @@ pub struct BlockBuilder {
 
     /// The prover used to prove a proposed block into a proven block.
     pub block_prover: BlockProver,
+
+    // Client connection to the network transaction builder.
+    //
+    // This client is used to submit network notes and transaction updates to the network transaction builder.
+    pub ntx_client: NtxClient,
 }
 
 impl BlockBuilder {
@@ -45,6 +54,7 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
+        ntx_client: NtxClient,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -60,6 +70,7 @@ impl BlockBuilder {
             failure_rate: 0.0,
             block_prover,
             store,
+            ntx_client,
         }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.

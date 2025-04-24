@@ -7,8 +7,8 @@ use url::Url;
 
 use super::{
     DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_STORE_URL,
-    parse_duration_ms,
+    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_NETWORK_TX_BUILDER_URL,
+    ENV_STORE_URL, parse_duration_ms,
 };
 
 #[derive(clap::Subcommand)]
@@ -22,6 +22,10 @@ pub enum BlockProducerCommand {
         /// The store's gRPC url.
         #[arg(long = "store.url", env = ENV_STORE_URL)]
         store_url: Url,
+
+        /// The network transaction builder's gRPC url.
+        #[arg(long = "network-tx-builder.url", env = ENV_NETWORK_TX_BUILDER_URL)]
+        network_tx_builder_url: Url,
 
         /// The remote batch prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
@@ -71,11 +75,15 @@ impl BlockProducerCommand {
             open_telemetry: _,
             block_interval,
             batch_interval,
+            network_tx_builder_url,
         } = self;
 
         let store_url = store_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
+        let network_tx_builder_url = network_tx_builder_url
+            .to_socket()
+            .context("Failed to extract socket address from network transaction builder URL")?;
 
         let listener =
             url.to_socket().context("Failed to extract socket address from store URL")?;
@@ -86,6 +94,7 @@ impl BlockProducerCommand {
         BlockProducer::init(
             listener,
             store_url,
+            network_tx_builder_url,
             batch_prover_url,
             block_prover_url,
             batch_interval,

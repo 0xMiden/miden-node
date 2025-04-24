@@ -792,7 +792,10 @@ pub fn insert_notes(
 ///
 /// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
-pub fn insert_scripts(transaction: &Transaction, notes: &[&NoteRecord]) -> Result<usize> {
+pub fn insert_scripts<'a>(
+    transaction: &Transaction,
+    notes: impl IntoIterator<Item = &'a NoteRecord>,
+) -> Result<usize> {
     let mut stmt =
         transaction.prepare_cached(insert_sql!(note_scripts { script_root, script } | IGNORE))?;
 
@@ -1275,7 +1278,7 @@ pub fn apply_block(
     // Note: ordering here is important as the relevant tables have FK dependencies.
     count += insert_block_header(transaction, block_header)?;
     count += upsert_accounts(transaction, accounts, block_header.block_num())?;
-    count += insert_scripts(transaction, &notes.iter().map(|(note, _)| note).collect::<Vec<_>>())?;
+    count += insert_scripts(transaction, notes.iter().map(|(note, _)| note))?;
     count += insert_notes(transaction, notes)?;
     count += insert_transactions(transaction, block_header.block_num(), transactions)?;
     count += insert_nullifiers_for_block(transaction, nullifiers, block_header.block_num())?;

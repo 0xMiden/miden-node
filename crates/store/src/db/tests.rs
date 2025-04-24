@@ -229,7 +229,7 @@ fn sql_select_notes() {
         let transaction = conn.transaction().unwrap();
 
         // insert scripts (after the first iteration the script is already in the db)
-        let res = sql::insert_scripts(&transaction, &[&note]);
+        let res = sql::insert_scripts(&transaction, [&note]);
         if i == 0 {
             assert_eq!(res.unwrap(), 1, "One element must have been inserted");
         } else {
@@ -288,7 +288,7 @@ fn sql_select_notes_different_execution_hints() {
     state.push(note_none.clone());
 
     let transaction = conn.transaction().unwrap();
-    sql::insert_scripts(&transaction, &[&note_none]).unwrap(); // only necessary for the first note
+    sql::insert_scripts(&transaction, [&note_none]).unwrap(); // only necessary for the first note
     let res = sql::insert_notes(&transaction, &[(note_none, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
     transaction.commit().unwrap();
@@ -426,7 +426,7 @@ fn sql_unconsumed_network_notes() {
 
     // Insert the set of notes.
     let db_tx = conn.transaction().unwrap();
-    sql::insert_scripts(&db_tx, &notes.iter().map(|(note, _)| note).collect::<Vec<_>>()).unwrap();
+    sql::insert_scripts(&db_tx, notes.iter().map(|(note, _)| note)).unwrap();
     sql::insert_notes(&db_tx, &notes).unwrap();
 
     // Fetch all network notes by setting a limit larger than the amount available.
@@ -1041,7 +1041,7 @@ fn notes() {
         merkle_path: merkle_path.clone(),
     };
 
-    sql::insert_scripts(&transaction, &[&note]).unwrap();
+    sql::insert_scripts(&transaction, [&note]).unwrap();
     sql::insert_notes(&transaction, &[(note.clone(), None)]).unwrap();
     transaction.commit().unwrap();
 

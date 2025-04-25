@@ -16,8 +16,20 @@ macro_rules! rpc_span {
 /// Additionally also pulls in remote tracing context which allows the server trace to be connected
 /// to the client's origin trace.
 pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    // TODO: spans
-    let span = rpc_span!("rpc.rpc", "TODO");
+    let span = match request.uri().path().rsplit('/').next() {
+        Some("CheckNullifiers") => rpc_span!("rpc.rpc", "CheckNullifiers"),
+        Some("CheckNullifiersByPrefix") => rpc_span!("rpc.rpc", "CheckNullifiersByPrefix"),
+        Some("GetBlockHeaderByNumber") => rpc_span!("rpc.rpc", "GetBlockHeaderByNumber"),
+        Some("SyncState") => rpc_span!("rpc.rpc", "SyncState"),
+        Some("SyncNotes") => rpc_span!("rpc.rpc", "SyncNotes"),
+        Some("GetNotesById") => rpc_span!("rpc.rpc", "GetNotesById"),
+        Some("SubmitProvenTransaction") => rpc_span!("rpc.rpc", "SubmitProvenTransaction"),
+        Some("GetAccountDetails") => rpc_span!("rpc.rpc", "GetAccountDetails"),
+        Some("GetBlockByNumber") => rpc_span!("rpc.rpc", "GetBlockByNumber"),
+        Some("GetAccountStateDelta") => rpc_span!("rpc.rpc", "GetAccountStateDelta"),
+        Some("GetAccountProofs") => rpc_span!("rpc.rpc", "GetAccountProofs"),
+        _ => rpc_span!("rpc.rpc", "Unknown"),
+    };
     add_otel_span_attributes(span, request)
 }
 

@@ -55,6 +55,7 @@ impl BlockProducer {
     pub async fn init(
         listener: TcpListener,
         store_address: SocketAddr,
+        network_tx_builder_address: SocketAddr,
         batch_prover: Option<Url>,
         block_prover: Option<Url>,
         batch_interval: Duration,
@@ -62,15 +63,19 @@ impl BlockProducer {
     ) -> Result<Self> {
         info!(target: COMPONENT, endpoint=?listener, store=%store_address, "Initializing server");
 
-        let store_url = format!("http://{store_address}");
-        let channel = tonic::transport::Endpoint::try_from(store_url.clone())
-            .with_context(|| format!("failed to create store endpoint for {store_url}"))?
+        let store = format!("http://{store_address}");
+        let store = tonic::transport::Endpoint::try_from(store.clone())
+            .with_context(|| format!("failed to create store endpoint for {store}"))?
             .connect()
             .await
-            .with_context(|| format!("failed to connect to store on {store_url}"))?;
-
-        let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            .with_context(|| format!("failed to connect to store on {store}"))?;
+        let store = store_client::ApiClient::with_interceptor(store, OtelInterceptor);
         let store = StoreClient::new(store);
+
+        let ntx_client = miden_node_proto::ntx_builder::Client::lazy_with_interceptor(
+            network_tx_builder_address,
+            OtelInterceptor,
+        );
 
         let latest_header = store.latest_header().await.context("failed to get latest header")?;
         let chain_tip = latest_header.block_num();
@@ -78,7 +83,12 @@ impl BlockProducer {
         info!(target: COMPONENT, "Server initialized");
 
         Ok(Self {
-            block_builder: BlockBuilder::new(store.clone(), block_prover, block_interval),
+            block_builder: BlockBuilder::new(
+                store.clone(),
+                ntx_client,
+                block_prover,
+                block_interval,
+            ),
             batch_builder: BatchBuilder::new(
                 store.clone(),
                 SERVER_NUM_BATCH_BUILDERS,

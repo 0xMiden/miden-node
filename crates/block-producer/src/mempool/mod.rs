@@ -309,11 +309,15 @@ impl Mempool {
     /// The pool will mark the associated batches and transactions as committed, and prune stale
     /// committed data, and purge transactions that are now considered expired.
     ///
+    /// # Returns
+    ///
+    /// Returns the list of transactions that expired and were purged.
+    ///
     /// # Panics
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self) {
+    pub fn commit_block(&mut self) -> BTreeSet<TransactionId> {
         // Remove committed batches and transactions from graphs.
         let batches = self.block_in_progress.take().expect("No block in progress to commit");
         let transactions =
@@ -330,18 +334,22 @@ impl Mempool {
         self.chain_tip = self.chain_tip.child();
 
         // Revert expired transactions and their descendents.
-        self.revert_expired_transactions();
+        self.revert_expired_transactions()
     }
 
     /// Notify the pool that construction of the in flight block failed.
     ///
     /// The pool will purge the block and all of its contents from the pool.
     ///
+    /// # Returns
+    ///
+    /// Returns the set of transactions that was purged.
+    ///
     /// # Panics
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.rollback_block", skip_all)]
-    pub fn rollback_block(&mut self) {
+    pub fn rollback_block(&mut self) -> BTreeSet<TransactionId> {
         let batches = self.block_in_progress.take().expect("No block in progress to be failed");
 
         // Revert all transactions. This is the nuclear (but simplest) solution.
@@ -361,15 +369,17 @@ impl Mempool {
             .copied()
             .collect();
         self.revert_transactions(txs)
-            .expect("transactions from a block must be part of the mempool");
+            .expect("transactions from a block must be part of the mempool")
     }
 
     #[instrument(target = COMPONENT, name = "mempool.revert_expired_transactions", skip_all)]
-    fn revert_expired_transactions(&mut self) {
+    fn revert_expired_transactions(&mut self) -> BTreeSet<TransactionId> {
         let expired = self.expirations.get(self.chain_tip);
 
-        self.revert_transactions(expired.into_iter().collect())
+        self.revert_transactions(expired.iter().copied().collect())
             .expect("expired transactions must be part of the mempool");
+
+        expired
     }
 
     /// Reverts the given transactions and their descendents from the mempool.
@@ -388,7 +398,7 @@ impl Mempool {
     fn revert_transactions(
         &mut self,
         txs: Vec<TransactionId>,
-    ) -> Result<(), GraphError<TransactionId>> {
+    ) -> Result<BTreeSet<TransactionId>, GraphError<TransactionId>> {
         tracing::Span::current().record("transactions.expired.ids", tracing::field::debug(&txs));
 
         // Revert all transactions and their descendents, and their associated batches.
@@ -408,8 +418,8 @@ impl Mempool {
 
         // Cleanup state.
         self.expirations.remove(reverted.iter());
-        self.state.revert_transactions(reverted);
+        self.state.revert_transactions(reverted.clone());
 
-        Ok(())
+        Ok(reverted)
     }
 }

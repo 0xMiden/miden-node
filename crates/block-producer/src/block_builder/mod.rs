@@ -1,15 +1,19 @@
-use std::ops::Range;
+use std::{collections::BTreeSet, ops::Range};
 
+use anyhow::Context;
 use futures::{FutureExt, never::Never};
 use miden_block_prover::LocalBlockProver;
+use miden_node_proto::{domain::note::CommittedNote, generated::transaction::TransactionStatus};
 use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
 use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
     block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::NoteHeader,
+    note::{NoteDetails, NoteHeader},
+    transaction::{OutputNote, TransactionHeader, TransactionId},
 };
 use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
+use miden_tx::utils::Serializable;
 use rand::Rng;
 use tokio::time::Duration;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -96,13 +100,25 @@ impl BlockBuilder {
         loop {
             interval.tick().await;
 
-            self.build_block(&mempool).await;
+            // Non-fatal errors are handled internally by the block building process.
+            //
+            // As such, any error returned here should be treated as fatal.
+            if let Err(err) = self.build_block(&mempool).await {
+                tracing::error!(%err, "fatal error while building a block, aborting block production");
+                return;
+            }
         }
     }
 
     /// Run the block building stages and add open-telemetry trace information where applicable.
     ///
     /// A failure in any stage will result in that block being rolled back.
+    ///
+    /// ## Returns
+    ///
+    /// The transaction and note IDs committed in this block, as well as the transaction IDs that were dropped (e.g. due to expiring).
+    ///
+    /// Returns [`None`] if the block building failed.
     ///
     /// ## Telemetry
     ///
@@ -112,7 +128,7 @@ impl BlockBuilder {
     /// - A failed stage will emit an error event, and both its own span and the root span will be
     ///   marked as errors.
     #[instrument(parent = None, target = COMPONENT, name = "block_builder.build_block", skip_all)]
-    async fn build_block(&self, mempool: &SharedMempool) {
+    async fn build_block(&self, mempool: &SharedMempool) -> anyhow::Result<()> {
         use futures::TryFutureExt;
 
         Self::select_block(mempool)
@@ -130,9 +146,11 @@ impl BlockBuilder {
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
             .or_else(|_err| self.rollback_block(mempool).never_error())
-            // Error has been handled, this is just type manipulation to remove the result wrapper.
-            .unwrap_or_else(|_: Never| ())
-            .await;
+            // All errors were handled and discarded above, so this is just type juggling
+            // to drop the result.
+            .unwrap_or_else(|_: Never| StateDelta::default())
+            .then(|delta| self.update_network_tx_builder(delta))
+            .await
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.select_block", skip_all)]
@@ -234,20 +252,89 @@ impl BlockBuilder {
         &self,
         mempool: &SharedMempool,
         built_block: ProvenBlock,
-    ) -> Result<(), BuildBlockError> {
+    ) -> Result<StateDelta, BuildBlockError> {
         self.store
             .apply_block(&built_block)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        mempool.lock().await.commit_block();
+        let reverted_transactions = mempool.lock().await.commit_block();
+        let committed_transactions = built_block
+            .transactions()
+            .as_slice()
+            .iter()
+            .map(TransactionHeader::id)
+            .collect();
+        let committed_notes = built_block
+            .output_notes()
+            .filter_map(|(_idx, note)| {
+                if let OutputNote::Full(note) = note {
+                    // TODO: ensure it is a network note.
+                    CommittedNote {
+                        block_num: built_block.header().block_num(),
+                        note_index: todo!("Do I really have to iterate over the batches?"),
+                        note_id: note.id().inner(),
+                        metadata: *note.metadata(),
+                        details: NoteDetails::from(note).to_bytes().into(),
+                        merkle_path: todo!("How do this?"),
+                    }
+                    .into()
+                } else {
+                    None
+                }
+            })
+            .collect();
 
-        Ok(())
+        Ok(StateDelta {
+            committed_transactions,
+            reverted_transactions,
+            committed_notes,
+        })
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.rollback_block", skip_all)]
-    async fn rollback_block(&self, mempool: &SharedMempool) {
-        mempool.lock().await.rollback_block();
+    async fn rollback_block(&self, mempool: &SharedMempool) -> StateDelta {
+        let reverted_transactions = mempool.lock().await.rollback_block();
+
+        StateDelta {
+            reverted_transactions,
+            ..Default::default()
+        }
+    }
+
+    #[instrument(target = COMPONENT, name = "block_builder.update_network_tx_builder", skip_all, err)]
+    async fn update_network_tx_builder(&self, delta: StateDelta) -> anyhow::Result<()> {
+        if !(delta.committed_transactions.is_empty() && delta.reverted_transactions.is_empty()) {
+            let committed = delta
+                .committed_transactions
+                .into_iter()
+                .map(|tx| (tx, TransactionStatus::Commited));
+            let reverted = delta
+                .reverted_transactions
+                .into_iter()
+                .map(|tx| (tx, TransactionStatus::Failed));
+
+            self.ntx_client
+                .clone()
+                .update_transaction_status(committed.chain(reverted))
+                .await
+                .context("submitting transaction status updates to network transaction builder")?;
+        }
+
+        if !delta.committed_notes.is_empty() {
+            self.ntx_client
+                .clone()
+                .submit_network_notes(
+                    todo!("revisit this api - do we really need the tx ID"),
+                    delta.committed_notes.into_iter(),
+                )
+                .await
+                .context(
+                    "failed to submit newly committed notes to the network transaction builder",
+                )?;
+        }
+
+        Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.simulate_proving", skip_all)]
@@ -370,6 +457,14 @@ impl TelemetryInjectorExt for ProvenBlock {
         span.set_attribute("block.commitments.note", header.note_root());
         span.set_attribute("block.commitments.transaction", header.tx_commitment());
     }
+}
+
+/// Change in transaction and note state as a result of the block building process.
+#[derive(Default)]
+struct StateDelta {
+    committed_transactions: Vec<TransactionId>,
+    reverted_transactions: BTreeSet<TransactionId>,
+    committed_notes: Vec<CommittedNote>,
 }
 
 // BLOCK PROVER

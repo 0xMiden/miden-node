@@ -21,6 +21,8 @@ use crate::{
 
 type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 type GeneratedClient<T> = crate::generated::ntx_builder::api_client::ApiClient<T>;
+
+#[derive(Clone)]
 pub struct Client<T> {
     inner: GeneratedClient<T>,
 }

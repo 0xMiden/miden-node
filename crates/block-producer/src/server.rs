@@ -213,7 +213,7 @@ impl BlockProducerRpcServer {
 
     #[instrument(
         target = COMPONENT,
-        name = "block_producer:submit_proven_transaction",
+        name = "block_producer.server.submit_proven_transaction",
         skip_all,
         err
     )]
@@ -228,6 +228,7 @@ impl BlockProducerRpcServer {
 
         let tx_id = tx.id();
 
+        // TODO: which of these should be moved to span fields?
         info!(
             target: COMPONENT,
             tx_id = %tx_id.to_hex(),

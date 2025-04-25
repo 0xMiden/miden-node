@@ -1813,7 +1813,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#d9fdcf05364c79701b687066a1a1bcd5efbc45f9"
 dependencies = [
  "miden-crypto",
  "miden-lib",
@@ -1906,7 +1906,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#d9fdcf05364c79701b687066a1a1bcd5efbc45f9"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2137,7 +2137,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#d9fdcf05364c79701b687066a1a1bcd5efbc45f9"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2184,7 +2184,7 @@ dependencies = [
 [[package]]
 name = "miden-proving-service-client"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#d9fdcf05364c79701b687066a1a1bcd5efbc45f9"
 dependencies = [
  "async-trait",
  "getrandom 0.3.2",
@@ -2214,7 +2214,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#d9fdcf05364c79701b687066a1a1bcd5efbc45f9"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2231,7 +2231,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#d9fdcf05364c79701b687066a1a1bcd5efbc45f9"
 dependencies = [
  "miden-core",
  "miden-crypto",
@@ -2854,7 +2854,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "log",
  "multimap",
  "once_cell",
@@ -2874,7 +2874,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.12.1",
  "proc-macro2",
  "quote",
  "syn",

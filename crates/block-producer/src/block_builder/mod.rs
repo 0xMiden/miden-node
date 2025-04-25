@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, ops::Range};
+use std::{collections::BTreeSet, fmt::Debug, ops::Range};
 
 use anyhow::Context;
 use futures::{FutureExt, never::Never};
@@ -9,7 +9,7 @@ use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
     block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::{NoteDetails, NoteHeader},
+    note::{NoteDetails, NoteExecutionMode, NoteHeader},
     transaction::{OutputNote, TransactionHeader, TransactionId},
 };
 use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
@@ -268,7 +268,11 @@ impl BlockBuilder {
         let committed_notes = built_block
             .output_notes()
             .filter_map(|(_idx, note)| {
+                // Only retain network notes.
                 if let OutputNote::Full(note) = note {
+                    if NoteExecutionMode::Network != note.metadata().tag().execution_mode() {
+                        return None;
+                    }
                     // TODO: ensure it is a network note.
                     CommittedNote {
                         block_num: built_block.header().block_num(),

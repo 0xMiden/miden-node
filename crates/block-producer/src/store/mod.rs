@@ -20,7 +20,7 @@ use miden_node_proto::{
         store::api_client as store_client,
     },
 };
-use miden_node_utils::{formatting::format_opt, grpc::LazyClient, tracing::grpc::OtelInterceptor};
+use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};
 use miden_objects::{
     Digest,
     account::AccountId,
@@ -30,7 +30,10 @@ use miden_objects::{
     utils::Serializable,
 };
 use miden_processor::crypto::RpoDigest;
-use tonic::{Status, service::interceptor::InterceptedService, transport::Channel};
+use tonic::{
+    service::interceptor::InterceptedService,
+    transport::{Channel, Error},
+};
 use tracing::{debug, info, instrument};
 
 use crate::{COMPONENT, errors::StoreError};
@@ -127,33 +130,29 @@ type InnerClient = store_client::ApiClient<InterceptedService<Channel, OtelInter
 /// Interface to the store's gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StoreClient {
-    inner: LazyClient<InnerClient>,
+    inner: InnerClient,
 }
 
 impl StoreClient {
-    pub fn new(store_address: SocketAddr) -> Self {
-        Self {
-            inner: LazyClient::new(store_address, |channel| {
-                store_client::ApiClient::with_interceptor(channel, OtelInterceptor)
-            }),
-        }
-    }
-
-    async fn inner(&self) -> Result<InnerClient, StoreError> {
-        self.inner
-            .inner()
-            .await
-            .map_err(|_| StoreError::GrpcClientError(Status::internal("connection error")))
+    pub fn new(store_address: SocketAddr) -> Result<Self, Error> {
+        let store = {
+            let store_url = format!("http://{store_address}");
+            let channel = tonic::transport::Endpoint::try_from(store_url)?.connect_lazy();
+            let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+            store
+        };
+        Ok(Self { inner: store })
     }
 
     /// Returns the latest block's header from the store.
     #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
     pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
-            .inner()
-            .await?
+            .inner
+            .clone()
             .get_block_header_by_number(tonic::Request::new(
                 GetBlockHeaderByNumberRequest::default(),
             ))
@@ -185,7 +184,7 @@ impl StoreClient {
         debug!(target: COMPONENT, ?message);
 
         let request = tonic::Request::new(message);
-        let response = self.inner().await?.get_transaction_inputs(request).await?.into_inner();
+        let response = self.inner.clone().get_transaction_inputs(request).await?.into_inner();
 
         debug!(target: COMPONENT, ?response);
 
@@ -219,7 +218,7 @@ impl StoreClient {
             reference_blocks: reference_blocks.map(|block_num| block_num.as_u32()).collect(),
         });
 
-        let store_response = self.inner().await?.get_block_inputs(request).await?.into_inner();
+        let store_response = self.inner.clone().get_block_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -235,7 +234,7 @@ impl StoreClient {
             note_ids: notes.map(digest::Digest::from).collect(),
         });
 
-        let store_response = self.inner().await?.get_batch_inputs(request).await?.into_inner();
+        let store_response = self.inner.clone().get_batch_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -244,6 +243,6 @@ impl StoreClient {
     pub async fn apply_block(&self, block: &ProvenBlock) -> Result<(), StoreError> {
         let request = tonic::Request::new(ApplyBlockRequest { block: block.to_bytes() });
 
-        self.inner().await?.apply_block(request).await.map(|_| ()).map_err(Into::into)
+        self.inner.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)
     }
 }

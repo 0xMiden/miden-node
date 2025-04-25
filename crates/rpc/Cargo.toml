@@ -27,4 +27,7 @@ tonic-web        = { version = "0.12" }
 tracing          = { workspace = true }
 
 [dev-dependencies]
+miden-node-rpc   = { workspace = true }
+miden-node-store = { workspace = true }
 miden-node-utils = { workspace = true, features = ["tracing-forest"] }
+tempfile         = { version = "3.5" }

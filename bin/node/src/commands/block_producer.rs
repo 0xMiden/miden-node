@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
@@ -80,17 +81,17 @@ impl BlockProducerCommand {
             .to_socket()
             .context("Failed to extract socket address from block producer URL")?;
 
-        let block_producer_config = miden_node_block_producer::BlockProducerConfig {
+        BlockProducer {
             block_producer_address,
             store_address,
             batch_prover: batch_prover_url,
             block_prover: block_prover_url,
             batch_interval,
             block_interval,
-        };
-        miden_node_block_producer::serve(block_producer_config)
-            .await
-            .context("failed while serving block-producer component")
+        }
+        .serve()
+        .await
+        .context("failed while serving block-producer component")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

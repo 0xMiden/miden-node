@@ -14,7 +14,7 @@ use tokio::{net::TcpListener, sync::Mutex};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 use url::Url;
 
 use crate::{
@@ -23,13 +23,13 @@ use crate::{
     batch_builder::BatchBuilder,
     block_builder::BlockBuilder,
     domain::transaction::AuthenticatedTransaction,
-    errors::{AddTransactionError, BlockProducerError, VerifyTxError},
+    errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
     mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
     store::StoreClient,
 };
 
 /// Block producer's configuration.
-pub struct BlockProducerConfig {
+pub struct BlockProducer {
     /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
@@ -44,97 +44,125 @@ pub struct BlockProducerConfig {
     pub block_interval: Duration,
 }
 
-/// Serves the block-producer RPC API, the batch-builder and the block-builder.
-///
-/// Note: this blocks until one of the servers die.
-pub async fn serve(config: BlockProducerConfig) -> anyhow::Result<()> {
-    info!(target: COMPONENT, endpoint=?config.block_producer_address, store=%config.store_address, "Initializing server");
+impl BlockProducer {
+    /// Serves the block-producer RPC API, the batch-builder and the block-builder.
+    ///
+    /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
+    ///       a fatal error is encountered.
+    pub async fn serve(self) -> anyhow::Result<()> {
+        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
 
-    let store = StoreClient::new(config.store_address);
+        let store = StoreClient::new(self.store_address)?;
 
-    // this call blocks initialization until the store responds
-    let latest_header = store.latest_header().await.context("failed to get latest header")?;
-    let chain_tip = latest_header.block_num();
+        // retry fetching the chain tip from the store until it succeeds.
+        let mut retries_counter = 0;
+        let chain_tip = loop {
+            match store.latest_header().await {
+                Err(StoreError::GrpcClientError(e)) => {
+                    // exponential backoff with base 500ms and max 30s
+                    let backoff = Duration::from_millis(500)
+                        .saturating_mul(1 << retries_counter)
+                        .min(Duration::from_secs(30));
 
-    let listener = TcpListener::bind(config.block_producer_address)
-        .await
-        .context("failed to bind to block producer address")?;
+                    error!(
+                        store = %self.store_address,
+                        ?backoff,
+                        %retries_counter,
+                        %e,
+                        "store connection failed while fetching chain tip, retrying"
+                    );
 
-    info!(target: COMPONENT, "Server initialized");
-
-    let block_builder =
-        BlockBuilder::new(store.clone(), config.block_prover, config.block_interval);
-    let batch_builder = BatchBuilder::new(
-        store.clone(),
-        SERVER_NUM_BATCH_BUILDERS,
-        config.batch_prover,
-        config.batch_interval,
-    );
-    let mempool = Mempool::shared(
-        chain_tip,
-        BatchBudget::default(),
-        BlockBudget::default(),
-        SERVER_MEMPOOL_STATE_RETENTION,
-        SERVER_MEMPOOL_EXPIRATION_SLACK,
-    );
-
-    // Spawn rpc server and batch and block provers.
-    //
-    // These communicate indirectly via a shared mempool.
-    //
-    // These should run forever, so we combine them into a joinset so that if
-    // any complete or fail, we can shutdown the rest (somewhat) gracefully.
-    let mut tasks = tokio::task::JoinSet::new();
-
-    let batch_builder_id = tasks
-        .spawn({
-            let mempool = mempool.clone();
-            async {
-                batch_builder.run(mempool).await;
-                Ok(())
+                    retries_counter += 1;
+                    tokio::time::sleep(backoff).await;
+                },
+                Ok(header) => break header.block_num(),
+                Err(e) => {
+                    error!(target: COMPONENT, %e, "failed to fetch chain tip from store");
+                    return Err(e.into());
+                },
             }
-        })
-        .id();
-    let block_builder_id = tasks
-        .spawn({
-            let mempool = mempool.clone();
-            async {
-                block_builder.run(mempool).await;
-                Ok(())
-            }
-        })
-        .id();
-    let rpc_id = tasks
-        .spawn(async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await })
-        .id();
+        };
 
-    let task_ids = HashMap::from([
-        (batch_builder_id, "batch-builder"),
-        (block_builder_id, "block-builder"),
-        (rpc_id, "rpc"),
-    ]);
+        let listener = TcpListener::bind(self.block_producer_address)
+            .await
+            .context("failed to bind to block producer address")?;
 
-    // Wait for any task to end. They should run indefinitely, so this is an unexpected result.
-    //
-    // SAFETY: The JoinSet is definitely not empty.
-    let task_result = tasks.join_next_with_id().await.unwrap();
+        info!(target: COMPONENT, "Server initialized");
 
-    let task_id = match &task_result {
-        Ok((id, _)) => *id,
-        Err(err) => err.id(),
-    };
-    let task = task_ids.get(&task_id).unwrap_or(&"unknown");
+        let block_builder =
+            BlockBuilder::new(store.clone(), self.block_prover, self.block_interval);
+        let batch_builder = BatchBuilder::new(
+            store.clone(),
+            SERVER_NUM_BATCH_BUILDERS,
+            self.batch_prover,
+            self.batch_interval,
+        );
+        let mempool = Mempool::shared(
+            chain_tip,
+            BatchBudget::default(),
+            BlockBudget::default(),
+            SERVER_MEMPOOL_STATE_RETENTION,
+            SERVER_MEMPOOL_EXPIRATION_SLACK,
+        );
 
-    // We could abort the other tasks here, but not much point as we're probably crashing the
-    // node.
+        // Spawn rpc server and batch and block provers.
+        //
+        // These communicate indirectly via a shared mempool.
+        //
+        // These should run forever, so we combine them into a joinset so that if
+        // any complete or fail, we can shutdown the rest (somewhat) gracefully.
+        let mut tasks = tokio::task::JoinSet::new();
 
-    task_result
-        .map_err(|source| BlockProducerError::JoinError { task, source })
-        .map(|(_, result)| match result {
-            Ok(_) => Err(BlockProducerError::TaskFailedSuccesfully { task }),
-            Err(source) => Err(BlockProducerError::TonicTransportError { task, source }),
-        })
-        .and_then(|x| x)?
+        let batch_builder_id = tasks
+            .spawn({
+                let mempool = mempool.clone();
+                async {
+                    batch_builder.run(mempool).await;
+                    Ok(())
+                }
+            })
+            .id();
+        let block_builder_id = tasks
+            .spawn({
+                let mempool = mempool.clone();
+                async {
+                    block_builder.run(mempool).await;
+                    Ok(())
+                }
+            })
+            .id();
+        let rpc_id = tasks
+            .spawn(async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await })
+            .id();
+
+        let task_ids = HashMap::from([
+            (batch_builder_id, "batch-builder"),
+            (block_builder_id, "block-builder"),
+            (rpc_id, "rpc"),
+        ]);
+
+        // Wait for any task to end. They should run indefinitely, so this is an unexpected result.
+        //
+        // SAFETY: The JoinSet is definitely not empty.
+        let task_result = tasks.join_next_with_id().await.unwrap();
+
+        let task_id = match &task_result {
+            Ok((id, _)) => *id,
+            Err(err) => err.id(),
+        };
+        let task = task_ids.get(&task_id).unwrap_or(&"unknown");
+
+        // We could abort the other tasks here, but not much point as we're probably crashing the
+        // node.
+
+        task_result
+            .map_err(|source| BlockProducerError::JoinError { task, source })
+            .map(|(_, result)| match result {
+                Ok(_) => Err(BlockProducerError::TaskFailedSuccesfully { task }),
+                Err(source) => Err(BlockProducerError::TonicTransportError { task, source }),
+            })
+            .and_then(|x| x)?
+    }
 }
 
 /// Serves the block producer's RPC [api](api_server::Api).

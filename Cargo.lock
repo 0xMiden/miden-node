@@ -292,20 +292,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "backoff"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b62ddb9cb1ec0a098ad4bbf9344d0713fa193ae1a80af55febcff2627b6a00c1"
-dependencies = [
- "futures-core",
- "getrandom 0.2.15",
- "instant",
- "pin-project-lite",
- "rand 0.8.5",
- "tokio",
-]
-
-[[package]]
 name = "backtrace"
 version = "0.3.74"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1531,15 +1517,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8fae54786f62fb2918dcfae3d568594e50eb9b5c25bf04371af6fe7516452fb"
 
 [[package]]
-name = "instant"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0242819d153cba4b4b05a5a8f2a7e9bbf97b6055b2a002b395c96b5ff3c0222"
-dependencies = [
- "cfg-if",
-]
-
-[[package]]
 name = "is_ci"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2013,6 +1990,7 @@ dependencies = [
  "miden-block-prover",
  "miden-lib",
  "miden-node-proto",
+ "miden-node-store",
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
@@ -2023,6 +2001,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.9.1",
  "rand_chacha 0.9.0",
+ "tempfile",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
@@ -2067,9 +2046,12 @@ version = "0.9.0"
 dependencies = [
  "anyhow",
  "miden-node-proto",
+ "miden-node-rpc",
+ "miden-node-store",
  "miden-node-utils",
  "miden-objects",
  "miden-tx",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -2133,23 +2115,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-node-tests"
-version = "0.9.0"
-dependencies = [
- "miden-node-proto",
- "miden-node-rpc",
- "miden-node-store",
- "tempfile",
- "tokio",
- "tonic",
-]
-
-[[package]]
 name = "miden-node-utils"
 version = "0.9.0"
 dependencies = [
  "anyhow",
- "backoff",
  "figment",
  "http 1.3.1",
  "itertools 0.14.0",
@@ -2159,7 +2128,6 @@ dependencies = [
  "opentelemetry_sdk",
  "rand 0.9.1",
  "serde",
- "tokio",
  "tonic",
  "tracing",
  "tracing-forest",

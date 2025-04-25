@@ -16,7 +16,7 @@ use miden_lib::{
 };
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client::ApiClient};
-use miden_node_store::{DataDirectory, GenesisState};
+use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     Felt,
@@ -76,12 +76,11 @@ pub async fn seed_store(
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
     let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
-    miden_node_store::bootstrap(genesis_state.clone(), &data_directory)
-        .expect("store should bootstrap");
+    Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
     let (_, store_addr) = start_store(data_directory.clone()).await;
-    let store_client = StoreClient::new(store_addr);
+    let store_client = StoreClient::new(store_addr).expect("store client should be created");
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
@@ -496,9 +495,7 @@ pub async fn start_store(
     let dir = data_directory.clone();
 
     task::spawn(async move {
-        miden_node_store::serve(grpc_store, dir)
-            .await
-            .expect("Failed to start serving store");
+        Store::serve(grpc_store, dir).await.expect("Failed to start serving store");
     });
 
     let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))

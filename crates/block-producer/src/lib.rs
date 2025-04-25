@@ -10,7 +10,7 @@ mod errors;
 mod mempool;
 mod server;
 pub mod store;
-pub use server::{BlockProducerConfig, serve};
+pub use server::BlockProducer;
 
 // CONSTANTS
 // =================================================================================================

@@ -1,4 +1,5 @@
 use anyhow::Context;
+use miden_node_rpc::Rpc;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
@@ -39,10 +40,10 @@ impl RpcCommand {
             open_telemetry: _,
         } = self;
 
-        let store_url = store_url
+        let store = store_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
-        let block_producer_url = block_producer_url
+        let block_producer = block_producer_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
 
@@ -51,9 +52,7 @@ impl RpcCommand {
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        miden_node_rpc::serve(listener, store_url, block_producer_url)
-            .await
-            .context("Serving RPC")
+        Rpc { listener, store, block_producer }.serve().await.context("Serving RPC")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

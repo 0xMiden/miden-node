@@ -1,6 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use anyhow::Context;
+use miden_node_block_producer::BlockProducer;
+use miden_node_rpc::Rpc;
+use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
@@ -151,35 +154,40 @@ impl BundledCommand {
         // Start store. The store endpoint is available after loading completes.
         let store_id = join_set
             .spawn(async move {
-                miden_node_store::serve(grpc_store, data_directory)
+                Store::serve(grpc_store, data_directory)
                     .await
                     .context("failed while serving store component")
             })
             .id();
 
         // Start block-producer. The block-producer's endpoint is available after loading completes.
-        let block_producer_config = miden_node_block_producer::BlockProducerConfig {
-            block_producer_address,
-            store_address,
-            batch_prover: batch_prover_url,
-            block_prover: block_prover_url,
-            batch_interval,
-            block_interval,
-        };
         let block_producer_id = join_set
             .spawn(async move {
-                miden_node_block_producer::serve(block_producer_config)
-                    .await
-                    .context("failed while serving block-producer component")
+                BlockProducer {
+                    block_producer_address,
+                    store_address,
+                    batch_prover: batch_prover_url,
+                    block_prover: block_prover_url,
+                    batch_interval,
+                    block_interval,
+                }
+                .serve()
+                .await
+                .context("failed while serving block-producer component")
             })
             .id();
 
         // Start RPC component.
         let rpc_id = join_set
             .spawn(async move {
-                miden_node_rpc::serve(grpc_rpc, store_address, block_producer_address)
-                    .await
-                    .context("failed while serving RPC component")
+                Rpc {
+                    listener: grpc_rpc,
+                    store: store_address,
+                    block_producer: block_producer_address,
+                }
+                .serve()
+                .await
+                .context("failed while serving RPC component")
             })
             .id();
 

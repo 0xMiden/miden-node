@@ -20,70 +20,76 @@ use crate::{
 mod api;
 mod db_maintenance;
 
-/// Bootstraps the Store, creating the database state and inserting the genesis block data.
-#[instrument(
+pub struct Store {}
+
+impl Store {
+    /// Bootstraps the Store, creating the database state and inserting the genesis block data.
+    #[instrument(
         target = COMPONENT,
         name = "store.bootstrap",
         skip_all,
         err,
-        fields(data_directory = %data_directory.display())
     )]
-pub fn bootstrap(genesis: GenesisState, data_directory: &Path) -> anyhow::Result<()> {
-    let genesis = genesis
-        .into_block()
-        .context("failed to convert genesis configuration into the genesis block")?;
+    pub fn bootstrap(genesis: GenesisState, data_directory: &Path) -> anyhow::Result<()> {
+        let genesis = genesis
+            .into_block()
+            .context("failed to convert genesis configuration into the genesis block")?;
 
-    let data_directory = DataDirectory::load(data_directory.to_path_buf()).with_context(|| {
-        format!("failed to load data directory at {}", data_directory.display())
-    })?;
-    tracing::info!(target=COMPONENT, path=%data_directory.display(), "Data directory loaded");
+        let data_directory =
+            DataDirectory::load(data_directory.to_path_buf()).with_context(|| {
+                format!("failed to load data directory at {}", data_directory.display())
+            })?;
+        tracing::info!(target=COMPONENT, path=%data_directory.display(), "Data directory loaded");
 
-    let block_store = data_directory.block_store_dir();
-    let block_store = BlockStore::bootstrap(block_store.clone(), &genesis)
-        .with_context(|| format!("failed to bootstrap block store at {}", block_store.display()))?;
-    tracing::info!(target=COMPONENT, path=%block_store.display(), "Block store created");
+        let block_store = data_directory.block_store_dir();
+        let block_store =
+            BlockStore::bootstrap(block_store.clone(), &genesis).with_context(|| {
+                format!("failed to bootstrap block store at {}", block_store.display())
+            })?;
+        tracing::info!(target=COMPONENT, path=%block_store.display(), "Block store created");
 
-    // Create the genesis block and insert it into the database.
-    let database_filepath = data_directory.database_path();
-    Db::bootstrap(database_filepath.clone(), &genesis).with_context(|| {
-        format!("failed to bootstrap database at {}", database_filepath.display())
-    })?;
-    tracing::info!(target=COMPONENT, path=%database_filepath.display(), "Database created");
+        // Create the genesis block and insert it into the database.
+        let database_filepath = data_directory.database_path();
+        Db::bootstrap(database_filepath.clone(), &genesis).with_context(|| {
+            format!("failed to bootstrap database at {}", database_filepath.display())
+        })?;
+        tracing::info!(target=COMPONENT, path=%database_filepath.display(), "Database created");
 
-    Ok(())
-}
+        Ok(())
+    }
 
-/// Serves the store's RPC API and DB maintenance background task.
-///
-/// Note: this blocks until the server dies.
-pub async fn serve(listener: TcpListener, data_directory: PathBuf) -> anyhow::Result<()> {
-    info!(target: COMPONENT, endpoint=?listener, ?data_directory, "Loading database");
+    /// Serves the store's RPC API and DB maintenance background task.
+    ///
+    /// Note: this blocks until the server dies.
+    pub async fn serve(listener: TcpListener, data_directory: PathBuf) -> anyhow::Result<()> {
+        info!(target: COMPONENT, endpoint=?listener, ?data_directory, "Loading database");
 
-    let data_directory = DataDirectory::load(data_directory)?;
+        let data_directory = DataDirectory::load(data_directory)?;
 
-    let block_store = Arc::new(BlockStore::load(data_directory.block_store_dir())?);
+        let block_store = Arc::new(BlockStore::load(data_directory.block_store_dir())?);
 
-    let database_filepath = data_directory.database_path();
-    let db = Db::load(database_filepath.clone())
-        .await
-        .with_context(|| format!("failed to load database at {}", database_filepath.display()))?;
+        let database_filepath = data_directory.database_path();
+        let db = Db::load(database_filepath.clone()).await.with_context(|| {
+            format!("failed to load database at {}", database_filepath.display())
+        })?;
 
-    let state = Arc::new(State::load(db, block_store).await.context("failed to load state")?);
+        let state = Arc::new(State::load(db, block_store).await.context("failed to load state")?);
 
-    let db_maintenance_service =
-        DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
-    let api_service = api_server::ApiServer::new(api::StoreApi { state });
+        let db_maintenance_service =
+            DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
+        let api_service = api_server::ApiServer::new(api::StoreApi { state });
 
-    info!(target: COMPONENT, "Database loaded");
+        info!(target: COMPONENT, "Database loaded");
 
-    tokio::spawn(db_maintenance_service.run());
-    // Build the gRPC server with the API service and trace layer.
-    tonic::transport::Server::builder()
-        .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
-        .add_service(api_service)
-        .serve_with_incoming(TcpListenerStream::new(listener))
-        .await
-        .context("failed to serve store API")
+        tokio::spawn(db_maintenance_service.run());
+        // Build the gRPC server with the API service and trace layer.
+        tonic::transport::Server::builder()
+            .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
+            .add_service(api_service)
+            .serve_with_incoming(TcpListenerStream::new(listener))
+            .await
+            .context("failed to serve store API")
+    }
 }
 
 /// Represents the store's data-directory and its content paths.

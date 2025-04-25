@@ -47,10 +47,12 @@ url = { workspace = true }
 assert_matches        = { workspace = true }
 miden-air             = { workspace = true }
 miden-lib             = { workspace = true, features = ["testing"] }
+miden-node-store      = { workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-objects         = { workspace = true, features = ["testing"] }
 miden-tx              = { workspace = true, features = ["testing"] }
 pretty_assertions     = "1.4"
 rand_chacha           = { version = "0.9", default-features = false }
+tempfile              = { version = "3.5" }
 tokio                 = { workspace = true, features = ["test-util"] }
 winterfell            = { version = "0.12" }

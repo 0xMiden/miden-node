@@ -9,6 +9,18 @@ macro_rules! rpc_span {
     };
 }
 
+/// A [`trace_fn`](tonic::transport::server::Server) implementation for the RPC which
+/// adds open-telemetry information to the span.
+///
+/// Creates an `info` span following the open-telemetry standard: `rpc.rpc/{method}`.
+/// Additionally also pulls in remote tracing context which allows the server trace to be connected
+/// to the client's origin trace.
+pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    // TODO: spans
+    let span = rpc_span!("rpc.rpc", "TODO");
+    add_otel_span_attributes(span, request)
+}
+
 /// A [`trace_fn`](tonic::transport::server::Server) implementation for the block producer which
 /// adds open-telemetry information to the span.
 ///

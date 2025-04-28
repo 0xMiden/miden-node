@@ -15,3 +15,7 @@ version.workspace      = true
 workspace = true
 
 [dependencies]
+http = { workspace = true }
+miden-node-proto = { workspace = true }
+miden-node-utils = { workspace = true }
+tonic = { workspace = true, features = ["transport"] }

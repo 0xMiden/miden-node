@@ -8,7 +8,7 @@ use miden_objects::{
     crypto::merkle::{MmrPeaks, Smt},
     note::Nullifier,
     transaction::OrderedTransactionHeaders,
-    utils::serde::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable},
+    utils::serde::{ByteReader, Deserializable, DeserializationError},
 };
 
 use crate::errors::GenesisError;
@@ -103,17 +103,6 @@ impl GenesisState {
 
 // SERIALIZATION
 // ================================================================================================
-
-impl Serializable for GenesisState {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        assert!(u64::try_from(self.accounts.len()).is_ok(), "too many accounts in GenesisState");
-        target.write_usize(self.accounts.len());
-        target.write_many(&self.accounts);
-
-        target.write_u32(self.version);
-        target.write_u32(self.timestamp);
-    }
-}
 
 impl Deserializable for GenesisState {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {

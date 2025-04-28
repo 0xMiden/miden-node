@@ -86,7 +86,8 @@ impl StoreCommand {
             .await
             .context("Failed to bind to store's gRPC URL")?;
 
-        Store::serve(listener, data_directory)
+        Store { listener, data_directory }
+            .serve()
             .await
             .context("failed while serving store component")
     }

@@ -80,7 +80,7 @@ pub async fn seed_store(
 
     // start the store
     let (_, store_addr) = start_store(data_directory.clone()).await;
-    let store_client = StoreClient::new(store_addr).expect("store client should be created");
+    let store_client = StoreClient::new(store_addr);
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
@@ -495,7 +495,13 @@ pub async fn start_store(
     let dir = data_directory.clone();
 
     task::spawn(async move {
-        Store::serve(grpc_store, dir).await.expect("Failed to start serving store");
+        Store {
+            listener: grpc_store,
+            data_directory: dir,
+        }
+        .serve()
+        .await
+        .expect("Failed to start serving store");
     });
 
     let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))

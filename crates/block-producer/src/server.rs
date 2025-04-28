@@ -52,13 +52,13 @@ impl BlockProducer {
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
 
-        let store = StoreClient::new(self.store_address)?;
+        let store = StoreClient::new(self.store_address);
 
         // retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
         let chain_tip = loop {
             match store.latest_header().await {
-                Err(StoreError::GrpcClientError(e)) => {
+                Err(StoreError::GrpcClientError(err)) => {
                     // exponential backoff with base 500ms and max 30s
                     let backoff = Duration::from_millis(500)
                         .saturating_mul(1 << retries_counter)
@@ -68,7 +68,7 @@ impl BlockProducer {
                         store = %self.store_address,
                         ?backoff,
                         %retries_counter,
-                        %e,
+                        %err,
                         "store connection failed while fetching chain tip, retrying"
                     );
 
@@ -325,7 +325,13 @@ mod test {
             let store_runtime =
                 runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
             store_runtime.spawn(async move {
-                Store::serve(store_listener, dir).await.expect("store should start serving");
+                Store {
+                    listener: store_listener,
+                    data_directory: dir,
+                }
+                .serve()
+                .await
+                .expect("store should start serving");
             });
             store_runtime
         };
@@ -352,9 +358,13 @@ mod test {
         // test: restart the store and request should succeed
         let store_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
         task::spawn(async move {
-            Store::serve(store_listener, data_directory.path().to_path_buf())
-                .await
-                .expect("store should start serving");
+            Store {
+                listener: store_listener,
+                data_directory: data_directory.path().to_path_buf(),
+            }
+            .serve()
+            .await
+            .expect("store should start serving");
         });
         let response = send_request(block_producer_client.clone(), 2).await;
         assert!(response.is_ok());

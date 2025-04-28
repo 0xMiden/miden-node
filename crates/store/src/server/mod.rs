@@ -20,7 +20,10 @@ use crate::{
 mod api;
 mod db_maintenance;
 
-pub struct Store {}
+pub struct Store {
+    pub listener: TcpListener,
+    pub data_directory: PathBuf,
+}
 
 impl Store {
     /// Bootstraps the Store, creating the database state and inserting the genesis block data.
@@ -61,10 +64,10 @@ impl Store {
     /// Serves the store's RPC API and DB maintenance background task.
     ///
     /// Note: this blocks until the server dies.
-    pub async fn serve(listener: TcpListener, data_directory: PathBuf) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?listener, ?data_directory, "Loading database");
+    pub async fn serve(self) -> anyhow::Result<()> {
+        info!(target: COMPONENT, endpoint=?self.listener, ?self.data_directory, "Loading database");
 
-        let data_directory = DataDirectory::load(data_directory)?;
+        let data_directory = DataDirectory::load(self.data_directory)?;
 
         let block_store = Arc::new(BlockStore::load(data_directory.block_store_dir())?);
 
@@ -86,7 +89,7 @@ impl Store {
         tonic::transport::Server::builder()
             .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
             .add_service(api_service)
-            .serve_with_incoming(TcpListenerStream::new(listener))
+            .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve store API")
     }

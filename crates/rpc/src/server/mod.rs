@@ -121,7 +121,13 @@ mod test {
             let store_runtime =
                 runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
             store_runtime.spawn(async move {
-                Store::serve(store_listener, dir).await.expect("store should start serving");
+                Store {
+                    listener: store_listener,
+                    data_directory: dir,
+                }
+                .serve()
+                .await
+                .expect("store should start serving");
             });
             store_runtime
         };
@@ -138,9 +144,13 @@ mod test {
         // test: restart the store and request should succeed
         let listener = TcpListener::bind(store_addr).await.expect("Failed to bind store");
         task::spawn(async move {
-            Store::serve(listener, data_directory.path().to_path_buf())
-                .await
-                .expect("store should start serving");
+            Store {
+                listener,
+                data_directory: data_directory.path().to_path_buf(),
+            }
+            .serve()
+            .await
+            .expect("store should start serving");
         });
         let response = send_request(&mut rpc_client, 0).await.unwrap();
         assert_eq!(response.into_inner().block_header.unwrap().block_num, 0);

@@ -154,7 +154,8 @@ impl BundledCommand {
         // Start store. The store endpoint is available after loading completes.
         let store_id = join_set
             .spawn(async move {
-                Store::serve(grpc_store, data_directory)
+                Store { listener: grpc_store, data_directory }
+                    .serve()
                     .await
                     .context("failed while serving store component")
             })

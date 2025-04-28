@@ -2011,6 +2011,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-node-ntx-builder"
+version = "0.9.0"
+
+[[package]]
 name = "miden-node-proto"
 version = "0.9.0"
 dependencies = [

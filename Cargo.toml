@@ -3,8 +3,9 @@ members = [
   "bin/faucet",
   "bin/node",
   "bin/stress-test",
-  "crates/block-producer",
+  "crates/block-producer", "crates/ntx-builder",
   "crates/proto",
+  "crates/ntx-builder",
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
@@ -37,6 +38,7 @@ itertools                 = { version = "0.14" }
 miden-air                 = { version = "0.13" }
 miden-lib                 = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-partial-blockchain" }
 miden-node-block-producer = { path = "crates/block-producer", version = "0.9" }
+miden-node-ntx-builder    = { path = "crates/ntx-builder", version = "0.9" }
 miden-node-proto          = { path = "crates/proto", version = "0.9" }
 miden-node-proto-build    = { path = "proto", version = "0.9" }
 miden-node-rpc            = { path = "crates/rpc", version = "0.9" }

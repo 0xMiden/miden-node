@@ -4,7 +4,6 @@ mod blocks;
 mod db;
 mod errors;
 mod genesis;
-mod nullifier_tree;
 mod server;
 mod state;
 

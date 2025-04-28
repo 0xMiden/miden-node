@@ -36,12 +36,17 @@ pub struct MockStoreSuccessBuilder {
 impl MockStoreSuccessBuilder {
     pub fn from_batches<'a>(batches_iter: impl Iterator<Item = &'a ProvenBatch> + Clone) -> Self {
         let accounts_smt = {
-            let accounts = batches_iter.clone().flat_map(|batch| {
-                batch
-                    .account_updates()
-                    .iter()
-                    .map(|(account_id, update)| (*account_id, update.initial_state_commitment()))
-            });
+            // We have to allocate the vector so we can call AccountTree::with_entries with an
+            // ExactSizeIterator.
+            let accounts = batches_iter
+                .clone()
+                .flat_map(|batch| {
+                    batch.account_updates().iter().map(|(account_id, update)| {
+                        (*account_id, update.initial_state_commitment())
+                    })
+                })
+                .collect::<Vec<_>>();
+
             AccountTree::with_entries(accounts).unwrap()
         };
 
@@ -54,7 +59,7 @@ impl MockStoreSuccessBuilder {
         }
     }
 
-    pub fn from_accounts(accounts: impl Iterator<Item = (AccountId, Digest)>) -> Self {
+    pub fn from_accounts(accounts: impl ExactSizeIterator<Item = (AccountId, Digest)>) -> Self {
         let accounts_smt = AccountTree::with_entries(accounts).unwrap();
 
         Self {

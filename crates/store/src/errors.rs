@@ -2,14 +2,10 @@ use std::io;
 
 use deadpool::managed::PoolError;
 use miden_objects::{
-    AccountDeltaError, AccountError, AccountTreeError, NoteError,
+    AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
     block::BlockNumber,
-    crypto::{
-        hash::rpo::RpoDigest,
-        merkle::{MerkleError, MmrError},
-        utils::DeserializationError,
-    },
+    crypto::{hash::rpo::RpoDigest, merkle::MmrError, utils::DeserializationError},
     note::Nullifier,
     transaction::OutputNote,
 };
@@ -17,18 +13,6 @@ use rusqlite::types::FromSqlError;
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 use tonic::Status;
-
-// INTERNAL ERRORS
-// =================================================================================================
-
-#[derive(Debug, Error)]
-pub enum NullifierTreeError {
-    #[error("failed to create nullifier tree")]
-    CreationFailed(#[source] MerkleError),
-
-    #[error("failed to mutate nullifier tree")]
-    MutationFailed(#[source] MerkleError),
-}
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -162,6 +146,10 @@ pub enum InvalidBlockError {
     NewBlockInvalidNullifierRoot,
     #[error("new block `prev_block_commitment` must match the chain's tip")]
     NewBlockInvalidPrevCommitment,
+    #[error("nullifier in new block is already spent")]
+    NewBlockNullifierAlreadySpent(#[source] NullifierTreeError),
+    #[error("duplicate account ID prefix in new block")]
+    NewBlockDuplicateAccountIdPrefix(#[source] AccountTreeError),
 }
 
 #[derive(Error, Debug)]

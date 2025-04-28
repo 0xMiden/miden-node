@@ -1878,11 +1878,11 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
 dependencies = [
  "miden-crypto",
- "miden-lib",
- "miden-objects",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "thiserror 2.0.12",
 ]
 
@@ -1938,13 +1938,13 @@ dependencies = [
  "fantoccini",
  "http 1.3.1",
  "http-body-util",
- "miden-lib",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-node-block-producer",
  "miden-node-proto",
  "miden-node-utils",
- "miden-objects",
- "miden-proving-service-client",
- "miden-tx",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-proving-service-client 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
+ "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "rand 0.9.1",
  "rand_chacha 0.9.0",
  "serde",
@@ -1976,10 +1976,23 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
 dependencies = [
  "miden-assembly",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
+ "miden-stdlib",
+ "regex",
+ "thiserror 2.0.12",
+ "walkdir",
+]
+
+[[package]]
+name = "miden-lib"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
+dependencies = [
+ "miden-assembly",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-stdlib",
  "regex",
  "thiserror 2.0.12",
@@ -2035,12 +2048,12 @@ dependencies = [
  "anyhow",
  "clap",
  "figment",
- "miden-lib",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-node-block-producer",
  "miden-node-rpc",
  "miden-node-store",
  "miden-node-utils",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "rand 0.9.1",
  "rand_chacha 0.9.0",
  "tokio",
@@ -2058,14 +2071,14 @@ dependencies = [
  "itertools 0.14.0",
  "miden-air",
  "miden-block-prover",
- "miden-lib",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-node-proto",
  "miden-node-test-macro",
  "miden-node-utils",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-processor",
- "miden-proving-service-client",
- "miden-tx",
+ "miden-proving-service-client 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-tx-batch-prover",
  "pretty_assertions",
  "rand 0.9.1",
@@ -2088,7 +2101,7 @@ dependencies = [
  "hex",
  "miden-node-proto-build",
  "miden-node-utils",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "proptest",
  "prost",
  "prost-build",
@@ -2115,8 +2128,8 @@ dependencies = [
  "anyhow",
  "miden-node-proto",
  "miden-node-utils",
- "miden-objects",
- "miden-tx",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "tokio",
  "tokio-stream",
  "tonic",
@@ -2133,11 +2146,11 @@ dependencies = [
  "deadpool",
  "deadpool-sync",
  "hex",
- "miden-lib",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-node-proto",
  "miden-node-test-macro",
  "miden-node-utils",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "regex",
  "rusqlite",
  "rusqlite_migration",
@@ -2158,12 +2171,12 @@ dependencies = [
  "futures",
  "miden-air",
  "miden-block-prover",
- "miden-lib",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-node-block-producer",
  "miden-node-proto",
  "miden-node-store",
  "miden-node-utils",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "rand 0.9.1",
  "rayon",
  "tokio",
@@ -2187,7 +2200,7 @@ dependencies = [
  "figment",
  "http 1.3.1",
  "itertools 0.14.0",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -2206,7 +2219,25 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
+dependencies = [
+ "bech32",
+ "getrandom 0.3.2",
+ "miden-assembly",
+ "miden-core",
+ "miden-crypto",
+ "miden-processor",
+ "miden-verifier",
+ "semver 1.0.26",
+ "serde",
+ "thiserror 2.0.12",
+ "toml",
+]
+
+[[package]]
+name = "miden-objects"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2253,12 +2284,32 @@ dependencies = [
 [[package]]
 name = "miden-proving-service-client"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
 dependencies = [
  "async-trait",
  "getrandom 0.3.2",
- "miden-objects",
- "miden-tx",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
+ "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
+ "miette",
+ "prost",
+ "prost-build",
+ "protox",
+ "thiserror 2.0.12",
+ "tokio",
+ "tonic",
+ "tonic-build",
+ "tonic-web-wasm-client",
+]
+
+[[package]]
+name = "miden-proving-service-client"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
+dependencies = [
+ "async-trait",
+ "getrandom 0.3.2",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miette",
  "prost",
  "prost-build",
@@ -2283,11 +2334,27 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
 dependencies = [
  "async-trait",
- "miden-lib",
- "miden-objects",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
+ "miden-processor",
+ "miden-prover",
+ "miden-verifier",
+ "rand 0.9.1",
+ "thiserror 2.0.12",
+ "winter-maybe-async",
+]
+
+[[package]]
+name = "miden-tx"
+version = "0.9.0"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
+dependencies = [
+ "async-trait",
+ "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-processor",
  "miden-prover",
  "miden-verifier",
@@ -2300,13 +2367,13 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#c9bcf372696a6a4a9cb8789e6feb86a2d169b55b"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
 dependencies = [
  "miden-core",
  "miden-crypto",
- "miden-objects",
+ "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-processor",
- "miden-tx",
+ "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "thiserror 2.0.12",
 ]
 

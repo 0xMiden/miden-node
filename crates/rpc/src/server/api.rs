@@ -27,9 +27,7 @@ use miden_objects::{
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
-    Request, Response, Status,
-    service::interceptor::InterceptedService,
-    transport::{Channel, Error},
+    Request, Response, Status, service::interceptor::InterceptedService, transport::Channel,
 };
 use tracing::{debug, info, instrument};
 

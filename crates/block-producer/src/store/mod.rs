@@ -30,10 +30,7 @@ use miden_objects::{
     utils::Serializable,
 };
 use miden_processor::crypto::RpoDigest;
-use tonic::{
-    service::interceptor::InterceptedService,
-    transport::Channel,
-};
+use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{debug, info, instrument};
 
 use crate::{COMPONENT, errors::StoreError};

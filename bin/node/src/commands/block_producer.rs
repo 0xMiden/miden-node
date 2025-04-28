@@ -84,8 +84,8 @@ impl BlockProducerCommand {
         BlockProducer {
             block_producer_address,
             store_address,
-            batch_prover: batch_prover_url,
-            block_prover: block_prover_url,
+            batch_prover_url,
+            block_prover_url,
             batch_interval,
             block_interval,
         }

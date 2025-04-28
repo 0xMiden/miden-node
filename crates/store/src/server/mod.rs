@@ -20,6 +20,7 @@ use crate::{
 mod api;
 mod db_maintenance;
 
+/// The store server.
 pub struct Store {
     pub listener: TcpListener,
     pub data_directory: PathBuf,

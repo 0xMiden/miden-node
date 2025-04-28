@@ -133,15 +133,14 @@ pub struct StoreClient {
 }
 
 impl StoreClient {
+    /// Creates a new store client with a lazy connection.
     pub fn new(store_address: SocketAddr) -> Self {
-        let store = {
-            let store_url = format!("http://{store_address}");
-            // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-            let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-            let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
-            info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
-            store
-        };
+        let store_url = format!("http://{store_address}");
+        // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
+        let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
+        let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+        info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+
         Self { inner: store }
     }
 

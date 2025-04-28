@@ -28,16 +28,21 @@ use crate::{
     store::StoreClient,
 };
 
-/// Block producer's configuration.
+/// The block producer server.
+///
+/// Specifies how to connect to the store, batch prover, and block prover components.
+/// The connection to the store is established at startup and retried with exponential backoff
+/// until the store becomes available. Once the connection is established, the block producer
+/// will start serving requests.
 pub struct BlockProducer {
     /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_address: SocketAddr,
     /// The address of the batch prover component.
-    pub batch_prover: Option<Url>,
+    pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
-    pub block_prover: Option<Url>,
+    pub block_prover_url: Option<Url>,
     /// The interval at which to produce batches.
     pub batch_interval: Duration,
     /// The interval at which to produce blocks.
@@ -90,11 +95,11 @@ impl BlockProducer {
         info!(target: COMPONENT, "Server initialized");
 
         let block_builder =
-            BlockBuilder::new(store.clone(), self.block_prover, self.block_interval);
+            BlockBuilder::new(store.clone(), self.block_prover_url, self.block_interval);
         let batch_builder = BatchBuilder::new(
             store.clone(),
             SERVER_NUM_BATCH_BUILDERS,
-            self.batch_prover,
+            self.batch_prover_url,
             self.batch_interval,
         );
         let mempool = Mempool::shared(
@@ -293,8 +298,8 @@ mod test {
             BlockProducer {
                 block_producer_address: block_producer_addr,
                 store_address: store_addr,
-                batch_prover: None,
-                block_prover: None,
+                batch_prover_url: None,
+                block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
             }

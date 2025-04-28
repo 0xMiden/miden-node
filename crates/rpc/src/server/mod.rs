@@ -18,7 +18,7 @@ mod api;
 pub struct Rpc {
     pub listener: TcpListener,
     pub store: SocketAddr,
-    pub block_producer: SocketAddr,
+    pub block_producer: Option<SocketAddr>,
 }
 
 impl Rpc {
@@ -30,7 +30,7 @@ impl Rpc {
         let api = api::RpcService::new(self.store, self.block_producer);
         let api_service = api_server::ApiServer::new(api);
 
-        info!(target: COMPONENT, "Server initialized");
+        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
 
         tonic::transport::Server::builder()
             .accept_http1(true)
@@ -93,7 +93,7 @@ mod test {
                 Rpc {
                     listener: rpc_listener,
                     store: store_addr,
-                    block_producer: block_producer_addr,
+                    block_producer: Some(block_producer_addr),
                 }
                 .serve()
                 .await

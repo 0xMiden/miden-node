@@ -124,7 +124,7 @@ message GetBlockInputsResponse {
     // The serialized chain MMR which includes proofs for all blocks referenced by the
     // above note inclusion proofs as well as proofs for inclusion of the requested blocks
     // referenced by the batches in the block.
-    bytes chain_mmr = 3;
+    bytes partial_block_chain = 3;
 
     // The state commitments of the requested accounts and their authentication paths.
     repeated AccountWitness account_witnesses = 4;
@@ -144,7 +144,7 @@ message GetBatchInputsResponse {
   // The serialized chain MMR which includes proofs for all blocks referenced by the
   // above note inclusion proofs as well as proofs for inclusion of the blocks referenced
   // by the transactions in the batch.
-  bytes chain_mmr = 3;
+  bytes partial_block_chain = 3;
 }
 
 // An account returned as a response to the `GetTransactionInputs`.

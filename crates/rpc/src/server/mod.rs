@@ -22,7 +22,7 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        let api = api::RpcService::new(self.store, self.block_producer).unwrap();
+        let api = api::RpcService::new(self.store, self.block_producer);
         let api_service = api_server::ApiServer::new(api);
 
         info!(target: COMPONENT, "Server initialized");

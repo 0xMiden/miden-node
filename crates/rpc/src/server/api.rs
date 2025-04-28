@@ -48,13 +48,11 @@ pub struct RpcService {
 }
 
 impl RpcService {
-    pub(super) fn new(
-        store_address: SocketAddr,
-        block_producer_address: SocketAddr,
-    ) -> Result<Self, Error> {
+    pub(super) fn new(store_address: SocketAddr, block_producer_address: SocketAddr) -> Self {
         let store = {
             let store_url = format!("http://{store_address}");
-            let channel = tonic::transport::Endpoint::try_from(store_url)?.connect_lazy();
+            // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
+            let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
             let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
             info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
             store
@@ -62,7 +60,9 @@ impl RpcService {
 
         let block_producer = {
             let block_producer_url = format!("http://{block_producer_address}");
-            let channel = tonic::transport::Endpoint::try_from(block_producer_url)?.connect_lazy();
+            // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
+            let channel =
+                tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
             let block_producer =
                 block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor);
             info!(
@@ -73,7 +73,7 @@ impl RpcService {
             block_producer
         };
 
-        Ok(Self { store, block_producer })
+        Self { store, block_producer }
     }
 }
 

@@ -122,6 +122,10 @@ impl NoteRecord {
         let script = row.get_ref(12)?.as_blob_or_null()?;
         let serial_num = row.get_ref(13)?.as_blob_or_null()?;
 
+        debug_assert!(
+            !(assets.is_some() ^ inputs.is_some() ^ script.is_some() ^ serial_num.is_some()),
+            "assets, inputs, script, serial_num must be either all present or all absent"
+        );
         let details = if let (Some(assets), Some(inputs), Some(script), Some(serial_num)) =
             (assets, inputs, script, serial_num)
         {

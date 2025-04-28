@@ -3,20 +3,18 @@ use std::{collections::HashMap, net::SocketAddr, time::Duration};
 use anyhow::{Context, Result};
 use miden_node_proto::generated::{
     block_producer::api_server, requests::SubmitProvenTransactionRequest,
-    responses::SubmitProvenTransactionResponse, store::api_client as store_client,
+    responses::SubmitProvenTransactionResponse,
 };
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
+    tracing::grpc::block_producer_trace_fn,
 };
-use miden_objects::{
-    block::BlockNumber, transaction::ProvenTransaction, utils::serde::Deserializable,
-};
+use miden_objects::{transaction::ProvenTransaction, utils::serde::Deserializable};
 use tokio::{net::TcpListener, sync::Mutex};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, info, instrument};
+use tracing::{debug, error, info, instrument};
 use url::Url;
 
 use crate::{
@@ -25,95 +23,91 @@ use crate::{
     batch_builder::BatchBuilder,
     block_builder::BlockBuilder,
     domain::transaction::AuthenticatedTransaction,
-    errors::{AddTransactionError, BlockProducerError, VerifyTxError},
+    errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
     mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
     store::StoreClient,
 };
 
-/// Represents an initialized block-producer component where the RPC connection is open,
-/// but not yet actively responding to requests.
+/// The block producer server.
 ///
-/// Separating the connection binding from the server spawning allows the caller to connect other
-/// components to the store without resorting to sleeps or other mechanisms to spawn dependent
-/// components.
+/// Specifies how to connect to the store, batch prover, and block prover components.
+/// The connection to the store is established at startup and retried with exponential backoff
+/// until the store becomes available. Once the connection is established, the block producer
+/// will start serving requests.
 pub struct BlockProducer {
-    batch_builder: BatchBuilder,
-    block_builder: BlockBuilder,
-    batch_budget: BatchBudget,
-    block_budget: BlockBudget,
-    state_retention: usize,
-    expiration_slack: u32,
-    rpc_listener: TcpListener,
-    store: StoreClient,
-    chain_tip: BlockNumber,
+    /// The address of the block producer component.
+    pub block_producer_address: SocketAddr,
+    /// The address of the store component.
+    pub store_address: SocketAddr,
+    /// The address of the batch prover component.
+    pub batch_prover_url: Option<Url>,
+    /// The address of the block prover component.
+    pub block_prover_url: Option<Url>,
+    /// The interval at which to produce batches.
+    pub batch_interval: Duration,
+    /// The interval at which to produce blocks.
+    pub block_interval: Duration,
 }
 
 impl BlockProducer {
-    /// Performs all setup tasks required before [`serve`](Self::serve) can be called.
+    /// Serves the block-producer RPC API, the batch-builder and the block-builder.
     ///
-    /// This includes connecting to the store and retrieving the latest chain state.
-    pub async fn init(
-        listener: TcpListener,
-        store_address: SocketAddr,
-        batch_prover: Option<Url>,
-        block_prover: Option<Url>,
-        batch_interval: Duration,
-        block_interval: Duration,
-    ) -> Result<Self> {
-        info!(target: COMPONENT, endpoint=?listener, store=%store_address, "Initializing server");
+    /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
+    ///       a fatal error is encountered.
+    pub async fn serve(self) -> anyhow::Result<()> {
+        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
 
-        let store_url = format!("http://{store_address}");
-        let channel = tonic::transport::Endpoint::try_from(store_url.clone())
-            .with_context(|| format!("failed to create store endpoint for {store_url}"))?
-            .connect()
+        let store = StoreClient::new(self.store_address);
+
+        // retry fetching the chain tip from the store until it succeeds.
+        let mut retries_counter = 0;
+        let chain_tip = loop {
+            match store.latest_header().await {
+                Err(StoreError::GrpcClientError(err)) => {
+                    // exponential backoff with base 500ms and max 30s
+                    let backoff = Duration::from_millis(500)
+                        .saturating_mul(1 << retries_counter)
+                        .min(Duration::from_secs(30));
+
+                    error!(
+                        store = %self.store_address,
+                        ?backoff,
+                        %retries_counter,
+                        %err,
+                        "store connection failed while fetching chain tip, retrying"
+                    );
+
+                    retries_counter += 1;
+                    tokio::time::sleep(backoff).await;
+                },
+                Ok(header) => break header.block_num(),
+                Err(e) => {
+                    error!(target: COMPONENT, %e, "failed to fetch chain tip from store");
+                    return Err(e.into());
+                },
+            }
+        };
+
+        let listener = TcpListener::bind(self.block_producer_address)
             .await
-            .with_context(|| format!("failed to connect to store on {store_url}"))?;
-
-        let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
-        let store = StoreClient::new(store);
-
-        let latest_header = store.latest_header().await.context("failed to get latest header")?;
-        let chain_tip = latest_header.block_num();
+            .context("failed to bind to block producer address")?;
 
         info!(target: COMPONENT, "Server initialized");
 
-        Ok(Self {
-            block_builder: BlockBuilder::new(store.clone(), block_prover, block_interval),
-            batch_builder: BatchBuilder::new(
-                store.clone(),
-                SERVER_NUM_BATCH_BUILDERS,
-                batch_prover,
-                batch_interval,
-            ),
-            batch_budget: BatchBudget::default(),
-            block_budget: BlockBudget::default(),
-            state_retention: SERVER_MEMPOOL_STATE_RETENTION,
-            expiration_slack: SERVER_MEMPOOL_EXPIRATION_SLACK,
-            store,
-            rpc_listener: listener,
-            chain_tip,
-        })
-    }
-
-    pub async fn serve(self) -> Result<(), BlockProducerError> {
-        let Self {
-            batch_builder,
-            block_builder,
-            batch_budget,
-            block_budget,
-            state_retention,
-            rpc_listener,
-            store,
-            chain_tip,
-            expiration_slack,
-        } = self;
-
+        let block_builder =
+            BlockBuilder::new(store.clone(), self.block_prover_url, self.block_interval);
+        let batch_builder = BatchBuilder::new(
+            store.clone(),
+            SERVER_NUM_BATCH_BUILDERS,
+            self.batch_prover_url,
+            self.batch_interval,
+        );
         let mempool = Mempool::shared(
             chain_tip,
-            batch_budget,
-            block_budget,
-            state_retention,
-            expiration_slack,
+            BatchBudget::default(),
+            BlockBudget::default(),
+            SERVER_MEMPOOL_STATE_RETENTION,
+            SERVER_MEMPOOL_EXPIRATION_SLACK,
         );
 
         // Spawn rpc server and batch and block provers.
@@ -142,12 +136,9 @@ impl BlockProducer {
                 }
             })
             .id();
-        let rpc_id =
-            tasks
-                .spawn(async move {
-                    BlockProducerRpcServer::new(mempool, store).serve(rpc_listener).await
-                })
-                .id();
+        let rpc_id = tasks
+            .spawn(async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await })
+            .id();
 
         let task_ids = HashMap::from([
             (batch_builder_id, "batch-builder"),
@@ -175,7 +166,7 @@ impl BlockProducer {
                 Ok(_) => Err(BlockProducerError::TaskFailedSuccesfully { task }),
                 Err(source) => Err(BlockProducerError::TonicTransportError { task, source }),
             })
-            .and_then(|x| x)
+            .and_then(|x| x)?
     }
 }
 
@@ -258,5 +249,155 @@ impl BlockProducerRpcServer {
         self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
             SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
         })
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::time::Duration;
+
+    use miden_air::{ExecutionProof, HashFunction};
+    use miden_node_proto::generated::{
+        block_producer::api_client as block_producer_client,
+        requests::SubmitProvenTransactionRequest, responses::SubmitProvenTransactionResponse,
+    };
+    use miden_node_store::{GenesisState, Store};
+    use miden_objects::{
+        Digest,
+        account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType, NetworkAccount},
+        transaction::ProvenTransactionBuilder,
+    };
+    use miden_tx::utils::Serializable;
+    use tokio::{net::TcpListener, runtime, task, time::sleep};
+    use tonic::transport::{Channel, Endpoint};
+    use winterfell::Proof;
+
+    use crate::BlockProducer;
+
+    #[tokio::test]
+    async fn block_producer_startup_is_robust_to_network_failures() {
+        // This test starts the block producer and tests that it starts serving only after the store
+        // is started.
+
+        // get the addresses for the store and block producer
+        let store_addr = {
+            let store_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
+            store_listener.local_addr().expect("store should get a local address")
+        };
+        let block_producer_addr = {
+            let block_producer_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
+            block_producer_listener
+                .local_addr()
+                .expect("Failed to get block-producer address")
+        };
+
+        // start the block producer
+        task::spawn(async move {
+            BlockProducer {
+                block_producer_address: block_producer_addr,
+                store_address: store_addr,
+                batch_prover_url: None,
+                block_prover_url: None,
+                batch_interval: Duration::from_millis(500),
+                block_interval: Duration::from_millis(500),
+            }
+            .serve()
+            .await
+            .unwrap();
+        });
+
+        // test: connecting to the block producer should fail until the store is started
+        let block_producer_endpoint =
+            Endpoint::try_from(format!("http://{block_producer_addr}")).expect("valid url");
+        let block_producer_client =
+            block_producer_client::ApiClient::connect(block_producer_endpoint.clone()).await;
+        assert!(block_producer_client.is_err());
+
+        // start the store
+        let data_directory = tempfile::tempdir().expect("tempdir should be created");
+        let store_runtime = {
+            let genesis_state = GenesisState::new(vec![], 1, 1);
+            Store::bootstrap(genesis_state.clone(), data_directory.path())
+                .expect("store should bootstrap");
+            let dir = data_directory.path().to_path_buf();
+            let store_listener =
+                TcpListener::bind(store_addr).await.expect("store should bind a port");
+            // in order to later kill the store, we need to spawn a new runtime and run the store on
+            // it. That allows us to kill all the tasks spawned by the store when we
+            // kill the runtime.
+            let store_runtime =
+                runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
+            store_runtime.spawn(async move {
+                Store {
+                    listener: store_listener,
+                    data_directory: dir,
+                }
+                .serve()
+                .await
+                .expect("store should start serving");
+            });
+            store_runtime
+        };
+
+        // we need to wait for the exponential backoff of the block producer to connect to the store
+        sleep(Duration::from_secs(1)).await;
+
+        let block_producer_client =
+            block_producer_client::ApiClient::connect(block_producer_endpoint)
+                .await
+                .expect("block producer client should connect");
+
+        // test: request against block-producer api should succeed
+        let response = send_request(block_producer_client.clone(), 0).await;
+        assert!(response.is_ok());
+
+        // kill the store
+        store_runtime.shutdown_background();
+
+        // test: request against block-producer api should fail immediately
+        let response = send_request(block_producer_client.clone(), 1).await;
+        assert!(response.is_err());
+
+        // test: restart the store and request should succeed
+        let store_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
+        task::spawn(async move {
+            Store {
+                listener: store_listener,
+                data_directory: data_directory.path().to_path_buf(),
+            }
+            .serve()
+            .await
+            .expect("store should start serving");
+        });
+        let response = send_request(block_producer_client.clone(), 2).await;
+        assert!(response.is_ok());
+    }
+
+    /// Creates a dummy transaction and submits it to the block producer.
+    async fn send_request(
+        mut client: block_producer_client::ApiClient<Channel>,
+        i: u8,
+    ) -> Result<tonic::Response<SubmitProvenTransactionResponse>, tonic::Status> {
+        let tx = ProvenTransactionBuilder::new(
+            AccountId::dummy(
+                [0; 15],
+                AccountIdVersion::Version0,
+                AccountType::RegularAccountImmutableCode,
+                AccountStorageMode::Private,
+                NetworkAccount::Disabled,
+            ),
+            Digest::default(),
+            [i; 32].try_into().unwrap(),
+            0.into(),
+            Digest::default(),
+            u32::MAX.into(),
+            ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
+        )
+        .build()
+        .unwrap();
+        let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+        client.submit_proven_transaction(request).await
     }
 }

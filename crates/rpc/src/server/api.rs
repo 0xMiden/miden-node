@@ -27,9 +27,7 @@ use miden_objects::{
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
-    Request, Response, Status,
-    service::interceptor::InterceptedService,
-    transport::{Channel, Error},
+    Request, Response, Status, service::interceptor::InterceptedService, transport::Channel,
 };
 use tracing::{debug, info, instrument};
 
@@ -48,27 +46,32 @@ pub struct RpcService {
 }
 
 impl RpcService {
-    pub(super) async fn new(
-        store_address: SocketAddr,
-        block_producer_address: SocketAddr,
-    ) -> Result<Self, Error> {
-        let store_url = format!("http://{store_address}");
-        let channel = tonic::transport::Endpoint::try_from(store_url)?.connect().await?;
-        let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
-        info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+    pub(super) fn new(store_address: SocketAddr, block_producer_address: SocketAddr) -> Self {
+        let store = {
+            let store_url = format!("http://{store_address}");
+            // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
+            let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
+            let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+            store
+        };
 
-        let block_producer_url = format!("http://{block_producer_address}");
-        let channel = tonic::transport::Endpoint::try_from(block_producer_url)?.connect().await?;
-        let block_producer =
-            block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+        let block_producer = {
+            let block_producer_url = format!("http://{block_producer_address}");
+            // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
+            let channel =
+                tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
+            let block_producer =
+                block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            info!(
+                target: COMPONENT,
+                block_producer_endpoint = %block_producer_address,
+                "Block producer client initialized",
+            );
+            block_producer
+        };
 
-        info!(
-            target: COMPONENT,
-            block_producer_endpoint = %block_producer_address,
-            "Block producer client initialized",
-        );
-
-        Ok(Self { store, block_producer })
+        Self { store, block_producer }
     }
 }
 

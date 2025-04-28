@@ -20,16 +20,10 @@ use crate::{
 mod api;
 mod db_maintenance;
 
-/// Represents an initialized store component where the RPC connection is open, but not yet actively
-/// responding to requests.
-///
-/// Separating the connection binding from the server spawning allows the caller to connect other
-/// components to the store without resorting to sleeps or other mechanisms to spawn dependent
-/// components.
+/// The store server.
 pub struct Store {
-    api_service: api_server::ApiServer<api::StoreApi>,
-    db_maintenance_service: DbMaintenance,
-    listener: TcpListener,
+    pub listener: TcpListener,
+    pub data_directory: PathBuf,
 }
 
 impl Store {
@@ -39,7 +33,6 @@ impl Store {
         name = "store.bootstrap",
         skip_all,
         err,
-        fields(data_directory = %data_directory.display())
     )]
     pub fn bootstrap(genesis: GenesisState, data_directory: &Path) -> anyhow::Result<()> {
         let genesis = genesis
@@ -69,11 +62,13 @@ impl Store {
         Ok(())
     }
 
-    /// Performs initialization tasks required before [`serve`](Self::serve) can be called.
-    pub async fn init(listener: TcpListener, data_directory: PathBuf) -> anyhow::Result<Self> {
-        info!(target: COMPONENT, endpoint=?listener, ?data_directory, "Loading database");
+    /// Serves the store's RPC API and DB maintenance background task.
+    ///
+    /// Note: this blocks until the server dies.
+    pub async fn serve(self) -> anyhow::Result<()> {
+        info!(target: COMPONENT, endpoint=?self.listener, ?self.data_directory, "Loading database");
 
-        let data_directory = DataDirectory::load(data_directory)?;
+        let data_directory = DataDirectory::load(self.data_directory)?;
 
         let block_store = Arc::new(BlockStore::load(data_directory.block_store_dir())?);
 
@@ -90,22 +85,11 @@ impl Store {
 
         info!(target: COMPONENT, "Database loaded");
 
-        Ok(Self {
-            api_service,
-            db_maintenance_service,
-            listener,
-        })
-    }
-
-    /// Serves the store's RPC API and DB maintenance background task.
-    ///
-    /// Note: this blocks until the server dies.
-    pub async fn serve(self) -> anyhow::Result<()> {
-        tokio::spawn(self.db_maintenance_service.run());
+        tokio::spawn(db_maintenance_service.run());
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
             .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
-            .add_service(self.api_service)
+            .add_service(api_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve store API")

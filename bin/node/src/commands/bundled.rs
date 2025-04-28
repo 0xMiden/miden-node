@@ -1,8 +1,8 @@
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use anyhow::Context;
-use miden_node_block_producer::server::BlockProducer;
-use miden_node_rpc::server::Rpc;
+use miden_node_block_producer::BlockProducer;
+use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};
@@ -137,43 +137,60 @@ impl BundledCommand {
         let grpc_store = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to store gRPC endpoint")?;
-        let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to block-producer gRPC endpoint")?;
-
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
-        let block_producer_address = grpc_block_producer
-            .local_addr()
-            .context("Failed to retrieve the block-producer's gRPC address")?;
+
+        let block_producer_address = {
+            let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("Failed to bind to block-producer gRPC endpoint")?;
+            grpc_block_producer
+                .local_addr()
+                .context("Failed to retrieve the block-producer's gRPC address")?
+        };
 
         let mut join_set = JoinSet::new();
 
         // Start store. The store endpoint is available after loading completes.
-        let store = Store::init(grpc_store, data_directory).await.context("Loading store")?;
-        let store_id =
-            join_set.spawn(async move { store.serve().await.context("Serving store") }).id();
+        let store_id = join_set
+            .spawn(async move {
+                Store { listener: grpc_store, data_directory }
+                    .serve()
+                    .await
+                    .context("failed while serving store component")
+            })
+            .id();
 
         // Start block-producer. The block-producer's endpoint is available after loading completes.
-        let block_producer = BlockProducer::init(
-            grpc_block_producer,
-            store_address,
-            batch_prover_url,
-            block_prover_url,
-            batch_interval,
-            block_interval,
-        )
-        .await
-        .context("Loading block-producer")?;
         let block_producer_id = join_set
-            .spawn(async move { block_producer.serve().await.context("Serving block-producer") })
+            .spawn(async move {
+                BlockProducer {
+                    block_producer_address,
+                    store_address,
+                    batch_prover_url,
+                    block_prover_url,
+                    batch_interval,
+                    block_interval,
+                }
+                .serve()
+                .await
+                .context("failed while serving block-producer component")
+            })
             .id();
 
         // Start RPC component.
-        let rpc = Rpc::init(grpc_rpc, store_address, block_producer_address)
-            .await
-            .context("Loading RPC")?;
-        let rpc_id = join_set.spawn(async move { rpc.serve().await.context("Serving RPC") }).id();
+        let rpc_id = join_set
+            .spawn(async move {
+                Rpc {
+                    listener: grpc_rpc,
+                    store: store_address,
+                    block_producer: block_producer_address,
+                }
+                .serve()
+                .await
+                .context("failed while serving RPC component")
+            })
+            .id();
 
         // Lookup table so we can identify the failed component.
         let component_ids = HashMap::from([

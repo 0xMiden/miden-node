@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{Display, Formatter},
+    net::SocketAddr,
     num::NonZeroU32,
 };
 
@@ -126,14 +127,20 @@ type InnerClient = store_client::ApiClient<InterceptedService<Channel, OtelInter
 /// Interface to the store's gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct StoreClient {
     inner: InnerClient,
 }
 
 impl StoreClient {
-    /// TODO: this should probably take store connection string and create a connection internally
-    pub fn new(store: InnerClient) -> Self {
+    /// Creates a new store client with a lazy connection.
+    pub fn new(store_address: SocketAddr) -> Self {
+        let store_url = format!("http://{store_address}");
+        // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
+        let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
+        let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+        info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+
         Self { inner: store }
     }
 

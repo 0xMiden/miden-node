@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -78,8 +79,8 @@ pub async fn seed_store(
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
-    let store_api_client = start_store(data_directory.clone()).await;
-    let store_client = StoreClient::new(store_api_client);
+    let (_, store_addr) = start_store(data_directory.clone()).await;
+    let store_client = StoreClient::new(store_addr);
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
@@ -483,22 +484,31 @@ async fn get_block_inputs(
     inputs
 }
 
-/// Runs the store with the given data directory. Returns a gRPC client to the store.
+/// Runs the store with the given data directory. Returns a tuple with:
+/// - a gRPC client to access the store
+/// - the address of the store
 pub async fn start_store(
     data_directory: PathBuf,
-) -> ApiClient<InterceptedService<Channel, OtelInterceptor>> {
-    let store_addr = {
-        let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
-        let store_addr = grpc_store.local_addr().expect("Failed to get store address");
-        let store = Store::init(grpc_store, data_directory).await.expect("Failed to init store");
-        task::spawn(async move { store.serve().await.unwrap() });
-        store_addr
-    };
+) -> (ApiClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
+    let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
+    let store_addr = grpc_store.local_addr().expect("Failed to get store address");
+    let dir = data_directory.clone();
+
+    task::spawn(async move {
+        Store {
+            listener: grpc_store,
+            data_directory: dir,
+        }
+        .serve()
+        .await
+        .expect("Failed to start serving store");
+    });
+
     let channel = tonic::transport::Endpoint::try_from(format!("http://{store_addr}",))
         .unwrap()
         .connect()
         .await
         .expect("Failed to connect to store");
 
-    ApiClient::with_interceptor(channel, OtelInterceptor)
+    (ApiClient::with_interceptor(channel, OtelInterceptor), store_addr)
 }

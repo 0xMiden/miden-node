@@ -125,7 +125,7 @@ pub struct GetBlockInputsResponse {
     /// above note inclusion proofs as well as proofs for inclusion of the requested blocks
     /// referenced by the batches in the block.
     #[prost(bytes = "vec", tag = "3")]
-    pub chain_mmr: ::prost::alloc::vec::Vec<u8>,
+    pub partial_block_chain: ::prost::alloc::vec::Vec<u8>,
     /// The state commitments of the requested accounts and their authentication paths.
     #[prost(message, repeated, tag = "4")]
     pub account_witnesses: ::prost::alloc::vec::Vec<AccountWitness>,
@@ -146,7 +146,7 @@ pub struct GetBatchInputsResponse {
     /// above note inclusion proofs as well as proofs for inclusion of the blocks referenced
     /// by the transactions in the batch.
     #[prost(bytes = "vec", tag = "3")]
-    pub chain_mmr: ::prost::alloc::vec::Vec<u8>,
+    pub partial_block_chain: ::prost::alloc::vec::Vec<u8>,
 }
 /// An account returned as a response to the `GetTransactionInputs`.
 #[derive(Clone, PartialEq, ::prost::Message)]

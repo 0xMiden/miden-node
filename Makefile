@@ -107,9 +107,7 @@ docker-build-node: ## Builds the Miden node using Docker
 .PHONY: docker-run-node
 docker-run-node: ## Runs the Miden node as a Docker container
 	docker volume create miden-db
-	@ABSOLUTE_PATH="$$(pwd)/config/miden-node.toml" && \
 	docker run --name miden-node \
 			   -p 57291:57291 \
                -v miden-db:/db \
-               -v "$${ABSOLUTE_PATH}:/miden-node.toml" \
                -d miden-node-image

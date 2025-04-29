@@ -228,7 +228,6 @@ impl BlockProducerRpcServer {
 
         let tx_id = tx.id();
 
-        // TODO: which of these should be moved to span fields?
         info!(
             target: COMPONENT,
             tx_id = %tx_id.to_hex(),

@@ -523,7 +523,10 @@ impl State {
         // - so none of the block headers block numbers should exceed the chain length of the
         //   partial MMR,
         // - and we've added blocks to a BTreeSet, so there can be no duplicates.
-        let partial_block_chain = PartialBlockChain::new(partial_mmr, headers)
+        //
+        // We construct headers and partial MMR in concert, so they are consistent. This is why we
+        // can call the unchecked constructor.
+        let partial_block_chain = PartialBlockChain::new_unchecked(partial_mmr, headers)
             .expect("partial mmr and block headers should be consistent");
 
         Ok(BatchInputs {
@@ -665,7 +668,10 @@ impl State {
         // - so none of the block header's block numbers should exceed the chain length of the
         //   partial MMR,
         // - and we've added blocks to a BTreeSet, so there can be no duplicates.
-        let partial_block_chain = PartialBlockChain::new(partial_mmr, headers)
+        //
+        // We construct headers and partial MMR in concert, so they are consistent. This is why we
+        // can call the unchecked constructor.
+        let partial_block_chain = PartialBlockChain::new_unchecked(partial_mmr, headers)
             .expect("partial mmr and block headers should be consistent");
 
         Ok(BlockInputs::new(

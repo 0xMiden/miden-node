@@ -59,7 +59,7 @@ impl RpcService {
             store
         };
 
-        let block_producer = if let Some(block_producer_address) = block_producer_address {
+        let block_producer = block_producer_address.map(|block_producer_address| {
             let block_producer_url = format!("http://{block_producer_address}");
             // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
             let channel =
@@ -71,10 +71,8 @@ impl RpcService {
                 block_producer_endpoint = %block_producer_address,
                 "Block producer client initialized",
             );
-            Some(block_producer)
-        } else {
-            None
-        };
+            block_producer
+        });
 
         Self { store, block_producer }
     }
@@ -198,25 +196,24 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<SubmitProvenTransactionResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
-        if let Some(block_producer) = &self.block_producer {
-            let request = request.into_inner();
+        let Some(block_producer) = &self.block_producer else {
+            return Err(Status::unavailable(
+                "Transaction submission not available in read-only mode",
+            ));
+        };
 
-            let tx = ProvenTransaction::read_from_bytes(&request.transaction)
-                .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
+        let request = request.into_inner();
 
-            let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
+        let tx = ProvenTransaction::read_from_bytes(&request.transaction)
+            .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
 
-            tx_verifier.verify(&tx).map_err(|err| {
-                Status::invalid_argument(format!(
-                    "Invalid proof for transaction {}: {err}",
-                    tx.id()
-                ))
-            })?;
+        let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
 
-            block_producer.clone().submit_proven_transaction(request).await
-        } else {
-            Err(Status::unavailable("Transaction submission not available in read-only mode"))
-        }
+        tx_verifier.verify(&tx).map_err(|err| {
+            Status::invalid_argument(format!("Invalid proof for transaction {}: {err}", tx.id()))
+        })?;
+
+        block_producer.clone().submit_proven_transaction(request).await
     }
 
     /// Returns details for public (public) account by id.

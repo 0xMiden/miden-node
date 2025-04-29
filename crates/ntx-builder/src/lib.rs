@@ -1,3 +1,3 @@
-mod block_producer;
+pub(crate) mod block_producer;
 mod server;
-mod store;
+pub(crate) mod store;

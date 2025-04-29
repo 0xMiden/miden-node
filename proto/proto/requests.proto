@@ -207,7 +207,7 @@ message GetUnconsumedNetworkNotesRequest {
 // Submit a list of network notes to the network transaction builder.
 message SubmitNetworkNotesRequest {    
     // Id of the transaction that created the notes.
-    digest.Digest transaction_id = 1;
+    transaction.TransactionId transaction_id = 1;
 
     // The network notes to submit.
     repeated note.Note note = 2;
@@ -218,7 +218,7 @@ message UpdateTransactionStatusRequest {
     // Represents the update for a single transaction.
     message TransactionUpdate {
         // Id of the transaction to update.
-        digest.Digest transaction_id = 1;
+        transaction.TransactionId transaction_id = 1;
 
         // New status of the transaction.
         transaction.TransactionStatus status = 2;

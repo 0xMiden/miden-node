@@ -3,7 +3,7 @@ authors.workspace      = true
 description            = "Miden node's network transaction builder component"
 edition.workspace      = true
 homepage.workspace     = true
-keywords               = ["network transaction builder", "miden", "node"]
+keywords               = ["miden", "network transaction builder", "node"]
 license.workspace      = true
 name                   = "miden-node-ntx-builder"
 readme                 = "README.md"
@@ -15,7 +15,9 @@ version.workspace      = true
 workspace = true
 
 [dependencies]
-http = { workspace = true }
+http             = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
-tonic = { workspace = true, features = ["transport"] }
+miden-objects    = { workspace = true }
+tokio            = { workspace = true }
+tonic            = { workspace = true, features = ["transport"] }

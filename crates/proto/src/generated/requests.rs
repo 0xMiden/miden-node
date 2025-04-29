@@ -233,7 +233,7 @@ pub struct GetUnconsumedNetworkNotesRequest {
 pub struct SubmitNetworkNotesRequest {
     /// Id of the transaction that created the notes.
     #[prost(message, optional, tag = "1")]
-    pub transaction_id: ::core::option::Option<super::digest::Digest>,
+    pub transaction_id: ::core::option::Option<super::transaction::TransactionId>,
     /// The network notes to submit.
     #[prost(message, repeated, tag = "2")]
     pub note: ::prost::alloc::vec::Vec<super::note::Note>,
@@ -254,7 +254,9 @@ pub mod update_transaction_status_request {
     pub struct TransactionUpdate {
         /// Id of the transaction to update.
         #[prost(message, optional, tag = "1")]
-        pub transaction_id: ::core::option::Option<super::super::digest::Digest>,
+        pub transaction_id: ::core::option::Option<
+            super::super::transaction::TransactionId,
+        >,
         /// New status of the transaction.
         #[prost(enumeration = "super::super::transaction::TransactionStatus", tag = "2")]
         pub status: i32,

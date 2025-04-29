@@ -30,7 +30,7 @@ pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         Some("GetAccountProofs") => rpc_span!("rpc.rpc", "GetAccountProofs"),
         _ => rpc_span!("rpc.rpc", "Unknown"),
     };
-    add_otel_span_attributes(span, request)
+    add_network_attributes(span, request)
 }
 
 /// A [`trace_fn`](tonic::transport::server::Server) implementation for the block producer which
@@ -46,7 +46,8 @@ pub fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         rpc_span!("block-producer.rpc", "Unknown")
     };
 
-    add_otel_span_attributes(span, request)
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
 }
 
 /// A [`trace_fn`](tonic::transport::server::Server) implementation for the store which adds
@@ -74,14 +75,14 @@ pub fn store_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         _ => rpc_span!("store.rpc", "Unknown"),
     };
 
-    add_otel_span_attributes(span, request)
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
 }
 
 /// Adds remote tracing context to the span.
 ///
 /// Could be expanded in the future by adding in more open-telemetry properties.
 fn add_otel_span_attributes<T>(span: tracing::Span, request: &http::Request<T>) -> tracing::Span {
-    use super::OpenTelemetrySpanExt;
     // Pull the open-telemetry parent context using the HTTP extractor. We could make a more
     // generic gRPC extractor by utilising the gRPC metadata. However that
     //     (a) requires cloning headers,
@@ -94,8 +95,15 @@ fn add_otel_span_attributes<T>(span: tracing::Span, request: &http::Request<T>) 
     });
     tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&span, otel_ctx);
 
+    span
+}
+
+/// Adds various network attributes to the span, including remote address and port.
+///
+/// See [server attributes](https://opentelemetry.io/docs/specs/semconv/rpc/rpc-spans/#server-attributes).
+fn add_network_attributes<T>(span: tracing::Span, request: &http::Request<T>) -> tracing::Span {
+    use super::OpenTelemetrySpanExt;
     // Set HTTP attributes.
-    // See https://opentelemetry.io/docs/specs/semconv/rpc/rpc-spans/#server-attributes.
     span.set_attribute("rpc.system", "grpc");
     if let Some(host) = request.uri().host() {
         span.set_attribute("server.address", host);

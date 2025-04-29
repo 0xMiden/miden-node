@@ -20,10 +20,10 @@ internal = []
 workspace = true
 
 [dependencies]
-protox      = { version = "0.7" }
+protox      = { version = "0.8" }
 tonic-build = { version = "0.12" }
 
 [build-dependencies]
 anyhow = { workspace = true }
 prost  = { workspace = true }
-protox = { version = "0.7" }
+protox = { version = "0.8" }

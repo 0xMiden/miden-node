@@ -9,6 +9,30 @@ macro_rules! rpc_span {
     };
 }
 
+/// A [`trace_fn`](tonic::transport::server::Server) implementation for the RPC which
+/// adds open-telemetry information to the span.
+///
+/// Creates an `info` span following the open-telemetry standard: `rpc.rpc/{method}`.
+/// Additionally also pulls in remote tracing context which allows the server trace to be connected
+/// to the client's origin trace.
+pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    let span = match request.uri().path().rsplit('/').next() {
+        Some("CheckNullifiers") => rpc_span!("rpc.rpc", "CheckNullifiers"),
+        Some("CheckNullifiersByPrefix") => rpc_span!("rpc.rpc", "CheckNullifiersByPrefix"),
+        Some("GetBlockHeaderByNumber") => rpc_span!("rpc.rpc", "GetBlockHeaderByNumber"),
+        Some("SyncState") => rpc_span!("rpc.rpc", "SyncState"),
+        Some("SyncNotes") => rpc_span!("rpc.rpc", "SyncNotes"),
+        Some("GetNotesById") => rpc_span!("rpc.rpc", "GetNotesById"),
+        Some("SubmitProvenTransaction") => rpc_span!("rpc.rpc", "SubmitProvenTransaction"),
+        Some("GetAccountDetails") => rpc_span!("rpc.rpc", "GetAccountDetails"),
+        Some("GetBlockByNumber") => rpc_span!("rpc.rpc", "GetBlockByNumber"),
+        Some("GetAccountStateDelta") => rpc_span!("rpc.rpc", "GetAccountStateDelta"),
+        Some("GetAccountProofs") => rpc_span!("rpc.rpc", "GetAccountProofs"),
+        _ => rpc_span!("rpc.rpc", "Unknown"),
+    };
+    add_network_attributes(span, request)
+}
+
 /// A [`trace_fn`](tonic::transport::server::Server) implementation for the block producer which
 /// adds open-telemetry information to the span.
 ///
@@ -22,7 +46,8 @@ pub fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         rpc_span!("block-producer.rpc", "Unknown")
     };
 
-    add_otel_span_attributes(span, request)
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
 }
 
 /// A [`trace_fn`](tonic::transport::server::Server) implementation for the store which adds
@@ -50,14 +75,14 @@ pub fn store_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         _ => rpc_span!("store.rpc", "Unknown"),
     };
 
-    add_otel_span_attributes(span, request)
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
 }
 
 /// Adds remote tracing context to the span.
 ///
 /// Could be expanded in the future by adding in more open-telemetry properties.
 fn add_otel_span_attributes<T>(span: tracing::Span, request: &http::Request<T>) -> tracing::Span {
-    use super::OpenTelemetrySpanExt;
     // Pull the open-telemetry parent context using the HTTP extractor. We could make a more
     // generic gRPC extractor by utilising the gRPC metadata. However that
     //     (a) requires cloning headers,
@@ -70,8 +95,15 @@ fn add_otel_span_attributes<T>(span: tracing::Span, request: &http::Request<T>) 
     });
     tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&span, otel_ctx);
 
+    span
+}
+
+/// Adds various network attributes to the span, including remote address and port.
+///
+/// See [server attributes](https://opentelemetry.io/docs/specs/semconv/rpc/rpc-spans/#server-attributes).
+fn add_network_attributes<T>(span: tracing::Span, request: &http::Request<T>) -> tracing::Span {
+    use super::OpenTelemetrySpanExt;
     // Set HTTP attributes.
-    // See https://opentelemetry.io/docs/specs/semconv/rpc/rpc-spans/#server-attributes.
     span.set_attribute("rpc.system", "grpc");
     if let Some(host) = request.uri().host() {
         span.set_attribute("server.address", host);

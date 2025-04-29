@@ -33,7 +33,6 @@ miden-proving-service-client = { git = "https://github.com/0xPolygonMiden/miden-
   "batch-prover",
   "block-prover",
 ] }
-miden-tx = { workspace = true }
 miden-tx-batch-prover = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "pgackst-partial-blockchain" }
 rand = { version = "0.9" }
 thiserror = { workspace = true }

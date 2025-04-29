@@ -2134,6 +2134,7 @@ dependencies = [
  "miden-node-utils",
  "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
  "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "tempfile",
  "tokio",
  "tokio-stream",
  "tonic",

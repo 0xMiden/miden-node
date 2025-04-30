@@ -10,8 +10,7 @@ use url::Url;
 
 use super::{
     DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_READ_ONLY, ENV_RPC_URL,
-    parse_duration_ms,
+    ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_RPC_URL, parse_duration_ms,
 };
 
 #[derive(clap::Subcommand)]
@@ -79,12 +78,6 @@ pub enum BundledCommand {
             value_name = "MILLISECONDS"
         )]
         batch_interval: Duration,
-
-        /// Sets the RPC component to read-only mode. This means that the node will not
-        /// start the block-producer component so it will not be able to receive transactions and
-        /// generate blocks.
-        #[arg(long = "read-only", default_value_t = false, env = ENV_READ_ONLY, value_name = "bool")]
-        read_only: bool,
     },
 }
 
@@ -103,7 +96,6 @@ impl BundledCommand {
             },
             BundledCommand::Start {
                 rpc_url,
-                read_only,
                 data_directory,
                 batch_prover_url,
                 block_prover_url,
@@ -114,7 +106,6 @@ impl BundledCommand {
             } => {
                 Self::start(
                     rpc_url,
-                    read_only,
                     data_directory,
                     batch_prover_url,
                     block_prover_url,
@@ -128,7 +119,6 @@ impl BundledCommand {
 
     async fn start(
         rpc_url: Url,
-        read_only: bool,
         data_directory: PathBuf,
         batch_prover_url: Option<Url>,
         block_prover_url: Option<Url>,
@@ -150,10 +140,16 @@ impl BundledCommand {
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
 
-        let mut join_set = JoinSet::new();
+        let block_producer_address = {
+            let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("Failed to bind to block-producer gRPC endpoint")?;
+            grpc_block_producer
+                .local_addr()
+                .context("Failed to retrieve the block-producer's gRPC address")?
+        };
 
-        // Lookup table so we can identify the failed component.
-        let mut component_ids = HashMap::new();
+        let mut join_set = JoinSet::new();
 
         // Start store. The store endpoint is available after loading completes.
         let store_id = join_set
@@ -164,41 +160,23 @@ impl BundledCommand {
                     .context("failed while serving store component")
             })
             .id();
-        component_ids.insert(store_id, "store");
 
-        // Start block-producer. The block-producer's endpoint is available after loading
-        // completes.
-        let block_producer_address = if read_only {
-            None
-        } else {
-            let block_producer_address = {
-                let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-                    .await
-                    .context("Failed to bind to block-producer gRPC endpoint")?;
-                grpc_block_producer
-                    .local_addr()
-                    .context("Failed to retrieve the block-producer's gRPC address")?
-            };
-
-            let block_producer_id = join_set
-                .spawn(async move {
-                    BlockProducer {
-                        block_producer_address,
-                        store_address,
-                        batch_prover_url,
-                        block_prover_url,
-                        batch_interval,
-                        block_interval,
-                    }
-                    .serve()
-                    .await
-                    .context("failed while serving block-producer component")
-                })
-                .id();
-            component_ids.insert(block_producer_id, "block-producer");
-
-            Some(block_producer_address)
-        };
+        // Start block-producer. The block-producer's endpoint is available after loading completes.
+        let block_producer_id = join_set
+            .spawn(async move {
+                BlockProducer {
+                    block_producer_address,
+                    store_address,
+                    batch_prover_url,
+                    block_prover_url,
+                    batch_interval,
+                    block_interval,
+                }
+                .serve()
+                .await
+                .context("failed while serving block-producer component")
+            })
+            .id();
 
         // Start RPC component.
         let rpc_id = join_set
@@ -206,14 +184,20 @@ impl BundledCommand {
                 Rpc {
                     listener: grpc_rpc,
                     store: store_address,
-                    block_producer: block_producer_address,
+                    block_producer: Some(block_producer_address),
                 }
                 .serve()
                 .await
                 .context("failed while serving RPC component")
             })
             .id();
-        component_ids.insert(rpc_id, "rpc");
+
+        // Lookup table so we can identify the failed component.
+        let component_ids = HashMap::from([
+            (store_id, "store"),
+            (block_producer_id, "block-producer"),
+            (rpc_id, "rpc"),
+        ]);
 
         // SAFETY: The joinset is definitely not empty.
         let component_result = join_set.join_next_with_id().await.unwrap();

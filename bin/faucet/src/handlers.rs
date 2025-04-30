@@ -13,6 +13,7 @@ use miden_objects::{
     utils::serde::Serializable,
 };
 use serde::{Deserialize, Serialize};
+use tokio::sync::oneshot;
 use tonic::body;
 use tracing::info;
 
@@ -21,9 +22,9 @@ use crate::{COMPONENT, errors::HandlerError, state::FaucetState};
 #[derive(Deserialize)]
 pub struct FaucetRequest {
     #[serde(deserialize_with = "deserialize_account_id")]
-    account_id: AccountId,
-    is_private_note: bool,
-    asset_amount: u64,
+    pub account_id: AccountId,
+    pub is_private_note: bool,
+    pub asset_amount: u64,
 }
 
 /// Serde deserializing helper wrapper for [`AccountId::from_hex`].
@@ -45,7 +46,7 @@ pub async fn get_metadata(
     State(state): State<FaucetState>,
 ) -> (StatusCode, Json<FaucetMetadataReponse>) {
     let response = FaucetMetadataReponse {
-        id: state.id.to_string(),
+        id: state.account_id.to_string(),
         asset_amount_options: state.config.asset_amount_options.clone(),
     };
 
@@ -56,6 +57,7 @@ pub async fn get_tokens(
     State(state): State<FaucetState>,
     Json(req): Json<FaucetRequest>,
 ) -> Result<impl IntoResponse, HandlerError> {
+    let target_account = req.account_id;
     info!(
         target: COMPONENT,
         account_id = %req.account_id,
@@ -72,37 +74,20 @@ pub async fn get_tokens(
         });
     }
 
-    let mut client = state.client.lock().await;
+    let (tx_result, rx_result) = oneshot::channel();
 
-    // Receive and hex user account id
-    let target_account_id = req.account_id;
+    if let Err(err) = state.request_sender.try_send((req, tx_result)) {
+        todo!("handle and map errors here");
+    }
 
-    // Execute transaction
-    info!(target: COMPONENT, "Executing mint transaction for account.");
-    let (executed_tx, created_note) = client.execute_mint_transaction(
-        target_account_id,
-        req.is_private_note,
-        req.asset_amount,
-    )?;
+    let Ok((block_height, note)) = rx_result.await else {
+        todo!("return internal error");
+    };
 
-    let mut faucet_account = client.data_store().faucet_account();
-    faucet_account
-        .apply_delta(executed_tx.account_delta())
-        .context("Failed to apply faucet account delta")?;
-
-    // Run transaction prover & send transaction to node
-    info!(target: COMPONENT, "Proving and submitting transaction.");
-    let block_height = client.prove_and_submit_transaction(executed_tx).await?;
-
-    // Update data store with the new faucet state
-    client.data_store().update_faucet_state(faucet_account);
-
-    let note_id: NoteId = created_note.id();
-    let note_details =
-        NoteDetails::new(created_note.assets().clone(), created_note.recipient().clone());
-
-    let note_tag = NoteTag::from_account_id(target_account_id, NoteExecutionMode::Local)
-        .context("failed to build note tag for local execution")?;
+    let note_id: NoteId = note.id();
+    let note_details = NoteDetails::new(note.assets().clone(), note.recipient().clone());
+    // SAFETY: NoteTag creation can only error for network execution mode.
+    let note_tag = NoteTag::from_account_id(target_account, NoteExecutionMode::Local).unwrap();
 
     // Serialize note into bytes
     let bytes = NoteFile::NoteDetails {

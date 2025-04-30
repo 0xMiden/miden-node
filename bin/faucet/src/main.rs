@@ -16,7 +16,7 @@ use axum::{
     routing::{get, post},
 };
 use clap::{Parser, Subcommand};
-use client::initialize_faucet_client;
+use client::{FaucetClient, initialize_faucet_client};
 use handlers::{get_background, get_favicon, get_index_css, get_index_html, get_index_js};
 use http::{HeaderValue, header};
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
@@ -32,7 +32,7 @@ use miden_objects::{
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use state::FaucetState;
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
 use tower_http::{cors::CorsLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer};
 use tracing::info;
@@ -107,7 +107,15 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         Command::Start { config } => {
             let config: FaucetConfig =
                 load_config(config).context("failed to load configuration file")?;
-            let faucet_state = FaucetState::new(config.clone()).await?;
+            let client = FaucetClient::new(&config).await?;
+
+            // Maximum of 100 requests in-queue at once. Overflow is rejected for faster feedback.
+            let (tx_requests, rx_requests) = mpsc::channel(100);
+
+            let faucet_state =
+                FaucetState::new(config.clone(), client.faucet_id(), tx_requests).await?;
+
+            let client_jh = tokio::spawn(async move { client.run(rx_requests).await });
 
             info!(target: COMPONENT, %config, "Initializing server");
 

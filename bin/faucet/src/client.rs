@@ -30,7 +30,10 @@ use rand::{random, rngs::StdRng};
 use tonic::transport::Channel;
 use tracing::info;
 
-use crate::{COMPONENT, config::FaucetConfig, errors::ClientError, store::FaucetDataStore};
+use crate::{
+    COMPONENT, config::FaucetConfig, errors::ClientError, handlers::FaucetRequest,
+    store::FaucetDataStore,
+};
 
 pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
     include_str!("transaction_scripts/distribute_fungible_asset.masm");
@@ -115,10 +118,59 @@ impl FaucetClient {
         Ok(Self { rpc_api, executor, data_store, id, rng })
     }
 
+    pub async fn run(
+        mut self,
+        mut requests: tokio::sync::mpsc::Receiver<(
+            FaucetRequest,
+            tokio::sync::oneshot::Sender<(BlockNumber, Note)>,
+        )>,
+    ) -> anyhow::Result<()> {
+        while let Some((request, response_sender)) = requests.recv().await {
+            // User may have cancelled the request after queuing.
+            if response_sender.is_closed() {
+                continue;
+            }
+
+            // info!(target: COMPONENT, "Executing mint transaction for account.");
+            let (executed_tx, created_note) = self.execute_mint_transaction(
+                request.account_id,
+                request.is_private_note,
+                request.asset_amount,
+            )?;
+
+            // TODO: this no longer needs arcs, mutexs etc.
+            let mut faucet_account = self.data_store.faucet_account();
+            faucet_account
+                .apply_delta(executed_tx.account_delta())
+                .context("Failed to apply faucet account delta")?;
+
+            // User may have cancelled the request after queuing.
+            if response_sender.is_closed() {
+                continue;
+            }
+
+            // Run transaction prover & send transaction to node
+            // info!(target: COMPONENT, "Proving and submitting transaction.");
+            // TODO: enable remote prover.
+            // TODO: handle errors and desync failures here.
+            let block_height = self.prove_and_submit_transaction(executed_tx).await?;
+
+            // Update data store with the new faucet state
+            self.data_store.update_faucet_state(faucet_account);
+
+            // Its possible that the request has been cancelled, so we discard the error.
+            let _ = response_sender.send((block_height, created_note));
+        }
+
+        tracing::info!("Request stream closed, shutting down faucet");
+
+        Ok(())
+    }
+
     /// Executes a mint transaction for the target account.
     ///
     /// Returns the executed transaction and the expected output note.
-    pub fn execute_mint_transaction(
+    fn execute_mint_transaction(
         &mut self,
         target_account_id: AccountId,
         is_private_note: bool,
@@ -154,7 +206,7 @@ impl FaucetClient {
     }
 
     /// Proves and submits the executed transaction to the node.
-    pub async fn prove_and_submit_transaction(
+    async fn prove_and_submit_transaction(
         &mut self,
         executed_tx: ExecutedTransaction,
     ) -> Result<BlockNumber, ClientError> {
@@ -182,13 +234,8 @@ impl FaucetClient {
         Ok(response.into_inner().block_height.into())
     }
 
-    /// Returns a reference to the data store.
-    pub fn data_store(&self) -> &FaucetDataStore {
-        &self.data_store
-    }
-
     /// Returns the id of the faucet account.
-    pub fn get_faucet_id(&self) -> AccountId {
+    pub fn faucet_id(&self) -> AccountId {
         self.id
     }
 }

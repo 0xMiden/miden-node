@@ -20,9 +20,19 @@ use crate::{COMPONENT, errors::HandlerError, state::FaucetState};
 
 #[derive(Deserialize)]
 pub struct FaucetRequest {
-    account_id: String,
+    #[serde(deserialize_with = "deserialize_account_id")]
+    account_id: AccountId,
     is_private_note: bool,
     asset_amount: u64,
+}
+
+/// Serde deserializing helper wrapper for [`AccountId::from_hex`].
+fn deserialize_account_id<'de, D>(deserializer: D) -> Result<AccountId, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let buf = String::deserialize(deserializer)?;
+    AccountId::from_hex(&buf).map_err(serde::de::Error::custom)
 }
 
 #[derive(Serialize)]
@@ -65,8 +75,7 @@ pub async fn get_tokens(
     let mut client = state.client.lock().await;
 
     // Receive and hex user account id
-    let target_account_id = AccountId::from_hex(req.account_id.as_str())
-        .map_err(HandlerError::AccountIdDeserializationError)?;
+    let target_account_id = req.account_id;
 
     // Execute transaction
     info!(target: COMPONENT, "Executing mint transaction for account.");

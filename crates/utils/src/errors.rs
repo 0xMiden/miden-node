@@ -25,3 +25,16 @@ pub enum ApiError {
     #[error("parsing store url failed: {0}")]
     InvalidStoreUrl(String),
 }
+
+pub trait ErrorReport: std::error::Error {
+    fn as_report(&self) -> String {
+        let mut report = self.to_string();
+
+        std::iter::successors(self.source(), |child| child.source())
+            .for_each(|source| report.push_str(&format!("\nCaused by: {source}")));
+
+        report
+    }
+}
+
+impl<T: std::error::Error> ErrorReport for T {}

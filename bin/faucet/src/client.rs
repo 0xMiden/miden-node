@@ -1,6 +1,6 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
-use anyhow::Context;
+use anyhow::{Context, anyhow};
 use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
 use miden_node_proto::generated::{
     requests::{
@@ -9,7 +9,7 @@ use miden_node_proto::generated::{
     rpc::api_client::ApiClient,
 };
 use miden_objects::{
-    Felt,
+    Digest, Felt,
     account::{Account, AccountFile, AccountId, AuthSecretKey},
     asset::FungibleAsset,
     block::{BlockHeader, BlockNumber},
@@ -18,20 +18,26 @@ use miden_objects::{
         rand::RpoRandomCoin,
     },
     note::{Note, NoteType},
-    transaction::{ChainMmr, ExecutedTransaction, TransactionArgs, TransactionScript},
+    transaction::{
+        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionScript,
+    },
     utils::Deserializable,
     vm::AdviceMap,
 };
 use miden_tx::{
     LocalTransactionProver, ProvingOptions, TransactionExecutor, TransactionProver,
-    auth::BasicAuthenticator, utils::Serializable,
+    auth::BasicAuthenticator,
+    utils::{Serializable, parse_hex_string_as_word},
 };
 use rand::{random, rngs::StdRng};
 use tonic::transport::Channel;
 use tracing::info;
 
 use crate::{
-    COMPONENT, config::FaucetConfig, errors::ClientError, handlers::FaucetRequest,
+    COMPONENT,
+    config::FaucetConfig,
+    errors::{ClientError, ExecutionError, MintError, MintResult},
+    handlers::FaucetRequest,
     store::FaucetDataStore,
 };
 
@@ -49,6 +55,8 @@ pub struct FaucetClient {
     data_store: Arc<FaucetDataStore>,
     id: AccountId,
     rng: RpoRandomCoin,
+    // Previous faucet account states used to perform rollbacks if a desync is detected.
+    prior_state: VecDeque<Account>,
 }
 
 // TODO: Remove this once https://github.com/0xPolygonMiden/miden-base/issues/909 is resolved
@@ -115,56 +123,130 @@ impl FaucetClient {
         let coin_seed: [u64; 4] = random();
         let rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
 
-        Ok(Self { rpc_api, executor, data_store, id, rng })
+        Ok(Self {
+            rpc_api,
+            executor,
+            data_store,
+            id,
+            rng,
+            prior_state: VecDeque::new(),
+        })
     }
 
     pub async fn run(
         mut self,
         mut requests: tokio::sync::mpsc::Receiver<(
             FaucetRequest,
-            tokio::sync::oneshot::Sender<(BlockNumber, Note)>,
+            tokio::sync::oneshot::Sender<MintResult<(BlockNumber, Note)>>,
         )>,
     ) -> anyhow::Result<()> {
         while let Some((request, response_sender)) = requests.recv().await {
-            // User may have cancelled the request after queuing.
+            // Skip doing work if the user no longer cares about the result.
             if response_sender.is_closed() {
+                tracing::info!("request skipped");
                 continue;
             }
 
-            // info!(target: COMPONENT, "Executing mint transaction for account.");
-            let (executed_tx, created_note) = self.execute_mint_transaction(
-                request.account_id,
-                request.is_private_note,
-                request.asset_amount,
-            )?;
+            // Update local state on success.
+            let result = self.handle_request(request).await.map(|(state, block_height, note)| {
+                // Store the last 1000 states for rollback purposes.
+                if self.prior_state.len() > 1000 {
+                    self.prior_state.pop_front();
+                }
+                self.prior_state.push_back(self.data_store.faucet_account());
+                self.data_store.update_faucet_state(state);
 
-            // TODO: this no longer needs arcs, mutexs etc.
-            let mut faucet_account = self.data_store.faucet_account();
-            faucet_account
-                .apply_delta(executed_tx.account_delta())
-                .context("Failed to apply faucet account delta")?;
+                (block_height, note)
+            });
 
-            // User may have cancelled the request after queuing.
-            if response_sender.is_closed() {
-                continue;
+            // We ignore the channel closure here as the user may have cancelled the request.
+            let _ = response_sender.send(result.clone());
+
+            // Handle errors if possible, otherwise bail and let the restart handle it.
+            if let Err(err) = result {
+                self.handle_error(err).await?;
             }
-
-            // Run transaction prover & send transaction to node
-            // info!(target: COMPONENT, "Proving and submitting transaction.");
-            // TODO: enable remote prover.
-            // TODO: handle errors and desync failures here.
-            let block_height = self.prove_and_submit_transaction(executed_tx).await?;
-
-            // Update data store with the new faucet state
-            self.data_store.update_faucet_state(faucet_account);
-
-            // Its possible that the request has been cancelled, so we discard the error.
-            let _ = response_sender.send((block_height, created_note));
         }
 
-        tracing::info!("Request stream closed, shutting down faucet");
+        tracing::info!("Request stream closed, shutting down minter");
 
         Ok(())
+    }
+
+    /// Attempt to recover from errors.
+    ///
+    /// Notably this includes rolling back local state if a desync occurs.
+    ///
+    /// Returns an error if recovery was not possible, which should be considered fatal.
+    async fn handle_error(&mut self, err: MintError) -> anyhow::Result<()> {
+        match err {
+            // A state mismatch means we desync'd from the actual chain state, and should resync.
+            //
+            // This can occur if the node restarts (dropping inflight txs), or if inflight txs got dropped.
+            MintError::Submission(err)
+                if err.code() == tonic::Code::InvalidArgument
+                    && err.message().contains("incorrect initial state commitment") =>
+            {
+                self.handle_desync(err.message()).with_context(|| {
+                    format!("failed to recover from desync error: {}", err.message())
+                })
+            },
+            // TODO: Look into which other errors should be recoverable.
+            //       e.g. Connection error to RPC client is probably not fatal.
+            others => Err(others).context("failed to handle error"),
+        }
+    }
+
+    /// Attempts to rollback back local state to match that indicated by the node.
+    ///
+    /// This relies on parsing the stringified error `VerifyTxError::IncorrectInitialAccountCommitment`.
+    ///
+    /// Returns an error if the rollback was unsuccesful. This should be treated as fatal.
+    fn handle_desync(&mut self, err: &str) -> anyhow::Result<()> {
+        let onchain_state = parse_desync_error(err).context("failed to parse desync message")?;
+
+        // Find the matching local state, unless we've dropped it already.
+        let rollback = self
+            .prior_state
+            .iter()
+            .position(|state| state.commitment() == onchain_state)
+            .context("no matching local state to rollback to")?;
+
+        // Rollback the local state.
+        // SAFETY: The index must exist since the element was just found.
+        self.data_store.update_faucet_state(self.prior_state[rollback].clone());
+        self.prior_state.drain(rollback..);
+
+        tracing::warn!(rollback_count = rollback, "desync detected and handled");
+
+        Ok(())
+    }
+
+    /// Fully handles a single request _without_ changing local state.
+    ///
+    /// Caller should update the faucet account state on a succesful call.
+    async fn handle_request(
+        &mut self,
+        request: FaucetRequest,
+    ) -> MintResult<(Account, BlockNumber, Note)> {
+        // info!(target: COMPONENT, "Executing mint transaction for account.");
+        let (executed_tx, created_note) = self.execute_mint_transaction(request)?;
+
+        let mut faucet_account = self.data_store.faucet_account();
+        faucet_account
+            .apply_delta(executed_tx.account_delta())
+            .map_err(MintError::Account)?;
+
+        // TODO: error handling.
+        let proven_transaction = Self::prove_transaction(executed_tx)?;
+
+        // Run transaction prover & send transaction to node
+        // info!(target: COMPONENT, "Proving and submitting transaction.");
+        // TODO: enable remote prover.
+        // TODO: handle errors and desync failures here.
+        let block_height = self.submit_transaction(proven_transaction).await?;
+
+        Ok((faucet_account, block_height, created_note))
     }
 
     /// Executes a mint transaction for the target account.
@@ -172,14 +254,14 @@ impl FaucetClient {
     /// Returns the executed transaction and the expected output note.
     fn execute_mint_transaction(
         &mut self,
-        target_account_id: AccountId,
-        is_private_note: bool,
-        asset_amount: u64,
-    ) -> Result<(ExecutedTransaction, Note), ClientError> {
-        let asset =
-            FungibleAsset::new(self.id, asset_amount).context("Failed to create fungible asset")?;
+        request: FaucetRequest,
+    ) -> MintResult<(ExecutedTransaction, Note)> {
+        // SAFETY: self.id is definitely a faucet account, and the amount is valid.
+        // TODO: type safety the asset amount as part of request.
+        let asset = FungibleAsset::new(self.id, request.asset_amount).unwrap();
 
-        let note_type = if is_private_note {
+        // TODO: type safety this in the request already. And the asset amount.
+        let note_type = if request.is_private_note {
             NoteType::Private
         } else {
             NoteType::Public
@@ -187,51 +269,41 @@ impl FaucetClient {
 
         let output_note = create_p2id_note(
             self.id,
-            target_account_id,
+            request.account_id,
             vec![asset.into()],
             note_type,
             Felt::default(),
             &mut self.rng,
         )
-        .context("Failed to create P2ID note")?;
+        .map_err(ExecutionError::NoteCreation)?;
 
         let transaction_args = build_transaction_arguments(&output_note, note_type, asset)?;
 
         let executed_tx = self
             .executor
             .execute_transaction(self.id, 0.into(), &[], transaction_args)
-            .context("Failed to execute transaction")?;
+            .map_err(ExecutionError::Execution)?;
 
         Ok((executed_tx, output_note))
     }
 
-    /// Proves and submits the executed transaction to the node.
-    async fn prove_and_submit_transaction(
-        &mut self,
-        executed_tx: ExecutedTransaction,
-    ) -> Result<BlockNumber, ClientError> {
+    fn prove_transaction(tx: ExecutedTransaction) -> MintResult<ProvenTransaction> {
+        LocalTransactionProver::new(ProvingOptions::default())
+            .prove(tx.into())
+            .map_err(MintError::Proving)
+    }
+
+    async fn submit_transaction(&mut self, tx: ProvenTransaction) -> MintResult<BlockNumber> {
         // Prepare request with proven transaction.
         // This is needed to be in a separated code block in order to release reference to avoid
         // borrow checker error.
-        let request = {
-            let transaction_prover = LocalTransactionProver::new(ProvingOptions::default());
+        let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
 
-            let proven_transaction = transaction_prover
-                .prove(executed_tx.into())
-                .context("Failed to prove transaction")?;
-
-            SubmitProvenTransactionRequest {
-                transaction: proven_transaction.to_bytes(),
-            }
-        };
-
-        let response = self
-            .rpc_api
+        self.rpc_api
             .submit_proven_transaction(request)
             .await
-            .context("Failed to submit proven transaction")?;
-
-        Ok(response.into_inner().block_height.into())
+            .map(|response| response.into_inner().block_height.into())
+            .map_err(MintError::Submission)
     }
 
     /// Returns the id of the faucet account.
@@ -242,6 +314,23 @@ impl FaucetClient {
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
+    let onchain_state = err
+        .split_once("current:")
+        .map(|(_prefix, suffix)| suffix)
+        .and_then(|suffix| suffix.split_whitespace().next())
+        .context("failed to find expected commitment")?;
+
+    // This is used to represent the empty account state.
+    if onchain_state.eq_ignore_ascii_case("none") {
+        return Ok(Digest::default());
+    }
+
+    parse_hex_string_as_word(onchain_state)
+        .map_err(|err| anyhow!("failed to parse expected commitment: {err}"))
+        .map(Into::into)
+}
 
 /// Initializes the faucet client by connecting to the node and fetching the root block header.
 pub async fn initialize_faucet_client(
@@ -307,7 +396,7 @@ fn build_transaction_arguments(
     output_note: &Note,
     note_type: NoteType,
     asset: FungibleAsset,
-) -> Result<TransactionArgs, ClientError> {
+) -> Result<TransactionArgs, ExecutionError> {
     let recipient = output_note
         .recipient()
         .digest()
@@ -329,7 +418,7 @@ fn build_transaction_arguments(
         .replace("{execution_hint}", &Felt::new(execution_hint).to_string());
 
     let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
-        .context("Failed to compile script")?;
+        .map_err(ExecutionError::TransactionCompilation)?;
 
     let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
     transaction_args.extend_output_note_recipients(vec![output_note.clone()]);

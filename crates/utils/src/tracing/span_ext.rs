@@ -4,6 +4,8 @@ use std::net::IpAddr;
 use miden_objects::{Digest, batch::BatchId, block::BlockNumber};
 use opentelemetry::{Key, Value, trace::Status};
 
+use crate::errors::ErrorReport;
+
 /// Utility functions for converting types into [`opentelemetry::Value`].
 pub trait ToValue {
     fn to_value(&self) -> Value;
@@ -102,15 +104,9 @@ where
 
     /// Sets a status on `Span` based on an error.
     fn set_error(&self, err: &dyn std::error::Error) {
-        // Include the main error and then append causation report.
-        let mut report = err.to_string();
-
-        std::iter::successors(err.source(), |child| child.source())
-            .for_each(|source| report.push_str(&format!("\nCaused by: {source}")));
-
         tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
             self,
-            Status::Error { description: report.into() },
+            Status::Error { description: err.as_report().into() },
         );
     }
 }

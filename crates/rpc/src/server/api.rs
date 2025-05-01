@@ -42,11 +42,14 @@ type BlockProducerClient =
 
 pub struct RpcService {
     store: StoreClient,
-    block_producer: BlockProducerClient,
+    block_producer: Option<BlockProducerClient>,
 }
 
 impl RpcService {
-    pub(super) fn new(store_address: SocketAddr, block_producer_address: SocketAddr) -> Self {
+    pub(super) fn new(
+        store_address: SocketAddr,
+        block_producer_address: Option<SocketAddr>,
+    ) -> Self {
         let store = {
             let store_url = format!("http://{store_address}");
             // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
@@ -56,7 +59,7 @@ impl RpcService {
             store
         };
 
-        let block_producer = {
+        let block_producer = block_producer_address.map(|block_producer_address| {
             let block_producer_url = format!("http://{block_producer_address}");
             // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
             let channel =
@@ -69,7 +72,7 @@ impl RpcService {
                 "Block producer client initialized",
             );
             block_producer
-        };
+        });
 
         Self { store, block_producer }
     }
@@ -193,6 +196,12 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<SubmitProvenTransactionResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        let Some(block_producer) = &self.block_producer else {
+            return Err(Status::unavailable(
+                "Transaction submission not available in read-only mode",
+            ));
+        };
+
         let request = request.into_inner();
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
@@ -204,7 +213,7 @@ impl api_server::Api for RpcService {
             Status::invalid_argument(format!("Invalid proof for transaction {}: {err}", tx.id()))
         })?;
 
-        self.block_producer.clone().submit_proven_transaction(request).await
+        block_producer.clone().submit_proven_transaction(request).await
     }
 
     /// Returns details for public (public) account by id.

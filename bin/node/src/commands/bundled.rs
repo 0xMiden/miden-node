@@ -184,7 +184,7 @@ impl BundledCommand {
                 Rpc {
                     listener: grpc_rpc,
                     store: store_address,
-                    block_producer: block_producer_address,
+                    block_producer: Some(block_producer_address),
                 }
                 .serve()
                 .await

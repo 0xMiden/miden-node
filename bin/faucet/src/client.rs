@@ -1,18 +1,12 @@
-use std::{collections::VecDeque, sync::Arc, time::Duration};
+use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
-use miden_node_proto::generated::{
-    requests::{
-        GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
-    },
-    rpc::api_client::ApiClient,
-};
 use miden_objects::{
     AccountError, Digest, Felt, NoteError, TransactionScriptError,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
     asset::FungibleAsset,
-    block::{BlockHeader, BlockNumber},
+    block::BlockNumber,
     crypto::{
         merkle::{MmrPeaks, PartialMmr},
         rand::{FeltRng, RpoRandomCoin},
@@ -21,24 +15,21 @@ use miden_objects::{
     transaction::{
         ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionScript,
     },
-    utils::Deserializable,
     vm::AdviceMap,
 };
 use miden_tx::{
     LocalTransactionProver, ProvingOptions, TransactionExecutor, TransactionExecutorError,
-    TransactionProver, TransactionProverError,
-    auth::BasicAuthenticator,
-    utils::{Serializable, parse_hex_string_as_word},
+    TransactionProver, TransactionProverError, auth::BasicAuthenticator,
+    utils::parse_hex_string_as_word,
 };
 use rand::{random, rngs::StdRng};
 use serde::Serialize;
 use tokio::sync::{mpsc, oneshot};
-use tonic::transport::Channel;
-use tracing::info;
+use tonic::Code;
+use tracing::{info, instrument};
 
 use crate::{
-    COMPONENT,
-    config::FaucetConfig,
+    rpc_client::{RpcClient, RpcError},
     store::FaucetDataStore,
     types::{AssetAmount, NoteType},
 };
@@ -57,8 +48,14 @@ pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
 pub struct FaucetId(AccountId);
 
 impl FaucetId {
-    fn inner(self) -> AccountId {
+    pub fn inner(self) -> AccountId {
         self.0
+    }
+}
+
+impl std::fmt::Display for FaucetId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -84,9 +81,6 @@ pub struct MintRequest {
 type MintResult<T> = Result<T, MintError>;
 
 /// Error indicating what went wrong in the minting process for a request.
-///
-/// Unfortunately the inner errors do not implement Clone, so broader interactions
-/// with this type are usually wrapped in an Arc.
 #[derive(Debug, thiserror::Error)]
 pub enum MintError {
     #[error("building the p2id note failed")]
@@ -98,83 +92,89 @@ pub enum MintError {
     #[error("proving the tx failed")]
     Proving(TransactionProverError),
     #[error("submitting the tx to the node failed")]
-    Submission(tonic::Status),
+    Submission(RpcError),
 }
 
-/// Basic client that handles execution, proving and submitting of mint transactions
-/// for the faucet.
-pub struct FaucetClient {
-    executor: TransactionExecutor,
+/// Stores the current faucet state and handles minting requests.
+pub struct Faucet {
+    authenticator: Arc<BasicAuthenticator<StdRng>>,
     data_store: Arc<FaucetDataStore>,
     id: FaucetId,
     // Previous faucet account states used to perform rollbacks if a desync is detected.
     prior_state: VecDeque<Account>,
 }
 
-// TODO: Remove this once https://github.com/0xPolygonMiden/miden-base/issues/909 is resolved
-unsafe impl Send for FaucetClient {}
-
-impl FaucetClient {
-    /// Fetches the latest faucet account state from the node and creates a new faucet client.
-    ///
-    /// # Note
-    /// If the faucet account is not found on chain, it will be created on submission of the first
-    /// minting transaction.
-    pub async fn new(config: &FaucetConfig) -> anyhow::Result<Self> {
-        let (mut rpc_api, root_block_header, root_chain_mmr) =
-            initialize_faucet_client(config).await?;
-
-        let faucet_account_data = AccountFile::read(&config.faucet_account_path)
-            .context("failed to load faucet account from file")?;
-
-        let id = faucet_account_data.account.id();
+impl Faucet {
+    /// Loads the faucet state from the node and the account file.
+    #[instrument(name = "Faucet::load", fields(id), skip_all)]
+    pub async fn load(
+        account_file: AccountFile,
+        rpc_client: &mut RpcClient,
+    ) -> anyhow::Result<Self> {
+        let id = account_file.account.id();
         let id = FaucetId(id);
 
-        info!(target: COMPONENT, "Requesting account state from the node...");
-        let faucet_account = match request_account_state(&mut rpc_api, id.inner()).await {
+        tracing::Span::current().record("id", id.to_string());
+
+        info!("Fetching faucet state from node");
+
+        let account = match rpc_client.get_faucet_account(id).await {
             Ok(account) => {
                 info!(
-                    target: COMPONENT,
                     commitment = %account.commitment(),
                     nonce = %account.nonce(),
                     "Received faucet account state from the node",
                 );
 
-                account
+                Ok(account)
             },
+            Err(RpcError::Transport(status)) if status.code() == Code::NotFound => {
+                let account = account_file.account;
+                info!(
+                    commitment = %account.commitment(),
+                    nonce = %account.nonce(),
+                    "Faucet not found in the node, using state from file"
+                );
 
-            Err(err) => match err {
-                ClientError::RequestError(status) if status.code() == tonic::Code::NotFound => {
-                    info!(target: COMPONENT, "Faucet account not found in the node");
-
-                    faucet_account_data.account
-                },
-                _ => {
-                    return Err(err);
-                },
+                Ok(account)
             },
-        };
+            Err(err) => Err(err),
+        }
+        .context("fetching faucet state from node")?;
+
+        info!("Fetching genesis header from the node");
+        let genesis_header = rpc_client
+            .get_genesis_header()
+            .await
+            .context("fetching genesis header from the node")?;
+
+        // SAFETY: An empty chain MMR should be valid.
+        let genesis_chain_mmr = ChainMmr::new(
+            PartialMmr::from_peaks(
+                MmrPeaks::new(0, Vec::new()).expect("Empty MmrPeak should be valid"),
+            ),
+            Vec::new(),
+        )
+        .expect("Empty ChainMmr should be valid");
 
         let data_store = Arc::new(FaucetDataStore::new(
-            faucet_account,
-            faucet_account_data.account_seed,
-            root_block_header,
-            root_chain_mmr,
+            account,
+            account_file.account_seed,
+            genesis_header,
+            genesis_chain_mmr,
         ));
 
-        let public_key = match &faucet_account_data.auth_secret_key {
+        let public_key = match &account_file.auth_secret_key {
             AuthSecretKey::RpoFalcon512(secret) => secret.public_key(),
         };
 
-        let authenticator = BasicAuthenticator::<StdRng>::new(&[(
+        let authenticator = Arc::new(BasicAuthenticator::<StdRng>::new(&[(
             public_key.into(),
-            faucet_account_data.auth_secret_key,
-        )]);
-
-        let executor = TransactionExecutor::new(data_store.clone(), Some(Arc::new(authenticator)));
+            account_file.auth_secret_key,
+        )]));
 
         Ok(Self {
-            executor,
+            authenticator,
             data_store,
             id,
             prior_state: VecDeque::new(),
@@ -184,11 +184,8 @@ impl FaucetClient {
     /// Runs the faucet minting process until the request source is closed, or it encounters a fatal error.
     pub async fn run(
         mut self,
-        mut rpc_client: ApiClient<Channel>,
-        mut requests: mpsc::Receiver<(
-            MintRequest,
-            oneshot::Sender<Result<(BlockNumber, Note), Arc<MintError>>>,
-        )>,
+        mut rpc_client: RpcClient,
+        mut requests: mpsc::Receiver<(MintRequest, oneshot::Sender<(BlockNumber, Note)>)>,
     ) -> anyhow::Result<()> {
         let coin_seed: [u64; 4] = random();
         let rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
@@ -200,22 +197,21 @@ impl FaucetClient {
                 continue;
             }
 
-            // Update local state on success.
-            let result = self
-                .handle_request(request, rng, &mut rpc_client)
-                .await
-                // SAFETY: Account delta must be valid since the tx was executed, proven and accepted by the node.
-                .inspect(|(delta, ..)| self.update_state(delta).unwrap())
-                .map(|(_, block_height, note)| (block_height, note))
-                // Error isn't clone :(
-                .map_err(Arc::new);
-
-            // We ignore the channel closure here as the user may have cancelled the request.
-            let _ = response_sender.send(result.clone());
-
-            // Handle errors if possible, otherwise bail and let the restart handle it.
-            if let Err(err) = result {
-                self.error_recovery(&err).await?;
+            match self.handle_request(request, rng, &mut rpc_client).await {
+                // Update local state on success.
+                Ok((delta, block_number, note)) => {
+                    // We ignore the channel closure here as the user may have cancelled the request.
+                    let _ = response_sender.send((block_number, note));
+                    // SAFETY: Delta must be valid since it comes from a tx accepted by the node.
+                    self.update_state(&delta).unwrap();
+                },
+                // Handle errors if possible, otherwise bail and let the restart handle it.
+                Err(err) => {
+                    self.error_recovery(err)
+                        .await
+                        .context("failed to recover from minting error")
+                        .inspect_err(|err| tracing::error!(%err, "minting request failed"))?;
+                },
             }
         }
 
@@ -248,12 +244,12 @@ impl FaucetClient {
     /// Notably this includes rolling back local state if a desync occurs.
     ///
     /// Returns an error if recovery was not possible, which should be considered fatal.
-    async fn error_recovery(&mut self, err: &MintError) -> anyhow::Result<()> {
+    async fn error_recovery(&mut self, err: MintError) -> anyhow::Result<()> {
         match err {
             // A state mismatch means we desync'd from the actual chain state, and should resync.
             //
             // This can occur if the node restarts (dropping inflight txs), or if inflight txs got dropped.
-            MintError::Submission(err)
+            MintError::Submission(RpcError::Transport(err))
                 if err.code() == tonic::Code::InvalidArgument
                     && err.message().contains("incorrect initial state commitment") =>
             {
@@ -262,7 +258,7 @@ impl FaucetClient {
                 })
             },
             // TODO: Look into which other errors should be recoverable.
-            //       e.g. Connection error to RPC client is probably not fatal.
+            //       e.g. Connection error being lost to RPC client is probably not fatal.
             others => Err(others).context("failed to handle error"),
         }
     }
@@ -299,7 +295,7 @@ impl FaucetClient {
         &self,
         request: MintRequest,
         rng: impl FeltRng,
-        rpc_client: &mut ApiClient<Channel>,
+        rpc_client: &mut RpcClient,
     ) -> MintResult<(AccountDelta, BlockNumber, Note)> {
         // Generate the payment note and compile it into our transaction arguments.
         let p2id_note = P2IdNote::build(self.faucet_id(), &request, rng)?;
@@ -315,7 +311,9 @@ impl FaucetClient {
     }
 
     fn execute_transaction(&self, tx_args: TransactionArgs) -> MintResult<ExecutedTransaction> {
-        self.executor
+        // TODO: Is this cheap? Do we need to carry this around with us, or can we just construct
+        //       when needed?
+        TransactionExecutor::new(self.data_store.clone(), Some(self.authenticator.clone()))
             .execute_transaction(self.id.inner(), BlockNumber::GENESIS, &[], tx_args)
             .map_err(MintError::Execution)
     }
@@ -329,15 +327,9 @@ impl FaucetClient {
     async fn submit_transaction(
         &self,
         tx: ProvenTransaction,
-        rpc_client: &mut ApiClient<Channel>,
+        rpc_client: &mut RpcClient,
     ) -> MintResult<BlockNumber> {
-        let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
-
-        rpc_client
-            .submit_proven_transaction(request)
-            .await
-            .map(|response| response.into_inner().block_height.into())
-            .map_err(MintError::Submission)
+        rpc_client.submit_transaction(tx).await.map_err(MintError::Submission)
     }
 
     /// Returns the id of the faucet account.
@@ -364,65 +356,6 @@ fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
     parse_hex_string_as_word(onchain_state)
         .map_err(|err| anyhow!("failed to parse expected commitment: {err}"))
         .map(Into::into)
-}
-
-/// Initializes the faucet client by connecting to the node and fetching the root block header.
-pub async fn initialize_faucet_client(
-    config: &FaucetConfig,
-) -> Result<(ApiClient<Channel>, BlockHeader, ChainMmr), ClientError> {
-    let endpoint = tonic::transport::Endpoint::try_from(config.node_url.to_string())
-        .context("Failed to parse node URL from configuration file")?
-        .timeout(Duration::from_millis(config.timeout_ms));
-
-    let mut rpc_api =
-        ApiClient::connect(endpoint).await.context("Failed to connect to the node")?;
-
-    let request = GetBlockHeaderByNumberRequest {
-        block_num: Some(0),
-        include_mmr_proof: None,
-    };
-    let response = rpc_api
-        .get_block_header_by_number(request)
-        .await
-        .context("Failed to get block header")?;
-    let root_block_header = response
-        .into_inner()
-        .block_header
-        .context("Missing root block header in response")?;
-
-    let root_block_header = root_block_header.try_into().context("Failed to parse block header")?;
-
-    let root_chain_mmr = ChainMmr::new(
-        PartialMmr::from_peaks(
-            MmrPeaks::new(0, Vec::new()).expect("Empty MmrPeak should be valid"),
-        ),
-        Vec::new(),
-    )
-    .expect("Empty ChainMmr should be valid");
-
-    Ok((rpc_api, root_block_header, root_chain_mmr))
-}
-
-/// Requests account state from the node.
-///
-/// The account is expected to be public, otherwise, the error is returned.
-async fn request_account_state(
-    rpc_api: &mut ApiClient<Channel>,
-    account_id: AccountId,
-) -> Result<Account, ClientError> {
-    let account_info = rpc_api
-        .get_account_details(GetAccountDetailsRequest { account_id: Some(account_id.into()) })
-        .await?
-        .into_inner()
-        .details
-        .context("Account info field is empty")?;
-
-    let faucet_account_state_bytes =
-        account_info.details.context("Account details field is empty")?;
-
-    Account::read_from_bytes(&faucet_account_state_bytes)
-        .context("Failed to deserialize faucet account")
-        .map_err(Into::into)
 }
 
 struct P2IdNote(Note);

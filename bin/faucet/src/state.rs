@@ -4,7 +4,6 @@ use tokio::sync::oneshot;
 
 use crate::{
     client::{FaucetId, MintRequest},
-    errors::MintResult,
     frontend::StaticResources,
     handlers::GetTokensState,
     types::AssetOptions,
@@ -13,12 +12,13 @@ use crate::{
 // FAUCET STATE
 // ================================================================================================
 
-type RequestSender =
-    tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<MintResult<(BlockNumber, Note)>>)>;
+type RequestSender = tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<(BlockNumber, Note)>)>;
 
 /// The state associated with the facuet's frontend server.
 ///
 /// Mint requests are submitted to the faucet using a channel.
+///
+/// Mutable and static state are kept separately.
 #[derive(Clone)]
 pub struct ServerState {
     mint_state: GetTokensState,

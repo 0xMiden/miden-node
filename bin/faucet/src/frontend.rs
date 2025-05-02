@@ -28,7 +28,7 @@ pub struct StaticResources {
 ///
 /// More specifically, the faucet's account ID and allowed mint amounts.
 #[derive(Clone, serde::Serialize)]
-struct Metadata {
+pub struct Metadata {
     pub id: FaucetId,
     pub asset_amount_options: AssetOptions,
 }

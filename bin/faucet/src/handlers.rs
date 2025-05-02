@@ -20,12 +20,10 @@ use tonic::body;
 
 use crate::{
     client::MintRequest,
-    errors::{MintError, MintResult},
     types::{AssetOptions, NoteType},
 };
 
-type RequestSender =
-    tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<MintResult<(BlockNumber, Note)>>)>;
+type RequestSender = tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<(BlockNumber, Note)>)>;
 
 #[derive(Clone)]
 pub struct GetTokensState {
@@ -37,26 +35,25 @@ pub struct GetTokensState {
 ///
 /// Further parsing is done to get the expected [`MintRequest`] expected by the faucet client.
 #[derive(Deserialize)]
-struct RawMintRequest {
+pub struct RawMintRequest {
     account_id: String,
     is_private_note: bool,
     asset_amount: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
-enum InvalidRequest {
+pub enum InvalidRequest {
     #[error("account ID failed to parse")]
     AccountId(AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
 }
 
-enum GetTokenError {
+pub enum GetTokenError {
     InvalidRequest(InvalidRequest),
     ClientOverloaded,
     ClientClosed,
     ClientReturnChannelClosed,
-    MintFailed(MintError),
     ResponseBuilder(http::Error),
 }
 
@@ -67,7 +64,6 @@ impl GetTokenError {
             Self::ClientOverloaded => StatusCode::SERVICE_UNAVAILABLE,
             Self::ClientClosed => StatusCode::SERVICE_UNAVAILABLE,
             Self::ClientReturnChannelClosed => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::MintFailed(_) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::ResponseBuilder(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -82,7 +78,7 @@ impl GetTokenError {
             Self::ClientClosed => {
                 "The faucet is currently unavailable, please try again later".to_owned()
             },
-            Self::ClientReturnChannelClosed | Self::ResponseBuilder(_) | Self::MintFailed(_) => {
+            Self::ClientReturnChannelClosed | Self::ResponseBuilder(_) => {
                 "Internal error".to_owned()
             },
         }
@@ -98,9 +94,6 @@ impl GetTokenError {
             },
             Self::ClientReturnChannelClosed => {
                 tracing::error!("result channel from the faucet closed mid-request")
-            },
-            Self::MintFailed(error) => {
-                tracing::error!(error = error.as_report(), "mint failed")
             },
             Self::ResponseBuilder(error) => {
                 tracing::error!(error = error.as_report(), "failed to build response")
@@ -160,10 +153,8 @@ pub async fn get_tokens(
         TrySendError::Closed(_) => GetTokenError::ClientClosed,
     })?;
 
-    let (block_height, note) = rx_result
-        .await
-        .map_err(|_| GetTokenError::ClientReturnChannelClosed)?
-        .map_err(GetTokenError::MintFailed)?;
+    let (block_height, note) =
+        rx_result.await.map_err(|_| GetTokenError::ClientReturnChannelClosed)?;
 
     let note_id: NoteId = note.id();
     let note_details = NoteDetails::new(note.assets().clone(), note.recipient().clone());

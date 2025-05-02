@@ -1,8 +1,8 @@
 mod client;
 mod config;
-mod errors;
 mod frontend;
 mod handlers;
+mod rpc_client;
 mod state;
 mod store;
 mod types;
@@ -18,12 +18,13 @@ use axum::{
     routing::{get, post},
 };
 use clap::{Parser, Subcommand};
-use client::{FaucetClient, initialize_faucet_client};
+use client::Faucet;
 use frontend::get_metadata;
 use http::{HeaderValue, header};
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{
-    config::load_config, crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion,
+    config::load_config, crypto::get_rpo_random_coin, grpc::UrlExt, logging::OpenTelemetry,
+    version::LongVersion,
 };
 use miden_objects::{
     Felt,
@@ -33,6 +34,7 @@ use miden_objects::{
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use rpc_client::RpcClient;
 use state::ServerState;
 use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
@@ -109,7 +111,16 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         Command::Start { config } => {
             let config: FaucetConfig =
                 load_config(config).context("failed to load configuration file")?;
-            let client = FaucetClient::new(&config).await?;
+
+            let rpc_client = config
+                .node_url
+                .to_socket()
+                .context("failed to convert the node url to a socket address")?;
+            let mut rpc_client = RpcClient::connect_lazy(rpc_client);
+            let account_file = AccountFile::read(&config.faucet_account_path)
+                .context("failed to load faucet account from file")?;
+
+            let client = Faucet::load(account_file, &mut rpc_client).await?;
 
             // Maximum of 100 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(100);
@@ -156,13 +167,19 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             // Run both the client and the server concurrently.
             // TODO: We probably want a more graceful shutdown.
-            let client = async { client.run(rx_requests).await.context("faucet client failed") };
+            let client =
+                async { client.run(rpc_client, rx_requests).await.context("faucet client failed") };
             let server = async { axum::serve(listener, app).await.context("faucet server failed") };
             let mut tasks = tokio::task::JoinSet::new();
             tasks.spawn(client);
             tasks.spawn(server);
             // SAFETY: join_next returns None if there are no tasks, and we definitely have tasks.
-            tasks.join_next().await.unwrap().context("failed to join task")?;
+            tasks
+                .join_next()
+                .await
+                .unwrap()
+                .context("failed to join task")?
+                .context("a server task ended unexpectedly")?;
         },
 
         Command::CreateFaucetAccount {
@@ -177,7 +194,16 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let config: FaucetConfig =
                 load_config(config_path).context("failed to load configuration file")?;
 
-            let (_, root_block_header, _) = initialize_faucet_client(&config).await?;
+            let rpc_client = config
+                .node_url
+                .to_socket()
+                .context("failed to convert the node url to a socket address")?;
+            let mut rpc_client = RpcClient::connect_lazy(rpc_client);
+
+            let genesis_header = rpc_client
+                .get_genesis_header()
+                .await
+                .context("fetching genesis header from the node")?;
 
             let current_dir =
                 std::env::current_dir().context("failed to open current directory")?;
@@ -188,7 +214,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             let (account, account_seed) = create_basic_fungible_faucet(
                 rng.random(),
-                (&root_block_header).try_into().context("failed to create anchor block")?,
+                (&genesis_header).try_into().context("failed to create anchor block")?,
                 TokenSymbol::try_from(token_symbol.as_str())
                     .context("failed to parse token symbol")?,
                 *decimals,

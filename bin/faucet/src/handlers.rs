@@ -27,9 +27,10 @@ use crate::{
 type RequestSender =
     tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<MintResult<(BlockNumber, Note)>>)>;
 
+#[derive(Clone)]
 pub struct GetTokensState {
-    request_sender: RequestSender,
-    asset_options: AssetOptions,
+    pub request_sender: RequestSender,
+    pub asset_options: AssetOptions,
 }
 
 /// Used to receive the initial request from the user.
@@ -146,11 +147,9 @@ impl RawMintRequest {
 }
 
 pub async fn get_tokens(
-    State(state): State<impl AsRef<GetTokensState>>,
+    State(state): State<GetTokensState>,
     Json(request): Json<RawMintRequest>,
 ) -> Result<impl IntoResponse, GetTokenError> {
-    let state = state.as_ref();
-
     let request = request.validate(&state.asset_options).map_err(GetTokenError::InvalidRequest)?;
     let request_account = request.account_id;
 

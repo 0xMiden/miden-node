@@ -19,7 +19,7 @@ tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
 async-trait                  = { version = "0.1" }
-futures                      = { version = "0.3" }
+futures                      = { workspace = true }
 itertools                    = { workspace = true }
 miden-block-prover           = { version = "0.8" }
 miden-lib                    = { workspace = true }

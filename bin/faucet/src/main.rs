@@ -115,15 +115,10 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let (tx_requests, rx_requests) = mpsc::channel(100);
 
             let faucet_state = ServerState::new(
-                config.clone(),
                 client.faucet_id(),
-                config.asset_amount_options,
+                config.asset_amount_options.clone(),
                 tx_requests,
             );
-
-            // let client_jh = tokio::spawn(async move { client.run(rx_requests).await });
-
-            info!(target: COMPONENT, %config, "Initializing server");
 
             let app = Router::new()
                 .route("/", get(frontend::get_index_html))
@@ -157,10 +152,17 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 .with_context(|| format!("no sockets available on {}", config.endpoint))?;
             let listener =
                 TcpListener::bind(socket_addr).await.context("failed to bind TCP listener")?;
+            info!(target: COMPONENT, %config, "Server started");
 
-            info!(target: COMPONENT, endpoint = %config.endpoint, "Server started");
-
-            axum::serve(listener, app).await.unwrap();
+            // Run both the client and the server concurrently.
+            // TODO: We probably want a more graceful shutdown.
+            let client = async { client.run(rx_requests).await.context("faucet client failed") };
+            let server = async { axum::serve(listener, app).await.context("faucet server failed") };
+            let mut tasks = tokio::task::JoinSet::new();
+            tasks.spawn(client);
+            tasks.spawn(server);
+            // SAFETY: join_next returns None if there are no tasks, and we definitely have tasks.
+            tasks.join_next().await.unwrap().context("failed to join task")?;
         },
 
         Command::CreateFaucetAccount {

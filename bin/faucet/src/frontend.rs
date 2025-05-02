@@ -104,26 +104,26 @@ impl StaticResources {
     }
 }
 
-pub async fn get_index_html(State(state): State<impl AsRef<StaticResources>>) -> Response {
-    StaticResources::build_response(&state.as_ref().html)
+pub async fn get_index_html(State(state): State<&'static StaticResources>) -> Response {
+    StaticResources::build_response(&state.html)
 }
 
-pub async fn get_index_js(State(state): State<impl AsRef<StaticResources>>) -> Response {
-    StaticResources::build_response(&state.as_ref().js)
+pub async fn get_index_js(State(state): State<&'static StaticResources>) -> Response {
+    StaticResources::build_response(&state.js)
 }
 
-pub async fn get_index_css(State(state): State<impl AsRef<StaticResources>>) -> Response {
-    StaticResources::build_response(&state.as_ref().css)
+pub async fn get_index_css(State(state): State<&'static StaticResources>) -> Response {
+    StaticResources::build_response(&state.css)
 }
 
-pub async fn get_background(State(state): State<impl AsRef<StaticResources>>) -> Response {
-    StaticResources::build_response(&state.as_ref().background)
+pub async fn get_background(State(state): State<&'static StaticResources>) -> Response {
+    StaticResources::build_response(&state.background)
 }
 
-pub async fn get_favicon(State(state): State<impl AsRef<StaticResources>>) -> Response {
-    StaticResources::build_response(&state.as_ref().favicon)
+pub async fn get_favicon(State(state): State<&'static StaticResources>) -> Response {
+    StaticResources::build_response(&state.favicon)
 }
 
-pub async fn get_metadata(State(state): State<impl AsRef<StaticResources>>) -> Json<Metadata> {
-    state.as_ref().metadata.clone()
+pub async fn get_metadata(State(state): State<&'static StaticResources>) -> Json<Metadata> {
+    state.metadata.clone()
 }

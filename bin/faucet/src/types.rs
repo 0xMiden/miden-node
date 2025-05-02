@@ -1,11 +1,29 @@
 //! A collection of new types and safety wrappers used throughout the faucet.
 
+use std::fmt::Debug;
+
 use miden_objects::asset::FungibleAsset;
 use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Describes the asset amounts allowed by the faucet.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 pub struct AssetOptions(Vec<AssetAmount>);
+
+impl std::fmt::Display for AssetOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[")?;
+
+        let mut options = self.0.iter();
+        if let Some(first) = options.next() {
+            write!(f, " {first}")?;
+        }
+        for rest in options {
+            write!(f, ", {rest}")?;
+        }
+
+        write!(f, " ]")
+    }
+}
 
 impl AssetOptions {
     /// Converts the given amount into an [`AssetAmount`] _iff_ if it
@@ -39,6 +57,12 @@ impl AssetOptions {
 /// and this type guarantees that its value is within this range.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize)]
 pub struct AssetAmount(u64);
+
+impl std::fmt::Display for AssetAmount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 
 impl AssetAmount {
     /// The absolute maximum asset ammount allowed by the network.

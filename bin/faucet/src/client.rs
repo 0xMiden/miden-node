@@ -17,7 +17,7 @@ use miden_objects::{
         merkle::{MmrPeaks, PartialMmr},
         rand::RpoRandomCoin,
     },
-    note::{Note, NoteType},
+    note::Note,
     transaction::{
         ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionScript,
     },
@@ -37,7 +37,6 @@ use crate::{
     COMPONENT,
     config::FaucetConfig,
     errors::{ClientError, ExecutionError, MintError, MintResult},
-    handlers::FaucetRequest,
     store::FaucetDataStore,
 };
 
@@ -46,6 +45,32 @@ pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
 
 // FAUCET CLIENT
 // ================================================================================================
+
+/// A request for minting to the [`FaucetClient`].
+pub struct MintRequest {
+    /// Destination account.
+    pub account_id: AccountId,
+    /// Whether to generate a public or private note to hold the minted asset.
+    pub note_type: NoteType,
+    /// The amount to mint.
+    pub asset_amount: u64,
+}
+
+/// Type of note to generate for a [`MintRequest`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum NoteType {
+    Private,
+    Public,
+}
+
+impl From<NoteType> for miden_objects::note::NoteType {
+    fn from(value: NoteType) -> Self {
+        match value {
+            NoteType::Private => Self::Private,
+            NoteType::Public => Self::Public,
+        }
+    }
+}
 
 /// Basic client that handles execution, proving and submitting of mint transactions
 /// for the faucet.
@@ -133,17 +158,18 @@ impl FaucetClient {
         })
     }
 
+    /// Runs the faucet minting process until the request source is closed, or it encounters a fatal error.
     pub async fn run(
         mut self,
         mut requests: tokio::sync::mpsc::Receiver<(
-            FaucetRequest,
+            MintRequest,
             tokio::sync::oneshot::Sender<MintResult<(BlockNumber, Note)>>,
         )>,
     ) -> anyhow::Result<()> {
         while let Some((request, response_sender)) = requests.recv().await {
             // Skip doing work if the user no longer cares about the result.
             if response_sender.is_closed() {
-                tracing::info!("request skipped");
+                tracing::info!(request.account_id=%request.account_id, "request cancelled");
                 continue;
             }
 
@@ -164,7 +190,7 @@ impl FaucetClient {
 
             // Handle errors if possible, otherwise bail and let the restart handle it.
             if let Err(err) = result {
-                self.handle_error(err).await?;
+                self.error_recovery(err).await?;
             }
         }
 
@@ -178,7 +204,7 @@ impl FaucetClient {
     /// Notably this includes rolling back local state if a desync occurs.
     ///
     /// Returns an error if recovery was not possible, which should be considered fatal.
-    async fn handle_error(&mut self, err: MintError) -> anyhow::Result<()> {
+    async fn error_recovery(&mut self, err: MintError) -> anyhow::Result<()> {
         match err {
             // A state mismatch means we desync'd from the actual chain state, and should resync.
             //
@@ -217,7 +243,7 @@ impl FaucetClient {
         self.data_store.update_faucet_state(self.prior_state[rollback].clone());
         self.prior_state.drain(rollback..);
 
-        tracing::warn!(rollback_count = rollback, "desync detected and handled");
+        tracing::warn!(rollback.count = rollback, "desync detected and handled");
 
         Ok(())
     }
@@ -227,7 +253,7 @@ impl FaucetClient {
     /// Caller should update the faucet account state on a succesful call.
     async fn handle_request(
         &mut self,
-        request: FaucetRequest,
+        request: MintRequest,
     ) -> MintResult<(Account, BlockNumber, Note)> {
         // info!(target: COMPONENT, "Executing mint transaction for account.");
         let (executed_tx, created_note) = self.execute_mint_transaction(request)?;
@@ -254,30 +280,24 @@ impl FaucetClient {
     /// Returns the executed transaction and the expected output note.
     fn execute_mint_transaction(
         &mut self,
-        request: FaucetRequest,
+        request: MintRequest,
     ) -> MintResult<(ExecutedTransaction, Note)> {
         // SAFETY: self.id is definitely a faucet account, and the amount is valid.
         // TODO: type safety the asset amount as part of request.
         let asset = FungibleAsset::new(self.id, request.asset_amount).unwrap();
 
-        // TODO: type safety this in the request already. And the asset amount.
-        let note_type = if request.is_private_note {
-            NoteType::Private
-        } else {
-            NoteType::Public
-        };
-
         let output_note = create_p2id_note(
             self.id,
             request.account_id,
             vec![asset.into()],
-            note_type,
+            request.note_type.into(),
             Felt::default(),
             &mut self.rng,
         )
         .map_err(ExecutionError::NoteCreation)?;
 
-        let transaction_args = build_transaction_arguments(&output_note, note_type, asset)?;
+        let transaction_args =
+            build_transaction_arguments(&output_note, request.note_type.into(), asset)?;
 
         let executed_tx = self
             .executor

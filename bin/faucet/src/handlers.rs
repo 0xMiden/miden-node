@@ -7,6 +7,7 @@ use axum::{
 };
 use http::header;
 use http_body_util::Full;
+use miden_node_utils::errors::ErrorReport;
 use miden_objects::{
     account::AccountId,
     note::{NoteDetails, NoteExecutionMode, NoteFile, NoteId, NoteTag},
@@ -17,14 +18,16 @@ use tokio::sync::oneshot;
 use tonic::body;
 use tracing::info;
 
-use crate::{COMPONENT, errors::HandlerError, state::FaucetState};
+use crate::{COMPONENT, client::MintRequest, errors::HandlerError, state::ServerState};
 
+/// Used to receive the initial request from the user.
+///
+/// Further parsing is done to get the expected [`MintRequest`] expected by the faucet client.
 #[derive(Deserialize)]
-pub struct FaucetRequest {
-    #[serde(deserialize_with = "deserialize_account_id")]
-    pub account_id: AccountId,
-    pub is_private_note: bool,
-    pub asset_amount: u64,
+struct RawMintRequest {
+    account_id: String,
+    is_private_note: bool,
+    asset_amount: u64,
 }
 
 /// Serde deserializing helper wrapper for [`AccountId::from_hex`].
@@ -37,15 +40,13 @@ where
 }
 
 #[derive(Serialize)]
-pub struct FaucetMetadataReponse {
+pub struct FaucetMetadata {
     id: String,
     asset_amount_options: Vec<u64>,
 }
 
-pub async fn get_metadata(
-    State(state): State<FaucetState>,
-) -> (StatusCode, Json<FaucetMetadataReponse>) {
-    let response = FaucetMetadataReponse {
+pub async fn get_metadata(State(state): State<ServerState>) -> (StatusCode, Json<FaucetMetadata>) {
+    let response = FaucetMetadata {
         id: state.account_id.to_string(),
         asset_amount_options: state.config.asset_amount_options.clone(),
     };
@@ -54,8 +55,8 @@ pub async fn get_metadata(
 }
 
 pub async fn get_tokens(
-    State(state): State<FaucetState>,
-    Json(req): Json<FaucetRequest>,
+    State(state): State<ServerState>,
+    Json(req): Json<RawMintRequest>,
 ) -> Result<impl IntoResponse, HandlerError> {
     let target_account = req.account_id;
     info!(
@@ -106,47 +107,6 @@ pub async fn get_tokens(
         .header(header::CONTENT_DISPOSITION, "attachment; filename=note.mno")
         .header("Note-Id", note_id.to_string())
         .body(body::boxed(Full::from(bytes)))
-        .context("Failed to build response")
-        .map_err(Into::into)
-}
-
-pub async fn get_index_html(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "index.html")
-}
-
-pub async fn get_index_js(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "index.js")
-}
-
-pub async fn get_index_css(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "index.css")
-}
-
-pub async fn get_background(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "background.png")
-}
-
-pub async fn get_favicon(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "favicon.ico")
-}
-
-/// Returns a static file bundled with the app state.
-///
-/// # Panics
-///
-/// Panics if the file does not exist.
-fn get_static_file(
-    State(state): State<FaucetState>,
-    file: &'static str,
-) -> Result<impl IntoResponse, HandlerError> {
-    info!(target: COMPONENT, file, "Serving static file");
-
-    let static_file = state.static_files.get(file).expect("static file not found");
-
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, static_file.mime_type)
-        .body(body::boxed(Full::from(static_file.data)))
         .context("Failed to build response")
         .map_err(Into::into)
 }

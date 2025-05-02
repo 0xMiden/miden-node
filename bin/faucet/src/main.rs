@@ -5,6 +5,7 @@ mod frontend;
 mod handlers;
 mod state;
 mod store;
+mod types;
 
 #[cfg(test)]
 mod stub_rpc_api;
@@ -18,6 +19,7 @@ use axum::{
 };
 use clap::{Parser, Subcommand};
 use client::{FaucetClient, initialize_faucet_client};
+use frontend::get_metadata;
 use http::{HeaderValue, header};
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{
@@ -39,7 +41,7 @@ use tracing::info;
 
 use crate::{
     config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig},
-    handlers::{get_metadata, get_tokens},
+    handlers::get_tokens,
 };
 
 // CONSTANTS
@@ -112,7 +114,12 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             // Maximum of 100 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(100);
 
-            let faucet_state = ServerState::new(config.clone(), client.faucet_id(), tx_requests);
+            let faucet_state = ServerState::new(
+                config.clone(),
+                client.faucet_id(),
+                config.asset_amount_options,
+                tx_requests,
+            );
 
             // let client_jh = tokio::spawn(async move { client.run(rx_requests).await });
 

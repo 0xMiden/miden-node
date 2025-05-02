@@ -30,30 +30,6 @@ struct RawMintRequest {
     asset_amount: u64,
 }
 
-/// Serde deserializing helper wrapper for [`AccountId::from_hex`].
-fn deserialize_account_id<'de, D>(deserializer: D) -> Result<AccountId, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let buf = String::deserialize(deserializer)?;
-    AccountId::from_hex(&buf).map_err(serde::de::Error::custom)
-}
-
-#[derive(Serialize)]
-pub struct FaucetMetadata {
-    id: String,
-    asset_amount_options: Vec<u64>,
-}
-
-pub async fn get_metadata(State(state): State<ServerState>) -> (StatusCode, Json<FaucetMetadata>) {
-    let response = FaucetMetadata {
-        id: state.account_id.to_string(),
-        asset_amount_options: state.config.asset_amount_options.clone(),
-    };
-
-    (StatusCode::OK, Json(response))
-}
-
 pub async fn get_tokens(
     State(state): State<ServerState>,
     Json(req): Json<RawMintRequest>,

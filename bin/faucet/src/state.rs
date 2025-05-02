@@ -1,8 +1,13 @@
 use axum::extract::FromRef;
-use miden_objects::{account::AccountId, block::BlockNumber, note::Note};
+use miden_objects::{block::BlockNumber, note::Note};
 use tokio::sync::oneshot;
 
-use crate::{client::MintRequest, config::FaucetConfig, frontend::StaticFiles};
+use crate::{
+    client::{FaucetId, MintRequest},
+    config::FaucetConfig,
+    frontend::StaticResources,
+    types::AssetOptions,
+};
 
 // FAUCET STATE
 // ================================================================================================
@@ -14,31 +19,26 @@ type RequestSender = tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<(Bl
 /// Mint requests are submitted to the faucet using a channel.
 #[derive(Clone)]
 pub struct ServerState {
-    pub account_id: AccountId,
     config: FaucetConfig,
     pub request_sender: RequestSender,
-    static_files: &'static StaticFiles,
+    static_files: &'static StaticResources,
 }
 
 impl ServerState {
     pub fn new(
         // TODO: get rid of this.
         config: FaucetConfig,
-        account_id: AccountId,
+        faucet_id: FaucetId,
+        asset_options: AssetOptions,
         request_sender: RequestSender,
     ) -> Self {
-        let static_files = StaticFiles::new().leak();
+        let static_files = StaticResources::new(faucet_id, asset_options).leak();
 
-        ServerState {
-            account_id,
-            config,
-            static_files,
-            request_sender,
-        }
+        ServerState { config, static_files, request_sender }
     }
 }
 
-impl FromRef<ServerState> for &'static StaticFiles {
+impl FromRef<ServerState> for &'static StaticResources {
     fn from_ref(input: &ServerState) -> Self {
         input.static_files
     }

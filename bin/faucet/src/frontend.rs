@@ -1,27 +1,39 @@
 use std::collections::HashMap;
 
-use axum::{body::Body, extract::State, response::Response};
+use axum::{Json, body::Body, extract::State, response::Response};
 use http::{StatusCode, header::CONTENT_TYPE};
 use http_body_util::Full;
 use static_files::Resource;
+
+use crate::{client::FaucetId, types::AssetOptions};
 
 /// The static website files embedded by the build.rs script.
 mod static_resources {
     include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 }
 
-/// State holding the static file resources required by the frontend.
+/// Holds the static files required by the faucet website.
 ///
 /// aka holds and serves the website files.
-pub struct StaticFiles {
+pub struct StaticResources {
     css: Resource,
     html: Resource,
     js: Resource,
     favicon: Resource,
     background: Resource,
+    metadata: Json<Metadata>,
 }
 
-impl StaticFiles {
+/// Describes the faucet metadata.
+///
+/// More specifically, the faucet's account ID and allowed mint amounts.
+#[derive(Clone, serde::Serialize)]
+struct Metadata {
+    pub id: FaucetId,
+    pub asset_amount_options: AssetOptions,
+}
+
+impl StaticResources {
     const HTML_FILENAME: &str = "index.html";
     const CSS_FILENAME: &str = "index.css";
     const JS_FILENAME: &str = "index.js";
@@ -29,11 +41,11 @@ impl StaticFiles {
     const BACKGROUND_FILENAME: &str = "background.png";
 
     /// Loads the static files required by the frontend website.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any of the resources were not found.
-    pub fn new() -> Self {
+    pub fn new(faucet_id: FaucetId, asset_options: AssetOptions) -> Self {
+        let metadata = Metadata {
+            id: faucet_id,
+            asset_amount_options: asset_options,
+        };
         let files = static_resources::generate();
 
         Self {
@@ -42,6 +54,7 @@ impl StaticFiles {
             js: Self::clone_file(&files, Self::JS_FILENAME),
             favicon: Self::clone_file(&files, Self::FAVICON_FILENAME),
             background: Self::clone_file(&files, Self::BACKGROUND_FILENAME),
+            metadata: Json(metadata),
         }
     }
 
@@ -91,22 +104,26 @@ impl StaticFiles {
     }
 }
 
-pub async fn get_index_html(State(state): State<impl AsRef<StaticFiles>>) -> Response {
-    StaticFiles::build_response(&state.as_ref().html)
+pub async fn get_index_html(State(state): State<impl AsRef<StaticResources>>) -> Response {
+    StaticResources::build_response(&state.as_ref().html)
 }
 
-pub async fn get_index_js(State(state): State<impl AsRef<StaticFiles>>) -> Response {
-    StaticFiles::build_response(&state.as_ref().js)
+pub async fn get_index_js(State(state): State<impl AsRef<StaticResources>>) -> Response {
+    StaticResources::build_response(&state.as_ref().js)
 }
 
-pub async fn get_index_css(State(state): State<impl AsRef<StaticFiles>>) -> Response {
-    StaticFiles::build_response(&state.as_ref().css)
+pub async fn get_index_css(State(state): State<impl AsRef<StaticResources>>) -> Response {
+    StaticResources::build_response(&state.as_ref().css)
 }
 
-pub async fn get_background(State(state): State<impl AsRef<StaticFiles>>) -> Response {
-    StaticFiles::build_response(&state.as_ref().background)
+pub async fn get_background(State(state): State<impl AsRef<StaticResources>>) -> Response {
+    StaticResources::build_response(&state.as_ref().background)
 }
 
-pub async fn get_favicon(State(state): State<impl AsRef<StaticFiles>>) -> Response {
-    StaticFiles::build_response(&state.as_ref().favicon)
+pub async fn get_favicon(State(state): State<impl AsRef<StaticResources>>) -> Response {
+    StaticResources::build_response(&state.as_ref().favicon)
+}
+
+pub async fn get_metadata(State(state): State<impl AsRef<StaticResources>>) -> Json<Metadata> {
+    state.as_ref().metadata.clone()
 }

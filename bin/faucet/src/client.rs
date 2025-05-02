@@ -30,6 +30,7 @@ use miden_tx::{
     utils::{Serializable, parse_hex_string_as_word},
 };
 use rand::{random, rngs::StdRng};
+use serde::Serialize;
 use tonic::transport::Channel;
 use tracing::info;
 
@@ -38,6 +39,7 @@ use crate::{
     config::FaucetConfig,
     errors::{ClientError, ExecutionError, MintError, MintResult},
     store::FaucetDataStore,
+    types::{AssetAmount, NoteType},
 };
 
 pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
@@ -46,6 +48,28 @@ pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
 // FAUCET CLIENT
 // ================================================================================================
 
+/// The faucet's account ID.
+///
+/// Used as a type safety mechanism to avoid confusion with user account IDs,
+/// and allows us to implement traits.
+#[derive(Clone, Copy)]
+pub struct FaucetId(AccountId);
+
+impl FaucetId {
+    fn inner(self) -> AccountId {
+        self.0
+    }
+}
+
+impl Serialize for FaucetId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0.to_hex())
+    }
+}
+
 /// A request for minting to the [`FaucetClient`].
 pub struct MintRequest {
     /// Destination account.
@@ -53,23 +77,7 @@ pub struct MintRequest {
     /// Whether to generate a public or private note to hold the minted asset.
     pub note_type: NoteType,
     /// The amount to mint.
-    pub asset_amount: u64,
-}
-
-/// Type of note to generate for a [`MintRequest`].
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum NoteType {
-    Private,
-    Public,
-}
-
-impl From<NoteType> for miden_objects::note::NoteType {
-    fn from(value: NoteType) -> Self {
-        match value {
-            NoteType::Private => Self::Private,
-            NoteType::Public => Self::Public,
-        }
-    }
+    pub asset_amount: AssetAmount,
 }
 
 /// Basic client that handles execution, proving and submitting of mint transactions
@@ -78,7 +86,7 @@ pub struct FaucetClient {
     rpc_api: ApiClient<Channel>,
     executor: TransactionExecutor,
     data_store: Arc<FaucetDataStore>,
-    id: AccountId,
+    id: FaucetId,
     rng: RpoRandomCoin,
     // Previous faucet account states used to perform rollbacks if a desync is detected.
     prior_state: VecDeque<Account>,
@@ -101,9 +109,10 @@ impl FaucetClient {
             .context("Failed to load faucet account from file")?;
 
         let id = faucet_account_data.account.id();
+        let id = FaucetId(id);
 
         info!(target: COMPONENT, "Requesting account state from the node...");
-        let faucet_account = match request_account_state(&mut rpc_api, id).await {
+        let faucet_account = match request_account_state(&mut rpc_api, id.inner()).await {
             Ok(account) => {
                 info!(
                     target: COMPONENT,
@@ -283,11 +292,10 @@ impl FaucetClient {
         request: MintRequest,
     ) -> MintResult<(ExecutedTransaction, Note)> {
         // SAFETY: self.id is definitely a faucet account, and the amount is valid.
-        // TODO: type safety the asset amount as part of request.
-        let asset = FungibleAsset::new(self.id, request.asset_amount).unwrap();
+        let asset = FungibleAsset::new(self.id.inner(), request.asset_amount.inner()).unwrap();
 
         let output_note = create_p2id_note(
-            self.id,
+            self.id.inner(),
             request.account_id,
             vec![asset.into()],
             request.note_type.into(),
@@ -301,7 +309,7 @@ impl FaucetClient {
 
         let executed_tx = self
             .executor
-            .execute_transaction(self.id, 0.into(), &[], transaction_args)
+            .execute_transaction(self.id.inner(), 0.into(), &[], transaction_args)
             .map_err(ExecutionError::Execution)?;
 
         Ok((executed_tx, output_note))
@@ -327,7 +335,7 @@ impl FaucetClient {
     }
 
     /// Returns the id of the faucet account.
-    pub fn faucet_id(&self) -> AccountId {
+    pub fn faucet_id(&self) -> FaucetId {
         self.id
     }
 }

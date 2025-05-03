@@ -9,7 +9,7 @@ name                   = "miden-faucet"
 readme                 = "README.md"
 repository.workspace   = true
 rust-version.workspace = true
-version                = "0.8.1"
+version                = "0.8.2"
 
 [lints]
 workspace = true
@@ -33,7 +33,7 @@ static-files     = "0.2"
 thiserror        = { workspace = true }
 tokio            = { workspace = true, features = ["fs"] }
 toml             = { version = "0.8" }
-tonic            = { workspace = true }
+tonic            = { workspace = true, features = ["tls-native-roots"] }
 tower            = { workspace = true }
 tower-http       = { workspace = true, features = ["cors", "set-header", "trace"] }
 tracing          = { workspace = true }

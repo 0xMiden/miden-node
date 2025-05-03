@@ -1,7 +1,6 @@
-use std::net::SocketAddr;
+use std::str::FromStr;
 
 use anyhow::Context;
-use http::uri::Scheme;
 use miden_node_proto::generated::{
     requests::{
         GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
@@ -14,16 +13,17 @@ use miden_objects::{
     transaction::ProvenTransaction,
 };
 use miden_tx::utils::{Deserializable, Serializable};
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use url::Url;
 
 use crate::client::FaucetId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
     #[error("gRPC error encountered")]
-    Transport(tonic::Status),
-    #[error("error while parsing the gRPC response")]
-    ResponseParsing(anyhow::Error),
+    Transport(#[source] tonic::Status),
+    #[error("error parsing the gRPC response")]
+    ResponseParsing(#[source] anyhow::Error),
 }
 
 pub struct RpcClient {
@@ -34,18 +34,13 @@ impl RpcClient {
     /// Creates an RPC client to the given address.
     ///
     /// Connection is lazy and will re-establish in the background on disconnection.
-    pub fn connect_lazy(addr: SocketAddr) -> Self {
-        // SAFETY: http://{addr} will always form a valid Uri.
-        let uri = http::Uri::builder()
-            .scheme(Scheme::HTTP)
-            .authority(addr.to_string())
-            .build()
-            .unwrap();
-
-        let client = Endpoint::from(uri).connect_lazy();
+    pub fn connect_lazy(url: Url) -> Result<Self, tonic::transport::Error> {
+        let client = Endpoint::from_str(&url.to_string())?
+            .tls_config(ClientTlsConfig::default().with_native_roots())?
+            .connect_lazy();
         let client = GeneratedClient::new(client);
 
-        Self { inner: client }
+        Ok(Self { inner: client })
     }
 
     pub async fn get_genesis_header(&mut self) -> Result<BlockHeader, RpcError> {

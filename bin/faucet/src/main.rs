@@ -23,8 +23,7 @@ use frontend::get_metadata;
 use http::{HeaderValue, header};
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{
-    config::load_config, crypto::get_rpo_random_coin, grpc::UrlExt, logging::OpenTelemetry,
-    version::LongVersion,
+    config::load_config, crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion,
 };
 use miden_objects::{
     Felt,
@@ -112,11 +111,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let config: FaucetConfig =
                 load_config(config).context("failed to load configuration file")?;
 
-            let rpc_client = config
-                .node_url
-                .to_socket()
-                .context("failed to convert the node url to a socket address")?;
-            let mut rpc_client = RpcClient::connect_lazy(rpc_client);
+            let mut rpc_client = RpcClient::connect_lazy(config.node_url.clone())
+                .context("failed to create RPC client")?;
             let account_file = AccountFile::read(&config.faucet_account_path)
                 .context("failed to load faucet account from file")?;
 
@@ -194,11 +190,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let config: FaucetConfig =
                 load_config(config_path).context("failed to load configuration file")?;
 
-            let rpc_client = config
-                .node_url
-                .to_socket()
-                .context("failed to convert the node url to a socket address")?;
-            let mut rpc_client = RpcClient::connect_lazy(rpc_client);
+            let mut rpc_client =
+                RpcClient::connect_lazy(config.node_url).context("failed to create RPC client")?;
 
             let genesis_header = rpc_client
                 .get_genesis_header()
@@ -229,11 +222,11 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
 
             let output_path = current_dir.join(output_path);
-            account_data
-                .write(&output_path)
-                .context("failed to write account data to file")?;
+            account_data.write(&output_path).with_context(|| {
+                format!("failed to write account data to file: {}", output_path.display())
+            })?;
 
-            println!("Faucet account file successfully created at: {output_path:?}");
+            println!("Faucet account file successfully created at: {}", output_path.display());
         },
 
         Command::Init { config_path, faucet_account_path } => {

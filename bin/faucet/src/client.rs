@@ -84,15 +84,15 @@ type MintResult<T> = Result<T, MintError>;
 #[derive(Debug, thiserror::Error)]
 pub enum MintError {
     #[error("building the p2id note failed")]
-    BuildingP2IdNote(NoteError),
+    BuildingP2IdNote(#[source] NoteError),
     #[error("compiling the tx script failed")]
-    ScriptCompilation(TransactionScriptError),
+    ScriptCompilation(#[source] TransactionScriptError),
     #[error("execution of the tx script failed")]
-    Execution(TransactionExecutorError),
+    Execution(#[source] TransactionExecutorError),
     #[error("proving the tx failed")]
-    Proving(TransactionProverError),
+    Proving(#[source] TransactionProverError),
     #[error("submitting the tx to the node failed")]
-    Submission(RpcError),
+    Submission(#[source] RpcError),
 }
 
 /// Stores the current faucet state and handles minting requests.

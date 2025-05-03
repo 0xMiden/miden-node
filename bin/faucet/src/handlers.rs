@@ -44,7 +44,7 @@ pub struct RawMintRequest {
 #[derive(Debug, thiserror::Error)]
 pub enum InvalidRequest {
     #[error("account ID failed to parse")]
-    AccountId(AccountIdError),
+    AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
 }

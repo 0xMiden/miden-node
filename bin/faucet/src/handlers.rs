@@ -146,6 +146,14 @@ pub async fn get_tokens(
     let request = request.validate(&state.asset_options).map_err(GetTokenError::InvalidRequest)?;
     let request_account = request.account_id;
 
+    // Fill in the request's tracing fields.
+    //
+    // These were registered in the trace layer in the router.
+    let span = tracing::Span::current();
+    span.record("account", &request.account_id.to_hex());
+    span.record("amount", &request.asset_amount.inner());
+    span.record("note_type", &request.note_type.to_string());
+
     // Submit the request to the client and wait for the result.
     let (tx_result, rx_result) = oneshot::channel();
     state.request_sender.try_send((request, tx_result)).map_err(|err| match err {

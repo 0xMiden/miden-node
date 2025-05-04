@@ -15,29 +15,30 @@ version                = "0.8.2"
 workspace = true
 
 [dependencies]
-anyhow           = { workspace = true }
-axum             = { version = "0.8", features = ["tokio"] }
-clap             = { version = "4.5", features = ["derive", "string"] }
-http             = { workspace = true }
-http-body-util   = "0.1"
-miden-lib        = { workspace = true }
-miden-node-proto = { workspace = true }
-miden-node-utils = { workspace = true }
-miden-objects    = { workspace = true }
-miden-tx         = { workspace = true, features = ["concurrent"] }
-mime             = "0.3"
-rand             = { workspace = true }
-rand_chacha      = "0.9"
-serde            = { version = "1.0", features = ["derive"] }
-static-files     = "0.2"
-thiserror        = { workspace = true }
-tokio            = { workspace = true, features = ["fs"] }
-toml             = { version = "0.8" }
-tonic            = { workspace = true, features = ["tls-native-roots"] }
-tower            = { workspace = true }
-tower-http       = { workspace = true, features = ["cors", "set-header", "trace"] }
-tracing          = { workspace = true }
-url              = { workspace = true }
+anyhow             = { workspace = true }
+axum               = { version = "0.8", features = ["tokio"] }
+clap               = { version = "4.5", features = ["derive", "string"] }
+http               = { workspace = true }
+http-body-util     = "0.1"
+miden-lib          = { workspace = true }
+miden-node-proto   = { workspace = true }
+miden-node-utils   = { workspace = true }
+miden-objects      = { workspace = true }
+miden-tx           = { workspace = true, features = ["concurrent"] }
+mime               = "0.3"
+rand               = { workspace = true }
+rand_chacha        = "0.9"
+serde              = { version = "1.0", features = ["derive"] }
+static-files       = "0.2"
+thiserror          = { workspace = true }
+tokio              = { workspace = true, features = ["fs"] }
+toml               = { version = "0.8" }
+tonic              = { workspace = true, features = ["tls-native-roots"] }
+tower              = { workspace = true }
+tower-http         = { workspace = true, features = ["cors", "set-header", "trace"] }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+url                = { workspace = true }
 
 [build-dependencies]
 # Required to inject build metadata.

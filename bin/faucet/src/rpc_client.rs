@@ -16,7 +16,7 @@ use miden_tx::utils::{Deserializable, Serializable};
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use url::Url;
 
-use crate::client::FaucetId;
+use crate::faucet::FaucetId;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {

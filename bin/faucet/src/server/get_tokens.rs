@@ -19,7 +19,7 @@ use tokio::sync::{mpsc::error::TrySendError, oneshot};
 use tonic::body;
 
 use crate::{
-    client::MintRequest,
+    faucet::MintRequest,
     types::{AssetOptions, NoteType},
 };
 

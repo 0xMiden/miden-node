@@ -5,7 +5,7 @@ use http::{StatusCode, header::CONTENT_TYPE};
 use http_body_util::Full;
 use static_files::Resource;
 
-use crate::{client::FaucetId, types::AssetOptions};
+use crate::{faucet::FaucetId, types::AssetOptions};
 
 /// The static website files embedded by the build.rs script.
 mod static_resources {

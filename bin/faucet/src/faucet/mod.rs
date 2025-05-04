@@ -24,18 +24,19 @@ use miden_tx::{
 };
 use rand::{random, rngs::StdRng};
 use serde::Serialize;
+use store::FaucetDataStore;
 use tokio::sync::{mpsc, oneshot};
 use tonic::Code;
 use tracing::{info, instrument};
 
 use crate::{
     rpc_client::{RpcClient, RpcError},
-    store::FaucetDataStore,
     types::{AssetAmount, NoteType},
 };
 
-pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
-    include_str!("transaction_scripts/distribute_fungible_asset.masm");
+mod store;
+
+pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str = include_str!("distribute_fungible_asset.masm");
 
 // FAUCET CLIENT
 // ================================================================================================
@@ -68,7 +69,7 @@ impl Serialize for FaucetId {
     }
 }
 
-/// A request for minting to the [`FaucetClient`].
+/// A request for minting to the [`Faucet`].
 pub struct MintRequest {
     /// Destination account.
     pub account_id: AccountId,

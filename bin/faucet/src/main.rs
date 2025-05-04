@@ -1,10 +1,7 @@
-mod client;
 mod config;
-mod frontend;
-mod handlers;
+mod faucet;
 mod rpc_client;
-mod state;
-mod store;
+mod server;
 mod types;
 
 #[cfg(test)]
@@ -13,18 +10,10 @@ mod stub_rpc_api;
 use std::{path::PathBuf, str::FromStr};
 
 use anyhow::Context;
-use axum::{
-    Router,
-    routing::{get, post},
-};
 use clap::{Parser, Subcommand};
-use client::Faucet;
-use frontend::get_metadata;
-use http::{HeaderValue, Request, header};
+use faucet::Faucet;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
-use miden_node_utils::{
-    config::load_config, crypto::get_rpo_random_coin, version::LongVersion,
-};
+use miden_node_utils::{config::load_config, crypto::get_rpo_random_coin, version::LongVersion};
 use miden_objects::{
     Felt,
     account::{AccountFile, AccountStorageMode, AuthSecretKey},
@@ -34,19 +23,11 @@ use miden_objects::{
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use rpc_client::RpcClient;
-use state::ServerState;
-use tokio::{net::TcpListener, sync::mpsc};
-use tower::ServiceBuilder;
-use tower_http::{
-    cors::CorsLayer, set_header::SetResponseHeaderLayer, trace::{DefaultOnResponse, TraceLayer}
-};
-use tracing::{Level, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use server::Server;
+use tokio::sync::mpsc;
+use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{
-    config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig},
-    handlers::get_tokens,
-};
+use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 
 // CONSTANTS
 // =================================================================================================
@@ -118,78 +99,21 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let account_file = AccountFile::read(&config.faucet_account_path)
                 .context("failed to load faucet account from file")?;
 
-            let client = Faucet::load(account_file, &mut rpc_client).await?;
+            let faucet = Faucet::load(account_file, &mut rpc_client).await?;
 
             // Maximum of 100 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(100);
 
-            let faucet_state = ServerState::new(
-                client.faucet_id(),
-                config.asset_amount_options.clone(),
-                tx_requests,
-            );
-
-            let app = Router::new()
-                .route("/", get(frontend::get_index_html))
-                .route("/index.js", get(frontend::get_index_js))
-                .route("/index.css", get(frontend::get_index_css))
-                .route("/background.png", get(frontend::get_background))
-                .route("/favicon.ico", get(frontend::get_favicon))
-                .route("/get_metadata", get(get_metadata))
-                .route(
-                    "/get_tokens",
-                    post(get_tokens).layer(
-                        // The other routes are serving static files and are therefore less interesting to log.
-                        TraceLayer::new_for_http() 
-                            // Pre-register the account and amount so we can fill them in in the request.
-                            //
-                            // TODO: switch input from json to query params so we can fill in here.
-                            .make_span_with(|_request: &Request<_>| {
-                                use tracing::field::Empty;
-                                tracing::info_span!(
-                                    "token_request",
-                                    account = Empty,
-                                    note_type = Empty,
-                                    amount = Empty
-                                )
-                            })
-                            .on_response(DefaultOnResponse::new().level(Level::INFO))
-                            // Disable failure logs since we already trace errors in the method.
-                            .on_failure(())
-                    ),
-                )
-                .layer(
-                    ServiceBuilder::new()
-                        .layer(SetResponseHeaderLayer::if_not_present(
-                            http::header::CACHE_CONTROL,
-                            HeaderValue::from_static("no-cache"),
-                        ))
-                        .layer(
-                            CorsLayer::new()
-                                .allow_origin(tower_http::cors::Any)
-                                .allow_methods(tower_http::cors::Any)
-                                .allow_headers([header::CONTENT_TYPE]),
-                        ),
-                )
-                .with_state(faucet_state);
-
-            let socket_addr = config
-                .endpoint
-                .socket_addrs(|| None)?
-                .into_iter()
-                .next()
-                .with_context(|| format!("no sockets available on {}", config.endpoint))?;
-            let listener =
-                TcpListener::bind(socket_addr).await.context("failed to bind TCP listener")?;
-            info!(target: COMPONENT, %config, "Server started");
+            let server =
+                Server::new(faucet.faucet_id(), config.asset_amount_options.clone(), tx_requests);
 
             // Run both the client and the server concurrently.
             // TODO: We probably want a more graceful shutdown.
-            let client =
-                async { client.run(rpc_client, rx_requests).await.context("faucet client failed") };
-            let server = async { axum::serve(listener, app).await.context("faucet server failed") };
+            let faucet =
+                async { faucet.run(rpc_client, rx_requests).await.context("faucet failed") };
+            let server = async move { server.serve(config.port).await.context("server failed") };
             let mut tasks = tokio::task::JoinSet::new();
-            tasks.spawn(client);
+            tasks.spawn(faucet);
             tasks.spawn(server);
             // SAFETY: join_next returns None if there are no tasks, and we definitely have tasks.
             tasks
@@ -305,9 +229,7 @@ fn setup_tracing() {
         },
     };
 
-    tracing_subscriber::registry()
-        .with(fmt.with_filter(filter))
-        .init();
+    tracing_subscriber::registry().with(fmt.with_filter(filter)).init();
 }
 
 /// Generates [`LongVersion`] using the metadata generated by build.rs.
@@ -381,7 +303,7 @@ mod test {
         .unwrap();
 
         // Start the faucet connected to the stub
-        let website_url = config.endpoint.clone();
+        let website_url = format!("http://localhost:{}", config.port);
         tokio::spawn(async move {
             run_faucet_command(Cli {
                 command: crate::Command::Start { config: config_path },

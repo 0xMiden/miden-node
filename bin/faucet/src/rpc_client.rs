@@ -34,8 +34,8 @@ impl RpcClient {
     /// Creates an RPC client to the given address.
     ///
     /// Connection is lazy and will re-establish in the background on disconnection.
-    pub fn connect_lazy(url: Url) -> Result<Self, tonic::transport::Error> {
-        let client = Endpoint::from_str(&url.to_string())?
+    pub fn connect_lazy(url: &Url) -> Result<Self, tonic::transport::Error> {
+        let client = Endpoint::from_str(url.as_ref())?
             .tls_config(ClientTlsConfig::default().with_native_roots())?
             .connect_lazy();
         let client = GeneratedClient::new(client);

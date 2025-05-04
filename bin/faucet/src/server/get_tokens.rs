@@ -61,10 +61,10 @@ impl GetTokenError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            Self::ClientOverloaded => StatusCode::SERVICE_UNAVAILABLE,
-            Self::ClientClosed => StatusCode::SERVICE_UNAVAILABLE,
-            Self::ClientReturnChannelClosed => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::ResponseBuilder(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ClientOverloaded | Self::ClientClosed => StatusCode::SERVICE_UNAVAILABLE,
+            Self::ClientReturnChannelClosed | Self::ResponseBuilder(_) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            },
         }
     }
 
@@ -90,13 +90,13 @@ impl GetTokenError {
             Self::InvalidRequest(_) => {},
             Self::ClientOverloaded => tracing::warn!("faucet client is overloaded"),
             Self::ClientClosed => {
-                tracing::error!("faucet client is closed but requests are still coming in")
+                tracing::error!("faucet client is closed but requests are still coming in");
             },
             Self::ClientReturnChannelClosed => {
-                tracing::error!("result channel from the faucet closed mid-request")
+                tracing::error!("result channel from the faucet closed mid-request");
             },
             Self::ResponseBuilder(error) => {
-                tracing::error!(error = error.as_report(), "failed to build response")
+                tracing::error!(error = error.as_report(), "failed to build response");
             },
         }
     }
@@ -124,9 +124,10 @@ impl RawMintRequest {
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
     fn validate(self, options: &AssetOptions) -> Result<MintRequest, InvalidRequest> {
-        let note_type = match self.is_private_note {
-            true => NoteType::Private,
-            false => NoteType::Public,
+        let note_type = if self.is_private_note {
+            NoteType::Private
+        } else {
+            NoteType::Public
         };
 
         let account_id =
@@ -150,9 +151,9 @@ pub async fn get_tokens(
     //
     // These were registered in the trace layer in the router.
     let span = tracing::Span::current();
-    span.record("account", &request.account_id.to_hex());
-    span.record("amount", &request.asset_amount.inner());
-    span.record("note_type", &request.note_type.to_string());
+    span.record("account", request.account_id.to_hex());
+    span.record("amount", request.asset_amount.inner());
+    span.record("note_type", request.note_type.to_string());
 
     // Submit the request to the client and wait for the result.
     let (tx_result, rx_result) = oneshot::channel();
@@ -166,7 +167,8 @@ pub async fn get_tokens(
 
     let note_id: NoteId = note.id();
     let note_details = NoteDetails::new(note.assets().clone(), note.recipient().clone());
-    // SAFETY: NoteTag creation can only error for network execution mode, and we only use private or public.
+    // SAFETY: NoteTag creation can only error for network execution mode, and we only use private
+    // or public.
     let note_tag = NoteTag::from_account_id(request_account, NoteExecutionMode::Local).unwrap();
 
     let bytes = NoteFile::NoteDetails {

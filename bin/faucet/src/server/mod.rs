@@ -1,13 +1,20 @@
 use anyhow::Context;
-use axum::{extract::FromRef, routing::{get, post}, Router};
+use axum::{
+    Router,
+    extract::FromRef,
+    routing::{get, post},
+};
 use frontend::StaticResources;
-use get_tokens::GetTokensState;
-use get_tokens::get_tokens;
+use get_tokens::{GetTokensState, get_tokens};
 use http::{HeaderValue, Request};
 use miden_objects::{block::BlockNumber, note::Note};
 use tokio::{net::TcpListener, sync::oneshot};
 use tower::ServiceBuilder;
-use tower_http::{cors::CorsLayer, set_header::SetResponseHeaderLayer, trace::{DefaultOnResponse, TraceLayer}};
+use tower_http::{
+    cors::CorsLayer,
+    set_header::SetResponseHeaderLayer,
+    trace::{DefaultOnResponse, TraceLayer},
+};
 use tracing::Level;
 
 use crate::{
@@ -59,7 +66,7 @@ impl Server {
                     "/get_tokens",
                     post(get_tokens).layer(
                         // The other routes are serving static files and are therefore less interesting to log.
-                        TraceLayer::new_for_http() 
+                        TraceLayer::new_for_http()
                             // Pre-register the account and amount so we can fill them in in the request.
                             //
                             // TODO: switch input from json to query params so we can fill in here.

@@ -94,8 +94,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let config: FaucetConfig =
                 load_config(config).context("failed to load configuration file")?;
 
-            let mut rpc_client = RpcClient::connect_lazy(config.node_url.clone())
-                .context("failed to create RPC client")?;
+            let mut rpc_client =
+                RpcClient::connect_lazy(&config.node_url).context("failed to create RPC client")?;
             let account_file = AccountFile::read(&config.faucet_account_path)
                 .context("failed to load faucet account from file")?;
 
@@ -137,7 +137,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 load_config(config_path).context("failed to load configuration file")?;
 
             let mut rpc_client =
-                RpcClient::connect_lazy(config.node_url).context("failed to create RPC client")?;
+                RpcClient::connect_lazy(&config.node_url).context("failed to create RPC client")?;
 
             let genesis_header = rpc_client
                 .get_genesis_header()

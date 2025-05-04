@@ -182,7 +182,8 @@ impl Faucet {
         })
     }
 
-    /// Runs the faucet minting process until the request source is closed, or it encounters a fatal error.
+    /// Runs the faucet minting process until the request source is closed, or it encounters a fatal
+    /// error.
     pub async fn run(
         mut self,
         mut rpc_client: RpcClient,
@@ -201,7 +202,8 @@ impl Faucet {
             match self.handle_request(request, rng, &mut rpc_client).await {
                 // Update local state on success.
                 Ok((delta, block_number, note)) => {
-                    // We ignore the channel closure here as the user may have cancelled the request.
+                    // We ignore the channel closure here as the user may have cancelled the
+                    // request.
                     let _ = response_sender.send((block_number, note));
                     // SAFETY: Delta must be valid since it comes from a tx accepted by the node.
                     self.update_state(&delta).unwrap();
@@ -209,7 +211,6 @@ impl Faucet {
                 // Handle errors if possible, otherwise bail and let the restart handle it.
                 Err(err) => {
                     self.error_recovery(err)
-                        .await
                         .context("failed to recover from minting error")
                         .inspect_err(|err| tracing::error!(%err, "minting request failed"))?;
                 },
@@ -245,11 +246,12 @@ impl Faucet {
     /// Notably this includes rolling back local state if a desync occurs.
     ///
     /// Returns an error if recovery was not possible, which should be considered fatal.
-    async fn error_recovery(&mut self, err: MintError) -> anyhow::Result<()> {
+    fn error_recovery(&mut self, err: MintError) -> anyhow::Result<()> {
         match err {
             // A state mismatch means we desync'd from the actual chain state, and should resync.
             //
-            // This can occur if the node restarts (dropping inflight txs), or if inflight txs got dropped.
+            // This can occur if the node restarts (dropping inflight txs), or if inflight txs got
+            // dropped.
             MintError::Submission(RpcError::Transport(err))
                 if err.code() == tonic::Code::InvalidArgument
                     && err.message().contains("incorrect initial state commitment") =>
@@ -266,7 +268,8 @@ impl Faucet {
 
     /// Attempts to rollback back local state to match that indicated by the node.
     ///
-    /// This relies on parsing the stringified error `VerifyTxError::IncorrectInitialAccountCommitment`.
+    /// This relies on parsing the stringified error
+    /// `VerifyTxError::IncorrectInitialAccountCommitment`.
     ///
     /// Returns an error if the rollback was unsuccesful. This should be treated as fatal.
     fn handle_desync(&mut self, err: &str) -> anyhow::Result<()> {

@@ -104,7 +104,7 @@ impl Server {
         let listener = url.to_socket().with_context(|| format!("failed to parse url {url}"))?;
         let listener = TcpListener::bind(listener)
             .await
-            .with_context(|| format!("failed to bind TCP listener on {}", url))?;
+            .with_context(|| format!("failed to bind TCP listener on {url}"))?;
 
         tracing::info!(target: COMPONENT, address = %url, "Server started");
 

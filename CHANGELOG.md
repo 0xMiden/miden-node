@@ -9,6 +9,7 @@
 - gRPC error messages now include more context (#819).
 - Faucet now detects and recovers from state desync (#819).
 - Faucet implementation is now more robust (#819).
+- Faucet now supports TLS connection to the node RPC (#819).
 
 ### Fixes
 

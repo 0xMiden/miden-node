@@ -60,7 +60,7 @@ impl StaticResources {
 
     /// Creates a static reference by wrapping itself in a [`Box`] and [leaking](Box::leak) it.
     ///
-    /// This is a cheaper alternative to [`Arc`] and is useful if the resource needs to live for
+    /// This is a cheaper alternative to Arc and is useful if the resource needs to live for
     /// the entire program e.g. such as in this server application.
     pub fn leak(self) -> &'static Self {
         Box::leak(Box::new(self))

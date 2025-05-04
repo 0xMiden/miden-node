@@ -51,9 +51,9 @@ pub enum InvalidRequest {
 
 pub enum GetTokenError {
     InvalidRequest(InvalidRequest),
-    ClientOverloaded,
-    ClientClosed,
-    ClientReturnChannelClosed,
+    FaucetOverloaded,
+    FaucetClosed,
+    FaucetReturnChannelClosed,
     ResponseBuilder(http::Error),
 }
 
@@ -61,8 +61,8 @@ impl GetTokenError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::InvalidRequest(_) => StatusCode::BAD_REQUEST,
-            Self::ClientOverloaded | Self::ClientClosed => StatusCode::SERVICE_UNAVAILABLE,
-            Self::ClientReturnChannelClosed | Self::ResponseBuilder(_) => {
+            Self::FaucetOverloaded | Self::FaucetClosed => StatusCode::SERVICE_UNAVAILABLE,
+            Self::FaucetReturnChannelClosed | Self::ResponseBuilder(_) => {
                 StatusCode::INTERNAL_SERVER_ERROR
             },
         }
@@ -72,13 +72,13 @@ impl GetTokenError {
     fn user_facing_error(&self) -> String {
         match self {
             Self::InvalidRequest(invalid_request) => invalid_request.as_report(),
-            Self::ClientOverloaded => {
+            Self::FaucetOverloaded => {
                 "The faucet is currently overloaded, please try again later".to_owned()
             },
-            Self::ClientClosed => {
+            Self::FaucetClosed => {
                 "The faucet is currently unavailable, please try again later".to_owned()
             },
-            Self::ClientReturnChannelClosed | Self::ResponseBuilder(_) => {
+            Self::FaucetReturnChannelClosed | Self::ResponseBuilder(_) => {
                 "Internal error".to_owned()
             },
         }
@@ -88,11 +88,11 @@ impl GetTokenError {
     fn trace(&self) {
         match self {
             Self::InvalidRequest(_) => {},
-            Self::ClientOverloaded => tracing::warn!("faucet client is overloaded"),
-            Self::ClientClosed => {
-                tracing::error!("faucet client is closed but requests are still coming in");
+            Self::FaucetOverloaded => tracing::warn!("faucet client is overloaded"),
+            Self::FaucetClosed => {
+                tracing::error!("faucet channel is closed but requests are still coming in");
             },
-            Self::ClientReturnChannelClosed => {
+            Self::FaucetReturnChannelClosed => {
                 tracing::error!("result channel from the faucet closed mid-request");
             },
             Self::ResponseBuilder(error) => {
@@ -158,12 +158,12 @@ pub async fn get_tokens(
     // Submit the request to the client and wait for the result.
     let (tx_result, rx_result) = oneshot::channel();
     state.request_sender.try_send((request, tx_result)).map_err(|err| match err {
-        TrySendError::Full(_) => GetTokenError::ClientOverloaded,
-        TrySendError::Closed(_) => GetTokenError::ClientClosed,
+        TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
+        TrySendError::Closed(_) => GetTokenError::FaucetClosed,
     })?;
 
     let (block_height, note) =
-        rx_result.await.map_err(|_| GetTokenError::ClientReturnChannelClosed)?;
+        rx_result.await.map_err(|_| GetTokenError::FaucetReturnChannelClosed)?;
 
     let note_id: NoteId = note.id();
     let note_details = NoteDetails::new(note.assets().clone(), note.recipient().clone());

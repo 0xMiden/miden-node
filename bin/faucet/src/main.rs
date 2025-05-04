@@ -304,7 +304,7 @@ mod test {
         .unwrap();
 
         // Start the faucet connected to the stub
-        let website_url = format!("http://localhost:{}", config.endpoint);
+        let website_url = config.endpoint.clone();
         tokio::spawn(async move {
             run_faucet_command(Cli {
                 command: crate::Command::Start { config: config_path },

@@ -27,7 +27,7 @@ impl std::fmt::Display for AssetOptions {
 
 impl AssetOptions {
     /// Converts the given amount into an [`AssetAmount`] _iff_ if it
-    /// matches on of the allowed options.
+    /// matches one of the allowed options.
     ///
     /// This is the only valid way to create an [`AssetAmount`].
     pub fn validate(&self, amount: u64) -> Option<AssetAmount> {
@@ -96,7 +96,7 @@ impl<'de> Deserialize<'de> for AssetOptions {
     }
 }
 
-/// Type of note to generate for a [`MintRequest`].
+/// Type of note to generate for a mint request.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum NoteType {
     Private,

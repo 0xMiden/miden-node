@@ -21,7 +21,7 @@ pub const DEFAULT_RPC_TIMEOUT_MS: u64 = 10000;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FaucetConfig {
-    /// The port at which to serve the faucet's REST API.
+    /// Endpoint of the faucet in the format `<ip>:<port>`
     pub endpoint: Url,
     /// Node RPC gRPC endpoint in the format `http://<host>[:<port>]`
     pub node_url: Url,

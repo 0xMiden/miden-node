@@ -28,7 +28,6 @@ miden-tx           = { workspace = true, features = ["concurrent"] }
 rand               = { workspace = true }
 rand_chacha        = "0.9"
 serde              = { version = "1.0", features = ["derive"] }
-static-files       = "0.2"
 thiserror          = { workspace = true }
 tokio              = { workspace = true, features = ["fs"] }
 toml               = { version = "0.8" }
@@ -42,10 +41,10 @@ url                = { workspace = true }
 [build-dependencies]
 # Required to inject build metadata.
 miden-node-utils = { workspace = true, features = ["vergen"] }
-static-files     = "0.2"
 
 [dev-dependencies]
-fantoccini   = { version = "0.21" }
-serde_json   = { version = "1.0" }
-tokio-stream = { workspace = true, features = ["net"] }
-tonic-web    = { version = "0.12" }
+fantoccini                = { version = "0.21" }
+miden-node-block-producer = { workspace = true, features = ["testing"] }
+serde_json                = { version = "1.0" }
+tokio-stream              = { workspace = true, features = ["net"] }
+tonic-web                 = { version = "0.12" }

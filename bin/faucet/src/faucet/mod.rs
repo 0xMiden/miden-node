@@ -333,6 +333,7 @@ impl Faucet {
         tx: ProvenTransaction,
         rpc_client: &mut RpcClient,
     ) -> MintResult<BlockNumber> {
+        dbg!(tx.expiration_block_num());
         rpc_client.submit_transaction(tx).await.map_err(MintError::Submission)
     }
 
@@ -418,5 +419,25 @@ impl P2IdNote {
 
     fn into_inner(self) -> Note {
         self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn desync_error_parsing() {
+        let tx_state = Digest::from([0u32, 1, 2, 3]);
+        let actual = Digest::from([11u32, 12, 13, 14]);
+        let err = AddTransactionError::VerificationFailed(
+            VerifyTxError::IncorrectAccountInitialCommitment {
+                tx_initial_account_commitment: tx_state,
+                current_account_commitment: Some(actual),
+            },
+        );
+        let err = tonic::Status::from(err);
+
+        let result = parse_desync_error(err.message()).unwrap();
     }
 }

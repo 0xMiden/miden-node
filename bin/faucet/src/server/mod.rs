@@ -4,7 +4,7 @@ use axum::{
     extract::FromRef,
     routing::{get, post},
 };
-use frontend::StaticResources;
+use frontend::Metadata;
 use get_tokens::{GetTokensState, get_tokens};
 use http::{HeaderValue, Request};
 use miden_node_utils::grpc::UrlExt;
@@ -37,7 +37,7 @@ type RequestSender = tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<(Bl
 #[derive(Clone)]
 pub struct Server {
     mint_state: GetTokensState,
-    static_files: &'static StaticResources,
+    metadata: &'static Metadata,
 }
 
 impl Server {
@@ -50,9 +50,14 @@ impl Server {
             request_sender,
             asset_options: asset_options.clone(),
         };
-        let static_files = StaticResources::new(faucet_id, asset_options).leak();
+        let metadata = Metadata {
+            id: faucet_id,
+            asset_amount_options: asset_options,
+        };
+        // SAFETY: Leaking is okay because we want it to live as long as the application.
+        let metadata = Box::leak(Box::new(metadata));
 
-        Server { mint_state, static_files }
+        Server { mint_state, metadata }
     }
 
     pub async fn serve(self, url: Url) -> anyhow::Result<()> {
@@ -112,9 +117,9 @@ impl Server {
     }
 }
 
-impl FromRef<Server> for &'static StaticResources {
+impl FromRef<Server> for &'static Metadata {
     fn from_ref(input: &Server) -> Self {
-        input.static_files
+        input.metadata
     }
 }
 

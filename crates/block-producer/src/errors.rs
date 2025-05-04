@@ -1,6 +1,6 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
-use miden_node_utils::formatting::format_opt;
+use miden_node_utils::{errors::ErrorReport, formatting::format_opt};
 use miden_objects::{
     Digest, ProposedBatchError, ProposedBlockError,
     block::BlockNumber,
@@ -113,7 +113,7 @@ impl From<AddTransactionError> for tonic::Status {
             )
             | AddTransactionError::Expired { .. }
             | AddTransactionError::TransactionDeserializationFailed(_) => {
-                Self::invalid_argument(value.to_string())
+                Self::invalid_argument(value.as_report())
             },
 
             // Internal errors which should not be communicated to the user.

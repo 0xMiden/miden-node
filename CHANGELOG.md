@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+## v0.8.2 (2025-05-04)
+
+### Enhancements
+
+- gRPC error messages now include more context (#819).
+- Faucet now detects and recovers from state desync (#819).
+- Faucet implementation is now more robust (#819).
+
+### Fixes
+
+- Faucet times out during high load (#819).
+ 
 ## v0.8.0 (2025-03-26)
 
 ### Enhancements

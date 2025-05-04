@@ -111,7 +111,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             // TODO: We probably want a more graceful shutdown.
             let faucet =
                 async { faucet.run(rpc_client, rx_requests).await.context("faucet failed") };
-            let server = async move { server.serve(config.port).await.context("server failed") };
+            let server =
+                async move { server.serve(config.endpoint).await.context("server failed") };
             let mut tasks = tokio::task::JoinSet::new();
             tasks.spawn(faucet);
             tasks.spawn(server);
@@ -303,7 +304,7 @@ mod test {
         .unwrap();
 
         // Start the faucet connected to the stub
-        let website_url = format!("http://localhost:{}", config.port);
+        let website_url = format!("http://localhost:{}", config.endpoint);
         tokio::spawn(async move {
             run_faucet_command(Cli {
                 command: crate::Command::Start { config: config_path },

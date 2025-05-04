@@ -7,6 +7,7 @@ use axum::{
 use frontend::StaticResources;
 use get_tokens::{GetTokensState, get_tokens};
 use http::{HeaderValue, Request};
+use miden_node_utils::grpc::UrlExt;
 use miden_objects::{block::BlockNumber, note::Note};
 use tokio::{net::TcpListener, sync::oneshot};
 use tower::ServiceBuilder;
@@ -16,6 +17,7 @@ use tower_http::{
     trace::{DefaultOnResponse, TraceLayer},
 };
 use tracing::Level;
+use url::Url;
 
 use crate::{
     COMPONENT,
@@ -53,7 +55,7 @@ impl Server {
         Server { mint_state, static_files }
     }
 
-    pub async fn serve(self, port: u16) -> anyhow::Result<()> {
+    pub async fn serve(self, url: Url) -> anyhow::Result<()> {
         let app = Router::new()
                 .route("/", get(frontend::get_index_html))
                 .route("/index.js", get(frontend::get_index_js))
@@ -99,12 +101,12 @@ impl Server {
                 )
                 .with_state(self);
 
-        let server_addr = format!("0.0.0.0:{port}");
-        let listener = TcpListener::bind(&server_addr)
+        let listener = url.to_socket().with_context(|| format!("failed to parse url {url}"))?;
+        let listener = TcpListener::bind(listener)
             .await
-            .with_context(|| format!("failed to bind TCP listener on {server_addr}"))?;
+            .with_context(|| format!("failed to bind TCP listener on {}", url))?;
 
-        tracing::info!(target: COMPONENT, address = %server_addr, "Server started");
+        tracing::info!(target: COMPONENT, address = %url, "Server started");
 
         axum::serve(listener, app).await.map_err(Into::into)
     }

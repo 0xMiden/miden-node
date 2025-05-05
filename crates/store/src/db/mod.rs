@@ -4,15 +4,20 @@ use std::{
 };
 
 use anyhow::Context;
+use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
     generated::note as proto,
 };
 use miden_objects::{
+    Word,
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
-    note::{NoteId, NoteInclusionProof, NoteMetadata, Nullifier},
+    note::{
+        NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
+        NoteRecipient, NoteScript, Nullifier,
+    },
     transaction::TransactionId,
 };
 use sql::utils::{column_value_as_u64, read_block_number};
@@ -68,7 +73,7 @@ pub struct NoteRecord {
     pub note_index: BlockNoteIndex,
     pub note_id: RpoDigest,
     pub metadata: NoteMetadata,
-    pub details: Option<Vec<u8>>,
+    pub details: Option<NoteDetails>,
     pub merkle_path: MerklePath,
 }
 
@@ -85,7 +90,10 @@ impl NoteRecord {
             aux,
             execution_hint,
             merkle_path,
-            details
+            assets,
+            inputs,
+            script,
+            serial_num
     ";
 
     /// Parses a row from the `notes` table. The sql selection must use [`Self::SELECT_COLUMNS`] to
@@ -108,8 +116,34 @@ impl NoteRecord {
         let execution_hint = column_value_as_u64(row, 8)?;
         let merkle_path_data = row.get_ref(9)?.as_blob()?;
         let merkle_path = MerklePath::read_from_bytes(merkle_path_data)?;
-        let details_data = row.get_ref(10)?.as_blob_or_null()?;
-        let details = details_data.map(<Vec<u8>>::read_from_bytes).transpose()?;
+
+        let assets = row.get_ref(10)?.as_blob_or_null()?;
+        let inputs = row.get_ref(11)?.as_blob_or_null()?;
+        let script = row.get_ref(12)?.as_blob_or_null()?;
+        let serial_num = row.get_ref(13)?.as_blob_or_null()?;
+
+        debug_assert!(
+            (assets.is_some() && inputs.is_some() && script.is_some() && serial_num.is_some())
+                || (assets.is_none()
+                    && inputs.is_none()
+                    && script.is_none()
+                    && serial_num.is_none()),
+            "assets, inputs, script, serial_num must be either all present or all absent"
+        );
+        let details = if let (Some(assets), Some(inputs), Some(script), Some(serial_num)) =
+            (assets, inputs, script, serial_num)
+        {
+            Some(NoteDetails::new(
+                NoteAssets::read_from_bytes(assets)?,
+                NoteRecipient::new(
+                    Word::read_from_bytes(serial_num)?,
+                    NoteScript::from_bytes(script)?,
+                    NoteInputs::read_from_bytes(inputs)?,
+                ),
+            ))
+        } else {
+            None
+        };
 
         let metadata =
             NoteMetadata::new(sender, note_type, tag.into(), execution_hint.try_into()?, aux)?;
@@ -133,7 +167,7 @@ impl From<NoteRecord> for proto::Note {
             note_id: Some(note.note_id.into()),
             metadata: Some(note.metadata.into()),
             merkle_path: Some(Into::into(&note.merkle_path)),
-            details: note.details,
+            details: note.details.as_ref().map(Serializable::to_bytes),
         }
     }
 }

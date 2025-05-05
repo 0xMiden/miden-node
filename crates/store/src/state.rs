@@ -22,15 +22,15 @@ use miden_objects::{
     AccountError,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
-        AccountTree, AccountWitness, BlockChain, BlockHeader, BlockInputs, BlockNumber,
+        AccountTree, AccountWitness, Blockchain, BlockHeader, BlockInputs, BlockNumber,
         NullifierTree, NullifierWitness, ProvenBlock,
     },
     crypto::{
         hash::rpo::RpoDigest,
         merkle::{Mmr, MmrDelta, MmrProof, PartialMmr, SmtProof},
     },
-    note::{NoteId, Nullifier},
-    transaction::{OutputNote, PartialBlockChain},
+    note::{NoteDetails, NoteId, Nullifier},
+    transaction::{OutputNote, PartialBlockchain},
     utils::Serializable,
 };
 use tokio::{
@@ -62,7 +62,7 @@ pub struct TransactionInputs {
 /// Container for state that needs to be updated atomically.
 struct InnerState {
     nullifier_tree: NullifierTree,
-    blockchain: BlockChain,
+    blockchain: Blockchain,
     account_tree: AccountTree,
 }
 
@@ -109,7 +109,7 @@ impl State {
             nullifier_tree,
             // SAFETY: We assume the loaded MMR is valid and does not have more than u32::MAX
             // entries.
-            blockchain: BlockChain::from_mmr_unchecked(chain_mmr),
+            blockchain: Blockchain::from_mmr_unchecked(chain_mmr),
             account_tree,
         });
 
@@ -263,7 +263,9 @@ impl State {
             .output_notes()
             .map(|(note_index, note)| {
                 let (details, nullifier) = match note {
-                    OutputNote::Full(note) => (Some(note.to_bytes()), Some(note.nullifier())),
+                    OutputNote::Full(note) => {
+                        (Some(NoteDetails::from(note)), Some(note.nullifier()))
+                    },
                     OutputNote::Header(_) => (None, None),
                     note @ OutputNote::Partial(_) => {
                         return Err(InvalidBlockError::InvalidOutputNoteType(Box::new(
@@ -515,7 +517,7 @@ impl State {
             })
             .expect("DB should have returned the header of the batch reference block");
 
-        // The order doesn't matter for PartialBlockChain::new, so swap remove is fine.
+        // The order doesn't matter for PartialBlockchain::new, so swap remove is fine.
         let batch_reference_block_header = headers.swap_remove(header_index);
 
         // SAFETY: This should not error because:
@@ -526,7 +528,7 @@ impl State {
         //
         // We construct headers and partial MMR in concert, so they are consistent. This is why we
         // can call the unchecked constructor.
-        let partial_block_chain = PartialBlockChain::new_unchecked(partial_mmr, headers)
+        let partial_block_chain = PartialBlockchain::new_unchecked(partial_mmr, headers)
             .expect("partial mmr and block headers should be consistent");
 
         Ok(BatchInputs {
@@ -660,7 +662,7 @@ impl State {
             })
             .expect("DB should have returned the header of the latest block header");
 
-        // The order doesn't matter for PartialBlockChain::new, so swap remove is fine.
+        // The order doesn't matter for PartialBlockchain::new, so swap remove is fine.
         let latest_block_header = headers.swap_remove(latest_block_header_index);
 
         // SAFETY: This should not error because:
@@ -671,7 +673,7 @@ impl State {
         //
         // We construct headers and partial MMR in concert, so they are consistent. This is why we
         // can call the unchecked constructor.
-        let partial_block_chain = PartialBlockChain::new_unchecked(partial_mmr, headers)
+        let partial_block_chain = PartialBlockchain::new_unchecked(partial_mmr, headers)
             .expect("partial mmr and block headers should be consistent");
 
         Ok(BlockInputs::new(

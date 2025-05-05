@@ -213,7 +213,7 @@ impl BlockProducerRpcServer {
 
     #[instrument(
         target = COMPONENT,
-        name = "block_producer:submit_proven_transaction",
+        name = "block_producer.server.submit_proven_transaction",
         skip_all,
         err
     )]

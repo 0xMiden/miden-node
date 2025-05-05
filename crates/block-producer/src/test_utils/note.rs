@@ -1,9 +1,5 @@
 use miden_lib::transaction::TransactionKernel;
-use miden_objects::{
-    note::Note,
-    testing::note::NoteBuilder,
-    transaction::{InputNote, InputNoteCommitment, OutputNote},
-};
+use miden_objects::{note::Note, testing::note::NoteBuilder, transaction::OutputNote};
 use rand_chacha::{ChaCha20Rng, rand_core::SeedableRng};
 
 use crate::test_utils::account::mock_account_id;
@@ -13,10 +9,6 @@ pub fn mock_note(num: u8) -> Note {
     NoteBuilder::new(sender, ChaCha20Rng::from_seed([num; 32]))
         .build(&TransactionKernel::assembler().with_debug_mode(true))
         .unwrap()
-}
-
-pub fn mock_unauthenticated_note_commitment(num: u8) -> InputNoteCommitment {
-    InputNote::unauthenticated(mock_note(num)).into()
 }
 
 pub fn mock_output_note(num: u8) -> OutputNote {

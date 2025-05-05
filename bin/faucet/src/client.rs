@@ -19,7 +19,7 @@ use miden_objects::{
     },
     note::{Note, NoteType},
     transaction::{
-        ExecutedTransaction, ForeignAccountInputs, InputNote, InputNotes, PartialBlockChain,
+        ExecutedTransaction, ForeignAccountInputs, InputNote, InputNotes, PartialBlockchain,
         TransactionArgs, TransactionScript,
     },
     utils::Deserializable,
@@ -209,7 +209,7 @@ impl FaucetClient {
 /// Initializes the faucet client by connecting to the node and fetching the root block header.
 pub async fn initialize_faucet_client(
     config: &FaucetConfig,
-) -> Result<(ApiClient<Channel>, BlockHeader, PartialBlockChain), ClientError> {
+) -> Result<(ApiClient<Channel>, BlockHeader, PartialBlockchain), ClientError> {
     let endpoint = tonic::transport::Endpoint::try_from(config.node_url.to_string())
         .context("Failed to parse node URL from configuration file")?
         .timeout(Duration::from_millis(config.timeout_ms));
@@ -232,13 +232,13 @@ pub async fn initialize_faucet_client(
 
     let root_block_header = root_block_header.try_into().context("Failed to parse block header")?;
 
-    let root_partial_block_chain = PartialBlockChain::new(
+    let root_partial_block_chain = PartialBlockchain::new(
         PartialMmr::from_peaks(
             MmrPeaks::new(0, Vec::new()).expect("Empty MmrPeak should be valid"),
         ),
         Vec::new(),
     )
-    .expect("Empty PartialBlockChain should be valid");
+    .expect("Empty PartialBlockchain should be valid");
 
     Ok((rpc_api, root_block_header, root_partial_block_chain))
 }

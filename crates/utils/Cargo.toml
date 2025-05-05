@@ -17,6 +17,8 @@ workspace = true
 [features]
 # Enables depedencies intended for build script generation of version metadata.
 vergen = ["dep:vergen", "dep:vergen-gitcl"]
+# Enables utility functions for testing traces created by some other crate's stack.
+testing = ["dep:tokio"]
 
 [dependencies]
 anyhow                = { workspace = true }
@@ -40,3 +42,5 @@ url                   = { workspace = true }
 # This must match the version expected by `vergen-gitcl`.
 vergen       = { "version" = "9.0", optional = true }
 vergen-gitcl = { version = "1.0", features = ["cargo", "rustc"], optional = true }
+# Optional dependencies enabled by `testing` feature.
+tokio = { workspace = true, optional = true }

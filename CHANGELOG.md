@@ -9,7 +9,8 @@
   - Data directory is no longer created but is instead expected to exist.
   - The genesis block can no longer be configured which also removes the `store dump-genesis` command.
 - [BREAKING] Use `AccountTree` and update account witness proto definitions (#783).
-- [BREAKING] Update name of `ChainMmr` to `PartialBlockChain` (#807).
+- Enabled running RPC component in `read-only` mode (#802).
+- [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
 
 ## v0.8.0 (2025-03-26)
 

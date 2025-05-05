@@ -333,7 +333,6 @@ impl Faucet {
         tx: ProvenTransaction,
         rpc_client: &mut RpcClient,
     ) -> MintResult<BlockNumber> {
-        dbg!(tx.expiration_block_num());
         rpc_client.submit_transaction(tx).await.map_err(MintError::Submission)
     }
 
@@ -348,10 +347,10 @@ impl Faucet {
 
 fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
     let onchain_state = err
-        .split_once("current:")
+        .split_once("current value of ")
         .map(|(_prefix, suffix)| suffix)
         .and_then(|suffix| suffix.split_whitespace().next())
-        .context("failed to find expected commitment")?;
+        .context("failed to find current commitment")?;
 
     // This is used to represent the empty account state.
     if onchain_state.eq_ignore_ascii_case("none") {
@@ -359,7 +358,7 @@ fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
     }
 
     parse_hex_string_as_word(onchain_state)
-        .map_err(|err| anyhow!("failed to parse expected commitment: {err}"))
+        .map_err(|err| anyhow!("failed to parse expected commitment {onchain_state}: {err}"))
         .map(Into::into)
 }
 
@@ -424,10 +423,18 @@ impl P2IdNote {
 
 #[cfg(test)]
 mod tests {
+    use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
+
     use super::*;
 
+    /// This test ensures that the we are able to parse account mismatch errors
+    /// provided by the block-producer.
+    ///
+    /// This test isn't fully secure as there is still an RPC component and gRPC
+    /// infrastructure in the way.
     #[test]
     fn desync_error_parsing() {
+        // TODO: This would be better as an integration test.
         let tx_state = Digest::from([0u32, 1, 2, 3]);
         let actual = Digest::from([11u32, 12, 13, 14]);
         let err = AddTransactionError::VerificationFailed(
@@ -437,7 +444,8 @@ mod tests {
             },
         );
         let err = tonic::Status::from(err);
+        let result = parse_desync_error(dbg!(err.message())).unwrap();
 
-        let result = parse_desync_error(err.message()).unwrap();
+        assert_eq!(result, actual);
     }
 }

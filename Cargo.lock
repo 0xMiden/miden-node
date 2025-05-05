@@ -2104,6 +2104,7 @@ dependencies = [
  "http 1.3.1",
  "http-body-util",
  "miden-lib",
+ "miden-node-block-producer",
  "miden-node-proto",
  "miden-node-utils",
  "miden-objects",

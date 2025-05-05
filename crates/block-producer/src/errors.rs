@@ -55,7 +55,7 @@ pub enum VerifyTxError {
     OutputNotesAlreadyExist(Vec<NoteId>),
 
     /// The account's initial commitment did not match the current account's commitment
-    #[error("incorrect initial state commitment ({tx_initial_account_commitment}, current: {})", format_opt(.current_account_commitment.as_ref()))]
+    #[error("transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {}", format_opt(.current_account_commitment.as_ref()))]
     IncorrectAccountInitialCommitment {
         tx_initial_account_commitment: Digest,
         current_account_commitment: Option<Digest>,

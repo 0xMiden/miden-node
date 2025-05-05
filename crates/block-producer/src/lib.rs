@@ -9,9 +9,9 @@ mod domain;
 mod mempool;
 pub mod store;
 
-#[cfg(testing)]
+#[cfg(feature = "testing")]
 pub mod errors;
-#[cfg(not(testing))]
+#[cfg(not(feature = "testing"))]
 mod errors;
 
 pub mod server;

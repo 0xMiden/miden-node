@@ -54,14 +54,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         loading.style.display = 'block';
         try {
-            const response = await fetch(window.location.href + 'get_tokens', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ account_id: accountId, is_private_note: isPrivateNote, asset_amount: parseInt(assetSelect.value)})
-            });
+            const response = await fetch(window.location.href + 'get_tokens?' + new URLSearchParams({
+                account_id: accountId, is_private_note: isPrivateNote, asset_amount: parseInt(assetSelect.value)
+            }), {
+                    method: "POST"
+                });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! Status: ${response.status}`);
+                throw response;
             }
 
             const blob = await response.blob();
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', function () {
             info.style.display = 'block';
         } catch (error) {
             console.error('Error:', error);
-            errorMessage.textContent = 'Failed to receive tokens. Please try again.';
+            errorMessage.textContent = 'Failed to receive tokens. ' + error.statusText + ' (' + error.status + ')';
             errorMessage.style.display = 'block';
         }
         loading.style.display = 'none';

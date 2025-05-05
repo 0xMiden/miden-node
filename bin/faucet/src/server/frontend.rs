@@ -22,6 +22,8 @@ pub async fn get_index_html() -> Html<&'static str> {
 
 pub async fn get_index_js() -> Response {
     (
+        // TODO: I don't think this is correct. Or rather my browser grumbles about it the console
+        // tabs.
         [(header::CONTENT_TYPE, "Content-Type: text/javascript; charset=utf-8")],
         include_str!("resources/index.js"),
     )

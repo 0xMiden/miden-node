@@ -1,6 +1,5 @@
 use axum::{
-    Json,
-    extract::State,
+    extract::{Query, State},
     http::{Response, StatusCode},
     response::IntoResponse,
 };
@@ -27,8 +26,14 @@ type RequestSender = tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<(Bl
 
 #[derive(Clone)]
 pub struct GetTokensState {
-    pub request_sender: RequestSender,
-    pub asset_options: AssetOptions,
+    request_sender: RequestSender,
+    asset_options: AssetOptions,
+}
+
+impl GetTokensState {
+    pub fn new(request_sender: RequestSender, asset_options: AssetOptions) -> Self {
+        Self { request_sender, asset_options }
+    }
 }
 
 /// Used to receive the initial request from the user.
@@ -36,9 +41,9 @@ pub struct GetTokensState {
 /// Further parsing is done to get the expected [`MintRequest`] expected by the faucet client.
 #[derive(Deserialize)]
 pub struct RawMintRequest {
-    account_id: String,
-    is_private_note: bool,
-    asset_amount: u64,
+    pub account_id: String,
+    pub is_private_note: bool,
+    pub asset_amount: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -142,7 +147,7 @@ impl RawMintRequest {
 
 pub async fn get_tokens(
     State(state): State<GetTokensState>,
-    Json(request): Json<RawMintRequest>,
+    Query(request): Query<RawMintRequest>,
 ) -> Result<impl IntoResponse, GetTokenError> {
     let request = request.validate(&state.asset_options).map_err(GetTokenError::InvalidRequest)?;
     let request_account = request.account_id;

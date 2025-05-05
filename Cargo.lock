@@ -483,9 +483,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.20"
+version = "1.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04da6a0d40b948dfc4fa8f5bbf402b0fc1a64a28dbf7d12ffd683550f2c1b63a"
+checksum = "8691782945451c1c383942c4874dbe63814f61cb57ef773cda2972682b7bb3c0"
 dependencies = [
  "jobserver",
  "libc",
@@ -1180,9 +1180,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "75249d144030531f8dee69fe9cea04d3edf809a017ae445e2abdff6629e86633"
+checksum = "a9421a676d1b147b16b82c9225157dc629087ef8ec4d5e2960f9437a90dac0a5"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1205,9 +1205,15 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
-version = "0.15.2"
+version = "0.14.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf151400ff0baff5465007dd2f3e717f3fe502074ca563069ce3a6629d07b289"
+checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
+
+[[package]]
+name = "hashbrown"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84b26c544d002229e640969970a2e74021aadf6e2f96372b9c58eff97de08eb3"
 dependencies = [
  "foldhash",
 ]
@@ -1218,7 +1224,7 @@ version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7382cf6263419f2d8df38c55d7da83da5c18aef87fc7a7fc1fb1e344edfe14c1"
 dependencies = [
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
 ]
 
 [[package]]
@@ -1558,7 +1564,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cea70ddb795996207ad57735b50c5982d8844f38ba9ee5f1aedcfb708a2aa11e"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.2",
+ "hashbrown 0.15.3",
 ]
 
 [[package]]
@@ -1692,9 +1698,9 @@ dependencies = [
 
 [[package]]
 name = "libm"
-version = "0.2.13"
+version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9627da5196e5d8ed0b0495e61e518847578da83483c37288316d9b2e03a7f72"
+checksum = "a25169bd5913a4b437588a7e3d127cd6e90127b60e0ffbd834a38f1599e016b8"
 
 [[package]]
 name = "libredox"
@@ -1892,11 +1898,11 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#b03e7af4f3e1964658af7e02ed9dc16e431331bb"
 dependencies = [
  "miden-crypto",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-lib",
+ "miden-objects",
  "thiserror 2.0.12",
 ]
 
@@ -1952,13 +1958,13 @@ dependencies = [
  "fantoccini",
  "http 1.3.1",
  "http-body-util",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-lib",
  "miden-node-block-producer",
  "miden-node-proto",
  "miden-node-utils",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
- "miden-proving-service-client 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
+ "miden-proving-service-client",
+ "miden-tx",
  "rand 0.9.1",
  "rand_chacha 0.9.0",
  "serde",
@@ -1990,23 +1996,10 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#b03e7af4f3e1964658af7e02ed9dc16e431331bb"
 dependencies = [
  "miden-assembly",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miden-stdlib",
- "regex",
- "thiserror 2.0.12",
- "walkdir",
-]
-
-[[package]]
-name = "miden-lib"
-version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
-dependencies = [
- "miden-assembly",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
  "miden-stdlib",
  "regex",
  "thiserror 2.0.12",
@@ -2062,12 +2055,12 @@ dependencies = [
  "anyhow",
  "clap",
  "figment",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-lib",
  "miden-node-block-producer",
  "miden-node-rpc",
  "miden-node-store",
  "miden-node-utils",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
  "rand 0.9.1",
  "rand_chacha 0.9.0",
  "tokio",
@@ -2085,15 +2078,15 @@ dependencies = [
  "itertools 0.14.0",
  "miden-air",
  "miden-block-prover",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-lib",
  "miden-node-proto",
  "miden-node-store",
  "miden-node-test-macro",
  "miden-node-utils",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
  "miden-processor",
- "miden-proving-service-client 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
- "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-proving-service-client",
+ "miden-tx",
  "miden-tx-batch-prover",
  "pretty_assertions",
  "rand 0.9.1",
@@ -2118,7 +2111,7 @@ dependencies = [
  "hex",
  "miden-node-proto-build",
  "miden-node-utils",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
  "proptest",
  "prost",
  "prost-build",
@@ -2147,8 +2140,8 @@ dependencies = [
  "miden-node-rpc",
  "miden-node-store",
  "miden-node-utils",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
- "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
+ "miden-tx",
  "tempfile",
  "tokio",
  "tokio-stream",
@@ -2167,11 +2160,12 @@ dependencies = [
  "deadpool",
  "deadpool-sync",
  "hex",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-lib",
  "miden-node-proto",
  "miden-node-test-macro",
  "miden-node-utils",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
+ "rand 0.9.1",
  "regex",
  "rusqlite",
  "rusqlite_migration",
@@ -2192,12 +2186,12 @@ dependencies = [
  "futures",
  "miden-air",
  "miden-block-prover",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-lib",
  "miden-node-block-producer",
  "miden-node-proto",
  "miden-node-store",
  "miden-node-utils",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
  "rand 0.9.1",
  "rayon",
  "tokio",
@@ -2221,7 +2215,7 @@ dependencies = [
  "figment",
  "http 1.3.1",
  "itertools 0.14.0",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -2241,25 +2235,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
-dependencies = [
- "bech32",
- "getrandom 0.3.2",
- "miden-assembly",
- "miden-core",
- "miden-crypto",
- "miden-processor",
- "miden-verifier",
- "semver 1.0.26",
- "serde",
- "thiserror 2.0.12",
- "toml",
-]
-
-[[package]]
-name = "miden-objects"
-version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#b03e7af4f3e1964658af7e02ed9dc16e431331bb"
 dependencies = [
  "bech32",
  "getrandom 0.3.2",
@@ -2306,52 +2282,12 @@ dependencies = [
 [[package]]
 name = "miden-proving-service-client"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#b03e7af4f3e1964658af7e02ed9dc16e431331bb"
 dependencies = [
  "async-trait",
  "getrandom 0.3.2",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miette",
- "prost",
- "prost-build",
- "protox",
- "thiserror 2.0.12",
- "tokio",
- "tonic",
- "tonic-build",
- "tonic-web-wasm-client",
-]
-
-[[package]]
-name = "miden-proving-service-client"
-version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
-dependencies = [
- "async-trait",
- "getrandom 0.3.2",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miette",
- "prost",
- "prost-build",
- "protox 0.7.2",
- "thiserror 2.0.12",
- "tokio",
- "tonic",
- "tonic-build",
- "tonic-web-wasm-client",
-]
-
-[[package]]
-name = "miden-proving-service-client"
-version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
-dependencies = [
- "async-trait",
- "getrandom 0.3.2",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
- "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
+ "miden-tx",
  "miette",
  "prost",
  "prost-build",
@@ -2376,27 +2312,11 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#a30142d0653ff833af501179fb3ccbc9e98767ae"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#b03e7af4f3e1964658af7e02ed9dc16e431331bb"
 dependencies = [
  "async-trait",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=next)",
- "miden-processor",
- "miden-prover",
- "miden-verifier",
- "rand 0.9.1",
- "thiserror 2.0.12",
- "winter-maybe-async",
-]
-
-[[package]]
-name = "miden-tx"
-version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
-dependencies = [
- "async-trait",
- "miden-lib 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-lib",
+ "miden-objects",
  "miden-processor",
  "miden-prover",
  "miden-verifier",
@@ -2409,13 +2329,13 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain#732d98dc9fd48a58692b19d98012d2fd5714d957"
+source = "git+https://github.com/0xPolygonMiden/miden-base.git?branch=next#b03e7af4f3e1964658af7e02ed9dc16e431331bb"
 dependencies = [
  "miden-core",
  "miden-crypto",
- "miden-objects 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-objects",
  "miden-processor",
- "miden-tx 0.9.0 (git+https://github.com/0xPolygonMiden/miden-base.git?branch=pgackst-partial-blockchain)",
+ "miden-tx",
  "thiserror 2.0.12",
 ]
 
@@ -2720,9 +2640,9 @@ checksum = "d05e27ee213611ffe7d6348b942e8f942b37114c00cc03cec254295a4a17852e"
 
 [[package]]
 name = "openssl-sys"
-version = "0.9.107"
+version = "0.9.108"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8288979acd84749c744a9014b4382d42b8f7b2592847b5afb2ed29e5d16ede07"
+checksum = "e145e1651e858e820e4860f7b9c5e169bc1d8ce1c86043be79fa7b7634821847"
 dependencies = [
  "cc",
  "libc",
@@ -3133,6 +3053,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "protox-parse"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57927f9dbeeffcce7192404deee6157a640cbb3fe8ac11eabbe571565949ab75"
+dependencies = [
+ "logos 0.15.0",
+ "miette",
+ "prost-types",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "quanta"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bd1fe6824cea6538803de3ff1bc0cf3949024db3d43c9643024bfb33a807c0e"
+dependencies = [
+ "crossbeam-utils",
+ "libc",
+ "once_cell",
+ "raw-cpuid",
+ "wasi 0.11.0+wasi-snapshot-preview1",
+ "web-sys",
+ "winapi",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3261,9 +3208,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.11"
+version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2f103c6d277498fbceb16e84d317e2a400f160f46904d5f5410848c829511a3"
+checksum = "928fca9cf2aa042393a8325b9ead81d2f0df4cb12e1e24cef072922ccd99c5af"
 dependencies = [
  "bitflags",
 ]
@@ -3406,9 +3353,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "1.0.5"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d97817398dd4bb2e6da002002db259209759911da105da92bec29ccb12cf58bf"
+checksum = "c71e83d6afe7ff64890ec6b71d6a69bb8a610ab78ce364b3352876bb4c801266"
 dependencies = [
  "bitflags",
  "errno",
@@ -3843,9 +3790,9 @@ checksum = "0bf256ce5efdfa370213c1dabab5935a12e49f2c58d15e9eac2870d3b4f27263"
 
 [[package]]
 name = "synstructure"
-version = "0.13.1"
+version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8af7666ab7b6390ab78131fb5b0fce11d6b7a6951602017c35fa82800708971"
+checksum = "728a70f3dbaf5bab7f0c4b1ac8d7ae5ea60a4b5549c8a5914361c99147a709d2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3867,7 +3814,7 @@ dependencies = [
  "fastrand",
  "getrandom 0.3.2",
  "once_cell",
- "rustix 1.0.5",
+ "rustix 1.0.7",
  "windows-sys 0.59.0",
 ]
 
@@ -3907,7 +3854,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "45c6481c4829e4cc63825e62c49186a34538b7b2750b73b266581ffb612fb5ed"
 dependencies = [
- "rustix 1.0.5",
+ "rustix 1.0.7",
  "windows-sys 0.59.0",
 ]
 
@@ -5090,9 +5037,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "0.7.7"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6cb8234a863ea0e8cd7284fcdd4f145233eb00fee02bbdd9861aec44e6477bc5"
+checksum = "d9fb597c990f03753e08d3c29efbfcf2019a003b4bf4ba19225c158e1549f0f3"
 dependencies = [
  "memchr",
 ]

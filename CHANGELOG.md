@@ -10,7 +10,7 @@
   - The genesis block can no longer be configured which also removes the `store dump-genesis` command.
 - [BREAKING] Use `AccountTree` and update account witness proto definitions (#783).
 - Enabled running RPC component in `read-only` mode (#802).
-- [BREAKING] Update name of `ChainMmr` to `PartialBlockChain` (#807).
+- [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
 
 ## Unreleased
 

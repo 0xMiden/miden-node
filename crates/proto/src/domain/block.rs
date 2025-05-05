@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use miden_objects::{
     block::{BlockHeader, BlockInputs, NullifierWitness},
     note::{NoteId, NoteInclusionProof},
-    transaction::PartialBlockChain,
+    transaction::PartialBlockchain,
     utils::{Deserializable, Serializable},
 };
 
@@ -162,9 +162,9 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .map(<(NoteId, NoteInclusionProof)>::try_from)
             .collect::<Result<_, ConversionError>>()?;
 
-        let partial_block_chain = PartialBlockChain::read_from_bytes(&response.partial_block_chain)
+        let partial_block_chain = PartialBlockchain::read_from_bytes(&response.partial_block_chain)
             .map_err(|source| {
-                ConversionError::deserialization_error("PartialBlockChain", source)
+                ConversionError::deserialization_error("PartialBlockchain", source)
             })?;
 
         Ok(BlockInputs::new(

@@ -22,7 +22,7 @@ use miden_objects::{
     AccountError,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
-        AccountTree, AccountWitness, Blockchain, BlockHeader, BlockInputs, BlockNumber,
+        AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
         NullifierTree, NullifierWitness, ProvenBlock,
     },
     crypto::{

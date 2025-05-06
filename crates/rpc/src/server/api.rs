@@ -10,9 +10,10 @@ use miden_node_proto::{
             SyncNoteRequest, SyncStateRequest,
         },
         responses::{
-            CheckNullifiersByPrefixResponse, CheckNullifiersResponse, GetAccountDetailsResponse,
-            GetAccountProofsResponse, GetAccountStateDeltaResponse, GetBlockByNumberResponse,
-            GetBlockHeaderByNumberResponse, GetNotesByIdResponse, SubmitProvenTransactionResponse,
+            BlockProducerStatusResponse, CheckNullifiersByPrefixResponse, CheckNullifiersResponse,
+            GetAccountDetailsResponse, GetAccountProofsResponse, GetAccountStateDeltaResponse,
+            GetBlockByNumberResponse, GetBlockHeaderByNumberResponse, GetNotesByIdResponse,
+            RpcStatusResponse, StoreStatusResponse, SubmitProvenTransactionResponse,
             SyncNoteResponse, SyncStateResponse,
         },
         rpc::api_server,
@@ -307,5 +308,42 @@ impl api_server::Api for RpcService {
         }
 
         self.store.clone().get_account_proofs(request).await
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "rpc.server.status",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn status(&self, request: Request<()>) -> Result<Response<RpcStatusResponse>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        let store_status =
+            self.store.clone().status(Request::new(())).await.map(Response::into_inner).ok();
+        let block_producer_status = if let Some(block_producer) = &self.block_producer {
+            block_producer
+                .clone()
+                .status(Request::new(()))
+                .await
+                .map(Response::into_inner)
+                .ok()
+        } else {
+            None
+        };
+
+        Ok(Response::new(RpcStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            store_status: store_status.or(Some(StoreStatusResponse {
+                status: "unreachable".to_string(),
+                chain_tip: 0,
+                version: "-".to_string(),
+            })),
+            block_producer_status: block_producer_status.or(Some(BlockProducerStatusResponse {
+                status: "unreachable".to_string(),
+                version: "-".to_string(),
+            })),
+        }))
     }
 }

@@ -17,6 +17,7 @@ workspace = true
 [dependencies]
 anyhow             = { workspace = true }
 axum               = { version = "0.8", features = ["tokio"] }
+axum-extra         = { version = "0.10" }
 clap               = { version = "4.5", features = ["derive", "string"] }
 http               = { workspace = true }
 http-body-util     = "0.1"

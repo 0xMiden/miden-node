@@ -3,6 +3,7 @@ use axum::{
     extract::State,
     response::{Html, IntoResponse, Response},
 };
+use axum_extra::response::{Css, JavaScript};
 use http::header::{self};
 
 use crate::{faucet::FaucetId, types::AssetOptions};
@@ -20,27 +21,17 @@ pub async fn get_index_html() -> Html<&'static str> {
     Html(include_str!("resources/index.html"))
 }
 
-pub async fn get_index_js() -> Response {
-    (
-        // TODO: I don't think this is correct. Or rather my browser grumbles about it the console
-        // tabs.
-        [(header::CONTENT_TYPE, "Content-Type: text/javascript; charset=utf-8")],
-        include_str!("resources/index.js"),
-    )
-        .into_response()
+pub async fn get_index_js() -> JavaScript<&'static str> {
+    JavaScript(include_str!("resources/index.js"))
 }
 
-pub async fn get_index_css() -> Response {
-    (
-        [(header::CONTENT_TYPE, "Content-Type: text/css; charset=utf-8")],
-        include_str!("resources/index.css"),
-    )
-        .into_response()
+pub async fn get_index_css() -> Css<&'static str> {
+    Css(include_str!("resources/index.css"))
 }
 
 pub async fn get_background() -> Response {
     (
-        [(header::CONTENT_TYPE, "Content-Type: image/png")],
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/png"))],
         include_bytes!("resources/background.png"),
     )
         .into_response()
@@ -48,7 +39,7 @@ pub async fn get_background() -> Response {
 
 pub async fn get_favicon() -> Response {
     (
-        [(header::CONTENT_TYPE, "Content-Type: image/x-icon")],
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/x-icon"))],
         include_bytes!("resources/favicon.ico"),
     )
         .into_response()

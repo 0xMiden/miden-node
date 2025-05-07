@@ -25,7 +25,8 @@ use miden_node_proto::{
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
             GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
             GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
-            NullifierTransactionInputRecord, NullifierUpdate, SyncNoteResponse, SyncStateResponse,
+            NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
+            SyncNoteResponse, SyncStateResponse,
         },
         store::api_server,
         transaction::TransactionSummary,
@@ -549,6 +550,21 @@ impl api_server::Api for StoreApi {
         Ok(Response::new(GetUnconsumedNetworkNotesResponse {
             notes: notes.into_iter().map(Into::into).collect(),
             next_token: next_page.token,
+        }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.status",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
+        Ok(Response::new(StoreStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: self.state.latest_block_num().await.as_u32(),
         }))
     }
 }

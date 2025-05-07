@@ -4,6 +4,7 @@ package rpc;
 
 import "requests.proto";
 import "responses.proto";
+import "google/protobuf/empty.proto";
 
 service Api {
     // Returns a nullifier proof for each of the requested nullifiers.
@@ -64,4 +65,7 @@ service Api {
     // part of hashes. Thus, returned data contains excessive notes, client can make
     // additional filtering of that data on its side.
     rpc SyncState(requests.SyncStateRequest) returns (responses.SyncStateResponse) {}
+
+    // Returns the status info of the node.
+    rpc Status(google.protobuf.Empty) returns (responses.RpcStatusResponse) {}
 }

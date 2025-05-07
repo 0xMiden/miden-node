@@ -1,9 +1,12 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::{Context, anyhow};
-use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
+use miden_lib::{
+    account::interface::{AccountInterface, AccountInterfaceError},
+    note::create_p2id_note,
+};
 use miden_objects::{
-    AccountError, Digest, Felt, NoteError, TransactionScriptError,
+    AccountError, Digest, Felt, NoteError,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
     asset::FungibleAsset,
     block::BlockNumber,
@@ -12,9 +15,7 @@ use miden_objects::{
         rand::{FeltRng, RpoRandomCoin},
     },
     note::Note,
-    transaction::{
-        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionScript,
-    },
+    transaction::{ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs},
     vm::AdviceMap,
 };
 use miden_tx::{
@@ -25,7 +26,7 @@ use miden_tx::{
 use rand::{random, rngs::StdRng};
 use serde::Serialize;
 use store::FaucetDataStore;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot::Sender};
 use tonic::Code;
 use tracing::{info, instrument};
 
@@ -35,8 +36,6 @@ use crate::{
 };
 
 mod store;
-
-pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str = include_str!("distribute_fungible_asset.masm");
 
 // FAUCET CLIENT
 // ================================================================================================
@@ -87,7 +86,7 @@ pub enum MintError {
     #[error("building the p2id note failed")]
     BuildingP2IdNote(#[source] NoteError),
     #[error("compiling the tx script failed")]
-    ScriptCompilation(#[source] TransactionScriptError),
+    ScriptCompilation(#[source] AccountInterfaceError),
     #[error("execution of the tx script failed")]
     Execution(#[source] TransactionExecutorError),
     #[error("proving the tx failed")]
@@ -103,6 +102,7 @@ pub struct Faucet {
     id: FaucetId,
     // Previous faucet account states used to perform rollbacks if a desync is detected.
     prior_state: VecDeque<Account>,
+    account_interface: AccountInterface,
 }
 
 impl Faucet {
@@ -158,6 +158,8 @@ impl Faucet {
         )
         .expect("Empty ChainMmr should be valid");
 
+        let account_interface = AccountInterface::from(&account);
+
         let data_store = Arc::new(FaucetDataStore::new(
             account,
             account_file.account_seed,
@@ -179,6 +181,7 @@ impl Faucet {
             data_store,
             id,
             prior_state: VecDeque::new(),
+            account_interface,
         })
     }
 
@@ -187,24 +190,36 @@ impl Faucet {
     pub async fn run(
         mut self,
         mut rpc_client: RpcClient,
-        mut requests: mpsc::Receiver<(MintRequest, oneshot::Sender<(BlockNumber, Note)>)>,
+        mut requests: mpsc::Receiver<(MintRequest, Sender<(BlockNumber, Note)>)>,
     ) -> anyhow::Result<()> {
         let coin_seed: [u64; 4] = random();
         let rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
 
-        while let Some((request, response_sender)) = requests.recv().await {
-            // Skip doing work if the user no longer cares about the result.
-            if response_sender.is_closed() {
-                tracing::info!(request.account_id=%request.account_id, "request cancelled");
-                continue;
-            }
+        let mut buffer = Vec::new();
+        let limit = 100; // we could include 256 notes per tx, but requests channel is limited to 100 atm
 
-            match self.handle_request(request, rng, &mut rpc_client).await {
+        while requests.recv_many(&mut buffer, limit).await > 0 {
+            // Skip requests where the user no longer cares about the result.
+            let (requests, response_senders): (Vec<MintRequest>, Vec<Sender<(BlockNumber, Note)>>) = buffer
+                .drain(..)
+                .filter(|(request, response_sender)| {
+                    if response_sender.is_closed() {
+                        tracing::info!(request.account_id=%request.account_id, "request cancelled");
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .unzip();
+
+            match self.handle_request_batch(requests, rng, &mut rpc_client).await {
                 // Update local state on success.
-                Ok((delta, block_number, note)) => {
-                    // We ignore the channel closure here as the user may have cancelled the
-                    // request.
-                    let _ = response_sender.send((block_number, note));
+                Ok((delta, block_number, notes)) => {
+                    for (note, response_sender) in notes.iter().zip(response_senders) {
+                        // We ignore the channel closure here as the user may have cancelled the
+                        // request.
+                        let _ = response_sender.send((block_number, note.clone()));
+                    }
                     // SAFETY: Delta must be valid since it comes from a tx accepted by the node.
                     self.update_state(&delta).unwrap();
                 },
@@ -292,18 +307,31 @@ impl Faucet {
         Ok(())
     }
 
-    /// Fully handles a single request _without_ changing local state.
+    /// Fully handles a batch of requests _without_ changing local state.
     ///
     /// Caller should update the local state based on the returned result.
-    async fn handle_request(
+    async fn handle_request_batch(
         &self,
-        request: MintRequest,
-        rng: impl FeltRng,
+        requests: Vec<MintRequest>,
+        rng: impl FeltRng + Clone,
         rpc_client: &mut RpcClient,
-    ) -> MintResult<(AccountDelta, BlockNumber, Note)> {
+    ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>)> {
         // Generate the payment note and compile it into our transaction arguments.
-        let p2id_note = P2IdNote::build(self.faucet_id(), &request, rng)?;
-        let tx_args = p2id_note.compile()?;
+
+        let p2id_notes: Vec<P2IdNote> = requests
+            .iter()
+            .filter_map(|request| {
+                let note = P2IdNote::build(self.faucet_id(), request, rng.clone());
+                match note {
+                    Ok(note) => Some(note),
+                    Err(err) => {
+                        tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note");
+                        None
+                    }
+                }
+        }).collect();
+        let notes = p2id_notes.into_iter().map(P2IdNote::into_inner).collect::<Vec<_>>();
+        let tx_args = P2IdNote::compile(&notes, &self.account_interface)?;
 
         let tx = self.execute_transaction(tx_args)?;
         let account_delta = tx.account_delta().clone();
@@ -311,7 +339,7 @@ impl Faucet {
         let tx = Self::prove_transaction(tx)?;
         let block_height = self.submit_transaction(tx, rpc_client).await?;
 
-        Ok((account_delta, block_height, p2id_note.into_inner()))
+        Ok((account_delta, block_height, notes))
     }
 
     fn execute_transaction(&self, tx_args: TransactionArgs) -> MintResult<ExecutedTransaction> {
@@ -381,37 +409,15 @@ impl P2IdNote {
         .map(Self)
     }
 
-    fn compile(&self) -> MintResult<TransactionArgs> {
-        let note = &self.0;
-        let recipient = note
-            .recipient()
-            .digest()
-            .iter()
-            .map(|x| x.as_int().to_string())
-            .collect::<Vec<_>>()
-            .join(".");
-
-        // SAFETY: Its a P2Id note with a single fungible asset by construction.
-        let asset = note.assets().iter().next().unwrap().unwrap_fungible();
-        let note_type = note.metadata().note_type();
-        let tag = note.metadata().tag().inner();
-        let aux = note.metadata().aux().inner();
-        let execution_hint = note.metadata().execution_hint().into();
-
-        let script = &DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT
-            .replace("{recipient}", &recipient)
-            .replace("{note_type}", &Felt::new(note_type as u64).to_string())
-            .replace("{aux}", &Felt::new(aux).to_string())
-            .replace("{tag}", &Felt::new(tag.into()).to_string())
-            .replace("{amount}", &Felt::new(asset.amount()).to_string())
-            .replace("{execution_hint}", &Felt::new(execution_hint).to_string());
-
-        // SAFETY: This is a basic p2id note so this should always succeed.
-        let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
+    fn compile(notes: &[Note], interface: &AccountInterface) -> MintResult<TransactionArgs> {
+        let partial_notes = notes.iter().map(Into::into).collect::<Vec<_>>();
+        // TODO: check expiration delta
+        let script = interface
+            .build_send_notes_script(&partial_notes, None, false)
             .map_err(MintError::ScriptCompilation)?;
 
         let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
-        transaction_args.extend_output_note_recipients(vec![note]);
+        transaction_args.extend_output_note_recipients(notes);
 
         Ok(transaction_args)
     }

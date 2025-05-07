@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{GenesisState, Store};
+use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -20,6 +20,7 @@ use rand_chacha::ChaCha20Rng;
 use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL};
+use crate::system_monitor::SystemMonitor;
 
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
@@ -85,6 +86,11 @@ impl StoreCommand {
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to store's gRPC URL")?;
+
+        // Start system monitor.
+        let data_dir =
+            DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
+        std::thread::spawn(move || SystemMonitor::new(Some(data_dir)).run());
 
         Store { listener, data_directory }
             .serve()

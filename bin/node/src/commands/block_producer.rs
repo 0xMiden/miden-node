@@ -10,6 +10,7 @@ use super::{
     ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_STORE_URL,
     parse_duration_ms,
 };
+use crate::system_monitor::SystemMonitor;
 
 #[derive(clap::Subcommand)]
 pub enum BlockProducerCommand {
@@ -80,6 +81,9 @@ impl BlockProducerCommand {
         let block_producer_address = url
             .to_socket()
             .context("Failed to extract socket address from block producer URL")?;
+
+        // Start system monitor.
+        std::thread::spawn(move || SystemMonitor::new(None).run());
 
         BlockProducer {
             block_producer_address,

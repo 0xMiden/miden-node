@@ -4,6 +4,7 @@ use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{ENV_BLOCK_PRODUCER_URL, ENV_ENABLE_OTEL, ENV_RPC_URL, ENV_STORE_URL};
+use crate::system_monitor::SystemMonitor;
 
 #[derive(clap::Subcommand)]
 pub enum RpcCommand {
@@ -55,6 +56,9 @@ impl RpcCommand {
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
+
+        // Start system monitor.
+        std::thread::spawn(move || SystemMonitor::new(None).run());
 
         Rpc { listener, store, block_producer }.serve().await.context("Serving RPC")
     }

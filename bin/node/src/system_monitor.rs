@@ -81,14 +81,14 @@ impl SystemMonitor {
             system_memory_utilization,
             // System CPU
             system_cpu_physical_count,
-            system_cpu_utilization,
+            %system_cpu_utilization,
             // Disks
             system_disk_limit,
             system_disk_state_available,
-            system_disk_utilization,
+            %system_disk_utilization,
             // Process
             process_memory_usage,
-            process_cpu_utilization,
+            %process_cpu_utilization,
             process_disk_written,
             process_disk_read,
             // Node store data

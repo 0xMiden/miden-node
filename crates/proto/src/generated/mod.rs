@@ -7,6 +7,7 @@ pub mod digest;
 pub mod merkle;
 pub mod mmr;
 pub mod note;
+pub mod ntx_builder;
 pub mod requests;
 pub mod responses;
 pub mod rpc;

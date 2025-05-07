@@ -1,9 +1,9 @@
 use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use anyhow::Context;
-use miden_node_block_producer::server::BlockProducer;
-use miden_node_rpc::server::Rpc;
-use miden_node_store::server::Store;
+use miden_node_block_producer::BlockProducer;
+use miden_node_rpc::Rpc;
+use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
@@ -18,19 +18,11 @@ use super::{
 pub enum BundledCommand {
     /// Bootstraps the blockchain database with the genesis block.
     ///
-    /// This populates the genesis block's data with the accounts and data listed in the
-    /// configuration file.
+    /// The genesis block contains a single public faucet account. The private key for this
+    /// account is written to the `accounts-directory` which can be used to control the account.
     ///
-    /// Each generated genesis account's data is also written to disk. This includes the private
-    /// key which can be used to create transactions for these accounts.
-    ///
-    /// See also: `store dump-genesis`
+    /// This key is not required by the node and can be moved.
     Bootstrap {
-        /// Genesis configuration file.
-        ///
-        /// If not provided the default configuration is used.
-        #[arg(long, value_name = "FILE")]
-        config: Option<PathBuf>,
         /// Directory in which to store the database and raw block data.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
@@ -92,14 +84,9 @@ pub enum BundledCommand {
 impl BundledCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
         match self {
-            BundledCommand::Bootstrap {
-                config,
-                data_directory,
-                accounts_directory,
-            } => {
+            BundledCommand::Bootstrap { data_directory, accounts_directory } => {
                 // Currently the bundled bootstrap is identical to the store's bootstrap.
                 crate::commands::store::StoreCommand::Bootstrap {
-                    config,
                     data_directory,
                     accounts_directory,
                 }
@@ -150,43 +137,60 @@ impl BundledCommand {
         let grpc_store = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to store gRPC endpoint")?;
-        let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to block-producer gRPC endpoint")?;
-
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
-        let block_producer_address = grpc_block_producer
-            .local_addr()
-            .context("Failed to retrieve the block-producer's gRPC address")?;
+
+        let block_producer_address = {
+            let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("Failed to bind to block-producer gRPC endpoint")?;
+            grpc_block_producer
+                .local_addr()
+                .context("Failed to retrieve the block-producer's gRPC address")?
+        };
 
         let mut join_set = JoinSet::new();
 
         // Start store. The store endpoint is available after loading completes.
-        let store = Store::init(grpc_store, data_directory).await.context("Loading store")?;
-        let store_id =
-            join_set.spawn(async move { store.serve().await.context("Serving store") }).id();
+        let store_id = join_set
+            .spawn(async move {
+                Store { listener: grpc_store, data_directory }
+                    .serve()
+                    .await
+                    .context("failed while serving store component")
+            })
+            .id();
 
         // Start block-producer. The block-producer's endpoint is available after loading completes.
-        let block_producer = BlockProducer::init(
-            grpc_block_producer,
-            store_address,
-            batch_prover_url,
-            block_prover_url,
-            batch_interval,
-            block_interval,
-        )
-        .await
-        .context("Loading block-producer")?;
         let block_producer_id = join_set
-            .spawn(async move { block_producer.serve().await.context("Serving block-producer") })
+            .spawn(async move {
+                BlockProducer {
+                    block_producer_address,
+                    store_address,
+                    batch_prover_url,
+                    block_prover_url,
+                    batch_interval,
+                    block_interval,
+                }
+                .serve()
+                .await
+                .context("failed while serving block-producer component")
+            })
             .id();
 
         // Start RPC component.
-        let rpc = Rpc::init(grpc_rpc, store_address, block_producer_address)
-            .await
-            .context("Loading RPC")?;
-        let rpc_id = join_set.spawn(async move { rpc.serve().await.context("Serving RPC") }).id();
+        let rpc_id = join_set
+            .spawn(async move {
+                Rpc {
+                    listener: grpc_rpc,
+                    store: store_address,
+                    block_producer: Some(block_producer_address),
+                }
+                .serve()
+                .await
+                .context("failed while serving RPC component")
+            })
+            .id();
 
         // Lookup table so we can identify the failed component.
         let component_ids = HashMap::from([

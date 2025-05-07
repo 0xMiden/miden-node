@@ -1,4 +1,9 @@
-use std::{collections::BTreeSet, convert::Infallible, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    convert::Infallible,
+    num::{NonZero, TryFromIntError},
+    sync::Arc,
+};
 
 use miden_node_proto::{
     convert,
@@ -19,8 +24,8 @@ use miden_node_proto::{
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
             GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
-            GetTransactionInputsResponse, NullifierTransactionInputRecord, NullifierUpdate,
-            SyncNoteResponse, SyncStateResponse,
+            GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
+            NullifierTransactionInputRecord, NullifierUpdate, SyncNoteResponse, SyncStateResponse,
         },
         store::api_server,
         transaction::TransactionSummary,
@@ -37,7 +42,7 @@ use miden_objects::{
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
-use crate::{COMPONENT, state::State};
+use crate::{COMPONENT, db::Page, state::State};
 
 // STORE API
 // ================================================================================================
@@ -518,6 +523,33 @@ impl api_server::Api for StoreApi {
             .map(|delta| delta.to_bytes());
 
         Ok(Response::new(GetAccountStateDeltaResponse { delta }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.get_unconsumed_network_notes",
+        skip_all,
+        err
+    )]
+    async fn get_unconsumed_network_notes(
+        &self,
+        request: Request<generated::requests::GetUnconsumedNetworkNotesRequest>,
+    ) -> Result<Response<GetUnconsumedNetworkNotesResponse>, Status> {
+        let request = request.into_inner();
+        let state = self.state.clone();
+
+        let size =
+            NonZero::try_from(request.page_size as usize).map_err(|err: TryFromIntError| {
+                invalid_argument(format!("Invalid page_size: {err}"))
+            })?;
+        let page = Page { token: request.page_token, size };
+        let (notes, next_page) =
+            state.get_unconsumed_network_notes(page).await.map_err(internal_error)?;
+
+        Ok(Response::new(GetUnconsumedNetworkNotesResponse {
+            notes: notes.into_iter().map(Into::into).collect(),
+            next_token: next_page.token,
+        }))
     }
 }
 

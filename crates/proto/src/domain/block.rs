@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use miden_objects::{
-    block::{AccountWitness, BlockHeader, BlockInputs, NullifierWitness},
+    block::{BlockHeader, BlockInputs, NullifierWitness},
     note::{NoteId, NoteInclusionProof},
-    transaction::ChainMmr,
+    transaction::PartialBlockchain,
     utils::{Deserializable, Serializable},
 };
 
@@ -101,7 +101,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
     fn from(inputs: BlockInputs) -> Self {
         let (
             prev_block_header,
-            chain_mmr,
+            partial_block_chain,
             account_witnesses,
             nullifier_witnesses,
             unauthenticated_note_proofs,
@@ -111,15 +111,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
             latest_block_header: Some(prev_block_header.into()),
             account_witnesses: account_witnesses
                 .into_iter()
-                .map(|(id, witness)| {
-                    let (initial_state_commitment, proof) = witness.into_parts();
-                    AccountWitnessRecord {
-                        account_id: id,
-                        initial_state_commitment,
-                        proof,
-                    }
-                    .into()
-                })
+                .map(|(id, witness)| AccountWitnessRecord { account_id: id, witness }.into())
                 .collect(),
             nullifier_witnesses: nullifier_witnesses
                 .into_iter()
@@ -128,7 +120,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
                     NullifierWitnessRecord { nullifier, proof }.into()
                 })
                 .collect(),
-            chain_mmr: chain_mmr.to_bytes(),
+            partial_block_chain: partial_block_chain.to_bytes(),
             unauthenticated_note_proofs: unauthenticated_note_proofs
                 .iter()
                 .map(NoteInclusionInBlockProof::from)
@@ -151,13 +143,7 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .into_iter()
             .map(|entry| {
                 let witness_record: AccountWitnessRecord = entry.try_into()?;
-                Ok((
-                    witness_record.account_id,
-                    AccountWitness::new(
-                        witness_record.initial_state_commitment,
-                        witness_record.proof,
-                    ),
-                ))
+                Ok((witness_record.account_id, witness_record.witness))
             })
             .collect::<Result<BTreeMap<_, _>, ConversionError>>()?;
 
@@ -176,12 +162,14 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .map(<(NoteId, NoteInclusionProof)>::try_from)
             .collect::<Result<_, ConversionError>>()?;
 
-        let chain_mmr = ChainMmr::read_from_bytes(&response.chain_mmr)
-            .map_err(|source| ConversionError::deserialization_error("ChainMmr", source))?;
+        let partial_block_chain = PartialBlockchain::read_from_bytes(&response.partial_block_chain)
+            .map_err(|source| {
+                ConversionError::deserialization_error("PartialBlockchain", source)
+            })?;
 
         Ok(BlockInputs::new(
             latest_block_header,
-            chain_mmr,
+            partial_block_chain,
             account_witnesses,
             nullifier_witnesses,
             unauthenticated_note_proofs,

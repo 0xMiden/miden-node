@@ -18,7 +18,10 @@ use miden_objects::{
         rand::RpoRandomCoin,
     },
     note::{Note, NoteType},
-    transaction::{ChainMmr, ExecutedTransaction, TransactionArgs, TransactionScript},
+    transaction::{
+        ExecutedTransaction, ForeignAccountInputs, InputNote, InputNotes, PartialBlockchain,
+        TransactionArgs, TransactionScript,
+    },
     utils::Deserializable,
     vm::AdviceMap,
 };
@@ -58,7 +61,7 @@ impl FaucetClient {
     /// If the faucet account is not found on chain, it will be created on submission of the first
     /// minting transaction.
     pub async fn new(config: &FaucetConfig) -> Result<Self, ClientError> {
-        let (mut rpc_api, root_block_header, root_chain_mmr) =
+        let (mut rpc_api, root_block_header, root_partial_block_chain) =
             initialize_faucet_client(config).await?;
 
         let faucet_account_data = AccountFile::read(&config.faucet_account_path)
@@ -95,7 +98,7 @@ impl FaucetClient {
             faucet_account,
             faucet_account_data.account_seed,
             root_block_header,
-            root_chain_mmr,
+            root_partial_block_chain,
         ));
 
         let public_key = match &faucet_account_data.auth_secret_key {
@@ -144,10 +147,17 @@ impl FaucetClient {
         .context("Failed to create P2ID note")?;
 
         let transaction_args = build_transaction_arguments(&output_note, note_type, asset)?;
+        self.data_store
+            .load_transaction_script(transaction_args.tx_script().expect("should have script"));
 
         let executed_tx = self
             .executor
-            .execute_transaction(self.id, 0.into(), &[], transaction_args)
+            .execute_transaction(
+                self.id,
+                0.into(),
+                InputNotes::<InputNote>::default(),
+                transaction_args,
+            )
             .context("Failed to execute transaction")?;
 
         Ok((executed_tx, output_note))
@@ -199,7 +209,7 @@ impl FaucetClient {
 /// Initializes the faucet client by connecting to the node and fetching the root block header.
 pub async fn initialize_faucet_client(
     config: &FaucetConfig,
-) -> Result<(ApiClient<Channel>, BlockHeader, ChainMmr), ClientError> {
+) -> Result<(ApiClient<Channel>, BlockHeader, PartialBlockchain), ClientError> {
     let endpoint = tonic::transport::Endpoint::try_from(config.node_url.to_string())
         .context("Failed to parse node URL from configuration file")?
         .timeout(Duration::from_millis(config.timeout_ms));
@@ -222,15 +232,15 @@ pub async fn initialize_faucet_client(
 
     let root_block_header = root_block_header.try_into().context("Failed to parse block header")?;
 
-    let root_chain_mmr = ChainMmr::new(
+    let root_partial_block_chain = PartialBlockchain::new(
         PartialMmr::from_peaks(
             MmrPeaks::new(0, Vec::new()).expect("Empty MmrPeak should be valid"),
         ),
         Vec::new(),
     )
-    .expect("Empty ChainMmr should be valid");
+    .expect("Empty PartialBlockchain should be valid");
 
-    Ok((rpc_api, root_block_header, root_chain_mmr))
+    Ok((rpc_api, root_block_header, root_partial_block_chain))
 }
 
 /// Requests account state from the node.
@@ -284,7 +294,12 @@ fn build_transaction_arguments(
     let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
         .context("Failed to compile script")?;
 
-    let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
+    let mut transaction_args = TransactionArgs::new(
+        Some(script),
+        None,
+        AdviceMap::new(),
+        Vec::<ForeignAccountInputs>::default(),
+    );
     transaction_args.extend_output_note_recipients(vec![output_note.clone()]);
 
     Ok(transaction_args)

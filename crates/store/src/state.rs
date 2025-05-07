@@ -10,6 +10,7 @@ use std::{
 };
 
 use miden_node_proto::{
+    AccountWitnessRecord,
     domain::{
         account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
         batch::BatchInputs,
@@ -18,18 +19,18 @@ use miden_node_proto::{
 };
 use miden_node_utils::formatting::format_array;
 use miden_objects::{
-    ACCOUNT_TREE_DEPTH, AccountError,
+    AccountError,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
-    block::{AccountWitness, BlockHeader, BlockInputs, BlockNumber, NullifierWitness, ProvenBlock},
+    block::{
+        AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
+        NullifierTree, NullifierWitness, ProvenBlock,
+    },
     crypto::{
         hash::rpo::RpoDigest,
-        merkle::{
-            LeafIndex, Mmr, MmrDelta, MmrError, MmrPeaks, MmrProof, PartialMmr, SimpleSmt,
-            SmtProof, ValuePath,
-        },
+        merkle::{Mmr, MmrDelta, MmrProof, PartialMmr, SmtProof},
     },
-    note::{NoteId, Nullifier},
-    transaction::{ChainMmr, OutputNote},
+    note::{NoteDetails, NoteId, Nullifier},
+    transaction::{OutputNote, PartialBlockchain},
     utils::Serializable,
 };
 use tokio::{
@@ -41,13 +42,12 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     blocks::BlockStore,
-    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate},
+    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate},
     errors::{
         ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError,
         GetBlockInputsError, InvalidBlockError, NoteSyncError, StateInitializationError,
         StateSyncError,
     },
-    nullifier_tree::NullifierTree,
 };
 // STRUCTURES
 // ================================================================================================
@@ -59,111 +59,19 @@ pub struct TransactionInputs {
     pub found_unauthenticated_notes: BTreeSet<NoteId>,
 }
 
-/// A [Merkle Mountain Range](Mmr) defining a chain of blocks.
-#[derive(Debug, Clone)]
-pub struct Blockchain(Mmr);
-
-impl Blockchain {
-    /// Returns a new Blockchain.
-    pub fn new(chain_mmr: Mmr) -> Self {
-        Self(chain_mmr)
-    }
-
-    /// Returns the tip of the chain, i.e. the number of the latest block in the chain.
-    pub fn chain_tip(&self) -> BlockNumber {
-        let block_number: u32 = (self.0.forest() - 1)
-            .try_into()
-            .expect("chain_mmr always has, at least, the genesis block");
-
-        block_number.into()
-    }
-
-    /// Returns the chain length.
-    pub fn chain_length(&self) -> BlockNumber {
-        self.chain_tip().child()
-    }
-
-    /// Returns the current peaks of the MMR.
-    pub fn peaks(&self) -> MmrPeaks {
-        self.0.peaks()
-    }
-
-    /// Returns the peaks of the MMR at the state specified by `forest`.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the specified `forest` value is not valid for this MMR.
-    pub fn peaks_at(&self, forest: usize) -> Result<MmrPeaks, MmrError> {
-        self.0.peaks_at(forest)
-    }
-
-    /// Adds a block commitment to the MMR. The caller must ensure that this commitent is the one
-    /// for the next block in the chain.
-    pub fn push(&mut self, block_commitment: RpoDigest) {
-        self.0.add(block_commitment);
-    }
-
-    /// Returns an [`MmrProof`] for the leaf at the specified position.
-    pub fn open(&self, pos: usize) -> Result<MmrProof, MmrError> {
-        self.0.open_at(pos, self.0.forest())
-    }
-
-    /// Returns a reference to the underlying [`Mmr`].
-    pub fn as_mmr(&self) -> &Mmr {
-        &self.0
-    }
-
-    /// Creates a [`PartialMmr`] at the state of the latest block (i.e. the block's chain root will
-    /// match the hashed peaks of the returned partial MMR). This MMR will include authentication
-    /// paths for all blocks in the provided set.
-    pub fn partial_mmr_from_blocks(
-        &self,
-        blocks: &BTreeSet<BlockNumber>,
-        latest_block_number: BlockNumber,
-    ) -> PartialMmr {
-        // Using latest block as the target forest means we take the state of the MMR one before
-        // the latest block. This is because the latest block will be used as the reference
-        // block of the batch and will be added to the MMR by the batch kernel.
-        let target_forest = latest_block_number.as_usize();
-        let peaks = self
-            .peaks_at(target_forest)
-            .expect("target_forest should be smaller than forest of the chain mmr");
-        // Grab the block merkle paths from the inner state.
-        let mut partial_mmr = PartialMmr::from_peaks(peaks);
-
-        for block_num in blocks.iter().map(BlockNumber::as_usize) {
-            // SAFETY: We have ensured block nums are less than chain length.
-            let leaf = self
-                .0
-                .get(block_num)
-                .expect("block num less than chain length should exist in chain mmr");
-            let path = self
-                .0
-                .open_at(block_num, target_forest)
-                .expect("block num and target forest should be valid for this mmr")
-                .merkle_path;
-            // SAFETY: We should be able to fill the partial MMR with data from the chain MMR
-            // without errors, otherwise it indicates the chain mmr is invalid.
-            partial_mmr
-                .track(block_num, leaf, &path)
-                .expect("filling partial mmr with data from mmr should succeed");
-        }
-
-        partial_mmr
-    }
-}
-
 /// Container for state that needs to be updated atomically.
 struct InnerState {
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: SimpleSmt<ACCOUNT_TREE_DEPTH>,
+    account_tree: AccountTree,
 }
 
 impl InnerState {
     /// Returns the latest block number.
     fn latest_block_num(&self) -> BlockNumber {
-        self.blockchain.chain_tip()
+        self.blockchain
+            .chain_tip()
+            .expect("chain should always have at least the genesis block")
     }
 }
 
@@ -199,7 +107,9 @@ impl State {
 
         let inner = RwLock::new(InnerState {
             nullifier_tree,
-            blockchain: Blockchain::new(chain_mmr),
+            // SAFETY: We assume the loaded MMR is valid and does not have more than u32::MAX
+            // entries.
+            blockchain: Blockchain::from_mmr_unchecked(chain_mmr),
             account_tree,
         });
 
@@ -239,7 +149,8 @@ impl State {
 
         let header = block.header();
 
-        let tx_commitment = BlockHeader::compute_tx_commitment(block.transactions());
+        let tx_commitment = block.transactions().commitment();
+
         if header.tx_commitment() != tx_commitment {
             return Err(InvalidBlockError::InvalidBlockTxCommitment {
                 expected: tx_commitment,
@@ -308,25 +219,29 @@ impl State {
             }
 
             // compute update for nullifier tree
-            let nullifier_tree_update = inner.nullifier_tree.compute_mutations(
-                block.created_nullifiers().iter().map(|nullifier| (*nullifier, block_num)),
-            );
+            let nullifier_tree_update = inner
+                .nullifier_tree
+                .compute_mutations(
+                    block.created_nullifiers().iter().map(|nullifier| (*nullifier, block_num)),
+                )
+                .map_err(InvalidBlockError::NewBlockNullifierAlreadySpent)?;
 
-            if nullifier_tree_update.root() != header.nullifier_root() {
+            if nullifier_tree_update.as_mutation_set().root() != header.nullifier_root() {
                 return Err(InvalidBlockError::NewBlockInvalidNullifierRoot.into());
             }
 
             // compute update for account tree
-            let account_tree_update = inner.account_tree.compute_mutations(
-                block.updated_accounts().iter().map(|update| {
-                    (
-                        LeafIndex::new_max_depth(update.account_id().prefix().into()),
-                        update.final_state_commitment().into(),
-                    )
-                }),
-            );
+            let account_tree_update = inner
+                .account_tree
+                .compute_mutations(
+                    block
+                        .updated_accounts()
+                        .iter()
+                        .map(|update| (update.account_id(), update.final_state_commitment())),
+                )
+                .map_err(InvalidBlockError::NewBlockDuplicateAccountIdPrefix)?;
 
-            if account_tree_update.root() != header.account_root() {
+            if account_tree_update.as_mutation_set().root() != header.account_root() {
                 return Err(InvalidBlockError::NewBlockInvalidAccountRoot.into());
             }
 
@@ -348,7 +263,9 @@ impl State {
             .output_notes()
             .map(|(note_index, note)| {
                 let (details, nullifier) = match note {
-                    OutputNote::Full(note) => (Some(note.to_bytes()), Some(note.nullifier())),
+                    OutputNote::Full(note) => {
+                        (Some(NoteDetails::from(note)), Some(note.nullifier()))
+                    },
                     OutputNote::Header(_) => (None, None),
                     note @ OutputNote::Partial(_) => {
                         return Err(InvalidBlockError::InvalidOutputNoteType(Box::new(
@@ -455,7 +372,7 @@ impl State {
         if let Some(header) = block_header {
             let mmr_proof = if include_mmr_proof {
                 let inner = self.inner.read().await;
-                let mmr_proof = inner.blockchain.open(header.block_num().as_usize())?;
+                let mmr_proof = inner.blockchain.open(header.block_num())?;
                 Some(mmr_proof)
             } else {
                 None
@@ -484,7 +401,11 @@ impl State {
     #[instrument(target = COMPONENT, skip_all, ret(level = "debug"))]
     pub async fn check_nullifiers(&self, nullifiers: &[Nullifier]) -> Vec<SmtProof> {
         let inner = self.inner.read().await;
-        nullifiers.iter().map(|n| inner.nullifier_tree.open(n)).collect()
+        nullifiers
+            .iter()
+            .map(|n| inner.nullifier_tree.open(n))
+            .map(NullifierWitness::into_proof)
+            .collect()
     }
 
     /// Queries a list of [`NoteRecord`] from the database.
@@ -548,7 +469,7 @@ impl State {
         let (batch_reference_block, partial_mmr) = {
             let inner_state = self.inner.read().await;
 
-            let latest_block_num = inner_state.blockchain.chain_tip();
+            let latest_block_num = inner_state.latest_block_num();
 
             let highest_block_num =
                 *blocks.last().expect("we should have checked for empty block references");
@@ -564,10 +485,19 @@ impl State {
             // there is no need to prove its inclusion.
             blocks.remove(&latest_block_num);
 
-            (
-                latest_block_num,
-                inner_state.blockchain.partial_mmr_from_blocks(&blocks, latest_block_num),
-            )
+            // SAFETY:
+            // - The latest block num was retrieved from the inner blockchain from which we will
+            //   also retrieve the proofs, so it is guaranteed to exist in that chain.
+            // - We have checked that no block number in the blocks set is greater than latest block
+            //   number *and* latest block num was removed from the set. Therefore only block
+            //   numbers smaller than latest block num remain in the set. Therefore all the block
+            //   numbers are guaranteed to exist in the chain state at latest block num.
+            let partial_mmr = inner_state
+                .blockchain
+                .partial_mmr_from_blocks(&blocks, latest_block_num)
+                .expect("latest block num should exist and all blocks in set should be < than latest block");
+
+            (latest_block_num, partial_mmr)
         };
 
         // Fetch the reference block of the batch as part of this query, so we can avoid looking it
@@ -587,7 +517,7 @@ impl State {
             })
             .expect("DB should have returned the header of the batch reference block");
 
-        // The order doesn't matter for ChainMmr::new, so swap remove is fine.
+        // The order doesn't matter for PartialBlockchain::new, so swap remove is fine.
         let batch_reference_block_header = headers.swap_remove(header_index);
 
         // SAFETY: This should not error because:
@@ -595,13 +525,16 @@ impl State {
         // - so none of the block headers block numbers should exceed the chain length of the
         //   partial MMR,
         // - and we've added blocks to a BTreeSet, so there can be no duplicates.
-        let chain_mmr = ChainMmr::new(partial_mmr, headers)
+        //
+        // We construct headers and partial MMR in concert, so they are consistent. This is why we
+        // can call the unchecked constructor.
+        let partial_block_chain = PartialBlockchain::new_unchecked(partial_mmr, headers)
             .expect("partial mmr and block headers should be consistent");
 
         Ok(BatchInputs {
             batch_reference_block_header,
             note_proofs,
-            chain_mmr,
+            partial_block_chain,
         })
     }
 
@@ -678,7 +611,7 @@ impl State {
 
         let note_sync = self.db.get_note_sync(block_num, note_tags).await?;
 
-        let mmr_proof = inner.blockchain.open(note_sync.block_header.block_num().as_usize())?;
+        let mmr_proof = inner.blockchain.open(note_sync.block_header.block_num())?;
 
         Ok((note_sync, mmr_proof))
     }
@@ -729,7 +662,7 @@ impl State {
             })
             .expect("DB should have returned the header of the latest block header");
 
-        // The order doesn't matter for ChainMmr::new, so swap remove is fine.
+        // The order doesn't matter for PartialBlockchain::new, so swap remove is fine.
         let latest_block_header = headers.swap_remove(latest_block_header_index);
 
         // SAFETY: This should not error because:
@@ -737,12 +670,15 @@ impl State {
         // - so none of the block header's block numbers should exceed the chain length of the
         //   partial MMR,
         // - and we've added blocks to a BTreeSet, so there can be no duplicates.
-        let chain_mmr = ChainMmr::new(partial_mmr, headers)
+        //
+        // We construct headers and partial MMR in concert, so they are consistent. This is why we
+        // can call the unchecked constructor.
+        let partial_block_chain = PartialBlockchain::new_unchecked(partial_mmr, headers)
             .expect("partial mmr and block headers should be consistent");
 
         Ok(BlockInputs::new(
             latest_block_header,
-            chain_mmr,
+            partial_block_chain,
             account_witnesses,
             nullifier_witnesses,
             unauthenticated_note_proofs,
@@ -788,19 +724,24 @@ impl State {
 
         // Fetch the partial MMR at the state of the latest block with authentication paths for the
         // provided set of blocks.
-        let partial_mmr = inner.blockchain.partial_mmr_from_blocks(blocks, latest_block_number);
+        //
+        // SAFETY:
+        // - The latest block num was retrieved from the inner blockchain from which we will also
+        //   retrieve the proofs, so it is guaranteed to exist in that chain.
+        // - We have checked that no block number in the blocks set is greater than latest block
+        //   number *and* latest block num was removed from the set. Therefore only block numbers
+        //   smaller than latest block num remain in the set. Therefore all the block numbers are
+        //   guaranteed to exist in the chain state at latest block num.
+        let partial_mmr =
+            inner.blockchain.partial_mmr_from_blocks(blocks, latest_block_number).expect(
+                "latest block num should exist and all blocks in set should be < than latest block",
+            );
 
         // Fetch witnesses for all acounts.
         let account_witnesses = account_ids
             .iter()
             .copied()
-            .map(|account_id| {
-                let ValuePath {
-                    value: latest_state_commitment,
-                    path: proof,
-                } = inner.account_tree.open(&account_id.into());
-                (account_id, AccountWitness::new(latest_state_commitment, proof))
-            })
+            .map(|account_id| (account_id, inner.account_tree.open(account_id)))
             .collect::<BTreeMap<AccountId, AccountWitness>>();
 
         // Fetch witnesses for all nullifiers. We don't check whether the nullifiers are spent or
@@ -808,10 +749,7 @@ impl State {
         let nullifier_witnesses: BTreeMap<Nullifier, NullifierWitness> = nullifiers
             .iter()
             .copied()
-            .map(|nullifier| {
-                let proof = inner.nullifier_tree.open(&nullifier);
-                (nullifier, NullifierWitness::new(proof))
-            })
+            .map(|nullifier| (nullifier, inner.nullifier_tree.open(&nullifier)))
             .collect();
 
         Ok((latest_block_number, account_witnesses, nullifier_witnesses, partial_mmr))
@@ -829,10 +767,7 @@ impl State {
 
         let inner = self.inner.read().await;
 
-        let account_commitment = inner
-            .account_tree
-            .open(&LeafIndex::new_max_depth(account_id.prefix().into()))
-            .value;
+        let account_commitment = inner.account_tree.get(account_id);
 
         let nullifiers = nullifiers
             .iter()
@@ -938,14 +873,13 @@ impl State {
         let responses = account_ids
             .into_iter()
             .map(|account_id| {
-                let acc_leaf_idx = LeafIndex::new_max_depth(account_id.prefix().into());
-                let opening = inner_state.account_tree.open(&acc_leaf_idx);
+                let witness = inner_state.account_tree.open(account_id);
                 let state_header = state_headers.get(&account_id).cloned();
 
+                let witness_record = AccountWitnessRecord { account_id, witness };
+
                 AccountProofsResponse {
-                    account_id: Some(account_id.into()),
-                    account_commitment: Some(opening.value.into()),
-                    account_proof: Some(opening.path.into()),
+                    witness: Some(witness_record.into()),
                     state_header,
                 }
             })
@@ -985,6 +919,14 @@ impl State {
     pub async fn optimize_db(&self) -> Result<(), DatabaseError> {
         self.db.optimize().await
     }
+
+    /// Returns the unprocessed network notes, along with the next pagination token.
+    pub async fn get_unconsumed_network_notes(
+        &self,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+        self.db.select_unconsumed_network_notes(page).await
+    }
 }
 
 // UTILITIES
@@ -1022,16 +964,9 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 }
 
 #[instrument(target = COMPONENT, skip_all)]
-async fn load_accounts(
-    db: &mut Db,
-) -> Result<SimpleSmt<ACCOUNT_TREE_DEPTH>, StateInitializationError> {
-    let account_data: Vec<_> = db
-        .select_all_account_commitments()
-        .await?
-        .into_iter()
-        .map(|(id, account_commitment)| (id.prefix().into(), account_commitment.into()))
-        .collect();
+async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
+    let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
-    SimpleSmt::with_leaves(account_data)
+    AccountTree::with_entries(account_data)
         .map_err(StateInitializationError::FailedToCreateAccountsTree)
 }

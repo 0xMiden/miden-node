@@ -222,7 +222,7 @@ impl BatchJob {
         ProposedBatch::new(
             transactions,
             inputs.batch_reference_block_header,
-            inputs.chain_mmr,
+            inputs.partial_block_chain,
             inputs.note_proofs,
         )
         .map_err(BuildBatchError::ProposeBatchError)
@@ -235,7 +235,7 @@ impl BatchJob {
     ) -> Result<ProvenBatch, BuildBatchError> {
         Span::current().set_attribute("prover.kind", self.batch_prover.kind());
 
-        match &self.batch_prover {
+        let proven_batch = match &self.batch_prover {
             BatchProver::Remote(prover) => {
                 prover.prove(proposed_batch).await.map_err(BuildBatchError::RemoteProverError)
             },
@@ -245,6 +245,15 @@ impl BatchJob {
             })
             .await
             .map_err(BuildBatchError::JoinError)?,
+        }?;
+
+        if proven_batch.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
+            Err(BuildBatchError::SecurityLevelTooLow(
+                proven_batch.proof_security_level(),
+                MIN_PROOF_SECURITY_LEVEL,
+            ))
+        } else {
+            Ok(proven_batch)
         }
     }
 

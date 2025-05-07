@@ -1,5 +1,5 @@
 use anyhow::Context;
-use miden_node_rpc::server::Rpc;
+use miden_node_rpc::Rpc;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
@@ -17,9 +17,10 @@ pub enum RpcCommand {
         #[arg(long = "store.url", env = ENV_STORE_URL, value_name = "URL")]
         store_url: Url,
 
-        /// The block-producer's gRPC url.
+        /// The block-producer's gRPC url. If unset, will run the RPC in read-only mode,
+        /// i.e. without a block-producer.
         #[arg(long = "block-producer.url", env = ENV_BLOCK_PRODUCER_URL, value_name = "URL")]
-        block_producer_url: Url,
+        block_producer_url: Option<Url>,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
@@ -40,24 +41,22 @@ impl RpcCommand {
             open_telemetry: _,
         } = self;
 
-        let store_url = store_url
+        let store = store_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
-        let block_producer_url = block_producer_url
-            .to_socket()
-            .context("Failed to extract socket address from store URL")?;
+
+        let block_producer = if let Some(url) = block_producer_url {
+            Some(url.to_socket().context("Failed to extract socket address from store URL")?)
+        } else {
+            None
+        };
 
         let listener = url.to_socket().context("Failed to extract socket address from RPC URL")?;
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        Rpc::init(listener, store_url, block_producer_url)
-            .await
-            .context("Loading RPC")?
-            .serve()
-            .await
-            .context("Serving RPC")
+        Rpc { listener, store, block_producer }.serve().await.context("Serving RPC")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

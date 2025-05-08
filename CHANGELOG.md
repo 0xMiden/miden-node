@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Faucet now supports the usage of a remote transaction prover (#830).
+
 ## v0.8.2 (2025-05-04)
 
 ### Enhancements

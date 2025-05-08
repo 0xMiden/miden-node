@@ -53,3 +53,8 @@ miden-node-block-producer = { workspace = true, features = ["testing"] }
 serde_json                = { version = "1.0" }
 tokio-stream              = { workspace = true, features = ["net"] }
 tonic-web                 = { version = "0.12" }
+
+# Required to avoid false positives in cargo-machete
+# This is due to the `winter-maybe-async` crate not working standalone.
+[package.metadata.cargo-machete]
+ignored = ["async-trait"]

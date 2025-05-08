@@ -479,7 +479,7 @@ mod tests {
 
     #[tokio::test]
     async fn faucet_batches_requests() {
-        let stub_node_url = Url::from_str("http://localhost:50051").unwrap();
+        let stub_node_url = Url::from_str("http://localhost:50052").unwrap();
         let mut rpc_client = RpcClient::connect_lazy(&stub_node_url).unwrap();
 
         // Start the stub node

@@ -496,7 +496,7 @@ mod tests {
                 (&genesis_header).try_into().unwrap(),
                 TokenSymbol::try_from("POL").unwrap(),
                 2,
-                Felt::try_from(1_000_000_u32).unwrap(),
+                Felt::from(1_000_000_u32),
                 AccountStorageMode::Public,
                 AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
             )

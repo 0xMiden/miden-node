@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, rc::Rc, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
@@ -17,6 +17,7 @@ use miden_objects::{
     },
     vm::AdviceMap,
 };
+use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{
     LocalTransactionProver, ProvingOptions, TransactionExecutor, TransactionExecutorError,
     TransactionProver, TransactionProverError, auth::BasicAuthenticator,
@@ -37,6 +38,25 @@ use crate::{
 mod store;
 
 pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str = include_str!("distribute_fungible_asset.masm");
+
+// TRANSACTION PROVER
+// ================================================================================================
+
+/// Represents a transaction prover which can be either local or remote.
+enum TransactionProverWrapper {
+    Local(LocalTransactionProver),
+    Remote(RemoteTransactionProver),
+}
+
+impl TransactionProverWrapper {
+    fn local() -> Self {
+        Self::Local(LocalTransactionProver::new(ProvingOptions::default()))
+    }
+
+    fn remote(endpoint: impl Into<String>) -> Self {
+        Self::Remote(RemoteTransactionProver::new(endpoint))
+    }
+}
 
 // FAUCET CLIENT
 // ================================================================================================
@@ -98,11 +118,12 @@ pub enum MintError {
 
 /// Stores the current faucet state and handles minting requests.
 pub struct Faucet {
-    authenticator: Arc<BasicAuthenticator<StdRng>>,
     data_store: Arc<FaucetDataStore>,
     id: FaucetId,
     // Previous faucet account states used to perform rollbacks if a desync is detected.
     prior_state: VecDeque<Account>,
+    tx_prover: Arc<TransactionProverWrapper>,
+    tx_executor: Rc<TransactionExecutor>,
 }
 
 impl Faucet {
@@ -111,6 +132,7 @@ impl Faucet {
     pub async fn load(
         account_file: AccountFile,
         rpc_client: &mut RpcClient,
+        remote_tx_prover_url: Option<impl Into<String>>,
     ) -> anyhow::Result<Self> {
         let id = account_file.account.id();
         let id = FaucetId(id);
@@ -174,11 +196,20 @@ impl Faucet {
             account_file.auth_secret_key,
         )]));
 
+        let tx_prover = match remote_tx_prover_url {
+            Some(url) => Arc::new(TransactionProverWrapper::remote(url)),
+            None => Arc::new(TransactionProverWrapper::local()),
+        };
+
+        let tx_executor =
+            Rc::new(TransactionExecutor::new(data_store.clone(), Some(authenticator.clone())));
+
         Ok(Self {
-            authenticator,
             data_store,
             id,
             prior_state: VecDeque::new(),
+            tx_prover,
+            tx_executor,
         })
     }
 
@@ -305,27 +336,33 @@ impl Faucet {
         let p2id_note = P2IdNote::build(self.faucet_id(), &request, rng)?;
         let tx_args = p2id_note.compile()?;
 
-        let tx = self.execute_transaction(tx_args)?;
+        let tx = self.execute_transaction(tx_args).await?;
         let account_delta = tx.account_delta().clone();
 
-        let tx = Self::prove_transaction(tx)?;
+        let tx = match &self.tx_prover.as_ref() {
+            TransactionProverWrapper::Remote(prover) => {
+                prover.prove(tx.into()).await.map_err(MintError::Proving)
+            },
+            TransactionProverWrapper::Local(prover) => {
+                prover.prove(tx.into()).await.map_err(MintError::Proving)
+            },
+        }?;
+
         let block_height = self.submit_transaction(tx, rpc_client).await?;
 
         Ok((account_delta, block_height, p2id_note.into_inner()))
     }
 
-    fn execute_transaction(&self, tx_args: TransactionArgs) -> MintResult<ExecutedTransaction> {
+    async fn execute_transaction(
+        &self,
+        tx_args: TransactionArgs,
+    ) -> MintResult<ExecutedTransaction> {
         // TODO: Is this cheap? Do we need to carry this around with us, or can we just construct
         //       when needed?
-        TransactionExecutor::new(self.data_store.clone(), Some(self.authenticator.clone()))
+        self.tx_executor
             .execute_transaction(self.id.inner(), BlockNumber::GENESIS, &[], tx_args)
+            .await
             .map_err(MintError::Execution)
-    }
-
-    fn prove_transaction(tx: ExecutedTransaction) -> MintResult<ProvenTransaction> {
-        LocalTransactionProver::new(ProvingOptions::default())
-            .prove(tx.into())
-            .map_err(MintError::Proving)
     }
 
     async fn submit_transaction(

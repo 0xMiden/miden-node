@@ -31,13 +31,16 @@ pub struct FaucetConfig {
     pub asset_amount_options: AssetOptions,
     /// Path to the faucet account file
     pub faucet_account_path: PathBuf,
+    /// Optional: Endpoint of the remote transaction prover in the format
+    /// `<protocol>://<host>[:<port>]`
+    pub remote_tx_prover_url: Option<Url>,
 }
 
 impl Display for FaucetConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{{ endpoint: \"{}\", node_url: \"{}\", timeout_ms: \"{}\", asset_amount_options: {:?}, faucet_account_path: \"{}\" }}",
-            self.endpoint, self.node_url, self.timeout_ms, self.asset_amount_options, self.faucet_account_path.display()
+            "{{ endpoint: \"{}\", node_url: \"{}\", timeout_ms: \"{}\", asset_amount_options: {:?}, faucet_account_path: \"{}\", remote_tx_prover_url: \"{:?}\" }}",
+            self.endpoint, self.node_url, self.timeout_ms, self.asset_amount_options, self.faucet_account_path.display(), self.remote_tx_prover_url
         ))
     }
 }
@@ -53,6 +56,7 @@ impl Default for FaucetConfig {
             // SAFETY: These amounts are all less than the maximum.
             asset_amount_options: AssetOptions::new(vec![100, 500, 1_000]).unwrap(),
             faucet_account_path: DEFAULT_FAUCET_ACCOUNT_PATH.into(),
+            remote_tx_prover_url: None,
         }
     }
 }

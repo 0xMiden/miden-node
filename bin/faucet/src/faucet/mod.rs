@@ -211,6 +211,7 @@ impl Faucet {
                     }
                 })
                 .unzip();
+            println!("received {} requests", requests.len());
 
             match self.handle_request_batch(requests, rng, &mut rpc_client).await {
                 // Update local state on success.
@@ -331,7 +332,7 @@ impl Faucet {
                 }
         }).collect();
         let notes = p2id_notes.into_iter().map(P2IdNote::into_inner).collect::<Vec<_>>();
-        let tx_args = P2IdNote::compile(&notes, &self.account_interface)?;
+        let tx_args = self.compile(&notes)?;
 
         let tx = self.execute_transaction(tx_args)?;
         let account_delta = tx.account_delta().clone();
@@ -340,6 +341,20 @@ impl Faucet {
         let block_height = self.submit_transaction(tx, rpc_client).await?;
 
         Ok((account_delta, block_height, notes))
+    }
+
+    /// Compiles the transaction script that creates the given set of notes.
+    fn compile(&self, notes: &[Note]) -> MintResult<TransactionArgs> {
+        let partial_notes = notes.iter().map(Into::into).collect::<Vec<_>>();
+        let script = self
+            .account_interface
+            .build_send_notes_script(&partial_notes, None, false)
+            .map_err(MintError::ScriptCompilation)?;
+
+        let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
+        transaction_args.extend_output_note_recipients(notes);
+
+        Ok(transaction_args)
     }
 
     fn execute_transaction(&self, tx_args: TransactionArgs) -> MintResult<ExecutedTransaction> {
@@ -409,19 +424,6 @@ impl P2IdNote {
         .map(Self)
     }
 
-    fn compile(notes: &[Note], interface: &AccountInterface) -> MintResult<TransactionArgs> {
-        let partial_notes = notes.iter().map(Into::into).collect::<Vec<_>>();
-        // TODO: check expiration delta
-        let script = interface
-            .build_send_notes_script(&partial_notes, None, false)
-            .map_err(MintError::ScriptCompilation)?;
-
-        let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
-        transaction_args.extend_output_note_recipients(notes);
-
-        Ok(transaction_args)
-    }
-
     fn into_inner(self) -> Note {
         self.0
     }
@@ -429,9 +431,29 @@ impl P2IdNote {
 
 #[cfg(test)]
 mod tests {
+    use std::{str::FromStr, sync::Mutex};
+
+    use miden_lib::{
+        AuthScheme,
+        account::{
+            auth::RpoFalcon512, faucets::create_basic_fungible_faucet, wallets::BasicWallet,
+        },
+    };
     use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
+    use miden_node_utils::crypto::get_rpo_random_coin;
+    use miden_objects::{
+        account::{AccountBuilder, AccountStorageMode, AccountType},
+        asset::TokenSymbol,
+        block::BlockHeader,
+        crypto::dsa::rpo_falcon512::{PublicKey, SecretKey},
+    };
+    use rand::{Rng, SeedableRng};
+    use rand_chacha::ChaCha20Rng;
+    use tokio::sync::oneshot;
+    use url::Url;
 
     use super::*;
+    use crate::{stub_rpc_api::serve_stub, types::AssetOptions};
 
     /// This test ensures that the we are able to parse account mismatch errors
     /// provided by the block-producer.
@@ -453,5 +475,87 @@ mod tests {
         let result = parse_desync_error(dbg!(err.message())).unwrap();
 
         assert_eq!(result, actual);
+    }
+
+    #[tokio::test]
+    async fn faucet_batches_requests() {
+        let stub_node_url = Url::from_str("http://localhost:50051").unwrap();
+        let mut rpc_client = RpcClient::connect_lazy(&stub_node_url).unwrap();
+
+        // Start the stub node
+        tokio::spawn(async move { serve_stub(&stub_node_url).await.unwrap() });
+
+        let genesis_header = rpc_client.get_genesis_header().await.unwrap();
+
+        // Create faucet account
+        let account_file = {
+            let mut rng = ChaCha20Rng::from_seed(rand::random());
+            let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let (account, account_seed) = create_basic_fungible_faucet(
+                rng.random(),
+                (&genesis_header).try_into().unwrap(),
+                TokenSymbol::try_from("POL").unwrap(),
+                2,
+                Felt::try_from(1_000_000_u32).unwrap(),
+                AccountStorageMode::Public,
+                AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
+            )
+            .unwrap();
+
+            AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret))
+        };
+
+        // Run the faucet
+        let faucet = Faucet::load(account_file, &mut rpc_client).await.unwrap();
+        let (requests_sender, requests_receiver) = mpsc::channel(100);
+        tokio::spawn(async move {
+            faucet.run(rpc_client, requests_receiver).await.unwrap();
+        });
+
+        // Use the channel to send requests to the faucet
+        let coin_seed: [u64; 4] = rand::rng().random();
+        let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
+        let key_pair = {
+            let mut rng = rng.lock().unwrap();
+            SecretKey::with_rng(&mut *rng)
+        };
+        let mut receivers = Vec::new();
+        for i in 0..150 {
+            let (response_sender, response_receiver) = oneshot::channel();
+            let account_id = create_account_id(&genesis_header, key_pair.public_key(), i);
+            let request = MintRequest {
+                account_id,
+                asset_amount: AssetOptions::new(vec![100]).unwrap().validate(100).unwrap(),
+                note_type: NoteType::Public,
+            };
+            receivers.push(response_receiver);
+            requests_sender.send((request, response_sender)).await.unwrap();
+        }
+
+        // Check that all requests were processed
+        for receiver in receivers {
+            receiver.await.unwrap();
+        }
+
+        // TODO: check that requests were batched correctly
+    }
+
+    /// Creates a new private account with a given public key and anchor block. Generates the seed
+    /// from the given index.
+    fn create_account_id(
+        anchor_block: &BlockHeader,
+        public_key: PublicKey,
+        index: u64,
+    ) -> AccountId {
+        let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
+        let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
+            .anchor(anchor_block.try_into().unwrap())
+            .account_type(AccountType::RegularAccountImmutableCode)
+            .storage_mode(AccountStorageMode::Private)
+            .with_component(RpoFalcon512::new(public_key))
+            .with_component(BasicWallet)
+            .build()
+            .unwrap();
+        new_account.id()
     }
 }

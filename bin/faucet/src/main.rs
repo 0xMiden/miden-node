@@ -108,19 +108,30 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let server =
                 Server::new(faucet.faucet_id(), config.asset_amount_options.clone(), tx_requests);
 
-            // Run the server in a separate task
-            let server_handle = tokio::spawn(async move {
-                server.serve(config.endpoint).await.context("server failed")
-            });
+            // Capture in a variable to avoid moving into two branches
+            let config_endpoint = config.endpoint;
 
-            // Run the faucet directly on the current thread
-            let faucet_result = faucet.run(rpc_client, rx_requests).await;
+            // Use select to concurrently:
+            // - Run and wait for the faucet (on current thread)
+            // - Run and wait for server (in a spawned task)
+            let faucet_future = faucet.run(rpc_client, rx_requests);
+            let server_future = async {
+                let server_handle = tokio::spawn(async move {
+                    server.serve(config_endpoint).await.context("server failed")
+                });
+                server_handle.await.context("failed to join server task")?
+            };
 
-            // Abort the server task
-            server_handle.abort();
-
-            // Return faucet result
-            faucet_result.context("faucet failed")?;
+            tokio::select! {
+                server_result = server_future => {
+                    // If server completes first, return its result
+                    server_result.context("server failed")
+                },
+                faucet_result = faucet_future => {
+                    // Faucet completed, return its result
+                    faucet_result.context("faucet failed")
+                }
+            }?;
         },
 
         Command::CreateFaucetAccount {

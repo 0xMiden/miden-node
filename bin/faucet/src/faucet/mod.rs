@@ -315,26 +315,14 @@ impl Faucet {
         rng: &mut impl FeltRng,
         rpc_client: &mut RpcClient,
     ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>)> {
-        let (executed_transaction, notes) = self.execute_batch_mint_transaction(requests, rng)?;
+        let notes = P2IdNotes::build(self.faucet_id(), requests, rng).into_inner();
+        let tx_args = self.compile(&notes)?;
+        let executed_transaction = self.execute_transaction(tx_args)?;
         let account_delta = executed_transaction.account_delta().clone();
         let tx = Self::prove_transaction(executed_transaction)?;
         let block_number = self.submit_transaction(tx, rpc_client).await?;
 
         Ok((account_delta, block_number, notes))
-    }
-
-    /// Creates and executes a transaction that outputs the requested notes.
-    fn execute_batch_mint_transaction(
-        &self,
-        requests: &[MintRequest],
-        rng: &mut impl FeltRng,
-    ) -> MintResult<(ExecutedTransaction, Vec<Note>)> {
-        // Generate the payment note and compile it into our transaction arguments.
-        let notes = P2IdNotes::build(self.faucet_id(), requests, rng).into_inner();
-        let tx_args = self.compile(&notes)?;
-
-        let executed_transaction = self.execute_transaction(tx_args)?;
-        Ok((executed_transaction, notes))
     }
 
     /// Compiles the transaction script that creates the given set of notes.
@@ -516,8 +504,11 @@ mod tests {
         let coin_seed: [u64; 4] = rand::rng().random();
         let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
         let mut rng = *rng.lock().unwrap();
-        let (executed_tx, notes) =
-            faucet.execute_batch_mint_transaction(&requests, &mut rng).unwrap();
+
+        // Build and execute the transaction
+        let notes = P2IdNotes::build(faucet.faucet_id(), &requests, &mut rng).into_inner();
+        let tx_args = faucet.compile(&notes).unwrap();
+        let executed_tx = faucet.execute_transaction(tx_args).unwrap();
 
         assert_eq!(executed_tx.output_notes().num_notes(), num_requests as usize);
         assert_eq!(notes.len(), num_requests as usize);

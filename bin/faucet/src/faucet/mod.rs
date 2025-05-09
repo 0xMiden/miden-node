@@ -29,7 +29,7 @@ use serde::Serialize;
 use store::FaucetDataStore;
 use tokio::sync::{mpsc, oneshot};
 use tonic::Code;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument};
 
 use crate::{
     rpc_client::{RpcClient, RpcError},
@@ -69,11 +69,20 @@ impl FaucetProver {
 
     async fn prove(
         &self,
-        tx: impl Into<TransactionWitness>,
+        tx: impl Into<TransactionWitness> + Clone,
     ) -> Result<ProvenTransaction, MintError> {
         match self {
             Self::Local(prover) => prover.prove(tx.into()).await,
-            Self::Remote(prover) => prover.prove(tx.into()).await,
+            Self::Remote(prover) => {
+                let proven_tx = prover.prove(tx.clone().into()).await;
+                match proven_tx {
+                    Ok(proven_tx) => Ok(proven_tx),
+                    Err(err) => {
+                        error!("failed to prove transaction with remote prover, falling back to local prover: {}", err);
+                        LocalTransactionProver::new(ProvingOptions::default()).prove(tx.into()).await
+                    }
+                }
+            },
         }
         .map_err(MintError::Proving)
     }

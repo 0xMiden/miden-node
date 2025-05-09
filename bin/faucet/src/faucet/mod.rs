@@ -487,10 +487,9 @@ mod tests {
         // Start the stub node
         tokio::spawn(async move { serve_stub(&stub_node_url).await.unwrap() });
 
-        let genesis_header = rpc_client.get_genesis_header().await.unwrap();
-
         // Create the faucet
-        let account_file = {
+        let faucet = {
+            let genesis_header = rpc_client.get_genesis_header().await.unwrap();
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let (account, account_seed) = create_basic_fungible_faucet(
@@ -503,10 +502,11 @@ mod tests {
                 AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
             )
             .unwrap();
+            let account_file =
+                AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
 
-            AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret))
+            Faucet::load(account_file, &mut rpc_client).await.unwrap()
         };
-        let faucet = Faucet::load(account_file, &mut rpc_client).await.unwrap();
 
         // Create a set of mint requests
         let num_requests = 5;

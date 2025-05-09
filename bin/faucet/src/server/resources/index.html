@@ -6,6 +6,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Miden Faucet</title>
     <link rel="stylesheet" href="./index.css">
+    <!-- Load SHA3 library directly -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-sha3/0.8.0/sha3.min.js"></script>
+    <!-- Load our JavaScript after SHA3 library -->
+    <script src="./index.js"></script>
 </head>
 
 <body>
@@ -39,7 +43,6 @@
             miden consume-notes --account <span id="command-account-id"></span> <span id="note-id"></span>
         </p>
     </div>
-    <script src="./index.js"></script>
 </body>
 
 </html>

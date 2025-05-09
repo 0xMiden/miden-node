@@ -13,7 +13,9 @@ use miden_objects::{AccountIdError, account::AccountId};
 use serde::Deserialize;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
+use tracing::error;
 
+use super::pow::{check_pow_solution, check_server_signature};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -41,6 +43,9 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
+    pub pow_seed: String,
+    pub pow_solution: u64,
+    pub server_signature: String,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -49,6 +54,10 @@ pub enum InvalidRequest {
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
+    #[error("invalid POW solution")]
+    InvalidPoW,
+    #[error("invalid server signature")]
+    InvalidServerSignature,
 }
 
 pub enum GetTokenError {
@@ -132,6 +141,15 @@ impl RawMintRequest {
         let asset_amount = options
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
+
+        if !check_server_signature(self.server_signature, self.pow_seed.clone()) {
+            error!("[get_tokens] invalid server signature");
+            return Err(InvalidRequest::InvalidServerSignature);
+        }
+
+        if !check_pow_solution(self.pow_seed, self.pow_solution) {
+            return Err(InvalidRequest::InvalidPoW);
+        }
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

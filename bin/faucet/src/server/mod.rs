@@ -36,6 +36,7 @@ use crate::{
 
 mod frontend;
 mod get_tokens;
+mod pow;
 
 // FAUCET STATE
 // ================================================================================================
@@ -113,6 +114,7 @@ impl Server {
                 .route("/background.png", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
+                .route("/pow", get(pow::get_pow_seed))
                 // TODO: This feels rather ugly, and would be nice to move but I can't figure out the types.
                 .route(
                     "/get_tokens",

@@ -13,6 +13,15 @@ document.addEventListener('DOMContentLoaded', function () {
     const status = document.getElementById("loading-status");
     const txLink = document.getElementById('tx-link');
 
+    // Check if SHA3 is available right from the start
+    if (typeof sha3_256 === 'undefined') {
+        console.error("SHA3 library not loaded initially");
+        errorMessage.textContent = 'Cryptographic library not loaded. Please refresh the page.';
+        errorMessage.style.display = 'block';
+    } else {
+        console.log("SHA3 library is available at page load");
+    }
+
     fetchMetadata();
 
     privateButton.addEventListener('click', () => { handleButtonClick(true) });
@@ -80,8 +89,26 @@ document.addEventListener('DOMContentLoaded', function () {
 
         setLoadingState(true);
 
+        // Check if SHA3 library is loaded
+        if (typeof sha3_256 === 'undefined') {
+            console.error("SHA3 UNDEFINED when trying to handle button click");
+            errorMessage.textContent = "Cryptographic library not loaded. Please refresh the page and try again.";
+            errorMessage.style.display = 'block';
+            return;
+        }
+
+        // Get the pow seed, difficulty, and server signature
+        const powResponse = await fetch(window.location.href + 'pow', {
+            method: "GET"
+        });
+
+        const powData = await powResponse.json();
+
+        // Search for a nonce that satisfies the proof of work
+        const nonce = await findValidNonce(powData.seed, powData.difficulty);
+
         const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams({
-            account_id: accountId, is_private_note: isPrivateNote, asset_amount: parseInt(assetSelect.value)
+            account_id: accountId, is_private_note: isPrivateNote, asset_amount: parseInt(assetSelect.value), pow_seed: powData.seed, pow_solution: nonce, server_signature: powData.server_signature
         }));
 
         evtSource.onopen = function () {
@@ -133,6 +160,52 @@ document.addEventListener('DOMContentLoaded', function () {
             txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
             txLink.textContent = data.transaction_id;
         });
+    }
+
+    // Function to find a valid nonce for proof of work
+    async function findValidNonce(seed, difficulty) {
+        // Check again if SHA3 is available
+        if (typeof sha3_256 === 'undefined') {
+            console.error("SHA3 library not properly loaded. SHA3 object:", sha3_256);
+            throw new Error('SHA3 library not properly loaded. Please refresh the page.');
+        }
+
+        // Parse difficulty (number of required trailing zeros)
+        const requiredZeros = parseInt(difficulty);
+        const requiredPattern = '0'.repeat(requiredZeros);
+
+        let nonce = 0;
+        let validNonceFound = false;
+
+        while (!validNonceFound) {
+            // Generate a random nonce
+            nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+
+            try {
+                // Compute hash using SHA3
+                let hash = sha3_256.create();
+                hash.update(seed);
+                hash.update(nonce.toString());
+                // Trim leading 0x
+                let digest = hash.hex().toString().slice(2);
+
+
+                // Check if the hash starts with the required number of zeros
+                if (digest.startsWith(requiredPattern)) {
+                    console.log("Found valid nonce! Nonce:", nonce, "Hash:", digest);
+                    validNonceFound = true;
+                    return nonce;
+                }
+            } catch (error) {
+                console.error('Error computing hash:', error);
+                throw new Error('Failed to compute hash: ' + error.message);
+            }
+
+            // Yield to browser to prevent freezing
+            if (nonce % 1000 === 0) {
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+        }
     }
 
     function downloadBlob(blob, filename) {

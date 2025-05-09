@@ -14,6 +14,7 @@ use miden_objects::{
     note::Note,
     transaction::{
         ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionScript,
+        TransactionWitness,
     },
     vm::AdviceMap,
 };
@@ -64,6 +65,17 @@ impl FaucetProver {
     /// * `endpoint` - The endpoint to connect to the remote prover.
     fn remote(endpoint: impl Into<String>) -> Self {
         Self::Remote(RemoteTransactionProver::new(endpoint))
+    }
+
+    async fn prove(
+        &self,
+        tx: impl Into<TransactionWitness>,
+    ) -> Result<ProvenTransaction, MintError> {
+        match self {
+            Self::Local(prover) => prover.prove(tx.into()).await,
+            Self::Remote(prover) => prover.prove(tx.into()).await,
+        }
+        .map_err(MintError::Proving)
     }
 }
 
@@ -348,16 +360,9 @@ impl Faucet {
         let tx = self.execute_transaction(tx_args).await?;
         let account_delta = tx.account_delta().clone();
 
-        let tx = match &self.tx_prover.as_ref() {
-            FaucetProver::Remote(prover) => {
-                prover.prove(tx.into()).await.map_err(MintError::Proving)
-            },
-            FaucetProver::Local(prover) => {
-                prover.prove(tx.into()).await.map_err(MintError::Proving)
-            },
-        }?;
+        let tx = self.tx_prover.as_ref().prove(tx).await?;
 
-        let block_height = self.submit_transaction(tx, rpc_client).await?;
+        let block_height = self.submit_transaction(tx.clone(), rpc_client).await?;
 
         Ok((account_delta, block_height, p2id_note.into_inner()))
     }

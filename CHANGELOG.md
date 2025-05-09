@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Added a required Proof-of-Work in the faucet to request tokens (#???).
+- Added a required Proof-of-Work in the faucet to request tokens (#831).
 
 ## v0.8.2 (2025-05-04)
 

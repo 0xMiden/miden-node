@@ -6,7 +6,7 @@ use miden_lib::{
     note::create_p2id_note,
 };
 use miden_objects::{
-    AccountError, Digest, Felt, NoteError,
+    AccountError, Digest, Felt,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
     asset::FungibleAsset,
     block::BlockNumber,
@@ -83,8 +83,6 @@ type MintResult<T> = Result<T, MintError>;
 /// Error indicating what went wrong in the minting process for a request.
 #[derive(Debug, thiserror::Error)]
 pub enum MintError {
-    #[error("building the p2id note failed")]
-    BuildingP2IdNote(#[source] NoteError),
     #[error("compiling the tx script failed")]
     ScriptCompilation(#[source] AccountInterfaceError),
     #[error("execution of the tx script failed")]
@@ -317,7 +315,7 @@ impl Faucet {
         rng: &mut impl FeltRng,
         rpc_client: &mut RpcClient,
     ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>)> {
-        let (executed_transaction, notes) = self.create_batch_transaction(requests, rng)?;
+        let (executed_transaction, notes) = self.execute_batch_mint_transaction(requests, rng)?;
         let account_delta = executed_transaction.account_delta().clone();
         let tx = Self::prove_transaction(executed_transaction)?;
         let block_number = self.submit_transaction(tx, rpc_client).await?;
@@ -326,25 +324,13 @@ impl Faucet {
     }
 
     /// Creates and executes a transaction that outputs the requested notes.
-    fn create_batch_transaction(
+    fn execute_batch_mint_transaction(
         &self,
         requests: &[MintRequest],
         rng: &mut impl FeltRng,
     ) -> MintResult<(ExecutedTransaction, Vec<Note>)> {
         // Generate the payment note and compile it into our transaction arguments.
-        let p2id_notes: Vec<P2IdNote> = requests
-            .iter()
-            .filter_map(|request| {
-                let note = P2IdNote::build(self.faucet_id(), request, rng);
-                match note {
-                    Ok(note) => Some(note),
-                    Err(err) => {
-                        tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note");
-                        None
-                    }
-                }
-        }).collect();
-        let notes = p2id_notes.into_iter().map(P2IdNote::into_inner).collect::<Vec<_>>();
+        let notes = P2IdNotes::build(self.faucet_id(), requests, rng).into_inner();
         let tx_args = self.compile(&notes)?;
 
         let executed_transaction = self.execute_transaction(tx_args)?;
@@ -413,26 +399,34 @@ fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
         .map(Into::into)
 }
 
-struct P2IdNote(Note);
+struct P2IdNotes(Vec<Note>);
 
-impl P2IdNote {
-    fn build(source: FaucetId, request: &MintRequest, rng: &mut impl FeltRng) -> MintResult<Self> {
-        // SAFETY: source is definitely a faucet account, and the amount is valid.
-        let asset = FungibleAsset::new(source.inner(), request.asset_amount.inner()).unwrap();
-
-        create_p2id_note(
-            source.inner(),
-            request.account_id,
-            vec![asset.into()],
-            request.note_type.into(),
-            Felt::default(),
-            rng,
-        )
-        .map_err(MintError::BuildingP2IdNote)
-        .map(Self)
+impl P2IdNotes {
+    fn build(source: FaucetId, requests: &[MintRequest], rng: &mut impl FeltRng) -> Self {
+        Self(requests
+            .iter()
+            .filter_map(|request| {
+                // SAFETY: source is definitely a faucet account, and the amount is valid.
+                let asset = FungibleAsset::new(source.inner(), request.asset_amount.inner()).unwrap();
+                let note = create_p2id_note(
+                    source.inner(),
+                    request.account_id,
+                    vec![asset.into()],
+                    request.note_type.into(),
+                    Felt::default(),
+                    rng,
+                );
+                match note {
+                    Ok(note) => Some(note),
+                    Err(err) => {
+                        tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note");
+                        None
+                    }
+                }
+            }).collect())
     }
 
-    fn into_inner(self) -> Note {
+    fn into_inner(self) -> Vec<Note> {
         self.0
     }
 }
@@ -529,7 +523,8 @@ mod tests {
         let coin_seed: [u64; 4] = rand::rng().random();
         let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
         let mut rng = *rng.lock().unwrap();
-        let (executed_tx, notes) = faucet.create_batch_transaction(&requests, &mut rng).unwrap();
+        let (executed_tx, notes) =
+            faucet.execute_batch_mint_transaction(&requests, &mut rng).unwrap();
 
         assert_eq!(executed_tx.output_notes().num_notes(), num_requests as usize);
         assert_eq!(notes.len(), num_requests as usize);

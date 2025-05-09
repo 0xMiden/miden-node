@@ -408,21 +408,14 @@ impl P2IdNotes {
             .filter_map(|request| {
                 // SAFETY: source is definitely a faucet account, and the amount is valid.
                 let asset = FungibleAsset::new(source.inner(), request.asset_amount.inner()).unwrap();
-                let note = create_p2id_note(
+                create_p2id_note(
                     source.inner(),
                     request.account_id,
                     vec![asset.into()],
                     request.note_type.into(),
                     Felt::default(),
                     rng,
-                );
-                match note {
-                    Ok(note) => Some(note),
-                    Err(err) => {
-                        tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note");
-                        None
-                    }
-                }
+                ).inspect_err(|err| tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note")).ok()
             }).collect())
     }
 

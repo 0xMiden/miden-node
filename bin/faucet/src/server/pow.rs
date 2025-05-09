@@ -9,8 +9,7 @@ use sha3::{Digest, Sha3_256};
 const DIFFICULTY: u64 = 5;
 
 const SERVER_SALT: LazyLock<String> = LazyLock::new(|| {
-    std::env::var("MIDEN_FAUCET_SERVER_SALT")
-        .expect("MIDEN_FAUCET_SERVER_SALT must be set")
+    std::env::var("MIDEN_FAUCET_SERVER_SALT").expect("MIDEN_FAUCET_SERVER_SALT must be set")
 });
 
 #[derive(Serialize)]

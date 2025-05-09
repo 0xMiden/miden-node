@@ -83,7 +83,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 asset_amount: parseInt(assetSelect.value),
                 pow_seed: powData.seed,
                 pow_solution: nonce,
-                server_signature: powData.server_signature
+                server_signature: powData.server_signature,
+                server_timestamp: powData.timestamp
             }), {
                 method: "POST"
             });

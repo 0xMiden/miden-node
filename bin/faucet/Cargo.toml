@@ -47,6 +47,7 @@ miden-node-utils = { workspace = true, features = ["vergen"] }
 [dev-dependencies]
 fantoccini                = { version = "0.21" }
 miden-node-block-producer = { workspace = true, features = ["testing"] }
+miden-objects             = { workspace = true, features = ["testing"] }
 serde_json                = { version = "1.0" }
 tokio-stream              = { workspace = true, features = ["net"] }
 tonic-web                 = { version = "0.12" }

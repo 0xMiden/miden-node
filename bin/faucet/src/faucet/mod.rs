@@ -39,20 +39,29 @@ mod store;
 
 pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str = include_str!("distribute_fungible_asset.masm");
 
-// TRANSACTION PROVER
+// FAUCET PROVER
 // ================================================================================================
 
-/// Represents a transaction prover which can be either local or remote.
-enum TransactionProverWrapper {
+/// Represents a transaction prover which can be either local or remote, and is used to prove
+/// transactions minted by the faucet.
+enum FaucetProver {
     Local(LocalTransactionProver),
     Remote(RemoteTransactionProver),
 }
 
-impl TransactionProverWrapper {
+impl FaucetProver {
+    /// Creates a new local prover.
+    ///
+    /// It uses the default proving options.
     fn local() -> Self {
         Self::Local(LocalTransactionProver::new(ProvingOptions::default()))
     }
 
+    /// Creates a new remote prover.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - The endpoint to connect to the remote prover.
     fn remote(endpoint: impl Into<String>) -> Self {
         Self::Remote(RemoteTransactionProver::new(endpoint))
     }
@@ -122,7 +131,7 @@ pub struct Faucet {
     id: FaucetId,
     // Previous faucet account states used to perform rollbacks if a desync is detected.
     prior_state: VecDeque<Account>,
-    tx_prover: Arc<TransactionProverWrapper>,
+    tx_prover: Arc<FaucetProver>,
     tx_executor: Rc<TransactionExecutor>,
 }
 
@@ -197,8 +206,8 @@ impl Faucet {
         )]));
 
         let tx_prover = match remote_tx_prover_url {
-            Some(url) => Arc::new(TransactionProverWrapper::remote(url)),
-            None => Arc::new(TransactionProverWrapper::local()),
+            Some(url) => Arc::new(FaucetProver::remote(url)),
+            None => Arc::new(FaucetProver::local()),
         };
 
         let tx_executor =
@@ -340,10 +349,10 @@ impl Faucet {
         let account_delta = tx.account_delta().clone();
 
         let tx = match &self.tx_prover.as_ref() {
-            TransactionProverWrapper::Remote(prover) => {
+            FaucetProver::Remote(prover) => {
                 prover.prove(tx.into()).await.map_err(MintError::Proving)
             },
-            TransactionProverWrapper::Local(prover) => {
+            FaucetProver::Local(prover) => {
                 prover.prove(tx.into()).await.map_err(MintError::Proving)
             },
         }?;
@@ -357,8 +366,6 @@ impl Faucet {
         &self,
         tx_args: TransactionArgs,
     ) -> MintResult<ExecutedTransaction> {
-        // TODO: Is this cheap? Do we need to carry this around with us, or can we just construct
-        //       when needed?
         self.tx_executor
             .execute_transaction(self.id.inner(), BlockNumber::GENESIS, &[], tx_args)
             .await

@@ -29,6 +29,7 @@ miden-tx           = { workspace = true, features = ["concurrent"] }
 rand               = { workspace = true }
 rand_chacha        = "0.9"
 serde              = { version = "1.0", features = ["derive"] }
+sha3               = { version = "0.10.8" }
 thiserror          = { workspace = true }
 tokio              = { workspace = true, features = ["fs"] }
 toml               = { version = "0.8" }

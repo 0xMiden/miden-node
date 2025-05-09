@@ -16,7 +16,9 @@ use miden_objects::{
 use serde::Deserialize;
 use tokio::sync::{mpsc::error::TrySendError, oneshot};
 use tonic::body;
+use tracing::error;
 
+use super::pow::{check_pow_solution, check_server_signature, check_server_timestamp};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -44,6 +46,10 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
+    pub pow_seed: String,
+    pub pow_solution: u64,
+    pub server_signature: String,
+    pub server_timestamp: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -52,6 +58,12 @@ pub enum InvalidRequest {
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
+    #[error("invalid POW solution")]
+    InvalidPoW,
+    #[error("invalid server signature")]
+    InvalidServerSignature,
+    #[error("server timestamp expired")]
+    ExpiredServerTimestamp,
 }
 
 pub enum GetTokenError {
@@ -140,6 +152,22 @@ impl RawMintRequest {
         let asset_amount = options
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
+
+        // Check the server timestamp
+        if !check_server_timestamp(self.server_timestamp) {
+            return Err(InvalidRequest::ExpiredServerTimestamp);
+        }
+
+        // Check the server signature
+        if !check_server_signature(&self.server_signature, &self.pow_seed, self.server_timestamp) {
+            error!("[get_tokens] invalid server signature");
+            return Err(InvalidRequest::InvalidServerSignature);
+        }
+
+        // Check the PoW solution
+        if !check_pow_solution(&self.pow_seed, self.pow_solution) {
+            return Err(InvalidRequest::InvalidPoW);
+        }
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

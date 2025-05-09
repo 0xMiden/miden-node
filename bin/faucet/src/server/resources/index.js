@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const nonce = await findValidNonce(powData.seed, powData.difficulty);
 
         const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams({
-            account_id: accountId, is_private_note: isPrivateNote, asset_amount: parseInt(assetSelect.value), pow_seed: powData.seed, pow_solution: nonce, server_signature: powData.server_signature
+            account_id: accountId, is_private_note: isPrivateNote, asset_amount: parseInt(assetSelect.value), pow_seed: powData.seed, pow_solution: nonce, server_signature: powData.server_signature, server_timestamp: powData.timestamp
         }));
 
         evtSource.onopen = function () {

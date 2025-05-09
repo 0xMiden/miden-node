@@ -15,7 +15,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::error;
 
-use super::pow::{check_pow_solution, check_server_signature};
+use super::pow::{check_pow_solution, check_server_signature, check_server_timestamp};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -46,6 +46,7 @@ pub struct RawMintRequest {
     pub pow_seed: String,
     pub pow_solution: u64,
     pub server_signature: String,
+    pub server_timestamp: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,6 +59,8 @@ pub enum InvalidRequest {
     InvalidPoW,
     #[error("invalid server signature")]
     InvalidServerSignature,
+    #[error("server timestamp expired")]
+    ExpiredServerTimestamp,
 }
 
 pub enum GetTokenError {
@@ -142,12 +145,19 @@ impl RawMintRequest {
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
-        if !check_server_signature(self.server_signature, self.pow_seed.clone()) {
+        // Check the server timestamp
+        if !check_server_timestamp(self.server_timestamp) {
+            return Err(InvalidRequest::ExpiredServerTimestamp);
+        }
+
+        // Check the server signature
+        if !check_server_signature(&self.server_signature, &self.pow_seed, self.server_timestamp) {
             error!("[get_tokens] invalid server signature");
             return Err(InvalidRequest::InvalidServerSignature);
         }
 
-        if !check_pow_solution(self.pow_seed, self.pow_solution) {
+        // Check the PoW solution
+        if !check_pow_solution(&self.pow_seed, self.pow_solution) {
             return Err(InvalidRequest::InvalidPoW);
         }
 

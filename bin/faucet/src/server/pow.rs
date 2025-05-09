@@ -177,3 +177,16 @@ mod tests {
         assert!(result.is_err());
     }
 }
+
+/// Check the received timestamp.
+///
+/// The timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of the
+/// current time.
+pub(crate) fn check_server_timestamp(timestamp: u64) -> bool {
+    let server_timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("Time went backwards")
+        .as_secs();
+
+    (server_timestamp - timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+}

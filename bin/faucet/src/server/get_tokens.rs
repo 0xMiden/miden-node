@@ -66,6 +66,8 @@ pub enum InvalidRequest {
     ExpiredServerTimestamp(u64, u64),
     #[error("invalid server signature")]
     InvalidServerSignature,
+    #[error("server timestamp expired")]
+    ExpiredServerTimestamp,
 }
 
 pub enum GetTokenError {

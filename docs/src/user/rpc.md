@@ -4,7 +4,7 @@ This is a reference of the Node's public RPC interface. It consists of a gRPC AP
 transactions and query the state of the blockchain.
 
 The gRPC service definition can be found in the Miden node's `proto`
-[directory](https://github.com/0xPolygonMiden/miden-node/tree/main/proto) in the `rpc.proto` file.
+[directory](https://github.com/0xMiden/miden-node/tree/main/proto) in the `rpc.proto` file.
 
 <!--toc:start-->
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Added a required Proof-of-Work in the faucet to request tokens (#???).
+
 ## v0.8.2 (2025-05-04)
 
 ### Enhancements

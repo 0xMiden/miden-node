@@ -11,13 +11,13 @@
 <body>
     <div id="navbar">
         <h1 id="title">Miden Faucet</h1>
-      <div id="faucetId"></div>
+        <div id="faucet-id"></div>
     </div>
     <div id="center-container">
         <h2 id="subtitle">Request test tokens</h2>
         <span id="error-message"></span>
         <div id="form-container">
-            <input type="text" id="account-id" placeholder="Hex encoded Account id" required>
+            <input type="text" id="account-id" placeholder="Miden Account address" required>
             <select id="asset-amount"></select>
         </div>
         <div id="visibility-buttons">
@@ -27,7 +27,8 @@
         </div>
     </div>
     <div id="loading" class="info-container">
-        <div class="loader"></div> 
+        <div class="loader"></div>
+        <div id="loading-status" class="loader-status"></div>
     </div>
     <div id="info" class="info-container">
         <p class="info-message">You can consume the note by running the following commands in your shell</p>

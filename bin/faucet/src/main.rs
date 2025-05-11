@@ -16,7 +16,7 @@ use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{config::load_config, crypto::get_rpo_random_coin, version::LongVersion};
 use miden_objects::{
     Felt,
-    account::{AccountFile, AccountStorageMode, AuthSecretKey},
+    account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -35,6 +35,9 @@ use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
 const REQUESTS_QUEUE_SIZE: usize = 1000;
+
+// TODO: we should probably parse this from the config file
+const NETWORK_ID: NetworkId = NetworkId::Testnet;
 
 // COMMANDS
 // ================================================================================================

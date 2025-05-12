@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Added a required Proof-of-Work in the faucet to request tokens (#831).
+- Added an optional API key request parameter to skip PoW in faucet (#839).
 
 ## v0.8.2 (2025-05-04)
 
@@ -16,7 +17,7 @@
 ### Fixes
 
 - Faucet times out during high load (#819).
- 
+
 ## v0.8.0 (2025-03-26)
 
 ### Enhancements
@@ -49,7 +50,7 @@
 - [BREAKING] Update `GetBlockInputs` RPC (#709).
 - [BREAKING] Added `batch_prover_url` to block producer configuration (#701).
 - [BREAKING] Added `block_prover_url` to block producer configuration (#719).
-- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723). 
+- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723).
 - [BREAKING] Updated to Rust Edition 2024 (#727).
 - [BREAKING] MSRV bumped to 1.85 (#727).
 - [BREAKING] Replaced `toml` configuration with CLI (#732).

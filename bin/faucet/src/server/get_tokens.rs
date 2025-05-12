@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use axum::{
     extract::{Query, State},
     http::{Response, StatusCode},
@@ -49,10 +51,11 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
-    pub pow_seed: String,
-    pub pow_solution: u64,
-    pub server_signature: String,
-    pub server_timestamp: u64,
+    pub pow_seed: Option<String>,
+    pub pow_solution: Option<u64>,
+    pub server_signature: Option<String>,
+    pub server_timestamp: Option<u64>,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -61,6 +64,8 @@ pub enum InvalidRequest {
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
+    #[error("invalid API key")]
+    InvalidApiKey,
     #[error("invalid POW solution")]
     InvalidPoW,
     #[error("invalid server signature")]
@@ -147,6 +152,7 @@ impl RawMintRequest {
         self,
         options: &AssetOptions,
         pow_salt: &str,
+        api_keys: &BTreeSet<String>,
     ) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
@@ -160,24 +166,39 @@ impl RawMintRequest {
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
+        // Check the API key, if provideds
+        if let Some(api_key) = &self.api_key {
+            if api_keys.contains(api_key) {
+                // If the API key is valid, we skip the PoW check
+                return Ok(MintRequest { account_id, note_type, asset_amount });
+            }
+            return Err(InvalidRequest::InvalidApiKey);
+        }
+
+        let (server_timestamp, pow_seed, server_signature, pow_solution) = {
+            let pow_seed = self.pow_seed.ok_or(InvalidRequest::InvalidPoW)?;
+            let server_signature =
+                self.server_signature.ok_or(InvalidRequest::InvalidServerSignature)?;
+            let server_timestamp =
+                self.server_timestamp.ok_or(InvalidRequest::ExpiredServerTimestamp)?;
+            let pow_solution = self.pow_solution.ok_or(InvalidRequest::InvalidPoW)?;
+
+            (server_timestamp, pow_seed, server_signature, pow_solution)
+        };
+
         // Check the server timestamp
-        if !check_server_timestamp(self.server_timestamp) {
+        if !check_server_timestamp(server_timestamp) {
             return Err(InvalidRequest::ExpiredServerTimestamp);
         }
 
         // Check the server signature
-        if !check_server_signature(
-            pow_salt,
-            &self.server_signature,
-            &self.pow_seed,
-            self.server_timestamp,
-        ) {
+        if !check_server_signature(pow_salt, &server_signature, &pow_seed, server_timestamp) {
             error!("[get_tokens] invalid server signature");
             return Err(InvalidRequest::InvalidServerSignature);
         }
 
         // Check the PoW solution
-        if !check_pow_solution(&self.pow_seed, self.pow_solution) {
+        if !check_pow_solution(&pow_seed, pow_solution) {
             return Err(InvalidRequest::InvalidPoW);
         }
 
@@ -190,7 +211,7 @@ pub async fn get_tokens(
     Query(request): Query<RawMintRequest>,
 ) -> Result<impl IntoResponse, GetTokenError> {
     let request = request
-        .validate(&server.mint_state.asset_options, &server.pow_salt)
+        .validate(&server.mint_state.asset_options, &server.pow_salt, &server.api_keys)
         .map_err(GetTokenError::InvalidRequest)?;
     let request_account = request.account_id;
 

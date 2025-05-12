@@ -90,7 +90,7 @@ pub(crate) fn check_pow_solution(seed: &str, solution: u64) -> bool {
     hasher.update(solution.to_string().as_bytes());
     let hash = &hasher.finalize().to_hex()[2..];
 
-    let leading_zeros = hash.chars().take(DIFFICULTY as usize).filter(|&c| c == '0').count();
+    let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
     leading_zeros >= DIFFICULTY as usize
 }
 

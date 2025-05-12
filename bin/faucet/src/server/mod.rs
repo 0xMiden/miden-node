@@ -48,6 +48,7 @@ type RequestSender = mpsc::Sender<(MintRequest, mpsc::Sender<Result<Event, Infal
 pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
+    pow_salt: String,
 }
 
 impl Server {
@@ -55,6 +56,7 @@ impl Server {
         faucet_id: FaucetId,
         asset_options: AssetOptions,
         request_sender: RequestSender,
+        pow_salt: String,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
         let metadata = Metadata {
@@ -64,7 +66,7 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        Server { mint_state, metadata }
+        Server { mint_state, metadata, pow_salt }
     }
 
     pub async fn serve(self, url: Url) -> anyhow::Result<()> {

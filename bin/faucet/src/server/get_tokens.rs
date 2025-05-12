@@ -15,7 +15,10 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::error;
 
-use super::pow::{check_pow_solution, check_server_signature, check_server_timestamp};
+use super::{
+    Server,
+    pow::{check_pow_solution, check_server_signature, check_server_timestamp},
+};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -127,7 +130,11 @@ impl RawMintRequest {
     /// Returns an error if:
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
-    fn validate(self, options: &AssetOptions) -> Result<MintRequest, InvalidRequest> {
+    fn validate(
+        self,
+        options: &AssetOptions,
+        pow_salt: &str,
+    ) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -151,7 +158,12 @@ impl RawMintRequest {
         }
 
         // Check the server signature
-        if !check_server_signature(&self.server_signature, &self.pow_seed, self.server_timestamp) {
+        if !check_server_signature(
+            pow_salt,
+            &self.server_signature,
+            &self.pow_seed,
+            self.server_timestamp,
+        ) {
             error!("[get_tokens] invalid server signature");
             return Err(InvalidRequest::InvalidServerSignature);
         }
@@ -166,14 +178,14 @@ impl RawMintRequest {
 }
 
 pub async fn get_tokens(
-    State(state): State<GetTokensState>,
+    State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result, rx_result) = mpsc::channel(5);
 
     let mint_error = request
-        .validate(&state.asset_options)
+        .validate(&state.asset_options, &server.pow_salt)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
             let span = tracing::Span::current();

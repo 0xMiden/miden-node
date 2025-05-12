@@ -30,6 +30,7 @@ use store::FaucetDataStore;
 use tokio::sync::{mpsc, oneshot};
 use tonic::Code;
 use tracing::{error, info, instrument, warn};
+use url::Url;
 
 use crate::{
     rpc_client::{RpcClient, RpcError},
@@ -63,7 +64,7 @@ impl FaucetProver {
     /// # Arguments
     ///
     /// * `endpoint` - The endpoint to connect to the remote prover.
-    fn remote(endpoint: impl Into<String>) -> Self {
+    fn remote(endpoint: Url) -> Self {
         Self::Remote(RemoteTransactionProver::new(endpoint))
     }
 
@@ -162,7 +163,7 @@ impl Faucet {
     pub async fn load(
         account_file: AccountFile,
         rpc_client: &mut RpcClient,
-        remote_tx_prover_url: Option<impl Into<String>>,
+        remote_tx_prover_url: Option<Url>,
     ) -> anyhow::Result<Self> {
         let id = account_file.account.id();
         let id = FaucetId(id);

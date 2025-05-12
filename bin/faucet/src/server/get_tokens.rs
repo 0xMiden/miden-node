@@ -172,7 +172,6 @@ impl RawMintRequest {
             &self.pow_seed,
             self.server_timestamp,
         ) {
-            error!("[get_tokens] invalid server signature");
             return Err(InvalidRequest::InvalidServerSignature);
         }
 

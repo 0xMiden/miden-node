@@ -18,7 +18,10 @@ use tokio::sync::{mpsc::error::TrySendError, oneshot};
 use tonic::body;
 use tracing::error;
 
-use super::pow::{check_pow_solution, check_server_signature, check_server_timestamp};
+use super::{
+    Server,
+    pow::{check_pow_solution, check_server_signature, check_server_timestamp},
+};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -140,7 +143,11 @@ impl RawMintRequest {
     /// Returns an error if:
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
-    fn validate(self, options: &AssetOptions) -> Result<MintRequest, InvalidRequest> {
+    fn validate(
+        self,
+        options: &AssetOptions,
+        pow_salt: &str,
+    ) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -159,7 +166,12 @@ impl RawMintRequest {
         }
 
         // Check the server signature
-        if !check_server_signature(&self.server_signature, &self.pow_seed, self.server_timestamp) {
+        if !check_server_signature(
+            pow_salt,
+            &self.server_signature,
+            &self.pow_seed,
+            self.server_timestamp,
+        ) {
             error!("[get_tokens] invalid server signature");
             return Err(InvalidRequest::InvalidServerSignature);
         }
@@ -174,10 +186,12 @@ impl RawMintRequest {
 }
 
 pub async fn get_tokens(
-    State(state): State<GetTokensState>,
+    State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Result<impl IntoResponse, GetTokenError> {
-    let request = request.validate(&state.asset_options).map_err(GetTokenError::InvalidRequest)?;
+    let request = request
+        .validate(&server.mint_state.asset_options, &server.pow_salt)
+        .map_err(GetTokenError::InvalidRequest)?;
     let request_account = request.account_id;
 
     // Fill in the request's tracing fields.
@@ -190,10 +204,14 @@ pub async fn get_tokens(
 
     // Submit the request to the client and wait for the result.
     let (tx_result, rx_result) = oneshot::channel();
-    state.request_sender.try_send((request, tx_result)).map_err(|err| match err {
-        TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
-        TrySendError::Closed(_) => GetTokenError::FaucetClosed,
-    })?;
+    server
+        .mint_state
+        .request_sender
+        .try_send((request, tx_result))
+        .map_err(|err| match err {
+            TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
+            TrySendError::Closed(_) => GetTokenError::FaucetClosed,
+        })?;
 
     let (block_height, note) =
         rx_result.await.map_err(|_| GetTokenError::FaucetReturnChannelClosed)?;

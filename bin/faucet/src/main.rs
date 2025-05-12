@@ -104,8 +104,12 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             // Maximum of 100 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(100);
 
-            let server =
-                Server::new(faucet.faucet_id(), config.asset_amount_options.clone(), tx_requests);
+            let server = Server::new(
+                faucet.faucet_id(),
+                config.asset_amount_options.clone(),
+                tx_requests,
+                config.pow_salt,
+            );
 
             // Run both the client and the server concurrently.
             // TODO: We probably want a more graceful shutdown.

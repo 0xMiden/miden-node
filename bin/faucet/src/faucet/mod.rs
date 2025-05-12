@@ -29,7 +29,7 @@ use serde::Serialize;
 use store::FaucetDataStore;
 use tokio::sync::{mpsc, oneshot};
 use tonic::Code;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 use crate::{
     rpc_client::{RpcClient, RpcError},
@@ -78,7 +78,7 @@ impl FaucetProver {
                 match proven_tx {
                     Ok(proven_tx) => Ok(proven_tx),
                     Err(err) => {
-                        error!("failed to prove transaction with remote prover, falling back to local prover: {}", err);
+                        warn!("failed to prove transaction with remote prover, falling back to local prover: {}", err);
                         LocalTransactionProver::new(ProvingOptions::default()).prove(tx.into()).await
                     }
                 }

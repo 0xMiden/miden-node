@@ -209,7 +209,6 @@ impl Faucet {
                     }
                 })
                 .unzip();
-            println!("received {} requests", requests.len());
 
             match self.handle_request_batch(&requests, &mut rng, &mut rpc_client).await {
                 // Update local state on success.

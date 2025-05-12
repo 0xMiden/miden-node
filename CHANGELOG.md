@@ -11,6 +11,7 @@
 - [BREAKING] Use `AccountTree` and update account witness proto definitions (#783).
 - Enabled running RPC component in `read-only` mode (#802).
 - [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
+- Added gRPC `/status` endpoint on all components (#817).
 
 ## Unreleased
 

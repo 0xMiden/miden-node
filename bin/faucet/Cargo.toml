@@ -32,7 +32,6 @@ miden-tx                     = { workspace = true, features = ["concurrent"] }
 rand                         = { workspace = true, features = ["thread_rng"] }
 rand_chacha                  = "0.9"
 serde                        = { version = "1.0", features = ["derive"] }
-sha3                         = { version = "0.10" }
 serde_json                   = { version = "1.0" }
 sha3                         = { version = "0.10" }
 thiserror                    = { workspace = true }

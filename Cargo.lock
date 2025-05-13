@@ -2173,6 +2173,7 @@ name = "miden-faucet"
 version = "0.8.2"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum 0.8.4",
  "axum-extra",
  "base64 0.21.7",
@@ -2184,6 +2185,7 @@ dependencies = [
  "miden-node-proto",
  "miden-node-utils",
  "miden-objects",
+ "miden-proving-service-client",
  "miden-tx",
  "rand 0.9.0",
  "rand_chacha 0.9.0",
@@ -2201,6 +2203,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "winter-maybe-async",
 ]
 
 [[package]]

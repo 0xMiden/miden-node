@@ -104,7 +104,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let account_file = AccountFile::read(&config.faucet_account_path)
                 .context("failed to load faucet account from file")?;
 
-            let faucet = Faucet::load(account_file, &mut rpc_client).await?;
+            let faucet =
+                Faucet::load(account_file, &mut rpc_client, config.remote_tx_prover_url).await?;
 
             // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
@@ -112,22 +113,30 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let server =
                 Server::new(faucet.faucet_id(), config.asset_amount_options.clone(), tx_requests);
 
-            // Run both the client and the server concurrently.
-            // TODO: We probably want a more graceful shutdown.
-            let faucet =
-                async { faucet.run(rpc_client, rx_requests).await.context("faucet failed") };
-            let server =
-                async move { server.serve(config.endpoint).await.context("server failed") };
-            let mut tasks = tokio::task::JoinSet::new();
-            tasks.spawn(faucet);
-            tasks.spawn(server);
-            // SAFETY: join_next returns None if there are no tasks, and we definitely have tasks.
-            tasks
-                .join_next()
-                .await
-                .unwrap()
-                .context("failed to join task")?
-                .context("a server task ended unexpectedly")?;
+            // Capture in a variable to avoid moving into two branches
+            let config_endpoint = config.endpoint;
+
+            // Use select to concurrently:
+            // - Run and wait for the faucet (on current thread)
+            // - Run and wait for server (in a spawned task)
+            let faucet_future = faucet.run(rpc_client, rx_requests);
+            let server_future = async {
+                let server_handle = tokio::spawn(async move {
+                    server.serve(config_endpoint).await.context("server failed")
+                });
+                server_handle.await.context("failed to join server task")?
+            };
+
+            tokio::select! {
+                server_result = server_future => {
+                    // If server completes first, return its result
+                    server_result.context("server failed")
+                },
+                faucet_result = faucet_future => {
+                    // Faucet completed, return its result
+                    faucet_result.context("faucet failed")
+                }
+            }?;
         },
 
         Command::CreateFaucetAccount {
@@ -310,12 +319,23 @@ mod test {
 
         // Start the faucet connected to the stub
         let website_url = config.endpoint.clone();
-        tokio::spawn(async move {
-            run_faucet_command(Cli {
-                command: crate::Command::Start { config: config_path },
-            })
-            .await
-            .unwrap();
+
+        // Use std::thread to launch faucet - avoids Send requirements
+        std::thread::spawn(move || {
+            // Create a new runtime for this thread
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build runtime");
+
+            // Run the faucet on this thread's runtime
+            rt.block_on(async {
+                run_faucet_command(Cli {
+                    command: crate::Command::Start { config: config_path },
+                })
+                .await
+                .unwrap();
+            });
         });
 
         // Start chromedriver. This requires having chromedriver and chrome installed

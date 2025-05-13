@@ -8,6 +8,7 @@ use miden_objects::{
     transaction::{ChainMmr, InputNotes, TransactionInputs},
 };
 use miden_tx::{DataStore, DataStoreError};
+use winter_maybe_async::maybe_async_trait;
 
 pub struct FaucetDataStore {
     faucet_account: Mutex<Account>,
@@ -46,7 +47,9 @@ impl FaucetDataStore {
     }
 }
 
+#[maybe_async_trait(?Send)]
 impl DataStore for FaucetDataStore {
+    #[maybe_async]
     fn get_transaction_inputs(
         &self,
         account_id: AccountId,

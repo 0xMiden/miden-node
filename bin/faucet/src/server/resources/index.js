@@ -90,7 +90,7 @@ document.addEventListener('DOMContentLoaded', function () {
         evtSource.onerror = function (_) {
             // Either rate limit exceeded or invalid account id. The error event does not contain the reason.
             evtSource.close();
-            showError('Failed to receive tokens.');
+            showError('Please try again soon.');
             setLoadingState(false);
         };
 

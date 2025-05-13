@@ -34,6 +34,7 @@ use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
+const REQUESTS_QUEUE_SIZE: usize = 1000;
 
 // COMMANDS
 // ================================================================================================
@@ -102,8 +103,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let faucet =
                 Faucet::load(account_file, &mut rpc_client, config.remote_tx_prover_url).await?;
 
-            // Maximum of 100 requests in-queue at once. Overflow is rejected for faster feedback.
-            let (tx_requests, rx_requests) = mpsc::channel(100);
+            // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
+            let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
 
             let server =
                 Server::new(faucet.faucet_id(), config.asset_amount_options.clone(), tx_requests);

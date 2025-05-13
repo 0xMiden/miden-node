@@ -73,20 +73,16 @@ impl MintUpdate {
                 let note_id = note.id();
                 let note_details =
                     NoteDetails::new(note.assets().clone(), note.recipient().clone());
-                // In a p2id note, the account id is the encoded in the first two note inputs
+                // SAFETY: in a valid p2id note, the account id is the encoded in the first two note inputs
                 let account_id =
                     AccountId::try_from([note.inputs().values()[1], note.inputs().values()[0]])
                         .unwrap();
-
-                // SAFETY: NoteTag creation can only error for network execution mode, and we only
-                // use private or public.
-                let note_tag =
-                    NoteTag::from_account_id(account_id, NoteExecutionMode::Local).unwrap();
+                let note_tag = NoteTag::from_account_id(account_id, NoteExecutionMode::Local).ok();
 
                 let bytes = NoteFile::NoteDetails {
                     details: note_details,
                     after_block_num: block_height,
-                    tag: Some(note_tag),
+                    tag: note_tag,
                 }
                 .to_bytes();
 

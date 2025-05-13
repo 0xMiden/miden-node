@@ -15,6 +15,7 @@ use miden_objects::{
 use serde::{Deserialize, Serialize};
 use tonic::body;
 use tracing::info;
+use tracing::{Instrument, Span, instrument};
 
 use crate::{COMPONENT, errors::HandlerError, state::FaucetState};
 
@@ -42,6 +43,7 @@ pub async fn get_metadata(
     (StatusCode::OK, Json(response))
 }
 
+#[instrument(parent = None, target = COMPONENT, name = "faucet.server.get_tokens", skip_all, err)]
 pub async fn get_tokens(
     State(state): State<FaucetState>,
     Json(req): Json<FaucetRequest>,

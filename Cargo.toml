@@ -21,7 +21,7 @@ exclude      = [".github/"]
 homepage     = "https://polygon.technology/polygon-miden"
 license      = "MIT"
 readme       = "README.md"
-repository   = "https://github.com/0xPolygonMiden/miden-node"
+repository   = "https://github.com/0xMiden/miden-node"
 rust-version = "1.85"
 version      = "0.9.0"
 
@@ -35,7 +35,7 @@ assert_matches            = { version = "1.5" }
 http                      = { version = "1.3" }
 itertools                 = { version = "0.14" }
 miden-air                 = { version = "0.13" }
-miden-lib                 = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "next" }
+miden-lib                 = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 miden-node-block-producer = { path = "crates/block-producer", version = "0.9" }
 miden-node-proto          = { path = "crates/proto", version = "0.9" }
 miden-node-proto-build    = { path = "proto", version = "0.9" }
@@ -43,9 +43,9 @@ miden-node-rpc            = { path = "crates/rpc", version = "0.9" }
 miden-node-store          = { path = "crates/store", version = "0.9" }
 miden-node-test-macro     = { path = "crates/test-macro" }
 miden-node-utils          = { path = "crates/utils", version = "0.9" }
-miden-objects             = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "next" }
+miden-objects             = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 miden-processor           = { version = "0.13" }
-miden-tx                  = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "next" }
+miden-tx                  = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 prost                     = { version = "0.13" }
 rand                      = { version = "0.9" }
 thiserror                 = { version = "2.0", default-features = false }

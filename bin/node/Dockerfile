@@ -27,8 +27,8 @@ COPY --from=builder /usr/local/cargo/bin/miden-node /usr/local/bin/miden-node
 
 LABEL org.opencontainers.image.authors=miden@polygon.io \
       org.opencontainers.image.url=https://0xpolygonmiden.github.io/ \
-      org.opencontainers.image.documentation=https://github.com/0xPolygonMiden/miden-node \
-      org.opencontainers.image.source=https://github.com/0xPolygonMiden/miden-node \
+      org.opencontainers.image.documentation=https://github.com/0xMiden/miden-node \
+      org.opencontainers.image.source=https://github.com/0xMiden/miden-node \
       org.opencontainers.image.vendor=Polygon \
       org.opencontainers.image.licenses=MIT
 

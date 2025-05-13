@@ -51,7 +51,7 @@ pub struct FaucetClient {
     rng: RpoRandomCoin,
 }
 
-// TODO: Remove this once https://github.com/0xPolygonMiden/miden-base/issues/909 is resolved
+// TODO: Remove this once https://github.com/0xMiden/miden-base/issues/909 is resolved
 unsafe impl Send for FaucetClient {}
 
 impl FaucetClient {

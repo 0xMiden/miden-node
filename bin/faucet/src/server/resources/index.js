@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const assetSelect = document.getElementById('asset-amount');
     const loading = document.getElementById('loading');
     const status = document.getElementById("loading-status");
+    const txLink = document.getElementById('tx-link');
 
     fetchMetadata();
 
@@ -128,6 +129,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 const blob = new Blob([byteArray], { type: 'application/octet-stream' });
                 downloadBlob(blob, 'note.mno');
             }
+            txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
+            txLink.textContent = data.transaction_id;
         });
     }
 

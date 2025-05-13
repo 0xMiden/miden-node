@@ -6,11 +6,12 @@ use miden_objects::{
     account::AccountId,
     block::BlockNumber,
     note::{Note, NoteDetails, NoteExecutionMode, NoteFile, NoteTag},
+    transaction::TransactionId,
     utils::Serializable,
 };
 use tokio::sync::mpsc::Sender;
 
-use crate::NETWORK_ID;
+use crate::{EXPLORER_URL, NETWORK_ID};
 
 pub type ResponseSender = Sender<Result<Event, Infallible>>;
 
@@ -40,10 +41,15 @@ impl ClientUpdater {
     /// client.
     /// Errors when sending through the channel are ignored since the client may have cancelled the
     /// request.
-    pub async fn send_notes(&self, block_number: BlockNumber, notes: &[Note]) {
+    pub async fn send_notes(
+        &self,
+        block_number: BlockNumber,
+        notes: &[Note],
+        tx_id: TransactionId,
+    ) {
         for (note, sender) in notes.iter().zip(&self.clients) {
             let _ = sender
-                .send(Ok(MintUpdate::Minted(block_number, note.clone()).into_event()))
+                .send(Ok(MintUpdate::Minted(note.clone(), block_number, tx_id).into_event()))
                 .await;
         }
     }
@@ -56,7 +62,7 @@ pub enum MintUpdate {
     Executed,
     Proven,
     Submitted,
-    Minted(BlockNumber, Note),
+    Minted(Note, BlockNumber, TransactionId),
 }
 
 impl MintUpdate {
@@ -69,7 +75,7 @@ impl MintUpdate {
     /// - `MintUpdate::Minted`: event type "note". Contains the note encoded in base64.
     pub fn into_event(self) -> Event {
         match self {
-            MintUpdate::Minted(block_height, note) => {
+            MintUpdate::Minted(note, block_height, tx_id) => {
                 let note_id = note.id();
                 let note_details =
                     NoteDetails::new(note.assets().clone(), note.recipient().clone());
@@ -92,6 +98,8 @@ impl MintUpdate {
                 let event_payload = serde_json::json!({
                     "note_id": note_id.to_string(),
                     "account_id": account_id.to_bech32(NETWORK_ID),
+                    "transaction_id": tx_id.to_string(),
+                    "explorer_url": EXPLORER_URL,
                     "data_base64": encoded_note,
                 });
 

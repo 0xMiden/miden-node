@@ -15,7 +15,9 @@ use miden_objects::{
         rand::{FeltRng, RpoRandomCoin},
     },
     note::Note,
-    transaction::{ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs},
+    transaction::{
+        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionId,
+    },
     vm::AdviceMap,
 };
 use miden_tx::{
@@ -219,8 +221,8 @@ impl Faucet {
 
             match self.handle_request_batch(&requests, &mut rng, &mut rpc_client, &updater).await {
                 // Update local state on success.
-                Ok((delta, block_number, notes)) => {
-                    updater.send_notes(block_number, &notes).await;
+                Ok((delta, block_number, notes, tx_id)) => {
+                    updater.send_notes(block_number, &notes, tx_id).await;
                     // SAFETY: Delta must be valid since it comes from a tx accepted by the node.
                     self.update_state(&delta).unwrap();
                 },
@@ -317,7 +319,7 @@ impl Faucet {
         rng: &mut impl FeltRng,
         rpc_client: &mut RpcClient,
         updater: &ClientUpdater,
-    ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>)> {
+    ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>, TransactionId)> {
         // Build the note
         let notes = P2IdNotes::build(self.faucet_id(), requests, rng)?.into_inner();
         let tx_args = self.compile(&notes)?;
@@ -326,6 +328,7 @@ impl Faucet {
         // Execute the transaction
         let executed_transaction = self.execute_transaction(tx_args)?;
         let account_delta = executed_transaction.account_delta().clone();
+        let tx_id = executed_transaction.id();
         updater.send_updates(MintUpdate::Executed).await;
 
         // Prove the transaction
@@ -336,7 +339,7 @@ impl Faucet {
         let block_number = self.submit_transaction(tx, rpc_client).await?;
         updater.send_updates(MintUpdate::Submitted).await;
 
-        Ok((account_delta, block_number, notes))
+        Ok((account_delta, block_number, notes, tx_id))
     }
 
     /// Compiles the transaction script that creates the given set of notes.

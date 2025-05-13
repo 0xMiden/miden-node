@@ -126,7 +126,16 @@ body {
     background-color: rgb(17, 24, 39);
     border-radius: 10px;
     padding: 18px;
-    margin-top: 27px;
+    margin-top: 5px;
+}
+
+#tx-link {
+    color: #FF5500;
+    text-decoration: none;
+}
+
+#tx-link:hover {
+    text-decoration: underline;
 }
 
 .loader {

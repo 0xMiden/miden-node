@@ -38,6 +38,7 @@ const REQUESTS_QUEUE_SIZE: usize = 1000;
 
 // TODO: we should probably parse this from the config file
 const NETWORK_ID: NetworkId = NetworkId::Testnet;
+const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 // COMMANDS
 // ================================================================================================

@@ -6,9 +6,9 @@ use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{
-    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_STORE_URL,
-    parse_duration_ms,
+    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
+    ENV_BATCH_PROVER_URL, ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL,
+    ENV_STORE_URL, parse_duration_ms,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -58,6 +58,15 @@ pub enum BlockProducerCommand {
             value_name = "MILLISECONDS"
         )]
         batch_interval: Duration,
+
+        /// Interval at which to monitor the system in milliseconds.
+        #[arg(
+            long = "monitor.interval",
+            default_value = DEFAULT_MONITOR_INTERVAL_MS,
+            value_parser = parse_duration_ms,
+            value_name = "MILLISECONDS"
+        )]
+        monitor_interval: Duration,
     },
 }
 
@@ -72,6 +81,7 @@ impl BlockProducerCommand {
             open_telemetry: _,
             block_interval,
             batch_interval,
+            monitor_interval,
         } = self;
 
         let store_address = store_url
@@ -83,7 +93,7 @@ impl BlockProducerCommand {
             .context("Failed to extract socket address from block producer URL")?;
 
         // Start system monitor.
-        std::thread::spawn(move || SystemMonitor::new(None).run());
+        std::thread::spawn(move || SystemMonitor::new(None, monitor_interval).run());
 
         BlockProducer {
             block_producer_address,

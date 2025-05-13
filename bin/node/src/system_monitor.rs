@@ -20,23 +20,25 @@ const MONITOR_INTERVAL: Duration = Duration::from_secs(10);
 pub struct SystemMonitor {
     sys: System,
     pid: Pid,
+    monitor_interval: Duration,
     data_directory: Option<DataDirectory>,
 }
 
 impl SystemMonitor {
     /// Creates a new system monitor.
-    pub fn new(data_directory: Option<DataDirectory>) -> Self {
+    pub fn new(data_directory: Option<DataDirectory>, monitor_interval: Duration) -> Self {
         Self {
             sys: System::new_all(),
             pid: Pid::from(std::process::id() as usize),
             data_directory,
+            monitor_interval,
         }
     }
 
     /// Runs the system monitor loop.
     pub fn run(&mut self) {
         loop {
-            std::thread::sleep(MONITOR_INTERVAL);
+            std::thread::sleep(self.monitor_interval);
             if let Err(err) = self.collect_system_metrics() {
                 error!(target: COMPONENT, ?err, "Error collecting system metrics");
             }

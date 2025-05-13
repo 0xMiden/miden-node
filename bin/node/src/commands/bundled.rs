@@ -9,8 +9,9 @@ use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
 
 use super::{
-    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_RPC_URL, parse_duration_ms,
+    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
+    ENV_BATCH_PROVER_URL, ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_RPC_URL,
+    parse_duration_ms,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -79,6 +80,15 @@ pub enum BundledCommand {
             value_name = "MILLISECONDS"
         )]
         batch_interval: Duration,
+
+        /// Interval at which to monitor the system in milliseconds.
+        #[arg(
+            long = "monitor.interval",
+            default_value = DEFAULT_MONITOR_INTERVAL_MS,
+            value_parser = parse_duration_ms,
+            value_name = "MILLISECONDS"
+        )]
+        monitor_interval: Duration,
     },
 }
 
@@ -104,6 +114,7 @@ impl BundledCommand {
                 open_telemetry: _,
                 block_interval,
                 batch_interval,
+                monitor_interval,
             } => {
                 Self::start(
                     rpc_url,
@@ -112,6 +123,7 @@ impl BundledCommand {
                     block_prover_url,
                     batch_interval,
                     block_interval,
+                    monitor_interval,
                 )
                 .await
             },
@@ -125,6 +137,7 @@ impl BundledCommand {
         block_prover_url: Option<Url>,
         batch_interval: Duration,
         block_interval: Duration,
+        monitor_interval: Duration,
     ) -> anyhow::Result<()> {
         // Start listening on all gRPC urls so that inter-component connections can be created
         // before each component is fully started up.
@@ -200,7 +213,7 @@ impl BundledCommand {
         // Start system monitor.
         let data_dir =
             DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        std::thread::spawn(move || SystemMonitor::new(Some(data_dir)).run());
+        std::thread::spawn(move || SystemMonitor::new(Some(data_dir), monitor_interval).run());
 
         // Lookup table so we can identify the failed component.
         let component_ids = HashMap::from([

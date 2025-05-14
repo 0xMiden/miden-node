@@ -60,10 +60,10 @@ pub enum InvalidRequest {
     AssetAmount(u64),
     #[error("invalid POW solution")]
     InvalidPoW,
-    #[error("invalid server signature")]
-    InvalidServerSignature,
-    #[error("server timestamp expired")]
-    ExpiredServerTimestamp,
+    #[error("server signatures do not match")]
+    ServerSignaturesDoNotMatch,
+    #[error("server timestamp expired, received: {0}, current time: {1}")]
+    ExpiredServerTimestamp(u64, u64),
 }
 
 pub enum GetTokenError {
@@ -153,24 +153,18 @@ impl RawMintRequest {
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
         // Check the server timestamp
-        if !check_server_timestamp(self.server_timestamp) {
-            return Err(InvalidRequest::ExpiredServerTimestamp);
-        }
+        check_server_timestamp(self.server_timestamp)?;
 
         // Check the server signature
-        if !check_server_signature(
+        check_server_signature(
             pow_salt,
             &self.server_signature,
             &self.pow_seed,
             self.server_timestamp,
-        ) {
-            return Err(InvalidRequest::InvalidServerSignature);
-        }
+        )?;
 
         // Check the PoW solution
-        if !check_pow_solution(&self.pow_seed, self.pow_solution) {
-            return Err(InvalidRequest::InvalidPoW);
-        }
+        check_pow_solution(&self.pow_seed, self.pow_solution)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

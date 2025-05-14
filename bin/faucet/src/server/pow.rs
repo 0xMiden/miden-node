@@ -6,7 +6,7 @@ use rand::{Rng, rng};
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
 
-use super::Server;
+use super::{Server, get_tokens::InvalidRequest};
 
 const DIFFICULTY: u64 = 5;
 const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
@@ -65,14 +65,18 @@ pub(crate) fn check_server_signature(
     server_signature: &str,
     seed: &str,
     timestamp: u64,
-) -> bool {
+) -> Result<(), InvalidRequest> {
     let mut hasher = Sha3_256::new();
     hasher.update(server_salt);
     hasher.update(seed);
     hasher.update(timestamp.to_string().as_bytes());
     let hash = &hasher.finalize().to_hex();
 
-    hash == server_signature
+    if hash != server_signature {
+        return Err(InvalidRequest::ServerSignaturesDoNotMatch);
+    }
+
+    Ok(())
 }
 
 /// Check a `PoW` solution.
@@ -84,25 +88,33 @@ pub(crate) fn check_server_signature(
 /// leading zeros.
 ///
 /// Returns `true` if the solution is valid, `false` otherwise.
-pub(crate) fn check_pow_solution(seed: &str, solution: u64) -> bool {
+pub(crate) fn check_pow_solution(seed: &str, solution: u64) -> Result<(), InvalidRequest> {
     let mut hasher = Sha3_256::new();
     hasher.update(seed);
     hasher.update(solution.to_string().as_bytes());
     let hash = &hasher.finalize().to_hex()[2..];
 
     let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-    leading_zeros >= DIFFICULTY as usize
+    if leading_zeros < DIFFICULTY as usize {
+        return Err(InvalidRequest::InvalidPoW);
+    }
+
+    Ok(())
 }
 
 /// Check the received timestamp.
 ///
 /// The timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of the
 /// current time.
-pub(crate) fn check_server_timestamp(timestamp: u64) -> bool {
+pub(crate) fn check_server_timestamp(timestamp: u64) -> Result<(), InvalidRequest> {
     let server_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
 
-    (server_timestamp - timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+    if (server_timestamp - timestamp) > SERVER_TIMESTAMP_TOLERANCE_SECONDS {
+        return Err(InvalidRequest::ExpiredServerTimestamp(timestamp, server_timestamp));
+    }
+
+    Ok(())
 }

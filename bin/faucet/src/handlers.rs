@@ -71,7 +71,6 @@ pub async fn get_tokens(
         .map_err(HandlerError::AccountIdDeserializationError)?;
 
     // Execute transaction
-    info!(target: COMPONENT, "Executing mint transaction for account.");
     let (executed_tx, created_note) = client.execute_mint_transaction(
         target_account_id,
         req.is_private_note,
@@ -84,7 +83,6 @@ pub async fn get_tokens(
         .context("Failed to apply faucet account delta")?;
 
     // Run transaction prover & send transaction to node
-    info!(target: COMPONENT, "Proving and submitting transaction.");
     let block_height = client.prove_and_submit_transaction(executed_tx).await?;
 
     // Update data store with the new faucet state

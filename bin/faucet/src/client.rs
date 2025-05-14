@@ -31,7 +31,7 @@ use miden_tx::{
 };
 use rand::{random, rngs::StdRng};
 use tonic::transport::Channel;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{COMPONENT, config::FaucetConfig, errors::ClientError, store::FaucetDataStore};
 
@@ -121,6 +121,7 @@ impl FaucetClient {
     /// Executes a mint transaction for the target account.
     ///
     /// Returns the executed transaction and the expected output note.
+    #[instrument(target = COMPONENT, name = "faucet.client.execute_mint_transaction", skip_all, err)]
     pub fn execute_mint_transaction(
         &mut self,
         target_account_id: AccountId,
@@ -164,6 +165,7 @@ impl FaucetClient {
     }
 
     /// Proves and submits the executed transaction to the node.
+    #[instrument(target = COMPONENT, name = "faucet.client.prove_and_submit_transaction", skip_all, err)]
     pub async fn prove_and_submit_transaction(
         &mut self,
         executed_tx: ExecutedTransaction,

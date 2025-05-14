@@ -64,8 +64,8 @@ pub enum InvalidRequest {
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
-    #[error("invalid API key")]
-    InvalidApiKey,
+    #[error("API key {0} is invalid")]
+    InvalidApiKey(String),
     #[error("invalid POW solution")]
     InvalidPoW,
     #[error("invalid server signature")]
@@ -166,13 +166,13 @@ impl RawMintRequest {
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
-        // Check the API key, if provideds
+        // Check the API key, if provided
         if let Some(api_key) = &self.api_key {
             if api_keys.contains(api_key) {
                 // If the API key is valid, we skip the PoW check
                 return Ok(MintRequest { account_id, note_type, asset_amount });
             }
-            return Err(InvalidRequest::InvalidApiKey);
+            return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
         }
 
         let (server_timestamp, pow_seed, server_signature, pow_solution) = {

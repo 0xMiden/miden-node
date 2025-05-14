@@ -252,8 +252,13 @@ impl KeyExtractor for ApiKeyExtractor {
             .map_err(|_| GovernorError::UnableToExtractKey)?;
 
         if let Some(api_key) = params.api_key.as_ref() {
+            // Requests with the same api key are rate limited together.
             Ok(api_key.to_string())
         } else {
+            // We don't want to rate limit together requests without an api key. So we want to
+            // return a "unique" extracted key for each request. By concatenating the account id
+            // and the server timestamp we get a somewhat unique key each time so this rate limiter
+            // won't affect requests without an api key.
             Ok(params.account_id.clone()
                 + &params.server_timestamp.ok_or(GovernorError::UnableToExtractKey)?.to_string())
         }

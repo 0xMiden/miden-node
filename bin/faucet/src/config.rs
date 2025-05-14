@@ -33,8 +33,8 @@ pub struct FaucetConfig {
     pub faucet_account_path: PathBuf,
     /// The salt to be used by the server to generate the `PoW` seed
     pub pow_salt: String,
-    /// List of comma separated API keys
-    pub api_keys: String,
+    /// List of API keys
+    pub api_keys: Vec<String>,
 }
 
 impl Display for FaucetConfig {
@@ -58,7 +58,7 @@ impl Default for FaucetConfig {
             asset_amount_options: AssetOptions::new(vec![100, 500, 1_000]).unwrap(),
             faucet_account_path: DEFAULT_FAUCET_ACCOUNT_PATH.into(),
             pow_salt: "miden-faucet".to_string(),
-            api_keys: String::new(),
+            api_keys: Vec::new(),
         }
     }
 }

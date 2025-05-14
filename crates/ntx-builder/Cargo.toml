@@ -1,25 +1,34 @@
 [package]
-name = "miden-node-ntx-builder"
-version = "0.9.0"
-edition = "2021"
+description            = "Miden node's network transaction builder component"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["miden", "node"]
+license.workspace      = true
+name                   = "miden-node-ntx-builder"
+name                   = "miden-node-ntx-builder"
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.9.0"
+version.workspace      = true
 
 [dependencies]
-anyhow =  { workspace = true }
-async-trait =  { workspace = true }
-http =  { workspace = true }
+anyhow           = { workspace = true }
+async-trait      = { workspace = true }
+http             = { workspace = true }
+miden-lib        = { workspace = true }
 miden-node-proto = { workspace = true }
-miden-node-store          = { workspace = true }
-miden-node-utils          = { workspace = true }
-miden-objects = { workspace = true }
-miden-tx = { workspace = true }
-miden-lib = { workspace = true }
-prost = { workspace = true }
-thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-tokio-stream = { workspace = true }
-tonic = { workspace = true }
-tower-http = { workspace = true }
-tracing = { workspace = true }
+miden-node-store = { workspace = true }
+miden-node-utils = { workspace = true }
+miden-objects    = { workspace = true }
+miden-tx         = { workspace = true }
+prost            = { workspace = true }
+thiserror        = { workspace = true }
+tokio            = { workspace = true, features = ["full"] }
+tokio-stream     = { workspace = true }
+tonic            = { workspace = true }
+tower-http       = { workspace = true }
+tracing          = { workspace = true }
 
 [dev-dependencies]
 miden-node-test-macro = { path = "../test-macro" }

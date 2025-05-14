@@ -187,8 +187,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 hash.update(seed);
                 hash.update(nonce.toString());
                 // Trim leading 0x
-                let digest = hash.hex().toString().slice(2);
-
+                let digest = hash.hex().toString();
 
                 // Check if the hash starts with the required number of zeros
                 if (digest.startsWith(requiredPattern)) {

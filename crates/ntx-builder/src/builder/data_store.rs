@@ -4,11 +4,11 @@ use std::{
 };
 
 use miden_objects::{
+    MastForest, Word,
     account::{Account, AccountId},
     block::{BlockHeader, BlockNumber},
     crypto::merkle::PartialMmr,
     transaction::PartialBlockchain,
-    MastForest, Word,
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 
@@ -174,7 +174,7 @@ impl AccountCache {
 #[cfg(test)]
 mod tests {
     use miden_lib::transaction::TransactionKernel;
-    use miden_objects::{account::Account, Felt};
+    use miden_objects::{Felt, account::Account};
 
     use crate::builder::data_store::AccountCache;
 

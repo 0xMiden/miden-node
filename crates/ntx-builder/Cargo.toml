@@ -15,6 +15,7 @@ workspace = true
 
 [dependencies]
 anyhow           = { workspace = true }
+miden-lib        = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }

@@ -213,6 +213,12 @@ pub struct GetBlockByNumberResponse {
     #[prost(bytes = "vec", optional, tag = "1")]
     pub block: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
+/// TODO
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetMmrPeaksResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub peaks: ::prost::alloc::vec::Vec<super::digest::Digest>,
+}
 /// Represents the result of getting account state delta.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetAccountStateDeltaResponse {

@@ -14,8 +14,7 @@ use miden_objects::{
 };
 use serde::{Deserialize, Serialize};
 use tonic::body;
-use tracing::info;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{COMPONENT, errors::HandlerError, state::FaucetState};
 
@@ -32,6 +31,7 @@ pub struct FaucetMetadataReponse {
     asset_amount_options: Vec<u64>,
 }
 
+#[instrument(parent = None, target = COMPONENT, name = "faucet.server.get_metadata", skip_all)]
 pub async fn get_metadata(
     State(state): State<FaucetState>,
 ) -> (StatusCode, Json<FaucetMetadataReponse>) {

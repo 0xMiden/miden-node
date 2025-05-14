@@ -42,7 +42,7 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(self.store_address);
         let unconsumed_network_notes = store.get_unconsumed_network_notes().await?;
 
-        let api = NtxBuilderApi::new(unconsumed_network_notes).await;
+        let api = NtxBuilderApi::new(unconsumed_network_notes);
         let api_state = api.state();
         let api_service = api_server::ApiServer::new(api);
 

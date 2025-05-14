@@ -10,17 +10,15 @@ repository.workspace   = true
 rust-version.workspace = true
 version                = "0.9.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 anyhow           = { workspace = true }
-async-trait      = { workspace = true }
-http             = { workspace = true }
-miden-lib        = { workspace = true }
 miden-node-proto = { workspace = true }
-miden-node-store = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 miden-tx         = { workspace = true }
-prost            = { workspace = true }
 thiserror        = { workspace = true }
 tokio            = { workspace = true, features = ["full"] }
 tokio-stream     = { workspace = true }

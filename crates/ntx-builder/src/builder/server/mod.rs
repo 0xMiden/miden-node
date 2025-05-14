@@ -28,7 +28,7 @@ pub struct NtxBuilderApi {
 }
 
 impl NtxBuilderApi {
-    pub async fn new(unconsumed_network_notes: Vec<Note>) -> Self {
+    pub fn new(unconsumed_network_notes: Vec<Note>) -> Self {
         let state = NtxBuilderState::new(unconsumed_network_notes);
         Self { state: Arc::new(Mutex::new(state)) }
     }
@@ -62,7 +62,7 @@ impl Api for NtxBuilderApi {
         let mut state = self
             .state
             .lock()
-            .map_err(|e| Status::internal(format!("Failed to lock state: {}", e)))?;
+            .map_err(|e| Status::internal(format!("Failed to lock state: {e}")))?;
 
         state.add_unconsumed_notes(notes);
 
@@ -94,7 +94,7 @@ impl Api for NtxBuilderApi {
         let mut state = self
             .state
             .lock()
-            .map_err(|e| Status::internal(format!("Failed to lock state: {}", e)))?;
+            .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
 
         state.discard_by_nullifiers(&nullifiers);
 
@@ -116,7 +116,7 @@ impl Api for NtxBuilderApi {
         let mut state = self
             .state
             .lock()
-            .map_err(|e| Status::internal(format!("Failed to lock state: {}", e)))?;
+            .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
         for tx in request.updates {
             let tx_id: Digest = tx
                 .transaction_id

@@ -213,7 +213,9 @@ impl BundledCommand {
         // Start system monitor.
         let data_dir =
             DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        std::thread::spawn(move || SystemMonitor::new(Some(data_dir), monitor_interval).run());
+        std::thread::spawn(move || {
+            SystemMonitor::new(monitor_interval).with_store_metrics(data_dir).run();
+        });
 
         // Lookup table so we can identify the failed component.
         let component_ids = HashMap::from([

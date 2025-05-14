@@ -1,11 +1,10 @@
 use std::time::Duration;
 
 use miden_node_store::DataDirectory;
-use sysinfo::{Disk, Disks, Pid, System};
+use sysinfo::{Disks, Pid, System};
 use tracing::{error, info};
 
 const COMPONENT: &str = "system-monitor";
-const MONITOR_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Runs a system monitor loop that logs the system metrics every `MONITOR_INTERVAL` seconds.
 /// It is intended to be run in a separate thread.
@@ -26,12 +25,20 @@ pub struct SystemMonitor {
 
 impl SystemMonitor {
     /// Creates a new system monitor.
-    pub fn new(data_directory: Option<DataDirectory>, monitor_interval: Duration) -> Self {
+    pub fn new(monitor_interval: Duration) -> Self {
         Self {
             sys: System::new_all(),
             pid: Pid::from(std::process::id() as usize),
-            data_directory,
+            data_directory: None,
             monitor_interval,
+        }
+    }
+
+    /// Creates a new system monitor with a data directory to collect store metrics.
+    pub fn with_store_metrics(self, data_directory: DataDirectory) -> Self {
+        Self {
+            data_directory: Some(data_directory),
+            ..self
         }
     }
 
@@ -39,19 +46,26 @@ impl SystemMonitor {
     pub fn run(&mut self) {
         loop {
             std::thread::sleep(self.monitor_interval);
-            if let Err(err) = self.collect_system_metrics() {
+            if let Err(err) = self.log_system_metrics() {
                 error!(target: COMPONENT, ?err, "Error collecting system metrics");
             }
         }
     }
 
-    /// Collects the system metrics.
-    fn collect_system_metrics(&mut self) -> anyhow::Result<()> {
+    /// Collects the system metrics and posts the structured log.
+    fn log_system_metrics(&mut self) -> anyhow::Result<()> {
         self.sys.refresh_all();
 
         let disks = Disks::new_with_refreshed_list();
-        let system_disk_limit: u64 = disks.iter().map(Disk::total_space).sum();
-        let system_disk_state_available: u64 = disks.iter().map(Disk::available_space).sum();
+        let current_dir = std::env::current_dir()?;
+        // NOTE: shows data for the disk that backs the current directory.
+        let disk = disks
+            .iter()
+            .filter(|d| current_dir.starts_with(d.mount_point()))
+            .max_by_key(|d| d.mount_point().as_os_str().len())
+            .ok_or(anyhow::anyhow!("No disk found"))?;
+        let system_disk_limit = disk.total_space();
+        let system_disk_state_available = disk.available_space();
         let system_disk_used = system_disk_limit - system_disk_state_available;
         #[allow(clippy::cast_precision_loss)]
         let system_disk_utilization = (system_disk_used as f64 / system_disk_limit as f64) * 100.0;
@@ -93,7 +107,7 @@ impl SystemMonitor {
             %process_cpu_utilization,
             process_disk_written,
             process_disk_read,
-            // Node store data
+            // Store
             db_file_size,
             db_wal_size,
             block_storage_size,
@@ -104,15 +118,15 @@ impl SystemMonitor {
 
     /// Collects the store metrics.
     fn collect_store_metrics(&self) -> anyhow::Result<(u64, u64, u64)> {
-        if let Some(data_dir) = &self.data_directory {
-            let db_file_size = std::fs::metadata(data_dir.database_path())?.len();
-            let db_wal_size =
-                std::fs::metadata(format!("{}-wal", data_dir.database_path().display()))?.len();
-            let block_storage_size = std::fs::metadata(data_dir.block_store_dir())?.len();
+        let Some(data_dir) = &self.data_directory else {
+            return Ok((0, 0, 0));
+        };
 
-            Ok((db_file_size, db_wal_size, block_storage_size))
-        } else {
-            Ok((0, 0, 0))
-        }
+        let db_file_size = std::fs::metadata(data_dir.database_path())?.len();
+        let db_wal_size =
+            std::fs::metadata(format!("{}-wal", data_dir.database_path().display()))?.len();
+        let block_storage_size = std::fs::metadata(data_dir.block_store_dir())?.len();
+
+        Ok((db_file_size, db_wal_size, block_storage_size))
     }
 }

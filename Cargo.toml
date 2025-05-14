@@ -49,7 +49,7 @@ miden-tx                  = { git = "https://github.com/0xPolygonMiden/miden-bas
 prost                     = { version = "0.13" }
 rand                      = { version = "0.9" }
 thiserror                 = { version = "2.0", default-features = false }
-tokio                     = { version = "1.40", features = ["rt-multi-thread"] }
+tokio                     = { version = "1.44", features = ["rt-multi-thread"] }
 tokio-stream              = { version = "0.1" }
 tonic                     = { version = "0.12" }
 tower                     = { version = "0.5" }

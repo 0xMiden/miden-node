@@ -1,26 +1,13 @@
 use miden_objects::{
     Digest, Felt,
-    block::BlockNumber,
-    crypto::merkle::MerklePath,
-    note::{NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag, NoteType},
+    note::{Note, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag, NoteType},
+    utils::Serializable,
 };
 
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
     generated::note as proto,
 };
-
-/// A note which has been committed to the chain and therefore has an associated index in a specific block and an inclusion proof.
-#[derive(Debug, Clone, PartialEq)]
-pub struct CommittedNote {
-    pub block_num: BlockNumber,
-    // TODO: can this be BlockNoteIndex? If so, how to convert to an absolute index.
-    pub note_index: usize,
-    pub note_id: Digest,
-    pub metadata: NoteMetadata,
-    pub details: Option<Vec<u8>>,
-    pub merkle_path: MerklePath,
-}
 
 impl TryFrom<proto::NoteMetadata> for NoteMetadata {
     type Error = ConversionError;
@@ -38,6 +25,12 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
         let aux = Felt::try_from(value.aux).map_err(|_| ConversionError::NotAValidFelt)?;
 
         Ok(NoteMetadata::new(sender, note_type, tag, execution_hint, aux)?)
+    }
+}
+
+impl From<Note> for proto::NetworkNote {
+    fn from(note: Note) -> Self {
+        Self { note: note.to_bytes() }
     }
 }
 
@@ -96,18 +89,5 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
                     .try_into()?,
             )?,
         ))
-    }
-}
-
-impl From<CommittedNote> for proto::Note {
-    fn from(value: CommittedNote) -> Self {
-        Self {
-            block_num: value.block_num.as_u32(),
-            note_index: value.note_index.try_into().expect("note index should fit in a u32"),
-            note_id: Some(value.note_id.into()),
-            metadata: Some(value.metadata.into()),
-            merkle_path: Some(value.merkle_path.into()),
-            details: value.details,
-        }
     }
 }

@@ -124,7 +124,7 @@ message GetBlockInputsResponse {
     // The serialized chain MMR which includes proofs for all blocks referenced by the
     // above note inclusion proofs as well as proofs for inclusion of the requested blocks
     // referenced by the batches in the block.
-    bytes chain_mmr = 3;
+    bytes partial_block_chain = 3;
 
     // The state commitments of the requested accounts and their authentication paths.
     repeated AccountWitness account_witnesses = 4;
@@ -144,7 +144,7 @@ message GetBatchInputsResponse {
   // The serialized chain MMR which includes proofs for all blocks referenced by the
   // above note inclusion proofs as well as proofs for inclusion of the blocks referenced
   // by the transactions in the batch.
-  bytes chain_mmr = 3;
+  bytes partial_block_chain = 3;
 }
 
 // An account returned as a response to the `GetTransactionInputs`.
@@ -266,5 +266,38 @@ message GetUnconsumedNetworkNotesResponse {
     optional uint64 next_token = 1;
 
     // The list of unconsumed network notes.
-    repeated note.Note notes = 2;
+    repeated note.NetworkNote notes = 2;
+}
+
+// Represents the status of the node.
+message RpcStatusResponse {
+    // The rpc component's running version.
+    string version = 1;
+
+    // The store status.
+    StoreStatusResponse store_status = 3;
+
+    // The block producer status.
+    BlockProducerStatusResponse block_producer_status = 4;
+}
+
+// Represents the status of the store.
+message StoreStatusResponse {
+    // The store's running version.
+    string version = 1;
+
+    // The store's status.
+    string status = 2;
+
+    // Number of the latest block in the chain.
+    fixed32 chain_tip = 3;
+}
+
+// Represents the status of the block producer.
+message BlockProducerStatusResponse {
+    // The block producer's running version.
+    string version = 1;
+
+    // The block producer's status.
+    string status = 2;
 }

@@ -25,7 +25,8 @@ use miden_node_proto::{
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
             GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
             GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
-            NullifierTransactionInputRecord, NullifierUpdate, SyncNoteResponse, SyncStateResponse,
+            NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
+            SyncNoteResponse, SyncStateResponse,
         },
         store::api_server,
         transaction::TransactionSummary,
@@ -36,7 +37,7 @@ use miden_objects::{
     account::AccountId,
     block::{BlockNumber, ProvenBlock},
     crypto::hash::rpo::RpoDigest,
-    note::{NoteId, Nullifier},
+    note::{Note, NoteId, Nullifier},
     utils::{Deserializable, Serializable},
 };
 use tonic::{Request, Response, Status};
@@ -543,12 +544,38 @@ impl api_server::Api for StoreApi {
                 invalid_argument(format!("Invalid page_size: {err}"))
             })?;
         let page = Page { token: request.page_token, size };
+        // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created
+        // instead
         let (notes, next_page) =
             state.get_unconsumed_network_notes(page).await.map_err(internal_error)?;
 
+        let mut network_notes = Vec::with_capacity(notes.len());
+        for note in notes {
+            // SAFETY: Network notes are filtered in the database, so they should have details;
+            // otherwise the state would be corrupted
+            let (assets, recipient) = note.details.unwrap().into_parts();
+            let note = Note::new(assets, note.metadata, recipient);
+            network_notes.push(note.into());
+        }
+
         Ok(Response::new(GetUnconsumedNetworkNotesResponse {
-            notes: notes.into_iter().map(Into::into).collect(),
+            notes: network_notes,
             next_token: next_page.token,
+        }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.status",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
+        Ok(Response::new(StoreStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: self.state.latest_block_num().await.as_u32(),
         }))
     }
 }

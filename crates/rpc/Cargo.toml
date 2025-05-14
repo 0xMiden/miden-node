@@ -24,7 +24,11 @@ tokio            = { workspace = true, features = ["macros", "net", "rt-multi-th
 tokio-stream     = { workspace = true, features = ["net"] }
 tonic            = { workspace = true }
 tonic-web        = { version = "0.12" }
+tower-http       = { workspace = true, features = ["trace"] }
 tracing          = { workspace = true }
 
 [dev-dependencies]
+miden-node-rpc   = { workspace = true }
+miden-node-store = { workspace = true }
 miden-node-utils = { workspace = true, features = ["tracing-forest"] }
+tempfile         = { version = "3.5" }

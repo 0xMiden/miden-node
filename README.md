@@ -1,7 +1,7 @@
 # Miden node
 
-[![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xPolygonMiden/miden-node/blob/main/LICENSE)
-[![test](https://github.com/0xPolygonMiden/miden-node/actions/workflows/test.yml/badge.svg)](https://github.com/0xPolygonMiden/miden-node/actions/workflows/test.yml)
+[![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/miden-node/blob/main/LICENSE)
+[![test](https://github.com/0xMiden/miden-node/actions/workflows/test.yml/badge.svg)](https://github.com/0xMiden/miden-node/actions/workflows/test.yml)
 [![RUST_VERSION](https://img.shields.io/badge/rustc-1.85+-lightgray.svg)](https://www.rust-lang.org/tools/install)
 [![crates.io](https://img.shields.io/crates/v/miden-node)](https://crates.io/crates/miden-node)
 
@@ -20,16 +20,16 @@ Access to the network is provided via a gRPC interface which can be found [here]
 ## Documentation
 
 Documentation, tutorials and guides for the current Miden version (aka testnet) can be found
-[here](https://0xpolygonmiden.github.io/miden-docs/), including an operator manual and gRPC reference guide. This is
+[here](https://0xMiden.github.io/miden-docs/), including an operator manual and gRPC reference guide. This is
 your one-stop-shop for all things Miden.
 
 For node operators living on the development edge, we also host the latest unreleased documentation
-[here](https://0xpolygonmiden.github.io/miden-node/index.html).
+[here](https://0xMiden.github.io/miden-node/index.html).
 
 ## Contributing
 
 Developer documentation and onboarding guide is available
-[here](https://0xpolygonmiden.github.io/miden-node/developer/index.html).
+[here](https://0xMiden.github.io/miden-node/developer/index.html).
 
 At minimum, please see our [contributing](CONTRIBUTING.md) guidelines and our [makefile](Makefile) for example workflows
 e.g. run the testsuite using

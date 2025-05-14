@@ -4,7 +4,7 @@ use miden_objects::{
     MastForest, Word,
     account::{Account, AccountId},
     block::{BlockHeader, BlockNumber},
-    transaction::{ChainMmr, TransactionScript},
+    transaction::{PartialBlockchain, TransactionScript},
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 
@@ -13,7 +13,7 @@ pub struct FaucetDataStore {
     /// Optional initial seed used for faucet account creation.
     init_seed: Option<Word>,
     block_header: BlockHeader,
-    chain_mmr: ChainMmr,
+    partial_block_chain: PartialBlockchain,
     mast_store: TransactionMastStore,
 }
 
@@ -25,7 +25,7 @@ impl FaucetDataStore {
         faucet_account: Account,
         init_seed: Option<Word>,
         block_header: BlockHeader,
-        chain_mmr: ChainMmr,
+        partial_block_chain: PartialBlockchain,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.insert(faucet_account.code().mast());
@@ -34,7 +34,7 @@ impl FaucetDataStore {
             faucet_account: Mutex::new(faucet_account),
             init_seed,
             block_header,
-            chain_mmr,
+            partial_block_chain,
             mast_store,
         }
     }
@@ -63,7 +63,7 @@ impl DataStore for FaucetDataStore {
         &self,
         account_id: AccountId,
         _ref_blocks: BTreeSet<BlockNumber>,
-    ) -> Result<(Account, Option<Word>, BlockHeader, ChainMmr), DataStoreError> {
+    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
         let account = self.faucet_account.lock().expect("Poisoned lock");
         if account_id != account.id() {
             return Err(DataStoreError::AccountNotFound(account_id));
@@ -73,7 +73,7 @@ impl DataStore for FaucetDataStore {
             account.clone(),
             account.is_new().then_some(self.init_seed).flatten(),
             self.block_header.clone(),
-            self.chain_mmr.clone(),
+            self.partial_block_chain.clone(),
         ))
     }
 }

@@ -10,15 +10,9 @@ mod proven_tx;
 
 pub use proven_tx::{MockProvenTxBuilder, mock_proven_tx};
 
-mod store;
-
-pub use store::{MockStoreSuccess, MockStoreSuccessBuilder};
-
 mod account;
 
 pub use account::{MockPrivateAccount, mock_account_id};
-
-pub mod block;
 
 pub mod batch;
 

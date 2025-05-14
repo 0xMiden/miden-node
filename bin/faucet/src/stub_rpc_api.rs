@@ -11,8 +11,8 @@ use miden_node_proto::generated::{
     responses::{
         CheckNullifiersByPrefixResponse, CheckNullifiersResponse, GetAccountDetailsResponse,
         GetAccountProofsResponse, GetAccountStateDeltaResponse, GetBlockByNumberResponse,
-        GetBlockHeaderByNumberResponse, GetNotesByIdResponse, SubmitProvenTransactionResponse,
-        SyncNoteResponse, SyncStateResponse,
+        GetBlockHeaderByNumberResponse, GetNotesByIdResponse, RpcStatusResponse,
+        SubmitProvenTransactionResponse, SyncNoteResponse, SyncStateResponse,
     },
     rpc::api_server,
 };
@@ -142,6 +142,10 @@ impl api_server::Api for StubRpcApi {
         &self,
         _request: Request<GetAccountProofsRequest>,
     ) -> Result<Response<GetAccountProofsResponse>, Status> {
+        unimplemented!()
+    }
+
+    async fn status(&self, _request: Request<()>) -> Result<Response<RpcStatusResponse>, Status> {
         unimplemented!()
     }
 }

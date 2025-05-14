@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 use std::num::NonZeroUsize;
 
 #[cfg(test)]
@@ -8,9 +9,9 @@ mod block_builder;
 mod domain;
 mod errors;
 mod mempool;
+mod server;
 pub mod store;
-
-pub mod server;
+pub use server::BlockProducer;
 
 // CONSTANTS
 // =================================================================================================

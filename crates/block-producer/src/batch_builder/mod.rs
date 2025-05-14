@@ -222,7 +222,7 @@ impl BatchJob {
         ProposedBatch::new(
             transactions,
             inputs.batch_reference_block_header,
-            inputs.chain_mmr,
+            inputs.partial_block_chain,
             inputs.note_proofs,
         )
         .map_err(BuildBatchError::ProposeBatchError)

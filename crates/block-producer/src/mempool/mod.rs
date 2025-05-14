@@ -394,7 +394,7 @@ impl Mempool {
     ///
     /// Returns an error if any transaction was not in the transaction graph i.e. if the transaction
     /// is unknown.
-    #[instrument(target = COMPONENT, name = "mempool.revert_transactions", skip_all, fields(transactions.ids))]
+    #[instrument(target = COMPONENT, name = "mempool.revert_transactions", skip_all, fields(transactions.expired.ids))]
     fn revert_transactions(
         &mut self,
         txs: Vec<TransactionId>,

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use miden_objects::{
     block::{BlockHeader, BlockInputs, NullifierWitness},
     note::{NoteId, NoteInclusionProof},
-    transaction::ChainMmr,
+    transaction::PartialBlockchain,
     utils::{Deserializable, Serializable},
 };
 
@@ -101,7 +101,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
     fn from(inputs: BlockInputs) -> Self {
         let (
             prev_block_header,
-            chain_mmr,
+            partial_block_chain,
             account_witnesses,
             nullifier_witnesses,
             unauthenticated_note_proofs,
@@ -120,7 +120,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
                     NullifierWitnessRecord { nullifier, proof }.into()
                 })
                 .collect(),
-            chain_mmr: chain_mmr.to_bytes(),
+            partial_block_chain: partial_block_chain.to_bytes(),
             unauthenticated_note_proofs: unauthenticated_note_proofs
                 .iter()
                 .map(NoteInclusionInBlockProof::from)
@@ -162,12 +162,14 @@ impl TryFrom<GetBlockInputsResponse> for BlockInputs {
             .map(<(NoteId, NoteInclusionProof)>::try_from)
             .collect::<Result<_, ConversionError>>()?;
 
-        let chain_mmr = ChainMmr::read_from_bytes(&response.chain_mmr)
-            .map_err(|source| ConversionError::deserialization_error("ChainMmr", source))?;
+        let partial_block_chain = PartialBlockchain::read_from_bytes(&response.partial_block_chain)
+            .map_err(|source| {
+                ConversionError::deserialization_error("PartialBlockchain", source)
+            })?;
 
         Ok(BlockInputs::new(
             latest_block_header,
-            chain_mmr,
+            partial_block_chain,
             account_witnesses,
             nullifier_witnesses,
             unauthenticated_note_proofs,

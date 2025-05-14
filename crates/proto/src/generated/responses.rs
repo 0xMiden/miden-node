@@ -125,7 +125,7 @@ pub struct GetBlockInputsResponse {
     /// above note inclusion proofs as well as proofs for inclusion of the requested blocks
     /// referenced by the batches in the block.
     #[prost(bytes = "vec", tag = "3")]
-    pub chain_mmr: ::prost::alloc::vec::Vec<u8>,
+    pub partial_block_chain: ::prost::alloc::vec::Vec<u8>,
     /// The state commitments of the requested accounts and their authentication paths.
     #[prost(message, repeated, tag = "4")]
     pub account_witnesses: ::prost::alloc::vec::Vec<AccountWitness>,
@@ -146,7 +146,7 @@ pub struct GetBatchInputsResponse {
     /// above note inclusion proofs as well as proofs for inclusion of the blocks referenced
     /// by the transactions in the batch.
     #[prost(bytes = "vec", tag = "3")]
-    pub chain_mmr: ::prost::alloc::vec::Vec<u8>,
+    pub partial_block_chain: ::prost::alloc::vec::Vec<u8>,
 }
 /// An account returned as a response to the `GetTransactionInputs`.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -281,5 +281,41 @@ pub struct GetUnconsumedNetworkNotesResponse {
     pub next_token: ::core::option::Option<u64>,
     /// The list of unconsumed network notes.
     #[prost(message, repeated, tag = "2")]
-    pub notes: ::prost::alloc::vec::Vec<super::note::Note>,
+    pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
+}
+/// Represents the status of the node.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RpcStatusResponse {
+    /// The rpc component's running version.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The store status.
+    #[prost(message, optional, tag = "3")]
+    pub store_status: ::core::option::Option<StoreStatusResponse>,
+    /// The block producer status.
+    #[prost(message, optional, tag = "4")]
+    pub block_producer_status: ::core::option::Option<BlockProducerStatusResponse>,
+}
+/// Represents the status of the store.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StoreStatusResponse {
+    /// The store's running version.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The store's status.
+    #[prost(string, tag = "2")]
+    pub status: ::prost::alloc::string::String,
+    /// Number of the latest block in the chain.
+    #[prost(fixed32, tag = "3")]
+    pub chain_tip: u32,
+}
+/// Represents the status of the block producer.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct BlockProducerStatusResponse {
+    /// The block producer's running version.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The block producer's status.
+    #[prost(string, tag = "2")]
+    pub status: ::prost::alloc::string::String,
 }

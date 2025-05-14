@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use miden_objects::{
     block::BlockHeader,
     note::{NoteId, NoteInclusionProof},
-    transaction::ChainMmr,
+    transaction::PartialBlockchain,
     utils::{Deserializable, Serializable},
 };
 
@@ -17,7 +17,7 @@ use crate::{
 pub struct BatchInputs {
     pub batch_reference_block_header: BlockHeader,
     pub note_proofs: BTreeMap<NoteId, NoteInclusionProof>,
-    pub chain_mmr: ChainMmr,
+    pub partial_block_chain: PartialBlockchain,
 }
 
 impl From<BatchInputs> for proto::GetBatchInputsResponse {
@@ -25,7 +25,7 @@ impl From<BatchInputs> for proto::GetBatchInputsResponse {
         Self {
             batch_reference_block_header: Some(inputs.batch_reference_block_header.into()),
             note_proofs: inputs.note_proofs.iter().map(Into::into).collect(),
-            chain_mmr: inputs.chain_mmr.to_bytes(),
+            partial_block_chain: inputs.partial_block_chain.to_bytes(),
         }
     }
 }
@@ -44,8 +44,10 @@ impl TryFrom<proto::GetBatchInputsResponse> for BatchInputs {
                 .iter()
                 .map(<(NoteId, NoteInclusionProof)>::try_from)
                 .collect::<Result<_, ConversionError>>()?,
-            chain_mmr: ChainMmr::read_from_bytes(&response.chain_mmr)
-                .map_err(|source| ConversionError::deserialization_error("ChainMmr", source))?,
+            partial_block_chain: PartialBlockchain::read_from_bytes(&response.partial_block_chain)
+                .map_err(|source| {
+                    ConversionError::deserialization_error("PartialBlockchain", source)
+                })?,
         };
 
         Ok(result)

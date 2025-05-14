@@ -44,6 +44,13 @@ pub struct Note {
     #[prost(bytes = "vec", optional, tag = "6")]
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
+/// Represents a network note.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NetworkNote {
+    /// Serialized network note.
+    #[prost(bytes = "vec", tag = "1")]
+    pub note: ::prost::alloc::vec::Vec<u8>,
+}
 /// Represents a proof of note's inclusion in a block.
 ///
 /// Does not include proof of the block's inclusion in the chain.

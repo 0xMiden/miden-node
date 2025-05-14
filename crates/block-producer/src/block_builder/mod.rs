@@ -1,19 +1,18 @@
-use std::{collections::BTreeSet, fmt::Debug, ops::Range};
+use std::{collections::BTreeSet, ops::Range};
 
 use anyhow::Context;
 use futures::{FutureExt, never::Never};
 use miden_block_prover::LocalBlockProver;
-use miden_node_proto::{domain::note::CommittedNote, generated::transaction::TransactionStatus};
+use miden_node_proto::generated::transaction::TransactionStatus;
 use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
 use miden_objects::{
-    MIN_PROOF_SECURITY_LEVEL,
+    Digest, MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
     block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::{NoteDetails, NoteExecutionMode, NoteHeader},
+    note::{Note, NoteExecutionMode, NoteHeader},
     transaction::{OutputNote, TransactionHeader, TransactionId},
 };
 use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
-use miden_tx::utils::Serializable;
 use rand::Rng;
 use tokio::time::Duration;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -28,7 +27,7 @@ use crate::{
 // BLOCK BUILDER
 // =================================================================================================
 
-type NtxClient =
+pub type NtxClient =
     miden_node_proto::ntx_builder::Client<InterceptedService<Channel, OtelInterceptor>>;
 
 pub struct BlockBuilder {
@@ -48,7 +47,8 @@ pub struct BlockBuilder {
 
     // Client connection to the network transaction builder.
     //
-    // This client is used to submit network notes and transaction updates to the network transaction builder.
+    // This client is used to submit network notes and transaction updates to the network
+    // transaction builder.
     pub ntx_client: NtxClient,
 }
 
@@ -116,7 +116,8 @@ impl BlockBuilder {
     ///
     /// ## Returns
     ///
-    /// The transaction and note IDs committed in this block, as well as the transaction IDs that were dropped (e.g. due to expiring).
+    /// The transaction and note IDs committed in this block, as well as the transaction IDs that
+    /// were dropped (e.g. due to expiring).
     ///
     /// Returns [`None`] if the block building failed.
     ///
@@ -265,34 +266,22 @@ impl BlockBuilder {
             .iter()
             .map(TransactionHeader::id)
             .collect();
-        let committed_notes = built_block
+        let committed_network_notes = built_block
             .output_notes()
-            .filter_map(|(_idx, note)| {
-                // Only retain network notes.
-                if let OutputNote::Full(note) = note {
-                    if NoteExecutionMode::Network != note.metadata().tag().execution_mode() {
-                        return None;
-                    }
-                    // TODO: ensure it is a network note.
-                    CommittedNote {
-                        block_num: built_block.header().block_num(),
-                        note_index: todo!("Do I really have to iterate over the batches?"),
-                        note_id: note.id().inner(),
-                        metadata: *note.metadata(),
-                        details: NoteDetails::from(note).to_bytes().into(),
-                        merkle_path: todo!("How do this?"),
-                    }
-                    .into()
-                } else {
-                    None
-                }
+            .filter_map(|(_idx, note)| match note {
+                OutputNote::Full(inner)
+                    if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
+                {
+                    Some(inner.clone())
+                },
+                _ => None,
             })
             .collect();
 
         Ok(StateDelta {
             committed_transactions,
             reverted_transactions,
-            committed_notes,
+            committed_network_notes,
         })
     }
 
@@ -325,12 +314,19 @@ impl BlockBuilder {
                 .context("submitting transaction status updates to network transaction builder")?;
         }
 
-        if !delta.committed_notes.is_empty() {
+        if !delta.committed_network_notes.is_empty() {
             self.ntx_client
                 .clone()
                 .submit_network_notes(
-                    todo!("revisit this api - do we really need the tx ID"),
-                    delta.committed_notes.into_iter(),
+                    // TODO: using default here until there is a good reason not to (is tx id even
+                    // needed?)
+                    TransactionId::new(
+                        Digest::default(),
+                        Digest::default(),
+                        Digest::default(),
+                        Digest::default(),
+                    ),
+                    delta.committed_network_notes.into_iter(),
                 )
                 .await
                 .context(
@@ -468,7 +464,7 @@ impl TelemetryInjectorExt for ProvenBlock {
 struct StateDelta {
     committed_transactions: Vec<TransactionId>,
     reverted_transactions: BTreeSet<TransactionId>,
-    committed_notes: Vec<CommittedNote>,
+    committed_network_notes: Vec<Note>,
 }
 
 // BLOCK PROVER

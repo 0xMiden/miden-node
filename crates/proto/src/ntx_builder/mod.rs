@@ -1,22 +1,22 @@
 use std::net::SocketAddr;
 
 use http::uri::Scheme;
-use miden_objects::transaction::TransactionId;
+use miden_objects::{
+    note::{Note, Nullifier},
+    transaction::TransactionId,
+};
 use prost::bytes::Bytes;
 use tonic::{
     service::{Interceptor, interceptor::InterceptedService},
     transport::{Body, Channel, Endpoint},
 };
 
-use crate::{
-    domain::note::CommittedNote,
-    generated::{
-        requests::{
-            SubmitNetworkNotesRequest, UpdateTransactionStatusRequest,
-            update_transaction_status_request::TransactionUpdate,
-        },
-        transaction::TransactionStatus,
+use crate::generated::{
+    requests::{
+        SubmitNetworkNotesRequest, UpdateNetworkNotesRequest, UpdateTransactionStatusRequest,
+        update_transaction_status_request::TransactionUpdate,
     },
+    transaction::TransactionStatus,
 };
 
 type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
@@ -34,6 +34,7 @@ impl<I: Interceptor> Client<InterceptedService<Channel, I>> {
         let uri = http::Uri::builder()
             .scheme(Scheme::HTTP)
             .authority(addr.to_string())
+            .path_and_query("/")
             .build()
             .unwrap();
 
@@ -55,8 +56,7 @@ where
     pub async fn submit_network_notes(
         &mut self,
         tx_id: TransactionId,
-        // TODO: restrict this to confirmed network notes using new types
-        notes: impl Iterator<Item = CommittedNote>,
+        notes: impl Iterator<Item = Note>,
     ) -> Result<(), tonic::Status> {
         let request = SubmitNetworkNotesRequest {
             transaction_id: Some(tx_id.into()),
@@ -78,5 +78,17 @@ where
                 .collect(),
         };
         self.inner.update_transaction_status(request).await.map(|_| ())
+    }
+
+    pub async fn update_network_notes(
+        &mut self,
+        transaction_id: TransactionId,
+        nullifiers: impl Iterator<Item = Nullifier>,
+    ) -> Result<(), tonic::Status> {
+        let request = UpdateNetworkNotesRequest {
+            transaction_id: Some(transaction_id.into()),
+            nullifiers: nullifiers.map(Into::into).collect(),
+        };
+        self.inner.update_network_notes(request).await.map(|_| ())
     }
 }

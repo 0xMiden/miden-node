@@ -23,8 +23,8 @@ miden-lib          = { workspace = true }
 miden-node-proto   = { workspace = true }
 miden-node-utils   = { workspace = true }
 miden-objects      = { workspace = true }
-rusqlite           = { version = "0.32", features = ["array", "buildtime_bindgen", "bundled"] }
-rusqlite_migration = { version = "1.3" }
+rusqlite           = { version = "0.35", features = ["array", "buildtime_bindgen", "bundled"] }
+rusqlite_migration = { version = "2.1" }
 thiserror          = { workspace = true }
 tokio              = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread"] }
 tokio-stream       = { workspace = true, features = ["net"] }
@@ -38,5 +38,6 @@ miden-lib             = { workspace = true, features = ["testing"] }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { workspace = true, features = ["tracing-forest"] }
 miden-objects         = { workspace = true, features = ["testing"] }
+rand                  = { version = "0.9" }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }

@@ -86,12 +86,10 @@ impl StoreCommand {
             .await
             .context("Failed to bind to store's gRPC URL")?;
 
-        Store::init(listener, data_directory)
-            .await
-            .context("Loading store")?
+        Store { listener, data_directory }
             .serve()
             .await
-            .context("Serving store")
+            .context("failed while serving store component")
     }
 
     fn bootstrap(data_directory: &Path, accounts_directory: &Path) -> anyhow::Result<()> {

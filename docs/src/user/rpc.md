@@ -19,6 +19,7 @@ The gRPC service definition can be found in the Miden node's `proto`
 - [SubmitProvenTransaction](#submitproventransaction)
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
+- [Status](#status)
 
 <!--toc:end-->
 
@@ -86,3 +87,7 @@ be used to update the state of Chain MMR. This includes both chain MMR peaks and
 
 The low part of note tags are redacted to preserve some degree of privacy. Returned data therefore contains additional
 notes which should be filtered out by the client.
+
+## Status
+
+Request the status of the node components.

@@ -11,7 +11,7 @@ use miden_node_proto::{
 };
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::block_producer_trace_fn,
+    tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
 };
 use miden_objects::{
     note::Nullifier, transaction::ProvenTransaction, utils::serde::Deserializable,
@@ -29,7 +29,6 @@ use crate::{
     batch_builder::BatchBuilder,
     block_builder::{BlockBuilder, NtxClient},
     domain::transaction::AuthenticatedTransaction,
-    errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
     errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
     mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
     store::StoreClient,
@@ -130,10 +129,6 @@ impl BlockProducer {
             BlockBudget::default(),
             SERVER_MEMPOOL_STATE_RETENTION,
             SERVER_MEMPOOL_EXPIRATION_SLACK,
-            BatchBudget::default(),
-            BlockBudget::default(),
-            SERVER_MEMPOOL_STATE_RETENTION,
-            SERVER_MEMPOOL_EXPIRATION_SLACK,
         );
 
         // Spawn rpc server and batch and block provers.
@@ -197,7 +192,6 @@ impl BlockProducer {
                 Err(source) => Err(BlockProducerError::TonicTransportError { task, source }),
             })
             .and_then(|x| x)?
-            .and_then(|x| x)?
     }
 }
 
@@ -244,22 +238,6 @@ impl api_server::Api for BlockProducerRpcServer {
             status: "connected".to_string(),
         }))
     }
-
-    #[instrument(
-        target = COMPONENT,
-        name = "block_producer.server.status",
-        skip_all,
-        err
-    )]
-    async fn status(
-        &self,
-        _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<BlockProducerStatusResponse>, Status> {
-        Ok(tonic::Response::new(BlockProducerStatusResponse {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            status: "connected".to_string(),
-        }))
-    }
 }
 
 impl BlockProducerRpcServer {
@@ -282,7 +260,6 @@ impl BlockProducerRpcServer {
 
     #[instrument(
         target = COMPONENT,
-        name = "block_producer.server.submit_proven_transaction",
         name = "block_producer.server.submit_proven_transaction",
         skip_all,
         err

@@ -319,39 +319,3 @@ pub struct BlockProducerStatusResponse {
     #[prost(string, tag = "2")]
     pub status: ::prost::alloc::string::String,
 }
-/// Represents the status of the node.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct RpcStatusResponse {
-    /// The rpc component's running version.
-    #[prost(string, tag = "1")]
-    pub version: ::prost::alloc::string::String,
-    /// The store status.
-    #[prost(message, optional, tag = "3")]
-    pub store_status: ::core::option::Option<StoreStatusResponse>,
-    /// The block producer status.
-    #[prost(message, optional, tag = "4")]
-    pub block_producer_status: ::core::option::Option<BlockProducerStatusResponse>,
-}
-/// Represents the status of the store.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StoreStatusResponse {
-    /// The store's running version.
-    #[prost(string, tag = "1")]
-    pub version: ::prost::alloc::string::String,
-    /// The store's status.
-    #[prost(string, tag = "2")]
-    pub status: ::prost::alloc::string::String,
-    /// Number of the latest block in the chain.
-    #[prost(fixed32, tag = "3")]
-    pub chain_tip: u32,
-}
-/// Represents the status of the block producer.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct BlockProducerStatusResponse {
-    /// The block producer's running version.
-    #[prost(string, tag = "1")]
-    pub version: ::prost::alloc::string::String,
-    /// The block producer's status.
-    #[prost(string, tag = "2")]
-    pub status: ::prost::alloc::string::String,
-}

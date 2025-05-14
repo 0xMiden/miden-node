@@ -301,36 +301,3 @@ message BlockProducerStatusResponse {
     // The block producer's status.
     string status = 2;
 }
-
-// Represents the status of the node.
-message RpcStatusResponse {
-    // The rpc component's running version.
-    string version = 1;
-
-    // The store status.
-    StoreStatusResponse store_status = 3;
-
-    // The block producer status.
-    BlockProducerStatusResponse block_producer_status = 4;
-}
-
-// Represents the status of the store.
-message StoreStatusResponse {
-    // The store's running version.
-    string version = 1;
-
-    // The store's status.
-    string status = 2;
-
-    // Number of the latest block in the chain.
-    fixed32 chain_tip = 3;
-}
-
-// Represents the status of the block producer.
-message BlockProducerStatusResponse {
-    // The block producer's running version.
-    string version = 1;
-
-    // The block producer's status.
-    string status = 2;
-}

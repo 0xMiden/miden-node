@@ -15,7 +15,7 @@ use miden_objects::{
 use serde::{Deserialize, Serialize};
 use tonic::body;
 use tracing::info;
-use tracing::{Instrument, Span, instrument};
+use tracing::instrument;
 
 use crate::{COMPONENT, errors::HandlerError, state::FaucetState};
 
@@ -43,19 +43,19 @@ pub async fn get_metadata(
     (StatusCode::OK, Json(response))
 }
 
-#[instrument(parent = None, target = COMPONENT, name = "faucet.server.get_tokens", skip_all, err)]
+#[instrument(
+    parent = None, target = COMPONENT, name = "faucet.server.get_tokens",
+    skip_all, err,
+    fields(
+        account_id = %req.account_id,
+        is_private_note = %req.is_private_note,
+        asset_amount = %req.asset_amount,
+    )
+)]
 pub async fn get_tokens(
     State(state): State<FaucetState>,
     Json(req): Json<FaucetRequest>,
 ) -> Result<impl IntoResponse, HandlerError> {
-    info!(
-        target: COMPONENT,
-        account_id = %req.account_id,
-        is_private_note = %req.is_private_note,
-        asset_amount = %req.asset_amount,
-        "Received a request",
-    );
-
     // Check that the amount is in the asset amount options
     if !state.config.asset_amount_options.contains(&req.asset_amount) {
         return Err(HandlerError::InvalidAssetAmount {

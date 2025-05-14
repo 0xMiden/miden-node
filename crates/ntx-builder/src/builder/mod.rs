@@ -16,7 +16,7 @@ mod server;
 /// Interval for checking pending notes
 const NOTE_CHECK_INTERVAL_MS: u64 = 100;
 
-//mod data_store;
+mod data_store;
 mod store;
 
 /// Network Transaction Builder

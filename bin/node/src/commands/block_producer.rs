@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
+use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 

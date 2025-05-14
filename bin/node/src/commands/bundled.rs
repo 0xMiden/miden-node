@@ -3,6 +3,8 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_rpc::Rpc;
+use miden_node_block_producer::BlockProducer;
+use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};

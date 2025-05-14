@@ -73,7 +73,7 @@ impl RpcCommand {
             .context("Failed to bind to RPC's gRPC URL")?;
 
         // Start system monitor.
-        std::thread::spawn(move || SystemMonitor::new(monitor_interval).run());
+        SystemMonitor::new(monitor_interval).run();
 
         Rpc { listener, store, block_producer }.serve().await.context("Serving RPC")
     }

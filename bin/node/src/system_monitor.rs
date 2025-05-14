@@ -7,7 +7,6 @@ use tracing::{error, info};
 const COMPONENT: &str = "system-monitor";
 
 /// Runs a system monitor loop that logs the system metrics every `MONITOR_INTERVAL` seconds.
-/// It is intended to be run in a separate thread.
 /// It logs the following information:
 /// - Memory usage
 /// - CPU usage
@@ -42,14 +41,16 @@ impl SystemMonitor {
         }
     }
 
-    /// Runs the system monitor loop.
-    pub fn run(&mut self) {
-        loop {
-            std::thread::sleep(self.monitor_interval);
-            if let Err(err) = self.log_system_metrics() {
-                error!(target: COMPONENT, ?err, "Error collecting system metrics");
+    /// Runs the system monitor loop on a separate thread.
+    pub fn run(mut self) {
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(self.monitor_interval);
+                if let Err(err) = self.log_system_metrics() {
+                    error!(target: COMPONENT, ?err, "Error collecting system metrics");
+                }
             }
-        }
+        });
     }
 
     /// Collects the system metrics and posts the structured log.

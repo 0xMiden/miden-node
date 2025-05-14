@@ -12,7 +12,7 @@ use miden_objects::{
     block::BlockNumber,
     crypto::{
         merkle::{MmrPeaks, PartialMmr},
-        rand::{FeltRng, RpoRandomCoin},
+        rand::RpoRandomCoin,
     },
     note::Note,
     transaction::{
@@ -30,7 +30,7 @@ use miden_tx::{
 use rand::{random, rngs::StdRng};
 use serde::Serialize;
 use store::FaucetDataStore;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::{Mutex, mpsc::Receiver};
 use tonic::Code;
 use tracing::{error, info, instrument, warn};
 use updates::{ClientUpdater, MintUpdate, ResponseSender};
@@ -160,6 +160,7 @@ pub struct Faucet {
     tx_prover: Arc<FaucetProver>,
     tx_executor: Rc<TransactionExecutor>,
     account_interface: AccountInterface,
+    rng: Arc<Mutex<RpoRandomCoin>>,
 }
 
 impl Faucet {
@@ -242,6 +243,9 @@ impl Faucet {
         let tx_executor =
             Rc::new(TransactionExecutor::new(data_store.clone(), Some(authenticator.clone())));
 
+        let coin_seed: [u64; 4] = random();
+        let rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
+
         Ok(Self {
             data_store,
             id,
@@ -249,6 +253,7 @@ impl Faucet {
             tx_prover,
             tx_executor,
             account_interface,
+            rng: Arc::new(Mutex::new(rng)),
         })
     }
 
@@ -259,9 +264,6 @@ impl Faucet {
         mut rpc_client: RpcClient,
         mut requests: Receiver<(MintRequest, ResponseSender)>,
     ) -> anyhow::Result<()> {
-        let coin_seed: [u64; 4] = random();
-        let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
-
         let mut buffer = Vec::new();
         let limit = 100; // we could include 256 notes per tx, but requests channel is limited to 100 atm
 
@@ -281,7 +283,7 @@ impl Faucet {
 
             let updater = ClientUpdater::new(response_senders);
 
-            match self.handle_request_batch(&requests, &mut rng, &mut rpc_client, &updater).await {
+            match self.handle_request_batch(&requests, &mut rpc_client, &updater).await {
                 // Update local state on success.
                 Ok((delta, block_number, notes, tx_id)) => {
                     updater.send_notes(block_number, &notes, tx_id).await;
@@ -378,12 +380,15 @@ impl Faucet {
     async fn handle_request_batch(
         &self,
         requests: &[MintRequest],
-        rng: &mut impl FeltRng,
         rpc_client: &mut RpcClient,
         updater: &ClientUpdater,
     ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>, TransactionId)> {
+        let p2id_notes = {
+            let mut rng_guard = self.rng.lock().await;
+            P2IdNotes::build(self.faucet_id(), requests, &mut rng_guard)?
+        };
         // Build the note
-        let notes = P2IdNotes::build(self.faucet_id(), requests, rng)?.into_inner();
+        let notes = p2id_notes.into_inner();
         let tx_args = self.compile(&notes)?;
         updater.send_updates(MintUpdate::Built).await;
 
@@ -474,7 +479,7 @@ impl P2IdNotes {
     fn build(
         source: FaucetId,
         requests: &[MintRequest],
-        rng: &mut impl FeltRng,
+        rng: &mut RpoRandomCoin,
     ) -> Result<Self, MintError> {
         // If building a note fails, we discard the whole batch. Should never happen, since account
         // ids are validated on the request level.

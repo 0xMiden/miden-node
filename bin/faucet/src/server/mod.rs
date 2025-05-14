@@ -100,6 +100,8 @@ impl Server {
             .unwrap();
         let account_rate_limiter = Arc::new(account_rate_limiter);
 
+        // TODO: We should move the rate limiter paramers to the config file or as env vars. The
+        // same goes for the other rate limiters in this function.
         let api_key_rate_limiter = GovernorConfigBuilder::default()
             .const_burst_size(3)
             .const_per_second(10)
@@ -255,10 +257,12 @@ impl KeyExtractor for ApiKeyExtractor {
             // Requests with the same api key are rate limited together.
             Ok(api_key.to_string())
         } else {
-            // We don't want to rate limit together requests without an api key. So we want to
-            // return a "unique" extracted key for each request. By concatenating the account id
-            // and the server timestamp we get a somewhat unique key each time so this rate limiter
-            // won't affect requests without an api key.
+            // The naive approach would be to use an empty string as the extracted key for this case
+            // but by doing this then all non-api key requests will be grouped together and the
+            // limit will be reached almost instantly. To avoid this, we want to return a "unique"
+            // extracted key for each request. By concatenating the account id and the server
+            // timestamp we get a somewhat unique key each time so this rate limiter won't affect
+            // requests without an api key.
             Ok(params.account_id.clone()
                 + &params.server_timestamp.ok_or(GovernorError::UnableToExtractKey)?.to_string())
         }

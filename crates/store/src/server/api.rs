@@ -16,15 +16,15 @@ use miden_node_proto::{
             ApplyBlockRequest, CheckNullifiersByPrefixRequest, CheckNullifiersRequest,
             GetAccountDetailsRequest, GetAccountProofsRequest, GetAccountStateDeltaRequest,
             GetBatchInputsRequest, GetBlockByNumberRequest, GetBlockHeaderByNumberRequest,
-            GetBlockInputsRequest, GetNotesByIdRequest, GetTransactionInputsRequest,
-            SyncNoteRequest, SyncStateRequest,
+            GetBlockInputsRequest, GetMmrPeaksRequest, GetNotesByIdRequest,
+            GetTransactionInputsRequest, SyncNoteRequest, SyncStateRequest,
         },
         responses::{
             AccountTransactionInputRecord, ApplyBlockResponse, CheckNullifiersByPrefixResponse,
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
-            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
-            GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
+            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetMmrPeaksResponse,
+            GetNotesByIdResponse, GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
             NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
         },
@@ -149,6 +149,28 @@ impl api_server::Api for StoreApi {
             .collect();
 
         Ok(Response::new(CheckNullifiersByPrefixResponse { nullifiers }))
+    }
+
+    /// TODO
+    #[instrument(
+    target = COMPONENT,
+    name = "store.server.get_mmr_peaks",
+    skip_all,
+    ret(level = "debug"),
+    err
+)]
+    async fn get_mmr_peaks(
+        &self,
+        request: Request<GetMmrPeaksRequest>,
+    ) -> Result<Response<GetMmrPeaksResponse>, Status> {
+        let block_num = request.into_inner().block_num.map(BlockNumber::from);
+
+        let peaks = self.state.get_mmr_peaks(block_num).await.map_err(internal_error)?;
+        let response = Response::new(GetMmrPeaksResponse {
+            peaks: peaks.peaks().iter().map(Into::into).collect(),
+        });
+
+        Ok(response)
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain

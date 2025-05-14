@@ -1,0 +1,25 @@
+[package]
+name = "miden-node-ntx-builder"
+version = "0.9.0"
+edition = "2021"
+
+[dependencies]
+anyhow =  { workspace = true }
+async-trait =  { workspace = true }
+http =  { workspace = true }
+miden-node-proto = { workspace = true }
+miden-node-store          = { workspace = true }
+miden-node-utils          = { workspace = true }
+miden-objects = { workspace = true }
+miden-tx = { workspace = true }
+miden-lib = { workspace = true }
+prost = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
+tokio-stream = { workspace = true }
+tonic = { workspace = true }
+tower-http = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+miden-node-test-macro = { path = "../test-macro" }

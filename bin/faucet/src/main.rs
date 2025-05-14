@@ -17,7 +17,9 @@ use axum::{
 };
 use clap::{Parser, Subcommand};
 use client::initialize_faucet_client;
-use handlers::{get_background, get_favicon, get_index_css, get_index_html, get_index_js};
+use handlers::{
+    get_background, get_favicon, get_index_css, get_index_html, get_index_js, get_tokens,
+};
 use http::{HeaderValue, header};
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{
@@ -39,7 +41,7 @@ use tracing::info;
 
 use crate::{
     config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig},
-    handlers::{get_metadata, get_tokens},
+    handlers::get_metadata,
 };
 
 // CONSTANTS

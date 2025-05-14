@@ -4,6 +4,7 @@ members = [
   "bin/node",
   "bin/stress-test",
   "crates/block-producer",
+  "crates/ntx-builder",
   "crates/proto",
   "crates/rpc",
   "crates/store",
@@ -32,11 +33,13 @@ opt-level = 2
 [workspace.dependencies]
 anyhow                    = { version = "1.0" }
 assert_matches            = { version = "1.5" }
+async-trait               = { version = "0.1" }
 http                      = { version = "1.3" }
 itertools                 = { version = "0.14" }
 miden-air                 = { version = "0.13" }
 miden-lib                 = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "next" }
 miden-node-block-producer = { path = "crates/block-producer", version = "0.9" }
+miden-node-ntx-builder    = { path = "crates/ntx-builder", version = "0.9" }
 miden-node-proto          = { path = "crates/proto", version = "0.9" }
 miden-node-proto-build    = { path = "proto", version = "0.9" }
 miden-node-rpc            = { path = "crates/rpc", version = "0.9" }

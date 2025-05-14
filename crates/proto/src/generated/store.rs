@@ -374,6 +374,28 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("store.Api", "GetNotesById"));
             self.inner.unary(req, path, codec).await
         }
+        /// TODO
+        pub async fn get_mmr_peaks(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::requests::GetMmrPeaksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::responses::GetMmrPeaksResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/store.Api/GetMmrPeaks");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("store.Api", "GetMmrPeaks"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Returns data required to validate a new transaction.
         pub async fn get_transaction_inputs(
             &mut self,
@@ -625,6 +647,14 @@ pub mod api_server {
             request: tonic::Request<super::super::requests::GetNotesByIdRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::responses::GetNotesByIdResponse>,
+            tonic::Status,
+        >;
+        /// TODO
+        async fn get_mmr_peaks(
+            &self,
+            request: tonic::Request<super::super::requests::GetMmrPeaksRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::responses::GetMmrPeaksResponse>,
             tonic::Status,
         >;
         /// Returns data required to validate a new transaction.
@@ -1283,6 +1313,54 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNotesByIdSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/store.Api/GetMmrPeaks" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetMmrPeaksSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::requests::GetMmrPeaksRequest,
+                    > for GetMmrPeaksSvc<T> {
+                        type Response = super::super::responses::GetMmrPeaksResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::requests::GetMmrPeaksRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::get_mmr_peaks(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetMmrPeaksSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

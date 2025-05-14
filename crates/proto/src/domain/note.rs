@@ -1,7 +1,7 @@
 use miden_objects::{
     Digest, Felt,
     note::{Note, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag, NoteType},
-    utils::Serializable,
+    utils::{Deserializable, DeserializationError, Serializable},
 };
 
 use crate::{
@@ -31,6 +31,14 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
 impl From<Note> for proto::NetworkNote {
     fn from(note: Note) -> Self {
         Self { note: note.to_bytes() }
+    }
+}
+
+impl TryFrom<proto::NetworkNote> for Note {
+    type Error = DeserializationError;
+
+    fn try_from(value: proto::NetworkNote) -> Result<Self, Self::Error> {
+        Note::read_from_bytes(&value.note)
     }
 }
 

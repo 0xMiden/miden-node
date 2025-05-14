@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
+use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
@@ -165,6 +166,19 @@ impl BundledCommand {
             })
             .id();
 
+        // Start network transaction builder. The endpoint is available after loading completes.
+        let ntx_builder_id = join_set
+            .spawn(async move {
+                NetworkTransactionBuilder {
+                    address: ntx_builder_address,
+                    store_address: store_address.clone(),
+                }
+                .serve()
+                .await
+                .context("failed while serving store component")
+            })
+            .id();
+
         // Start block-producer. The block-producer's endpoint is available after loading completes.
         let block_producer_id = join_set
             .spawn(async move {
@@ -202,6 +216,7 @@ impl BundledCommand {
             (store_id, "store"),
             (block_producer_id, "block-producer"),
             (rpc_id, "rpc"),
+            (ntx_builder_id, "ntx-builder"),
         ]);
 
         // SAFETY: The joinset is definitely not empty.

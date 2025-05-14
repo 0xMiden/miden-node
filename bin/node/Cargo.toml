@@ -22,6 +22,7 @@ anyhow                    = { workspace = true }
 clap                      = { version = "4.5", features = ["derive", "env", "string"] }
 miden-lib                 = { workspace = true }
 miden-node-block-producer = { workspace = true }
+miden-node-ntx-builder    = { workspace = true }
 miden-node-rpc            = { workspace = true }
 miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }

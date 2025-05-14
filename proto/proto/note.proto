@@ -46,7 +46,7 @@ message Note {
     merkle.MerklePath merkle_path = 5;
 
     // Serialized details of the public note (empty for private notes).
-    optional bytes details = 6;
+    optional bytes details = 6;  // TODO: This contains redundant data (metadata, ID)
 }
 
 // Represents a network note.

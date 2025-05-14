@@ -121,7 +121,7 @@ impl FaucetClient {
     /// Executes a mint transaction for the target account.
     ///
     /// Returns the executed transaction and the expected output note.
-    pub fn execute_mint_transaction(
+    pub async fn execute_mint_transaction(
         &mut self,
         target_account_id: AccountId,
         is_private_note: bool,

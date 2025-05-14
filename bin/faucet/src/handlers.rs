@@ -70,11 +70,9 @@ pub async fn get_tokens(
 
     // Execute transaction
     info!(target: COMPONENT, "Executing mint transaction for account.");
-    let (executed_tx, created_note) = client.execute_mint_transaction(
-        target_account_id,
-        req.is_private_note,
-        req.asset_amount,
-    )?;
+    let (executed_tx, created_note) = client
+        .execute_mint_transaction(target_account_id, req.is_private_note, req.asset_amount)
+        .await?;
 
     let mut faucet_account = client.data_store().faucet_account();
     faucet_account

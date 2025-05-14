@@ -40,12 +40,6 @@ use crate::{
 /// The connection to the store is established at startup and retried with exponential backoff
 /// until the store becomes available. Once the connection is established, the block producer
 /// will start serving requests.
-/// The block producer server.
-///
-/// Specifies how to connect to the store, batch prover, and block prover components.
-/// The connection to the store is established at startup and retried with exponential backoff
-/// until the store becomes available. Once the connection is established, the block producer
-/// will start serving requests.
 pub struct BlockProducer {
     /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
@@ -64,7 +58,6 @@ pub struct BlockProducer {
 }
 
 impl BlockProducer {
-    /// Serves the block-producer RPC API, the batch-builder and the block-builder.
     /// Serves the block-producer RPC API, the batch-builder and the block-builder.
     ///
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until

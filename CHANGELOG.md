@@ -12,6 +12,7 @@
 - Enabled running RPC component in `read-only` mode (#802).
 - [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
 - Added gRPC `/status` endpoint on all components (#817).
+- Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
 
 ## v0.8.0 (2025-03-26)
 
@@ -45,7 +46,7 @@
 - [BREAKING] Update `GetBlockInputs` RPC (#709).
 - [BREAKING] Added `batch_prover_url` to block producer configuration (#701).
 - [BREAKING] Added `block_prover_url` to block producer configuration (#719).
-- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723). 
+- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723).
 - [BREAKING] Updated to Rust Edition 2024 (#727).
 - [BREAKING] MSRV bumped to 1.85 (#727).
 - [BREAKING] Replaced `toml` configuration with CLI (#732).

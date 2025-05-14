@@ -1,9 +1,12 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, rc::Rc, sync::Arc};
 
 use anyhow::{Context, anyhow};
-use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
+use miden_lib::{
+    account::interface::{AccountInterface, AccountInterfaceError},
+    note::create_p2id_note,
+};
 use miden_objects::{
-    AccountError, Digest, Felt, NoteError, TransactionScriptError,
+    AccountError, Digest, Felt,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
     asset::FungibleAsset,
     block::BlockNumber,
@@ -13,10 +16,11 @@ use miden_objects::{
     },
     note::Note,
     transaction::{
-        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionScript,
+        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionWitness,
     },
     vm::AdviceMap,
 };
+use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{
     LocalTransactionProver, ProvingOptions, TransactionExecutor, TransactionExecutorError,
     TransactionProver, TransactionProverError, auth::BasicAuthenticator,
@@ -25,9 +29,10 @@ use miden_tx::{
 use rand::{random, rngs::StdRng};
 use serde::Serialize;
 use store::FaucetDataStore;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot::Sender};
 use tonic::Code;
-use tracing::{info, instrument};
+use tracing::{error, info, instrument, warn};
+use url::Url;
 
 use crate::{
     rpc_client::{RpcClient, RpcError},
@@ -36,7 +41,53 @@ use crate::{
 
 mod store;
 
-pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str = include_str!("distribute_fungible_asset.masm");
+// FAUCET PROVER
+// ================================================================================================
+
+/// Represents a transaction prover which can be either local or remote, and is used to prove
+/// transactions minted by the faucet.
+enum FaucetProver {
+    Local(LocalTransactionProver),
+    Remote(RemoteTransactionProver),
+}
+
+impl FaucetProver {
+    /// Creates a new local prover.
+    ///
+    /// It uses the default proving options.
+    fn local() -> Self {
+        Self::Local(LocalTransactionProver::new(ProvingOptions::default()))
+    }
+
+    /// Creates a new remote prover.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - The endpoint to connect to the remote prover.
+    fn remote(endpoint: Url) -> Self {
+        Self::Remote(RemoteTransactionProver::new(endpoint))
+    }
+
+    async fn prove(
+        &self,
+        tx: impl Into<TransactionWitness> + Clone,
+    ) -> Result<ProvenTransaction, MintError> {
+        match self {
+            Self::Local(prover) => prover.prove(tx.into()).await,
+            Self::Remote(prover) => {
+                let proven_tx = prover.prove(tx.clone().into()).await;
+                match proven_tx {
+                    Ok(proven_tx) => Ok(proven_tx),
+                    Err(err) => {
+                        warn!("failed to prove transaction with remote prover, falling back to local prover: {}", err);
+                        LocalTransactionProver::new(ProvingOptions::default()).prove(tx.into()).await
+                    }
+                }
+            },
+        }
+        .map_err(MintError::Proving)
+    }
+}
 
 // FAUCET CLIENT
 // ================================================================================================
@@ -84,10 +135,8 @@ type MintResult<T> = Result<T, MintError>;
 /// Error indicating what went wrong in the minting process for a request.
 #[derive(Debug, thiserror::Error)]
 pub enum MintError {
-    #[error("building the p2id note failed")]
-    BuildingP2IdNote(#[source] NoteError),
     #[error("compiling the tx script failed")]
-    ScriptCompilation(#[source] TransactionScriptError),
+    ScriptCompilation(#[source] AccountInterfaceError),
     #[error("execution of the tx script failed")]
     Execution(#[source] TransactionExecutorError),
     #[error("proving the tx failed")]
@@ -98,11 +147,13 @@ pub enum MintError {
 
 /// Stores the current faucet state and handles minting requests.
 pub struct Faucet {
-    authenticator: Arc<BasicAuthenticator<StdRng>>,
     data_store: Arc<FaucetDataStore>,
     id: FaucetId,
     // Previous faucet account states used to perform rollbacks if a desync is detected.
     prior_state: VecDeque<Account>,
+    tx_prover: Arc<FaucetProver>,
+    tx_executor: Rc<TransactionExecutor>,
+    account_interface: AccountInterface,
 }
 
 impl Faucet {
@@ -111,6 +162,7 @@ impl Faucet {
     pub async fn load(
         account_file: AccountFile,
         rpc_client: &mut RpcClient,
+        remote_tx_prover_url: Option<Url>,
     ) -> anyhow::Result<Self> {
         let id = account_file.account.id();
         let id = FaucetId(id);
@@ -158,6 +210,8 @@ impl Faucet {
         )
         .expect("Empty ChainMmr should be valid");
 
+        let account_interface = AccountInterface::from(&account);
+
         let data_store = Arc::new(FaucetDataStore::new(
             account,
             account_file.account_seed,
@@ -174,11 +228,21 @@ impl Faucet {
             account_file.auth_secret_key,
         )]));
 
+        let tx_prover = match remote_tx_prover_url {
+            Some(url) => Arc::new(FaucetProver::remote(url)),
+            None => Arc::new(FaucetProver::local()),
+        };
+
+        let tx_executor =
+            Rc::new(TransactionExecutor::new(data_store.clone(), Some(authenticator.clone())));
+
         Ok(Self {
-            authenticator,
             data_store,
             id,
             prior_state: VecDeque::new(),
+            tx_prover,
+            tx_executor,
+            account_interface,
         })
     }
 
@@ -187,24 +251,36 @@ impl Faucet {
     pub async fn run(
         mut self,
         mut rpc_client: RpcClient,
-        mut requests: mpsc::Receiver<(MintRequest, oneshot::Sender<(BlockNumber, Note)>)>,
+        mut requests: mpsc::Receiver<(MintRequest, Sender<(BlockNumber, Note)>)>,
     ) -> anyhow::Result<()> {
         let coin_seed: [u64; 4] = random();
-        let rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
+        let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
 
-        while let Some((request, response_sender)) = requests.recv().await {
-            // Skip doing work if the user no longer cares about the result.
-            if response_sender.is_closed() {
-                tracing::info!(request.account_id=%request.account_id, "request cancelled");
-                continue;
-            }
+        let mut buffer = Vec::new();
+        let limit = 100; // we could include 256 notes per tx, but requests channel is limited to 100 atm
 
-            match self.handle_request(request, rng, &mut rpc_client).await {
+        while requests.recv_many(&mut buffer, limit).await > 0 {
+            // Skip requests where the user no longer cares about the result.
+            let (requests, response_senders): (Vec<MintRequest>, Vec<Sender<(BlockNumber, Note)>>) = buffer
+                .drain(..)
+                .filter(|(request, response_sender)| {
+                    if response_sender.is_closed() {
+                        tracing::info!(request.account_id=%request.account_id, "request cancelled");
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .unzip();
+
+            match self.handle_request_batch(&requests, &mut rng, &mut rpc_client).await {
                 // Update local state on success.
-                Ok((delta, block_number, note)) => {
-                    // We ignore the channel closure here as the user may have cancelled the
-                    // request.
-                    let _ = response_sender.send((block_number, note));
+                Ok((delta, block_number, notes)) => {
+                    for (note, response_sender) in notes.iter().zip(response_senders) {
+                        // We ignore the channel closure here as the user may have cancelled the
+                        // request.
+                        let _ = response_sender.send((block_number, note.clone()));
+                    }
                     // SAFETY: Delta must be valid since it comes from a tx accepted by the node.
                     self.update_state(&delta).unwrap();
                 },
@@ -292,40 +368,47 @@ impl Faucet {
         Ok(())
     }
 
-    /// Fully handles a single request _without_ changing local state.
+    /// Fully handles a batch of requests _without_ changing local state.
     ///
     /// Caller should update the local state based on the returned result.
-    async fn handle_request(
+    async fn handle_request_batch(
         &self,
-        request: MintRequest,
-        rng: impl FeltRng,
+        requests: &[MintRequest],
+        rng: &mut impl FeltRng,
         rpc_client: &mut RpcClient,
-    ) -> MintResult<(AccountDelta, BlockNumber, Note)> {
-        // Generate the payment note and compile it into our transaction arguments.
-        let p2id_note = P2IdNote::build(self.faucet_id(), &request, rng)?;
-        let tx_args = p2id_note.compile()?;
+    ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>)> {
+        let notes = P2IdNotes::build(self.faucet_id(), requests, rng).into_inner();
+        let tx_args = self.compile(&notes)?;
+        let executed_transaction = self.execute_transaction(tx_args).await?;
+        let account_delta = executed_transaction.account_delta().clone();
+        let tx = self.tx_prover.as_ref().prove(executed_transaction).await?;
+        let block_height = self.submit_transaction(tx.clone(), rpc_client).await?;
 
-        let tx = self.execute_transaction(tx_args)?;
-        let account_delta = tx.account_delta().clone();
-
-        let tx = Self::prove_transaction(tx)?;
-        let block_height = self.submit_transaction(tx, rpc_client).await?;
-
-        Ok((account_delta, block_height, p2id_note.into_inner()))
+        Ok((account_delta, block_height, notes))
     }
 
-    fn execute_transaction(&self, tx_args: TransactionArgs) -> MintResult<ExecutedTransaction> {
-        // TODO: Is this cheap? Do we need to carry this around with us, or can we just construct
-        //       when needed?
-        TransactionExecutor::new(self.data_store.clone(), Some(self.authenticator.clone()))
+    /// Compiles the transaction script that creates the given set of notes.
+    fn compile(&self, notes: &[Note]) -> MintResult<TransactionArgs> {
+        let partial_notes = notes.iter().map(Into::into).collect::<Vec<_>>();
+        let script = self
+            .account_interface
+            .build_send_notes_script(&partial_notes, None, false)
+            .map_err(MintError::ScriptCompilation)?;
+
+        let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
+        transaction_args.extend_output_note_recipients(notes);
+
+        Ok(transaction_args)
+    }
+
+    async fn execute_transaction(
+        &self,
+        tx_args: TransactionArgs,
+    ) -> MintResult<ExecutedTransaction> {
+        self.tx_executor
             .execute_transaction(self.id.inner(), BlockNumber::GENESIS, &[], tx_args)
+            .await
             .map_err(MintError::Execution)
-    }
-
-    fn prove_transaction(tx: ExecutedTransaction) -> MintResult<ProvenTransaction> {
-        LocalTransactionProver::new(ProvingOptions::default())
-            .prove(tx.into())
-            .map_err(MintError::Proving)
     }
 
     async fn submit_transaction(
@@ -362,70 +445,49 @@ fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
         .map(Into::into)
 }
 
-struct P2IdNote(Note);
+struct P2IdNotes(Vec<Note>);
 
-impl P2IdNote {
-    fn build(source: FaucetId, request: &MintRequest, mut rng: impl FeltRng) -> MintResult<Self> {
-        // SAFETY: source is definitely a faucet account, and the amount is valid.
-        let asset = FungibleAsset::new(source.inner(), request.asset_amount.inner()).unwrap();
-
-        create_p2id_note(
-            source.inner(),
-            request.account_id,
-            vec![asset.into()],
-            request.note_type.into(),
-            Felt::default(),
-            &mut rng,
-        )
-        .map_err(MintError::BuildingP2IdNote)
-        .map(Self)
-    }
-
-    fn compile(&self) -> MintResult<TransactionArgs> {
-        let note = &self.0;
-        let recipient = note
-            .recipient()
-            .digest()
+impl P2IdNotes {
+    fn build(source: FaucetId, requests: &[MintRequest], rng: &mut impl FeltRng) -> Self {
+        Self(requests
             .iter()
-            .map(|x| x.as_int().to_string())
-            .collect::<Vec<_>>()
-            .join(".");
-
-        // SAFETY: Its a P2Id note with a single fungible asset by construction.
-        let asset = note.assets().iter().next().unwrap().unwrap_fungible();
-        let note_type = note.metadata().note_type();
-        let tag = note.metadata().tag().inner();
-        let aux = note.metadata().aux().inner();
-        let execution_hint = note.metadata().execution_hint().into();
-
-        let script = &DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT
-            .replace("{recipient}", &recipient)
-            .replace("{note_type}", &Felt::new(note_type as u64).to_string())
-            .replace("{aux}", &Felt::new(aux).to_string())
-            .replace("{tag}", &Felt::new(tag.into()).to_string())
-            .replace("{amount}", &Felt::new(asset.amount()).to_string())
-            .replace("{execution_hint}", &Felt::new(execution_hint).to_string());
-
-        // SAFETY: This is a basic p2id note so this should always succeed.
-        let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
-            .map_err(MintError::ScriptCompilation)?;
-
-        let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
-        transaction_args.extend_output_note_recipients(vec![note]);
-
-        Ok(transaction_args)
+            .filter_map(|request| {
+                // SAFETY: source is definitely a faucet account, and the amount is valid.
+                let asset = FungibleAsset::new(source.inner(), request.asset_amount.inner()).unwrap();
+                create_p2id_note(
+                    source.inner(),
+                    request.account_id,
+                    vec![asset.into()],
+                    request.note_type.into(),
+                    Felt::default(),
+                    rng,
+                ).inspect_err(|err| tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note")).ok()
+            }).collect())
     }
 
-    fn into_inner(self) -> Note {
+    fn into_inner(self) -> Vec<Note> {
         self.0
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{str::FromStr, sync::Mutex};
+
+    use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
     use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
+    use miden_node_utils::crypto::get_rpo_random_coin;
+    use miden_objects::{
+        account::{AccountIdVersion, AccountStorageMode, AccountType},
+        asset::TokenSymbol,
+        crypto::dsa::rpo_falcon512::SecretKey,
+    };
+    use rand::{Rng, SeedableRng};
+    use rand_chacha::ChaCha20Rng;
+    use url::Url;
 
     use super::*;
+    use crate::{stub_rpc_api::serve_stub, types::AssetOptions};
 
     /// This test ensures that the we are able to parse account mismatch errors
     /// provided by the block-producer.
@@ -447,5 +509,66 @@ mod tests {
         let result = parse_desync_error(dbg!(err.message())).unwrap();
 
         assert_eq!(result, actual);
+    }
+
+    // This test ensures that the faucet can create a transaction that outputs a batch of notes.
+    #[tokio::test]
+    async fn faucet_batches_requests() {
+        let stub_node_url = Url::from_str("http://localhost:50052").unwrap();
+        let mut rpc_client = RpcClient::connect_lazy(&stub_node_url).unwrap();
+
+        // Start the stub node
+        tokio::spawn(async move { serve_stub(&stub_node_url).await.unwrap() });
+
+        // Create the faucet
+        let faucet = {
+            let genesis_header = rpc_client.get_genesis_header().await.unwrap();
+            let mut rng = ChaCha20Rng::from_seed(rand::random());
+            let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let (account, account_seed) = create_basic_fungible_faucet(
+                rng.random(),
+                (&genesis_header).try_into().unwrap(),
+                TokenSymbol::try_from("POL").unwrap(),
+                2,
+                Felt::from(1_000_000_u32),
+                AccountStorageMode::Public,
+                AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
+            )
+            .unwrap();
+            let account_file =
+                AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
+
+            Faucet::load(account_file, &mut rpc_client, None).await.unwrap()
+        };
+
+        // Create a set of mint requests
+        let num_requests = 5;
+        let requests = (0..num_requests)
+            .map(|i| {
+                let account_id = AccountId::dummy(
+                    [i; 15],
+                    AccountIdVersion::Version0,
+                    AccountType::RegularAccountImmutableCode,
+                    AccountStorageMode::Private,
+                );
+                MintRequest {
+                    account_id,
+                    asset_amount: AssetOptions::new(vec![100]).unwrap().validate(100).unwrap(),
+                    note_type: NoteType::Public,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let coin_seed: [u64; 4] = rand::rng().random();
+        let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
+        let mut rng = *rng.lock().unwrap();
+
+        // Build and execute the transaction
+        let notes = P2IdNotes::build(faucet.faucet_id(), &requests, &mut rng).into_inner();
+        let tx_args = faucet.compile(&notes).unwrap();
+        let executed_tx = faucet.execute_transaction(tx_args).await.unwrap();
+
+        assert_eq!(executed_tx.output_notes().num_notes(), num_requests as usize);
+        assert_eq!(notes.len(), num_requests as usize);
     }
 }

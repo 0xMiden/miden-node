@@ -6,7 +6,7 @@ use rand::{Rng, rng};
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
 
-use super::Server;
+use super::{Server, get_tokens::InvalidRequest};
 
 const DIFFICULTY: u64 = 5;
 const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
@@ -19,35 +19,40 @@ struct PoWResponse {
     timestamp: u64,
 }
 
-/// Generate a random hex string of specified length in bytes
-fn random_hex_string(num_bytes: usize) -> String {
+/// Get the server signature.
+///
+/// The server signature is the result of hashing the server salt, the seed, and the timestamp.
+pub(crate) fn get_server_signature(server_salt: &str, seed: &str, timestamp: u64) -> String {
+    let mut hasher = Sha3_256::new();
+    hasher.update(server_salt);
+    hasher.update(seed);
+    hasher.update(timestamp.to_string().as_bytes());
+    hasher.finalize().to_hex()
+}
+
+/// Generate a random hex string of specified length in nibbles.
+fn random_hex_string(num_nibbles: usize) -> String {
     // Generate random bytes
     let mut rng = rng();
-    let mut random_bytes = vec![0u8; num_bytes];
+    let mut random_bytes = vec![0u8; num_nibbles / 2];
     rng.fill(&mut random_bytes[..]);
 
     // Convert bytes to hex string
-    let hex_string =
-        random_bytes.iter().fold(String::new(), |acc, byte| format!("{acc}{byte:02x}"));
-
-    format!("0x{hex_string}")
+    random_bytes.iter().fold(String::new(), |acc, byte| format!("{acc}{byte:02x}"))
 }
 
 /// Get a seed to be used by a client as the `PoW` seed.
 ///
 /// The seed is a 64 character random hex string.
 pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoResponse {
-    let random_seed = random_hex_string(32);
-
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
-    let mut hasher = Sha3_256::new();
-    hasher.update(server.pow_salt);
-    hasher.update(&random_seed);
-    hasher.update(timestamp.to_string().as_bytes());
-    let server_signature = hasher.finalize().to_hex();
+
+    let random_seed = random_hex_string(32);
+
+    let server_signature = get_server_signature(&server.pow_salt, &random_seed, timestamp);
 
     Json(PoWResponse {
         seed: random_seed,
@@ -65,14 +70,14 @@ pub(crate) fn check_server_signature(
     server_signature: &str,
     seed: &str,
     timestamp: u64,
-) -> bool {
-    let mut hasher = Sha3_256::new();
-    hasher.update(server_salt);
-    hasher.update(seed);
-    hasher.update(timestamp.to_string().as_bytes());
-    let hash = &hasher.finalize().to_hex();
+) -> Result<(), InvalidRequest> {
+    let hash = get_server_signature(server_salt, seed, timestamp);
 
-    hash == server_signature
+    if hash != server_signature {
+        return Err(InvalidRequest::ServerSignaturesDoNotMatch);
+    }
+
+    Ok(())
 }
 
 /// Check a `PoW` solution.
@@ -84,25 +89,91 @@ pub(crate) fn check_server_signature(
 /// leading zeros.
 ///
 /// Returns `true` if the solution is valid, `false` otherwise.
-pub(crate) fn check_pow_solution(seed: &str, solution: u64) -> bool {
+pub(crate) fn check_pow_solution(seed: &str, solution: u64) -> Result<(), InvalidRequest> {
     let mut hasher = Sha3_256::new();
     hasher.update(seed);
     hasher.update(solution.to_string().as_bytes());
-    let hash = &hasher.finalize().to_hex()[2..];
+    let hash = &hasher.finalize().to_hex();
 
-    let leading_zeros = hash.chars().take(DIFFICULTY as usize).filter(|&c| c == '0').count();
-    leading_zeros >= DIFFICULTY as usize
+    let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
+    if leading_zeros < DIFFICULTY as usize {
+        return Err(InvalidRequest::InvalidPoW);
+    }
+
+    Ok(())
 }
 
 /// Check the received timestamp.
 ///
 /// The timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of the
 /// current time.
-pub(crate) fn check_server_timestamp(timestamp: u64) -> bool {
+pub(crate) fn check_server_timestamp(timestamp: u64) -> Result<(), InvalidRequest> {
     let server_timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")
         .as_secs();
 
-    (server_timestamp - timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+    if (server_timestamp - timestamp) > SERVER_TIMESTAMP_TOLERANCE_SECONDS {
+        return Err(InvalidRequest::ExpiredServerTimestamp(timestamp, server_timestamp));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use sha3::{Digest, Sha3_256};
+
+    use super::*;
+
+    fn find_pow_solution(seed: &str) -> u64 {
+        let mut solution = 0;
+        loop {
+            let mut hasher = Sha3_256::new();
+            hasher.update(seed);
+            hasher.update(solution.to_string().as_bytes());
+            let hash = &hasher.finalize().to_hex();
+            let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
+            if leading_zeros >= DIFFICULTY as usize {
+                return solution;
+            }
+
+            solution += 1;
+        }
+    }
+
+    #[test]
+    fn test_check_server_signature() {
+        let server_salt = "miden-faucet";
+        let seed = "0x1234567890abcdef";
+        let timestamp = 1_234_567_890;
+
+        let mut hasher = Sha3_256::new();
+        hasher.update(server_salt);
+        hasher.update(seed);
+        hasher.update(timestamp.to_string().as_bytes());
+        let server_signature = hasher.finalize().to_hex();
+
+        let result = check_server_signature(server_salt, &server_signature, seed, timestamp);
+        assert!(result.is_ok());
+
+        let solution = find_pow_solution(seed);
+        let result = check_pow_solution(seed, solution);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_check_server_signature_failure() {
+        let server_salt = "miden-faucet";
+        let seed = "0x1234567890abcdef";
+        let timestamp = 1_234_567_890;
+        let server_signature = "0x1234567890abcdef";
+
+        let result = check_server_signature(server_salt, server_signature, seed, timestamp);
+        assert!(result.is_err());
+
+        let solution = 1_234_567_890;
+        let result = check_pow_solution(seed, solution);
+        assert!(result.is_err());
+    }
 }

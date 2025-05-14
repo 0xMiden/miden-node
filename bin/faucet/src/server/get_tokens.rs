@@ -68,10 +68,12 @@ pub enum InvalidRequest {
     InvalidApiKey(String),
     #[error("invalid POW solution")]
     InvalidPoW,
-    #[error("invalid server signature")]
-    InvalidServerSignature,
-    #[error("server timestamp expired")]
-    ExpiredServerTimestamp,
+    #[error("POW parameters are missing")]
+    MissingPowParameters,
+    #[error("server signatures do not match")]
+    ServerSignaturesDoNotMatch,
+    #[error("server timestamp expired, received: {0}, current time: {1}")]
+    ExpiredServerTimestamp(u64, u64),
 }
 
 pub enum GetTokenError {
@@ -176,31 +178,24 @@ impl RawMintRequest {
         }
 
         let (server_timestamp, pow_seed, server_signature, pow_solution) = {
-            let pow_seed = self.pow_seed.ok_or(InvalidRequest::InvalidPoW)?;
+            let pow_seed = self.pow_seed.ok_or(InvalidRequest::MissingPowParameters)?;
             let server_signature =
-                self.server_signature.ok_or(InvalidRequest::InvalidServerSignature)?;
+                self.server_signature.ok_or(InvalidRequest::MissingPowParameters)?;
             let server_timestamp =
-                self.server_timestamp.ok_or(InvalidRequest::ExpiredServerTimestamp)?;
-            let pow_solution = self.pow_solution.ok_or(InvalidRequest::InvalidPoW)?;
+                self.server_timestamp.ok_or(InvalidRequest::MissingPowParameters)?;
+            let pow_solution = self.pow_solution.ok_or(InvalidRequest::MissingPowParameters)?;
 
             (server_timestamp, pow_seed, server_signature, pow_solution)
         };
 
         // Check the server timestamp
-        if !check_server_timestamp(server_timestamp) {
-            return Err(InvalidRequest::ExpiredServerTimestamp);
-        }
+        check_server_timestamp(server_timestamp)?;
 
         // Check the server signature
-        if !check_server_signature(pow_salt, &server_signature, &pow_seed, server_timestamp) {
-            error!("[get_tokens] invalid server signature");
-            return Err(InvalidRequest::InvalidServerSignature);
-        }
+        check_server_signature(pow_salt, &server_signature, &pow_seed, server_timestamp)?;
 
         // Check the PoW solution
-        if !check_pow_solution(&pow_seed, pow_solution) {
-            return Err(InvalidRequest::InvalidPoW);
-        }
+        check_pow_solution(&pow_seed, pow_solution)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

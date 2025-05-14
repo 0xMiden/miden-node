@@ -59,7 +59,7 @@ impl Default for FaucetConfig {
             asset_amount_options: AssetOptions::new(vec![100, 500, 1_000]).unwrap(),
             faucet_account_path: DEFAULT_FAUCET_ACCOUNT_PATH.into(),
             remote_tx_prover_url: None,
-            pow_salt: "miden-faucet".to_string(),
+            pow_salt: rand::random::<[u8; 32]>().into_iter().map(|b| b as char).collect(),
         }
     }
 }

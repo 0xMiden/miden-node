@@ -47,7 +47,7 @@ use crate::{
 
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
-const ENV_ENABLE_OTEL: &str = "MIDEN_NODE_ENABLE_OTEL"; // TODO(current pr): Should we consolidate this with bin/node/src/commands/mod.rs:14?
+const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 
 // COMMANDS
 // ================================================================================================

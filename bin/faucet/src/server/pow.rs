@@ -19,18 +19,26 @@ struct PoWResponse {
     timestamp: u64,
 }
 
-/// Generate a random hex string of specified length in bytes
-fn random_hex_string(num_bytes: usize) -> String {
+/// Get the server signature.
+///
+/// The server signature is the result of hashing the server salt, the seed, and the timestamp.
+pub(crate) fn get_server_signature(server_salt: &str, seed: &str, timestamp: u64) -> String {
+    let mut hasher = Sha3_256::new();
+    hasher.update(server_salt);
+    hasher.update(seed);
+    hasher.update(timestamp.to_string().as_bytes());
+    hasher.finalize().to_hex()
+}
+
+/// Generate a random hex string of specified length in nibbles.
+fn random_hex_string(num_nibbles: usize) -> String {
     // Generate random bytes
     let mut rng = rng();
-    let mut random_bytes = vec![0u8; num_bytes];
+    let mut random_bytes = vec![0u8; num_nibbles / 2];
     rng.fill(&mut random_bytes[..]);
 
     // Convert bytes to hex string
-    let hex_string =
-        random_bytes.iter().fold(String::new(), |acc, byte| format!("{acc}{byte:02x}"));
-
-    format!("0x{hex_string}")
+    random_bytes.iter().fold(String::new(), |acc, byte| format!("{acc}{byte:02x}"))
 }
 
 /// Get a seed to be used by a client as the `PoW` seed.
@@ -44,11 +52,7 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
 
     let random_seed = random_hex_string(32);
 
-    let mut hasher = Sha3_256::new();
-    hasher.update(server.pow_salt);
-    hasher.update(&random_seed);
-    hasher.update(timestamp.to_string().as_bytes());
-    let server_signature = hasher.finalize().to_hex();
+    let server_signature = get_server_signature(&server.pow_salt, &random_seed, timestamp);
 
     Json(PoWResponse {
         seed: random_seed,
@@ -67,11 +71,7 @@ pub(crate) fn check_server_signature(
     seed: &str,
     timestamp: u64,
 ) -> Result<(), InvalidRequest> {
-    let mut hasher = Sha3_256::new();
-    hasher.update(server_salt);
-    hasher.update(seed);
-    hasher.update(timestamp.to_string().as_bytes());
-    let hash = &hasher.finalize().to_hex();
+    let hash = get_server_signature(server_salt, seed, timestamp);
 
     if hash != server_signature {
         return Err(InvalidRequest::ServerSignaturesDoNotMatch);

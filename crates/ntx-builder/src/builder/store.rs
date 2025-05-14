@@ -4,24 +4,21 @@ use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         requests::{
-            GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, GetMmrPeaksRequest,
+            GetAccountDetailsRequest, GetBlockHeaderByNumberRequest,
             GetUnconsumedNetworkNotesRequest,
         },
-        responses::GetMmrPeaksResponse,
         store::api_client as store_client,
     },
-    try_convert,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::{Account, AccountId},
-    block::{BlockHeader, BlockNumber},
-    crypto::merkle::MmrPeaks,
+    block::BlockHeader,
     note::Note,
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
-use tonic::{service::interceptor::InterceptedService, transport::Channel, Response};
+use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{info, instrument};
 
 use crate::COMPONENT;
@@ -68,22 +65,6 @@ impl StoreClient {
             ))?;
 
         BlockHeader::try_from(response).map_err(Into::into)
-    }
-
-    #[instrument(target = COMPONENT, name = "store.client.get_mmr_peaks", skip_all, err)]
-    pub async fn get_mmr_peaks(&self, block_num: BlockNumber) -> Result<MmrPeaks, StoreError> {
-        let request =
-            tonic::Request::new(GetMmrPeaksRequest { block_num: Some(block_num.as_u32()) });
-
-        let response: Response<GetMmrPeaksResponse> =
-            self.inner.clone().get_mmr_peaks(request).await?;
-        let peaks = try_convert(response.into_inner().peaks)?;
-
-        MmrPeaks::new(block_num.as_usize() + 1, peaks).map_err(|_| {
-            StoreError::MalformedResponse(
-                "returned peaks are not valid for the requested block number".into(),
-            )
-        })
     }
 
     /// Returns the latest block's header from the store.

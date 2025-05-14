@@ -133,12 +133,6 @@ message GetNotesByIdRequest {
     repeated digest.Digest note_ids = 1;
 }
 
-// Returns peaks for the given block number, or the chain tip if a block number not provided.
-message GetMmrPeaksRequest {
-    // Block number for the MMR.
-    optional fixed32 block_num = 2;
-}
-
 // Returns the latest state of an account with the specified ID.
 message GetAccountDetailsRequest {
     // Account ID to get details.

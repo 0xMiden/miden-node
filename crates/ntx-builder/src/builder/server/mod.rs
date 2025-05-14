@@ -11,8 +11,8 @@ use miden_node_proto::{
     try_convert,
 };
 use miden_objects::{
-    note::{Note, Nullifier},
     Digest,
+    note::{Note, Nullifier},
 };
 use state::NtxBuilderState;
 use tonic::{Request, Response, Status};

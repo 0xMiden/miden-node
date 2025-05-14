@@ -46,9 +46,6 @@ service Api {
     // Returns a list of notes matching the provided note IDs.
     rpc GetNotesById(requests.GetNotesByIdRequest) returns (responses.GetNotesByIdResponse) {}
 
-    // TODO
-    rpc GetMmrPeaks(requests.GetMmrPeaksRequest) returns (responses.GetMmrPeaksResponse) {}
-
     // Returns data required to validate a new transaction.
     rpc GetTransactionInputs(requests.GetTransactionInputsRequest) returns (responses.GetTransactionInputsResponse) {}
 

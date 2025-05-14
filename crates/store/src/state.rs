@@ -27,7 +27,7 @@ use miden_objects::{
     },
     crypto::{
         hash::rpo::RpoDigest,
-        merkle::{Mmr, MmrDelta, MmrError, MmrPeaks, MmrProof, PartialMmr, SmtProof},
+        merkle::{Mmr, MmrDelta, MmrProof, PartialMmr, SmtProof},
     },
     note::{NoteDetails, NoteId, Nullifier},
     transaction::{OutputNote, PartialBlockchain},
@@ -417,20 +417,6 @@ impl State {
         note_ids: Vec<NoteId>,
     ) -> Result<Vec<NoteRecord>, DatabaseError> {
         self.db.select_notes_by_id(note_ids).await
-    }
-
-    /// TODO
-    pub async fn get_mmr_peaks(
-        &self,
-        block_num: Option<BlockNumber>,
-    ) -> Result<MmrPeaks, MmrError> {
-        let peaks = if let Some(number) = block_num {
-            self.inner.read().await.blockchain.peaks_at(number)?
-        } else {
-            self.inner.read().await.blockchain.peaks()
-        };
-
-        Ok(peaks)
     }
 
     /// Fetches the inputs for a transaction batch from the database.

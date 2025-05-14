@@ -192,10 +192,6 @@ message GetNotesByIdResponse {
     repeated note.Note notes = 1;
 }
 
-message GetMmrPeaksResponse {
-    repeated digest.Digest peaks = 1;
-}
-
 // Represents the result of getting account details.
 message GetAccountDetailsResponse {
     // Account info (with details for public accounts).

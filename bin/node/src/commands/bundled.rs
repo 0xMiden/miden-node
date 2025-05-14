@@ -171,7 +171,7 @@ impl BundledCommand {
             .spawn(async move {
                 NetworkTransactionBuilder {
                     address: ntx_builder_address,
-                    store_address: store_address.clone(),
+                    store_address,
                 }
                 .serve()
                 .await

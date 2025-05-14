@@ -41,8 +41,6 @@ pub struct Note {
     #[prost(message, optional, tag = "5")]
     pub merkle_path: ::core::option::Option<super::merkle::MerklePath>,
     /// Serialized details of the public note (empty for private notes).
-    ///
-    /// TODO: This contains redundant data (metadata, ID)
     #[prost(bytes = "vec", optional, tag = "6")]
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }

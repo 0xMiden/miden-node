@@ -198,11 +198,6 @@ pub struct GetNotesByIdResponse {
     #[prost(message, repeated, tag = "1")]
     pub notes: ::prost::alloc::vec::Vec<super::note::Note>,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetMmrPeaksResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub peaks: ::prost::alloc::vec::Vec<super::digest::Digest>,
-}
 /// Represents the result of getting account details.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetAccountDetailsResponse {

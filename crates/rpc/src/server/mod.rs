@@ -138,7 +138,7 @@ mod test {
             });
             let url = rpc_addr.to_string();
             let url = Url::parse(&url).unwrap();
-            miden_node_proto::connect(url, 10000).await.unwrap()
+            miden_node_proto::connect(&url, 10000).await.unwrap()
         };
 
         let request = GetBlockHeaderByNumberRequest {
@@ -185,7 +185,7 @@ mod test {
             });
             let url = rpc_addr.to_string();
             let url = Url::parse(&url).unwrap();
-            miden_node_proto::connect(url, 10000).await.unwrap()
+            miden_node_proto::connect(&url, 10000).await.unwrap()
         };
 
         // test: requests against RPC api should fail immediately

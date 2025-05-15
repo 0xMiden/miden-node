@@ -74,6 +74,52 @@ mod test {
     }
 
     #[tokio::test]
+    async fn rpc_server_rejects_requests_without_accept_header() {
+        // TODO(current pr): DRY this setup
+        let store_addr = {
+            let store_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
+            store_listener.local_addr().expect("store should get a local address")
+        };
+        let block_producer_addr = {
+            let block_producer_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
+            block_producer_listener
+                .local_addr()
+                .expect("Failed to get block-producer address")
+        };
+        // start the rpc component
+        let mut rpc_client = {
+            let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
+            let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
+            task::spawn(async move {
+                Rpc {
+                    listener: rpc_listener,
+                    store: store_addr,
+                    block_producer: Some(block_producer_addr),
+                }
+                .serve()
+                .await
+                .expect("Failed to start serving store");
+            });
+            let rpc_endpoint = Endpoint::try_from(format!("http://{rpc_addr}"))
+                .expect("Failed to create rpc endpoint");
+
+            rpc_client::ApiClient::connect(rpc_endpoint)
+                .await
+                .expect("Failed to create rpc client")
+        };
+
+        let response = send_request(&mut rpc_client, 0).await;
+        assert!(response.is_err());
+        assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
+        assert_eq!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
+
+        // TODO(current pr): Add interceptor and test again.
+        //let rpc_client = rpc_client::ApiClient::with_interceptor(inner, interceptor)
+    }
+
+    #[tokio::test]
     async fn rpc_startup_is_robust_to_network_failures() {
         // This test starts the store and RPC components and verifies that they successfully
         // connect to each other on startup and that they reconnect after the store is restarted.

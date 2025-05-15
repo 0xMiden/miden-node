@@ -12,11 +12,8 @@
 - Enabled running RPC component in `read-only` mode (#802).
 - [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
 - Added gRPC `/status` endpoint on all components (#817).
-<<<<<<< HEAD
 - Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
-=======
-- [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against clients connections (#844).
->>>>>>> 8e7e747 (Update changelog)
+- [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
 
 ## v0.8.0 (2025-03-26)
 

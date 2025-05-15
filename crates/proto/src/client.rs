@@ -9,14 +9,13 @@ use tonic::{
 };
 use url::Url;
 
+pub type RpcClient = ApiClient<InterceptedService<Channel, AcceptHeaderInterceptor>>;
+
 /// Connects to the Miden node API using the provided URL and timeout.
 ///
 /// The client is configured with an interceptor that sets the HTTP ACCEPT header
 /// to the version of the Miden node.
-pub async fn connect(
-    url: Url,
-    timeout_ms: u64,
-) -> anyhow::Result<ApiClient<InterceptedService<Channel, AcceptHeaderInterceptor>>> {
+pub async fn connect(url: &Url, timeout_ms: u64) -> anyhow::Result<RpcClient> {
     // Setup connection channel.
     let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
         .context("Failed to parse node URL")?

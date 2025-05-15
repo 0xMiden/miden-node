@@ -51,8 +51,7 @@ impl Rpc {
 #[cfg(test)]
 mod test {
     use miden_node_proto::generated::{
-        requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
-        rpc::api_client as rpc_client,
+        requests::GetBlockHeaderByNumberRequest, rpc::api_client as rpc_client,
     };
     use miden_node_store::{GenesisState, Store};
     use tokio::{net::TcpListener, runtime, task};

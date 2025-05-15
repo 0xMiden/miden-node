@@ -1,24 +1,18 @@
-use std::{
-    net::SocketAddr,
-    task::{Context as StdContext, Poll},
-};
+use std::net::SocketAddr;
 
 use anyhow::Context;
-use futures::{FutureExt, future::BoxFuture};
-use http::header::ACCEPT;
 use miden_node_proto::generated::rpc::api_server;
 use miden_node_utils::tracing::grpc::rpc_trace_fn;
-use std::future::ready;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
-use tonic::body::BoxBody;
-use tower::{Layer, Service};
 use tower_http::trace::TraceLayer;
-use tracing::{debug, info};
+use tracing::info;
+use version::VersionLayer;
 
 use crate::COMPONENT;
 
 mod api;
+mod version;
 
 /// The RPC server component.
 ///
@@ -45,7 +39,7 @@ impl Rpc {
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
-            .layer(AuthLayer::new())
+            .layer(VersionLayer::new())
             // Enables gRPC-web support.
             .add_service(tonic_web::enable(api_service))
             .serve_with_incoming(TcpListenerStream::new(self.listener))
@@ -53,135 +47,6 @@ impl Rpc {
             .context("failed to serve RPC API")
     }
 }
-
-#[derive(Clone)]
-pub struct AuthLayer {}
-
-impl AuthLayer {
-    pub fn new() -> Self {
-        AuthLayer {}
-    }
-}
-
-impl<S> Layer<S> for AuthLayer {
-    type Service = AuthService<S>;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        AuthService { inner }
-    }
-}
-
-#[derive(Clone)]
-pub struct AuthService<S> {
-    inner: S,
-}
-
-impl<S> Service<http::Request<BoxBody>> for AuthService<S>
-where
-    S: Service<http::Request<BoxBody>, Response = http::Response<BoxBody>> + Clone + Send + 'static,
-    S::Error: Send + 'static,
-    S::Future: Send + 'static,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, cx: &mut StdContext<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, request: http::Request<BoxBody>) -> Self::Future {
-        // Check if ACCEPT header exists.
-        if !request.headers().contains_key(ACCEPT) {
-            debug!(target: COMPONENT, "Request missing ACCEPT header");
-
-            // Create a response without calling the inner service
-            let response = http::Response::builder()
-                .status(http::StatusCode::BAD_REQUEST)
-                .header("content-type", "application/grpc")
-                .header("grpc-status", "3") // INVALID_ARGUMENT
-                .header("grpc-message", "Missing required ACCEPT header")
-                .body(BoxBody::default())
-                .unwrap();
-
-            // Return a future that resolves immediately to this response
-            return futures::future::ready(Ok(response)).boxed();
-        }
-
-        // Otherwise proceed with normal operation
-        let clone = self.inner.clone();
-        let mut inner = std::mem::replace(&mut self.inner, clone);
-
-        inner.call(request).boxed()
-    }
-}
-
-/// Layer that checks for the existence of ACCEPT header in all incoming requests.
-//#[derive(Clone)]
-//struct AcceptHeaderCheckLayer;
-//
-//impl AcceptHeaderCheckLayer {
-//    fn new() -> Self {
-//        Self
-//    }
-//}
-//
-//impl<S> Layer<S> for AcceptHeaderCheckLayer {
-//    type Service = AcceptHeaderCheckService<S>;
-//
-//    fn layer(&self, service: S) -> Self::Service {
-//        AcceptHeaderCheckService { inner: service }
-//    }
-//}
-//
-///// Service that checks for the existence of ACCEPT header in all incoming requests
-//#[derive(Clone)]
-//struct AcceptHeaderCheckService<S> {
-//    inner: S,
-//}
-//
-////impl<T, B> tonic::codegen::Service<http::Request<B>> for ApiServer<T>
-////where
-////    T: Api,
-////    B: Body + std::marker::Send + 'static,
-////    B::Error: Into<StdError> + std::marker::Send + 'static,
-//impl<S, B> Service<http::Request<B>> for AcceptHeaderCheckService<S>
-//where
-//    S: Service<http::Request<B>> + Clone + Send + 'static,
-//    S::Future: Send + 'static,
-//    B: Send + Clone + 'static,
-//{
-//    type Response = http::Response<BoxBody>;
-//    type Error = S::Error;
-//    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
-//
-//    fn poll_ready(&mut self, cx: &mut StdContext<'_>) -> Poll<Result<(), Self::Error>> {
-//        self.inner.poll_ready(cx)
-//    }
-//
-//    fn call(&mut self, request: http::Request<B>) -> Self::Future {
-//        let clone = self.inner.clone();
-//        let mut inner = std::mem::replace(&mut self.inner, clone);
-//
-//        Box::pin(async move {
-//            // Check if ACCEPT header exists
-//            if !request.headers().contains_key(ACCEPT) {
-//                debug!(target: COMPONENT, "Request missing ACCEPT header");
-//                let response = http::Response::builder()
-//                    .status(http::StatusCode::BAD_REQUEST)
-//                    .header("content-type", "application/grpc")
-//                    .header("grpc-status", "3") // INVALID_ARGUMENT
-//                    .header("grpc-message", "Missing required ACCEPT header")
-//                    .body(BoxBody::default())
-//                    .unwrap();
-//                return Ok(response);
-//            }
-//
-//            // Forward the request to the inner service
-//            inner.call(request).await
-//        })
-//    }
-//}
 
 #[cfg(test)]
 mod test {

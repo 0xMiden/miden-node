@@ -1,3 +1,4 @@
+mod client;
 pub mod domain;
 pub mod errors;
 
@@ -7,6 +8,7 @@ pub mod generated;
 // RE-EXPORTS
 // ================================================================================================
 
+pub use client::connect;
 pub use domain::{
     account::{AccountState, AccountWitnessRecord},
     convert,

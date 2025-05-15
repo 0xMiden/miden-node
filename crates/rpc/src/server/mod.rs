@@ -55,7 +55,8 @@ mod test {
     };
     use miden_node_store::{GenesisState, Store};
     use tokio::{net::TcpListener, runtime, task};
-    use tonic::{metadata::AsciiMetadataValue, service::Interceptor, transport::Endpoint};
+    use tonic::transport::Endpoint;
+    use url::Url;
 
     use crate::Rpc;
 
@@ -135,15 +136,9 @@ mod test {
                 .await
                 .expect("Failed to start serving store");
             });
-            let channel = Endpoint::try_from(format!("http://{rpc_addr}"))
-                .expect("Failed to create rpc endpoint")
-                .connect()
-                .await
-                .unwrap();
-            let version = env!("CARGO_PKG_VERSION");
-            let accept_value = format!("application/vnd.miden.{version}+grpc");
-            let interceptor = AcceptHeaderInterceptor::new(accept_value);
-            rpc_client::ApiClient::with_interceptor(channel, interceptor)
+            let url = rpc_addr.to_string();
+            let url = Url::parse(&url).unwrap();
+            miden_node_proto::connect(url, 10000).await.unwrap()
         };
 
         let request = GetBlockHeaderByNumberRequest {
@@ -154,28 +149,6 @@ mod test {
         assert!(response.is_err());
         assert_ne!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
         assert_ne!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
-    }
-
-    // TODO(current pr): move from here and tidy up
-    struct AcceptHeaderInterceptor {
-        value: String,
-    }
-    impl AcceptHeaderInterceptor {
-        fn new(value: String) -> Self {
-            Self { value }
-        }
-    }
-    impl Interceptor for AcceptHeaderInterceptor {
-        fn call(
-            &mut self,
-            request: tonic::Request<()>,
-        ) -> Result<tonic::Request<()>, tonic::Status> {
-            let mut request = request;
-            request
-                .metadata_mut()
-                .insert("accept", AsciiMetadataValue::try_from(self.value.clone()).unwrap());
-            Ok(request)
-        }
     }
 
     #[tokio::test]
@@ -210,15 +183,9 @@ mod test {
                 .await
                 .expect("Failed to start serving store");
             });
-            let channel = Endpoint::try_from(format!("http://{rpc_addr}"))
-                .expect("Failed to create rpc endpoint")
-                .connect()
-                .await
-                .unwrap();
-            let version = env!("CARGO_PKG_VERSION");
-            let accept_value = format!("application/vnd.miden.{version}+grpc");
-            let interceptor = AcceptHeaderInterceptor::new(accept_value);
-            rpc_client::ApiClient::with_interceptor(channel, interceptor)
+            let url = rpc_addr.to_string();
+            let url = Url::parse(&url).unwrap();
+            miden_node_proto::connect(url, 10000).await.unwrap()
         };
 
         // test: requests against RPC api should fail immediately

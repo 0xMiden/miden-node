@@ -6,7 +6,7 @@ use miden_lib::{
     note::create_p2id_note,
 };
 use miden_objects::{
-    AccountError, Digest, Felt,
+    AccountError, Digest, Felt, TransactionInputError,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
     asset::FungibleAsset,
     block::BlockNumber,
@@ -16,7 +16,8 @@ use miden_objects::{
     },
     note::Note,
     transaction::{
-        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionWitness,
+        ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction, TransactionArgs,
+        TransactionWitness,
     },
     vm::AdviceMap,
 };
@@ -143,6 +144,8 @@ pub enum MintError {
     Proving(#[source] TransactionProverError),
     #[error("submitting the tx to the node failed")]
     Submission(#[source] RpcError),
+    #[error("transaction input error")]
+    TransactionInput(#[source] TransactionInputError),
 }
 
 /// Stores the current faucet state and handles minting requests.
@@ -201,14 +204,14 @@ impl Faucet {
             .await
             .context("fetching genesis header from the node")?;
 
-        // SAFETY: An empty chain MMR should be valid.
-        let genesis_chain_mmr = ChainMmr::new(
+        // SAFETY: An empty partial blockchain should be valid.
+        let genesis_partial_blockchain = PartialBlockchain::new(
             PartialMmr::from_peaks(
                 MmrPeaks::new(0, Vec::new()).expect("Empty MmrPeak should be valid"),
             ),
             Vec::new(),
         )
-        .expect("Empty ChainMmr should be valid");
+        .expect("Empty PartialBlockchain should be valid");
 
         let account_interface = AccountInterface::from(&account);
 
@@ -216,7 +219,7 @@ impl Faucet {
             account,
             account_file.account_seed,
             genesis_header,
-            genesis_chain_mmr,
+            genesis_partial_blockchain,
         ));
 
         let public_key = match &account_file.auth_secret_key {
@@ -395,7 +398,8 @@ impl Faucet {
             .build_send_notes_script(&partial_notes, None, false)
             .map_err(MintError::ScriptCompilation)?;
 
-        let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
+        let mut transaction_args =
+            TransactionArgs::new(Some(script), None, AdviceMap::new(), vec![]);
         transaction_args.extend_output_note_recipients(notes);
 
         Ok(transaction_args)
@@ -405,8 +409,9 @@ impl Faucet {
         &self,
         tx_args: TransactionArgs,
     ) -> MintResult<ExecutedTransaction> {
+        let input_notes = InputNotes::new(vec![]).map_err(MintError::TransactionInput)?;
         self.tx_executor
-            .execute_transaction(self.id.inner(), BlockNumber::GENESIS, &[], tx_args)
+            .execute_transaction(self.id.inner(), BlockNumber::GENESIS, input_notes, tx_args)
             .await
             .map_err(MintError::Execution)
     }
@@ -478,7 +483,7 @@ mod tests {
     use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
     use miden_node_utils::crypto::get_rpo_random_coin;
     use miden_objects::{
-        account::{AccountIdVersion, AccountStorageMode, AccountType},
+        account::{AccountIdVersion, AccountStorageMode, AccountType, NetworkAccount},
         asset::TokenSymbol,
         crypto::dsa::rpo_falcon512::SecretKey,
     };
@@ -550,6 +555,7 @@ mod tests {
                     AccountIdVersion::Version0,
                     AccountType::RegularAccountImmutableCode,
                     AccountStorageMode::Private,
+                    NetworkAccount::Disabled,
                 );
                 MintRequest {
                     account_id,

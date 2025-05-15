@@ -51,57 +51,36 @@ impl Rpc {
 #[cfg(test)]
 mod test {
     use miden_node_proto::generated::{
-        requests::GetBlockHeaderByNumberRequest, rpc::api_client as rpc_client,
+        requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
+        rpc::api_client::ApiClient,
     };
     use miden_node_store::{GenesisState, Store};
     use tokio::{net::TcpListener, runtime, task};
-    use tonic::transport::Endpoint;
     use url::Url;
 
     use crate::Rpc;
 
     #[tokio::test]
     async fn rpc_server_rejects_requests_without_accept_header() {
-        // TODO(current pr): DRY this setup, tidy up
-        let store_addr = {
-            let store_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
-            store_listener.local_addr().expect("store should get a local address")
-        };
-        let block_producer_addr = {
-            let block_producer_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
-            block_producer_listener
-                .local_addr()
-                .expect("Failed to get block-producer address")
-        };
-        // start the rpc component
+        // Start the RPC.
+        let (_, rpc_addr, _) = start_rpc().await;
+
+        // Override the client so that the ACCEPT header is not set.
         let mut rpc_client = {
-            let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
-            let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
-            task::spawn(async move {
-                Rpc {
-                    listener: rpc_listener,
-                    store: store_addr,
-                    block_producer: Some(block_producer_addr),
-                }
-                .serve()
-                .await
-                .expect("Failed to start serving store");
-            });
-            let rpc_endpoint = Endpoint::try_from(format!("http://{rpc_addr}"))
-                .expect("Failed to create rpc endpoint");
+            let endpoint =
+                tonic::transport::Endpoint::try_from(format!("http://{rpc_addr}")).unwrap();
 
-            rpc_client::ApiClient::connect(rpc_endpoint)
-                .await
-                .expect("Failed to create rpc client")
+            ApiClient::connect(endpoint).await.unwrap()
         };
 
+        // Send any request to the RPC.
         let request = GetBlockHeaderByNumberRequest {
             block_num: Some(0),
             include_mmr_proof: None,
         };
         let response = rpc_client.get_block_header_by_number(request).await;
+
+        // Assert that the server rejected our request because of missing accept header.
         assert!(response.is_err());
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
         assert_eq!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
@@ -109,43 +88,13 @@ mod test {
 
     #[tokio::test]
     async fn rpc_server_accepts_requests_with_accept_header() {
-        // TODO(current pr): DRY this setup, tidy up
-        let store_addr = {
-            let store_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
-            store_listener.local_addr().expect("store should get a local address")
-        };
-        let block_producer_addr = {
-            let block_producer_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
-            block_producer_listener
-                .local_addr()
-                .expect("Failed to get block-producer address")
-        };
-        // start the rpc component
-        let mut rpc_client = {
-            let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
-            let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
-            task::spawn(async move {
-                Rpc {
-                    listener: rpc_listener,
-                    store: store_addr,
-                    block_producer: Some(block_producer_addr),
-                }
-                .serve()
-                .await
-                .expect("Failed to start serving store");
-            });
-            let url = rpc_addr.to_string();
-            let url = Url::parse(&url).unwrap();
-            miden_node_proto::connect(&url, 10000).await.unwrap()
-        };
+        // Start the RPC.
+        let (mut rpc_client, _, _) = start_rpc().await;
 
-        let request = GetBlockHeaderByNumberRequest {
-            block_num: Some(0),
-            include_mmr_proof: None,
-        };
-        let response = rpc_client.get_block_header_by_number(request).await;
+        // Send any request to the RPC.
+        let response = send_request(&mut rpc_client).await;
+
+        // Assert the server does not reject our request on the basis of missing accept header.
         assert!(response.is_err());
         assert_ne!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
         assert_ne!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
@@ -156,47 +105,14 @@ mod test {
         // This test starts the store and RPC components and verifies that they successfully
         // connect to each other on startup and that they reconnect after the store is restarted.
 
-        // get the addresses for the store and block producer
-        let store_addr = {
-            let store_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
-            store_listener.local_addr().expect("store should get a local address")
-        };
-        let block_producer_addr = {
-            let block_producer_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
-            block_producer_listener
-                .local_addr()
-                .expect("Failed to get block-producer address")
-        };
-        // start the rpc component
-        let mut rpc_client = {
-            let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
-            let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
-            task::spawn(async move {
-                Rpc {
-                    listener: rpc_listener,
-                    store: store_addr,
-                    block_producer: Some(block_producer_addr),
-                }
-                .serve()
-                .await
-                .expect("Failed to start serving store");
-            });
-            let url = rpc_addr.to_string();
-            let url = Url::parse(&url).unwrap();
-            miden_node_proto::connect(&url, 10000).await.unwrap()
-        };
+        // Start the RPC.
+        let (mut rpc_client, _, store_addr) = start_rpc().await;
 
-        // test: requests against RPC api should fail immediately
-        let request = GetBlockHeaderByNumberRequest {
-            block_num: Some(0),
-            include_mmr_proof: None,
-        };
-        let response = rpc_client.get_block_header_by_number(request).await;
+        // Test: requests against RPC api should fail immediately
+        let response = send_request(&mut rpc_client).await;
         assert!(response.is_err());
 
-        // start the store
+        // Start the store.
         let data_directory = tempfile::tempdir().expect("tempdir should be created");
         let store_runtime = {
             let genesis_state = GenesisState::new(vec![], 1, 1);
@@ -205,7 +121,7 @@ mod test {
             let dir = data_directory.path().to_path_buf();
             let store_listener =
                 TcpListener::bind(store_addr).await.expect("store should bind a port");
-            // in order to later kill the store, we need to spawn a new runtime and run the store on
+            // In order to later kill the store, we need to spawn a new runtime and run the store on
             // it. That allows us to kill all the tasks spawned by the store when we
             // kill the runtime.
             let store_runtime =
@@ -222,24 +138,16 @@ mod test {
             store_runtime
         };
 
-        // test: send request against RPC api and should succeed
-        let request = GetBlockHeaderByNumberRequest {
-            block_num: Some(0),
-            include_mmr_proof: None,
-        };
-        let response = rpc_client.get_block_header_by_number(request).await.unwrap();
-        assert!(response.into_inner().block_header.is_some());
+        // Test: send request against RPC api and should succeed
+        let response = send_request(&mut rpc_client).await;
+        assert!(response.unwrap().into_inner().block_header.is_some());
 
-        // test: shutdown the store and should fail
+        // Test: shutdown the store and should fail
         store_runtime.shutdown_background();
-        let request = GetBlockHeaderByNumberRequest {
-            block_num: Some(0),
-            include_mmr_proof: None,
-        };
-        let response = rpc_client.get_block_header_by_number(request).await;
+        let response = send_request(&mut rpc_client).await;
         assert!(response.is_err());
 
-        // test: restart the store and request should succeed
+        // Test: restart the store and request should succeed
         let listener = TcpListener::bind(store_addr).await.expect("Failed to bind store");
         task::spawn(async move {
             Store {
@@ -250,11 +158,55 @@ mod test {
             .await
             .expect("store should start serving");
         });
+        let response = send_request(&mut rpc_client).await;
+        assert_eq!(response.unwrap().into_inner().block_header.unwrap().block_num, 0);
+    }
+
+    /// Sends an arbitrary / irrelevant request to the RPC.
+    async fn send_request(
+        rpc_client: &mut miden_node_proto::RpcClient,
+    ) -> std::result::Result<tonic::Response<GetBlockHeaderByNumberResponse>, tonic::Status> {
         let request = GetBlockHeaderByNumberRequest {
             block_num: Some(0),
             include_mmr_proof: None,
         };
-        let response = rpc_client.get_block_header_by_number(request).await.unwrap();
-        assert_eq!(response.into_inner().block_header.unwrap().block_num, 0);
+        rpc_client.get_block_header_by_number(request).await
+    }
+
+    /// Binds a socket on an available port, runs the RPC server on it, and
+    /// returns a client to talk to the server, along with the socket address.
+    async fn start_rpc() -> (miden_node_proto::RpcClient, std::net::SocketAddr, std::net::SocketAddr)
+    {
+        let store_addr = {
+            let store_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
+            store_listener.local_addr().expect("store should get a local address")
+        };
+        let block_producer_addr = {
+            let block_producer_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
+            block_producer_listener
+                .local_addr()
+                .expect("Failed to get block-producer address")
+        };
+
+        // Start the rpc component.
+        let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
+        let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
+        task::spawn(async move {
+            Rpc {
+                listener: rpc_listener,
+                store: store_addr,
+                block_producer: Some(block_producer_addr),
+            }
+            .serve()
+            .await
+            .expect("Failed to start serving store");
+        });
+        let url = rpc_addr.to_string();
+        let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
+        let rpc_client = miden_node_proto::connect(&url, 10000).await.unwrap();
+
+        (rpc_client, rpc_addr, store_addr)
     }
 }

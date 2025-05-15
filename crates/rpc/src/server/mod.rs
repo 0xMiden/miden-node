@@ -60,19 +60,6 @@ mod test {
 
     use crate::Rpc;
 
-    /// Sends a `get_block_header_by_number` request to the RPC server with block number 0.
-    async fn send_request(
-        rpc_client: &mut rpc_client::ApiClient<tonic::transport::Channel>,
-        block_num: u32,
-    ) -> Result<tonic::Response<GetBlockHeaderByNumberResponse>, tonic::Status> {
-        let request = GetBlockHeaderByNumberRequest {
-            block_num: Some(block_num),
-            include_mmr_proof: None,
-        };
-
-        rpc_client.get_block_header_by_number(request).await
-    }
-
     #[tokio::test]
     async fn rpc_server_rejects_requests_without_accept_header() {
         // TODO(current pr): DRY this setup, tidy up
@@ -110,7 +97,11 @@ mod test {
                 .expect("Failed to create rpc client")
         };
 
-        let response = send_request(&mut rpc_client, 0).await;
+        let request = GetBlockHeaderByNumberRequest {
+            block_num: Some(0),
+            include_mmr_proof: None,
+        };
+        let response = rpc_client.get_block_header_by_number(request).await;
         assert!(response.is_err());
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
         assert_eq!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
@@ -220,16 +211,23 @@ mod test {
                 .await
                 .expect("Failed to start serving store");
             });
-            let rpc_endpoint = Endpoint::try_from(format!("http://{rpc_addr}"))
-                .expect("Failed to create rpc endpoint");
-
-            rpc_client::ApiClient::connect(rpc_endpoint)
+            let channel = Endpoint::try_from(format!("http://{rpc_addr}"))
+                .expect("Failed to create rpc endpoint")
+                .connect()
                 .await
-                .expect("Failed to create rpc client")
+                .unwrap();
+            let version = env!("CARGO_PKG_VERSION");
+            let accept_value = format!("application/vnd.miden.{version}+grpc");
+            let interceptor = AcceptHeaderInterceptor::new(accept_value);
+            rpc_client::ApiClient::with_interceptor(channel, interceptor)
         };
 
         // test: requests against RPC api should fail immediately
-        let response = send_request(&mut rpc_client, 0).await;
+        let request = GetBlockHeaderByNumberRequest {
+            block_num: Some(0),
+            include_mmr_proof: None,
+        };
+        let response = rpc_client.get_block_header_by_number(request).await;
         assert!(response.is_err());
 
         // start the store
@@ -259,12 +257,20 @@ mod test {
         };
 
         // test: send request against RPC api and should succeed
-        let response = send_request(&mut rpc_client, 0).await.unwrap();
+        let request = GetBlockHeaderByNumberRequest {
+            block_num: Some(0),
+            include_mmr_proof: None,
+        };
+        let response = rpc_client.get_block_header_by_number(request).await.unwrap();
         assert!(response.into_inner().block_header.is_some());
 
         // test: shutdown the store and should fail
         store_runtime.shutdown_background();
-        let response = send_request(&mut rpc_client, 0).await;
+        let request = GetBlockHeaderByNumberRequest {
+            block_num: Some(0),
+            include_mmr_proof: None,
+        };
+        let response = rpc_client.get_block_header_by_number(request).await;
         assert!(response.is_err());
 
         // test: restart the store and request should succeed
@@ -278,7 +284,11 @@ mod test {
             .await
             .expect("store should start serving");
         });
-        let response = send_request(&mut rpc_client, 0).await.unwrap();
+        let request = GetBlockHeaderByNumberRequest {
+            block_num: Some(0),
+            include_mmr_proof: None,
+        };
+        let response = rpc_client.get_block_header_by_number(request).await.unwrap();
         assert_eq!(response.into_inner().block_header.unwrap().block_num, 0);
     }
 }

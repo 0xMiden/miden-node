@@ -91,39 +91,40 @@ where
                                 self.inner.call(request).boxed()
                             } else {
                                 debug!(target: COMPONENT, "Version does not match ({}/{})", version, self.version);
-                                bad_request().boxed()
+                                bad_request("Client / server version mismatch").boxed()
                             }
                         },
                         Err(e) => {
                             debug!(target: COMPONENT, "Failed to parse version: {}", e);
-                            bad_request().boxed()
+                            bad_request("Invalid version specified in accept header value").boxed()
                         },
                     },
                     Err(e) => {
                         debug!(target: COMPONENT, "Failed to parse accept header value: {}", e);
-                        bad_request().boxed()
+                        bad_request("Invalid accept header value").boxed()
                     },
                 },
                 Err(e) => {
                     debug!(target: COMPONENT, "Failed to stringify accept header value: {}", e);
-                    bad_request().boxed()
+                    bad_request("Invalid accept header value").boxed()
                 },
             }
         } else {
             debug!(target: COMPONENT, "Request missing ACCEPT header");
-            bad_request().boxed()
+            bad_request("Missing required ACCEPT header").boxed()
         }
     }
 }
 
 /// Returns a future that resolves to a bad request response.
-fn bad_request<B: Default + Send + 'static, E: Send + 'static>()
--> impl Future<Output = Result<http::Response<B>, E>> {
+fn bad_request<B: Default + Send + 'static, E: Send + 'static>(
+    msg: &'static str,
+) -> impl Future<Output = Result<http::Response<B>, E>> {
     let response = http::Response::builder()
         .status(http::StatusCode::BAD_REQUEST)
         .header("content-type", "application/grpc")
         .header("grpc-status", "3") // INVALID_ARGUMENT
-        .header("grpc-message", "Missing required ACCEPT header")
+        .header("grpc-message", msg)
         .body(B::default())
         .expect("headers are valid");
 

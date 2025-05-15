@@ -56,7 +56,7 @@ mod test {
     };
     use miden_node_store::{GenesisState, Store};
     use tokio::{net::TcpListener, runtime, task};
-    use tonic::transport::Endpoint;
+    use tonic::{metadata::AsciiMetadataValue, service::Interceptor, transport::Endpoint};
 
     use crate::Rpc;
 
@@ -75,7 +75,7 @@ mod test {
 
     #[tokio::test]
     async fn rpc_server_rejects_requests_without_accept_header() {
-        // TODO(current pr): DRY this setup
+        // TODO(current pr): DRY this setup, tidy up
         let store_addr = {
             let store_listener =
                 TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
@@ -114,9 +114,78 @@ mod test {
         assert!(response.is_err());
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
         assert_eq!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
+    }
 
-        // TODO(current pr): Add interceptor and test again.
-        //let rpc_client = rpc_client::ApiClient::with_interceptor(inner, interceptor)
+    #[tokio::test]
+    async fn rpc_server_accepts_requests_with_accept_header() {
+        // TODO(current pr): DRY this setup, tidy up
+        let store_addr = {
+            let store_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
+            store_listener.local_addr().expect("store should get a local address")
+        };
+        let block_producer_addr = {
+            let block_producer_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
+            block_producer_listener
+                .local_addr()
+                .expect("Failed to get block-producer address")
+        };
+        // start the rpc component
+        let mut rpc_client = {
+            let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
+            let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
+            task::spawn(async move {
+                Rpc {
+                    listener: rpc_listener,
+                    store: store_addr,
+                    block_producer: Some(block_producer_addr),
+                }
+                .serve()
+                .await
+                .expect("Failed to start serving store");
+            });
+            let channel = Endpoint::try_from(format!("http://{rpc_addr}"))
+                .expect("Failed to create rpc endpoint")
+                .connect()
+                .await
+                .unwrap();
+            let version = env!("CARGO_PKG_VERSION");
+            let accept_value = format!("application/vnd.miden.{version}+grpc");
+            let interceptor = AcceptHeaderInterceptor::new(accept_value);
+            rpc_client::ApiClient::with_interceptor(channel, interceptor)
+        };
+
+        let request = GetBlockHeaderByNumberRequest {
+            block_num: Some(0),
+            include_mmr_proof: None,
+        };
+        let response = rpc_client.get_block_header_by_number(request).await;
+        assert!(response.is_err());
+        assert_ne!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
+        assert_ne!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
+    }
+
+    // TODO(current pr): move from here and tidy up
+    struct AcceptHeaderInterceptor {
+        value: String,
+    }
+    impl AcceptHeaderInterceptor {
+        fn new(value: String) -> Self {
+            Self { value }
+        }
+    }
+    impl Interceptor for AcceptHeaderInterceptor {
+        fn call(
+            &mut self,
+            request: tonic::Request<()>,
+        ) -> Result<tonic::Request<()>, tonic::Status> {
+            let mut request = request;
+            request
+                .metadata_mut()
+                .insert("accept", AsciiMetadataValue::try_from(self.value.clone()).unwrap());
+            Ok(request)
+        }
     }
 
     #[tokio::test]

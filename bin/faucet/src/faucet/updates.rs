@@ -5,7 +5,7 @@ use base64::{Engine, engine::general_purpose};
 use miden_objects::{
     account::AccountId,
     block::BlockNumber,
-    note::{Note, NoteDetails, NoteExecutionMode, NoteFile, NoteTag},
+    note::{Note, NoteDetails, NoteExecutionMode, NoteFile, NoteTag, NoteType},
     transaction::TransactionId,
     utils::Serializable,
 };
@@ -72,7 +72,8 @@ impl MintUpdate {
     /// - `MintUpdate::Executed`: event type "update"
     /// - `MintUpdate::Proven`: event type "update"
     /// - `MintUpdate::Submitted`: event type "update"
-    /// - `MintUpdate::Minted`: event type "note". Contains the note encoded in base64.
+    /// - `MintUpdate::Minted`: event type "note". Contains the note encoded in base64 if it is
+    ///   private.
     pub fn into_event(self) -> Event {
         match self {
             MintUpdate::Minted(note, block_height, tx_id) => {
@@ -86,15 +87,19 @@ impl MintUpdate {
                         .unwrap();
                 let note_tag = NoteTag::from_account_id(account_id, NoteExecutionMode::Local).ok();
 
-                let bytes = NoteFile::NoteDetails {
-                    details: note_details,
-                    after_block_num: block_height,
-                    tag: note_tag,
-                }
-                .to_bytes();
-
-                // Encode the note bytes as a base64 string
+                // If the note is private, encode the note bytes as a base64 string
+                let bytes = if note.metadata().note_type() == NoteType::Private {
+                    NoteFile::NoteDetails {
+                        details: note_details,
+                        after_block_num: block_height,
+                        tag: note_tag,
+                    }
+                    .to_bytes()
+                } else {
+                    Vec::new()
+                };
                 let encoded_note = general_purpose::STANDARD.encode(&bytes);
+
                 let event_payload = serde_json::json!({
                     "note_id": note_id.to_string(),
                     "account_id": account_id.to_bech32(NETWORK_ID),

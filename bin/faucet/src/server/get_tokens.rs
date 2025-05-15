@@ -175,29 +175,30 @@ pub async fn get_tokens(
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     // Response channel with buffer size 5 since there are currently 5 possible updates
-    let (tx_result, rx_result) = mpsc::channel(5);
+    let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
-    let mint_error =
-        request
-            .validate(&server.mint_state.asset_options, &server.pow_salt)
-            .map_err(GetTokenError::InvalidRequest)
-            .and_then(|request| {
-                let span = tracing::Span::current();
-                span.record("account", request.account_id.to_hex());
-                span.record("amount", request.asset_amount.inner());
-                span.record("note_type", request.note_type.to_string());
+    let mint_error = request
+        .validate(&server.mint_state.asset_options, &server.pow_salt)
+        .map_err(GetTokenError::InvalidRequest)
+        .and_then(|request| {
+            let span = tracing::Span::current();
+            span.record("account", request.account_id.to_hex());
+            span.record("amount", request.asset_amount.inner());
+            span.record("note_type", request.note_type.to_string());
 
-                server.mint_state.request_sender.try_send((request, tx_result.clone())).map_err(
-                    |err| match err {
-                        TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
-                        TrySendError::Closed(_) => GetTokenError::FaucetClosed,
-                    },
-                )
-            })
-            .err();
+            server
+                .mint_state
+                .request_sender
+                .try_send((request, tx_result_notifier.clone()))
+                .map_err(|err| match err {
+                    TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
+                    TrySendError::Closed(_) => GetTokenError::FaucetClosed,
+                })
+        })
+        .err();
 
     if let Some(error) = mint_error {
-        tx_result.send(Ok(error.into_event())).await.unwrap();
+        tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
     }
 
     let stream = ReceiverStream::new(rx_result);

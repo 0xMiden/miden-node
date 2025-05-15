@@ -109,7 +109,9 @@ impl StoreCommand {
         // Start system monitor.
         let data_dir =
             DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        SystemMonitor::new(monitor_interval).with_store_metrics(data_dir).run();
+        SystemMonitor::new(monitor_interval)
+            .with_store_metrics(data_dir)
+            .run_with_supervisor();
 
         Store { listener, data_directory }
             .serve()

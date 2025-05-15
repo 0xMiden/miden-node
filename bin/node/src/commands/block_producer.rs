@@ -93,7 +93,7 @@ impl BlockProducerCommand {
             .context("Failed to extract socket address from block producer URL")?;
 
         // Start system monitor.
-        SystemMonitor::new(monitor_interval).run();
+        SystemMonitor::new(monitor_interval).run_with_supervisor();
 
         BlockProducer {
             block_producer_address,

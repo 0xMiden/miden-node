@@ -99,6 +99,7 @@ impl Store {
 /// Represents the store's data-directory and its content paths.
 ///
 /// Used to keep our filepath assumptions in one location.
+#[derive(Clone)]
 pub struct DataDirectory(PathBuf);
 
 impl DataDirectory {

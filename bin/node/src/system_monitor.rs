@@ -1,7 +1,8 @@
-use std::time::Duration;
+use std::{thread, time::Duration};
 
 use miden_node_store::DataDirectory;
 use sysinfo::{Disks, Pid, System};
+use tokio::task;
 use tracing::{error, info};
 
 const COMPONENT: &str = "system-monitor";
@@ -15,8 +16,8 @@ const COMPONENT: &str = "system-monitor";
 /// - Database size
 /// - Database WAL size
 /// - Block storage size
+#[derive(Clone)]
 pub struct SystemMonitor {
-    sys: System,
     pid: Pid,
     monitor_interval: Duration,
     data_directory: Option<DataDirectory>,
@@ -26,7 +27,6 @@ impl SystemMonitor {
     /// Creates a new system monitor.
     pub fn new(monitor_interval: Duration) -> Self {
         Self {
-            sys: System::new_all(),
             pid: Pid::from(std::process::id() as usize),
             data_directory: None,
             monitor_interval,
@@ -41,22 +41,33 @@ impl SystemMonitor {
         }
     }
 
-    /// Runs the system monitor loop on a separate thread.
-    pub fn run(mut self) {
-        std::thread::spawn(move || {
+    /// Runs a supervisor task that re-runs the system monitor if it panics.
+    pub fn run_with_supervisor(self) -> task::JoinHandle<()> {
+        task::spawn(async move {
             loop {
-                std::thread::sleep(self.monitor_interval);
-                if let Err(err) = self.log_system_metrics() {
+                if let Err(err) = self.clone().run().await {
+                    error!(target: COMPONENT, ?err, "Panicked while collecting system metrics. Restarting.");
+                }
+            }
+        })
+    }
+
+    /// Runs the system monitor loop on a separate blocking task.
+    pub fn run(self) -> task::JoinHandle<()> {
+        task::spawn_blocking(move || {
+            let mut sys = System::new_all();
+            loop {
+                thread::sleep(self.monitor_interval);
+                sys.refresh_all();
+                if let Err(err) = self.log_system_metrics(&sys) {
                     error!(target: COMPONENT, ?err, "Error collecting system metrics");
                 }
             }
-        });
+        })
     }
 
     /// Collects the system metrics and posts the structured log.
-    fn log_system_metrics(&mut self) -> anyhow::Result<()> {
-        self.sys.refresh_all();
-
+    fn log_system_metrics(&self, sys: &System) -> anyhow::Result<()> {
         let disks = Disks::new_with_refreshed_list();
         let current_dir = std::env::current_dir()?;
         // NOTE: shows data for the disk that backs the current directory.
@@ -71,23 +82,23 @@ impl SystemMonitor {
         #[allow(clippy::cast_precision_loss)]
         let system_disk_utilization = (system_disk_used as f64 / system_disk_limit as f64) * 100.0;
 
-        let system_cpu_utilization = self.sys.global_cpu_usage() / 100.0;
+        let system_cpu_utilization = sys.global_cpu_usage() / 100.0;
         let system_cpu_physical_count = System::physical_core_count();
 
-        let system_memory_usage = self.sys.used_memory();
-        let system_memory_limit = self.sys.total_memory();
-        let system_memory_available = self.sys.available_memory();
+        let system_memory_usage = sys.used_memory();
+        let system_memory_limit = sys.total_memory();
+        let system_memory_available = sys.available_memory();
         #[allow(clippy::cast_precision_loss)]
         let system_memory_utilization = system_memory_usage as f64 / system_memory_limit as f64;
 
         // SAFETY: the process exists since it is the current process.
-        let process = self.sys.process(self.pid).unwrap();
+        let process = sys.process(self.pid).unwrap();
         let process_memory_usage = process.memory();
         let process_cpu_utilization = process.cpu_usage() / 100.0;
         let process_disk_written = process.disk_usage().written_bytes;
         let process_disk_read = process.disk_usage().read_bytes;
 
-        let (db_file_size, db_wal_size, block_storage_size) = self.collect_store_metrics()?;
+        let store_metrics = self.collect_store_metrics()?;
 
         info!(
             target: COMPONENT,
@@ -109,18 +120,18 @@ impl SystemMonitor {
             process_disk_written,
             process_disk_read,
             // Store
-            db_file_size,
-            db_wal_size,
-            block_storage_size,
+            db_file_size=store_metrics.db_file_size,
+            db_wal_size=store_metrics.db_wal_size,
+            block_storage_size=store_metrics.block_storage_size,
         );
 
         Ok(())
     }
 
     /// Collects the store metrics.
-    fn collect_store_metrics(&self) -> anyhow::Result<(u64, u64, u64)> {
+    fn collect_store_metrics(&self) -> anyhow::Result<StoreMetrics> {
         let Some(data_dir) = &self.data_directory else {
-            return Ok((0, 0, 0));
+            return Ok(StoreMetrics::default());
         };
 
         let db_file_size = std::fs::metadata(data_dir.database_path())?.len();
@@ -128,6 +139,27 @@ impl SystemMonitor {
             std::fs::metadata(format!("{}-wal", data_dir.database_path().display()))?.len();
         let block_storage_size = std::fs::metadata(data_dir.block_store_dir())?.len();
 
-        Ok((db_file_size, db_wal_size, block_storage_size))
+        Ok(StoreMetrics {
+            db_file_size,
+            db_wal_size,
+            block_storage_size,
+        })
+    }
+}
+
+/// Metrics of the store.
+struct StoreMetrics {
+    pub db_file_size: u64,
+    pub db_wal_size: u64,
+    pub block_storage_size: u64,
+}
+
+impl Default for StoreMetrics {
+    fn default() -> Self {
+        Self {
+            db_file_size: 0,
+            db_wal_size: 0,
+            block_storage_size: 0,
+        }
     }
 }

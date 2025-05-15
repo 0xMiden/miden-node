@@ -1,18 +1,19 @@
 use std::net::SocketAddr;
 
+use accept::AcceptLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
 use miden_node_utils::tracing::grpc::rpc_trace_fn;
+use semver::VersionReq;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
 use tracing::info;
-use version::VersionLayer;
 
 use crate::COMPONENT;
 
+mod accept;
 mod api;
-mod version;
 
 /// The RPC server component.
 ///
@@ -39,7 +40,7 @@ impl Rpc {
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
-            .layer(VersionLayer::new())
+            .layer(AcceptLayer::new(VersionReq::parse("1.0.0").expect("valid version"))) // TODO...
             // Enables gRPC-web support.
             .add_service(tonic_web::enable(api_service))
             .serve_with_incoming(TcpListenerStream::new(self.listener))

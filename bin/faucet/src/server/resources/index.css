@@ -23,7 +23,9 @@ body {
 }
 
 #error-message {
-    display: none;
+    display: block;
+    visibility: hidden;
+    height: 18.5px;
     color: red;
     text-align: center;
     margin-bottom: 4.5px;
@@ -119,14 +121,29 @@ body {
     text-align: center;
 }
 
-.info-container {
+.loader-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin: 0 0 0 -42px;
+    padding: 10px;
+    background: rgb(32, 35, 40);
     display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 1;
+    border-radius: 10px;
+}
+
+.info-container {
+    display: block;
+    visibility: hidden;
     flex-direction: column;
     align-items: center;
     background-color: rgb(17, 24, 39);
     border-radius: 10px;
     padding: 18px;
-    margin-top: 5px;
+    margin-top: 10px;
 }
 
 #tx-link {

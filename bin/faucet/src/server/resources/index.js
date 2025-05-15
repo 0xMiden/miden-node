@@ -39,11 +39,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function showError(message) {
         errorMessage.textContent = message;
-        errorMessage.style.display = 'block';
+        errorMessage.style.visibility = 'visible';
     }
 
     function hideError() {
-        errorMessage.style.display = 'none';
+        errorMessage.style.visibility = 'hidden';
     }
 
     function validateAccountId(accountId) {
@@ -64,9 +64,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function setLoadingState(isLoading) {
         privateButton.disabled = isLoading;
         publicButton.disabled = isLoading;
-        loading.style.display = isLoading ? 'flex' : 'none';
-        info.style.display = isLoading ? 'none' : 'block';
-        importCommand.style.display = isLoading ? 'none' : 'block';
+        loading.style.display = isLoading ? 'block' : 'none';
+        status.textContent = "";
+        info.style.visibility = isLoading ? 'hidden' : 'visible';
+        importCommand.style.visibility = isLoading ? 'hidden' : 'visible';
     }
 
     async function handleButtonClick(isPrivateNote) {

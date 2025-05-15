@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  "bin/faucet",
+  #"bin/faucet",
   "bin/node",
   "bin/stress-test",
   "crates/block-producer",

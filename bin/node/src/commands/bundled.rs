@@ -172,6 +172,7 @@ impl BundledCommand {
                 NetworkTransactionBuilder {
                     address: ntx_builder_address,
                     store_address,
+                    block_producer_address,
                 }
                 .serve()
                 .await

@@ -16,14 +16,15 @@ use miden_node_proto::{
             ApplyBlockRequest, CheckNullifiersByPrefixRequest, CheckNullifiersRequest,
             GetAccountDetailsRequest, GetAccountProofsRequest, GetAccountStateDeltaRequest,
             GetBatchInputsRequest, GetBlockByNumberRequest, GetBlockHeaderByNumberRequest,
-            GetBlockInputsRequest, GetMmrPeaksRequest, GetNotesByIdRequest,
+            GetBlockInputsRequest, GetCurrentMmrPeaksRequest,
+            GetNetworkAccountDetailsByPrefixRequest, GetNotesByIdRequest,
             GetTransactionInputsRequest, SyncNoteRequest, SyncStateRequest,
         },
         responses::{
             AccountTransactionInputRecord, ApplyBlockResponse, CheckNullifiersByPrefixResponse,
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
-            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetMmrPeaksResponse,
+            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetCurrentMmrPeaksResponse,
             GetNotesByIdResponse, GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
             NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
@@ -154,23 +155,29 @@ impl api_server::Api for StoreApi {
     /// TODO
     #[instrument(
     target = COMPONENT,
-    name = "store.server.get_mmr_peaks",
+    name = "store.server.get_current_mmr_peaks",
     skip_all,
     ret(level = "debug"),
     err
 )]
-    async fn get_mmr_peaks(
+    async fn get_current_mmr_peaks(
         &self,
-        request: Request<GetMmrPeaksRequest>,
-    ) -> Result<Response<GetMmrPeaksResponse>, Status> {
+        request: Request<GetCurrentMmrPeaksRequest>,
+    ) -> Result<Response<GetCurrentMmrPeaksResponse>, Status> {
         let block_num = request.into_inner().block_num.map(BlockNumber::from);
 
-        let peaks = self.state.get_mmr_peaks(block_num).await.map_err(internal_error)?;
-        let response = Response::new(GetMmrPeaksResponse {
-            peaks: peaks.peaks().iter().map(Into::into).collect(),
-        });
+        let response = match self.state.get_mmr_peaks(block_num).await.map_err(internal_error)? {
+            Some((header, peaks)) => GetCurrentMmrPeaksResponse {
+                current_peaks: peaks.peaks().into_iter().map(Into::into).collect(),
+                current_block_header: Some(header.into()),
+            },
+            None => GetCurrentMmrPeaksResponse {
+                current_peaks: vec![],
+                current_block_header: None,
+            },
+        };
 
-        Ok(response)
+        Ok(Response::new(response.into()))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -307,6 +314,27 @@ impl api_server::Api for StoreApi {
         let request = request.into_inner();
         let account_id = read_account_id(request.account_id)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
+
+        Ok(Response::new(GetAccountDetailsResponse {
+            details: Some((&account_info).into()),
+        }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.get_network_account_details_by_prefix",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_network_account_details_by_prefix(
+        &self,
+        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
+    ) -> Result<Response<GetAccountDetailsResponse>, Status> {
+        let request = request.into_inner();
+        let prefix = request.account_id_prefix;
+        assert!(prefix >> 30 == 0, "account_id_prefix must be 30 bits");
+        let account_info: AccountInfo = self.state.get_account_details_by_prefix(prefix).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
             details: Some((&account_info).into()),

@@ -419,18 +419,25 @@ impl State {
         self.db.select_notes_by_id(note_ids).await
     }
 
-    /// TODO
+    /// If the input block number is the current chain tip, `None` is returned.
+    /// Otherwise, gets current MMR peaks.
     pub async fn get_mmr_peaks(
         &self,
         block_num: Option<BlockNumber>,
-    ) -> Result<MmrPeaks, MmrError> {
-        let peaks = if let Some(number) = block_num {
-            self.inner.read().await.blockchain.peaks_at(number)?
-        } else {
-            self.inner.read().await.blockchain.peaks()
-        };
+    ) -> Result<Option<(BlockHeader, MmrPeaks)>, MmrError> {
+        let blockchain = &self.inner.read().await.blockchain;
+        // SAFETY: There is always at least one block in the chain
+        if let Some(number) = block_num {
+            if number == blockchain.chain_tip().unwrap() {
+                return Ok(None);
+            }
+        }
 
-        Ok(peaks)
+        let peaks = blockchain.peaks();
+        // TODO: map err here
+        let block_header = self.db.select_block_header_by_block_num(None).await.unwrap().unwrap();
+
+        Ok(Some((block_header, peaks)))
     }
 
     /// Fetches the inputs for a transaction batch from the database.
@@ -804,6 +811,14 @@ impl State {
     /// Returns details for public (on-chain) account.
     pub async fn get_account_details(&self, id: AccountId) -> Result<AccountInfo, DatabaseError> {
         self.db.select_account(id).await
+    }
+
+    /// Returns details for public (on-chain) account.
+    pub async fn get_account_details_by_prefix(
+        &self,
+        id_prefix: u32,
+    ) -> Result<AccountInfo, DatabaseError> {
+        self.db.select_account_by_prefix(id_prefix).await
     }
 
     /// Returns account proofs with optional account and storage headers.

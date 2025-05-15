@@ -1,87 +1,36 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
-    sync::{Arc, Mutex},
+    collections::{BTreeMap, HashMap},
+    sync::Mutex,
 };
 
 use miden_objects::{
-    MastForest, Word,
     account::{Account, AccountId},
-    block::{BlockHeader, BlockNumber},
-    crypto::merkle::PartialMmr,
-    transaction::PartialBlockchain,
+    note::{NoteExecutionMode, NoteTag},
 };
-use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
-
-use super::store::StoreClient;
-
-// DATA STORE
-// =================================================================================================
-
-pub struct NtxBuilderDataStore {
-    store_client: StoreClient,
-    mast_forest_store: TransactionMastStore,
-    account_cache: AccountCache,
-    block_ref: BlockHeader,
-}
-
-impl NtxBuilderDataStore {
-    pub fn new(store_client: StoreClient, block_ref: BlockHeader) -> Self {
-        let account_cache = AccountCache::new(128);
-        let mast_forest_store = TransactionMastStore::new();
-        Self {
-            store_client,
-            account_cache,
-            block_ref,
-            mast_forest_store,
-        }
-    }
-
-    pub fn set_block_ref(&mut self, block_ref: BlockHeader) {
-        self.block_ref = block_ref;
-    }
-}
-
-#[async_trait::async_trait(?Send)]
-impl DataStore for NtxBuilderDataStore {
-    async fn get_transaction_inputs(
-        &self,
-        account_id: AccountId,
-        _ref_blocks: BTreeSet<BlockNumber>,
-    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
-        let account = if let Some(acc) = self.account_cache.get(account_id) {
-            acc
-        } else {
-            let acc = self
-                .store_client
-                .get_network_account(account_id)
-                .await
-                .map_err(|_| DataStoreError::AccountNotFound(account_id))?;
-            // cache account
-            self.account_cache.put(&acc);
-
-            acc
-        };
-
-        let peaks = self
-            .store_client
-            .get_mmr_peaks(self.block_ref.block_num())
-            .await
-            .map_err(|err| DataStoreError::other_with_source("error retrieving MMR peaks", err))?;
-
-        let partial_mmr = PartialMmr::from_peaks(peaks);
-        let partial_blockchain = PartialBlockchain::new(partial_mmr, []).unwrap();
-        Ok((account, None, self.block_ref.clone(), partial_blockchain))
-    }
-}
-
-impl MastForestStore for NtxBuilderDataStore {
-    fn get(&self, procedure_hash: &miden_objects::Digest) -> Option<Arc<MastForest>> {
-        self.mast_forest_store.get(procedure_hash)
-    }
-}
 
 // ACCOUNT CACHE
 // =================================================================================================
+
+#[derive(Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct NtxAccountIdPrefix(u32);
+
+impl From<AccountId> for NtxAccountIdPrefix {
+    fn from(id: AccountId) -> Self {
+        NtxAccountIdPrefix((id.prefix().as_u64() >> 34) as u32)
+    }
+}
+
+impl TryFrom<NoteTag> for NtxAccountIdPrefix {
+    type Error = String;
+
+    fn try_from(tag: NoteTag) -> Result<Self, Self::Error> {
+        if tag.execution_mode() == NoteExecutionMode::Network && tag.is_single_target() {
+            return Ok(NtxAccountIdPrefix(tag.inner()));
+        } else {
+            return Err("tag not meant for executing by a single account".into());
+        }
+    }
+}
 
 struct AccountEntry {
     account: Account,
@@ -90,8 +39,8 @@ struct AccountEntry {
 
 struct CacheState {
     generation: usize,
-    accounts: HashMap<u128, AccountEntry>,
-    ordering: BTreeMap<usize, AccountId>,
+    accounts: HashMap<NtxAccountIdPrefix, AccountEntry>,
+    ordering: BTreeMap<usize, NtxAccountIdPrefix>,
 }
 
 pub struct AccountCache {
@@ -113,7 +62,7 @@ impl AccountCache {
 
     /// Insert or replace an entry.
     pub fn put(&self, account: &Account) {
-        let account_id = account.id();
+        let account_id = NtxAccountIdPrefix::from(account.id());
         let mut state = self.state.lock().unwrap();
         state.generation += 1;
         let current_generation = state.generation;
@@ -144,7 +93,7 @@ impl AccountCache {
 
     /// Get a reference to a value if it exists in the cache.
     /// Additionally, when there is a cache hit, marks the account as recently used.
-    pub fn get(&self, account_id: AccountId) -> Option<Account> {
+    pub fn get(&self, account_id: NtxAccountIdPrefix) -> Option<Account> {
         let mut state = self.state.lock().unwrap();
 
         let (old_generation, account_clone) = {
@@ -158,13 +107,19 @@ impl AccountCache {
 
         let new_generation = state.generation;
         state.ordering.remove(&old_generation);
-        state.ordering.insert(new_generation, account_id);
+        state.ordering.insert(new_generation, account_id.into());
 
         Some(account_clone)
     }
 
-    pub fn len(&self) -> usize {
-        self.state.lock().unwrap().accounts.len()
+    /// Manually evict an entry from the cache.
+    pub fn evict(&self, account_id: AccountId) -> Option<Account> {
+        let mut state = self.state.lock().unwrap();
+        if let Some(entry) = state.accounts.remove(&account_id.into()) {
+            state.ordering.remove(&entry.generation);
+            return Some(entry.account);
+        }
+        None
     }
 }
 
@@ -188,7 +143,7 @@ mod tests {
         let cache = AccountCache::new(2);
 
         cache.put(&account.clone());
-        assert_eq!(cache.get(account.id()).unwrap(), account);
+        assert_eq!(cache.get(account.id().into()).unwrap(), account);
     }
 
     #[test]
@@ -201,17 +156,18 @@ mod tests {
         cache.put(&acc1.clone());
         cache.put(&acc2.clone());
 
-        assert_eq!(cache.len(), 2);
+        assert_eq!(cache.state.lock().unwrap().accounts.len(), 2);
 
-        assert!(cache.get(acc1.id()).is_some());
-        assert!(cache.get(acc2.id()).is_some());
+        assert!(cache.get(acc1.id().into()).is_some());
+        assert!(cache.get(acc2.id().into()).is_some());
 
-        cache.get(acc1.id()).unwrap();
+        cache.get(acc1.id().into()).unwrap();
         cache.put(&acc3.clone());
 
-        assert_eq!(cache.len(), 2);
-        assert!(cache.get(acc1.id()).is_some());
-        assert!(cache.get(acc2.id()).is_none());
-        assert!(cache.get(acc3.id()).is_some());
+        assert_eq!(cache.state.lock().unwrap().accounts.len(), 2);
+
+        assert!(cache.get(acc1.id().into()).is_some());
+        assert!(cache.get(acc2.id().into()).is_none());
+        assert!(cache.get(acc3.id().into()).is_some());
     }
 }

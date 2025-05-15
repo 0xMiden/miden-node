@@ -23,6 +23,9 @@ service Api {
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(requests.GetAccountDetailsRequest) returns (responses.GetAccountDetailsResponse) {}
 
+    // Returns the latest state of an account with the specified ID.
+    rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetAccountDetailsResponse) {}
+
     // Returns the latest state proofs of the specified accounts.
     rpc GetAccountProofs(requests.GetAccountProofsRequest) returns (responses.GetAccountProofsResponse) {}
 
@@ -47,7 +50,7 @@ service Api {
     rpc GetNotesById(requests.GetNotesByIdRequest) returns (responses.GetNotesByIdResponse) {}
 
     // TODO
-    rpc GetMmrPeaks(requests.GetMmrPeaksRequest) returns (responses.GetMmrPeaksResponse) {}
+    rpc GetCurrentMmrPeaks(requests.GetCurrentMmrPeaksRequest) returns (responses.GetCurrentMmrPeaksResponse) {}
 
     // Returns data required to validate a new transaction.
     rpc GetTransactionInputs(requests.GetTransactionInputsRequest) returns (responses.GetTransactionInputsResponse) {}

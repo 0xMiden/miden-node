@@ -13,27 +13,28 @@ use miden_node_proto::{
 use miden_objects::{
     Digest,
     note::{Note, Nullifier},
+    transaction::TransactionId,
 };
-use state::NtxBuilderState;
 use tonic::{Request, Response, Status};
 use tracing::info;
 
 use crate::COMPONENT;
 
 mod state;
+pub use state::PendingNotes;
 
 #[derive(Debug)]
 pub struct NtxBuilderApi {
-    state: Arc<Mutex<NtxBuilderState>>,
+    state: Arc<Mutex<PendingNotes>>,
 }
 
 impl NtxBuilderApi {
     pub fn new(unconsumed_network_notes: Vec<Note>) -> Self {
-        let state = NtxBuilderState::new(unconsumed_network_notes);
+        let state = PendingNotes::new(unconsumed_network_notes);
         Self { state: Arc::new(Mutex::new(state)) }
     }
 
-    pub fn state(&self) -> Arc<Mutex<NtxBuilderState>> {
+    pub fn state(&self) -> Arc<Mutex<PendingNotes>> {
         self.state.clone()
     }
 }
@@ -128,10 +129,24 @@ impl Api for NtxBuilderApi {
                     ))
                 })?;
 
+            let tx_id: TransactionId = tx_id.into();
             if TransactionStatus::Commited == tx.status() {
-                state.commit_transaction(tx_id.into());
+                let n = state.commit_inflight(tx_id);
+                info!(
+                    target: COMPONENT,
+                    committed = n,
+                    tx_id = tx_id.to_hex(),
+                    "Committed notes notes for transaction"
+                );
             } else {
-                state.discard_transaction(tx_id.into());
+                let n = state.rollback_inflight(tx_id.into());
+
+                info!(
+                    target: COMPONENT,
+                    rolled_back = n,
+                    tx_id = tx_id.to_hex(),
+                    "Rolled back inflichgt notes notes after transaction got discarded"
+                );
             }
         }
         Ok(Response::new(()))

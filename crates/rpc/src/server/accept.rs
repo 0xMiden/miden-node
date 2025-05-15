@@ -20,7 +20,25 @@ pub struct AcceptLayer {
 
 impl AcceptLayer {
     /// Create a new accept layer with the specified version requirement.
-    pub fn new(version: VersionReq) -> Self {
+    ///
+    /// # Panics:
+    ///
+    /// Panics if the version string in Cargo.toml is not valid semver.
+    /// The version string is made into an env var at compile time which means
+    /// that the unit tests prove this cannot panic in practice.
+    pub fn new() -> Self {
+        // Parse the full version string (e.g., "0.8.0").
+        let full_version = env!("CARGO_PKG_VERSION");
+
+        // Extract major and minor version components
+        let parts: Vec<&str> = full_version.split('.').collect();
+        let major = parts.first().expect("package semver has major");
+        let minor = parts.get(1).expect("package semver has minor");
+
+        // Create version requirement string in the format ">= major.minor"
+        let version_req_str = format!(">= {major}.{minor}");
+        let version = VersionReq::parse(&version_req_str).expect("");
+
         AcceptLayer { version }
     }
 }
@@ -144,7 +162,17 @@ impl<'a> TryFrom<&'a str> for AcceptHeaderValue<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::AcceptHeaderValue;
+    use semver::Version;
+
+    use super::{AcceptHeaderValue, AcceptLayer};
+
+    #[test]
+    fn current_version_is_parsed_and_matches() {
+        let a = AcceptLayer::new();
+        let full_version = env!("CARGO_PKG_VERSION");
+        let full_version = Version::parse(full_version).unwrap();
+        assert!(a.version.matches(&full_version));
+    }
 
     #[test]
     fn valid_accept_header_is_parsed() {

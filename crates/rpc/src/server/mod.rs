@@ -89,7 +89,7 @@ mod test {
     #[tokio::test]
     async fn rpc_server_accepts_requests_with_accept_header() {
         // Start the RPC.
-        let (mut rpc_client, _, _) = start_rpc().await;
+        let (mut rpc_client, ..) = start_rpc().await;
 
         // Send any request to the RPC.
         let response = send_request(&mut rpc_client).await;

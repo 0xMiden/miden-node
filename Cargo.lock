@@ -2010,6 +2010,7 @@ dependencies = [
  "thiserror 2.0.12",
  "tonic",
  "tonic-build",
+ "url",
 ]
 
 [[package]]
@@ -2045,6 +2046,7 @@ dependencies = [
  "tower 0.5.2",
  "tower-http 0.6.4",
  "tracing",
+ "url",
 ]
 
 [[package]]

@@ -476,8 +476,8 @@ impl P2IdNotes {
         requests: &[MintRequest],
         rng: &mut impl FeltRng,
     ) -> Result<Self, MintError> {
-        // TODO: if building a note fails, we discard the whole batch. Is this error possible?
-        // AccountIds are vaildated on the request level.
+        // If building a note fails, we discard the whole batch. Should never happen, since account
+        // ids are validated on the request level.
         let mut notes = Vec::new();
         for request in requests {
             // SAFETY: source is definitely a faucet account, and the amount is valid.

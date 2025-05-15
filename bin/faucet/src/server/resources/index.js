@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function setLoadingState(isLoading) {
         privateButton.disabled = isLoading;
         publicButton.disabled = isLoading;
-        loading.style.display = isLoading ? 'block' : 'none';
+        loading.style.display = isLoading ? 'flex' : 'none';
         status.textContent = "";
         info.style.visibility = isLoading ? 'hidden' : 'visible';
         importCommand.style.visibility = isLoading ? 'hidden' : 'visible';

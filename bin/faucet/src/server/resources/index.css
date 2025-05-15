@@ -123,9 +123,11 @@ body {
 
 .loader-overlay {
     position: absolute;
+    flex-direction: column;
     top: 50%;
     left: 50%;
-    margin: 0 0 0 -42px;
+    width: 150px;
+    margin: 0 0 0 -75px;
     padding: 10px;
     background: rgb(32, 35, 40);
     display: none;

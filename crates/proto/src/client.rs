@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use crate::generated::rpc::api_client::ApiClient;
 use anyhow::Context;
 use tonic::{
     metadata::AsciiMetadataValue,
@@ -8,6 +7,8 @@ use tonic::{
     transport::Channel,
 };
 use url::Url;
+
+use crate::generated::rpc::api_client::ApiClient;
 
 pub type RpcClient = ApiClient<InterceptedService<Channel, AcceptHeaderInterceptor>>;
 

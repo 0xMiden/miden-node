@@ -120,9 +120,9 @@ impl SystemMonitor {
             process_disk_written,
             process_disk_read,
             // Store
-            db_file_size=store_metrics.db_file_size,
-            db_wal_size=store_metrics.db_wal_size,
-            block_storage_size=store_metrics.block_storage_size,
+            db_file_size=store_metrics.db_file,
+            db_wal_size=store_metrics.db_wal,
+            block_storage_size=store_metrics.block_storage,
         );
 
         Ok(())
@@ -134,32 +134,19 @@ impl SystemMonitor {
             return Ok(StoreMetrics::default());
         };
 
-        let db_file_size = std::fs::metadata(data_dir.database_path())?.len();
-        let db_wal_size =
+        let db_file = std::fs::metadata(data_dir.database_path())?.len();
+        let db_wal =
             std::fs::metadata(format!("{}-wal", data_dir.database_path().display()))?.len();
-        let block_storage_size = std::fs::metadata(data_dir.block_store_dir())?.len();
+        let block_storage = std::fs::metadata(data_dir.block_store_dir())?.len();
 
-        Ok(StoreMetrics {
-            db_file_size,
-            db_wal_size,
-            block_storage_size,
-        })
+        Ok(StoreMetrics { db_file, db_wal, block_storage })
     }
 }
 
 /// Metrics of the store.
+#[derive(Default)]
 struct StoreMetrics {
-    pub db_file_size: u64,
-    pub db_wal_size: u64,
-    pub block_storage_size: u64,
-}
-
-impl Default for StoreMetrics {
-    fn default() -> Self {
-        Self {
-            db_file_size: 0,
-            db_wal_size: 0,
-            block_storage_size: 0,
-        }
-    }
+    pub db_file: u64,
+    pub db_wal: u64,
+    pub block_storage: u64,
 }

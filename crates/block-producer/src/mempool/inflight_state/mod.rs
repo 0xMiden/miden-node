@@ -107,7 +107,7 @@ impl InflightState {
     pub fn add_transaction(
         &mut self,
         tx: &AuthenticatedTransaction,
-    ) -> Result<BTreeSet<TransactionId>, AddTransactionError> {
+    ) -> Result<BTreeSet<TransactionId>, Box<AddTransactionError>> {
         // Separate verification and state mutation so that a rejected transaction
         // does not impact the state (atomicity).
         self.verify_transaction(tx)?;
@@ -128,13 +128,16 @@ impl InflightState {
             .expect("Chain height cannot be less than number of committed blocks")
     }
 
-    fn verify_transaction(&self, tx: &AuthenticatedTransaction) -> Result<(), AddTransactionError> {
+    fn verify_transaction(
+        &self,
+        tx: &AuthenticatedTransaction,
+    ) -> Result<(), Box<AddTransactionError>> {
         // Check that the transaction hasn't already expired.
         if tx.expires_at() <= self.chain_tip + self.expiration_slack {
-            return Err(AddTransactionError::Expired {
+            return Err(Box::new(AddTransactionError::Expired {
                 expired_at: tx.expires_at(),
                 limit: self.chain_tip + self.expiration_slack,
-            });
+            }));
         }
 
         // The mempool retains recently committed blocks, in addition to the state that is currently
@@ -149,10 +152,10 @@ impl InflightState {
         // combination of block rate, transaction throughput and database IO.
         let stale_limit = self.oldest_committed_state();
         if tx.authentication_height() < stale_limit {
-            return Err(AddTransactionError::StaleInputs {
+            return Err(Box::new(AddTransactionError::StaleInputs {
                 input_block: tx.authentication_height(),
                 stale_limit,
-            });
+            }));
         }
 
         // Ensure current account state is correct.
@@ -166,11 +169,13 @@ impl InflightState {
 
         // SAFETY: a new accounts state is set to zero ie default.
         if expected != current.unwrap_or_default() {
-            return Err(VerifyTxError::IncorrectAccountInitialCommitment {
-                tx_initial_account_commitment: expected,
-                current_account_commitment: current,
-            }
-            .into());
+            return Err(Box::new(
+                VerifyTxError::IncorrectAccountInitialCommitment {
+                    tx_initial_account_commitment: expected,
+                    current_account_commitment: current,
+                }
+                .into(),
+            ));
         }
 
         // Ensure nullifiers aren't already present.
@@ -182,7 +187,7 @@ impl InflightState {
             .filter(|nullifier| self.nullifiers.contains(nullifier))
             .collect::<Vec<_>>();
         if !double_spend.is_empty() {
-            return Err(VerifyTxError::InputNotesAlreadyConsumed(double_spend).into());
+            return Err(Box::new(VerifyTxError::InputNotesAlreadyConsumed(double_spend).into()));
         }
 
         // Ensure output notes aren't already present.
@@ -191,7 +196,7 @@ impl InflightState {
             .filter(|note| self.output_notes.contains_key(note))
             .collect::<Vec<_>>();
         if !duplicates.is_empty() {
-            return Err(VerifyTxError::OutputNotesAlreadyExist(duplicates).into());
+            return Err(Box::new(VerifyTxError::OutputNotesAlreadyExist(duplicates).into()));
         }
 
         // Ensure that all unauthenticated notes have an inflight output note to consume.
@@ -206,7 +211,7 @@ impl InflightState {
             .filter(|note_id| !self.output_notes.contains_key(note_id))
             .collect::<Vec<_>>();
         if !missing.is_empty() {
-            return Err(VerifyTxError::UnauthenticatedNotesNotFound(missing).into());
+            return Err(Box::new(VerifyTxError::UnauthenticatedNotesNotFound(missing).into()));
         }
 
         Ok(())
@@ -383,7 +388,7 @@ mod tests {
             AuthenticatedTransaction::from_inner(expired).with_authentication_height(chain_tip);
 
         let err = uut.add_transaction(&expired).unwrap_err();
-        assert_matches!(err, AddTransactionError::Expired { .. });
+        assert_matches!(err.as_ref(), AddTransactionError::Expired { .. });
     }
 
     /// Ensures that the specified expiration slack is adhered to.
@@ -409,7 +414,7 @@ mod tests {
             AuthenticatedTransaction::from_inner(expired).with_authentication_height(chain_tip);
 
         let err = uut.add_transaction(&expired).unwrap_err();
-        assert_matches!(err, AddTransactionError::Expired { .. });
+        assert_matches!(err.as_ref(), AddTransactionError::Expired { .. });
     }
 
     #[test]
@@ -436,10 +441,10 @@ mod tests {
         let err = uut.add_transaction(&AuthenticatedTransaction::from_inner(tx2)).unwrap_err();
 
         assert_matches!(
-            err,
+            err.as_ref(),
             AddTransactionError::VerificationFailed(VerifyTxError::InputNotesAlreadyConsumed(
                 notes
-            )) if notes == vec![mock_note(note_seed).nullifier()]
+            )) if *notes == vec![mock_note(note_seed).nullifier()]
         );
     }
 
@@ -462,10 +467,10 @@ mod tests {
         let err = uut.add_transaction(&AuthenticatedTransaction::from_inner(tx1)).unwrap_err();
 
         assert_matches!(
-            err,
+            err.as_ref(),
             AddTransactionError::VerificationFailed(VerifyTxError::OutputNotesAlreadyExist(
                 notes
-            )) if notes == vec![note.id()]
+            )) if *notes == vec![note.id()]
         );
     }
 
@@ -482,11 +487,11 @@ mod tests {
             .unwrap_err();
 
         assert_matches!(
-            err,
+            err.as_ref(),
             AddTransactionError::VerificationFailed(VerifyTxError::IncorrectAccountInitialCommitment {
                 tx_initial_account_commitment: init_state,
                 current_account_commitment: current_state,
-            }) if init_state == states[0] && current_state == states[2].into()
+            }) if *init_state == states[0] && *current_state == states[2].into()
         );
     }
 

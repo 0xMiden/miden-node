@@ -116,23 +116,33 @@ pub async fn get_tokens(
         .map_err(Into::into)
 }
 
-pub async fn get_index_html(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
+pub async fn get_index_html(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
     get_static_file(state, "index.html")
 }
 
-pub async fn get_index_js(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
+pub async fn get_index_js(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
     get_static_file(state, "index.js")
 }
 
-pub async fn get_index_css(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
+pub async fn get_index_css(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
     get_static_file(state, "index.css")
 }
 
-pub async fn get_background(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
+pub async fn get_background(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
     get_static_file(state, "background.png")
 }
 
-pub async fn get_favicon(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
+pub async fn get_favicon(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
     get_static_file(state, "favicon.ico")
 }
 
@@ -144,7 +154,7 @@ pub async fn get_favicon(state: State<FaucetState>) -> Result<impl IntoResponse,
 fn get_static_file(
     State(state): State<FaucetState>,
     file: &'static str,
-) -> Result<impl IntoResponse, HandlerError> {
+) -> Result<impl IntoResponse, Box<HandlerError>> {
     info!(target: COMPONENT, file, "Serving static file");
 
     let static_file = state.static_files.get(file).expect("static file not found");
@@ -154,5 +164,5 @@ fn get_static_file(
         .header(header::CONTENT_TYPE, static_file.mime_type)
         .body(body::boxed(Full::from(static_file.data)))
         .context("Failed to build response")
-        .map_err(Into::into)
+        .map_err(|err| Box::new(err.into()))
 }

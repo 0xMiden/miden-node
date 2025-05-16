@@ -147,7 +147,8 @@ impl FaucetClient {
         )
         .context("Failed to create P2ID note")?;
 
-        let transaction_args = build_transaction_arguments(&output_note, note_type, asset)?;
+        let transaction_args =
+            build_transaction_arguments(&output_note, note_type, asset).map_err(|err| *err)?;
         self.data_store
             .load_transaction_script(transaction_args.tx_script().expect("should have script"));
 
@@ -272,7 +273,7 @@ fn build_transaction_arguments(
     output_note: &Note,
     note_type: NoteType,
     asset: FungibleAsset,
-) -> Result<TransactionArgs, ClientError> {
+) -> Result<TransactionArgs, Box<ClientError>> {
     let recipient = output_note
         .recipient()
         .digest()
@@ -294,7 +295,8 @@ fn build_transaction_arguments(
         .replace("{execution_hint}", &Felt::new(execution_hint).to_string());
 
     let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
-        .context("Failed to compile script")?;
+        .context("Failed to compile script")
+        .map_err(|err| Box::new(ClientError::from(err)))?;
 
     let mut transaction_args = TransactionArgs::new(
         Some(script),

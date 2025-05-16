@@ -49,6 +49,7 @@ use crate::{
 
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
+const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 
 // COMMANDS
 // ================================================================================================
@@ -66,6 +67,13 @@ pub enum Command {
     Start {
         #[arg(short, long, value_name = "FILE", default_value = FAUCET_CONFIG_FILE_PATH)]
         config: PathBuf,
+
+        /// Enables the exporting of traces for OpenTelemetry.
+        ///
+        /// This can be further configured using environment variables as defined in the official
+        /// OpenTelemetry documentation. See our operator manual for further details.
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL)]
+        open_telemetry: bool,
     },
 
     /// Create a new public faucet account and save to the specified file
@@ -91,22 +99,37 @@ pub enum Command {
     },
 }
 
+impl Command {
+    fn open_telemetry(&self) -> OpenTelemetry {
+        if match *self {
+            Command::Start { config: _, open_telemetry } => open_telemetry,
+            _ => false,
+        } {
+            OpenTelemetry::Enabled
+        } else {
+            OpenTelemetry::Disabled
+        }
+    }
+}
+
 // MAIN
 // =================================================================================================
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)
-        .context("failed to initialize logging")?;
-
     let cli = Cli::parse();
+
+    // Configure tracing with optional OpenTelemetry exporting support.
+    miden_node_utils::logging::setup_tracing(cli.command.open_telemetry())
+        .context("failed to initialize logging")?;
 
     run_faucet_command(cli).await
 }
 
 async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     match &cli.command {
-        Command::Start { config } => {
+        // Note: open-telemetry is handled in main.
+        Command::Start { config, open_telemetry: _ } => {
             let config: FaucetConfig =
                 load_config(config).context("failed to load configuration file")?;
             let faucet_state = FaucetState::new(config.clone()).await?;
@@ -193,7 +216,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 .write(&output_path)
                 .context("failed to write account data to file")?;
 
-            println!("Faucet account file successfully created at: {output_path:?}");
+            println!("Faucet account file successfully created at: {}", output_path.display());
         },
 
         Command::Init { config_path, faucet_account_path } => {
@@ -213,7 +236,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             std::fs::write(&config_file_path, config_as_toml_string)
                 .context("error writing config to file")?;
 
-            println!("Config file successfully created at: {config_file_path:?}");
+            println!("Config file successfully created at: {}", config_file_path.display());
         },
     }
 
@@ -299,7 +322,10 @@ mod test {
         let website_url = config.endpoint.clone();
         tokio::spawn(async move {
             run_faucet_command(Cli {
-                command: crate::Command::Start { config: config_path },
+                command: crate::Command::Start {
+                    config: config_path,
+                    open_telemetry: false,
+                },
             })
             .await
             .unwrap();

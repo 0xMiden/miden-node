@@ -70,8 +70,8 @@ runs:
         Maintainer: Polygon Devops <devops@polygon.technology>
         Description: miden-node binary package
         Homepage: https://polygon.technology/polygon-miden
-        Vcs-Git: git@github.com:0xPolygonMiden/miden-node.git
-        Vcs-Browser: https://github.com/0xPolygonMiden/miden-node
+        Vcs-Git: git@github.com:0xMiden/miden-node.git
+        Vcs-Browser: https://github.com/0xMiden/miden-node
         EOF
 
         cat > packaging/deb/miden-faucet/DEBIAN/control << EOF
@@ -83,8 +83,8 @@ runs:
         Maintainer: Polygon Devops <devops@polygon.technology>
         Description: miden-faucet binary package
         Homepage: https://polygon.technology/polygon-miden
-        Vcs-Git: git@github.com:0xPolygonMiden/miden-node.git
-        Vcs-Browser: https://github.com/0xPolygonMiden/miden-node
+        Vcs-Git: git@github.com:0xMiden/miden-node.git
+        Vcs-Browser: https://github.com/0xMiden/miden-node
         EOF
 
     - name: Build binaries

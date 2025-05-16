@@ -45,7 +45,7 @@ Start the node with the desired public gRPC server address.
 ```sh
 miden-node bundled start \
   --data-directory data \
-  --rpc.url http://0.0.0.0:57123
+  --rpc.url http://0.0.0.0:57291
 ```
 
 ## Faucet

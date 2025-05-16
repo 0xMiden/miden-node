@@ -214,7 +214,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 .write(&output_path)
                 .context("failed to write account data to file")?;
 
-            println!("Faucet account file successfully created at: {output_path:?}");
+            println!("Faucet account file successfully created at: {}", output_path.display());
         },
 
         Command::Init { config_path, faucet_account_path } => {
@@ -234,7 +234,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             std::fs::write(&config_file_path, config_as_toml_string)
                 .context("error writing config to file")?;
 
-            println!("Config file successfully created at: {config_file_path:?}");
+            println!("Config file successfully created at: {}", config_file_path.display());
         },
     }
 

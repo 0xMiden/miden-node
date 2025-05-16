@@ -141,6 +141,7 @@ pub async fn get_favicon(state: State<FaucetState>) -> Result<impl IntoResponse,
 /// # Panics
 ///
 /// Panics if the file does not exist.
+#[allow(clippy::result_large_err)]
 fn get_static_file(
     State(state): State<FaucetState>,
     file: &'static str,

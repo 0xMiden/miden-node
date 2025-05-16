@@ -268,6 +268,7 @@ async fn request_account_state(
 }
 
 /// Builds transaction arguments for the mint transaction.
+#[allow(clippy::result_large_err)]
 fn build_transaction_arguments(
     output_note: &Note,
     note_type: NoteType,

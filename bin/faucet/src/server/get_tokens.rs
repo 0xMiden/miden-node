@@ -13,7 +13,12 @@ use miden_objects::{AccountIdError, account::AccountId};
 use serde::Deserialize;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
+use tracing::error;
 
+use super::{
+    Server,
+    pow::{check_pow_solution, check_server_signature, check_server_timestamp},
+};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -41,6 +46,10 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
+    pub pow_seed: String,
+    pub pow_solution: u64,
+    pub server_signature: String,
+    pub server_timestamp: u64,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -49,6 +58,12 @@ pub enum InvalidRequest {
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
+    #[error("invalid POW solution")]
+    InvalidPoW,
+    #[error("server signatures do not match")]
+    ServerSignaturesDoNotMatch,
+    #[error("server timestamp expired, received: {0}, current time: {1}")]
+    ExpiredServerTimestamp(u64, u64),
 }
 
 pub enum GetTokenError {
@@ -115,7 +130,11 @@ impl RawMintRequest {
     /// Returns an error if:
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
-    fn validate(self, options: &AssetOptions) -> Result<MintRequest, InvalidRequest> {
+    fn validate(
+        self,
+        options: &AssetOptions,
+        pow_salt: &str,
+    ) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -133,19 +152,33 @@ impl RawMintRequest {
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
+        // Check the server timestamp
+        check_server_timestamp(self.server_timestamp)?;
+
+        // Check the server signature
+        check_server_signature(
+            pow_salt,
+            &self.server_signature,
+            &self.pow_seed,
+            self.server_timestamp,
+        )?;
+
+        // Check the PoW solution
+        check_pow_solution(&self.pow_seed, self.pow_solution)?;
+
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
 }
 
 pub async fn get_tokens(
-    State(state): State<GetTokensState>,
+    State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     // Response channel with buffer size 5 since there are currently 5 possible updates
-    let (tx_result, rx_result) = mpsc::channel(5);
+    let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
     let mint_error = request
-        .validate(&state.asset_options)
+        .validate(&server.mint_state.asset_options, &server.pow_salt)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
             let span = tracing::Span::current();
@@ -153,9 +186,10 @@ pub async fn get_tokens(
             span.record("amount", request.asset_amount.inner());
             span.record("note_type", request.note_type.to_string());
 
-            state
+            server
+                .mint_state
                 .request_sender
-                .try_send((request, tx_result.clone()))
+                .try_send((request, tx_result_notifier.clone()))
                 .map_err(|err| match err {
                     TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
                     TrySendError::Closed(_) => GetTokenError::FaucetClosed,
@@ -164,7 +198,7 @@ pub async fn get_tokens(
         .err();
 
     if let Some(error) = mint_error {
-        tx_result.send(Ok(error.into_event())).await.unwrap();
+        tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
     }
 
     let stream = ReceiverStream::new(rx_result);

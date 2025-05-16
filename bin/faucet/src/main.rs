@@ -110,8 +110,12 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
 
-            let server =
-                Server::new(faucet.faucet_id(), config.asset_amount_options.clone(), tx_requests);
+            let server = Server::new(
+                faucet.faucet_id(),
+                config.asset_amount_options.clone(),
+                tx_requests,
+                config.pow_salt,
+            );
 
             // Capture in a variable to avoid moving into two branches
             let config_endpoint = config.endpoint;

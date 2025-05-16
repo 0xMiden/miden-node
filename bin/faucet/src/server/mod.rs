@@ -36,6 +36,7 @@ use crate::{
 
 mod frontend;
 mod get_tokens;
+mod pow;
 
 // FAUCET STATE
 // ================================================================================================
@@ -47,6 +48,7 @@ type RequestSender = mpsc::Sender<(MintRequest, mpsc::Sender<Result<Event, Infal
 pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
+    pow_salt: String,
 }
 
 impl Server {
@@ -54,6 +56,7 @@ impl Server {
         faucet_id: FaucetId,
         asset_options: AssetOptions,
         request_sender: RequestSender,
+        pow_salt: String,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
         let metadata = Metadata {
@@ -63,7 +66,7 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        Server { mint_state, metadata }
+        Server { mint_state, metadata, pow_salt }
     }
 
     pub async fn serve(self, url: Url) -> anyhow::Result<()> {
@@ -113,6 +116,7 @@ impl Server {
                 .route("/background.png", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
+                .route("/pow", get(pow::get_pow_seed))
                 // TODO: This feels rather ugly, and would be nice to move but I can't figure out the types.
                 .route(
                     "/get_tokens",

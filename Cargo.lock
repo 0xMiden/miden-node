@@ -2191,6 +2191,7 @@ dependencies = [
  "rand_chacha 0.9.0",
  "serde",
  "serde_json",
+ "sha3",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",

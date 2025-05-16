@@ -1,8 +1,7 @@
-use std::time::Duration;
-
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
+use tokio::{net::TcpListener, time::Duration};
 use url::Url;
 
 use super::{
@@ -88,8 +87,12 @@ impl BlockProducerCommand {
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
 
+        let tcp_listener = TcpListener::bind(block_producer_address)
+            .await
+            .context("Failed to bind socket address for block producer")?;
+
         BlockProducer {
-            block_producer_address,
+            block_producer_listener: tcp_listener,
             store_address,
             ntx_builder_address,
             batch_prover_url,

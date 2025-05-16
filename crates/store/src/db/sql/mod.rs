@@ -450,6 +450,8 @@ pub fn upsert_accounts(
     accounts: &[BlockAccountUpdate],
     block_num: BlockNumber,
 ) -> Result<usize> {
+    println!("about to insert account");
+
     let mut upsert_stmt = transaction.prepare_cached(insert_sql!(
         accounts {
             account_id,
@@ -502,6 +504,7 @@ pub fn upsert_accounts(
             },
         };
 
+        println!("account ID {}, prefix {}", account_id, account_id_prefix);
         let inserted = upsert_stmt.execute(params![
             account_id.to_bytes(),
             account_id_prefix,

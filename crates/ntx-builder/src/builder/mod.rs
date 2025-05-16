@@ -31,8 +31,8 @@ const NOTE_CHECK_INTERVAL_MS: u64 = 200;
 
 /// Network Transaction Builder
 pub struct NetworkTransactionBuilder {
-    /// The address of the network transaction builder gRPC server.
-    pub address: SocketAddr,
+    /// The listener for the network transaction builder gRPC server.
+    pub ntx_builder_listener: TcpListener,
     /// Address of the store gRPC server.
     pub store_address: SocketAddr,
     /// Address of the block producer gRPC server.
@@ -41,7 +41,7 @@ pub struct NetworkTransactionBuilder {
 
 impl NetworkTransactionBuilder {
     pub async fn serve(self) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?self.address, "Starting network transaction builder server");
+        info!(target: COMPONENT, endpoint=?self.ntx_builder_listener.local_addr().unwrap(), "Starting network transaction builder server");
 
         let store = StoreClient::new(self.store_address);
         let unconsumed_network_notes = store.get_unconsumed_network_notes().await?;
@@ -49,16 +49,16 @@ impl NetworkTransactionBuilder {
         let notes_queue = api.state();
 
         let api_service = api_server::ApiServer::new(api);
-        let listener = TcpListener::bind(self.address).await?;
 
         let tick_handle =
             Self::spawn_ticker(notes_queue, self.store_address, self.block_producer_address);
+        println!("ererer3");
 
         let server_result = tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc())
             .add_service(api_service)
-            .serve_with_incoming(TcpListenerStream::new(listener))
+            .serve_with_incoming(TcpListenerStream::new(self.ntx_builder_listener))
             .await;
 
         tick_handle.abort();

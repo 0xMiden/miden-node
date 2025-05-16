@@ -4,6 +4,7 @@
 
 - Added a required Proof-of-Work in the faucet to request tokens (#831).
 - Faucet now supports the usage of a remote transaction prover (#830).
+- Added a required Proof-of-Work in the faucet to request tokens (#831).
 - Added an optional API key request parameter to skip PoW in faucet (#839).
 
 ## v0.8.2 (2025-05-04)

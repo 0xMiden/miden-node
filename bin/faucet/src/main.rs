@@ -17,7 +17,7 @@ use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{config::load_config, crypto::get_rpo_random_coin, version::LongVersion};
 use miden_objects::{
     Felt,
-    account::{AccountFile, AccountStorageMode, AuthSecretKey},
+    account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -38,6 +38,10 @@ const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
 const REQUESTS_QUEUE_SIZE: usize = 1000;
 const DEFAULT_API_KEYS_COUNT: &str = "1";
 const API_KEY_PREFIX: &str = "miden_faucet_";
+
+// TODO: we should probably parse this from the config file
+const NETWORK_ID: NetworkId = NetworkId::Testnet;
+const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 // COMMANDS
 // ================================================================================================

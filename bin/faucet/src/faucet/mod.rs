@@ -6,7 +6,7 @@ use miden_lib::{
     note::create_p2id_note,
 };
 use miden_objects::{
-    AccountError, Digest, Felt,
+    AccountError, Digest, Felt, NoteError,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
     asset::FungibleAsset,
     block::BlockNumber,
@@ -16,7 +16,8 @@ use miden_objects::{
     },
     note::Note,
     transaction::{
-        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionWitness,
+        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionId,
+        TransactionWitness,
     },
     vm::AdviceMap,
 };
@@ -29,17 +30,20 @@ use miden_tx::{
 use rand::{random, rngs::StdRng};
 use serde::Serialize;
 use store::FaucetDataStore;
-use tokio::sync::{mpsc, oneshot::Sender};
+use tokio::sync::mpsc::Receiver;
 use tonic::Code;
 use tracing::{error, info, instrument, warn};
+use updates::{ClientUpdater, MintUpdate, ResponseSender};
 use url::Url;
 
 use crate::{
+    NETWORK_ID,
     rpc_client::{RpcClient, RpcError},
     types::{AssetAmount, NoteType},
 };
 
 mod store;
+mod updates;
 
 // FAUCET PROVER
 // ================================================================================================
@@ -116,7 +120,7 @@ impl Serialize for FaucetId {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.0.to_hex())
+        serializer.serialize_str(&self.0.to_bech32(NETWORK_ID))
     }
 }
 
@@ -143,6 +147,8 @@ pub enum MintError {
     Proving(#[source] TransactionProverError),
     #[error("submitting the tx to the node failed")]
     Submission(#[source] RpcError),
+    #[error("failed to build notes")]
+    NoteBuild(#[source] NoteError),
 }
 
 /// Stores the current faucet state and handles minting requests.
@@ -251,7 +257,7 @@ impl Faucet {
     pub async fn run(
         mut self,
         mut rpc_client: RpcClient,
-        mut requests: mpsc::Receiver<(MintRequest, Sender<(BlockNumber, Note)>)>,
+        mut requests: Receiver<(MintRequest, ResponseSender)>,
     ) -> anyhow::Result<()> {
         let coin_seed: [u64; 4] = random();
         let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
@@ -261,7 +267,7 @@ impl Faucet {
 
         while requests.recv_many(&mut buffer, limit).await > 0 {
             // Skip requests where the user no longer cares about the result.
-            let (requests, response_senders): (Vec<MintRequest>, Vec<Sender<(BlockNumber, Note)>>) = buffer
+            let (requests, response_senders): (Vec<MintRequest>, Vec<ResponseSender>) = buffer
                 .drain(..)
                 .filter(|(request, response_sender)| {
                     if response_sender.is_closed() {
@@ -273,14 +279,12 @@ impl Faucet {
                 })
                 .unzip();
 
-            match self.handle_request_batch(&requests, &mut rng, &mut rpc_client).await {
+            let updater = ClientUpdater::new(response_senders);
+
+            match self.handle_request_batch(&requests, &mut rng, &mut rpc_client, &updater).await {
                 // Update local state on success.
-                Ok((delta, block_number, notes)) => {
-                    for (note, response_sender) in notes.iter().zip(response_senders) {
-                        // We ignore the channel closure here as the user may have cancelled the
-                        // request.
-                        let _ = response_sender.send((block_number, note.clone()));
-                    }
+                Ok((delta, block_number, notes, tx_id)) => {
+                    updater.send_notes(block_number, &notes, tx_id).await;
                     // SAFETY: Delta must be valid since it comes from a tx accepted by the node.
                     self.update_state(&delta).unwrap();
                 },
@@ -376,15 +380,28 @@ impl Faucet {
         requests: &[MintRequest],
         rng: &mut impl FeltRng,
         rpc_client: &mut RpcClient,
-    ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>)> {
-        let notes = P2IdNotes::build(self.faucet_id(), requests, rng).into_inner();
+        updater: &ClientUpdater,
+    ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>, TransactionId)> {
+        // Build the note
+        let notes = P2IdNotes::build(self.faucet_id(), requests, rng)?.into_inner();
         let tx_args = self.compile(&notes)?;
+        updater.send_updates(MintUpdate::Built).await;
+
+        // Execute the transaction
         let executed_transaction = self.execute_transaction(tx_args).await?;
         let account_delta = executed_transaction.account_delta().clone();
-        let tx = self.tx_prover.as_ref().prove(executed_transaction).await?;
-        let block_height = self.submit_transaction(tx.clone(), rpc_client).await?;
+        let tx_id = executed_transaction.id();
+        updater.send_updates(MintUpdate::Executed).await;
 
-        Ok((account_delta, block_height, notes))
+        // Prove the transaction
+        let tx = self.tx_prover.as_ref().prove(executed_transaction).await?;
+        updater.send_updates(MintUpdate::Proven).await;
+
+        // Submit the transaction
+        let block_number = self.submit_transaction(tx, rpc_client).await?;
+        updater.send_updates(MintUpdate::Submitted).await;
+
+        Ok((account_delta, block_number, notes, tx_id))
     }
 
     /// Compiles the transaction script that creates the given set of notes.
@@ -445,24 +462,37 @@ fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
         .map(Into::into)
 }
 
+/// A collection of `P2Id` notes.
 struct P2IdNotes(Vec<Note>);
 
 impl P2IdNotes {
-    fn build(source: FaucetId, requests: &[MintRequest], rng: &mut impl FeltRng) -> Self {
-        Self(requests
-            .iter()
-            .filter_map(|request| {
-                // SAFETY: source is definitely a faucet account, and the amount is valid.
-                let asset = FungibleAsset::new(source.inner(), request.asset_amount.inner()).unwrap();
-                create_p2id_note(
-                    source.inner(),
-                    request.account_id,
-                    vec![asset.into()],
-                    request.note_type.into(),
-                    Felt::default(),
-                    rng,
-                ).inspect_err(|err| tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note")).ok()
-            }).collect())
+    /// Builds a collection of `P2Id` notes from a set of mint requests.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if creating any p2id note fails.
+    fn build(
+        source: FaucetId,
+        requests: &[MintRequest],
+        rng: &mut impl FeltRng,
+    ) -> Result<Self, MintError> {
+        // If building a note fails, we discard the whole batch. Should never happen, since account
+        // ids are validated on the request level.
+        let mut notes = Vec::new();
+        for request in requests {
+            // SAFETY: source is definitely a faucet account, and the amount is valid.
+            let asset = FungibleAsset::new(source.inner(), request.asset_amount.inner()).unwrap();
+            let note = create_p2id_note(
+                source.inner(),
+                request.account_id,
+                vec![asset.into()],
+                request.note_type.into(),
+                Felt::default(),
+                rng,
+            ).inspect_err(|err| tracing::error!(request.account_id=%request.account_id, ?err, "failed to build note")).map_err(MintError::NoteBuild)?;
+            notes.push(note);
+        }
+        Ok(Self(notes))
     }
 
     fn into_inner(self) -> Vec<Note> {
@@ -564,7 +594,7 @@ mod tests {
         let mut rng = *rng.lock().unwrap();
 
         // Build and execute the transaction
-        let notes = P2IdNotes::build(faucet.faucet_id(), &requests, &mut rng).into_inner();
+        let notes = P2IdNotes::build(faucet.faucet_id(), &requests, &mut rng).unwrap().into_inner();
         let tx_args = faucet.compile(&notes).unwrap();
         let executed_tx = faucet.execute_transaction(tx_args).await.unwrap();
 

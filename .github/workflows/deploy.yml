@@ -16,6 +16,11 @@ on:
         required: true
         type: string
 
+      reset-db:
+        description: 'Reset database and genesis account'
+        required: false
+        type: boolean
+
 # Limit concurrency to 1 per network.
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.network }}
@@ -139,6 +144,7 @@ jobs:
             dpkg -i ${{ env.faucet-package }} 
 
       # The faucet uses the public faucet generated in the genesis block.
+      # If the reset-db flag is set, the database and accounts files are deleted.
       - name: Configure environment
         uses: ./.github/actions/ssm_execute
         env:
@@ -147,7 +153,13 @@ jobs:
         with:
           instance_id: ${{ secrets[env.instance-id] }}
           command: |
-            sudo /usr/bin/miden-node bundled bootstrap --data-directory /opt/miden-node --accounts-directory /opt/miden-faucet; \
+            if [ "${{ inputs.reset-db }}" == "true" ]; then \
+                sudo rm -rf /opt/miden-faucet/*; \
+                sudo rm -rf /opt/miden-node/*; \
+            fi; \
+            if [ ! -f /opt/miden-node/miden-store.sqlite3 ]; then \
+              sudo /usr/bin/miden-node bundled bootstrap --data-directory /opt/miden-node --accounts-directory /opt/miden-faucet; \
+            fi; \
             sudo /usr/bin/miden-faucet init -c /etc/opt/miden-faucet/miden-faucet.toml -f /opt/miden-faucet/account.mac; \
             sudo chown -R miden-node /opt/miden-node; \
             sudo chown -R miden-faucet /opt/miden-faucet;

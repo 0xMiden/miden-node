@@ -4,7 +4,5 @@
 # Remove miden-faucet installs
 ##############
 sudo rm -rf /lib/systemd/system/miden-faucet.service
-sudo rm -rf /etc/opt/miden-faucet
-sudo rm -rf /opt/miden-faucet
 sudo deluser miden-faucet
 sudo systemctl daemon-reload

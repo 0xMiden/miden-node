@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Faucet now supports the usage of a remote transaction prover (#830).
+- [BUGFIX] Prevents duplicated note IDs (#842).
 
 ## v0.8.2 (2025-05-04)
 

@@ -14,6 +14,7 @@
 - Added gRPC `/status` endpoint on all components (#817).
 - Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
 - Block producer now emits network note information (#805).
+- Introduced Network Transaction Builder (#840).
 
 ## v0.8.0 (2025-03-26)
 

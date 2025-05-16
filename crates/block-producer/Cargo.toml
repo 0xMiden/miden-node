@@ -31,6 +31,7 @@ miden-proving-service-client = { git = "https://github.com/0xMiden/miden-base.gi
   "batch-prover",
   "block-prover",
 ] }
+miden-tx = { workspace = true }
 miden-tx-batch-prover = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 rand = { version = "0.9" }
 thiserror = { workspace = true }

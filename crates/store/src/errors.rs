@@ -211,6 +211,12 @@ pub enum GetBlockInputsError {
 }
 
 #[derive(Error, Debug)]
+pub enum GetMmrPeaksError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+}
+
+#[derive(Error, Debug)]
 pub enum StateSyncError {
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),

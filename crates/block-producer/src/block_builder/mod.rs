@@ -302,6 +302,7 @@ impl BlockBuilder {
                 .committed_transactions
                 .into_iter()
                 .map(|tx| (tx, TransactionStatus::Commited));
+
             let reverted = delta
                 .reverted_transactions
                 .into_iter()

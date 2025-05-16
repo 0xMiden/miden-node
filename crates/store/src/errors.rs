@@ -82,6 +82,12 @@ impl From<DatabaseError> for Status {
     }
 }
 
+impl From<DatabaseError> for Box<Status> {
+    fn from(err: DatabaseError) -> Self {
+        Box::new(err.into())
+    }
+}
+
 // INITIALIZATION ERRORS
 // =================================================================================================
 

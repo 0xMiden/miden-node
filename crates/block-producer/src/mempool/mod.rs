@@ -219,7 +219,7 @@ impl Mempool {
         transaction: AuthenticatedTransaction,
     ) -> Result<BlockNumber, AddTransactionError> {
         // Add transaction to inflight state.
-        let parents = self.state.add_transaction(&transaction)?;
+        let parents = self.state.add_transaction(&transaction).map_err(|err| *err)?;
 
         self.expirations.insert(transaction.id(), transaction.expires_at());
 

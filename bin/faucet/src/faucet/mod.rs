@@ -27,7 +27,7 @@ use miden_tx::{
     TransactionProver, TransactionProverError, auth::BasicAuthenticator,
     utils::parse_hex_string_as_word,
 };
-use rand::{random, rngs::StdRng, thread_rng};
+use rand::{Rng, rng, rngs::StdRng};
 use serde::Serialize;
 use store::FaucetDataStore;
 use tokio::sync::mpsc::Receiver;
@@ -378,7 +378,9 @@ impl Faucet {
         rpc_client: &mut RpcClient,
         updater: &ClientUpdater,
     ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>, TransactionId)> {
-        let coin_seed: [u64; 4] = random();
+        let mut thread_rng = rng();
+        let coin_seed: [u64; 4] = thread_rng.random();
+
         let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
 
         let p2id_notes = P2IdNotes::build(self.faucet_id(), requests, &mut rng)?;

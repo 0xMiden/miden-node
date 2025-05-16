@@ -4,10 +4,10 @@
 
 We want to make contributing to this project as easy and transparent as possible, whether it's:
 
-- Reporting a [bug](https://github.com/0xPolygonMiden/miden-node/issues/new?assignees=&labels=bug&projects=&template=1-bugreport.yml)
-- Taking part in [discussions](https://github.com/0xPolygonMiden/miden-node/discussions)
-- Submitting a [fix](https://github.com/0xPolygonMiden/miden-node/pulls)
-- Proposing new [features](https://github.com/0xPolygonMiden/miden-node/issues/new?assignees=&labels=enhancement&projects=&template=2-feature-request.yml)
+- Reporting a [bug](https://github.com/0xMiden/miden-node/issues/new?assignees=&labels=bug&projects=&template=1-bugreport.yml)
+- Taking part in [discussions](https://github.com/0xMiden/miden-node/discussions)
+- Submitting a [fix](https://github.com/0xMiden/miden-node/pulls)
+- Proposing new [features](https://github.com/0xMiden/miden-node/issues/new?assignees=&labels=enhancement&projects=&template=2-feature-request.yml)
 
 &nbsp;
 

@@ -28,6 +28,7 @@ pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         Some("GetBlockByNumber") => rpc_span!("rpc.rpc", "GetBlockByNumber"),
         Some("GetAccountStateDelta") => rpc_span!("rpc.rpc", "GetAccountStateDelta"),
         Some("GetAccountProofs") => rpc_span!("rpc.rpc", "GetAccountProofs"),
+        Some("Status") => rpc_span!("rpc.rpc", "Status"),
         _ => rpc_span!("rpc.rpc", "Unknown"),
     };
     add_network_attributes(span, request)
@@ -40,10 +41,14 @@ pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
 /// Additionally also pulls in remote tracing context which allows the server trace to be connected
 /// to the client's origin trace.
 pub fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let span = if let Some("SubmitProvenTransaction") = request.uri().path().rsplit('/').next() {
-        rpc_span!("block-producer.rpc", "SubmitProvenTransaction")
-    } else {
-        rpc_span!("block-producer.rpc", "Unknown")
+    let span = match request.uri().path().rsplit('/').next() {
+        Some("SubmitProvenTransaction") => {
+            rpc_span!("block-producer.rpc", "SubmitProvenTransaction")
+        },
+        Some("Status") => rpc_span!("block-producer.rpc", "Status"),
+        _ => {
+            rpc_span!("block-producer.rpc", "Unknown")
+        },
     };
 
     let span = add_otel_span_attributes(span, request);
@@ -72,6 +77,7 @@ pub fn store_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         Some("GetTransactionInputs") => rpc_span!("store.rpc", "GetTransactionInputs"),
         Some("SyncNotes") => rpc_span!("store.rpc", "SyncNotes"),
         Some("SyncState") => rpc_span!("store.rpc", "SyncState"),
+        Some("Status") => rpc_span!("store.rpc", "Status"),
         _ => rpc_span!("store.rpc", "Unknown"),
     };
 

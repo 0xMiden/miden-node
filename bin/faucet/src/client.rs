@@ -19,7 +19,7 @@ use miden_objects::{
     },
     note::{Note, NoteType},
     transaction::{
-        ExecutedTransaction, ForeignAccountInputs, InputNote, InputNotes, PartialBlockchain,
+        AccountInputs, ExecutedTransaction, InputNote, InputNotes, PartialBlockchain,
         TransactionArgs, TransactionScript,
     },
     utils::Deserializable,
@@ -31,7 +31,7 @@ use miden_tx::{
 };
 use rand::{random, rngs::StdRng};
 use tonic::transport::Channel;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{COMPONENT, config::FaucetConfig, errors::ClientError, store::FaucetDataStore};
 
@@ -51,7 +51,7 @@ pub struct FaucetClient {
     rng: RpoRandomCoin,
 }
 
-// TODO: Remove this once https://github.com/0xPolygonMiden/miden-base/issues/909 is resolved
+// TODO: Remove this once https://github.com/0xMiden/miden-base/issues/909 is resolved
 unsafe impl Send for FaucetClient {}
 
 impl FaucetClient {
@@ -121,6 +121,7 @@ impl FaucetClient {
     /// Executes a mint transaction for the target account.
     ///
     /// Returns the executed transaction and the expected output note.
+    #[instrument(target = COMPONENT, name = "faucet.client.execute_mint_transaction", skip_all, err)]
     pub fn execute_mint_transaction(
         &mut self,
         target_account_id: AccountId,
@@ -164,6 +165,7 @@ impl FaucetClient {
     }
 
     /// Proves and submits the executed transaction to the node.
+    #[instrument(target = COMPONENT, name = "faucet.client.prove_and_submit_transaction", skip_all, err)]
     pub async fn prove_and_submit_transaction(
         &mut self,
         executed_tx: ExecutedTransaction,
@@ -266,6 +268,7 @@ async fn request_account_state(
 }
 
 /// Builds transaction arguments for the mint transaction.
+#[allow(clippy::result_large_err)]
 fn build_transaction_arguments(
     output_note: &Note,
     note_type: NoteType,
@@ -294,12 +297,8 @@ fn build_transaction_arguments(
     let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
         .context("Failed to compile script")?;
 
-    let mut transaction_args = TransactionArgs::new(
-        Some(script),
-        None,
-        AdviceMap::new(),
-        Vec::<ForeignAccountInputs>::default(),
-    );
+    let mut transaction_args =
+        TransactionArgs::new(Some(script), None, AdviceMap::new(), Vec::<AccountInputs>::default());
     transaction_args.extend_output_note_recipients(vec![output_note.clone()]);
 
     Ok(transaction_args)

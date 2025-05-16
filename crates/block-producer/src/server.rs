@@ -2,8 +2,9 @@ use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, Result};
 use miden_node_proto::generated::{
-    block_producer::api_server, requests::SubmitProvenTransactionRequest,
-    responses::SubmitProvenTransactionResponse,
+    block_producer::api_server,
+    requests::SubmitProvenTransactionRequest,
+    responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
 };
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
@@ -195,6 +196,22 @@ impl api_server::Api for BlockProducerRpcServer {
             // This Status::from mapping takes care of hiding internal errors.
             .map_err(Into::into)
     }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "block_producer.server.status",
+        skip_all,
+        err
+    )]
+    async fn status(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<BlockProducerStatusResponse>, Status> {
+        Ok(tonic::Response::new(BlockProducerStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+        }))
+    }
 }
 
 impl BlockProducerRpcServer {
@@ -264,7 +281,7 @@ mod test {
     use miden_node_store::{GenesisState, Store};
     use miden_objects::{
         Digest,
-        account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType, NetworkAccount},
+        account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType},
         transaction::ProvenTransactionBuilder,
     };
     use miden_tx::utils::Serializable;
@@ -386,7 +403,6 @@ mod test {
                 AccountIdVersion::Version0,
                 AccountType::RegularAccountImmutableCode,
                 AccountStorageMode::Private,
-                NetworkAccount::Disabled,
             ),
             Digest::default(),
             [i; 32].try_into().unwrap(),

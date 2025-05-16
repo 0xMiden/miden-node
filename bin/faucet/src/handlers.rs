@@ -14,7 +14,7 @@ use miden_objects::{
 };
 use serde::{Deserialize, Serialize};
 use tonic::body;
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{COMPONENT, errors::HandlerError, state::FaucetState};
 
@@ -31,6 +31,7 @@ pub struct FaucetMetadataReponse {
     asset_amount_options: Vec<u64>,
 }
 
+#[instrument(parent = None, target = COMPONENT, name = "faucet.server.get_metadata", skip_all)]
 pub async fn get_metadata(
     State(state): State<FaucetState>,
 ) -> (StatusCode, Json<FaucetMetadataReponse>) {
@@ -42,18 +43,19 @@ pub async fn get_metadata(
     (StatusCode::OK, Json(response))
 }
 
+#[instrument(
+    parent = None, target = COMPONENT, name = "faucet.server.get_tokens",
+    skip_all, err,
+    fields(
+        account_id = %req.account_id,
+        is_private_note = %req.is_private_note,
+        asset_amount = %req.asset_amount,
+    )
+)]
 pub async fn get_tokens(
     State(state): State<FaucetState>,
     Json(req): Json<FaucetRequest>,
 ) -> Result<impl IntoResponse, HandlerError> {
-    info!(
-        target: COMPONENT,
-        account_id = %req.account_id,
-        is_private_note = %req.is_private_note,
-        asset_amount = %req.asset_amount,
-        "Received a request",
-    );
-
     // Check that the amount is in the asset amount options
     if !state.config.asset_amount_options.contains(&req.asset_amount) {
         return Err(HandlerError::InvalidAssetAmount {
@@ -69,7 +71,6 @@ pub async fn get_tokens(
         .map_err(HandlerError::AccountIdDeserializationError)?;
 
     // Execute transaction
-    info!(target: COMPONENT, "Executing mint transaction for account.");
     let (executed_tx, created_note) = client.execute_mint_transaction(
         target_account_id,
         req.is_private_note,
@@ -82,7 +83,6 @@ pub async fn get_tokens(
         .context("Failed to apply faucet account delta")?;
 
     // Run transaction prover & send transaction to node
-    info!(target: COMPONENT, "Proving and submitting transaction.");
     let block_height = client.prove_and_submit_transaction(executed_tx).await?;
 
     // Update data store with the new faucet state
@@ -141,6 +141,7 @@ pub async fn get_favicon(state: State<FaucetState>) -> Result<impl IntoResponse,
 /// # Panics
 ///
 /// Panics if the file does not exist.
+#[allow(clippy::result_large_err)]
 fn get_static_file(
     State(state): State<FaucetState>,
     file: &'static str,

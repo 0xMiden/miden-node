@@ -4,9 +4,13 @@ package block_producer;
 
 import "requests.proto";
 import "responses.proto";
+import "google/protobuf/empty.proto";
 
 service Api {
     // Submits proven transaction to the Miden network
     rpc SubmitProvenTransaction(requests.SubmitProvenTransactionRequest) returns (responses.SubmitProvenTransactionResponse) {}
+
+    // Returns the status info.
+    rpc Status(google.protobuf.Empty) returns (responses.BlockProducerStatusResponse) {}
 }
 

@@ -116,24 +116,34 @@ pub async fn get_tokens(
         .map_err(Into::into)
 }
 
-pub async fn get_index_html(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "index.html").map_err(|err| *err)
+pub async fn get_index_html(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
+    get_static_file(state, "index.html")
 }
 
-pub async fn get_index_js(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "index.js").map_err(|err| *err)
+pub async fn get_index_js(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
+    get_static_file(state, "index.js")
 }
 
-pub async fn get_index_css(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "index.css").map_err(|err| *err)
+pub async fn get_index_css(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
+    get_static_file(state, "index.css")
 }
 
-pub async fn get_background(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "background.png").map_err(|err| *err)
+pub async fn get_background(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
+    get_static_file(state, "background.png")
 }
 
-pub async fn get_favicon(state: State<FaucetState>) -> Result<impl IntoResponse, HandlerError> {
-    get_static_file(state, "favicon.ico").map_err(|err| *err)
+pub async fn get_favicon(
+    state: State<FaucetState>,
+) -> Result<impl IntoResponse, Box<HandlerError>> {
+    get_static_file(state, "favicon.ico")
 }
 
 /// Returns a static file bundled with the app state.

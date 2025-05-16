@@ -59,3 +59,9 @@ impl IntoResponse for HandlerError {
             .into_response()
     }
 }
+
+impl IntoResponse for Box<HandlerError> {
+    fn into_response(self) -> Response {
+        (*self).into_response()
+    }
+}

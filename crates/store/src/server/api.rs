@@ -593,6 +593,7 @@ fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
     Status::invalid_argument(err.to_string())
 }
 
+#[allow(clippy::result_large_err)]
 fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Status> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()

@@ -30,7 +30,7 @@ use miden_tx::{
 use rand::{random, rngs::StdRng};
 use serde::Serialize;
 use store::FaucetDataStore;
-use tokio::sync::{Mutex, mpsc::Receiver};
+use tokio::sync::mpsc::Receiver;
 use tonic::Code;
 use tracing::{error, info, instrument, warn};
 use updates::{ClientUpdater, MintUpdate, ResponseSender};
@@ -160,7 +160,6 @@ pub struct Faucet {
     tx_prover: Arc<FaucetProver>,
     tx_executor: Rc<TransactionExecutor>,
     account_interface: AccountInterface,
-    rng: Arc<Mutex<RpoRandomCoin>>,
 }
 
 impl Faucet {
@@ -243,9 +242,6 @@ impl Faucet {
         let tx_executor =
             Rc::new(TransactionExecutor::new(data_store.clone(), Some(authenticator.clone())));
 
-        let coin_seed: [u64; 4] = random();
-        let rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
-
         Ok(Self {
             data_store,
             id,
@@ -253,7 +249,6 @@ impl Faucet {
             tx_prover,
             tx_executor,
             account_interface,
-            rng: Arc::new(Mutex::new(rng)),
         })
     }
 
@@ -383,10 +378,11 @@ impl Faucet {
         rpc_client: &mut RpcClient,
         updater: &ClientUpdater,
     ) -> MintResult<(AccountDelta, BlockNumber, Vec<Note>, TransactionId)> {
-        let p2id_notes = {
-            let mut rng_guard = self.rng.lock().await;
-            P2IdNotes::build(self.faucet_id(), requests, &mut rng_guard)?
-        };
+        let coin_seed: [u64; 4] = random();
+        let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
+
+        let p2id_notes = P2IdNotes::build(self.faucet_id(), requests, &mut rng)?;
+
         // Build the note
         let notes = p2id_notes.into_inner();
         let tx_args = self.compile(&notes)?;

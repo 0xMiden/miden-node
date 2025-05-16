@@ -148,9 +148,9 @@ mod tests {
     #[test]
     fn lru_evicts_least_recently_used_account() {
         let cache = AccountCache::new(2);
-        let acc_id_1: u128 = 0x0000_0004_0000_0000;
-        let acc_id_2: u128 = 0x0000_0008_0000_0000;
-        let acc_id_3: u128 = 0x0000_000C_0000_0000;
+        let acc_id_1: u128 = 0x0100_0000_0000_0000_0000_0000_0000_0000;
+        let acc_id_2: u128 = 0x0200_0000_0000_0000_0000_0000_0000_0000;
+        let acc_id_3: u128 = 0x0300_0000_0000_0000_0000_0000_0000_0000;
 
         let acc1 = create_account(acc_id_1);
         let acc2 = create_account(acc_id_2);
@@ -164,7 +164,10 @@ mod tests {
         assert!(cache.get(acc1.id().into()).is_some());
         assert!(cache.get(acc2.id().into()).is_some());
 
+        // access the account to makr it as recently used
         cache.get(acc1.id().into()).unwrap();
+
+        // evict acc2
         cache.put(&acc3.clone());
 
         assert_eq!(cache.state.lock().unwrap().accounts.len(), 2);

@@ -281,7 +281,7 @@ pub struct GetUnconsumedNetworkNotesResponse {
     pub next_token: ::core::option::Option<u64>,
     /// The list of unconsumed network notes.
     #[prost(message, repeated, tag = "2")]
-    pub notes: ::prost::alloc::vec::Vec<super::note::Note>,
+    pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
 }
 /// Represents the status of the node.
 #[derive(Clone, PartialEq, ::prost::Message)]

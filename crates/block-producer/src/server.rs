@@ -1,28 +1,33 @@
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, Result};
-use miden_node_proto::generated::{
-    block_producer::api_server,
-    requests::SubmitProvenTransactionRequest,
-    responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
+use miden_node_proto::{
+    generated::{
+        block_producer::api_server,
+        requests::SubmitProvenTransactionRequest,
+        responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
+    },
+    ntx_builder,
 };
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::block_producer_trace_fn,
+    tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
 };
-use miden_objects::{transaction::ProvenTransaction, utils::serde::Deserializable};
+use miden_objects::{
+    note::Nullifier, transaction::ProvenTransaction, utils::serde::Deserializable,
+};
 use tokio::{net::TcpListener, sync::Mutex};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
 use crate::{
     COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION,
     SERVER_NUM_BATCH_BUILDERS,
     batch_builder::BatchBuilder,
-    block_builder::BlockBuilder,
+    block_builder::{BlockBuilder, NtxClient},
     domain::transaction::AuthenticatedTransaction,
     errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
     mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
@@ -35,11 +40,19 @@ use crate::{
 /// The connection to the store is established at startup and retried with exponential backoff
 /// until the store becomes available. Once the connection is established, the block producer
 /// will start serving requests.
+/// The block producer server.
+///
+/// Specifies how to connect to the store, batch prover, and block prover components.
+/// The connection to the store is established at startup and retried with exponential backoff
+/// until the store becomes available. Once the connection is established, the block producer
+/// will start serving requests.
 pub struct BlockProducer {
     /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_address: SocketAddr,
+    /// The address of the network transaction builder.
+    pub ntx_builder_address: SocketAddr,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -52,12 +65,12 @@ pub struct BlockProducer {
 
 impl BlockProducer {
     /// Serves the block-producer RPC API, the batch-builder and the block-builder.
+    /// Serves the block-producer RPC API, the batch-builder and the block-builder.
     ///
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
-
         let store = StoreClient::new(self.store_address);
 
         // retry fetching the chain tip from the store until it succeeds.
@@ -93,10 +106,17 @@ impl BlockProducer {
             .await
             .context("failed to bind to block producer address")?;
 
+        let ntx_client =
+            ntx_builder::Client::lazy_with_interceptor(self.ntx_builder_address, OtelInterceptor);
+
         info!(target: COMPONENT, "Server initialized");
 
-        let block_builder =
-            BlockBuilder::new(store.clone(), self.block_prover_url, self.block_interval);
+        let block_builder = BlockBuilder::new(
+            store.clone(),
+            ntx_client,
+            self.block_prover_url,
+            self.block_interval,
+        );
         let batch_builder = BatchBuilder::new(
             store.clone(),
             SERVER_NUM_BATCH_BUILDERS,
@@ -137,8 +157,13 @@ impl BlockProducer {
                 }
             })
             .id();
+
+        let ntx_client =
+            ntx_builder::Client::lazy_with_interceptor(self.ntx_builder_address, OtelInterceptor);
         let rpc_id = tasks
-            .spawn(async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await })
+            .spawn(async move {
+                BlockProducerRpcServer::new(mempool, store, ntx_client).serve(listener).await
+            })
             .id();
 
         let task_ids = HashMap::from([
@@ -160,7 +185,6 @@ impl BlockProducer {
 
         // We could abort the other tasks here, but not much point as we're probably crashing the
         // node.
-
         task_result
             .map_err(|source| BlockProducerError::JoinError { task, source })
             .map(|(_, result)| match result {
@@ -182,6 +206,8 @@ struct BlockProducerRpcServer {
     mempool: Mutex<SharedMempool>,
 
     store: StoreClient,
+
+    ntx_client: NtxClient,
 }
 
 #[tonic::async_trait]
@@ -215,8 +241,12 @@ impl api_server::Api for BlockProducerRpcServer {
 }
 
 impl BlockProducerRpcServer {
-    pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
-        Self { mempool: Mutex::new(mempool), store }
+    pub fn new(mempool: SharedMempool, store: StoreClient, ntx_client: NtxClient) -> Self {
+        Self {
+            mempool: Mutex::new(mempool),
+            store,
+            ntx_client,
+        }
     }
 
     async fn serve(self, listener: TcpListener) -> Result<(), tonic::transport::Error> {
@@ -261,11 +291,34 @@ impl BlockProducerRpcServer {
         let inputs = self.store.get_tx_inputs(&tx).await.map_err(VerifyTxError::from)?;
 
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
+        let tx_id = tx.id();
+        let tx_nullifiers: Vec<Nullifier> = tx.nullifiers().collect();
+
         let tx = AuthenticatedTransaction::new(tx, inputs)?;
 
-        self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-            SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
-        })
+        // Launch a task for updating the mempool, and send the update to the network transaction
+        // builder
+        let (submit_tx_response, _) = tokio::join!(
+            async {
+                self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
+                    SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
+                })
+            },
+            async {
+                let mut ntx_client = self.ntx_client.clone();
+                if let Err(err) =
+                    ntx_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await
+                {
+                    warn!(
+                        target: COMPONENT,
+                        message = %err,
+                        "error submitting network notes updates to ntx builder"
+                    );
+                }
+            },
+        );
+
+        submit_tx_response
     }
 }
 
@@ -304,10 +357,17 @@ mod test {
         };
         let block_producer_addr = {
             let block_producer_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
+                TcpListener::bind("127.0.0.1:0").await.expect("failed to bind block-producer");
             block_producer_listener
                 .local_addr()
                 .expect("Failed to get block-producer address")
+        };
+
+        let ntx_builder_address = {
+            let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("failed to bind the ntx builder address");
+            ntx_builder_address.local_addr().expect("Failed to get ntx builder address")
         };
 
         // start the block producer
@@ -315,6 +375,7 @@ mod test {
             BlockProducer {
                 block_producer_address: block_producer_addr,
                 store_address: store_addr,
+                ntx_builder_address,
                 batch_prover_url: None,
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
@@ -357,7 +418,6 @@ mod test {
             });
             store_runtime
         };
-
         // we need to wait for the exponential backoff of the block producer to connect to the store
         sleep(Duration::from_secs(1)).await;
 

@@ -137,17 +137,21 @@ impl BundledCommand {
         let grpc_store = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to store gRPC endpoint")?;
+        let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to block-producer gRPC endpoint")?;
+        let grpc_network_tx_builder = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to network transaction builder gRPC endpoint")?;
+
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
-
-        let block_producer_address = {
-            let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-                .await
-                .context("Failed to bind to block-producer gRPC endpoint")?;
-            grpc_block_producer
-                .local_addr()
-                .context("Failed to retrieve the block-producer's gRPC address")?
-        };
+        let block_producer_address = grpc_block_producer
+            .local_addr()
+            .context("Failed to retrieve the block-producer's gRPC address")?;
+        let ntx_builder_address = grpc_network_tx_builder
+            .local_addr()
+            .context("Failed to retrieve the network transaction builder's gRPC address")?;
 
         let mut join_set = JoinSet::new();
 
@@ -167,6 +171,7 @@ impl BundledCommand {
                 BlockProducer {
                     block_producer_address,
                     store_address,
+                    ntx_builder_address,
                     batch_prover_url,
                     block_prover_url,
                     batch_interval,

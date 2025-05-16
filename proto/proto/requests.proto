@@ -210,7 +210,16 @@ message SubmitNetworkNotesRequest {
     digest.Digest transaction_id = 1;
 
     // The network notes to submit.
-    repeated note.Note note = 2;
+    repeated note.NetworkNote note = 2;
+}
+
+// Update the status of network notes that were consumed externally.
+message UpdateNetworkNotesRequest {    
+    // Id of the transaction that consumed the notes.
+    digest.Digest transaction_id = 1;
+
+    // The output nullifiers.
+    repeated digest.Digest nullifiers = 2;
 }
 
 // Update network transaction builder with transaction status changes.

@@ -49,6 +49,12 @@ message Note {
     optional bytes details = 6;
 }
 
+// Represents a network note.
+message NetworkNote {
+    // Serialized network note.
+    bytes note = 1; 
+}
+
 // Represents a proof of note's inclusion in a block.
 //
 // Does not include proof of the block's inclusion in the chain.

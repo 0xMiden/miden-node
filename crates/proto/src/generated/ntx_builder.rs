@@ -138,6 +138,30 @@ pub mod api_client {
                 .insert(GrpcMethod::new("ntx_builder.Api", "UpdateTransactionStatus"));
             self.inner.unary(req, path, codec).await
         }
+        /// Update the status of network notes that were consumed externally.
+        pub async fn update_network_notes(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::requests::UpdateNetworkNotesRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ntx_builder.Api/UpdateNetworkNotes",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ntx_builder.Api", "UpdateNetworkNotes"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -164,6 +188,11 @@ pub mod api_server {
             request: tonic::Request<
                 super::super::requests::UpdateTransactionStatusRequest,
             >,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
+        /// Update the status of network notes that were consumed externally.
+        async fn update_network_notes(
+            &self,
+            request: tonic::Request<super::super::requests::UpdateNetworkNotesRequest>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -323,6 +352,54 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = UpdateTransactionStatusSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ntx_builder.Api/UpdateNetworkNotes" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateNetworkNotesSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::requests::UpdateNetworkNotesRequest,
+                    > for UpdateNetworkNotesSvc<T> {
+                        type Response = ();
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::requests::UpdateNetworkNotesRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::update_network_notes(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateNetworkNotesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

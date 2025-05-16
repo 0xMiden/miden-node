@@ -12,4 +12,7 @@ service Api {
 
     // Update network transaction builder with transaction status changes.
     rpc UpdateTransactionStatus(requests.UpdateTransactionStatusRequest) returns (google.protobuf.Empty) {}
+
+    // Update the status of network notes that were consumed externally.
+    rpc UpdateNetworkNotes(requests.UpdateNetworkNotesRequest) returns (google.protobuf.Empty) {}
 }

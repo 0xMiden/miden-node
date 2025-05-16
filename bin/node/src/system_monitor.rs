@@ -48,6 +48,8 @@ impl SystemMonitor {
                 if let Err(err) = self.clone().run().await {
                     error!(target: COMPONENT, ?err, "Panicked while collecting system metrics. Restarting.");
                 }
+                // Wait an interval before restarting the monitor.
+                tokio::time::sleep(self.monitor_interval).await;
             }
         })
     }

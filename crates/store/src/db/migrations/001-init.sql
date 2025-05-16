@@ -17,14 +17,16 @@ CREATE TABLE block_headers (
 ) STRICT;
 
 CREATE TABLE accounts (
-      account_id            BLOB    NOT NULL,
-      account_commitment    BLOB    NOT NULL,
-      block_num             INTEGER NOT NULL,
-      details               BLOB,
+    account_id              BLOB NOT NULL,
+    id_prefix               INTEGER NOT NULL,
+    account_commitment      BLOB NOT NULL,
+    block_num               INTEGER NOT NULL,
+    details                 BLOB,
 
-      PRIMARY KEY (account_id),
-      FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
-) STRICT, WITHOUT ROWID;
+    PRIMARY KEY (account_id),
+    UNIQUE (id_prefix),  
+    FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
+) STRICT;
 
 CREATE TABLE notes (
     block_num      INTEGER NOT NULL,

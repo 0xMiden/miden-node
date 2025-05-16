@@ -170,12 +170,13 @@ impl BundledCommand {
         let ntx_builder_id = join_set
             .spawn(async move {
                 NetworkTransactionBuilder {
-                    address: ntx_builder_address,
+                    ntx_builder_listener: grpc_network_tx_builder,
                     store_address,
+                    block_producer_address,
                 }
                 .serve()
                 .await
-                .context("failed while serving store component")
+                .context("failed while serving ntx builder component")
             })
             .id();
 
@@ -183,7 +184,7 @@ impl BundledCommand {
         let block_producer_id = join_set
             .spawn(async move {
                 BlockProducer {
-                    block_producer_address,
+                    block_producer_listener: grpc_block_producer,
                     store_address,
                     ntx_builder_address,
                     batch_prover_url,

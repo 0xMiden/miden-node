@@ -15,10 +15,12 @@ workspace = true
 
 [dependencies]
 anyhow           = { workspace = true }
+async-trait      = { workspace = true }
+miden-lib        = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
-miden-tx         = { workspace = true }
+miden-tx         = { workspace = true, features = ["async"] }
 thiserror        = { workspace = true }
 tokio            = { workspace = true, features = ["full"] }
 tokio-stream     = { workspace = true }

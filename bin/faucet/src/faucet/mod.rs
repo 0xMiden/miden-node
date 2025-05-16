@@ -27,7 +27,7 @@ use miden_tx::{
     TransactionProver, TransactionProverError, auth::BasicAuthenticator,
     utils::parse_hex_string_as_word,
 };
-use rand::{random, rngs::StdRng};
+use rand::{random, rngs::StdRng, thread_rng};
 use serde::Serialize;
 use store::FaucetDataStore;
 use tokio::sync::mpsc::Receiver;

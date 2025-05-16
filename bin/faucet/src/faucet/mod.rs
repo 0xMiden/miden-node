@@ -483,7 +483,7 @@ mod tests {
     use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
     use miden_node_utils::crypto::get_rpo_random_coin;
     use miden_objects::{
-        account::{AccountIdVersion, AccountStorageMode, AccountType, NetworkAccount},
+        account::{AccountIdVersion, AccountStorageMode, AccountType},
         asset::TokenSymbol,
         crypto::dsa::rpo_falcon512::SecretKey,
     };
@@ -555,7 +555,6 @@ mod tests {
                     AccountIdVersion::Version0,
                     AccountType::RegularAccountImmutableCode,
                     AccountStorageMode::Private,
-                    NetworkAccount::Disabled,
                 );
                 MintRequest {
                     account_id,

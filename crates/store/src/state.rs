@@ -858,7 +858,7 @@ impl State {
 
                     let state_header = AccountStateHeader {
                         header: Some(AccountHeader::from(details).into()),
-                        storage_header: details.storage().get_header().to_bytes(),
+                        storage_header: details.storage().to_header().to_bytes(),
                         account_code,
                         storage_maps: storage_slot_map_keys,
                     };

@@ -26,7 +26,7 @@ miden-lib = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects = { workspace = true }
-miden-proving-service-client = { git = "https://github.com/0xPolygonMiden/miden-base.git", branch = "next", default-features = false, features = [
+miden-proving-service-client = { git = "https://github.com/0xMiden/miden-base.git", branch = "next", default-features = false, features = [
   "std",
   "tx-prover",
 ] }

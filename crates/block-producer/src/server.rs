@@ -327,7 +327,7 @@ mod test {
     use miden_node_store::{GenesisState, Store};
     use miden_objects::{
         Digest,
-        account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType, NetworkAccount},
+        account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType},
         transaction::ProvenTransactionBuilder,
     };
     use miden_tx::utils::Serializable;
@@ -456,7 +456,6 @@ mod test {
                 AccountIdVersion::Version0,
                 AccountType::RegularAccountImmutableCode,
                 AccountStorageMode::Private,
-                NetworkAccount::Disabled,
             ),
             Digest::default(),
             [i; 32].try_into().unwrap(),

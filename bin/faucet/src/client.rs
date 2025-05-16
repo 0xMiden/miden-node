@@ -19,7 +19,7 @@ use miden_objects::{
     },
     note::{Note, NoteType},
     transaction::{
-        ExecutedTransaction, ForeignAccountInputs, InputNote, InputNotes, PartialBlockchain,
+        AccountInputs, ExecutedTransaction, InputNote, InputNotes, PartialBlockchain,
         TransactionArgs, TransactionScript,
     },
     utils::Deserializable,
@@ -297,12 +297,8 @@ fn build_transaction_arguments(
     let script = TransactionScript::compile(script, vec![], TransactionKernel::assembler())
         .context("Failed to compile script")?;
 
-    let mut transaction_args = TransactionArgs::new(
-        Some(script),
-        None,
-        AdviceMap::new(),
-        Vec::<ForeignAccountInputs>::default(),
-    );
+    let mut transaction_args =
+        TransactionArgs::new(Some(script), None, AdviceMap::new(), Vec::<AccountInputs>::default());
     transaction_args.extend_output_note_recipients(vec![output_note.clone()]);
 
     Ok(transaction_args)

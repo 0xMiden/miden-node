@@ -38,7 +38,7 @@ impl BlockProducerClient {
         &self,
         proven_tx: ProvenTransaction,
     ) -> Result<(), Status> {
-        let request = SubmitProvenTransactionRequest { transaction: proven_tx.to_bytes().into() };
+        let request = SubmitProvenTransactionRequest { transaction: proven_tx.to_bytes() };
 
         let _ = self.inner.clone().submit_proven_transaction(request).await?;
 

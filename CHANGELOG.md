@@ -14,6 +14,7 @@
 - Added gRPC `/status` endpoint on all components (#817).
 - Block producer now emits network note information (#805).
 - Introduced Network Transaction Builder (#840).
+- Added way of executing and proving network transactions (#841).
 
 ## v0.8.0 (2025-03-26)
 

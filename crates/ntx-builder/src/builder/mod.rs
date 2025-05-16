@@ -1,8 +1,4 @@
-use std::{
-    net::SocketAddr,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use block_producer::BlockProducerClient;
@@ -15,6 +11,7 @@ use store::StoreClient;
 use tokio::{
     net::TcpListener,
     runtime::Builder as RtBuilder,
+    sync::Mutex,
     task::{JoinHandle, spawn_blocking},
     time,
 };
@@ -94,13 +91,7 @@ impl NetworkTransactionBuilder {
 
                 loop {
                     interval.tick().await;
-                    let mut notes_queue = match api_state.lock() {
-                        Ok(guard) => guard,
-                        Err(err) => {
-                            warn!(target: COMPONENT, error=%err, "Failed to lock API state - poisoned lock");
-                            continue;
-                        },
-                    };
+                    let mut notes_queue = api_state.lock().await;
 
                     if notes_queue.has_pending() {
                         if let Some((tag, notes)) = notes_queue.take_next_notes_by_tag() {

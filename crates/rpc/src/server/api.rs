@@ -208,6 +208,12 @@ impl api_server::Api for RpcService {
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
             .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
 
+        if tx.account_id().is_network() {
+            return Err(Status::invalid_argument(
+                "Network transactions may not be submitted by users yet",
+            ));
+        }
+
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
 
         tx_verifier.verify(&tx).map_err(|err| {

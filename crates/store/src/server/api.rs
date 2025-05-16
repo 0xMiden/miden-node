@@ -168,7 +168,7 @@ impl api_server::Api for StoreApi {
 
         let response = match self.state.get_mmr_peaks(block_num).await.map_err(internal_error)? {
             Some((header, peaks)) => GetCurrentMmrPeaksResponse {
-                current_peaks: peaks.peaks().into_iter().map(Into::into).collect(),
+                current_peaks: peaks.peaks().iter().map(Into::into).collect(),
                 current_block_header: Some(header.into()),
             },
             None => GetCurrentMmrPeaksResponse {
@@ -177,7 +177,7 @@ impl api_server::Api for StoreApi {
             },
         };
 
-        Ok(Response::new(response.into()))
+        Ok(Response::new(response))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain

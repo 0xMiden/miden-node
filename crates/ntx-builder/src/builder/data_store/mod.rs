@@ -92,9 +92,7 @@ impl DataStore for NtxBuilderDataStore {
         let block_num = ref_blocks.first().unwrap();
         assert_eq!(*block_num, self.block_ref.lock().unwrap().block_num());
 
-        let account = if let Some(acc) = self.account_cache.get(account_id.into()) {
-            acc
-        } else {
+        let Some(account) = self.account_cache.get(account_id.into()) else {
             return Err(DataStoreError::other(
                 "account not found in cache; should have been retrieved before execution",
             ));

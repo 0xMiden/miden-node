@@ -355,7 +355,6 @@ mod test {
                 .local_addr()
                 .expect("Failed to get block-producer address")
         };
-
         let ntx_builder_address = {
             let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
                 .await

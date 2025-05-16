@@ -26,9 +26,8 @@ impl TryFrom<NoteTag> for NtxAccountIdPrefix {
     fn try_from(tag: NoteTag) -> Result<Self, Self::Error> {
         if tag.execution_mode() == NoteExecutionMode::Network && tag.is_single_target() {
             return Ok(NtxAccountIdPrefix(tag.inner()));
-        } else {
-            return Err("tag not meant for executing by a single account".into());
         }
+        Err("tag not meant for executing by a single account".into())
     }
 }
 
@@ -68,7 +67,7 @@ impl AccountCache {
         let current_generation = state.generation;
 
         let removed_generation = if let Some(entry) = state.accounts.insert(
-            account_id.into(),
+            account_id,
             AccountEntry {
                 generation: current_generation,
                 account: account.clone(),
@@ -86,7 +85,7 @@ impl AccountCache {
 
         if state.accounts.len() > self.capacity {
             if let Some((_, oldest_key)) = state.ordering.pop_first() {
-                state.accounts.remove(&oldest_key.into());
+                state.accounts.remove(&oldest_key);
             }
         }
     }
@@ -99,7 +98,7 @@ impl AccountCache {
         let (old_generation, account_clone) = {
             state.generation += 1;
             let new_generation = state.generation;
-            let entry = state.accounts.get_mut(&account_id.into())?;
+            let entry = state.accounts.get_mut(&account_id)?;
             let old = entry.generation;
             entry.generation = new_generation;
             (old, entry.account.clone())
@@ -107,7 +106,7 @@ impl AccountCache {
 
         let new_generation = state.generation;
         state.ordering.remove(&old_generation);
-        state.ordering.insert(new_generation, account_id.into());
+        state.ordering.insert(new_generation, account_id);
 
         Some(account_clone)
     }
@@ -149,9 +148,13 @@ mod tests {
     #[test]
     fn lru_evicts_least_recently_used_account() {
         let cache = AccountCache::new(2);
-        let acc1 = create_account(0x11111);
-        let acc2 = create_account(0x22222);
-        let acc3 = create_account(0x33333);
+        let acc_id_1: u128 = 0x0000_0004_0000_0000;
+        let acc_id_2: u128 = 0x0000_0008_0000_0000;
+        let acc_id_3: u128 = 0x0000_000C_0000_0000;
+
+        let acc1 = create_account(acc_id_1);
+        let acc2 = create_account(acc_id_2);
+        let acc3 = create_account(acc_id_3);
 
         cache.put(&acc1.clone());
         cache.put(&acc2.clone());

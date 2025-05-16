@@ -44,7 +44,7 @@ impl PendingNotes {
     }
 
     /// Returns the next set of notes with the next scheduled tag in the global queue
-    /// (up to `MAX_BATCH``)
+    /// (up to `MAX_BATCH`)
     pub fn take_next_notes_by_tag(&mut self) -> Option<(NoteTag, Vec<Note>)> {
         let next_tag = self.queue.front()?.metadata().tag();
 
@@ -56,7 +56,7 @@ impl PendingNotes {
             self.by_tag.remove(&next_tag);
         }
 
-        let ids: BTreeSet<NoteId> = batch.iter().map(|n| n.id()).collect();
+        let ids: BTreeSet<NoteId> = batch.iter().map(Note::id).collect();
         self.queue.retain(|n| !ids.contains(&n.id()));
 
         Some((next_tag, batch))

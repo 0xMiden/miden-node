@@ -198,7 +198,7 @@ pub fn select_account_by_prefix(transaction: &Transaction, id_prefix: u32) -> Re
         ",
     )?;
 
-    let mut rows = stmt.query(params![id_prefix as i64])?;
+    let mut rows = stmt.query(params![i64::from(id_prefix)])?;
     let row = rows.next()?.ok_or(DatabaseError::AccountPrefixNotFound(id_prefix))?;
 
     account_info_from_row(row)

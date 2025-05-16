@@ -18,8 +18,11 @@ const COMPONENT: &str = "system-monitor";
 /// - Block storage size
 #[derive(Clone)]
 pub struct SystemMonitor {
+    /// The process id of the current process.
     pid: Pid,
+    /// The time interval between monitoring checks.
     monitor_interval: Duration,
+    /// The data directory to collect store metrics from. If None, store metrics are not shown.
     data_directory: Option<DataDirectory>,
 }
 
@@ -133,7 +136,11 @@ impl SystemMonitor {
     /// Collects the store metrics.
     fn collect_store_metrics(&self) -> anyhow::Result<StoreMetrics> {
         let Some(data_dir) = &self.data_directory else {
-            return Ok(StoreMetrics::default());
+            return Ok(StoreMetrics {
+                db_file: None,
+                db_wal: None,
+                block_storage: None,
+            });
         };
 
         let db_file = std::fs::metadata(data_dir.database_path())?.len();
@@ -141,14 +148,17 @@ impl SystemMonitor {
             std::fs::metadata(format!("{}-wal", data_dir.database_path().display()))?.len();
         let block_storage = std::fs::metadata(data_dir.block_store_dir())?.len();
 
-        Ok(StoreMetrics { db_file, db_wal, block_storage })
+        Ok(StoreMetrics {
+            db_file: Some(db_file),
+            db_wal: Some(db_wal),
+            block_storage: Some(block_storage),
+        })
     }
 }
 
 /// Metrics of the store.
-#[derive(Default)]
 struct StoreMetrics {
-    pub db_file: u64,
-    pub db_wal: u64,
-    pub block_storage: u64,
+    pub db_file: Option<u64>,
+    pub db_wal: Option<u64>,
+    pub block_storage: Option<u64>,
 }

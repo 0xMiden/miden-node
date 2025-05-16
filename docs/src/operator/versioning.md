@@ -12,4 +12,4 @@ The following is considered the node's public API, and will therefore be conside
 
 We intend to include our OpenTelemetry trace specification in this once it stabilizes.
 
-We _will_ also call out non-breaking behvioral changes in our changelog and release notes.
+We _will_ also call out non-breaking behavioral changes in our changelog and release notes.

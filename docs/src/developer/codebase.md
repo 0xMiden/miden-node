@@ -1,6 +1,6 @@
 # Navigating the codebase
 
-The code is organised using a Rust workspace with seprate crates for the node and faucet binaries, a crate for each node
+The code is organised using a Rust workspace with separate crates for the node and faucet binaries, a crate for each node
 component, a couple of gRPC-related codegen crates, and a catch-all utilities crate.
 
 The primary artifacts are the node and faucet binaries. The library crates are not intended for external usage, but
@@ -14,7 +14,7 @@ instead simply serve to enforce code organisation and decoupling.
 | `store`          | Store component implementation.                                                                                                                          |
 | `rpc`            | RPC component implementation.                                                                                                                            |
 | `proto`          | Contains and exports all protobuf definitions.                                                                                                           |
-| `rpc-proto`      | Contains the RPC protobuf definitions. Currently this is an awkward clone of `proto` because we re-use the definitions from the internal protobuf types. |
+| `rpc-proto`      | Contains the RPC protobuf definitions. Currently this is an awkward clone of `proto` because we reuse the definitions from the internal protobuf types. |
 | `utils`          | Variety of utility functionality.                                                                                                                        |
 | `test-macro`     | Provides a procedural macro to enable tracing in tests.                                                                                                  |
 

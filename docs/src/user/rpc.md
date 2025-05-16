@@ -79,7 +79,7 @@ the chain.
 Iteratively sync data for specific notes and accounts.
 
 This request returns the next block containing data of interest. number in the chain. Client is expected to repeat these
-requests in a loop until the reponse reaches the head of the chain, at which point the data is fully synced.
+requests in a loop until the response reaches the head of the chain, at which point the data is fully synced.
 
 Each update response also contains info about new notes, accounts etc. created. It also returns Chain MMR delta that can
 be used to update the state of Chain MMR. This includes both chain MMR peaks and chain MMR nodes.

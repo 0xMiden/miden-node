@@ -42,5 +42,5 @@ above lifecycle (which effectively shows the happy path). This can occur if:
 
 - The transaction expires before being included in a block.
 - Any parent transaction is dropped (which will revert the state, invalidating child transactions).
-- It causes proving or any part of block/batch creation to fail. This is a fail-safe against unforseen bugs, removing
+- It causes proving or any part of block/batch creation to fail. This is a fail-safe against unforeseen bugs, removing
   problematic (but potentially valid) transactions from the mempool to prevent outages.

@@ -77,40 +77,45 @@ where
     /// The version specified in the value of the ACCEPT header must match
     /// the version requirements specified by the server.
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
-        if let Some(accept_header_value) = request.headers().get(ACCEPT) {
-            // Convert header value to str.
-            match accept_header_value.to_str() {
-                // Parse the accept str.
-                Ok(accept_str) => match AcceptHeaderValue::try_from(accept_str) {
-                    // Parse the version.
-                    Ok(accept) => match Version::parse(accept.version) {
-                        // Verify the version matches configured requirements.
-                        Ok(version) => {
-                            if self.version.matches(&version) {
-                                self.inner.call(request).boxed()
-                            } else {
-                                debug!(target: COMPONENT, "Version does not match ({}/{})", version, self.version);
-                                bad_request("Client / server version mismatch").boxed()
-                            }
-                        },
-                        Err(e) => {
-                            debug!(target: COMPONENT, "Failed to parse version: {}", e);
-                            bad_request("Invalid version specified in accept header value").boxed()
-                        },
-                    },
-                    Err(e) => {
-                        debug!(target: COMPONENT, "Failed to parse accept header value: {}", e);
-                        bad_request("Invalid accept header value").boxed()
-                    },
-                },
-                Err(e) => {
-                    debug!(target: COMPONENT, "Failed to stringify accept header value: {}", e);
-                    bad_request("Invalid accept header value").boxed()
-                },
-            }
-        } else {
+        // Check if ACCEPT header exists
+        let Some(accept_header_value) = request.headers().get(ACCEPT) else {
             debug!(target: COMPONENT, "Request missing ACCEPT header");
-            bad_request("Missing required ACCEPT header").boxed()
+            return bad_request("Missing required ACCEPT header").boxed();
+        };
+
+        // Convert header value to str
+        let accept_str = match accept_header_value.to_str() {
+            Ok(value) => value,
+            Err(e) => {
+                debug!(target: COMPONENT, "Failed to stringify accept header value: {}", e);
+                return bad_request("Invalid accept header value").boxed();
+            },
+        };
+
+        // Parse the accept str
+        let accept = match AcceptHeaderValue::try_from(accept_str) {
+            Ok(value) => value,
+            Err(e) => {
+                debug!(target: COMPONENT, "Failed to parse accept header value: {}", e);
+                return bad_request("Invalid accept header value").boxed();
+            },
+        };
+
+        // Parse the version
+        let version = match Version::parse(accept.version) {
+            Ok(version) => version,
+            Err(e) => {
+                debug!(target: COMPONENT, "Failed to parse version: {}", e);
+                return bad_request("Invalid version specified in accept header value").boxed();
+            },
+        };
+
+        // Verify the version matches configured requirements
+        if self.version.matches(&version) {
+            self.inner.call(request).boxed()
+        } else {
+            debug!(target: COMPONENT, "Version does not match ({}/{})", version, self.version);
+            bad_request("Client / server version mismatch").boxed()
         }
     }
 }

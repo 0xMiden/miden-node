@@ -19,17 +19,15 @@ pub struct AcceptLayer {
 }
 
 impl AcceptLayer {
-    /// Create a new accept layer that validates version values
-    /// specified in the HTTP ACCEPT header.
+    /// Create a new accept layer that validates version values specified in the HTTP ACCEPT header.
     ///
-    /// The version requirement is based on the version field found
-    /// in the workspace's Cargo.toml file.
+    /// The version requirement is based on the version field found in the workspace's Cargo.toml.
     ///
     /// # Panics:
     ///
-    /// Panics if the version string in Cargo.toml is not valid semver.
-    /// The version string is made into an env var at compile time which means
-    /// that the unit tests prove this cannot panic in practice.
+    /// Panics if the version string in Cargo.toml is not valid semver. The version string is made
+    /// into an env var at compile time which means that the unit tests prove this cannot panic
+    /// in practice.
     pub fn new() -> anyhow::Result<Self> {
         // Parse the full version string (e.g., "0.8.0").
         let version = env!("CARGO_PKG_VERSION");
@@ -74,8 +72,8 @@ where
 
     /// Validates existence and content of HTTP ACCEPT header.
     ///
-    /// The version specified in the value of the ACCEPT header must match
-    /// the version requirements specified by the server.
+    /// The version specified in the value of the ACCEPT header must match the version requirements
+    /// specified by the server.
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         // Check if ACCEPT header exists
         let Some(accept_header_value) = request.headers().get(ACCEPT) else {
@@ -135,8 +133,8 @@ fn bad_request<B: Default + Send + 'static, E: Send + 'static>(
     futures::future::ready(Ok(response))
 }
 
-/// The result of parsing the following canonical representation
-/// of an ACCEPT header value: `application/vnd.{app_name}.{version}+{response_type}`.
+/// The result of parsing the following canonical representation of an ACCEPT header value:
+/// `application/vnd.{app_name}.{version}+{response_type}`.
 #[derive(Debug, PartialEq)]
 pub struct AcceptHeaderValue<'a> {
     app_name: &'a str,

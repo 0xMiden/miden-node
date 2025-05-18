@@ -14,8 +14,8 @@ pub type RpcClient = ApiClient<InterceptedService<Channel, AcceptHeaderIntercept
 
 /// Connects to the Miden node API using the provided URL and timeout.
 ///
-/// The client is configured with an interceptor that sets the HTTP ACCEPT header
-/// to the version of the Miden node.
+/// The client is configured with an interceptor that sets the HTTP ACCEPT header to the version of
+/// the Miden node.
 pub async fn connect(url: &Url, timeout_ms: u64) -> anyhow::Result<RpcClient> {
     // Setup connection channel.
     let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
@@ -32,8 +32,7 @@ pub async fn connect(url: &Url, timeout_ms: u64) -> anyhow::Result<RpcClient> {
     Ok(ApiClient::with_interceptor(channel, interceptor))
 }
 
-/// Interceptor designed to inject the HTTP ACCEPT header
-/// into all [`ApiClient`] requests.
+/// Interceptor designed to inject the HTTP ACCEPT header into all [`ApiClient`] requests.
 pub struct AcceptHeaderInterceptor {
     value: String,
 }

@@ -2,10 +2,7 @@ use std::task::{Context as StdContext, Poll};
 
 use futures::{FutureExt, future::BoxFuture};
 use http::header::ACCEPT;
-use nom::{
-    IResult,
-    bytes::complete::{tag, take_until},
-};
+use nom::bytes::complete::{tag, take_until};
 use semver::{Version, VersionReq};
 use tower::{Layer, Service};
 use tracing::debug;
@@ -142,24 +139,17 @@ pub struct AcceptHeaderValue<'a> {
     response_type: &'a str,
 }
 
-impl AcceptHeaderValue<'_> {
-    /// Parses the given input string into an [`AcceptHeaderValue`].
-    fn parse(input: &str) -> IResult<&str, AcceptHeaderValue> {
+impl<'a> TryFrom<&'a str> for AcceptHeaderValue<'a> {
+    type Error = nom::Err<nom::error::Error<&'a str>>;
+
+    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
         let (input, _) = tag("application/vnd.")(input)?;
         let (input, app_name) = take_until(".")(input)?;
         let (input, _) = tag(".")(input)?;
         let (input, version) = take_until("+")(input)?;
         let (response_type, _) = tag("+")(input)?;
 
-        Ok(("", AcceptHeaderValue { app_name, version, response_type }))
-    }
-}
-
-impl<'a> TryFrom<&'a str> for AcceptHeaderValue<'a> {
-    type Error = nom::Err<nom::error::Error<&'a str>>;
-
-    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
-        Self::parse(input).map(|(_, value)| value)
+        Ok(AcceptHeaderValue { app_name, version, response_type })
     }
 }
 

@@ -149,4 +149,206 @@ OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key" \
 miden-node bundled start --enable-otel
 ```
 
-TODO: honeycomb queries, triggers and board examples.
+### Honeycomb queries, triggers and board examples
+
+#### Example queries
+
+Here are some useful Honeycomb queries to help monitor your Miden node:
+
+**Block building performance**:
+```honeycomb
+VISUALIZE
+HEATMAP(duration_ms) AVG(duration_ms)
+WHERE
+name = "block_builder.build_block"
+GROUP BY block.number
+ORDER BY block.number DESC
+LIMIT 100
+```
+
+**Batch processing latency**:
+```honeycomb
+VISUALIZE
+HEATMAP(duration_ms) AVG(duration_ms) P95(duration_ms)
+WHERE
+name = "batch_builder.build_batch"
+GROUP BY batch.id
+LIMIT 100
+```
+
+**Block proving failures**:
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name = "block_builder.build_block" 
+AND status = "error"
+CALCULATE RATE
+```
+
+**Transaction volume by block**:
+```honeycomb
+VISUALIZE
+MAX(transactions.count)
+WHERE
+name = "block_builder.build_block"
+GROUP BY block.number
+ORDER BY block.number DESC
+LIMIT 100
+```
+
+**Mempool size over time**:
+```honeycomb
+VISUALIZE
+MAX(transactions.pending.count)
+WHERE
+name = "mempool.select_block"
+CALCULATE RATE
+```
+
+#### Example triggers
+
+Create triggers in Honeycomb to alert you when important thresholds are crossed:
+
+**Slow block building**:
+* Query: 
+```honeycomb
+VISUALIZE
+AVG(duration_ms)
+WHERE
+name = "block_builder.build_block"
+```
+* Trigger condition: `AVG(duration_ms) > 30000` (adjust based on your expected block time)
+* Description: Alert when blocks take too long to build (more than 30 seconds on average)
+
+**High failure rate**:
+* Query: 
+```honeycomb
+VISUALIZE
+COUNT_WHERE(status = "error") / COUNT
+WHERE
+name = "block_builder.build_block"
+```
+* Trigger condition: `COUNT_WHERE(status = "error") / COUNT > 0.05`
+* Description: Alert when more than 5% of block builds are failing
+
+**Mempool overflow**:
+* Query:
+```honeycomb
+VISUALIZE
+MAX(transactions.pending.count)
+WHERE
+name = "mempool.select_block"
+```
+* Trigger condition: `MAX(transactions.pending.count) > 1000`
+* Description: Alert when mempool transaction count exceeds 1000
+
+#### Example boards
+
+Create Honeycomb boards to monitor different aspects of your Miden node:
+
+**Block production board**:
+* Block production rate
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name = "block_builder.build_block" 
+AND status != "error"
+CALCULATE RATE
+```
+
+* Block production errors
+```honeycomb
+VISUALIZE
+COUNT_WHERE(status = "error") / COUNT
+WHERE
+name = "block_builder.build_block"
+```
+
+* Block latency
+```honeycomb
+VISUALIZE
+AVG(duration_ms) P95(duration_ms)
+WHERE
+name = "block_builder.build_block"
+```
+
+* Block size
+```honeycomb
+VISUALIZE
+AVG(block.batches.count)
+WHERE
+name = "block_builder.build_block"
+```
+
+**Batch processing board**:
+* Batch processing rate
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name = "batch_builder.build_batch"
+AND status != "error"
+CALCULATE RATE
+```
+
+* Batch processing latency
+```honeycomb
+VISUALIZE
+AVG(duration_ms) P95(duration_ms)
+WHERE
+name = "batch_builder.build_batch"
+```
+
+* Batch size (transactions)
+```honeycomb
+VISUALIZE
+AVG(transactions.count)
+WHERE
+name = "batch_builder.build_batch"
+```
+
+**RPC performance board**:
+* RPC request rate
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name LIKE "%.rpc/%"
+CALCULATE RATE
+GROUP BY name
+```
+
+* RPC latency by endpoint
+```honeycomb
+VISUALIZE
+AVG(duration_ms) P95(duration_ms)
+WHERE
+name LIKE "%.rpc/%"
+GROUP BY name
+```
+
+* RPC errors by endpoint
+```honeycomb
+VISUALIZE
+COUNT_WHERE(status = "error") / COUNT
+WHERE
+name LIKE "%.rpc/%"
+GROUP BY name
+```
+
+#### Advanced investigation with BubbleUp
+
+To identify the root cause of performance issues or errors, use Honeycomb's BubbleUp feature:
+
+1. Create a query for a specific issue (e.g., high latency for block building)
+2. Click on a specific high-latency point in the visualization
+3. Use BubbleUp to see which attributes differ significantly between normal and slow operations
+4. Inspect the related spans in the trace to pinpoint the exact step causing problems
+
+This approach helps identify patterns like:
+- Which types of transactions are causing slow blocks
+- Which specific operations within block/batch processing take the most time
+- Correlations between resource usage and performance
+- Common patterns in error cases

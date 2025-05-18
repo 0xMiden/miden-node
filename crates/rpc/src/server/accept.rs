@@ -26,7 +26,7 @@ impl AcceptLayer {
     /// into an env var at compile time which means that the unit tests prove this cannot panic
     /// in practice.
     pub fn new() -> anyhow::Result<Self> {
-        // Parse the full version string (e.g., "0.8.0").
+        // Parse the full version string (e.g. "0.8.0").
         let version = env!("CARGO_PKG_VERSION");
         let version = Version::parse(version)?;
 

@@ -8,7 +8,7 @@ pub mod generated;
 // RE-EXPORTS
 // ================================================================================================
 
-pub use client::{AcceptHeaderInterceptor, RpcClient, connect};
+pub use client::RpcClient;
 pub use domain::{
     account::{AccountState, AccountWitnessRecord},
     convert,

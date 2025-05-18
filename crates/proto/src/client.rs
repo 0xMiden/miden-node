@@ -41,11 +41,11 @@ impl RpcClient {
     /// Connects to the Miden node API using the provided URL and timeout.
     ///
     /// The client is configured with an interceptor that sets all requisite request metadata.
-    pub async fn connect(url: &Url, timeout_ms: u64) -> anyhow::Result<RpcClient> {
+    pub async fn connect(url: &Url, timeout: Duration) -> anyhow::Result<RpcClient> {
         // Setup connection channel.
         let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
             .context("Failed to parse node URL")?
-            .timeout(Duration::from_millis(timeout_ms));
+            .timeout(timeout);
         let channel = endpoint.connect().await?;
 
         // Set up the accept metadata interceptor.

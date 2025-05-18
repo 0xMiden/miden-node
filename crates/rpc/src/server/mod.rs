@@ -50,6 +50,8 @@ impl Rpc {
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use miden_node_proto::{
         RpcClient,
         generated::{
@@ -208,7 +210,7 @@ mod test {
         });
         let url = rpc_addr.to_string();
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-        let rpc_client = RpcClient::connect(&url, 10000).await.unwrap();
+        let rpc_client = RpcClient::connect(&url, Duration::from_secs(10)).await.unwrap();
 
         (rpc_client, rpc_addr, store_addr)
     }

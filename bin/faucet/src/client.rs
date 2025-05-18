@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
@@ -211,7 +211,8 @@ impl FaucetClient {
 pub async fn initialize_faucet_client(
     config: &FaucetConfig,
 ) -> Result<(RpcClient, BlockHeader, PartialBlockchain), ClientError> {
-    let mut rpc_api = RpcClient::connect(&config.node_url, config.timeout_ms).await?;
+    let mut rpc_api =
+        RpcClient::connect(&config.node_url, Duration::from_millis(config.timeout_ms)).await?;
 
     let request = GetBlockHeaderByNumberRequest {
         block_num: Some(0),

@@ -68,6 +68,7 @@ pub struct MetadataInterceptor {
 }
 
 impl MetadataInterceptor {
+    /// Adds or overwrites metadata to the interceptor.
     pub fn with_metadata(
         mut self,
         key: &'static str,

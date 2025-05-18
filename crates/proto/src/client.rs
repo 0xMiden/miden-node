@@ -17,7 +17,8 @@ use crate::generated::rpc::api_client::ApiClient;
 // RPC CLIENT
 // ================================================================================================
 
-/// Alias for gRPC client that wraps the underlying client for the purposes of metadata configuration.
+/// Alias for gRPC client that wraps the underlying client for the purposes of metadata
+/// configuration.
 type InnerClient = ApiClient<InterceptedService<Channel, MetadataInterceptor>>;
 
 /// Client for the Miden RPC API which is fully configured to communicate with a Miden node.

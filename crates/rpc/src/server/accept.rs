@@ -19,7 +19,11 @@ pub struct AcceptLayer {
 }
 
 impl AcceptLayer {
-    /// Create a new accept layer with the specified version requirement.
+    /// Create a new accept layer that validates version values
+    /// specified in the HTTP ACCEPT header.
+    ///
+    /// The version requirement is based on the version field found
+    /// in the workspace's Cargo.toml file.
     ///
     /// # Panics:
     ///

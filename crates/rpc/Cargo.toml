@@ -22,8 +22,8 @@ miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 miden-tx         = { workspace = true }
-nom              = "8.0"
-semver           = "1.0"
+nom              = { version = "8.0" }
+semver           = { version = "1.0" }
 tokio            = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
 tokio-stream     = { workspace = true, features = ["net"] }
 tonic            = { workspace = true }

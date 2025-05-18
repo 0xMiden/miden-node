@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     ops::{Deref, DerefMut},
     time::Duration,
 };
@@ -16,8 +17,8 @@ use crate::generated::rpc::api_client::ApiClient;
 // RPC CLIENT
 // ================================================================================================
 
-/// Alias for gRPC client that wraps the underlying gRPC client for the purposes of configuration.
-type InnerClient = ApiClient<InterceptedService<Channel, AcceptHeaderInterceptor>>;
+/// Alias for gRPC client that wraps the underlying client for the purposes of metadata configuration.
+type InnerClient = ApiClient<InterceptedService<Channel, MetadataInterceptor>>;
 
 /// Client for the Miden RPC API which is fully configured to communicate with a Miden node.
 pub struct RpcClient(InnerClient);
@@ -38,8 +39,7 @@ impl DerefMut for RpcClient {
 impl RpcClient {
     /// Connects to the Miden node API using the provided URL and timeout.
     ///
-    /// The client is configured with an interceptor that sets the HTTP ACCEPT header to the version of
-    /// the Miden node.
+    /// The client is configured with an interceptor that sets all requisite request metadata.
     pub async fn connect(url: &Url, timeout_ms: u64) -> anyhow::Result<RpcClient> {
         // Setup connection channel.
         let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
@@ -47,36 +47,42 @@ impl RpcClient {
             .timeout(Duration::from_millis(timeout_ms));
         let channel = endpoint.connect().await?;
 
-        // Set up ACCEPT header interceptor.
+        // Set up the accept metadata interceptor.
         let version = env!("CARGO_PKG_VERSION");
         let accept_value = format!("application/vnd.miden.{version}+grpc");
-        let interceptor = AcceptHeaderInterceptor::new(accept_value);
+        let interceptor = MetadataInterceptor::default().with_metadata("accept", accept_value)?;
 
         // Return the connected client.
         Ok(RpcClient(ApiClient::with_interceptor(channel, interceptor)))
     }
 }
 
-// ACCEPT INTERCEPTOR
+// INTERCEPTOR
 // ================================================================================================
 
-/// Interceptor designed to inject the HTTP ACCEPT header into all [`ApiClient`] requests.
-pub struct AcceptHeaderInterceptor {
-    value: String,
+/// Interceptor designed to inject required metadata into all [`ApiClient`] requests.
+#[derive(Default)]
+pub struct MetadataInterceptor {
+    metadata: HashMap<&'static str, AsciiMetadataValue>,
 }
 
-impl AcceptHeaderInterceptor {
-    fn new(value: String) -> Self {
-        Self { value }
+impl MetadataInterceptor {
+    pub fn with_metadata(
+        mut self,
+        key: &'static str,
+        value: String,
+    ) -> Result<Self, anyhow::Error> {
+        self.metadata.insert(key, AsciiMetadataValue::try_from(value)?);
+        Ok(self)
     }
 }
 
-impl Interceptor for AcceptHeaderInterceptor {
+impl Interceptor for MetadataInterceptor {
     fn call(&mut self, request: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
         let mut request = request;
-        request
-            .metadata_mut()
-            .insert("accept", AsciiMetadataValue::try_from(self.value.clone()).unwrap());
+        for (key, value) in &self.metadata {
+            request.metadata_mut().insert(*key, value.clone());
+        }
         Ok(request)
     }
 }

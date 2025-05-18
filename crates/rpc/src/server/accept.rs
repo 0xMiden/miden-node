@@ -15,7 +15,7 @@ use crate::COMPONENT;
 /// Layer responsible for handling HTTP ACCEPT headers.
 #[derive(Clone)]
 pub struct AcceptLayer {
-    version: VersionReq,
+    version_req: VersionReq,
 }
 
 impl AcceptLayer {
@@ -30,20 +30,15 @@ impl AcceptLayer {
     /// Panics if the version string in Cargo.toml is not valid semver.
     /// The version string is made into an env var at compile time which means
     /// that the unit tests prove this cannot panic in practice.
-    pub fn new() -> Self {
+    pub fn new() -> anyhow::Result<Self> {
         // Parse the full version string (e.g., "0.8.0").
-        let full_version = env!("CARGO_PKG_VERSION");
-
-        // Extract major and minor version components
-        let parts: Vec<&str> = full_version.split('.').collect();
-        let major = parts.first().expect("package semver has major");
-        let minor = parts.get(1).expect("package semver has minor");
+        let version = env!("CARGO_PKG_VERSION");
+        let version = Version::parse(version)?;
 
         // Create version requirement string in the format ">= major.minor"
-        let version_req_str = format!(">= {major}.{minor}");
-        let version = VersionReq::parse(&version_req_str).expect("");
-
-        AcceptLayer { version }
+        let version_req = format!(">= {}.{}", version.major, version.minor);
+        let version_req = VersionReq::parse(&version_req).expect("");
+        Ok(AcceptLayer { version_req })
     }
 }
 
@@ -51,7 +46,7 @@ impl<S> Layer<S> for AcceptLayer {
     type Service = AcceptService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        AcceptService { inner, version: self.version.clone() }
+        AcceptService { inner, version: self.version_req.clone() }
     }
 }
 
@@ -165,6 +160,9 @@ impl<'a> TryFrom<&'a str> for AcceptHeaderValue<'a> {
     }
 }
 
+// ACCEPT TESTS
+// ================================================================================================
+
 #[cfg(test)]
 mod tests {
     use semver::Version;
@@ -173,10 +171,10 @@ mod tests {
 
     #[test]
     fn current_version_is_parsed_and_matches() {
-        let a = AcceptLayer::new();
+        let a = AcceptLayer::new().unwrap();
         let full_version = env!("CARGO_PKG_VERSION");
         let full_version = Version::parse(full_version).unwrap();
-        assert!(a.version.matches(&full_version));
+        assert!(a.version_req.matches(&full_version));
     }
 
     #[test]

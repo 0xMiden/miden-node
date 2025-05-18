@@ -39,7 +39,7 @@ impl Rpc {
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
-            .layer(AcceptLayer::new())
+            .layer(AcceptLayer::new()?)
             // Enables gRPC-web support.
             .add_service(tonic_web::enable(api_service))
             .serve_with_incoming(TcpListenerStream::new(self.listener))

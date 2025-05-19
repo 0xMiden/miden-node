@@ -171,7 +171,9 @@ pub(crate) fn check_server_signature(
 
 /// Check a `PoW` solution.
 ///
+/// * `challenge_state` - The challenge state to be used to validate the challenge.
 /// * `seed` - The seed to be used by the client as the `PoW` seed.
+/// * `server_signature` - The server signature to be used to validate the challenge.
 /// * `solution` - The solution to be checked.
 ///
 /// The solution is valid if the hash of the seed and the solution has at least `DIFFICULTY`

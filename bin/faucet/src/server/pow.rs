@@ -248,7 +248,10 @@ mod tests {
     fn test_check_server_signature() {
         let server_salt = "miden-faucet";
         let seed = "0x1234567890abcdef";
-        let timestamp = 1_234_567_890;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
 
         let mut hasher = Sha3_256::new();
         hasher.update(server_salt);

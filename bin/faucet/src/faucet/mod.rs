@@ -138,6 +138,7 @@ type MintResult<T> = Result<T, MintError>;
 
 /// Error indicating what went wrong in the minting process for a request.
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum MintError {
     #[error("compiling the tx script failed")]
     ScriptCompilation(#[source] AccountInterfaceError),
@@ -405,6 +406,7 @@ impl Faucet {
     }
 
     /// Compiles the transaction script that creates the given set of notes.
+    #[allow(clippy::result_large_err)]
     fn compile(&self, notes: &[Note]) -> MintResult<TransactionArgs> {
         let partial_notes = notes.iter().map(Into::into).collect::<Vec<_>>();
         let script = self
@@ -471,6 +473,7 @@ impl P2IdNotes {
     /// # Errors
     ///
     /// Returns an error if creating any p2id note fails.
+    #[allow(clippy::result_large_err)]
     fn build(
         source: FaucetId,
         requests: &[MintRequest],

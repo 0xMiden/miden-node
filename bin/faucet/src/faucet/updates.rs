@@ -56,6 +56,7 @@ impl ClientUpdater {
 }
 
 /// The different stages of the minting process.
+#[allow(clippy::large_enum_variant)]
 pub enum MintUpdate {
     // TODO: add PoW verification event
     Built,

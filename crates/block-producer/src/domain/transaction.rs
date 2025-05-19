@@ -45,6 +45,7 @@ impl AuthenticatedTransaction {
     /// # Errors
     ///
     /// Returns an error if any of the transaction's nullifiers are marked as spent by the inputs.
+    #[allow(clippy::result_large_err)]
     pub fn new(
         tx: ProvenTransaction,
         inputs: TransactionInputs,

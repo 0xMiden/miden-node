@@ -211,7 +211,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             std::fs::write(&config_file_path, config_as_toml_string)
                 .context("error writing config to file")?;
 
-            println!("Config file successfully created at: {config_file_path:?}");
+            println!("Config file successfully created at: {}", config_file_path.display());
         },
     }
 

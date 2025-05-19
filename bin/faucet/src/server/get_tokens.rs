@@ -17,7 +17,7 @@ use tracing::error;
 
 use super::{
     Server,
-    pow::{check_pow_solution, check_server_signature, check_server_timestamp},
+    pow::{ChallengeState, check_pow_solution, check_server_signature, check_server_timestamp},
 };
 use crate::{
     faucet::MintRequest,
@@ -64,6 +64,8 @@ pub enum InvalidRequest {
     ServerSignaturesDoNotMatch,
     #[error("server timestamp expired, received: {0}, current time: {1}")]
     ExpiredServerTimestamp(u64, u64),
+    #[error("invalid or expired challenge")]
+    InvalidChallenge,
 }
 
 pub enum GetTokenError {
@@ -134,6 +136,7 @@ impl RawMintRequest {
         self,
         options: &AssetOptions,
         pow_salt: &str,
+        challenge_state: &ChallengeState,
     ) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
@@ -164,7 +167,12 @@ impl RawMintRequest {
         )?;
 
         // Check the PoW solution
-        check_pow_solution(&self.pow_seed, self.pow_solution)?;
+        check_pow_solution(
+            challenge_state,
+            &self.pow_seed,
+            &self.server_signature,
+            self.pow_solution,
+        )?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
@@ -178,7 +186,7 @@ pub async fn get_tokens(
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
     let mint_error = request
-        .validate(&server.mint_state.asset_options, &server.pow_salt)
+        .validate(&server.mint_state.asset_options, &server.pow_salt, &server.challenge_state)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
             let span = tracing::Span::current();

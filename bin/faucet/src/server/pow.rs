@@ -1,15 +1,100 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use axum::{Json, extract::State, response::IntoResponse};
 use miden_tx::utils::ToHex;
 use rand::{Rng, rng};
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
+use tokio::time::{Duration, interval};
 
 use super::{Server, get_tokens::InvalidRequest};
 
 const DIFFICULTY: u64 = 5;
 const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
+
+#[derive(Clone)]
+pub struct Challenge {
+    timestamp: u64,
+    server_signature: String,
+}
+
+#[derive(Clone)]
+pub struct ChallengeState {
+    challenges: Arc<Mutex<HashMap<String, Challenge>>>,
+}
+
+impl ChallengeState {
+    pub fn new() -> Self {
+        Self {
+            challenges: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    pub fn add_challenge(&self, seed: &str, server_signature: String, timestamp: u64) {
+        let mut challenges = self.challenges.lock().unwrap();
+        challenges.insert(seed.to_string(), Challenge { timestamp, server_signature });
+    }
+
+    pub fn validate_challenge(
+        &self,
+        seed: &str,
+        server_signature: &str,
+    ) -> Result<(), InvalidRequest> {
+        let challenges = self.challenges.lock().unwrap();
+
+        if let Some(challenge) = challenges.get(seed) {
+            if challenge.server_signature != server_signature {
+                return Err(InvalidRequest::ServerSignaturesDoNotMatch);
+            }
+
+            let current_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("Time went backwards")
+                .as_secs();
+
+            if (current_time - challenge.timestamp) > SERVER_TIMESTAMP_TOLERANCE_SECONDS {
+                return Err(InvalidRequest::ExpiredServerTimestamp(
+                    challenge.timestamp,
+                    current_time,
+                ));
+            }
+
+            Ok(())
+        } else {
+            Err(InvalidRequest::InvalidChallenge)
+        }
+    }
+
+    pub fn cleanup_expired_challenges(&self) {
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+
+        let mut challenges = self.challenges.lock().unwrap();
+        challenges.retain(|_, challenge| {
+            (current_time - challenge.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+        });
+    }
+
+    pub fn remove_challenge(&self, seed: &str) {
+        let mut challenges = self.challenges.lock().unwrap();
+        challenges.remove(seed);
+    }
+}
+
+pub async fn start_cleanup_task(challenge_state: ChallengeState) {
+    let mut interval = interval(Duration::from_secs(60));
+
+    loop {
+        interval.tick().await;
+        challenge_state.cleanup_expired_challenges();
+    }
+}
 
 #[derive(Serialize)]
 struct PoWResponse {
@@ -51,8 +136,12 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
         .as_secs();
 
     let random_seed = random_hex_string(32);
-
     let server_signature = get_server_signature(&server.pow_salt, &random_seed, timestamp);
+
+    // Store the challenge
+    server
+        .challenge_state
+        .add_challenge(&random_seed, server_signature.clone(), timestamp);
 
     Json(PoWResponse {
         seed: random_seed,
@@ -89,7 +178,16 @@ pub(crate) fn check_server_signature(
 /// leading zeros.
 ///
 /// Returns `true` if the solution is valid, `false` otherwise.
-pub(crate) fn check_pow_solution(seed: &str, solution: u64) -> Result<(), InvalidRequest> {
+pub(crate) fn check_pow_solution(
+    challenge_state: &ChallengeState,
+    seed: &str,
+    server_signature: &str,
+    solution: u64,
+) -> Result<(), InvalidRequest> {
+    // First validate the challenge
+    challenge_state.validate_challenge(seed, server_signature)?;
+
+    // Then check the PoW solution
     let mut hasher = Sha3_256::new();
     hasher.update(seed);
     hasher.update(solution.to_string().as_bytes());
@@ -99,6 +197,10 @@ pub(crate) fn check_pow_solution(seed: &str, solution: u64) -> Result<(), Invali
     if leading_zeros < DIFFICULTY as usize {
         return Err(InvalidRequest::InvalidPoW);
     }
+
+    // If we get here, the solution is valid
+    // Remove the challenge to prevent reuse
+    challenge_state.remove_challenge(seed);
 
     Ok(())
 }
@@ -158,7 +260,9 @@ mod tests {
         assert!(result.is_ok());
 
         let solution = find_pow_solution(seed);
-        let result = check_pow_solution(seed, solution);
+        let challenge_state = ChallengeState::new();
+        challenge_state.add_challenge(seed, server_signature.clone(), timestamp);
+        let result = check_pow_solution(&challenge_state, seed, &server_signature, solution);
         assert!(result.is_ok());
     }
 
@@ -173,7 +277,8 @@ mod tests {
         assert!(result.is_err());
 
         let solution = 1_234_567_890;
-        let result = check_pow_solution(seed, solution);
+        let challenge_state = ChallengeState::new();
+        let result = check_pow_solution(&challenge_state, seed, server_signature, solution);
         assert!(result.is_err());
     }
 }

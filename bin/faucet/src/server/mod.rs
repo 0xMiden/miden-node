@@ -49,6 +49,7 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow_salt: String,
+    challenge_state: pow::ChallengeState,
 }
 
 impl Server {
@@ -65,8 +66,20 @@ impl Server {
         };
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
+        let challenge_state = pow::ChallengeState::new();
 
-        Server { mint_state, metadata, pow_salt }
+        // Start the cleanup task
+        let cleanup_state = challenge_state.clone();
+        tokio::spawn(async move {
+            pow::start_cleanup_task(cleanup_state).await;
+        });
+
+        Server {
+            mint_state,
+            metadata,
+            pow_salt,
+            challenge_state,
+        }
     }
 
     pub async fn serve(self, url: Url) -> anyhow::Result<()> {

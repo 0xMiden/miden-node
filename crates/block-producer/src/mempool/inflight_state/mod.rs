@@ -104,6 +104,7 @@ impl InflightState {
     /// Appends the transaction to the inflight state.
     ///
     /// This operation is atomic i.e. a rejected transaction has no impact of the state.
+    #[allow(clippy::result_large_err)]
     pub fn add_transaction(
         &mut self,
         tx: &AuthenticatedTransaction,
@@ -128,6 +129,7 @@ impl InflightState {
             .expect("Chain height cannot be less than number of committed blocks")
     }
 
+    #[allow(clippy::result_large_err)]
     fn verify_transaction(&self, tx: &AuthenticatedTransaction) -> Result<(), AddTransactionError> {
         // Check that the transaction hasn't already expired.
         if tx.expires_at() <= self.chain_tip + self.expiration_slack {

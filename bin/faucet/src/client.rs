@@ -212,7 +212,8 @@ pub async fn initialize_faucet_client(
     config: &FaucetConfig,
 ) -> Result<(RpcClient, BlockHeader, PartialBlockchain), ClientError> {
     let mut rpc_api =
-        RpcClient::connect(&config.node_url, Duration::from_millis(config.timeout_ms)).await?;
+        RpcClient::connect(&config.node_url, Duration::from_millis(config.timeout_ms), None)
+            .await?;
 
     let request = GetBlockHeaderByNumberRequest {
         block_num: Some(0),

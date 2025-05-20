@@ -117,6 +117,38 @@ mod test {
     }
 
     #[tokio::test]
+    async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
+        // NOTE: proptest does not support async and proptest_async does not work with multiple runtimes made by this fn.
+        for version in ["0.1.0", "0.0.1"] {
+            // Start the RPC.
+            let (_, rpc_addr, store_addr) = start_rpc().await;
+            let (store_runtime, _data_directory) = start_store(store_addr).await;
+
+            // Recreate the RPC client with an invalid version.
+            let url = rpc_addr.to_string();
+            let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
+            let mut rpc_client =
+                miden_node_proto::RpcClient::connect(&url, Duration::from_secs(10), Some(version))
+                    .await
+                    .unwrap();
+
+            // Send any request to the RPC.
+            let response = send_request(&mut rpc_client).await;
+
+            // Assert the server does not reject our request on the basis of missing accept header.
+            assert!(response.is_err());
+            assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
+            assert_eq!(
+                response.as_ref().err().unwrap().message(),
+                "Client / server version mismatch"
+            );
+
+            // Shutdown to avoid runtime drop error.
+            store_runtime.shutdown_background();
+        }
+    }
+
+    #[tokio::test]
     async fn rpc_startup_is_robust_to_network_failures() {
         // This test starts the store and RPC components and verifies that they successfully
         // connect to each other on startup and that they reconnect after the store is restarted.
@@ -198,7 +230,7 @@ mod test {
         });
         let url = rpc_addr.to_string();
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-        let rpc_client = RpcClient::connect(&url, Duration::from_secs(10)).await.unwrap();
+        let rpc_client = RpcClient::connect(&url, Duration::from_secs(10), None).await.unwrap();
 
         (rpc_client, rpc_addr, store_addr)
     }

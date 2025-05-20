@@ -337,35 +337,35 @@ mod test {
         // is started.
 
         // get the addresses for the store and block producer
-        let store_address = {
+        let store_addr = {
             let store_listener =
                 TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
             store_listener.local_addr().expect("store should get a local address")
         };
+        let block_producer_addr = {
+            let block_producer_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
+            block_producer_listener
+                .local_addr()
+                .expect("Failed to get block-producer address")
+        };
 
-        let block_producer_listener =
-            TcpListener::bind("127.0.0.1:0").await.expect("failed to bind block-producer");
-
-        let block_producer_address = block_producer_listener
-            .local_addr()
-            .expect("Failed to get block-producer address");
-        let ntx_builder_address = {
-            let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("failed to bind the ntx builder address");
-            ntx_builder_address.local_addr().expect("Failed to get ntx builder address")
+        let ntx_builder_addr = {
+            let ntx_builder_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind ntx builder");
+            ntx_builder_listener.local_addr().expect("Failed to get ntx builder address")
         };
 
         // start the block producer
         task::spawn(async move {
             BlockProducer {
-                block_producer_address,
-                store_address,
-                ntx_builder_address,
+                block_producer_address: block_producer_addr,
+                store_address: store_addr,
                 batch_prover_url: None,
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
+                ntx_builder_address: ntx_builder_addr,
             }
             .serve()
             .await
@@ -374,11 +374,10 @@ mod test {
 
         // test: connecting to the block producer should fail until the store is started
         let block_producer_endpoint =
-            Endpoint::try_from(format!("http://{block_producer_address}")).expect("valid url");
-        let _block_producer_client =
+            Endpoint::try_from(format!("http://{block_producer_addr}")).expect("valid url");
+        let block_producer_client =
             block_producer_client::ApiClient::connect(block_producer_endpoint.clone()).await;
-        // TODO: Rework test
-        //assert!(block_producer_client.is_err());
+        assert!(block_producer_client.is_err());
 
         // start the store
         let data_directory = tempfile::tempdir().expect("tempdir should be created");
@@ -388,7 +387,7 @@ mod test {
                 .expect("store should bootstrap");
             let dir = data_directory.path().to_path_buf();
             let store_listener =
-                TcpListener::bind(store_address).await.expect("store should bind a port");
+                TcpListener::bind(store_addr).await.expect("store should bind a port");
             // in order to later kill the store, we need to spawn a new runtime and run the store on
             // it. That allows us to kill all the tasks spawned by the store when we
             // kill the runtime.
@@ -405,6 +404,7 @@ mod test {
             });
             store_runtime
         };
+
         // we need to wait for the exponential backoff of the block producer to connect to the store
         sleep(Duration::from_secs(1)).await;
 
@@ -425,8 +425,7 @@ mod test {
         assert!(response.is_err());
 
         // test: restart the store and request should succeed
-        let store_listener =
-            TcpListener::bind(store_address).await.expect("store should bind a port");
+        let store_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
         task::spawn(async move {
             Store {
                 listener: store_listener,

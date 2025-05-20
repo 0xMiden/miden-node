@@ -50,7 +50,7 @@ impl Rpc {
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
+    use std::{net::SocketAddr, time::Duration};
 
     use miden_node_proto::{
         RpcClient,
@@ -60,7 +60,12 @@ mod test {
         },
     };
     use miden_node_store::{GenesisState, Store};
-    use tokio::{net::TcpListener, runtime, task};
+    use tempfile::TempDir;
+    use tokio::{
+        net::TcpListener,
+        runtime::{self, Runtime},
+        task,
+    };
     use url::Url;
 
     use crate::Rpc;
@@ -68,7 +73,8 @@ mod test {
     #[tokio::test]
     async fn rpc_server_rejects_requests_without_accept_header() {
         // Start the RPC.
-        let (_, rpc_addr, _) = start_rpc().await;
+        let (_, rpc_addr, store_addr) = start_rpc().await;
+        let (store_runtime, _data_directory) = start_store(store_addr).await;
 
         // Override the client so that the ACCEPT header is not set.
         let mut rpc_client = {
@@ -89,20 +95,25 @@ mod test {
         assert!(response.is_err());
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
         assert_eq!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
+
+        // Shutdown to avoid runtime drop error;
+        store_runtime.shutdown_background();
     }
 
     #[tokio::test]
     async fn rpc_server_accepts_requests_with_accept_header() {
         // Start the RPC.
-        let (mut rpc_client, ..) = start_rpc().await;
+        let (mut rpc_client, _, store_addr) = start_rpc().await;
+        let (store_runtime, _data_directory) = start_store(store_addr).await;
 
         // Send any request to the RPC.
         let response = send_request(&mut rpc_client).await;
 
         // Assert the server does not reject our request on the basis of missing accept header.
-        assert!(response.is_err());
-        assert_ne!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
-        assert_ne!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
+        assert!(response.is_ok());
+
+        // Shutdown to avoid runtime drop error;
+        store_runtime.shutdown_background();
     }
 
     #[tokio::test]
@@ -118,30 +129,7 @@ mod test {
         assert!(response.is_err());
 
         // Start the store.
-        let data_directory = tempfile::tempdir().expect("tempdir should be created");
-        let store_runtime = {
-            let genesis_state = GenesisState::new(vec![], 1, 1);
-            Store::bootstrap(genesis_state.clone(), data_directory.path())
-                .expect("store should bootstrap");
-            let dir = data_directory.path().to_path_buf();
-            let store_listener =
-                TcpListener::bind(store_addr).await.expect("store should bind a port");
-            // In order to later kill the store, we need to spawn a new runtime and run the store on
-            // it. That allows us to kill all the tasks spawned by the store when we
-            // kill the runtime.
-            let store_runtime =
-                runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
-            store_runtime.spawn(async move {
-                Store {
-                    listener: store_listener,
-                    data_directory: dir,
-                }
-                .serve()
-                .await
-                .expect("store should start serving");
-            });
-            store_runtime
-        };
+        let (store_runtime, data_directory) = start_store(store_addr).await;
 
         // Test: send request against RPC api and should succeed
         let response = send_request(&mut rpc_client).await;
@@ -213,5 +201,30 @@ mod test {
         let rpc_client = RpcClient::connect(&url, Duration::from_secs(10)).await.unwrap();
 
         (rpc_client, rpc_addr, store_addr)
+    }
+
+    async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
+        // Start the store.
+        let data_directory = tempfile::tempdir().expect("tempdir should be created");
+        let genesis_state = GenesisState::new(vec![], 1, 1);
+        Store::bootstrap(genesis_state.clone(), data_directory.path())
+            .expect("store should bootstrap");
+        let dir = data_directory.path().to_path_buf();
+        let store_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
+        // In order to later kill the store, we need to spawn a new runtime and run the store on
+        // it. That allows us to kill all the tasks spawned by the store when we
+        // kill the runtime.
+        let store_runtime =
+            runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
+        store_runtime.spawn(async move {
+            Store {
+                listener: store_listener,
+                data_directory: dir,
+            }
+            .serve()
+            .await
+            .expect("store should start serving");
+        });
+        (store_runtime, data_directory)
     }
 }

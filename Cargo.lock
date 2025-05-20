@@ -1855,6 +1855,7 @@ dependencies = [
  "http-body-util",
  "miden-lib",
  "miden-node-proto",
+ "miden-node-rpc",
  "miden-node-utils",
  "miden-objects",
  "miden-tx",
@@ -2105,6 +2106,19 @@ version = "0.1.0"
 dependencies = [
  "quote",
  "syn",
+]
+
+[[package]]
+name = "miden-node-tests"
+version = "0.9.0"
+dependencies = [
+ "miden-node-proto",
+ "miden-node-rpc",
+ "miden-node-store",
+ "tempfile",
+ "tokio",
+ "tonic",
+ "url",
 ]
 
 [[package]]

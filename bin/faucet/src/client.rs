@@ -2,12 +2,10 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
-use miden_node_proto::{
-    RpcClient,
-    generated::requests::{
-        GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
-    },
+use miden_node_proto::generated::requests::{
+    GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
 };
+use miden_node_rpc::ApiClient;
 use miden_objects::{
     Felt,
     account::{Account, AccountFile, AccountId, AuthSecretKey},
@@ -43,7 +41,7 @@ pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
 /// Basic client that handles execution, proving and submitting of mint transactions
 /// for the faucet.
 pub struct FaucetClient {
-    rpc_api: RpcClient,
+    rpc_api: ApiClient,
     executor: TransactionExecutor,
     data_store: Arc<FaucetDataStore>,
     id: AccountId,
@@ -210,9 +208,9 @@ impl FaucetClient {
 /// Initializes the faucet client by connecting to the node and fetching the root block header.
 pub async fn initialize_faucet_client(
     config: &FaucetConfig,
-) -> Result<(RpcClient, BlockHeader, PartialBlockchain), ClientError> {
+) -> Result<(ApiClient, BlockHeader, PartialBlockchain), ClientError> {
     let mut rpc_api =
-        RpcClient::connect(&config.node_url, Duration::from_millis(config.timeout_ms), None)
+        ApiClient::connect(&config.node_url, Duration::from_millis(config.timeout_ms), None)
             .await?;
 
     let request = GetBlockHeaderByNumberRequest {
@@ -245,7 +243,7 @@ pub async fn initialize_faucet_client(
 ///
 /// The account is expected to be public, otherwise, the error is returned.
 async fn request_account_state(
-    rpc_api: &mut RpcClient,
+    rpc_api: &mut ApiClient,
     account_id: AccountId,
 ) -> Result<Account, ClientError> {
     let account_info = rpc_api

@@ -1,4 +1,3 @@
-mod client;
 pub mod domain;
 pub mod errors;
 
@@ -8,7 +7,6 @@ pub mod generated;
 // RE-EXPORTS
 // ================================================================================================
 
-pub use client::RpcClient;
 pub use domain::{
     account::{AccountState, AccountWitnessRecord},
     convert,

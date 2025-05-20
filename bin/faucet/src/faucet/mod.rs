@@ -6,20 +6,13 @@ use miden_lib::{
     note::create_p2id_note,
 };
 use miden_objects::{
-    AccountError, Digest, Felt, NoteError,
-    account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
-    asset::FungibleAsset,
-    block::BlockNumber,
-    crypto::{
+    account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey}, assembly::DefaultSourceManager, asset::FungibleAsset, block::BlockNumber, crypto::{
         merkle::{MmrPeaks, PartialMmr},
         rand::RpoRandomCoin,
-    },
-    note::Note,
-    transaction::{
+    }, note::Note, transaction::{
         ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction, TransactionArgs,
         TransactionId, TransactionWitness,
-    },
-    vm::AdviceMap,
+    }, vm::AdviceMap, AccountError, Digest, Felt, NoteError
 };
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{
@@ -438,6 +431,7 @@ impl Faucet {
                 BlockNumber::GENESIS,
                 InputNotes::default(),
                 tx_args,
+                Arc::new(DefaultSourceManager::default()),
             )
             .await
             .map_err(MintError::Execution)

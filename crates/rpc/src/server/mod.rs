@@ -118,7 +118,8 @@ mod test {
 
     #[tokio::test]
     async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
-        // NOTE: proptest does not support async and proptest_async does not work with multiple runtimes made by this fn.
+        // NOTE: proptest does not support async and proptest_async does not work with multiple
+        // runtimes made by this fn.
         for version in ["0.1.0", "0.0.1"] {
             // Start the RPC.
             let (_, rpc_addr, store_addr) = start_rpc().await;

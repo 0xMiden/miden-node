@@ -42,7 +42,8 @@ impl RpcClient {
     ///
     /// The client is configured with an interceptor that sets all requisite request metadata.
     ///
-    /// If a version is not specified, the version found in the `Cargo.toml` of the workspace is used.
+    /// If a version is not specified, the version found in the `Cargo.toml` of the workspace is
+    /// used.
     pub async fn connect(
         url: &Url,
         timeout: Duration,

@@ -1,7 +1,10 @@
 use std::{collections::BTreeSet, sync::Mutex};
 
 use miden_objects::{
-    account::{Account, AccountId}, block::{BlockHeader, BlockNumber}, transaction::{PartialBlockchain, TransactionScript}, MastForest, Word
+    MastForest, Word,
+    account::{Account, AccountId},
+    block::{BlockHeader, BlockNumber},
+    transaction::{PartialBlockchain, TransactionScript},
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 use winter_maybe_async::maybe_async_trait;

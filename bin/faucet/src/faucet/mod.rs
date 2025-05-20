@@ -6,13 +6,21 @@ use miden_lib::{
     note::create_p2id_note,
 };
 use miden_objects::{
-    account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey}, assembly::DefaultSourceManager, asset::FungibleAsset, block::BlockNumber, crypto::{
+    AccountError, Digest, Felt, NoteError,
+    account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
+    assembly::DefaultSourceManager,
+    asset::FungibleAsset,
+    block::BlockNumber,
+    crypto::{
         merkle::{MmrPeaks, PartialMmr},
         rand::RpoRandomCoin,
-    }, note::Note, transaction::{
+    },
+    note::Note,
+    transaction::{
         ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction, TransactionArgs,
         TransactionId, TransactionWitness,
-    }, vm::AdviceMap, AccountError, Digest, Felt, NoteError
+    },
+    vm::AdviceMap,
 };
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{
@@ -607,7 +615,8 @@ mod tests {
         let notes = P2IdNotes::build(faucet.faucet_id(), &requests, &mut rng).unwrap().into_inner();
         let tx_args = faucet.compile(&notes).unwrap();
 
-        faucet.data_store
+        faucet
+            .data_store
             .load_transaction_script(tx_args.tx_script().expect("should have script"));
 
         let executed_tx = faucet.execute_transaction(tx_args).await.unwrap();

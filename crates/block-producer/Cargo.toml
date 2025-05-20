@@ -50,6 +50,7 @@ miden-air             = { workspace = true }
 miden-lib             = { workspace = true, features = ["testing"] }
 miden-node-store      = { workspace = true }
 miden-node-test-macro = { workspace = true }
+miden-node-utils      = { workspace = true, features = ["testing"] }
 miden-objects         = { workspace = true, features = ["testing"] }
 miden-tx              = { workspace = true, features = ["testing"] }
 pretty_assertions     = "1.4"

@@ -14,9 +14,10 @@ version                = "0.9.0"
 workspace = true
 
 [dependencies]
-miden-node-proto = { path = "../crates/proto" }
-miden-node-rpc   = { path = "../crates/rpc" }
-miden-node-store = { path = "../crates/store" }
+miden-node-proto      = { path = "../crates/proto" }
+miden-node-rpc        = { path = "../crates/rpc" }
+miden-node-rpc-client = { path = "../crates/rpc-client" }
+miden-node-store      = { path = "../crates/store" }
 
 [dev-dependencies]
 tempfile = { version = "3.5" }

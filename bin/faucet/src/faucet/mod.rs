@@ -389,6 +389,10 @@ impl Faucet {
         // Build the note
         let notes = p2id_notes.into_inner();
         let tx_args = self.compile(&notes)?;
+
+        self.data_store
+            .load_transaction_script(tx_args.tx_script().expect("should have script"));
+
         updater.send_updates(MintUpdate::Built).await;
 
         // Execute the transaction
@@ -608,6 +612,10 @@ mod tests {
         // Build and execute the transaction
         let notes = P2IdNotes::build(faucet.faucet_id(), &requests, &mut rng).unwrap().into_inner();
         let tx_args = faucet.compile(&notes).unwrap();
+
+        faucet.data_store
+            .load_transaction_script(tx_args.tx_script().expect("should have script"));
+
         let executed_tx = faucet.execute_transaction(tx_args).await.unwrap();
 
         assert_eq!(executed_tx.output_notes().num_notes(), num_requests as usize);

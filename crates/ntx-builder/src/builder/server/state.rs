@@ -52,26 +52,6 @@ impl NtxBuilderState {
         }
     }
 
-    /// Move notes from pending to inflight for a specific transaction
-    pub fn _move_notes_to_inflight(&mut self, tx_id: TransactionId, note_ids: &[NoteId]) {
-        let id_set: BTreeSet<NoteId> = note_ids.iter().copied().collect();
-        let mut moved = Vec::new();
-
-        for queue in self.pending_notes_by_tag.values_mut() {
-            let mut i = 0;
-            while i < queue.len() {
-                if id_set.contains(&queue[i].id()) {
-                    moved.push(queue.remove(i));
-                } else {
-                    i += 1;
-                }
-            }
-        }
-
-        self.unconsumed_note_queue.retain(|n| !id_set.contains(&n.id()));
-        self.inflight_notes.insert(tx_id, moved);
-    }
-
     /// Discard a transaction, moving its notes back to pending
     /// Returns the number of notes moved back to pending status
     pub fn discard_transaction(&mut self, tx_id: TransactionId) -> usize {

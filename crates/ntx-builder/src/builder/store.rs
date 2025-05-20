@@ -123,12 +123,9 @@ impl StoreClient {
 // =================================================================================================
 
 #[derive(Debug, Error)]
-#[allow(dead_code)]
 pub enum StoreError {
     #[error("gRPC client error")]
     GrpcClientError(#[from] tonic::Status),
-    #[error("malformed response from store: {0}")]
-    MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
 }

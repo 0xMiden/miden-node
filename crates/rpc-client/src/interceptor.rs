@@ -1,12 +1,13 @@
+use alloc::{collections::btree_map::BTreeMap, string::String};
 use tonic::{
     metadata::{AsciiMetadataValue, errors::InvalidMetadataValue},
     service::Interceptor,
 };
 
-/// Interceptor designed to inject required metadata into all [`ApiClient`] requests.
+/// Interceptor designed to inject required metadata into all [`super::RpcClient`] requests.
 #[derive(Default, Clone)]
 pub struct MetadataInterceptor {
-    metadata: std::collections::BTreeMap<&'static str, AsciiMetadataValue>,
+    metadata: BTreeMap<&'static str, AsciiMetadataValue>,
 }
 
 impl MetadataInterceptor {

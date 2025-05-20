@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tonic::{metadata::AsciiMetadataValue, service::Interceptor};
 
-/// Interceptor designed to inject required metadata into all [`ApiClient`] requests.
+/// Interceptor designed to inject required metadata into all [`super::ApiClient`] requests.
 #[derive(Default)]
 pub struct MetadataInterceptor {
     metadata: HashMap<&'static str, AsciiMetadataValue>,

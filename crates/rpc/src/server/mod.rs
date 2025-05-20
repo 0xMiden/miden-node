@@ -96,7 +96,7 @@ mod test {
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
         assert_eq!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
 
-        // Shutdown to avoid runtime drop error;
+        // Shutdown to avoid runtime drop error.
         store_runtime.shutdown_background();
     }
 
@@ -112,7 +112,7 @@ mod test {
         // Assert the server does not reject our request on the basis of missing accept header.
         assert!(response.is_ok());
 
-        // Shutdown to avoid runtime drop error;
+        // Shutdown to avoid runtime drop error.
         store_runtime.shutdown_background();
     }
 

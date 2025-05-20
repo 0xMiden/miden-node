@@ -171,7 +171,6 @@ impl StoreClient {
 // =================================================================================================
 
 #[derive(Debug, Error)]
-#[allow(dead_code)]
 pub enum StoreError {
     #[error("gRPC client error")]
     GrpcClientError(#[from] tonic::Status),

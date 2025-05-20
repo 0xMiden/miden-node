@@ -20,7 +20,6 @@ tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
 anyhow = { workspace = true }
-async-trait = { version = "0.1" }
 futures = { workspace = true }
 itertools = { workspace = true }
 miden-block-prover = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }

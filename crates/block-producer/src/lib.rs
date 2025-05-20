@@ -7,10 +7,15 @@ pub mod test_utils;
 mod batch_builder;
 mod block_builder;
 mod domain;
-mod errors;
 mod mempool;
-mod server;
 pub mod store;
+
+#[cfg(feature = "testing")]
+pub mod errors;
+#[cfg(not(feature = "testing"))]
+mod errors;
+
+pub mod server;
 pub use server::BlockProducer;
 
 // CONSTANTS

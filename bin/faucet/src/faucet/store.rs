@@ -4,9 +4,10 @@ use miden_objects::{
     MastForest, Word,
     account::{Account, AccountId},
     block::{BlockHeader, BlockNumber},
-    transaction::{PartialBlockchain, TransactionScript},
+    transaction::PartialBlockchain,
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
+use winter_maybe_async::maybe_async_trait;
 
 pub struct FaucetDataStore {
     faucet_account: Mutex<Account>,
@@ -48,17 +49,11 @@ impl FaucetDataStore {
     pub fn update_faucet_state(&self, new_faucet_state: Account) {
         *self.faucet_account.lock().expect("Poisoned lock") = new_faucet_state;
     }
-
-    /// Updates the stored faucet account with the new one.
-    pub fn load_transaction_script(&self, tx_script: &TransactionScript) {
-        // TODO: because the script string is interpolated, the MAST is different and needs to be
-        // loaded each time. Maybe it should be compiled once and inputs could be passed some other
-        // way
-        self.mast_store.insert(tx_script.mast().clone());
-    }
 }
 
+#[maybe_async_trait(?Send)]
 impl DataStore for FaucetDataStore {
+    #[maybe_async]
     fn get_transaction_inputs(
         &self,
         account_id: AccountId,

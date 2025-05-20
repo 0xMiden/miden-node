@@ -15,22 +15,25 @@ version.workspace      = true
 workspace = true
 
 [features]
+testing        = []
 tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
 anyhow = { workspace = true }
-futures = { version = "0.3" }
+async-trait = { version = "0.1" }
+futures = { workspace = true }
 itertools = { workspace = true }
 miden-block-prover = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 miden-lib = { workspace = true }
 miden-node-proto = { workspace = true }
-miden-node-utils = { workspace = true, features = ["testing"] }
+miden-node-utils = { workspace = true }
 miden-objects = { workspace = true }
 miden-processor = { workspace = true }
 miden-proving-service-client = { git = "https://github.com/0xMiden/miden-base.git", branch = "next", features = [
   "batch-prover",
   "block-prover",
 ] }
+miden-tx = { workspace = true }
 miden-tx-batch-prover = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 rand = { version = "0.9" }
 thiserror = { workspace = true }

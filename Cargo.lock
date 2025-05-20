@@ -2253,7 +2253,7 @@ dependencies = [
 [[package]]
 name = "miden-proving-service-client"
 version = "0.9.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#291d6620bc157e81f76c37b3dbcfb64ac5f80d8c"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#3d8c3b28048fffbb63592a971d0fcae5dc58bce9"
 dependencies = [
  "async-trait",
  "getrandom 0.3.3",
@@ -2299,7 +2299,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.9.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#291d6620bc157e81f76c37b3dbcfb64ac5f80d8c"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#3d8c3b28048fffbb63592a971d0fcae5dc58bce9"
 dependencies = [
  "miden-objects",
  "miden-tx",

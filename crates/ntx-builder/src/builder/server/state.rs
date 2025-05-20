@@ -39,7 +39,7 @@ impl NtxBuilderState {
         !self.unconsumed_note_queue.is_empty()
     }
 
-    /// Add a network notes to the pending notes queue.
+    /// Add network notes to the pending notes queue.
     /// Also adds nullifier |-> note ID mapping, and adds it to the set of notes by tag.
     pub fn add_unconsumed_notes(&mut self, notes: Vec<Note>) {
         for note in notes {

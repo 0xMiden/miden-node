@@ -114,13 +114,6 @@ impl BlockBuilder {
     ///
     /// A failure in any stage will result in that block being rolled back.
     ///
-    /// ## Returns
-    ///
-    /// The transaction and note IDs committed in this block, as well as the transaction IDs that
-    /// were dropped (e.g. due to expiring).
-    ///
-    /// Returns [`None`] if the block building failed.
-    ///
     /// ## Telemetry
     ///
     /// - Creates a new root span which means each block gets its own complete trace.

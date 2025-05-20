@@ -26,7 +26,7 @@ pub struct FaucetRequest {
 }
 
 #[derive(Serialize)]
-pub struct FaucetMetadataReponse {
+pub struct FaucetMetadataResponse {
     id: String,
     asset_amount_options: Vec<u64>,
 }
@@ -34,8 +34,8 @@ pub struct FaucetMetadataReponse {
 #[instrument(parent = None, target = COMPONENT, name = "faucet.server.get_metadata", skip_all)]
 pub async fn get_metadata(
     State(state): State<FaucetState>,
-) -> (StatusCode, Json<FaucetMetadataReponse>) {
-    let response = FaucetMetadataReponse {
+) -> (StatusCode, Json<FaucetMetadataResponse>) {
+    let response = FaucetMetadataResponse {
         id: state.id.to_string(),
         asset_amount_options: state.config.asset_amount_options.clone(),
     };

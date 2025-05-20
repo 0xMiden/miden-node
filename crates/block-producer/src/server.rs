@@ -65,7 +65,6 @@ pub struct BlockProducer {
 
 impl BlockProducer {
     /// Serves the block-producer RPC API, the batch-builder and the block-builder.
-    /// Serves the block-producer RPC API, the batch-builder and the block-builder.
     ///
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.

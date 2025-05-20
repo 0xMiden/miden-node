@@ -2,12 +2,12 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{GenesisState, Store};
+use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -19,7 +19,11 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use url::Url;
 
-use super::{ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL};
+use super::{
+    DEFAULT_MONITOR_INTERVAL_MS, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL,
+    parse_duration_ms,
+};
+use crate::system_monitor::SystemMonitor;
 
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
@@ -54,6 +58,15 @@ pub enum StoreCommand {
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "bool")]
         open_telemetry: bool,
+
+        /// Interval at which to monitor the system in milliseconds.
+        #[arg(
+            long = "monitor.interval",
+            default_value = DEFAULT_MONITOR_INTERVAL_MS,
+            value_parser = parse_duration_ms,
+            value_name = "MILLISECONDS"
+        )]
+        monitor_interval: Duration,
     },
 }
 
@@ -65,9 +78,12 @@ impl StoreCommand {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
             // Note: open-telemetry is handled in main.
-            StoreCommand::Start { url, data_directory, open_telemetry: _ } => {
-                Self::start(url, data_directory).await
-            },
+            StoreCommand::Start {
+                url,
+                data_directory,
+                open_telemetry: _,
+                monitor_interval,
+            } => Self::start(url, data_directory, monitor_interval).await,
         }
     }
 
@@ -79,12 +95,23 @@ impl StoreCommand {
         }
     }
 
-    async fn start(url: Url, data_directory: PathBuf) -> anyhow::Result<()> {
+    async fn start(
+        url: Url,
+        data_directory: PathBuf,
+        monitor_interval: Duration,
+    ) -> anyhow::Result<()> {
         let listener =
             url.to_socket().context("Failed to extract socket address from store URL")?;
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to store's gRPC URL")?;
+
+        // Start system monitor.
+        let data_dir =
+            DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
+        SystemMonitor::new(monitor_interval)
+            .with_store_metrics(data_dir)
+            .run_with_supervisor();
 
         Store { listener, data_directory }
             .serve()

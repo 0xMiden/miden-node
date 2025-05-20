@@ -6,10 +6,11 @@ use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{
-    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_NETWORK_TX_BUILDER_URL,
-    ENV_STORE_URL, parse_duration_ms,
+    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
+    ENV_BATCH_PROVER_URL, ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL,
+    ENV_NETWORK_TX_BUILDER_URL, ENV_STORE_URL, parse_duration_ms,
 };
+use crate::system_monitor::SystemMonitor;
 
 #[derive(clap::Subcommand)]
 pub enum BlockProducerCommand {
@@ -61,6 +62,15 @@ pub enum BlockProducerCommand {
             value_name = "MILLISECONDS"
         )]
         batch_interval: Duration,
+
+        /// Interval at which to monitor the system in milliseconds.
+        #[arg(
+            long = "monitor.interval",
+            default_value = DEFAULT_MONITOR_INTERVAL_MS,
+            value_parser = parse_duration_ms,
+            value_name = "MILLISECONDS"
+        )]
+        monitor_interval: Duration,
     },
 }
 
@@ -76,6 +86,7 @@ impl BlockProducerCommand {
             block_interval,
             batch_interval,
             network_tx_builder_url,
+            monitor_interval,
         } = self;
 
         let store_address = store_url
@@ -86,6 +97,12 @@ impl BlockProducerCommand {
             .context("Failed to extract socket address from network transaction builder URL")?;
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
+
+        // Start system monitor.
+        SystemMonitor::new(monitor_interval).run_with_supervisor();
+
+        // Start system monitor.
+        SystemMonitor::new(monitor_interval).run_with_supervisor();
 
         BlockProducer {
             block_producer_address,

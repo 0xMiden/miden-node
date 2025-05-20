@@ -178,6 +178,32 @@ pub fn select_account(transaction: &Transaction, account_id: AccountId) -> Resul
     account_info_from_row(row)
 }
 
+/// Select the latest account details by account id from the DB using the given [Connection].
+///
+/// # Returns
+///
+/// The latest account details, or an error.
+pub fn select_account_by_prefix(transaction: &Transaction, id_prefix: u32) -> Result<AccountInfo> {
+    let mut stmt = transaction.prepare_cached(
+        "
+        SELECT
+            account_id,
+            account_commitment,
+            block_num,
+            details
+        FROM
+            accounts
+        WHERE
+            id_prefix = ?1;
+        ",
+    )?;
+
+    let mut rows = stmt.query(params![i64::from(id_prefix)])?;
+    let row = rows.next()?.ok_or(DatabaseError::AccountPrefixNotFound(id_prefix))?;
+
+    account_info_from_row(row)
+}
+
 /// Select the latest accounts' details filtered by IDs from the DB using the given
 /// [Connection].
 ///
@@ -427,17 +453,22 @@ pub fn upsert_accounts(
     let mut upsert_stmt = transaction.prepare_cached(insert_sql!(
         accounts {
             account_id,
+            id_prefix,
             account_commitment,
             block_num,
             details
         } | REPLACE
     ))?;
+
     let mut select_details_stmt =
         transaction.prepare_cached("SELECT details FROM accounts WHERE account_id = ?1")?;
 
     let mut count = 0;
     for update in accounts {
         let account_id = update.account_id();
+        // Extract the 30-bit prefix to provide look up for ntx builder
+        // TODO: refactor/add helper methods?
+        let account_id_prefix = (account_id.prefix().as_u64() >> 34) as u32;
         let (full_account, insert_delta) = match update.details() {
             AccountUpdateDetails::Private => (None, None),
             AccountUpdateDetails::New(account) => {
@@ -473,6 +504,7 @@ pub fn upsert_accounts(
 
         let inserted = upsert_stmt.execute(params![
             account_id.to_bytes(),
+            account_id_prefix,
             update.final_state_commitment().to_bytes(),
             block_num.as_u32(),
             full_account.as_ref().map(|account| account.to_bytes()),

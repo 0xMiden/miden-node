@@ -213,6 +213,14 @@ pub struct GetBlockByNumberResponse {
     #[prost(bytes = "vec", optional, tag = "1")]
     pub block: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
+/// TODO: comments
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetCurrentBlockchainDataResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub current_peaks: ::prost::alloc::vec::Vec<super::digest::Digest>,
+    #[prost(message, optional, tag = "2")]
+    pub current_block_header: ::core::option::Option<super::block::BlockHeader>,
+}
 /// Represents the result of getting account state delta.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetAccountStateDeltaResponse {

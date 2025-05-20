@@ -11,7 +11,8 @@ use url::Url;
 
 use super::{
     DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_RPC_URL, parse_duration_ms,
+    ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_NTX_PROVER_URL, ENV_RPC_URL,
+    parse_duration_ms,
 };
 
 #[derive(clap::Subcommand)]
@@ -54,6 +55,11 @@ pub enum BundledCommand {
         /// in-process which is expensive.
         #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
         block_prover_url: Option<Url>,
+
+        /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
+        /// will default to running a prover in-process which is expensive.
+        #[arg(long = "tx-prover.url", env = ENV_NTX_PROVER_URL, value_name = "URL")]
+        tx_prover_url: Option<Url>,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
@@ -104,12 +110,14 @@ impl BundledCommand {
                 open_telemetry: _,
                 block_interval,
                 batch_interval,
+                tx_prover_url,
             } => {
                 Self::start(
                     rpc_url,
                     data_directory,
                     batch_prover_url,
                     block_prover_url,
+                    tx_prover_url,
                     batch_interval,
                     block_interval,
                 )
@@ -123,6 +131,7 @@ impl BundledCommand {
         data_directory: PathBuf,
         batch_prover_url: Option<Url>,
         block_prover_url: Option<Url>,
+        ntx_proving_service_address: Option<Url>,
         batch_interval: Duration,
         block_interval: Duration,
     ) -> anyhow::Result<()> {
@@ -138,21 +147,27 @@ impl BundledCommand {
         let grpc_store = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to store gRPC endpoint")?;
-        let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to block-producer gRPC endpoint")?;
-        let grpc_network_tx_builder = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to network transaction builder gRPC endpoint")?;
 
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
-        let block_producer_address = grpc_block_producer
-            .local_addr()
-            .context("Failed to retrieve the block-producer's gRPC address")?;
-        let ntx_builder_address = grpc_network_tx_builder
-            .local_addr()
-            .context("Failed to retrieve the network transaction builder's gRPC address")?;
+        let block_producer_address = {
+            let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("Failed to bind to block-producer gRPC endpoint")?;
+
+            grpc_block_producer
+                .local_addr()
+                .context("Failed to retrieve the block-producer's gRPC address")?
+        };
+        let ntx_builder_address = {
+            let grpc_network_tx_builder = TcpListener::bind("127.0.0.1:0")
+                .await
+                .context("Failed to bind to network transaction builder gRPC endpoint")?;
+
+            grpc_network_tx_builder
+                .local_addr()
+                .context("Failed to retrieve the network transaction builder's gRPC address")?
+        };
 
         let mut join_set = JoinSet::new();
 
@@ -170,12 +185,14 @@ impl BundledCommand {
         let ntx_builder_id = join_set
             .spawn(async move {
                 NetworkTransactionBuilder {
-                    address: ntx_builder_address,
+                    ntx_builder_address,
                     store_address,
+                    block_producer_address,
+                    proving_service_address: ntx_proving_service_address,
                 }
-                .serve()
+                .serve_resilient()
                 .await
-                .context("failed while serving store component")
+                .context("failed while serving ntx builder component")
             })
             .id();
 

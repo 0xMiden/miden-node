@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use miden_node_proto::{
     generated::{
         ntx_builder::api_server::Api,
@@ -13,28 +11,26 @@ use miden_node_proto::{
 use miden_objects::{
     Digest,
     note::{Note, Nullifier},
+    transaction::TransactionId,
 };
-use state::NtxBuilderState;
 use tonic::{Request, Response, Status};
 use tracing::info;
 
 use crate::COMPONENT;
 
 mod state;
+pub use state::PendingNotes;
+
+use super::SharedNotes;
 
 #[derive(Debug)]
 pub struct NtxBuilderApi {
-    state: Arc<Mutex<NtxBuilderState>>,
+    state: SharedNotes,
 }
 
 impl NtxBuilderApi {
-    pub fn new(unconsumed_network_notes: Vec<Note>) -> Self {
-        let state = NtxBuilderState::new(unconsumed_network_notes);
-        Self { state: Arc::new(Mutex::new(state)) }
-    }
-
-    pub fn state(&self) -> Arc<Mutex<NtxBuilderState>> {
-        self.state.clone()
+    pub fn new(notes_queue: SharedNotes) -> Self {
+        Self { state: notes_queue }
     }
 }
 
@@ -59,12 +55,9 @@ impl Api for NtxBuilderApi {
         let notes: Vec<Note> = try_convert(req.note)
             .map_err(|err| Status::invalid_argument(format!("invalid note list: {err}")))?;
 
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|e| Status::internal(format!("Failed to lock state: {e}")))?;
+        let mut state = self.state.lock().await;
 
-        state.add_unconsumed_notes(notes);
+        state.queue_unconsumed_notes(notes);
 
         Ok(Response::new(()))
     }
@@ -88,14 +81,10 @@ impl Api for NtxBuilderApi {
             .map(|res| res.map(Nullifier::from))
             .collect::<Result<_, _>>()
             .map_err(|err| {
-                Status::invalid_argument(format!("error when convertinf input nullifiers: {err}"))
+                Status::invalid_argument(format!("error when converting input nullifiers: {err}"))
             })?;
 
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
-
+        let mut state = self.state.lock().await;
         state.discard_by_nullifiers(&nullifiers);
 
         Ok(Response::new(()))
@@ -113,10 +102,8 @@ impl Api for NtxBuilderApi {
             "Received transaction status updates"
         );
 
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
+        let mut state = self.state.lock().await;
+
         for tx in request.updates {
             let tx_id: Digest = tx
                 .transaction_id
@@ -128,10 +115,24 @@ impl Api for NtxBuilderApi {
                     ))
                 })?;
 
+            let tx_id: TransactionId = tx_id.into();
             if TransactionStatus::Commited == tx.status() {
-                state.commit_transaction(tx_id.into());
+                let n = state.commit_inflight(tx_id);
+                info!(
+                    target: COMPONENT,
+                    committed = n,
+                    tx_id = tx_id.to_hex(),
+                    "Committed notes notes for transaction"
+                );
             } else {
-                state.discard_transaction(tx_id.into());
+                let n = state.rollback_inflight(tx_id);
+
+                info!(
+                    target: COMPONENT,
+                    rolled_back = n,
+                    tx_id = tx_id.to_hex(),
+                    "Rolled back inflight notes notes after transaction got discarded"
+                );
             }
         }
         Ok(Response::new(()))

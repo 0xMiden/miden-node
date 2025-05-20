@@ -16,17 +16,18 @@ use miden_node_proto::{
             ApplyBlockRequest, CheckNullifiersByPrefixRequest, CheckNullifiersRequest,
             GetAccountDetailsRequest, GetAccountProofsRequest, GetAccountStateDeltaRequest,
             GetBatchInputsRequest, GetBlockByNumberRequest, GetBlockHeaderByNumberRequest,
-            GetBlockInputsRequest, GetNotesByIdRequest, GetTransactionInputsRequest,
-            SyncNoteRequest, SyncStateRequest,
+            GetBlockInputsRequest, GetCurrentBlockchainDataRequest,
+            GetNetworkAccountDetailsByPrefixRequest, GetNotesByIdRequest,
+            GetTransactionInputsRequest, SyncNoteRequest, SyncStateRequest,
         },
         responses::{
             AccountTransactionInputRecord, ApplyBlockResponse, CheckNullifiersByPrefixResponse,
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
-            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
-            GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
-            NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
-            SyncNoteResponse, SyncStateResponse,
+            GetBlockHeaderByNumberResponse, GetBlockInputsResponse,
+            GetCurrentBlockchainDataResponse, GetNotesByIdResponse, GetTransactionInputsResponse,
+            GetUnconsumedNetworkNotesResponse, NullifierTransactionInputRecord, NullifierUpdate,
+            StoreStatusResponse, SyncNoteResponse, SyncStateResponse,
         },
         store::api_server,
         transaction::TransactionSummary,
@@ -149,6 +150,43 @@ impl api_server::Api for StoreApi {
             .collect();
 
         Ok(Response::new(CheckNullifiersByPrefixResponse { nullifiers }))
+    }
+
+    /// Returns the chain tip's header and MMR peaks corresponding to that header.
+    /// If there are N blocks, the peaks will represent the MMR at block `N - 1`.
+    ///
+    /// This returns all the blockchain-related information needed for executing transactions
+    /// without authenticating notes.
+    #[instrument(
+    target = COMPONENT,
+    name = "store.server.get_current_blockchain_data",
+    skip_all,
+    ret(level = "debug"),
+    err
+)]
+    async fn get_current_blockchain_data(
+        &self,
+        request: Request<GetCurrentBlockchainDataRequest>,
+    ) -> Result<Response<GetCurrentBlockchainDataResponse>, Status> {
+        let block_num = request.into_inner().block_num.map(BlockNumber::from);
+
+        let response = match self
+            .state
+            .get_current_blockchain_data(block_num)
+            .await
+            .map_err(internal_error)?
+        {
+            Some((header, peaks)) => GetCurrentBlockchainDataResponse {
+                current_peaks: peaks.peaks().iter().map(Into::into).collect(),
+                current_block_header: Some(header.into()),
+            },
+            None => GetCurrentBlockchainDataResponse {
+                current_peaks: vec![],
+                current_block_header: None,
+            },
+        };
+
+        Ok(Response::new(response))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -285,6 +323,27 @@ impl api_server::Api for StoreApi {
         let request = request.into_inner();
         let account_id = read_account_id(request.account_id)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
+
+        Ok(Response::new(GetAccountDetailsResponse {
+            details: Some((&account_info).into()),
+        }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.get_network_account_details_by_prefix",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_network_account_details_by_prefix(
+        &self,
+        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
+    ) -> Result<Response<GetAccountDetailsResponse>, Status> {
+        let request = request.into_inner();
+        let prefix = request.account_id_prefix;
+        assert!(prefix >> 30 == 0, "account_id_prefix must be 30 bits");
+        let account_info: AccountInfo = self.state.get_account_details_by_prefix(prefix).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
             details: Some((&account_info).into()),

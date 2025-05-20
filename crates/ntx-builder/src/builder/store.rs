@@ -4,17 +4,19 @@ use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         requests::{
-            GetAccountDetailsRequest, GetBlockHeaderByNumberRequest,
-            GetUnconsumedNetworkNotesRequest,
+            GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
+            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
         },
         store::api_client as store_client,
     },
+    try_convert,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    account::{Account, AccountId},
-    block::BlockHeader,
-    note::Note,
+    account::Account,
+    block::{BlockHeader, BlockNumber},
+    crypto::merkle::{MmrPeaks, PartialMmr},
+    note::{Note, NoteTag},
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -67,6 +69,39 @@ impl StoreClient {
         BlockHeader::try_from(response).map_err(Into::into)
     }
 
+    #[instrument(target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
+    pub async fn get_current_blockchain_data(
+        &self,
+        block_num: Option<BlockNumber>,
+    ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
+        let request = tonic::Request::new(GetCurrentBlockchainDataRequest {
+            block_num: block_num.as_ref().map(BlockNumber::as_u32),
+        });
+
+        let response = self.inner.clone().get_current_blockchain_data(request).await?.into_inner();
+
+        match response.current_block_header {
+            // There are new blocks compared to the builder's latest state
+            Some(block) => {
+                let peaks = try_convert(response.current_peaks)?;
+                let header =
+                    BlockHeader::try_from(block).map_err(StoreError::DeserializationError)?;
+
+                let peaks = MmrPeaks::new(header.block_num().as_usize(), peaks).map_err(|_| {
+                    StoreError::MalformedResponse(
+                        "returned peaks are not valid for the sent request".into(),
+                    )
+                })?;
+
+                let partial_mmr = PartialMmr::from_peaks(peaks);
+
+                Ok(Some((header, partial_mmr)))
+            },
+            // No new blocks were created, return
+            None => Ok(None),
+        }
+    }
+
     /// Returns the latest block's header from the store.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<Note>, StoreError> {
@@ -101,21 +136,34 @@ impl StoreClient {
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
-    pub async fn get_network_account(&self, account_id: AccountId) -> Result<Account, StoreError> {
-        let request = GetAccountDetailsRequest { account_id: Some(account_id.into()) };
+    pub async fn get_network_account_by_tag(
+        &self,
+        note_tag: NoteTag,
+    ) -> Result<Option<Account>, StoreError> {
+        let tag_inner = note_tag.inner();
+        assert!(tag_inner >> 30 == 0, "first 2 bits have to be 0");
+        let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
 
         let store_response = self
             .inner
             .clone()
-            .get_account_details(request)
+            .get_network_account_details_by_prefix(request)
             .await?
             .into_inner()
-            .details
-            .unwrap(); // TODO
+            .details;
 
-        let faucet_account_state_bytes = store_response.details.unwrap();
+        // we only care about the case where the account returns and is actually a network account,
+        // which implies details being public
+        let account = match store_response.map(|acc| acc.details) {
+            Some(Some(details)) => Some(Account::read_from_bytes(&details).map_err(|err| {
+                StoreError::DeserializationError(ConversionError::deserialization_error(
+                    "account", err,
+                ))
+            })?),
+            _ => None,
+        };
 
-        Ok(Account::read_from_bytes(&faucet_account_state_bytes).unwrap())
+        Ok(account)
     }
 }
 

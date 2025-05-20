@@ -53,6 +53,8 @@ pub enum DatabaseError {
     },
     #[error("account {0} not found")]
     AccountNotFoundInDb(AccountId),
+    #[error("account with prefix {0:#010x} not found")]
+    AccountPrefixNotFound(u32),
     #[error("accounts {0:?} not found")]
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
@@ -234,6 +236,14 @@ pub enum NoteSyncError {
     EmptyBlockHeadersTable,
     #[error("error retrieving the merkle proof for the block")]
     MmrError(#[from] MmrError),
+}
+
+#[derive(Error, Debug)]
+pub enum GetCurrentBlockchainDataError {
+    #[error("failed to retrieve block header")]
+    ErrorRetrievingBlockHeader(#[source] DatabaseError),
+    #[error("failed to instantiate MMR peaks")]
+    InvalidPeaks(MmrError),
 }
 
 #[derive(Error, Debug)]

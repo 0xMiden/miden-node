@@ -46,6 +46,7 @@ miden-node-utils          = { path = "crates/utils", version = "0.9" }
 miden-objects             = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 miden-processor           = { version = "0.13" }
 miden-tx                  = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
+miden-testing             = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }
 prost                     = { version = "0.13" }
 rand                      = { version = "0.9" }
 thiserror                 = { version = "2.0", default-features = false }

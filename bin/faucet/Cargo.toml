@@ -25,6 +25,7 @@ miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 miden-tx         = { workspace = true, features = ["concurrent"] }
+miden-testing    = { workspace = true }
 mime             = "0.3"
 rand             = { workspace = true }
 rand_chacha      = "0.9"

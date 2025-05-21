@@ -30,9 +30,9 @@ impl AcceptLayer {
         let version = env!("CARGO_PKG_VERSION");
         let version = Version::parse(version)?;
 
-        // Create version requirement string in the format ">= major.minor"
-        let version_req = format!(">= {}.{}", version.major, version.minor);
-        let version_req = VersionReq::parse(&version_req).expect("");
+        // Form a version requirement from the major and minor version numbers.
+        let version_req = format!("={}.{}", version.major, version.minor);
+        let version_req = VersionReq::parse(&version_req).expect("valid version requirement");
         Ok(AcceptLayer { version_req })
     }
 }
@@ -165,9 +165,39 @@ mod tests {
     #[test]
     fn current_version_is_parsed_and_matches() {
         let a = AcceptLayer::new().unwrap();
-        let full_version = env!("CARGO_PKG_VERSION");
-        let full_version = Version::parse(full_version).unwrap();
-        assert!(a.version_req.matches(&full_version));
+        let version = env!("CARGO_PKG_VERSION");
+        let version = Version::parse(version).unwrap();
+        assert!(a.version_req.matches(&version));
+    }
+
+    #[test]
+    fn same_minor_different_patch_matches() {
+        let a = AcceptLayer::new().unwrap();
+        let version = env!("CARGO_PKG_VERSION");
+        let mut version = Version::parse(version).unwrap();
+        version.patch += 1;
+        assert!(a.version_req.matches(&version));
+    }
+
+    #[test]
+    fn greater_minor_does_not_match() {
+        let a = AcceptLayer::new().unwrap();
+        let version = Version::parse("0.99.0").unwrap();
+        assert!(!a.version_req.matches(&version));
+    }
+
+    #[test]
+    fn lower_minor_does_not_match() {
+        let a = AcceptLayer::new().unwrap();
+        let version = Version::parse("0.1.0").unwrap();
+        assert!(!a.version_req.matches(&version));
+    }
+
+    #[test]
+    fn greater_major_does_not_match() {
+        let a = AcceptLayer::new().unwrap();
+        let version = Version::parse("9.9.0").unwrap();
+        assert!(!a.version_req.matches(&version));
     }
 
     #[test]

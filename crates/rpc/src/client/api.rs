@@ -17,19 +17,6 @@ type InnerClient = ProtoClient<InterceptedService<Channel, MetadataInterceptor>>
 /// Client for the Miden RPC API which is fully configured to communicate with a Miden node.
 pub struct ApiClient(InnerClient);
 
-impl Deref for ApiClient {
-    type Target = InnerClient;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ApiClient {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl ApiClient {
     /// Connects to the Miden node API using the provided URL and timeout.
     ///
@@ -50,10 +37,22 @@ impl ApiClient {
 
         // Set up the accept metadata interceptor.
         let version = version.unwrap_or(env!("CARGO_PKG_VERSION"));
-        let accept_value = format!("application/vnd.miden.{version}+grpc");
-        let interceptor = MetadataInterceptor::default().with_metadata("accept", accept_value)?;
+        let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
 
         // Return the connected client.
         Ok(ApiClient(ProtoClient::with_interceptor(channel, interceptor)))
+    }
+}
+
+impl Deref for ApiClient {
+    type Target = InnerClient;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for ApiClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }

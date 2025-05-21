@@ -2108,19 +2108,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-node-tests"
-version = "0.9.0"
-dependencies = [
- "miden-node-proto",
- "miden-node-rpc",
- "miden-node-store",
- "tempfile",
- "tokio",
- "tonic",
- "url",
-]
-
-[[package]]
 name = "miden-node-utils"
 version = "0.9.0"
 dependencies = [

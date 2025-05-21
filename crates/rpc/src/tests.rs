@@ -4,7 +4,6 @@ use miden_node_proto::generated::{
     requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
     rpc::api_client::ApiClient as ProtoClient,
 };
-use miden_node_rpc::{ApiClient, Rpc};
 use miden_node_store::{GenesisState, Store};
 use tempfile::TempDir;
 use tokio::{
@@ -13,6 +12,8 @@ use tokio::{
     task,
 };
 use url::Url;
+
+use crate::{ApiClient, Rpc};
 
 #[tokio::test]
 async fn rpc_server_rejects_requests_without_accept_header() {

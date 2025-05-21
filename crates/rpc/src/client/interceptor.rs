@@ -3,19 +3,18 @@ use std::collections::HashMap;
 use tonic::{metadata::AsciiMetadataValue, service::Interceptor};
 
 /// Interceptor designed to inject required metadata into all [`super::ApiClient`] requests.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct MetadataInterceptor {
     metadata: HashMap<&'static str, AsciiMetadataValue>,
 }
 
 impl MetadataInterceptor {
-    /// Adds or overwrites metadata to the interceptor.
-    pub fn with_metadata(
-        mut self,
-        key: &'static str,
-        value: String,
-    ) -> Result<Self, anyhow::Error> {
-        self.metadata.insert(key, AsciiMetadataValue::try_from(value)?);
+    /// Adds or overwrites HTTP ACCEPT metadata to the interceptor.
+    ///
+    /// Provided version string must be ASCII.
+    pub fn with_accept_metadata(mut self, version: &str) -> Result<Self, anyhow::Error> {
+        let accept_value = format!("application/vnd.miden.{version}+grpc");
+        self.metadata.insert("accept", AsciiMetadataValue::try_from(accept_value)?);
         Ok(self)
     }
 }

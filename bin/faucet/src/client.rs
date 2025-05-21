@@ -11,6 +11,7 @@ use miden_node_proto::generated::{
 use miden_objects::{
     Felt,
     account::{Account, AccountFile, AccountId, AuthSecretKey},
+    assembly::DefaultSourceManager,
     asset::FungibleAsset,
     block::{BlockHeader, BlockNumber},
     crypto::{
@@ -158,6 +159,7 @@ impl FaucetClient {
                 0.into(),
                 InputNotes::<InputNote>::default(),
                 transaction_args,
+                Arc::new(DefaultSourceManager::default()),
             )
             .context("Failed to execute transaction")?;
 

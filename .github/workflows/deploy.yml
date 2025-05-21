@@ -16,11 +16,6 @@ on:
         required: true
         type: string
 
-      reset-db:
-        description: 'Reset database and genesis account'
-        required: false
-        type: boolean
-
 # Limit concurrency to 1 per network.
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.network }}
@@ -153,11 +148,9 @@ jobs:
         with:
           instance_id: ${{ secrets[env.instance-id] }}
           command: |
-            if [ "${{ inputs.reset-db }}" == "true" ]; then \
-                sudo rm -rf /opt/miden-faucet/*; \
-                sudo rm -rf /opt/miden-node/*; \
-            fi; \
             if [ ! -f /opt/miden-node/miden-store.sqlite3 ]; then \
+              sudo rm -rf /opt/miden-faucet/*; \
+              sudo rm -rf /opt/miden-node/*; \
               sudo /usr/bin/miden-node bundled bootstrap --data-directory /opt/miden-node --accounts-directory /opt/miden-faucet; \
             fi; \
             sudo /usr/bin/miden-faucet init -c /etc/opt/miden-faucet/miden-faucet.toml -f /opt/miden-faucet/account.mac; \

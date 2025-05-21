@@ -6,7 +6,6 @@ members = [
   "crates/block-producer",
   "crates/proto",
   "crates/rpc",
-  "crates/rpc-client",
   "crates/store",
   "crates/test-macro",
   "crates/utils",
@@ -42,7 +41,6 @@ miden-node-block-producer = { path = "crates/block-producer", version = "0.9" }
 miden-node-proto          = { path = "crates/proto", version = "0.9" }
 miden-node-proto-build    = { path = "proto", version = "0.9" }
 miden-node-rpc            = { path = "crates/rpc", version = "0.9" }
-miden-node-rpc-client     = { path = "crates/rpc-client", version = "0.9" }
 miden-node-store          = { path = "crates/store", version = "0.9" }
 miden-node-test-macro     = { path = "crates/test-macro" }
 miden-node-utils          = { path = "crates/utils", version = "0.9" }

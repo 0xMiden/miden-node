@@ -4,8 +4,7 @@ use miden_node_proto::generated::{
     requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
     rpc::api_client::ApiClient as ProtoClient,
 };
-use miden_node_rpc::Rpc;
-use miden_node_rpc_client::RpcClient;
+use miden_node_rpc::{ApiClient, Rpc};
 use miden_node_store::{GenesisState, Store};
 use tempfile::TempDir;
 use tokio::{
@@ -73,7 +72,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         let url = rpc_addr.to_string();
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
         let mut rpc_client =
-            RpcClient::connect(&url, Duration::from_secs(10), Some(version)).await.unwrap();
+            ApiClient::connect(&url, Duration::from_secs(10), Some(version)).await.unwrap();
 
         // Send any request to the RPC.
         let response = send_request(&mut rpc_client).await;
@@ -129,7 +128,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
 
 /// Sends an arbitrary / irrelevant request to the RPC.
 async fn send_request(
-    rpc_client: &mut RpcClient,
+    rpc_client: &mut ApiClient,
 ) -> std::result::Result<tonic::Response<GetBlockHeaderByNumberResponse>, tonic::Status> {
     let request = GetBlockHeaderByNumberRequest {
         block_num: Some(0),
@@ -140,7 +139,7 @@ async fn send_request(
 
 /// Binds a socket on an available port, runs the RPC server on it, and
 /// returns a client to talk to the server, along with the socket address.
-async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) {
+async fn start_rpc() -> (ApiClient, std::net::SocketAddr, std::net::SocketAddr) {
     let store_addr = {
         let store_listener =
             TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
@@ -169,7 +168,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
     });
     let url = rpc_addr.to_string();
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let rpc_client = RpcClient::connect(&url, Duration::from_secs(10), None).await.unwrap();
+    let rpc_client = ApiClient::connect(&url, Duration::from_secs(10), None).await.unwrap();
 
     (rpc_client, rpc_addr, store_addr)
 }

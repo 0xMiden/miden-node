@@ -1,12 +1,11 @@
-use tonic::{
-    metadata::{AsciiMetadataValue, errors::InvalidMetadataValue},
-    service::Interceptor,
-};
+use std::collections::HashMap;
 
-/// Interceptor designed to inject required metadata into all [`ApiClient`] requests.
-#[derive(Default, Clone)]
+use tonic::{metadata::AsciiMetadataValue, service::Interceptor};
+
+/// Interceptor designed to inject required metadata into all [`super::ApiClient`] requests.
+#[derive(Default)]
 pub struct MetadataInterceptor {
-    metadata: std::collections::BTreeMap<&'static str, AsciiMetadataValue>,
+    metadata: HashMap<&'static str, AsciiMetadataValue>,
 }
 
 impl MetadataInterceptor {
@@ -15,7 +14,7 @@ impl MetadataInterceptor {
         mut self,
         key: &'static str,
         value: String,
-    ) -> Result<Self, InvalidMetadataValue> {
+    ) -> Result<Self, anyhow::Error> {
         self.metadata.insert(key, AsciiMetadataValue::try_from(value)?);
         Ok(self)
     }

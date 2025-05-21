@@ -19,7 +19,7 @@ anyhow = { workspace = true }
 async-trait = "0.1"
 axum = { version = "0.8", features = ["tokio"] }
 axum-extra = { version = "0.10" }
-base64 = "0.21"
+base64 = { version = "0.22" }
 clap = { version = "4.5", features = ["derive", "env", "string"] }
 http = { workspace = true }
 miden-lib = { workspace = true }

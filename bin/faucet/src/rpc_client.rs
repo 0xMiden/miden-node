@@ -18,7 +18,7 @@ use crate::faucet::FaucetId;
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
     #[error("gRPC error encountered")]
-    Transport(#[source] tonic::Status),
+    Transport(#[source] Box<tonic::Status>),
     #[error("error parsing the gRPC response")]
     ResponseParsing(#[source] anyhow::Error),
 }
@@ -46,7 +46,7 @@ impl RpcClient {
             .inner
             .get_block_header_by_number(request)
             .await
-            .map_err(RpcError::Transport)?;
+            .map_err(|e| RpcError::Transport(Box::new(e)))?;
 
         let root_block_header = response
             .into_inner()
@@ -70,7 +70,7 @@ impl RpcClient {
             .inner
             .get_account_details(request)
             .await
-            .map_err(RpcError::Transport)?
+            .map_err(|e| RpcError::Transport(Box::new(e)))?
             .into_inner()
             .details
             .context("details field is missing")
@@ -97,6 +97,6 @@ impl RpcClient {
             .submit_proven_transaction(request)
             .await
             .map(|response| response.into_inner().block_height.into())
-            .map_err(RpcError::Transport)
+            .map_err(|e| RpcError::Transport(Box::new(e)))
     }
 }

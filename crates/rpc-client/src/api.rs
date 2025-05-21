@@ -1,9 +1,8 @@
-use core::{
+use std::{
     ops::{Deref, DerefMut},
     time::Duration,
 };
 
-use alloc::string::ToString;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -57,7 +56,7 @@ impl RpcClient {
     }
 }
 
-/// Returns the HTTP ACCEPT header [`MetadataInterceptor`] that is required for the Miden RPC.
+/// Returns the HTTP ACCEPT header [`MetadataInterceptor`] that is expected by Miden RPC.
 fn accept_header_interceptor(version: Option<&'static str>) -> MetadataInterceptor {
     let version = version.unwrap_or(env!("CARGO_PKG_VERSION"));
     let accept_value = format!("application/vnd.miden.{version}+grpc");

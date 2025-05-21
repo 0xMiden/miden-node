@@ -1,18 +1,19 @@
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use axum::{
     Router,
     extract::{FromRef, Query},
-    routing::{get, post},
+    response::sse::Event,
+    routing::get,
 };
 use frontend::Metadata;
 use get_tokens::{GetTokensState, RawMintRequest, get_tokens};
-use http::{HeaderValue, Request};
+use http::{HeaderValue, Request, StatusCode};
 use miden_node_utils::grpc::UrlExt;
-use miden_objects::{account::AccountId, block::BlockNumber, note::Note};
+use miden_objects::account::AccountId;
 use miden_tx::utils::Serializable;
-use tokio::{net::TcpListener, sync::oneshot};
+use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
 use tower_governor::{
     GovernorError, GovernorLayer,
@@ -35,17 +36,19 @@ use crate::{
 
 mod frontend;
 mod get_tokens;
+mod pow;
 
 // FAUCET STATE
 // ================================================================================================
 
-type RequestSender = tokio::sync::mpsc::Sender<(MintRequest, oneshot::Sender<(BlockNumber, Note)>)>;
+type RequestSender = mpsc::Sender<(MintRequest, mpsc::Sender<Result<Event, Infallible>>)>;
 
 /// Serves the faucet's website and handles token requests.
 #[derive(Clone)]
 pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
+    pow_salt: String,
 }
 
 impl Server {
@@ -53,6 +56,7 @@ impl Server {
         faucet_id: FaucetId,
         asset_options: AssetOptions,
         request_sender: RequestSender,
+        pow_salt: String,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
         let metadata = Metadata {
@@ -62,7 +66,7 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        Server { mint_state, metadata }
+        Server { mint_state, metadata, pow_salt }
     }
 
     pub async fn serve(self, url: Url) -> anyhow::Result<()> {
@@ -112,10 +116,11 @@ impl Server {
                 .route("/background.png", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
+                .route("/pow", get(pow::get_pow_seed))
                 // TODO: This feels rather ugly, and would be nice to move but I can't figure out the types.
                 .route(
                     "/get_tokens",
-                    post(get_tokens)
+                    get(get_tokens)
                         .route_layer(
                             ServiceBuilder::new()
                                 .layer(
@@ -206,8 +211,16 @@ impl KeyExtractor for AccountKeyExtractor {
         let params = Query::<RawMintRequest>::try_from_uri(req.uri())
             .map_err(|_| GovernorError::UnableToExtractKey)?;
 
-        AccountId::from_hex(&params.account_id)
-            .map(RequestAccountId)
-            .map_err(|_| GovernorError::UnableToExtractKey)
+        if params.account_id.starts_with("0x") {
+            AccountId::from_hex(&params.account_id)
+        } else {
+            AccountId::from_bech32(&params.account_id).map(|(_, account_id)| account_id)
+        }
+        .map(RequestAccountId)
+        .map_err(|_| GovernorError::Other {
+            code: StatusCode::BAD_REQUEST,
+            msg: Some("Invalid account id".to_string()),
+            headers: None,
+        })
     }
 }

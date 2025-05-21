@@ -16,23 +16,26 @@ workspace = true
 
 [dependencies]
 anyhow                       = { workspace = true }
-async-trait                  = { version = "0.1" }
+async-trait                  = "0.1"
 axum                         = { version = "0.8", features = ["tokio"] }
 axum-extra                   = { version = "0.10" }
+base64                       = "0.21"
 clap                         = { version = "4.5", features = ["derive", "string"] }
 http                         = { workspace = true }
-http-body-util               = "0.1"
 miden-lib                    = { workspace = true }
 miden-node-proto             = { workspace = true }
 miden-node-utils             = { workspace = true }
 miden-objects                = { workspace = true }
-miden-proving-service-client = { version = "0.8", default-features = false, features = ["std", "tx-prover"] }
+miden-proving-service-client = { version = "0.8", features = ["tx-prover"] }
 miden-tx                     = { workspace = true, features = ["concurrent"] }
-rand                         = { workspace = true }
+rand                         = { workspace = true, features = ["thread_rng"] }
 rand_chacha                  = "0.9"
 serde                        = { version = "1.0", features = ["derive"] }
+serde_json                   = { version = "1.0" }
+sha3                         = { version = "0.10" }
 thiserror                    = { workspace = true }
 tokio                        = { workspace = true, features = ["fs"] }
+tokio-stream                 = { workspace = true, features = ["net"] }
 toml                         = { version = "0.8" }
 tonic                        = { workspace = true, features = ["tls-native-roots"] }
 tower                        = { workspace = true }

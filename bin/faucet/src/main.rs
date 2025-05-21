@@ -16,7 +16,7 @@ use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{config::load_config, crypto::get_rpo_random_coin, version::LongVersion};
 use miden_objects::{
     Felt,
-    account::{AccountFile, AccountStorageMode, AuthSecretKey},
+    account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -35,6 +35,10 @@ use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
 const REQUESTS_QUEUE_SIZE: usize = 1000;
+
+// TODO: we should probably parse this from the config file
+const NETWORK_ID: NetworkId = NetworkId::Testnet;
+const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 // COMMANDS
 // ================================================================================================
@@ -106,8 +110,12 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
 
-            let server =
-                Server::new(faucet.faucet_id(), config.asset_amount_options.clone(), tx_requests);
+            let server = Server::new(
+                faucet.faucet_id(),
+                config.asset_amount_options.clone(),
+                tx_requests,
+                config.pow_salt,
+            );
 
             // Capture in a variable to avoid moving into two branches
             let config_endpoint = config.endpoint;
@@ -203,7 +211,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             std::fs::write(&config_file_path, config_as_toml_string)
                 .context("error writing config to file")?;
 
-            println!("Config file successfully created at: {config_file_path:?}");
+            println!("Config file successfully created at: {}", config_file_path.display());
         },
     }
 

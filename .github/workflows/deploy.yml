@@ -139,7 +139,7 @@ jobs:
             dpkg -i ${{ env.faucet-package }} 
 
       # The faucet uses the public faucet generated in the genesis block.
-      # If the reset-db flag is set, the database and accounts files are deleted.
+      # If the database is missing, the node will bootstrap from scratch.
       - name: Configure environment
         uses: ./.github/actions/ssm_execute
         env:

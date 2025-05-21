@@ -13,9 +13,6 @@
 - [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
 - Added gRPC `/status` endpoint on all components (#817).
 - Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
-
-## Unreleased
-
 - Faucet now supports the usage of a remote transaction prover (#830).
 - [BUGFIX] Prevents duplicated note IDs (#842).
 - Added a required Proof-of-Work in the faucet to request tokens (#831).

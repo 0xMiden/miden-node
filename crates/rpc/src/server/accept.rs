@@ -41,7 +41,10 @@ impl<S> Layer<S> for AcceptLayer {
     type Service = AcceptService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        AcceptService { inner, version: self.version_req.clone() }
+        AcceptService {
+            inner,
+            version_req: self.version_req.clone(),
+        }
     }
 }
 
@@ -49,7 +52,7 @@ impl<S> Layer<S> for AcceptLayer {
 #[derive(Clone)]
 pub struct AcceptService<S> {
     inner: S,
-    version: VersionReq,
+    version_req: VersionReq,
 }
 
 impl<S, B> Service<http::Request<B>> for AcceptService<S>
@@ -72,10 +75,9 @@ where
     /// The version specified in the value of the ACCEPT header must match the version requirements
     /// specified by the server.
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
-        // Check if ACCEPT header exists
+        // If the ACCEPT header is not present, do not enforce the version requirement.
         let Some(accept_header_value) = request.headers().get(ACCEPT) else {
-            debug!(target: COMPONENT, "Request missing ACCEPT header");
-            return bad_request("Missing required ACCEPT header").boxed();
+            return self.inner.call(request).boxed();
         };
 
         // Convert header value to str
@@ -83,7 +85,7 @@ where
             Ok(value) => value,
             Err(e) => {
                 debug!(target: COMPONENT, "Failed to stringify accept header value: {}", e);
-                return bad_request("Invalid accept header value").boxed();
+                return bad_request("Invalid accept header value".into()).boxed();
             },
         };
 
@@ -92,7 +94,7 @@ where
             Ok(value) => value,
             Err(e) => {
                 debug!(target: COMPONENT, "Failed to parse accept header value: {}", e);
-                return bad_request("Invalid accept header value").boxed();
+                return bad_request("Invalid accept header value".into()).boxed();
             },
         };
 
@@ -101,23 +103,28 @@ where
             Ok(version) => version,
             Err(e) => {
                 debug!(target: COMPONENT, "Failed to parse version: {}", e);
-                return bad_request("Invalid version specified in accept header value").boxed();
+                return bad_request("Invalid version specified in accept header value".into())
+                    .boxed();
             },
         };
 
         // Verify the version matches configured requirements
-        if self.version.matches(&version) {
+        if self.version_req.matches(&version) {
             self.inner.call(request).boxed()
         } else {
-            debug!(target: COMPONENT, "Version does not match ({}/{})", version, self.version);
-            bad_request("Client / server version mismatch").boxed()
+            debug!(target: COMPONENT, "Version does not match ({}/{})", version, self.version_req);
+            let msg = format!(
+                "Client / server version mismatch. Version {} is required by the server",
+                self.version_req
+            );
+            bad_request(msg).boxed()
         }
     }
 }
 
 /// Returns a future that resolves to a bad request response.
 fn bad_request<B: Default + Send + 'static, E: Send + 'static>(
-    msg: &'static str,
+    msg: String,
 ) -> impl Future<Output = Result<http::Response<B>, E>> {
     let response = http::Response::builder()
         .status(http::StatusCode::BAD_REQUEST)

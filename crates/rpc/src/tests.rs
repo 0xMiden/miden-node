@@ -16,7 +16,7 @@ use url::Url;
 use crate::{ApiClient, Rpc};
 
 #[tokio::test]
-async fn rpc_server_rejects_requests_without_accept_header() {
+async fn rpc_server_accepts_requests_without_accept_header() {
     // Start the RPC.
     let (_, rpc_addr, store_addr) = start_rpc().await;
     let (store_runtime, _data_directory) = start_store(store_addr).await;
@@ -35,10 +35,8 @@ async fn rpc_server_rejects_requests_without_accept_header() {
     };
     let response = rpc_client.get_block_header_by_number(request).await;
 
-    // Assert that the server rejected our request because of missing accept header.
-    assert!(response.is_err());
-    assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
-    assert_eq!(response.as_ref().err().unwrap().message(), "Missing required ACCEPT header");
+    // Assert that the server did not reject our request.
+    assert!(response.is_ok());
 
     // Shutdown to avoid runtime drop error.
     store_runtime.shutdown_background();
@@ -79,7 +77,14 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         // Assert the server does not reject our request on the basis of missing accept header.
         assert!(response.is_err());
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
-        assert_eq!(response.as_ref().err().unwrap().message(), "Client / server version mismatch");
+        assert!(
+            response
+                .as_ref()
+                .err()
+                .unwrap()
+                .message()
+                .contains("Client / server version mismatch"),
+        );
 
         // Shutdown to avoid runtime drop error.
         store_runtime.shutdown_background();

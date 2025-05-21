@@ -585,7 +585,7 @@ fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
 fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Box<Status>> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
-        .map_err(|err| Box::new(invalid_argument(format!("invalid account ID: {err}"))))
+        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]

@@ -191,6 +191,6 @@ pub enum StoreError {
 
 impl From<tonic::Status> for StoreError {
     fn from(value: tonic::Status) -> Self {
-        StoreError::GrpcClientError(Box::new(value))
+        StoreError::GrpcClientError(value.into())
     }
 }

@@ -46,7 +46,7 @@ impl RpcClient {
             .inner
             .get_block_header_by_number(request)
             .await
-            .map_err(|e| RpcError::Transport(Box::new(e)))?;
+            .map_err(|e| RpcError::Transport(e.into()))?;
 
         let root_block_header = response
             .into_inner()
@@ -70,7 +70,7 @@ impl RpcClient {
             .inner
             .get_account_details(request)
             .await
-            .map_err(|e| RpcError::Transport(Box::new(e)))?
+            .map_err(|e| RpcError::Transport(e.into()))?
             .into_inner()
             .details
             .context("details field is missing")
@@ -97,6 +97,6 @@ impl RpcClient {
             .submit_proven_transaction(request)
             .await
             .map(|response| response.into_inner().block_height.into())
-            .map_err(|e| RpcError::Transport(Box::new(e)))
+            .map_err(|e| RpcError::Transport(e.into()))
     }
 }

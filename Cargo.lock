@@ -2068,7 +2068,6 @@ dependencies = [
  "nom 8.0.0",
  "semver 1.0.26",
  "tempfile",
- "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tonic",

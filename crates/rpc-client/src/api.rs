@@ -4,11 +4,10 @@ use core::{
 };
 
 use alloc::string::ToString;
+use anyhow::Context;
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use url::Url;
-
-use crate::RpcError;
 
 use super::MetadataInterceptor;
 
@@ -43,10 +42,10 @@ impl RpcClient {
         url: &Url,
         timeout: Duration,
         version: Option<&'static str>,
-    ) -> Result<RpcClient, RpcError> {
+    ) -> anyhow::Result<RpcClient> {
         // Setup connection channel.
         let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
-            .expect("valid url produces valid tonic endpoint")
+            .context("Failed to parse node URL")?
             .timeout(timeout);
         let channel = endpoint.connect().await?;
 

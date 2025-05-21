@@ -4,7 +4,6 @@ use axum::{
     http::{StatusCode, header},
     response::{IntoResponse, Response},
 };
-use miden_node_rpc_client::RpcError;
 use miden_objects::AccountIdError;
 use thiserror::Error;
 
@@ -15,9 +14,6 @@ pub enum ClientError {
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
-
-    #[error(transparent)]
-    ConnectionError(#[from] RpcError),
 }
 
 #[derive(Debug, Error)]

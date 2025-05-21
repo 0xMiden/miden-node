@@ -4,11 +4,9 @@
 extern crate alloc;
 
 mod api;
-mod errors;
 mod interceptor;
 
 pub use api::RpcClient;
-pub use errors::RpcError;
 pub use interceptor::MetadataInterceptor;
 
 // CONSTANTS

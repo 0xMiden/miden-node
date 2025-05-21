@@ -14,31 +14,26 @@ version.workspace      = true
 [lints]
 workspace = true
 
-[features]
-default   = ["web-tonic"]
-web-tonic = ["dep:getrandom", "dep:tonic-web-wasm-client"]
 
 [dependencies]
-anyhow                = { workspace = true }
-futures               = { version = "0.3" }
-getrandom             = { version = "0.3", optional = true, features = ["wasm_js"] }
-http                  = { workspace = true }
-miden-node-proto      = { workspace = true }
-miden-node-utils      = { workspace = true }
-miden-objects         = { workspace = true }
-miden-tx              = { workspace = true }
-nom                   = { version = "8.0" }
-semver                = { version = "1.0" }
-thiserror             = { workspace = true }
-tokio                 = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
-tokio-stream          = { workspace = true, features = ["net"] }
-tonic                 = { workspace = true }
-tonic-web             = { version = "0.12" }
-tonic-web-wasm-client = { version = "0.7", optional = true, default-features = false }
-tower                 = { workspace = true }
-tower-http            = { workspace = true, features = ["trace"] }
-tracing               = { workspace = true }
-url                   = { workspace = true }
+anyhow           = { workspace = true }
+futures          = { version = "0.3" }
+getrandom        = { version = "0.3", optional = true, features = ["wasm_js"] }
+http             = { workspace = true }
+miden-node-proto = { workspace = true }
+miden-node-utils = { workspace = true }
+miden-objects    = { workspace = true }
+miden-tx         = { workspace = true }
+nom              = { version = "8.0" }
+semver           = { version = "1.0" }
+thiserror        = { workspace = true }
+tokio            = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
+tokio-stream     = { workspace = true, features = ["net"] }
+tonic            = { workspace = true }
+tower            = { workspace = true }
+tower-http       = { workspace = true, features = ["trace"] }
+tracing          = { workspace = true }
+url              = { workspace = true }
 
 [dev-dependencies]
 miden-node-rpc   = { workspace = true }

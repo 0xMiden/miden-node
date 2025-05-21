@@ -1,17 +1,17 @@
 [workspace]
 members = [
-  "bin/faucet",
-  "bin/node",
-  "bin/stress-test",
-  "crates/block-producer",
-  "crates/proto",
-  "crates/rpc",
-  "crates/rpc-client",
-  "crates/store",
-  "crates/test-macro",
-  "crates/utils",
-  "proto",
-  "tests",
+    "bin/faucet",
+    "bin/node",
+    "bin/stress-test",
+    "crates/block-producer",
+    "crates/proto",
+    "crates/rpc",
+    "crates/rpc-client",
+    "crates/store",
+    "crates/test-macro",
+    "crates/utils",
+    "proto",
+    "tests",
 ]
 
 resolver = "2"

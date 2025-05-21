@@ -1,23 +1,15 @@
+use super::MetadataInterceptor;
+use crate::RpcError;
+use alloc::string::ToString;
 use core::{
     ops::{Deref, DerefMut},
     time::Duration,
 };
-
-use alloc::string::ToString;
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use tonic::service::interceptor::InterceptedService;
 use url::Url;
 
-use crate::RpcError;
-
-use super::MetadataInterceptor;
-
-#[cfg(not(feature = "web-tonic"))]
 type InnerClient = ProtoClient<InterceptedService<tonic::transport::Channel, MetadataInterceptor>>;
-
-#[cfg(feature = "web-tonic")]
-pub type InnerClient =
-    ProtoClient<InterceptedService<tonic_web_wasm_client::Client, MetadataInterceptor>>;
 
 /// Client for the Miden RPC API which is fully configured to communicate with a Miden node.
 #[derive(Clone)]
@@ -35,34 +27,13 @@ impl RpcClient {
         timeout: Duration,
         version: Option<&'static str>,
     ) -> Result<RpcClient, RpcError> {
-        connection_service(url, timeout, version).await
+        let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
+            .expect("valid url produces valid tonic endpoint")
+            .timeout(timeout);
+        let channel = endpoint.connect().await?;
+        let interceptor = accept_header_interceptor(version);
+        Ok(RpcClient(ProtoClient::with_interceptor(channel, interceptor)))
     }
-}
-
-#[cfg(not(feature = "web-tonic"))]
-async fn connection_service(
-    url: &Url,
-    timeout: Duration,
-    version: Option<&'static str>,
-) -> Result<RpcClient, RpcError> {
-    let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
-        .expect("valid url produces valid tonic endpoint")
-        .timeout(timeout);
-    let channel = endpoint.connect().await?;
-    let interceptor = accept_header_interceptor(version);
-    Ok(RpcClient(ProtoClient::with_interceptor(channel, interceptor)))
-}
-
-#[cfg(feature = "web-tonic")]
-#[allow(clippy::unused_async)]
-async fn connection_service(
-    url: &Url,
-    _timeout: Duration,
-    version: Option<&'static str>,
-) -> Result<RpcClient, RpcError> {
-    let wasm_client = tonic_web_wasm_client::Client::new(url.to_string());
-    let interceptor = accept_header_interceptor(version);
-    Ok(RpcClient(ProtoClient::with_interceptor(wasm_client, interceptor)))
 }
 
 impl Deref for RpcClient {

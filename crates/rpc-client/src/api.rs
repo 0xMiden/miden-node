@@ -5,32 +5,23 @@ use core::{
 
 use alloc::string::ToString;
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use tonic::service::interceptor::InterceptedService;
 use url::Url;
 
 use crate::RpcError;
 
 use super::MetadataInterceptor;
 
-/// Alias for gRPC client that wraps the underlying client for the purposes of metadata
-/// configuration.
-type InnerClient = ProtoClient<InterceptedService<Channel, MetadataInterceptor>>;
+#[cfg(not(feature = "web-tonic"))]
+type InnerClient = ProtoClient<InterceptedService<tonic::transport::Channel, MetadataInterceptor>>;
+
+#[cfg(feature = "web-tonic")]
+pub type InnerClient =
+    ProtoClient<InterceptedService<tonic_web_wasm_client::Client, MetadataInterceptor>>;
 
 /// Client for the Miden RPC API which is fully configured to communicate with a Miden node.
+#[derive(Clone)]
 pub struct RpcClient(InnerClient);
-
-impl Deref for RpcClient {
-    type Target = InnerClient;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for RpcClient {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
 
 impl RpcClient {
     /// Connects to the Miden node API using the provided URL and timeout.
@@ -44,17 +35,46 @@ impl RpcClient {
         timeout: Duration,
         version: Option<&'static str>,
     ) -> Result<RpcClient, RpcError> {
-        // Setup connection channel.
-        let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
-            .expect("valid url produces valid tonic endpoint")
-            .timeout(timeout);
-        let channel = endpoint.connect().await?;
+        connection_service(url, timeout, version).await
+    }
+}
 
-        // Set up the accept metadata interceptor.
-        let interceptor = accept_header_interceptor(version);
+#[cfg(not(feature = "web-tonic"))]
+async fn connection_service(
+    url: &Url,
+    timeout: Duration,
+    version: Option<&'static str>,
+) -> Result<RpcClient, RpcError> {
+    let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
+        .expect("valid url produces valid tonic endpoint")
+        .timeout(timeout);
+    let channel = endpoint.connect().await?;
+    let interceptor = accept_header_interceptor(version);
+    Ok(RpcClient(ProtoClient::with_interceptor(channel, interceptor)))
+}
 
-        // Return the connected client.
-        Ok(RpcClient(ProtoClient::with_interceptor(channel, interceptor)))
+#[cfg(feature = "web-tonic")]
+#[allow(clippy::unused_async)]
+async fn connection_service(
+    url: &Url,
+    _timeout: Duration,
+    version: Option<&'static str>,
+) -> Result<RpcClient, RpcError> {
+    let wasm_client = tonic_web_wasm_client::Client::new(url.to_string());
+    let interceptor = accept_header_interceptor(version);
+    Ok(RpcClient(ProtoClient::with_interceptor(wasm_client, interceptor)))
+}
+
+impl Deref for RpcClient {
+    type Target = InnerClient;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for RpcClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

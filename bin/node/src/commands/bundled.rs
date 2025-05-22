@@ -138,6 +138,7 @@ impl BundledCommand {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn start(
         rpc_url: Url,
         data_directory: PathBuf,

@@ -42,6 +42,32 @@ impl ApiClient {
         // Return the connected client.
         Ok(ApiClient(ProtoClient::with_interceptor(channel, interceptor)))
     }
+
+    /// Connects to the Miden node API using the provided URL and timeout.
+    ///
+    /// The connection is lazy and will re-establish in the background on disconnection.
+    ///
+    /// The client is configured with an interceptor that sets all requisite request metadata.
+    ///
+    /// If a version is not specified, the version found in the `Cargo.toml` of the workspace is
+    /// used.
+    pub fn connect_lazy(
+        url: &Url,
+        timeout: Duration,
+        version: Option<&'static str>,
+    ) -> anyhow::Result<ApiClient> {
+        let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
+            .context("Failed to parse node URL")?
+            .timeout(timeout);
+
+        let channel = endpoint.connect_lazy();
+
+        // Set up the accept metadata interceptor.
+        let version = version.unwrap_or(env!("CARGO_PKG_VERSION"));
+        let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
+
+        Ok(ApiClient(ProtoClient::with_interceptor(channel, interceptor)))
+    }
 }
 
 impl Deref for ApiClient {

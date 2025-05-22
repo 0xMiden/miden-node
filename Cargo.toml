@@ -34,6 +34,7 @@ opt-level = 2
 anyhow                    = { version = "1.0" }
 assert_matches            = { version = "1.5" }
 async-trait               = { version = "0.1" }
+futures                   = { version = "0.3" }
 http                      = { version = "1.3" }
 itertools                 = { version = "0.14" }
 miden-air                 = { version = "0.14" }

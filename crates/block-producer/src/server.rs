@@ -41,7 +41,7 @@ use crate::{
 /// until the store becomes available. Once the connection is established, the block producer
 /// will start serving requests.
 pub struct BlockProducer {
-    /// The listener for the block producer component.
+    /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_address: SocketAddr,
@@ -344,7 +344,7 @@ mod test {
         };
         let block_producer_addr = {
             let block_producer_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind block-producer");
+                TcpListener::bind("127.0.0.1:0").await.expect("failed to bind block-producer");
             block_producer_listener
                 .local_addr()
                 .expect("Failed to get block-producer address")
@@ -352,8 +352,8 @@ mod test {
 
         let ntx_builder_addr = {
             let ntx_builder_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind ntx builder");
-            ntx_builder_listener.local_addr().expect("Failed to get ntx builder address")
+                TcpListener::bind("127.0.0.1:0").await.expect("failed to bind ntx builder");
+            ntx_builder_listener.local_addr().expect("failed to get ntx builder address")
         };
 
         // start the block producer

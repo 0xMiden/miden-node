@@ -28,7 +28,7 @@ impl BlockProducerClient {
         let channel =
             tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
         let block_producer = ApiClient::with_interceptor(channel, OtelInterceptor);
-        info!(target: COMPONENT, store_endpoint = %block_producer_address, "Store client initialized");
+        info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Store client initialized");
 
         Self { inner: block_producer }
     }

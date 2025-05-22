@@ -78,7 +78,7 @@ impl NetworkTransactionBuilder {
         let listener = TcpListener::bind(self.ntx_builder_address).await?;
         info!(
             target: COMPONENT,
-            endpoint = ?listener.local_addr().unwrap(),
+            endpoint = ?listener.local_addr()?,
             "Starting network transaction builder server"
         );
 

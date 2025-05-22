@@ -2,15 +2,14 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Context;
 use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
-use miden_node_proto::generated::{
-    requests::{
-        GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
-    },
-    rpc::api_client::ApiClient,
+use miden_node_proto::generated::requests::{
+    GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
 };
+use miden_node_rpc::ApiClient;
 use miden_objects::{
     Felt,
     account::{Account, AccountFile, AccountId, AuthSecretKey},
+    assembly::DefaultSourceManager,
     asset::FungibleAsset,
     block::{BlockHeader, BlockNumber},
     crypto::{
@@ -30,7 +29,6 @@ use miden_tx::{
     auth::BasicAuthenticator, utils::Serializable,
 };
 use rand::{random, rngs::StdRng};
-use tonic::transport::Channel;
 use tracing::{info, instrument};
 
 use crate::{COMPONENT, config::FaucetConfig, errors::ClientError, store::FaucetDataStore};
@@ -44,7 +42,7 @@ pub const DISTRIBUTE_FUNGIBLE_ASSET_SCRIPT: &str =
 /// Basic client that handles execution, proving and submitting of mint transactions
 /// for the faucet.
 pub struct FaucetClient {
-    rpc_api: ApiClient<Channel>,
+    rpc_api: ApiClient,
     executor: TransactionExecutor,
     data_store: Arc<FaucetDataStore>,
     id: AccountId,
@@ -158,6 +156,7 @@ impl FaucetClient {
                 0.into(),
                 InputNotes::<InputNote>::default(),
                 transaction_args,
+                Arc::new(DefaultSourceManager::default()),
             )
             .context("Failed to execute transaction")?;
 
@@ -211,13 +210,10 @@ impl FaucetClient {
 /// Initializes the faucet client by connecting to the node and fetching the root block header.
 pub async fn initialize_faucet_client(
     config: &FaucetConfig,
-) -> Result<(ApiClient<Channel>, BlockHeader, PartialBlockchain), ClientError> {
-    let endpoint = tonic::transport::Endpoint::try_from(config.node_url.to_string())
-        .context("Failed to parse node URL from configuration file")?
-        .timeout(Duration::from_millis(config.timeout_ms));
-
+) -> Result<(ApiClient, BlockHeader, PartialBlockchain), ClientError> {
     let mut rpc_api =
-        ApiClient::connect(endpoint).await.context("Failed to connect to the node")?;
+        ApiClient::connect(&config.node_url, Duration::from_millis(config.timeout_ms), None)
+            .await?;
 
     let request = GetBlockHeaderByNumberRequest {
         block_num: Some(0),
@@ -249,7 +245,7 @@ pub async fn initialize_faucet_client(
 ///
 /// The account is expected to be public, otherwise, the error is returned.
 async fn request_account_state(
-    rpc_api: &mut ApiClient<Channel>,
+    rpc_api: &mut ApiClient,
     account_id: AccountId,
 ) -> Result<Account, ClientError> {
     let account_info = rpc_api

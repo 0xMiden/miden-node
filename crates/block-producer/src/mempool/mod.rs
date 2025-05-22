@@ -372,14 +372,14 @@ impl Mempool {
             .expect("transactions from a block must be part of the mempool")
     }
 
+    /// Gets all transactions that expire at the new chain tip and reverts them (and their
+    /// descendants) from the mempool. Returns the set of transactions that were purged.
     #[instrument(target = COMPONENT, name = "mempool.revert_expired_transactions", skip_all)]
     fn revert_expired_transactions(&mut self) -> BTreeSet<TransactionId> {
         let expired = self.expirations.get(self.chain_tip);
 
         self.revert_transactions(expired.iter().copied().collect())
-            .expect("expired transactions must be part of the mempool");
-
-        expired
+            .expect("expired transactions must be part of the mempool")
     }
 
     /// Reverts the given transactions and their descendents from the mempool.
@@ -389,6 +389,12 @@ impl Mempool {
     ///
     /// Transactions that were in reverted batches but that are disjoint from the reverted
     /// transactions (i.e. not descendents) are requeued and _not_ reverted.
+    ///
+    /// # Returns
+    ///
+    /// A set of the IDs of every transaction that ended up being reverted.
+    /// This includes both the transactions explicitly passed in `txs` and any of their
+    /// descendents that were also removed from the mempool.
     ///
     /// # Errors
     ///

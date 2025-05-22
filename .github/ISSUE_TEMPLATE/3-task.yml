@@ -29,7 +29,7 @@ body:
     id: task-how
     attributes:
       label: "How should it be done?"
-      placeholder: "Add a /health endpoint to each of the servers, that returns a small JSON reponse and `200` while the service is healthy"
+      placeholder: "Add a /health endpoint to each of the servers, that returns a small JSON response and `200` while the service is healthy"
     validations:
       required: true
   - type: textarea

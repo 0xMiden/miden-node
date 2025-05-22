@@ -13,6 +13,7 @@
 - [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
 - Added gRPC `/status` endpoint on all components (#817).
 - Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
+- [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
 - Block producer now emits network note information (#805).
 - Introduced Network Transaction Builder (#840).
 

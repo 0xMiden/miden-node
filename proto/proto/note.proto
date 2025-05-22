@@ -50,9 +50,15 @@ message Note {
 }
 
 // Represents a network note.
+//
+// The note is composed of the note metadata and its serialized details. The note's tag
+// must express that the note is for network usage instead of local.
 message NetworkNote {
-    // Serialized network note.
-    bytes note = 1; 
+    // The note's metadata.
+    NoteMetadata metadata = 1;
+
+    // Serialized note details (i.e., assets and recipient).
+    bytes details = 2;
 }
 
 // Represents a proof of note's inclusion in a block.

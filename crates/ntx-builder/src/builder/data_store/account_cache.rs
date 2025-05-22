@@ -55,14 +55,12 @@ pub struct AccountCache {
 
 // TODO: polish this, maybe use an external crate for something more robust/performant
 impl AccountCache {
-    /// Creates a new [AccountCache]
+    /// Creates a new [`AccountCache`]
     ///
     /// # Panics
     /// - if `capacity` is 0
     pub fn new(capacity: usize) -> Self {
-        if capacity == 0 {
-            panic!("cache capacity cannot be 0");
-        }
+        assert!((capacity != 0), "cache capacity cannot be 0");
 
         Self {
             capacity,
@@ -273,16 +271,16 @@ mod tests {
 
         assert_eq!(cache.state.lock().unwrap().accounts.len(), capacity);
 
-        for i in 0..(total - capacity) {
-            assert!(cache.get(accs[i].id().into()).is_none());
+        for acc in accs.iter().take(total - capacity) {
+            assert!(cache.get(acc.id().into()).is_none());
         }
-        for i in (total - capacity)..total {
-            assert!(cache.get(accs[i].id().into()).is_some());
+        for acc in accs.iter().take(total).skip(total - capacity) {
+            assert!(cache.get(acc.id().into()).is_some());
         }
     }
 
     fn create_account(id: u32) -> Account {
         // NOTE: this shifts the ID to generate a different prefix
-        Account::mock((id as u128) << 99, Felt::new(0), TransactionKernel::testing_assembler())
+        Account::mock(u128::from(id) << 99, Felt::new(0), TransactionKernel::testing_assembler())
     }
 }

@@ -48,6 +48,6 @@ static-files     = "0.2"
 
 [dev-dependencies]
 fantoccini    = { version = "0.21" }
+miden-testing = { version = "0.9.0" }
 serde_json    = { version = "1.0" }
 tokio-stream  = { workspace = true, features = ["net"] }
-miden-testing = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }

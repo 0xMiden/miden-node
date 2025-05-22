@@ -4,16 +4,17 @@ use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
-use miden_node_store::Store;
+use miden_node_store::{DataDirectory, Store};
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
 
 use super::{
-    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_NTX_PROVER_URL, ENV_RPC_URL,
-    parse_duration_ms,
+    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
+    ENV_BATCH_PROVER_URL, ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL,
+    ENV_NTX_PROVER_URL, ENV_RPC_URL, parse_duration_ms,
 };
+use crate::system_monitor::SystemMonitor;
 
 #[derive(clap::Subcommand)]
 #[expect(clippy::large_enum_variant, reason = "This is a single use enum")]
@@ -85,6 +86,15 @@ pub enum BundledCommand {
             value_name = "MILLISECONDS"
         )]
         batch_interval: Duration,
+
+        /// Interval at which to monitor the system in milliseconds.
+        #[arg(
+            long = "monitor.interval",
+            default_value = DEFAULT_MONITOR_INTERVAL_MS,
+            value_parser = parse_duration_ms,
+            value_name = "MILLISECONDS"
+        )]
+        monitor_interval: Duration,
     },
 }
 
@@ -111,6 +121,7 @@ impl BundledCommand {
                 block_interval,
                 batch_interval,
                 tx_prover_url,
+                monitor_interval,
             } => {
                 Self::start(
                     rpc_url,
@@ -120,6 +131,7 @@ impl BundledCommand {
                     tx_prover_url,
                     batch_interval,
                     block_interval,
+                    monitor_interval,
                 )
                 .await
             },
@@ -134,6 +146,7 @@ impl BundledCommand {
         ntx_proving_service_address: Option<Url>,
         batch_interval: Duration,
         block_interval: Duration,
+        monitor_interval: Duration,
     ) -> anyhow::Result<()> {
         // Start listening on all gRPC urls so that inter-component connections can be created
         // before each component is fully started up.
@@ -172,12 +185,16 @@ impl BundledCommand {
         let mut join_set = JoinSet::new();
 
         // Start store. The store endpoint is available after loading completes.
+        let data_directory_clone = data_directory.clone();
         let store_id = join_set
             .spawn(async move {
-                Store { listener: grpc_store, data_directory }
-                    .serve()
-                    .await
-                    .context("failed while serving store component")
+                Store {
+                    listener: grpc_store,
+                    data_directory: data_directory_clone,
+                }
+                .serve()
+                .await
+                .context("failed while serving store component")
             })
             .id();
 
@@ -227,6 +244,14 @@ impl BundledCommand {
                 .context("failed while serving RPC component")
             })
             .id();
+
+        // Start system monitor.
+        let data_dir =
+            DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
+
+        SystemMonitor::new(monitor_interval)
+            .with_store_metrics(data_dir)
+            .run_with_supervisor();
 
         // Lookup table so we can identify the failed component.
         let component_ids = HashMap::from([

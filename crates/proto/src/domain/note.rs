@@ -1,7 +1,10 @@
 use miden_objects::{
     Digest, Felt,
-    note::{Note, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag, NoteType},
-    utils::{Deserializable, DeserializationError, Serializable},
+    note::{
+        Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
+        NoteType,
+    },
+    utils::{Deserializable, Serializable},
 };
 
 use crate::{
@@ -30,15 +33,26 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
 
 impl From<Note> for proto::NetworkNote {
     fn from(note: Note) -> Self {
-        Self { note: note.to_bytes() }
+        Self {
+            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            details: NoteDetails::from(note).to_bytes(),
+        }
     }
 }
 
 impl TryFrom<proto::NetworkNote> for Note {
-    type Error = DeserializationError;
+    type Error = ConversionError;
 
-    fn try_from(value: proto::NetworkNote) -> Result<Self, Self::Error> {
-        Note::read_from_bytes(&value.note)
+    fn try_from(proto_note: proto::NetworkNote) -> Result<Self, Self::Error> {
+        let details = NoteDetails::read_from_bytes(&proto_note.details)
+            .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
+        let (assets, recipient) = details.into_parts();
+
+        let metadata: NoteMetadata = proto_note
+            .metadata
+            .ok_or_else(|| proto::NetworkNote::missing_field(stringify!(metadata)))?
+            .try_into()?;
+        Ok(Note::new(assets, metadata, recipient))
     }
 }
 

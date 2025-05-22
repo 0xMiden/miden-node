@@ -39,5 +39,33 @@ miden-faucet start
 
 After a few seconds you may go to `http://localhost:8080` and see the faucet UI.
 
+
+## Faucet security features:
+The faucet implements several security measures to prevent abuse:
+
+1. **Rate Limiting**:
+   - IP-based rate limiting:
+     - Burst limit: 8 requests
+     - Sustained rate: 1 request per second
+   - Account-based rate limiting:
+     - Burst limit: 1 request
+     - Sustained rate: 10 requests per second
+   - Request queue size: 1000 concurrent requests
+   - Request timeout: 10 seconds
+
+2. **Proof of Work requests**:
+  - Users must complete a computational challenge before their request is processed
+  - The challenge difficulty can be adjusted
+
+3. **Requests batching**:
+  - Maximum batch size: 100 requests
+  - Requests are processed in batches to optimize performance
+  - Failed requests within a batch are handled individually
+
+4. **Account rollbacks**:
+  - Faucet maintains the last 1000 account states for potential rollbacks
+  - Is used in case a desync is detected
+
+
 ## License
 This project is [MIT licensed](../../LICENSE).

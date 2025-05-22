@@ -112,17 +112,8 @@ impl StoreClient {
             let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
-            let page: Vec<Note> = resp
-                .notes
-                .into_iter()
-                .map(|note_proto| {
-                    Note::try_from(note_proto).map_err(|e| {
-                        StoreError::DeserializationError(ConversionError::deserialization_error(
-                            "note", e,
-                        ))
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
+            let page: Vec<Note> =
+                resp.notes.into_iter().map(Note::try_from).collect::<Result<Vec<_>, _>>()?;
 
             all_notes.extend(page);
 

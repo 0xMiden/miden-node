@@ -95,18 +95,18 @@ impl BlockProducer {
             }
         };
 
-        let ntx_client =
-            ntx_builder::Client::lazy_with_interceptor(self.ntx_builder_address, OtelInterceptor);
-
         let listener = TcpListener::bind(self.block_producer_address)
             .await
             .context("failed to bind to block producer address")?;
+
+        let ntx_builder =
+            ntx_builder::Client::connect_lazy(self.ntx_builder_address, OtelInterceptor);
 
         info!(target: COMPONENT, "Server initialized");
 
         let block_builder = BlockBuilder::new(
             store.clone(),
-            ntx_client,
+            ntx_builder,
             self.block_prover_url,
             self.block_interval,
         );
@@ -151,11 +151,11 @@ impl BlockProducer {
             })
             .id();
 
-        let ntx_client =
-            ntx_builder::Client::lazy_with_interceptor(self.ntx_builder_address, OtelInterceptor);
+        let ntx_builder =
+            ntx_builder::Client::connect_lazy(self.ntx_builder_address, OtelInterceptor);
         let rpc_id = tasks
             .spawn(async move {
-                BlockProducerRpcServer::new(mempool, store, ntx_client).serve(listener).await
+                BlockProducerRpcServer::new(mempool, store, ntx_builder).serve(listener).await
             })
             .id();
 
@@ -200,7 +200,7 @@ struct BlockProducerRpcServer {
 
     store: StoreClient,
 
-    ntx_client: NtxClient,
+    ntx_builder: NtxClient,
 }
 
 #[tonic::async_trait]
@@ -238,7 +238,7 @@ impl BlockProducerRpcServer {
         Self {
             mempool: Mutex::new(mempool),
             store,
-            ntx_client,
+            ntx_builder: ntx_client,
         }
     }
 
@@ -296,7 +296,7 @@ impl BlockProducerRpcServer {
                 SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
             });
 
-        let mut ntx_client = self.ntx_client.clone();
+        let mut ntx_client = self.ntx_builder.clone();
         if let Err(err) = ntx_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await {
             debug!(
                 target: COMPONENT,

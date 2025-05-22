@@ -1,6 +1,6 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
-use miden_node_utils::formatting::format_opt;
+use miden_node_utils::{ErrorReport, formatting::format_opt};
 use miden_objects::{
     Digest, ProposedBatchError, ProposedBlockError, ProvenBatchError,
     block::BlockNumber,
@@ -54,7 +54,7 @@ pub enum VerifyTxError {
     OutputNotesAlreadyExist(Vec<NoteId>),
 
     /// The account's initial commitment did not match the current account's commitment
-    #[error("incorrect account's initial commitment ({tx_initial_account_commitment}, current: {})", format_opt(.current_account_commitment.as_ref()))]
+    #[error("transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {}", format_opt(.current_account_commitment.as_ref()))]
     IncorrectAccountInitialCommitment {
         tx_initial_account_commitment: Digest,
         current_account_commitment: Option<Digest>,
@@ -112,7 +112,7 @@ impl From<AddTransactionError> for tonic::Status {
             )
             | AddTransactionError::Expired { .. }
             | AddTransactionError::TransactionDeserializationFailed(_) => {
-                Self::invalid_argument(value.to_string())
+                Self::invalid_argument(value.as_report())
             },
 
             // Internal errors which should not be communicated to the user.

@@ -660,6 +660,7 @@ fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountI
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
+#[allow(clippy::result_large_err)]
 fn read_account_ids(
     account_ids: &[generated::account::AccountId],
 ) -> Result<Vec<AccountId>, Status> {

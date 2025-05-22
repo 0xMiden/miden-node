@@ -7,3 +7,14 @@ Its main function is to pre-validate all requests before sending them on. This m
 get rejected _before_ reaching the store and block-producer, reducing their load. Notably this also includes verifying
 the proofs of submitting transactions. This allows the block-producer to skip proof verification (it trusts the RPC
 component), reducing the load in this critical component.
+
+## RPC Versioning
+
+The RPC server enforces version requirements against connecting clients that povide the HTTP ACCEPT header. When this header is provided, its corresponding value must follow this format: `application/vnd.miden.v0.9.0+grpc`.
+
+If there is a mismatch in version, clients will encounter an error while executing gRPC requests against the RPC server with the following details:
+
+- gRPC status code: 3 (Invalid Argument)
+- gRPC message: Missing required ACCEPT header
+
+The server will reject any version that does not have the same major and minor version to it. This behaviour will change after v1.0.0., at which point only the major version will be taken into account.

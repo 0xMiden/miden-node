@@ -1,9 +1,8 @@
-mod client;
 mod config;
-mod errors;
-mod handlers;
-mod state;
-mod store;
+mod faucet;
+mod rpc_client;
+mod server;
+mod types;
 
 #[cfg(test)]
 mod stub_rpc_api;
@@ -11,38 +10,25 @@ mod stub_rpc_api;
 use std::path::PathBuf;
 
 use anyhow::Context;
-use axum::{
-    Router,
-    routing::{get, post},
-};
 use clap::{Parser, Subcommand};
-use client::initialize_faucet_client;
-use handlers::{
-    get_background, get_favicon, get_index_css, get_index_html, get_index_js, get_tokens,
-};
-use http::{HeaderValue, header};
+use faucet::Faucet;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{
     config::load_config, crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion,
 };
 use miden_objects::{
     Felt,
-    account::{AccountFile, AccountStorageMode, AuthSecretKey},
+    account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use state::FaucetState;
-use tokio::net::TcpListener;
-use tower::ServiceBuilder;
-use tower_http::{cors::CorsLayer, set_header::SetResponseHeaderLayer, trace::TraceLayer};
-use tracing::info;
+use rpc_client::RpcClient;
+use server::Server;
+use tokio::sync::mpsc;
 
-use crate::{
-    config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig},
-    handlers::get_metadata,
-};
+use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 
 // CONSTANTS
 // =================================================================================================
@@ -50,6 +36,11 @@ use crate::{
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
+const REQUESTS_QUEUE_SIZE: usize = 1000;
+
+// TODO: we should probably parse this from the config file
+const NETWORK_ID: NetworkId = NetworkId::Testnet;
+const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 // COMMANDS
 // ================================================================================================
@@ -132,46 +123,49 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         Command::Start { config, open_telemetry: _ } => {
             let config: FaucetConfig =
                 load_config(config).context("failed to load configuration file")?;
-            let faucet_state = FaucetState::new(config.clone()).await?;
 
-            info!(target: COMPONENT, %config, "Initializing server");
+            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
+                .context("failed to create RPC client")?;
+            let account_file = AccountFile::read(&config.faucet_account_path)
+                .context("failed to load faucet account from file")?;
 
-            let app = Router::new()
-                .route("/", get(get_index_html))
-                .route("/index.js", get(get_index_js))
-                .route("/index.css", get(get_index_css))
-                .route("/background.png", get(get_background))
-                .route("/favicon.ico", get(get_favicon))
-                .route("/get_metadata", get(get_metadata))
-                .route("/get_tokens", post(get_tokens))
-                .layer(
-                    ServiceBuilder::new()
-                        .layer(TraceLayer::new_for_http())
-                        .layer(SetResponseHeaderLayer::if_not_present(
-                            http::header::CACHE_CONTROL,
-                            HeaderValue::from_static("no-cache"),
-                        ))
-                        .layer(
-                            CorsLayer::new()
-                                .allow_origin(tower_http::cors::Any)
-                                .allow_methods(tower_http::cors::Any)
-                                .allow_headers([header::CONTENT_TYPE]),
-                        ),
-                )
-                .with_state(faucet_state);
+            let faucet =
+                Faucet::load(account_file, &mut rpc_client, config.remote_tx_prover_url).await?;
 
-            let socket_addr = config
-                .endpoint
-                .socket_addrs(|| None)?
-                .into_iter()
-                .next()
-                .with_context(|| format!("no sockets available on {}", config.endpoint))?;
-            let listener =
-                TcpListener::bind(socket_addr).await.context("failed to bind TCP listener")?;
+            // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
+            let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
 
-            info!(target: COMPONENT, endpoint = %config.endpoint, "Server started");
+            let server = Server::new(
+                faucet.faucet_id(),
+                config.asset_amount_options.clone(),
+                tx_requests,
+                config.pow_salt,
+            );
 
-            axum::serve(listener, app).await.unwrap();
+            // Capture in a variable to avoid moving into two branches
+            let config_endpoint = config.endpoint;
+
+            // Use select to concurrently:
+            // - Run and wait for the faucet (on current thread)
+            // - Run and wait for server (in a spawned task)
+            let faucet_future = faucet.run(rpc_client, rx_requests);
+            let server_future = async {
+                let server_handle = tokio::spawn(async move {
+                    server.serve(config_endpoint).await.context("server failed")
+                });
+                server_handle.await.context("failed to join server task")?
+            };
+
+            tokio::select! {
+                server_result = server_future => {
+                    // If server completes first, return its result
+                    server_result.context("server failed")
+                },
+                faucet_result = faucet_future => {
+                    // Faucet completed, return its result
+                    faucet_result.context("faucet failed")
+                }
+            }?;
         },
 
         Command::CreateFaucetAccount {
@@ -186,7 +180,13 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let config: FaucetConfig =
                 load_config(config_path).context("failed to load configuration file")?;
 
-            let (_, root_block_header, _) = initialize_faucet_client(&config).await?;
+            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
+                .context("failed to create RPC client")?;
+
+            let genesis_header = rpc_client
+                .get_genesis_header()
+                .await
+                .context("fetching genesis header from the node")?;
 
             let current_dir =
                 std::env::current_dir().context("failed to open current directory")?;
@@ -197,7 +197,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             let (account, account_seed) = create_basic_fungible_faucet(
                 rng.random(),
-                (&root_block_header).try_into().context("failed to create anchor block")?,
+                (&genesis_header).try_into().context("failed to create anchor block")?,
                 TokenSymbol::try_from(token_symbol.as_str())
                     .context("failed to parse token symbol")?,
                 *decimals,
@@ -212,9 +212,9 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
 
             let output_path = current_dir.join(output_path);
-            account_data
-                .write(&output_path)
-                .context("failed to write account data to file")?;
+            account_data.write(&output_path).with_context(|| {
+                format!("failed to write account data to file: {}", output_path.display())
+            })?;
 
             println!("Faucet account file successfully created at: {}", output_path.display());
         },
@@ -241,11 +241,6 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// The static website files embedded by the build.rs script.
-mod static_resources {
-    include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 }
 
 /// Generates [`LongVersion`] using the metadata generated by build.rs.
@@ -320,15 +315,26 @@ mod test {
 
         // Start the faucet connected to the stub
         let website_url = config.endpoint.clone();
-        tokio::spawn(async move {
-            run_faucet_command(Cli {
-                command: crate::Command::Start {
-                    config: config_path,
-                    open_telemetry: false,
-                },
-            })
-            .await
-            .unwrap();
+
+        // Use std::thread to launch faucet - avoids Send requirements
+        std::thread::spawn(move || {
+            // Create a new runtime for this thread
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build runtime");
+
+            // Run the faucet on this thread's runtime
+            rt.block_on(async {
+                run_faucet_command(Cli {
+                    command: crate::Command::Start {
+                        config: config_path,
+                        open_telemetry: false,
+                    },
+                })
+                .await
+                .unwrap();
+            });
         });
 
         // Start chromedriver. This requires having chromedriver and chrome installed

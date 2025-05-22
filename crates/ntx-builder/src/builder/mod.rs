@@ -4,8 +4,11 @@ use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
 use miden_node_proto::generated::ntx_builder::api_server;
-use miden_objects::transaction::{
-    ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionWitness,
+use miden_objects::{
+    assembly::DefaultSourceManager,
+    transaction::{
+        ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionWitness,
+    },
 };
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{
@@ -206,6 +209,7 @@ async fn filter_next_and_execute(
                 block_ref,
                 input_notes.clone(),
                 TransactionArgs::default(),
+                Arc::new(DefaultSourceManager::default()),
             )
             .await
         {
@@ -241,7 +245,13 @@ async fn filter_next_and_execute(
     }
 
     match tx_executor
-        .execute_transaction(account.id(), block_ref, input_notes, TransactionArgs::default())
+        .execute_transaction(
+            account.id(),
+            block_ref,
+            input_notes,
+            TransactionArgs::default(),
+            Arc::new(DefaultSourceManager::default()),
+        )
         .await
     {
         Ok(tx) => Ok(Some(tx)),

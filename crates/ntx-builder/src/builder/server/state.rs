@@ -5,6 +5,7 @@ use miden_objects::{
     transaction::TransactionId,
 };
 
+/// Max number of notes taken for executing a single network transaction
 const MAX_BATCH: usize = 50;
 
 /// Maintains state of the network notes for the transaction builder.
@@ -34,11 +35,12 @@ impl PendingNotes {
     }
 
     /// Add network notes to the pending notes queue.
-    pub fn queue_unconsumed_notes(&mut self, notes: Vec<Note>) {
+    pub fn queue_unconsumed_notes(&mut self, notes: impl IntoIterator<Item = Note>) {
         for n in notes {
-            self.queue.push_back(n.clone());
-            self.by_tag.entry(n.metadata().tag()).or_default().push(n.clone());
             self.by_nullifier.insert(n.nullifier(), n.id());
+            self.by_tag.entry(n.metadata().tag()).or_default().push(n.clone());
+
+            self.queue.push_back(n);
         }
     }
 

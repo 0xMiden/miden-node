@@ -6,6 +6,7 @@ use data_store::NtxBuilderDataStore;
 use miden_node_proto::generated::ntx_builder::api_server;
 use miden_objects::{
     assembly::DefaultSourceManager,
+    note::Note,
     transaction::{
         ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionWitness,
     },
@@ -36,7 +37,7 @@ mod data_store;
 mod server;
 mod store;
 
-type SharedNotes = Arc<Mutex<PendingNotes>>;
+type SharedPendingNotes = Arc<Mutex<PendingNotes>>;
 
 /// Interval for checking pending notes
 const NOTE_CHECK_INTERVAL_MS: u64 = 200;
@@ -86,7 +87,7 @@ impl NetworkTransactionBuilder {
 
         // Initialize unconsumed notes
         let unconsumed_network_notes = store.get_unconsumed_network_notes().await?;
-        let notes_queue: SharedNotes =
+        let notes_queue: SharedPendingNotes =
             Arc::new(Mutex::new(PendingNotes::new(unconsumed_network_notes)));
 
         // Initialize tx ticker
@@ -111,7 +112,7 @@ impl NetworkTransactionBuilder {
     ///
     /// The ticker is in charge of periodically checking the network notes set and executing the
     /// next set of notes.
-    fn spawn_ticker(&self, api_state: SharedNotes) -> JoinHandle<anyhow::Result<()>> {
+    fn spawn_ticker(&self, api_state: SharedPendingNotes) -> JoinHandle<anyhow::Result<()>> {
         let store_addr = self.store_address;
         let block_addr = self.block_producer_address;
         let prover_addr = self.proving_service_address.clone();
@@ -160,7 +161,7 @@ impl NetworkTransactionBuilder {
 ///
 /// This function deals with errors internally and rolls back the state when required.
 async fn filter_next_and_execute(
-    api_state: &SharedNotes,
+    api_state: &SharedPendingNotes,
     tx_executor: &TransactionExecutor,
     data_store: &Arc<NtxBuilderDataStore>,
 ) -> anyhow::Result<Option<ExecutedTransaction>> {
@@ -219,13 +220,17 @@ async fn filter_next_and_execute(
                 let successul_notes =
                     input_notes.iter().filter(|n| successful_notes.contains(&n.id())).cloned();
 
-                let unsuccessul_notes = input_notes
+                let unsuccessful_notes: Vec<Note> = input_notes
                     .iter()
                     .filter(|n| !successful_notes.contains(&n.id()))
                     .map(InputNote::note)
-                    .cloned();
+                    .cloned()
+                    .collect();
 
-                api_state.lock().await.queue_unconsumed_notes(unsuccessul_notes.collect());
+                api_state
+                    .lock()
+                    .await
+                    .queue_unconsumed_notes(unsuccessful_notes.into_iter().rev());
 
                 InputNotes::new(successul_notes.collect()).unwrap()
             },
@@ -267,7 +272,7 @@ async fn filter_next_and_execute(
 
 /// Proves and submit an executed transaction
 async fn prove_and_submit(
-    api_state: &SharedNotes,
+    api_state: &SharedPendingNotes,
     block_producer_client: &BlockProducerClient,
     executed_tx: &ExecutedTransaction,
     remote_tx_prover: Option<&RemoteTransactionProver>,

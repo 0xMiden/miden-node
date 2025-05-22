@@ -21,15 +21,15 @@ use crate::COMPONENT;
 mod state;
 pub use state::PendingNotes;
 
-use super::SharedNotes;
+use super::SharedPendingNotes;
 
 #[derive(Debug)]
 pub struct NtxBuilderApi {
-    state: SharedNotes,
+    state: SharedPendingNotes,
 }
 
 impl NtxBuilderApi {
-    pub fn new(notes_queue: SharedNotes) -> Self {
+    pub fn new(notes_queue: SharedPendingNotes) -> Self {
         Self { state: notes_queue }
     }
 }

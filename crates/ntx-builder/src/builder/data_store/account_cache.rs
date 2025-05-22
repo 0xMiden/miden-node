@@ -31,24 +31,39 @@ impl TryFrom<NoteTag> for NtxAccountIdPrefix {
     }
 }
 
+/// Represents an entry in the account cache, with a `generation` counter to evict older entries
 struct AccountEntry {
     account: Account,
     generation: usize,
 }
 
+/// Cache state, containing a set of accounts mapped from their ID prefix as well as ordering,
+/// used for LRU eviction.
 struct CacheState {
     generation: usize,
     accounts: HashMap<NtxAccountIdPrefix, AccountEntry>,
     ordering: BTreeMap<usize, NtxAccountIdPrefix>,
 }
 
+/// A capacity-limited account cache.
+///
+/// The cache works in an LRU fashion and evicts accounts once capacity starts getting exceeded.
 pub struct AccountCache {
     capacity: usize,
     state: Mutex<CacheState>,
 }
 
+// TODO: polish this, maybe use an external crate for something more robust/performant
 impl AccountCache {
+    /// Creates a new [AccountCache]
+    ///
+    /// # Panics
+    /// - if `capacity` is 0
     pub fn new(capacity: usize) -> Self {
+        if capacity == 0 {
+            panic!("cache capacity cannot be 0");
+        }
+
         Self {
             capacity,
             state: std::sync::Mutex::new(CacheState {
@@ -95,7 +110,7 @@ impl AccountCache {
     pub fn get(&self, account_id: NtxAccountIdPrefix) -> Option<Account> {
         let mut state = self.state.lock().unwrap();
 
-        let (old_generation, account_clone) = {
+        let (old_generation, account) = {
             state.generation += 1;
             let new_generation = state.generation;
             let entry = state.accounts.get_mut(&account_id)?;
@@ -108,7 +123,7 @@ impl AccountCache {
         state.ordering.remove(&old_generation);
         state.ordering.insert(new_generation, account_id);
 
-        Some(account_clone)
+        Some(account)
     }
 
     /// Manually evict an entry from the cache.
@@ -127,14 +142,12 @@ impl AccountCache {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use miden_lib::transaction::TransactionKernel;
     use miden_objects::{Felt, account::Account};
 
     use crate::builder::data_store::AccountCache;
-
-    fn create_account(id: u128) -> Account {
-        Account::mock(id, Felt::new(0), TransactionKernel::testing_assembler())
-    }
 
     #[test]
     fn insert_get() {
@@ -148,9 +161,9 @@ mod tests {
     #[test]
     fn lru_evicts_least_recently_used_account() {
         let cache = AccountCache::new(2);
-        let acc_id_1: u128 = 0x0100_0000_0000_0000_0000_0000_0000_0000;
-        let acc_id_2: u128 = 0x0200_0000_0000_0000_0000_0000_0000_0000;
-        let acc_id_3: u128 = 0x0300_0000_0000_0000_0000_0000_0000_0000;
+        let acc_id_1: u32 = 0x0100;
+        let acc_id_2: u32 = 0x0200;
+        let acc_id_3: u32 = 0x0300;
 
         let acc1 = create_account(acc_id_1);
         let acc2 = create_account(acc_id_2);
@@ -175,5 +188,101 @@ mod tests {
         assert!(cache.get(acc1.id().into()).is_some());
         assert!(cache.get(acc2.id().into()).is_none());
         assert!(cache.get(acc3.id().into()).is_some());
+    }
+
+    #[test]
+    #[should_panic]
+    fn zero_capacity_panics() {
+        let _ = AccountCache::new(0);
+    }
+
+    #[test]
+    fn update_existing_entry_doesnt_grow_cache() {
+        let cache = AccountCache::new(1);
+        let acc = create_account(42);
+        cache.put(&acc);
+        let first_gen = cache.state.lock().unwrap().generation;
+        cache.put(&acc);
+        let state = cache.state.lock().unwrap();
+        assert_eq!(state.accounts.len(), 1);
+        assert!(state.generation > first_gen);
+    }
+
+    #[test]
+    fn manual_evict_removes_entry() {
+        let cache = AccountCache::new(2);
+        let acc = create_account(7);
+        cache.put(&acc);
+        assert!(cache.evict(acc.id()).is_some());
+        assert!(cache.get(acc.id().into()).is_none());
+    }
+
+    #[test]
+    fn concurrent_put_get() {
+        let cache = Arc::new(AccountCache::new(10));
+        let handles: Vec<_> = (0..10)
+            .map(|i| {
+                let cache = cache.clone();
+                std::thread::spawn(move || {
+                    let acc = create_account(i + 1);
+                    cache.put(&acc);
+                    let got = cache.get(acc.id().into()).unwrap();
+                    assert_eq!(got.id(), acc.id());
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn put_replaces_and_refreshes_lru() {
+        let cache = AccountCache::new(3);
+
+        let original = create_account(0xABC);
+        let updated = create_account(0xABC);
+        let other1 = create_account(0xDEF);
+        let other2 = create_account(0xFED);
+
+        cache.put(&original);
+        cache.put(&other1);
+        cache.put(&other2);
+        cache.put(&updated);
+
+        let newcomer = create_account(0x123);
+        cache.put(&newcomer);
+
+        assert!(cache.get(original.id().into()).is_some());
+        assert!(cache.get(other1.id().into()).is_none());
+        assert!(cache.get(other2.id().into()).is_some());
+        assert!(cache.get(newcomer.id().into()).is_some());
+    }
+
+    #[test]
+    fn large_bulk_eviction() {
+        let capacity = 300;
+        let total: usize = 500;
+        let cache = AccountCache::new(capacity);
+
+        let accs: Vec<_> = (0..total).map(|i| create_account((i + 1) as u32)).collect();
+
+        for a in &accs {
+            cache.put(a);
+        }
+
+        assert_eq!(cache.state.lock().unwrap().accounts.len(), capacity);
+
+        for i in 0..(total - capacity) {
+            assert!(cache.get(accs[i].id().into()).is_none());
+        }
+        for i in (total - capacity)..total {
+            assert!(cache.get(accs[i].id().into()).is_some());
+        }
+    }
+
+    fn create_account(id: u32) -> Account {
+        // NOTE: this shifts the ID to generate a different prefix
+        Account::mock((id as u128) << 99, Felt::new(0), TransactionKernel::testing_assembler())
     }
 }

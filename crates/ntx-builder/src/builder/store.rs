@@ -131,8 +131,9 @@ impl StoreClient {
         &self,
         note_tag: NoteTag,
     ) -> Result<Option<Account>, StoreError> {
+        // TODO: this account ID prefix needs its own type
         let tag_inner = note_tag.inner();
-        assert!(tag_inner >> 30 == 0, "first 2 bits have to be 0");
+        assert!(tag_inner >> 30 == 0, "first 2 bits of network account IDs have to be 0");
         let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
 
         let store_response = self
@@ -144,7 +145,7 @@ impl StoreClient {
             .details;
 
         // we only care about the case where the account returns and is actually a network account,
-        // which implies details being public
+        // which implies details being public, so OK to error otherwise
         let account = match store_response.map(|acc| acc.details) {
             Some(Some(details)) => Some(Account::read_from_bytes(&details).map_err(|err| {
                 StoreError::DeserializationError(ConversionError::deserialization_error(

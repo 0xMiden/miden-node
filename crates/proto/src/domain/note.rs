@@ -34,7 +34,7 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
 impl From<Note> for proto::NetworkNote {
     fn from(note: Note) -> Self {
         Self {
-            metadata: Some(note.metadata().clone().into()),
+            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
             details: NoteDetails::from(note).to_bytes(),
         }
     }

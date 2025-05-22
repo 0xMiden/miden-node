@@ -118,6 +118,7 @@ document.addEventListener('DOMContentLoaded', function () {
             asset_amount: parseInt(assetSelect.value),
             pow_seed: powData.seed,
             pow_solution: nonce,
+            pow_difficulty: powData.difficulty,
             server_signature: powData.server_signature,
             server_timestamp: powData.timestamp
         };

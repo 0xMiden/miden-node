@@ -45,6 +45,7 @@ pub struct RawMintRequest {
     pub asset_amount: u64,
     pub pow_seed: Option<String>,
     pub pow_solution: Option<u64>,
+    pub pow_difficulty: Option<u64>,
     pub server_signature: Option<String>,
     pub server_timestamp: Option<u64>,
     pub api_key: Option<String>,
@@ -171,11 +172,12 @@ impl RawMintRequest {
 
         if let Ok(pow_parameters) = PowParameters::try_from(&self) {
             server
+                .pow
                 .challenge_cache
                 .validate_challenge(&pow_parameters.pow_seed, &pow_parameters.server_signature)?;
             pow_parameters.check_server_timestamp()?;
-            pow_parameters.check_server_signature(&server.pow_salt)?;
-            pow_parameters.check_pow_solution(&server.challenge_cache)?;
+            pow_parameters.check_server_signature(&server.pow.salt)?;
+            pow_parameters.check_pow_solution(&server.pow.challenge_cache)?;
         } else {
             return Err(InvalidRequest::MissingPowParameters);
         }
@@ -185,11 +187,16 @@ impl RawMintRequest {
 }
 
 pub async fn get_tokens(
-    State(server): State<Server>,
+    State(mut server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
+
+    let sender_count = rx_result.sender_weak_count();
+
+    // Adjust PoW difficulty based on the number of senders.
+    server.pow.adjust_difficulty(sender_count);
 
     let mint_error = request
         .validate(&server)

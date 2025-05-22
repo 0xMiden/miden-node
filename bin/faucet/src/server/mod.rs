@@ -1,4 +1,10 @@
-use std::{collections::BTreeSet, convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeSet,
+    convert::Infallible,
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::Context;
 use axum::{
@@ -13,6 +19,7 @@ use http::{HeaderValue, Request, StatusCode};
 use miden_node_utils::grpc::UrlExt;
 use miden_objects::account::AccountId;
 use miden_tx::utils::Serializable;
+use pow::PoW;
 use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
 use tower_governor::{
@@ -48,8 +55,7 @@ type RequestSender = mpsc::Sender<(MintRequest, mpsc::Sender<Result<Event, Infal
 pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
-    pow_salt: String,
-    challenge_cache: pow::ChallengeCache,
+    pow: PoW,
     api_keys: BTreeSet<String>,
 }
 
@@ -77,13 +83,14 @@ impl Server {
             pow::run_cleanup(cleanup_state).await;
         });
 
-        Server {
-            mint_state,
-            metadata,
-            pow_salt,
+        let pow = PoW {
+            salt: pow_salt,
+            difficulty: Arc::new(Mutex::new(3)), /* 3 is a very low difficulty, it is adjusted by
+                                                  * the server. */
             challenge_cache,
-            api_keys,
-        }
+        };
+
+        Server { mint_state, metadata, pow, api_keys }
     }
 
     // TODO: Cannot move the rate limiter creation to its own function because it requires

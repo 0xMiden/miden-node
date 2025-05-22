@@ -25,7 +25,6 @@ miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 miden-tx         = { workspace = true, features = ["concurrent"] }
-miden-testing    = { workspace = true }
 mime             = "0.3"
 rand             = { workspace = true }
 rand_chacha      = "0.9"
@@ -47,6 +46,7 @@ miden-node-utils = { workspace = true, features = ["vergen"] }
 static-files     = "0.2"
 
 [dev-dependencies]
-fantoccini   = { version = "0.21" }
-serde_json   = { version = "1.0" }
-tokio-stream = { workspace = true, features = ["net"] }
+fantoccini    = { version = "0.21" }
+serde_json    = { version = "1.0" }
+tokio-stream  = { workspace = true, features = ["net"] }
+miden-testing = { git = "https://github.com/0xMiden/miden-base.git", branch = "next" }

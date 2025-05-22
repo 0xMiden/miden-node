@@ -108,6 +108,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Search for a nonce that satisfies the proof of work
         status.textContent = "Solving Proof of Work...";
+
         const nonce = await findValidNonce(powData.seed, powData.difficulty);
 
         const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams({

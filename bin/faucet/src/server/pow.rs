@@ -136,6 +136,7 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
         .as_secs();
 
     let random_seed = random_hex_string(32);
+
     let server_signature = get_server_signature(&server.pow_salt, &random_seed, timestamp);
 
     // Store the challenge
@@ -265,9 +266,11 @@ mod tests {
         assert!(result.is_ok());
 
         let solution = find_pow_solution(seed);
+
         let challenge_state = ChallengeState::new();
         challenge_state.add_challenge(seed, server_signature.clone(), timestamp);
         let result = check_pow_solution(&challenge_state, seed, &server_signature, solution);
+
         assert!(result.is_ok());
     }
 
@@ -282,8 +285,10 @@ mod tests {
         assert!(result.is_err());
 
         let solution = 1_234_567_890;
+
         let challenge_state = ChallengeState::new();
         let result = check_pow_solution(&challenge_state, seed, server_signature, solution);
+
         assert!(result.is_err());
     }
 }

@@ -1,5 +1,6 @@
 use anyhow::Context;
 use miden_node_proto::generated::{
+    block::BlockHeader,
     requests::{
         CheckNullifiersByPrefixRequest, CheckNullifiersRequest, GetAccountDetailsRequest,
         GetAccountProofsRequest, GetAccountStateDeltaRequest, GetBlockByNumberRequest,
@@ -45,9 +46,24 @@ impl api_server::Api for StubRpcApi {
     ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
         let mut mock_chain = MockChain::new();
         mock_chain.add_pending_new_faucet(Auth::BasicAuth, "USDT", 100_000);
-        
+        let mock_chain_header = mock_chain.latest_block_header();
+
+        let block_header: BlockHeader = BlockHeader {
+            version: mock_chain_header.version(),
+            timestamp: mock_chain_header.timestamp(),
+            prev_block_commitment: Some(mock_chain_header.prev_block_commitment().into()),
+            block_num: mock_chain_header.block_num().as_u32(),
+            chain_commitment: Some(mock_chain_header.chain_commitment().into()),
+            account_root: Some(mock_chain_header.account_root().into()),
+            nullifier_root: Some(mock_chain_header.nullifier_root().into()),
+            note_root: Some(mock_chain_header.note_root().into()),
+            tx_commitment: Some(mock_chain_header.tx_commitment().into()),
+            proof_commitment: Some(mock_chain_header.proof_commitment().into()),
+            tx_kernel_commitment: Some(mock_chain_header.tx_kernel_commitment().into()),
+        };
+
         Ok(Response::new(GetBlockHeaderByNumberResponse {
-            block_header: Some(mock_chain.latest_block_header().into()),
+            block_header: Some(block_header),
             mmr_path: None,
             chain_length: None,
         }))

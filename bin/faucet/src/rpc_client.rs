@@ -1,19 +1,16 @@
-use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::generated::{
-    requests::{
-        GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
-    },
-    rpc::api_client::ApiClient as GeneratedClient,
+use miden_node_proto::generated::requests::{
+    GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
 };
+use miden_node_rpc::ApiClient;
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
     transaction::ProvenTransaction,
 };
 use miden_tx::utils::{Deserializable, Serializable};
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use url::Url;
 
 use crate::faucet::FaucetId;
@@ -27,18 +24,13 @@ pub enum RpcError {
 }
 
 pub struct RpcClient {
-    inner: GeneratedClient<Channel>,
+    inner: ApiClient,
 }
 
 impl RpcClient {
     /// Creates an RPC client to the given address.
-    ///
-    /// Connection is lazy and will re-establish in the background on disconnection.
-    pub fn connect_lazy(url: &Url) -> Result<Self, tonic::transport::Error> {
-        let client = Endpoint::from_str(url.as_ref())?
-            .tls_config(ClientTlsConfig::default().with_native_roots())?
-            .connect_lazy();
-        let client = GeneratedClient::new(client);
+    pub async fn connect(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
+        let client = ApiClient::connect(url, Duration::from_millis(timeout_ms), None).await?;
 
         Ok(Self { inner: client })
     }

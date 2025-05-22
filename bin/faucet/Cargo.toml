@@ -24,6 +24,7 @@ clap                         = { version = "4.5", features = ["derive", "env", "
 http                         = { workspace = true }
 miden-lib                    = { workspace = true }
 miden-node-proto             = { workspace = true }
+miden-node-rpc               = { workspace = true }
 miden-node-utils             = { workspace = true }
 miden-objects                = { workspace = true }
 miden-proving-service-client = { version = "0.9", features = ["tx-prover"] }

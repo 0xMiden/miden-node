@@ -28,9 +28,7 @@ use rpc_client::RpcClient;
 use server::Server;
 use tokio::sync::mpsc;
 
-use crate::{
-    config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig},
-};
+use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 
 // CONSTANTS
 // =================================================================================================

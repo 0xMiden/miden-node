@@ -150,6 +150,13 @@ pub struct GetAccountDetailsRequest {
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
 }
+/// Returns the latest state of a network account based on the account ID prefix.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetNetworkAccountDetailsByPrefixRequest {
+    /// Account ID prefix.
+    #[prost(fixed32, tag = "1")]
+    pub account_id_prefix: u32,
+}
 /// Retrieves block data by given block number.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GetBlockByNumberRequest {

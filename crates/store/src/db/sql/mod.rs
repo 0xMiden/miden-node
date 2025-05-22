@@ -178,6 +178,32 @@ pub fn select_account(transaction: &Transaction, account_id: AccountId) -> Resul
     account_info_from_row(row)
 }
 
+/// Select the latest account details by account id from the DB using the given [Connection].
+///
+/// # Returns
+///
+/// The latest account details, or an error.
+pub fn select_account_by_prefix(transaction: &Transaction, id_prefix: u32) -> Result<AccountInfo> {
+    let mut stmt = transaction.prepare_cached(
+        "
+        SELECT
+            account_id,
+            account_commitment,
+            block_num,
+            details
+        FROM
+            accounts
+        WHERE
+            id_prefix = ?1;
+        ",
+    )?;
+
+    let mut rows = stmt.query(params![i64::from(id_prefix)])?;
+    let row = rows.next()?.ok_or(DatabaseError::AccountPrefixNotFound(id_prefix))?;
+
+    account_info_from_row(row)
+}
+
 /// Select the latest accounts' details filtered by IDs from the DB using the given
 /// [Connection].
 ///

@@ -16,8 +16,8 @@ use miden_node_proto::{
             ApplyBlockRequest, CheckNullifiersByPrefixRequest, CheckNullifiersRequest,
             GetAccountDetailsRequest, GetAccountProofsRequest, GetAccountStateDeltaRequest,
             GetBatchInputsRequest, GetBlockByNumberRequest, GetBlockHeaderByNumberRequest,
-            GetBlockInputsRequest, GetNotesByIdRequest, GetTransactionInputsRequest,
-            SyncNoteRequest, SyncStateRequest,
+            GetBlockInputsRequest, GetNetworkAccountDetailsByPrefixRequest, GetNotesByIdRequest,
+            GetTransactionInputsRequest, SyncNoteRequest, SyncStateRequest,
         },
         responses::{
             AccountTransactionInputRecord, ApplyBlockResponse, CheckNullifiersByPrefixResponse,
@@ -285,6 +285,27 @@ impl api_server::Api for StoreApi {
         let request = request.into_inner();
         let account_id = read_account_id(request.account_id)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
+
+        Ok(Response::new(GetAccountDetailsResponse {
+            details: Some((&account_info).into()),
+        }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.get_network_account_details_by_prefix",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_network_account_details_by_prefix(
+        &self,
+        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
+    ) -> Result<Response<GetAccountDetailsResponse>, Status> {
+        let request = request.into_inner();
+        let prefix = request.account_id_prefix;
+        assert!(prefix >> 30 == 0, "account_id_prefix must be 30 bits");
+        let account_info: AccountInfo = self.state.get_account_details_by_prefix(prefix).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
             details: Some((&account_info).into()),

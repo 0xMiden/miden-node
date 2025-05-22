@@ -4,7 +4,7 @@ use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         requests::{
-            GetAccountDetailsRequest, GetBlockHeaderByNumberRequest,
+            GetBlockHeaderByNumberRequest, GetNetworkAccountDetailsByPrefixRequest,
             GetUnconsumedNetworkNotesRequest,
         },
         store::api_client as store_client,
@@ -12,9 +12,9 @@ use miden_node_proto::{
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    account::{Account, AccountId},
+    account::Account,
     block::BlockHeader,
-    note::Note,
+    note::{Note, NoteTag},
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -92,21 +92,34 @@ impl StoreClient {
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
-    pub async fn get_network_account(&self, account_id: AccountId) -> Result<Account, StoreError> {
-        let request = GetAccountDetailsRequest { account_id: Some(account_id.into()) };
+    pub async fn get_network_account_by_tag(
+        &self,
+        note_tag: NoteTag,
+    ) -> Result<Option<Account>, StoreError> {
+        let tag_inner = note_tag.inner();
+        assert!(tag_inner >> 30 == 0, "first 2 bits have to be 0");
+        let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
 
         let store_response = self
             .inner
             .clone()
-            .get_account_details(request)
+            .get_network_account_details_by_prefix(request)
             .await?
             .into_inner()
-            .details
-            .unwrap(); // TODO
+            .details;
 
-        let faucet_account_state_bytes = store_response.details.unwrap();
+        // we only care about the case where the account returns and is actually a network account,
+        // which implies details being public
+        let account = match store_response.map(|acc| acc.details) {
+            Some(Some(details)) => Some(Account::read_from_bytes(&details).map_err(|err| {
+                StoreError::DeserializationError(ConversionError::deserialization_error(
+                    "account", err,
+                ))
+            })?),
+            _ => None,
+        };
 
-        Ok(Account::read_from_bytes(&faucet_account_state_bytes).unwrap())
+        Ok(account)
     }
 }
 

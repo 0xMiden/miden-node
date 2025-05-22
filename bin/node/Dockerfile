@@ -27,18 +27,18 @@ COPY --from=builder /app/data data
 COPY --from=builder /usr/local/cargo/bin/miden-node /usr/local/bin/miden-node
 
 LABEL org.opencontainers.image.authors=miden@polygon.io \
-      org.opencontainers.image.url=https://0xpolygonmiden.github.io/ \
-      org.opencontainers.image.documentation=https://github.com/0xMiden/miden-node \
-      org.opencontainers.image.source=https://github.com/0xMiden/miden-node \
-      org.opencontainers.image.vendor=Polygon \
-      org.opencontainers.image.licenses=MIT
+    org.opencontainers.image.url=https://0xpolygonmiden.github.io/ \
+    org.opencontainers.image.documentation=https://github.com/0xMiden/miden-node \
+    org.opencontainers.image.source=https://github.com/0xMiden/miden-node \
+    org.opencontainers.image.vendor=Polygon \
+    org.opencontainers.image.licenses=MIT
 
 ARG CREATED
 ARG VERSION
 ARG COMMIT
 LABEL org.opencontainers.image.created=$CREATED \
-      org.opencontainers.image.version=$VERSION \
-      org.opencontainers.image.revision=$COMMIT
+    org.opencontainers.image.version=$VERSION \
+    org.opencontainers.image.revision=$COMMIT
 
 # Expose RPC port
 EXPOSE 57291

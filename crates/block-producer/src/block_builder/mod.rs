@@ -45,11 +45,11 @@ pub struct BlockBuilder {
     /// The prover used to prove a proposed block into a proven block.
     pub block_prover: BlockProver,
 
-    // Client connection to the network transaction builder.
+    // Client to the network transaction builder.
     //
     // This client is used to submit network notes and transaction updates to the network
     // transaction builder.
-    pub ntx_client: NtxClient,
+    pub ntx_builder: NtxClient,
 }
 
 impl BlockBuilder {
@@ -58,7 +58,7 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
-        ntx_client: NtxClient,
+        ntx_builder: NtxClient,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -74,7 +74,7 @@ impl BlockBuilder {
             failure_rate: 0.0,
             block_prover,
             store,
-            ntx_client,
+            ntx_builder,
         }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
@@ -143,7 +143,7 @@ impl BlockBuilder {
             // All errors were handled and discarded above, so this is just type juggling
             // to drop the result.
             .unwrap_or_else(|_: Never| StateDelta::default())
-            .then(|delta| self.update_network_tx_builder(delta))
+            .then(|delta| self.update_ntx_builder(delta))
             .await
     }
 
@@ -259,17 +259,8 @@ impl BlockBuilder {
             .iter()
             .map(TransactionHeader::id)
             .collect();
-        let committed_network_notes = built_block
-            .output_notes()
-            .filter_map(|(_idx, note)| match note {
-                OutputNote::Full(inner)
-                    if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
-                {
-                    Some(inner.clone())
-                },
-                _ => None,
-            })
-            .collect();
+
+        let committed_network_notes = get_network_notes(&built_block);
 
         Ok(StateDelta {
             committed_transactions,
@@ -288,8 +279,8 @@ impl BlockBuilder {
         }
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.update_network_tx_builder", skip_all, err)]
-    async fn update_network_tx_builder(&self, delta: StateDelta) -> anyhow::Result<()> {
+    #[instrument(target = COMPONENT, name = "block_builder.update_ntx_builder", skip_all, err)]
+    async fn update_ntx_builder(&self, delta: StateDelta) -> anyhow::Result<()> {
         if !(delta.committed_transactions.is_empty() && delta.reverted_transactions.is_empty()) {
             let committed = delta
                 .committed_transactions
@@ -299,8 +290,7 @@ impl BlockBuilder {
                 .reverted_transactions
                 .into_iter()
                 .map(|tx| (tx, TransactionStatus::Failed));
-
-            self.ntx_client
+            self.ntx_builder
                 .clone()
                 .update_transaction_status(committed.chain(reverted))
                 .await
@@ -308,11 +298,10 @@ impl BlockBuilder {
         }
 
         if !delta.committed_network_notes.is_empty() {
-            self.ntx_client
+            self.ntx_builder
                 .clone()
                 .submit_network_notes(
-                    // TODO: using default here until there is a good reason not to (is tx id even
-                    // needed?)
+                    // TODO: using default here until there is a good reason not to
                     TransactionId::new(
                         Digest::default(),
                         Digest::default(),
@@ -493,4 +482,21 @@ impl BlockProver {
             },
         }
     }
+}
+
+// HELPER
+// ================================================================================================
+
+pub fn get_network_notes(proven_block: &ProvenBlock) -> Vec<Note> {
+    proven_block
+        .output_notes()
+        .filter_map(|(_idx, note)| match note {
+            OutputNote::Full(inner)
+                if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
+            {
+                Some(inner.clone())
+            },
+            _ => None,
+        })
+        .collect()
 }

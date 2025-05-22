@@ -1,6 +1,9 @@
 use miden_objects::{
     Digest, Felt,
-    note::{Note, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag, NoteType},
+    note::{
+        Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
+        NoteType,
+    },
     utils::Serializable,
 };
 
@@ -30,7 +33,10 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
 
 impl From<Note> for proto::NetworkNote {
     fn from(note: Note) -> Self {
-        Self { note: note.to_bytes() }
+        Self {
+            metadata: Some(note.metadata().clone().into()),
+            details: NoteDetails::from(note).to_bytes(),
+        }
     }
 }
 

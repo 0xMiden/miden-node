@@ -91,6 +91,10 @@ pub mod api_client {
             self
         }
         /// Submit a list of network notes to the network transaction builder.
+        ///
+        /// When a block gets committed in the blockchain, the list of new network notes needs to be
+        /// submitted to the NTB through this endpoint in order for it to track them and eventually
+        /// consume them.
         pub async fn submit_network_notes(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -114,7 +118,6 @@ pub mod api_client {
                 .insert(GrpcMethod::new("ntx_builder.Api", "SubmitNetworkNotes"));
             self.inner.unary(req, path, codec).await
         }
-        /// Update network transaction builder with transaction status changes.
         pub async fn update_transaction_status(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -139,6 +142,10 @@ pub mod api_client {
             self.inner.unary(req, path, codec).await
         }
         /// Update the status of network notes that were consumed externally.
+        ///
+        /// When a new transaction enters the mempool, the NTB needs to be notified of the nullifiers
+        /// that this transaction consumes through this endpoint. This way, the NTB can discard
+        /// nullified notes correctly.
         pub async fn update_network_notes(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -178,11 +185,14 @@ pub mod api_server {
     #[async_trait]
     pub trait Api: std::marker::Send + std::marker::Sync + 'static {
         /// Submit a list of network notes to the network transaction builder.
+        ///
+        /// When a block gets committed in the blockchain, the list of new network notes needs to be
+        /// submitted to the NTB through this endpoint in order for it to track them and eventually
+        /// consume them.
         async fn submit_network_notes(
             &self,
             request: tonic::Request<super::super::requests::SubmitNetworkNotesRequest>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
-        /// Update network transaction builder with transaction status changes.
         async fn update_transaction_status(
             &self,
             request: tonic::Request<
@@ -190,6 +200,10 @@ pub mod api_server {
             >,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
         /// Update the status of network notes that were consumed externally.
+        ///
+        /// When a new transaction enters the mempool, the NTB needs to be notified of the nullifiers
+        /// that this transaction consumes through this endpoint. This way, the NTB can discard
+        /// nullified notes correctly.
         async fn update_network_notes(
             &self,
             request: tonic::Request<super::super::requests::UpdateNetworkNotesRequest>,

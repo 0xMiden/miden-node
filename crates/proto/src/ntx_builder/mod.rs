@@ -29,7 +29,7 @@ pub struct Client<T> {
 
 impl<I: Interceptor> Client<InterceptedService<Channel, I>> {
     /// Creates a new [`Client`] which lazily connects with the given [`Interceptor`].
-    pub fn lazy_with_interceptor(addr: SocketAddr, interceptor: I) -> Self {
+    pub fn connect_lazy(addr: SocketAddr, interceptor: I) -> Self {
         // SAFETY: http://{addr} will always form a valid Uri.
         let uri = http::Uri::builder()
             .scheme(Scheme::HTTP)

@@ -20,7 +20,7 @@ use tokio::{net::TcpListener, sync::Mutex};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::Status;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info, instrument, warn};
+use tracing::{debug, error, info, instrument};
 use url::Url;
 
 use crate::{
@@ -34,12 +34,6 @@ use crate::{
     store::StoreClient,
 };
 
-/// The block producer server.
-///
-/// Specifies how to connect to the store, batch prover, and block prover components.
-/// The connection to the store is established at startup and retried with exponential backoff
-/// until the store becomes available. Once the connection is established, the block producer
-/// will start serving requests.
 /// The block producer server.
 ///
 /// Specifies how to connect to the store, batch prover, and block prover components.
@@ -105,14 +99,14 @@ impl BlockProducer {
             .await
             .context("failed to bind to block producer address")?;
 
-        let ntx_client =
-            ntx_builder::Client::lazy_with_interceptor(self.ntx_builder_address, OtelInterceptor);
+        let ntx_builder =
+            ntx_builder::Client::connect_lazy(self.ntx_builder_address, OtelInterceptor);
 
         info!(target: COMPONENT, "Server initialized");
 
         let block_builder = BlockBuilder::new(
             store.clone(),
-            ntx_client,
+            ntx_builder,
             self.block_prover_url,
             self.block_interval,
         );
@@ -157,11 +151,11 @@ impl BlockProducer {
             })
             .id();
 
-        let ntx_client =
-            ntx_builder::Client::lazy_with_interceptor(self.ntx_builder_address, OtelInterceptor);
+        let ntx_builder =
+            ntx_builder::Client::connect_lazy(self.ntx_builder_address, OtelInterceptor);
         let rpc_id = tasks
             .spawn(async move {
-                BlockProducerRpcServer::new(mempool, store, ntx_client).serve(listener).await
+                BlockProducerRpcServer::new(mempool, store, ntx_builder).serve(listener).await
             })
             .id();
 
@@ -206,7 +200,7 @@ struct BlockProducerRpcServer {
 
     store: StoreClient,
 
-    ntx_client: NtxClient,
+    ntx_builder: NtxClient,
 }
 
 #[tonic::async_trait]
@@ -244,7 +238,7 @@ impl BlockProducerRpcServer {
         Self {
             mempool: Mutex::new(mempool),
             store,
-            ntx_client,
+            ntx_builder: ntx_client,
         }
     }
 
@@ -295,27 +289,20 @@ impl BlockProducerRpcServer {
 
         let tx = AuthenticatedTransaction::new(tx, inputs)?;
 
-        // Launch a task for updating the mempool, and send the update to the network transaction
-        // builder
-        let (submit_tx_response, _) = tokio::join!(
-            async {
-                self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-                    SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
-                })
-            },
-            async {
-                let mut ntx_client = self.ntx_client.clone();
-                if let Err(err) =
-                    ntx_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await
-                {
-                    warn!(
-                        target: COMPONENT,
-                        message = %err,
-                        "error submitting network notes updates to ntx builder"
-                    );
-                }
-            },
-        );
+        // Update the mempool with the new transaction
+        let submit_tx_response =
+            self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
+                SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
+            });
+
+        let mut ntx_builder = self.ntx_builder.clone();
+        if let Err(err) = ntx_builder.update_network_notes(tx_id, tx_nullifiers.into_iter()).await {
+            debug!(
+                target: COMPONENT,
+                message = %err,
+                "error submitting network notes updates to ntx builder"
+            );
+        }
 
         submit_tx_response
     }

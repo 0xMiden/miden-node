@@ -15,6 +15,7 @@ version.workspace      = true
 workspace = true
 
 [features]
+testing        = []
 tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
@@ -28,6 +29,7 @@ miden-node-utils             = { workspace = true, features = ["testing"] }
 miden-objects                = { workspace = true }
 miden-processor              = { workspace = true }
 miden-proving-service-client = { version = "0.9", features = ["batch-prover", "block-prover"] }
+miden-tx                     = { workspace = true }
 miden-tx-batch-prover        = { version = "0.9" }
 rand                         = { version = "0.9" }
 thiserror                    = { workspace = true }
@@ -44,6 +46,7 @@ miden-air             = { workspace = true }
 miden-lib             = { workspace = true, features = ["testing"] }
 miden-node-store      = { workspace = true }
 miden-node-test-macro = { workspace = true }
+miden-node-utils      = { workspace = true, features = ["testing"] }
 miden-objects         = { workspace = true, features = ["testing"] }
 miden-tx              = { workspace = true, features = ["testing"] }
 pretty_assertions     = "1.4"

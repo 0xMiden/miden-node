@@ -9,44 +9,56 @@ name                   = "miden-faucet"
 readme                 = "README.md"
 repository.workspace   = true
 rust-version.workspace = true
-version                = "0.8.1"
+version                = "0.9.0"
 
 [lints]
 workspace = true
 
 [dependencies]
-anyhow           = { workspace = true }
-axum             = { version = "0.8", features = ["tokio"] }
-clap             = { version = "4.5", features = ["derive", "env", "string"] }
-http             = { workspace = true }
-http-body-util   = "0.1"
-miden-lib        = { workspace = true }
-miden-node-proto = { workspace = true }
-miden-node-rpc   = { workspace = true }
-miden-node-utils = { workspace = true }
-miden-objects    = { workspace = true }
-miden-tx         = { workspace = true, features = ["concurrent"] }
-mime             = "0.3"
-rand             = { workspace = true }
-rand_chacha      = "0.9"
-serde            = { version = "1.0", features = ["derive"] }
-static-files     = "0.2"
-thiserror        = { workspace = true }
-tokio            = { workspace = true, features = ["fs"] }
-toml             = { version = "0.8" }
-tonic            = { workspace = true }
-tonic-web        = { version = "0.12" }
-tower            = { workspace = true }
-tower-http       = { workspace = true, features = ["cors", "set-header", "trace"] }
-tracing          = { workspace = true }
-url              = { workspace = true }
+anyhow                       = { workspace = true }
+async-trait                  = "0.1"
+axum                         = { version = "0.8", features = ["tokio"] }
+axum-extra                   = { version = "0.10" }
+base64                       = "0.21"
+clap                         = { version = "4.5", features = ["derive", "env", "string"] }
+http                         = { workspace = true }
+miden-lib                    = { workspace = true }
+miden-node-proto             = { workspace = true }
+miden-node-rpc               = { workspace = true }
+miden-node-utils             = { workspace = true }
+miden-objects                = { workspace = true }
+miden-proving-service-client = { version = "0.9", features = ["tx-prover"] }
+miden-tx                     = { workspace = true, features = ["concurrent"] }
+rand                         = { workspace = true, features = ["thread_rng"] }
+rand_chacha                  = "0.9"
+serde                        = { version = "1.0", features = ["derive"] }
+serde_json                   = { version = "1.0" }
+sha3                         = { version = "0.10" }
+thiserror                    = { workspace = true }
+tokio                        = { workspace = true, features = ["fs"] }
+tokio-stream                 = { workspace = true, features = ["net"] }
+toml                         = { version = "0.8" }
+tonic                        = { workspace = true, features = ["tls-native-roots"] }
+tower                        = { workspace = true }
+tower-http                   = { workspace = true, features = ["cors", "set-header", "trace"] }
+tower_governor               = "0.7.0"
+tracing                      = { workspace = true }
+url                          = { workspace = true }
+winter-maybe-async           = { version = "0.12" }
 
 [build-dependencies]
 # Required to inject build metadata.
 miden-node-utils = { workspace = true, features = ["vergen"] }
-static-files     = "0.2"
 
 [dev-dependencies]
-fantoccini   = { version = "0.21" }
-serde_json   = { version = "1.0" }
-tokio-stream = { workspace = true, features = ["net"] }
+fantoccini                = { version = "0.21" }
+miden-node-block-producer = { workspace = true, features = ["testing"] }
+miden-objects             = { workspace = true, features = ["testing"] }
+serde_json                = { version = "1.0" }
+tokio-stream              = { workspace = true, features = ["net"] }
+tonic-web                 = { version = "0.12" }
+
+# Required to avoid false positives in cargo-machete
+# This is due to the `winter-maybe-async` crate not working standalone.
+[package.metadata.cargo-machete]
+ignored = ["async-trait"]

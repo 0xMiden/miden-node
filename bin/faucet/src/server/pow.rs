@@ -139,7 +139,30 @@ impl TryFrom<&RawMintRequest> for PowParameters {
     }
 }
 
-// CHALLENGE STATE
+// POW
+// ================================================================================================
+
+
+#[derive(Clone)]
+pub struct PoW {
+    pub(crate) salt: String,
+    pub(crate) difficulty: Arc<AtomicU64>,
+    pub(crate) challenge_cache: ChallengeCache,
+}
+
+impl PoW {
+    /// Adjust the difficulty of the `PoW`.
+    ///
+    /// The difficulty is adjusted based on the number of active requests.
+    /// The difficulty is increased by 1 for every 100 active requests.
+    /// The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
+    pub fn adjust_difficulty(&self, active_requests: usize) {
+        let new_difficulty = (active_requests as u64 / 100).clamp(1, MAX_DIFFICULTY);
+        self.difficulty.store(new_difficulty, Ordering::Relaxed);
+    }
+}
+
+// CHALLENGE CACHE
 // ================================================================================================
 
 /// A state for managing challenges.
@@ -157,20 +180,6 @@ pub struct ChallengeCache {
 }
 
 /// A challenge is a single `PoW` challenge.
-#[derive(Clone)]
-pub struct PoW {
-    pub(crate) salt: String,
-    pub(crate) difficulty: Arc<AtomicU64>,
-    pub(crate) challenge_cache: ChallengeCache,
-}
-
-impl PoW {
-    pub fn adjust_difficulty(&self, active_requests: usize) {
-        let new_difficulty = (active_requests as u64 / 100).clamp(1, MAX_DIFFICULTY);
-        self.difficulty.store(new_difficulty, Ordering::Relaxed);
-    }
-}
-
 #[derive(Clone)]
 pub struct Challenge {
     timestamp: u64,

@@ -137,10 +137,10 @@ impl TryFrom<&RawMintRequest> for PowParameters {
     }
 }
 
-// CHALLENGE STATE
+// CHALLENGE CACHE
 // ================================================================================================
 
-/// A state for managing challenges.
+/// A cache for managing challenges.
 ///
 /// Challenges are used to validate the `PoW` solution.
 /// We store the challenges in a map with the seed as the key to ensure that each challenge is
@@ -162,7 +162,7 @@ pub struct Challenge {
 }
 
 impl ChallengeCache {
-    /// Add a challenge to the state.
+    /// Add a challenge to the cache.
     pub fn put(&self, seed: &str, server_signature: String, timestamp: u64) {
         let mut challenges = self.challenges.lock().unwrap();
         challenges.insert(seed.to_string(), Challenge { timestamp, server_signature });
@@ -187,7 +187,7 @@ impl ChallengeCache {
 
 /// Run the cleanup task.
 ///
-/// The cleanup task is responsible for removing expired challenges from the state.
+/// The cleanup task is responsible for removing expired challenges from the cache.
 /// It runs every minute.
 pub async fn run_cleanup(challenge_cache: ChallengeCache) {
     let mut interval = interval(Duration::from_secs(60));

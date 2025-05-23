@@ -107,13 +107,6 @@ impl BlockBuilder {
                 tracing::error!(%err, "fatal error while building a block, aborting block production");
                 return;
             }
-            // Non-fatal errors are handled internally by the block building process.
-            //
-            // As such, any error returned here should be treated as fatal.
-            if let Err(err) = self.build_block(&mempool).await {
-                tracing::error!(%err, "fatal error while building a block, aborting block production");
-                return;
-            }
         }
     }
 

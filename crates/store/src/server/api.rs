@@ -23,7 +23,8 @@ use miden_node_proto::{
             AccountTransactionInputRecord, ApplyBlockResponse, CheckNullifiersByPrefixResponse,
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
-            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
+            GetBlockHeaderByNumberResponse, GetBlockInputsResponse,
+            GetNetworkAccountDetailsByPrefixResponse, GetNotesByIdResponse,
             GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
             NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
@@ -301,13 +302,13 @@ impl api_server::Api for StoreApi {
     async fn get_network_account_details_by_prefix(
         &self,
         request: Request<GetNetworkAccountDetailsByPrefixRequest>,
-    ) -> Result<Response<GetAccountDetailsResponse>, Status> {
+    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
         let request = request.into_inner();
         let prefix = request.account_id_prefix;
         assert!(prefix >> 30 == 0, "account_id_prefix must be 30 bits");
         let account_info: AccountInfo = self.state.get_account_details_by_prefix(prefix).await?;
 
-        Ok(Response::new(GetAccountDetailsResponse {
+        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
             details: Some((&account_info).into()),
         }))
     }

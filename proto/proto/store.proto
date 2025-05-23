@@ -23,10 +23,8 @@ service Api {
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(requests.GetAccountDetailsRequest) returns (responses.GetAccountDetailsResponse) {}
 
-    
     // Returns the latest state of an account with the specified ID.
-    // TODO: would probably be cleaner to do a specific response type instead of reusing GetAccountDetailsResponse
-    rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetAccountDetailsResponse) {}
+    rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetNetworkAccountDetailsByPrefixResponse) {}
 
     // Returns the latest state proofs of the specified accounts.
     rpc GetAccountProofs(requests.GetAccountProofsRequest) returns (responses.GetAccountProofsResponse) {}

@@ -23,11 +23,6 @@ CREATE TABLE accounts (
     account_commitment      BLOB NOT NULL,
     block_num               INTEGER NOT NULL,
     details                 BLOB,
-    account_id              BLOB NOT NULL,
-    id_prefix               INTEGER NOT NULL,
-    account_commitment      BLOB NOT NULL,
-    block_num               INTEGER NOT NULL,
-    details                 BLOB,
 
     PRIMARY KEY (account_id),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num)

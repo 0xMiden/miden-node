@@ -1,4 +1,10 @@
-use std::convert::Infallible;
+use std::{
+    convert::Infallible,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 use axum::{
     extract::{Query, State},
@@ -186,17 +192,47 @@ impl RawMintRequest {
     }
 }
 
+struct RequestCounterGuard {
+    active_count: Arc<AtomicUsize>,
+    queued_count: Arc<AtomicUsize>,
+}
+
+impl RequestCounterGuard {
+    fn new(active_count: Arc<AtomicUsize>, queued_count: Arc<AtomicUsize>) -> Self {
+        active_count.fetch_add(1, Ordering::Relaxed);
+        RequestCounterGuard { active_count, queued_count }
+    }
+
+    fn mark_queued(&self) {
+        self.queued_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn mark_processing(&self) {
+        self.queued_count.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
+impl Drop for RequestCounterGuard {
+    fn drop(&mut self) {
+        self.active_count.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 pub async fn get_tokens(
-    State(mut server): State<Server>,
+    State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
+    let request_guard =
+        RequestCounterGuard::new(server.active_requests.clone(), server.queued_requests.clone());
+
+    let current_active_requests = server.active_requests.load(Ordering::Relaxed);
+    let current_queued_requests = server.queued_requests.load(Ordering::Relaxed);
+    let total_load = current_active_requests + current_queued_requests;
+
+    server.pow.adjust_difficulty(total_load);
+
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
-
-    let sender_count = rx_result.sender_weak_count();
-
-    // Adjust PoW difficulty based on the number of senders.
-    server.pow.adjust_difficulty(sender_count);
 
     let mint_error = request
         .validate(&server)
@@ -207,14 +243,25 @@ pub async fn get_tokens(
             span.record("amount", request.asset_amount.inner());
             span.record("note_type", request.note_type.to_string());
 
-            server
+            // Mark as queued before attempting to send
+            request_guard.mark_queued();
+
+            let result = server
                 .mint_state
                 .request_sender
                 .try_send((request, tx_result_notifier.clone()))
                 .map_err(|err| match err {
                     TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
                     TrySendError::Closed(_) => GetTokenError::FaucetClosed,
-                })
+                });
+
+            // If successfully queued, mark as processing (will be decremented when actually
+            // processed)
+            if result.is_ok() {
+                request_guard.mark_processing();
+            }
+
+            result
         })
         .err();
 

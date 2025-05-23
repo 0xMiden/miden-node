@@ -2,7 +2,7 @@ use std::{
     collections::BTreeSet,
     convert::Infallible,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicUsize},
     time::Duration,
 };
 
@@ -57,6 +57,8 @@ pub struct Server {
     metadata: &'static Metadata,
     pow: PoW,
     api_keys: BTreeSet<String>,
+    active_requests: Arc<AtomicUsize>,
+    queued_requests: Arc<AtomicUsize>,
 }
 
 impl Server {
@@ -85,12 +87,18 @@ impl Server {
 
         let pow = PoW {
             salt: pow_salt,
-            difficulty: Arc::new(Mutex::new(3)), /* 3 is a very low difficulty, it is adjusted by
-                                                  * the server. */
+            difficulty: Arc::new(Mutex::new(1)), // Initialize difficulty to 1
             challenge_cache,
         };
 
-        Server { mint_state, metadata, pow, api_keys }
+        Server {
+            mint_state,
+            metadata,
+            pow,
+            active_requests: Arc::new(AtomicUsize::new(0)),
+            queued_requests: Arc::new(AtomicUsize::new(0)),
+            api_keys,
+        }
     }
 
     // TODO: Cannot move the rate limiter creation to its own function because it requires

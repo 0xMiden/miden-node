@@ -162,9 +162,9 @@ pub struct PoW {
 }
 
 impl PoW {
-    pub fn adjust_difficulty(&mut self, sender_count: usize) {
+    pub fn adjust_difficulty(&self, active_requests: usize) {
         let mut difficulty = self.difficulty.lock().unwrap();
-        *difficulty = (sender_count as u64 / 100).clamp(1, MAX_DIFFICULTY);
+        *difficulty = (active_requests as u64 / 100).clamp(1, MAX_DIFFICULTY);
     }
 }
 

@@ -69,10 +69,10 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        let challenge_state = pow::ChallengeCache::default();
+        let challenge_cache = pow::ChallengeCache::default();
 
         // Start the cleanup task
-        let cleanup_state = challenge_state.clone();
+        let cleanup_state = challenge_cache.clone();
         tokio::spawn(async move {
             pow::run_cleanup(cleanup_state).await;
         });
@@ -81,7 +81,7 @@ impl Server {
             mint_state,
             metadata,
             pow_salt,
-            challenge_cache: challenge_state,
+            challenge_cache,
             api_keys,
         }
     }

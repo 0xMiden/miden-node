@@ -76,18 +76,13 @@ impl PowParameters {
 
     /// Check a `PoW` solution.
     ///
-    /// * `challenge_state` - The challenge state to be used to validate the challenge.
-    /// * `seed` - The seed to be used by the client as the `PoW` seed.
-    /// * `server_signature` - The server signature to be used to validate the challenge.
-    /// * `solution` - The solution to be checked.
+    /// * `challenge_cache` - The challenge cache to be used to validate the challenge.
     ///
     /// The solution is valid if the hash of the seed and the solution has at least `DIFFICULTY`
     /// leading zeros.
-    ///
-    /// Returns `true` if the solution is valid, `false` otherwise.
     pub fn check_pow_solution(
         &self,
-        challenge_state: &ChallengeCache,
+        challenge_cache: &ChallengeCache,
     ) -> Result<(), InvalidRequest> {
         // Then check the PoW solution
         let mut hasher = Sha3_256::new();
@@ -102,7 +97,7 @@ impl PowParameters {
 
         // If we get here, the solution is valid
         // Remove the challenge to prevent reuse
-        challenge_state.remove_challenge(&self.pow_seed);
+        challenge_cache.remove(&self.pow_seed);
 
         Ok(())
     }
@@ -157,7 +152,7 @@ pub struct Challenge {
 
 impl ChallengeCache {
     /// Add a challenge to the state.
-    pub fn add_challenge(&self, seed: &str, server_signature: String, timestamp: u64) {
+    pub fn put(&self, seed: &str, server_signature: String, timestamp: u64) {
         let mut challenges = self.challenges.lock().unwrap();
         challenges.insert(seed.to_string(), Challenge { timestamp, server_signature });
     }
@@ -200,7 +195,7 @@ impl ChallengeCache {
     }
 
     /// Remove a challenge from the state.
-    pub fn remove_challenge(&self, seed: &str) {
+    pub fn remove(&self, seed: &str) {
         let mut challenges = self.challenges.lock().unwrap();
         challenges.remove(seed);
     }
@@ -210,12 +205,12 @@ impl ChallengeCache {
 ///
 /// The cleanup task is responsible for removing expired challenges from the state.
 /// It runs every minute.
-pub async fn run_cleanup(challenge_state: ChallengeCache) {
+pub async fn run_cleanup(challenge_cache: ChallengeCache) {
     let mut interval = interval(Duration::from_secs(60));
 
     loop {
         interval.tick().await;
-        challenge_state.cleanup_expired_challenges();
+        challenge_cache.cleanup_expired_challenges();
     }
 }
 
@@ -263,9 +258,7 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
     let server_signature = get_server_signature(&server.pow_salt, &random_seed, timestamp);
 
     // Store the challenge
-    server
-        .challenge_cache
-        .add_challenge(&random_seed, server_signature.clone(), timestamp);
+    server.challenge_cache.put(&random_seed, server_signature.clone(), timestamp);
 
     Json(PoWResponse {
         seed: random_seed,
@@ -325,9 +318,9 @@ mod tests {
 
         assert!(result.is_ok());
 
-        let challenge_state = ChallengeCache::default();
-        challenge_state.add_challenge(seed, server_signature, timestamp);
-        let result = pow_parameters.check_pow_solution(&challenge_state);
+        let challenge_cache = ChallengeCache::default();
+        challenge_cache.put(seed, server_signature, timestamp);
+        let result = pow_parameters.check_pow_solution(&challenge_cache);
 
         assert!(result.is_ok());
     }
@@ -348,8 +341,8 @@ mod tests {
         let result = pow_parameters.check_server_signature(server_salt);
         assert!(result.is_err());
 
-        let challenge_state = ChallengeCache::default();
-        let result = pow_parameters.check_pow_solution(&challenge_state);
+        let challenge_cache = ChallengeCache::default();
+        let result = pow_parameters.check_pow_solution(&challenge_cache);
 
         assert!(result.is_err());
     }

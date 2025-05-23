@@ -1,28 +1,20 @@
 use std::{collections::BTreeSet, ops::Range};
-use std::{collections::BTreeSet, ops::Range};
 
-use anyhow::Context;
 use anyhow::Context;
 use futures::{FutureExt, never::Never};
 use miden_block_prover::LocalBlockProver;
 use miden_node_proto::generated::transaction::TransactionStatus;
 use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
-use miden_node_proto::generated::transaction::TransactionStatus;
-use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
 use miden_objects::{
-    Digest, MIN_PROOF_SECURITY_LEVEL,
     Digest, MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
     block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::{Note, NoteExecutionMode, NoteHeader},
-    transaction::{OutputNote, TransactionHeader, TransactionId},
     note::{Note, NoteExecutionMode, NoteHeader},
     transaction::{OutputNote, TransactionHeader, TransactionId},
 };
 use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{Span, info, instrument};
 use url::Url;
@@ -34,9 +26,6 @@ use crate::{
 
 // BLOCK BUILDER
 // =================================================================================================
-
-pub type NtxClient =
-    miden_node_proto::ntx_builder::Client<InterceptedService<Channel, OtelInterceptor>>;
 
 pub type NtxClient =
     miden_node_proto::ntx_builder::Client<InterceptedService<Channel, OtelInterceptor>>;
@@ -61,12 +50,6 @@ pub struct BlockBuilder {
     // This client is used to submit network notes and transaction updates to the network
     // transaction builder.
     pub ntx_builder: NtxClient,
-
-    // Client to the network transaction builder.
-    //
-    // This client is used to submit network notes and transaction updates to the network
-    // transaction builder.
-    pub ntx_builder: NtxClient,
 }
 
 impl BlockBuilder {
@@ -75,7 +58,6 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
-        ntx_builder: NtxClient,
         ntx_builder: NtxClient,
         block_prover_url: Option<Url>,
         block_interval: Duration,
@@ -92,7 +74,6 @@ impl BlockBuilder {
             failure_rate: 0.0,
             block_prover,
             store,
-            ntx_builder,
             ntx_builder,
         }
     }
@@ -149,7 +130,6 @@ impl BlockBuilder {
     ///   marked as errors.
     #[instrument(parent = None, target = COMPONENT, name = "block_builder.build_block", skip_all)]
     async fn build_block(&self, mempool: &SharedMempool) -> anyhow::Result<()> {
-    async fn build_block(&self, mempool: &SharedMempool) -> anyhow::Result<()> {
         use futures::TryFutureExt;
 
         Self::select_block(mempool)
@@ -167,11 +147,6 @@ impl BlockBuilder {
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
             .or_else(|_err| self.rollback_block(mempool).never_error())
-            // All errors were handled and discarded above, so this is just type juggling
-            // to drop the result.
-            .unwrap_or_else(|_: Never| StateDelta::default())
-            .then(|delta| self.update_ntx_builder(delta))
-            .await
             // All errors were handled and discarded above, so this is just type juggling
             // to drop the result.
             .unwrap_or_else(|_: Never| StateDelta::default())
@@ -279,27 +254,11 @@ impl BlockBuilder {
         mempool: &SharedMempool,
         built_block: ProvenBlock,
     ) -> Result<StateDelta, BuildBlockError> {
-    ) -> Result<StateDelta, BuildBlockError> {
         self.store
             .apply_block(&built_block)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        let reverted_transactions = mempool.lock().await.commit_block();
-        let committed_transactions = built_block
-            .transactions()
-            .as_slice()
-            .iter()
-            .map(TransactionHeader::id)
-            .collect();
-
-        let committed_network_notes = get_network_notes(&built_block);
-
-        Ok(StateDelta {
-            committed_transactions,
-            reverted_transactions,
-            committed_network_notes,
-        })
         let reverted_transactions = mempool.lock().await.commit_block();
         let committed_transactions = built_block
             .transactions()
@@ -498,14 +457,6 @@ struct StateDelta {
     committed_network_notes: Vec<Note>,
 }
 
-/// Change in transaction and note state as a result of the block building process.
-#[derive(Default)]
-struct StateDelta {
-    committed_transactions: Vec<TransactionId>,
-    reverted_transactions: BTreeSet<TransactionId>,
-    committed_network_notes: Vec<Note>,
-}
-
 // BLOCK PROVER
 // ================================================================================================
 
@@ -539,23 +490,6 @@ impl BlockProver {
             },
         }
     }
-}
-
-// HELPER
-// ================================================================================================
-
-fn get_network_notes(proven_block: &ProvenBlock) -> Vec<Note> {
-    proven_block
-        .output_notes()
-        .filter_map(|(_idx, note)| match note {
-            OutputNote::Full(inner)
-                if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
-            {
-                Some(inner.clone())
-            },
-            _ => None,
-        })
-        .collect()
 }
 
 // HELPER

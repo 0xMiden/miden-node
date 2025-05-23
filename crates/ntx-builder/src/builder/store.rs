@@ -1,7 +1,6 @@
 use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
-        note::NetworkNote as ProtoNetworkNote,
         requests::{
             GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
             GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
@@ -10,12 +9,12 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::{note_tag::NetworkNote, tracing::grpc::OtelInterceptor};
+use miden_node_utils::{network_note::NetworkNote, tracing::grpc::OtelInterceptor};
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
     crypto::merkle::{MmrPeaks, PartialMmr},
-    note::{Note, NoteTag},
+    note::NoteTag,
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -102,7 +101,7 @@ impl StoreClient {
         }
     }
 
-    /// Returns the latest block's header from the store.
+    /// Returns the list of unconsumed network notes.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
@@ -115,7 +114,7 @@ impl StoreClient {
             let page: Vec<NetworkNote> = resp
                 .notes
                 .into_iter()
-                .map(|n:ProtoNetworkNote| NetworkNote::try_from)
+                .map(NetworkNote::try_from)
                 .collect::<Result<Vec<_>, _>>()?;
 
             all_notes.extend(page);

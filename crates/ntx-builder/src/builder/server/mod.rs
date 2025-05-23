@@ -8,11 +8,8 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_objects::{
-    Digest,
-    note::{Note, Nullifier},
-    transaction::TransactionId,
-};
+use miden_node_utils::note_tag::NetworkNote;
+use miden_objects::{Digest, note::Nullifier, transaction::TransactionId};
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
@@ -43,7 +40,7 @@ impl Api for NtxBuilderApi {
     ) -> Result<Response<()>, Status> {
         let req = request.into_inner();
 
-        let notes: Vec<Note> = try_convert(req.note)
+        let notes: Vec<NetworkNote> = try_convert(req.note)
             .map_err(|err| Status::invalid_argument(format!("invalid note list: {err}")))?;
 
         let mut state = self.state.lock().await;

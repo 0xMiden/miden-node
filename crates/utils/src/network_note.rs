@@ -23,6 +23,12 @@ impl NetworkNote {
     }
 }
 
+impl From<NetworkNote> for Note {
+    fn from(value: NetworkNote) -> Self {
+        value.0
+    }
+}
+
 impl TryFrom<Note> for NetworkNote {
     type Error = NetworkNoteError;
 

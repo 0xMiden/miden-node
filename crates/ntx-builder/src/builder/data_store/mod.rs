@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use account_cache::NetworkAccountCache;
-use miden_node_utils::{account::NetworkAccountPrefix, note_tag::NetworkNote};
+use miden_node_utils::account::{NetworkAccountError, NetworkAccountPrefix};
 use miden_objects::{
     AccountError, MastForest, Word,
     account::{Account, AccountId},
@@ -11,6 +11,7 @@ use miden_objects::{
     transaction::{ExecutedTransaction, PartialBlockchain},
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
+use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::warn;
 
@@ -31,7 +32,7 @@ pub struct NtxBuilderDataStore {
 }
 
 impl NtxBuilderDataStore {
-    pub async fn new(store_client: StoreClient) -> Result<Self, StoreError> {
+    pub async fn new(store_client: StoreClient) -> Result<Self, NtxBuilderError> {
         let account_cache = NetworkAccountCache::new(128);
         let mast_forest_store = TransactionMastStore::new();
 
@@ -55,14 +56,14 @@ impl NtxBuilderDataStore {
     pub async fn get_cached_acc_or_fetch_by_tag(
         &self,
         note_tag: NoteTag,
-    ) -> Result<Option<Account>, StoreError> {
+    ) -> Result<Option<Account>, NtxBuilderError> {
         let account_prefix: NetworkAccountPrefix = note_tag.try_into().unwrap();
         // look in cache, try the store otherwise
         let account = if let Some(acc) = self.account_cache.get(account_prefix) {
             Some(acc)
         } else if let Some(acc) = self.store_client.get_network_account_by_tag(note_tag).await? {
             // insert to cache
-            self.account_cache.put(&acc);
+            self.account_cache.put(&acc)?;
             Some(acc)
         } else {
             None
@@ -145,4 +146,17 @@ impl MastForestStore for NtxBuilderDataStore {
     fn get(&self, procedure_hash: &miden_objects::Digest) -> Option<Arc<MastForest>> {
         self.mast_forest_store.get(procedure_hash)
     }
+}
+
+// BUILDER ERRORS
+// =================================================================================================
+
+#[derive(Debug, Error)]
+pub enum NtxBuilderError {
+    #[error("store error")]
+    StoreError(#[from] StoreError),
+    #[error("block producer client error")]
+    BlockProducerError(#[from] tonic::Status),
+    #[error("network account error")]
+    NetworkAccountError(#[from] NetworkAccountError),
 }

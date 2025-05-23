@@ -4,6 +4,7 @@ use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
 use miden_node_proto::generated::ntx_builder::api_server;
+use miden_node_utils::note_tag::NetworkNote;
 use miden_objects::{
     assembly::DefaultSourceManager,
     note::Note,
@@ -195,9 +196,10 @@ async fn filter_next_and_execute(
 
     // select input notes by running them through the checker
     let input_notes = {
-        let input_notes =
-            InputNotes::new(notes.iter().cloned().map(InputNote::unauthenticated).collect())
-                .context("failed to create InputNotes object")?;
+        let input_notes = InputNotes::new(
+            notes.iter().cloned().map(Note::from).map(InputNote::unauthenticated).collect(),
+        )
+        .context("failed to create InputNotes object")?;
 
         for n in input_notes.iter() {
             data_store.insert_note_script_mast(n.note().script());
@@ -220,11 +222,12 @@ async fn filter_next_and_execute(
                 let successul_notes =
                     input_notes.iter().filter(|n| successful_notes.contains(&n.id())).cloned();
 
-                let unsuccessful_notes: Vec<Note> = input_notes
+                let unsuccessful_notes: Vec<NetworkNote> = input_notes
                     .iter()
                     .filter(|n| !successful_notes.contains(&n.id()))
                     .map(InputNote::note)
                     .cloned()
+                    .map(|n| NetworkNote::try_from(n).expect("checked above"))
                     .collect();
 
                 api_state
@@ -279,7 +282,14 @@ async fn prove_and_submit(
 ) -> anyhow::Result<()> {
     api_state.lock().await.mark_inflight(
         executed_tx.id(),
-        executed_tx.input_notes().iter().map(|n| n.note().clone()).collect(),
+        executed_tx
+            .input_notes()
+            .iter()
+            .map(|n| {
+                NetworkNote::try_from(n.note().clone())
+                    .expect("any executed note was checked to be network")
+            })
+            .collect(),
     );
 
     let tx_witness = TransactionWitness::from(executed_tx.clone());

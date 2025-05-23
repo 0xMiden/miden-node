@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use miden_node_utils::note_tag::NetworkNote;
 use miden_objects::{
-    note::{Note, NoteId, NoteTag, Nullifier},
+    note::{NoteId, NoteTag, Nullifier},
     transaction::TransactionId,
 };
 

@@ -4,7 +4,7 @@ pub mod crypto;
 pub mod formatting;
 pub mod grpc;
 pub mod logging;
-pub mod note_tag;
+pub mod network_note;
 pub mod tracing;
 pub mod version;
 

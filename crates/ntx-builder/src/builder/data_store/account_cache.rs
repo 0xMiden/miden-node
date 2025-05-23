@@ -3,12 +3,8 @@ use std::{
     sync::Mutex,
 };
 
-use miden_node_proto::generated::requests::GetNetworkAccountDetailsByPrefixRequest;
 use miden_node_utils::account::{NetworkAccountError, NetworkAccountPrefix};
-use miden_objects::{
-    account::{Account, AccountId},
-    note::{NoteExecutionMode, NoteTag},
-};
+use miden_objects::account::{Account, AccountId};
 
 // ACCOUNT CACHE
 // =================================================================================================

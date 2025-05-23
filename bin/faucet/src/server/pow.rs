@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use tokio::time::{Duration, interval};
 
-use super::{Server, get_tokens::InvalidRequest};
+use super::{
+    Server,
+    get_tokens::{InvalidRequest, RawMintRequest},
+};
 
 /// The difficulty of the `PoW`.
 ///
@@ -102,6 +105,29 @@ impl PowParameters {
         challenge_state.remove_challenge(&self.pow_seed);
 
         Ok(())
+    }
+}
+
+impl TryFrom<&RawMintRequest> for PowParameters {
+    type Error = InvalidRequest;
+
+    fn try_from(value: &RawMintRequest) -> Result<Self, Self::Error> {
+        Ok(Self {
+            pow_seed: value.pow_seed.as_ref().ok_or(InvalidRequest::MissingPowParameters)?.clone(),
+            server_signature: value
+                .server_signature
+                .as_ref()
+                .ok_or(InvalidRequest::MissingPowParameters)?
+                .clone(),
+            server_timestamp: *value
+                .server_timestamp
+                .as_ref()
+                .ok_or(InvalidRequest::MissingPowParameters)?,
+            pow_solution: *value
+                .pow_solution
+                .as_ref()
+                .ok_or(InvalidRequest::MissingPowParameters)?,
+        })
     }
 }
 

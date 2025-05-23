@@ -289,10 +289,9 @@ impl KeyExtractor for ApiKeyExtractor {
             // requests without an api key.
             Ok(params.account_id.clone()
                 + &params
-                    .pow_parameters
+                    .server_timestamp
                     .as_ref()
                     .ok_or(GovernorError::UnableToExtractKey)?
-                    .server_timestamp
                     .to_string())
         }
     }

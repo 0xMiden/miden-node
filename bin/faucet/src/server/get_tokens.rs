@@ -43,7 +43,10 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
-    pub pow_parameters: Option<PowParameters>,
+    pub pow_seed: Option<String>,
+    pub pow_solution: Option<u64>,
+    pub server_signature: Option<String>,
+    pub server_timestamp: Option<u64>,
     pub api_key: Option<String>,
 }
 
@@ -166,7 +169,7 @@ impl RawMintRequest {
             return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
         }
 
-        if let Some(pow_parameters) = &self.pow_parameters {
+        if let Ok(pow_parameters) = PowParameters::try_from(&self) {
             server
                 .challenge_cache
                 .validate_challenge(&pow_parameters.pow_seed, &pow_parameters.server_signature)?;

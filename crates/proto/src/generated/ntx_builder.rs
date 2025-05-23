@@ -118,6 +118,10 @@ pub mod api_client {
                 .insert(GrpcMethod::new("ntx_builder.Api", "SubmitNetworkNotes"));
             self.inner.unary(req, path, codec).await
         }
+        /// Update network transaction builder with transaction status changes.
+        ///
+        /// Any transaction that has been either committed or reverted is communicated to the NTB so
+        /// it can track the lifecycle of inflight transactions and notes correctly.
         pub async fn update_transaction_status(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -193,6 +197,10 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::requests::SubmitNetworkNotesRequest>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
+        /// Update network transaction builder with transaction status changes.
+        ///
+        /// Any transaction that has been either committed or reverted is communicated to the NTB so
+        /// it can track the lifecycle of inflight transactions and notes correctly.
         async fn update_transaction_status(
             &self,
             request: tonic::Request<

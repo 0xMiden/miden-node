@@ -311,7 +311,8 @@ impl Mempool {
     ///
     /// # Returns
     ///
-    /// Returns the list of transactions that expired and were purged.
+    /// Returns a set of transactions that were purged from the mempool because they can no longer
+    /// be included in in the chain (e.g., expired transactions and their descendants).
     ///
     /// # Panics
     ///
@@ -343,7 +344,8 @@ impl Mempool {
     ///
     /// # Returns
     ///
-    /// Returns the set of transactions that was purged.
+    /// Returns a set of transaction IDs that were reverted because they can no longer be
+    /// included in in the chain (e.g., expired transactions and their descendants)
     ///
     /// # Panics
     ///

@@ -487,7 +487,7 @@ impl BlockProver {
 // HELPER
 // ================================================================================================
 
-pub fn get_network_notes(proven_block: &ProvenBlock) -> Vec<Note> {
+fn get_network_notes(proven_block: &ProvenBlock) -> Vec<Note> {
     proven_block
         .output_notes()
         .filter_map(|(_idx, note)| match note {

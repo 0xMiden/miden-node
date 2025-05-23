@@ -16,7 +16,8 @@ service Api {
 
     // Update network transaction builder with transaction status changes.
     //
-    
+    // Any transaction that has been either committed or reverted is communicated to the NTB so
+    // it can track the lifecycle of inflight transactions and notes correctly.
     rpc UpdateTransactionStatus(requests.UpdateTransactionStatusRequest) returns (google.protobuf.Empty) {}
 
     // Update the status of network notes that were consumed externally.

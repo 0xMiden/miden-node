@@ -11,6 +11,7 @@ use std::{
 };
 
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
+use miden_node_utils::account::NetworkAccountPrefix;
 use miden_objects::{
     Digest, Word,
     account::{
@@ -178,7 +179,11 @@ pub fn select_account(transaction: &Transaction, account_id: AccountId) -> Resul
     account_info_from_row(row)
 }
 
-/// Select the latest account details by account id from the DB using the given [Connection].
+// TODO: Handle account prefix collision in a more robust way
+/// Select the latest account details by account ID prefix from the DB using the given [Connection]
+/// This method is meant to be used by the network transaction builder. Because network notes get
+/// matched through accounts through the account's 30-bit prefix, it is possible that multiple
+/// accounts match against a single prefix. In this scenario, the first account is returned.
 ///
 /// # Returns
 ///
@@ -453,6 +458,7 @@ pub fn upsert_accounts(
     let mut upsert_stmt = transaction.prepare_cached(insert_sql!(
         accounts {
             account_id,
+            id_prefix,
             account_commitment,
             block_num,
             details
@@ -464,6 +470,15 @@ pub fn upsert_accounts(
     let mut count = 0;
     for update in accounts {
         let account_id = update.account_id();
+        // Extract the 30-bit prefix to provide easy look ups for NTB
+        // TODO: this is hacky:
+        // Do not store prefix for accounts that are not network
+        let account_id_prefix = if account_id.is_network() {
+            NetworkAccountPrefix::try_from(account_id)?.inner()
+        } else {
+            0
+        };
+
         let (full_account, insert_delta) = match update.details() {
             AccountUpdateDetails::Private => (None, None),
             AccountUpdateDetails::New(account) => {
@@ -499,6 +514,7 @@ pub fn upsert_accounts(
 
         let inserted = upsert_stmt.execute(params![
             account_id.to_bytes(),
+            account_id_prefix,
             update.final_state_commitment().to_bytes(),
             block_num.as_u32(),
             full_account.as_ref().map(|account| account.to_bytes()),

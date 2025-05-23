@@ -16,14 +16,16 @@ CREATE TABLE block_headers (
     CONSTRAINT block_header_block_num_is_u32 CHECK (block_num BETWEEN 0 AND 0xFFFFFFFF)
 ) STRICT;
 
-CREATE TABLE accounts (
-      account_id            BLOB    NOT NULL,
-      account_commitment    BLOB    NOT NULL,
-      block_num             INTEGER NOT NULL,
-      details               BLOB,
 
-      PRIMARY KEY (account_id),
-      FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
+CREATE TABLE accounts (
+    account_id              BLOB NOT NULL,
+    id_prefix               INTEGER NOT NULL,
+    account_commitment      BLOB NOT NULL,
+    block_num               INTEGER NOT NULL,
+    details                 BLOB,
+
+    PRIMARY KEY (account_id),
+    FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
 ) STRICT, WITHOUT ROWID;
 
 CREATE TABLE notes (

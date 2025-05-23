@@ -142,7 +142,6 @@ impl TryFrom<&RawMintRequest> for PowParameters {
 // POW
 // ================================================================================================
 
-
 #[derive(Clone)]
 pub struct PoW {
     pub(crate) salt: String,

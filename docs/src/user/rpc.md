@@ -90,4 +90,4 @@ notes which should be filtered out by the client.
 
 ## Status
 
-Request the status of the node components.
+Request the status of the node components. The response contains the current version of the RPC component and the connection status of the other components, including it's running version and the chain tip.

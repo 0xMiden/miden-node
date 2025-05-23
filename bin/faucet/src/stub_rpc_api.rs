@@ -44,7 +44,7 @@ impl api_server::Api for StubRpcApi {
         &self,
         _request: Request<GetBlockHeaderByNumberRequest>,
     ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
-        // Values are taken from the default genesis block as at v0.7
+        // Values are taken from the default genesis block as at v0.8
         Ok(Response::new(GetBlockHeaderByNumberResponse {
             block_header: Some(BlockHeader {
                 version: 1,
@@ -52,15 +52,15 @@ impl api_server::Api for StubRpcApi {
                 block_num: 0,
                 chain_commitment: Some(Digest {
                     d0: 0x9729_9D39_2DA8_DC69,
-                    d1: 0x674_44AF_6294_0719,
+                    d1: 0x0674_44AF_6294_0719,
                     d2: 0x7B97_0BC7_07A0_F7D6,
                     d3: 0xE423_8D7C_78F3_9D8B,
                 }),
                 account_root: Some(Digest {
-                    d0: 0x9666_5D75_8487_401A,
-                    d1: 0xB7BF_DF8B_379F_ED71,
-                    d2: 0xFCA7_82CB_2406_2222,
-                    d3: 0x8D0C_B80F_6377_4E9A,
+                    d0: 0xD4A0_CFF6_578C_123E,
+                    d1: 0xF11A_1794_8930_B14A,
+                    d2: 0xD128_DD2A_4213_B53C,
+                    d3: 0x2DF8_FE54_F23F_6B91,
                 }),
                 nullifier_root: Some(Digest {
                     d0: 0xD4A0_CFF6_578C_123E,
@@ -76,13 +76,13 @@ impl api_server::Api for StubRpcApi {
                 }),
                 tx_commitment: Some(Digest { d0: 0, d1: 0, d2: 0, d3: 0 }),
                 tx_kernel_commitment: Some(Digest {
-                    d0: 0x7B6F_43E5_2910_C8C3,
-                    d1: 0x99B3_2868_577E_5779,
-                    d2: 0xAF9E_6424_57CD_B8C1,
-                    d3: 0xB1DD_E61B_F983_2DBD,
+                    d0: 0x7426_1CC3_545B_4661,
+                    d1: 0x8978_5ED8_28C9_B7AB,
+                    d2: 0xC0C3_C134_0497_D9F3,
+                    d3: 0x8D5E_9B8C_2A2E_A43B,
                 }),
                 proof_commitment: Some(Digest { d0: 0, d1: 0, d2: 0, d3: 0 }),
-                timestamp: 0x63B0_CD00,
+                timestamp: 1_746_737_038,
             }),
             mmr_path: None,
             chain_length: None,

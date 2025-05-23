@@ -13,7 +13,7 @@ the cause. Conventionally this has been achieved via metrics and logs respective
 using wide-events/traces and post-processing these instead. We're using the OpenTelemetry standard for this, however we
 are only using the trace pillar and avoid metrics and logs.
 
-We wish to emit these traces without compromising on code quality and readibility. This is also a downside to including
+We wish to emit these traces without compromising on code quality and readability. This is also a downside to including
 metrics - these are usually emitted inline with the code, causing noise and obscuring the business logic. Ideally we
 want to rely almost entirely on `tracing::#[instrument]` to create spans as these live outide the function body.
 
@@ -54,7 +54,7 @@ It is probably worth reading through the naming conventions to get a sense of st
 ### Footguns and common issues
 
 `tracing` requires data to be known statically e.g. you cannot add span attributes dynamically. `tracing-opentelemetry`
-provides a span extention trait which works around this limitation - however this dynamic information is _only_ visible
+provides a span extension trait which works around this limitation - however this dynamic information is _only_ visible
 to the OpenTelemetry processing i.e. `tracing_subscriber` won't see this at all.
 
 In general, you'll find that `tracing` subscribers are blind to any extensions or OpenTelemetry specific concepts. The

@@ -1,6 +1,6 @@
 # Navigating the codebase
 
-The code is organised using a Rust workspace with seprate crates for the node and faucet binaries, a crate for each node
+The code is organised using a Rust workspace with separate crates for the node and faucet binaries, a crate for each node
 component, a couple of gRPC-related codegen crates, and a catch-all utilities crate.
 
 The primary artifacts are the node and faucet binaries. The library crates are not intended for external usage, but

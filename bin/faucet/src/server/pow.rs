@@ -140,7 +140,7 @@ impl TryFrom<&RawMintRequest> for PowParameters {
 /// We store the challenges in a map with the seed as the key to ensure that each challenge is
 /// only used once. Once a challenge is created, it gets added to the map and is removed once the
 /// challenge is solved.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ChallengeCache {
     /// The challenges are stored in a map with the seed as the key to ensure that each challenge
     /// is only used once. Once a challenge is created, it gets added to the map and is removed
@@ -156,12 +156,6 @@ pub struct Challenge {
 }
 
 impl ChallengeCache {
-    pub fn new() -> Self {
-        Self {
-            challenges: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-
     /// Add a challenge to the state.
     pub fn add_challenge(&self, seed: &str, server_signature: String, timestamp: u64) {
         let mut challenges = self.challenges.lock().unwrap();
@@ -331,7 +325,7 @@ mod tests {
 
         assert!(result.is_ok());
 
-        let challenge_state = ChallengeCache::new();
+        let challenge_state = ChallengeCache::default();
         challenge_state.add_challenge(seed, server_signature, timestamp);
         let result = pow_parameters.check_pow_solution(&challenge_state);
 
@@ -354,7 +348,7 @@ mod tests {
         let result = pow_parameters.check_server_signature(server_salt);
         assert!(result.is_err());
 
-        let challenge_state = ChallengeCache::new();
+        let challenge_state = ChallengeCache::default();
         let result = pow_parameters.check_pow_solution(&challenge_state);
 
         assert!(result.is_err());

@@ -69,7 +69,7 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        let challenge_state = pow::ChallengeCache::new();
+        let challenge_state = pow::ChallengeCache::default();
 
         // Start the cleanup task
         let cleanup_state = challenge_state.clone();

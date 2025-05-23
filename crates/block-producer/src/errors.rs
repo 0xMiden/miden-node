@@ -1,14 +1,13 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
-use miden_node_utils::{errors::ErrorReport, formatting::format_opt};
+use miden_node_utils::{ErrorReport, formatting::format_opt};
 use miden_objects::{
-    Digest, ProposedBatchError, ProposedBlockError,
+    Digest, ProposedBatchError, ProposedBlockError, ProvenBatchError,
     block::BlockNumber,
     note::{NoteId, Nullifier},
     transaction::TransactionId,
 };
 use miden_proving_service_client::RemoteProverError;
-use miden_tx_batch_prover::errors::ProvenBatchError;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -148,6 +147,9 @@ pub enum BuildBatchError {
 
     #[error("failed to prove batch with remote prover")]
     RemoteProverError(#[source] RemoteProverError),
+
+    #[error("batch proof security level is too low: {0} < {1}")]
+    SecurityLevelTooLow(u32, u32),
 }
 
 // Block building errors
@@ -169,6 +171,8 @@ pub enum BuildBlockError {
     InjectedFailure,
     #[error("failed to prove block with remote prover")]
     RemoteProverError(#[source] RemoteProverError),
+    #[error("block proof security level is too low: {0} < {1}")]
+    SecurityLevelTooLow(u32, u32),
 }
 
 // Store errors
@@ -178,9 +182,15 @@ pub enum BuildBlockError {
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("gRPC client error")]
-    GrpcClientError(#[from] tonic::Status),
+    GrpcClientError(Box<tonic::Status>),
     #[error("malformed response from store: {0}")]
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
+}
+
+impl From<tonic::Status> for StoreError {
+    fn from(value: tonic::Status) -> Self {
+        StoreError::GrpcClientError(value.into())
+    }
 }

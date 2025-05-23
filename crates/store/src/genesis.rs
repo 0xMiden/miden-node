@@ -1,11 +1,14 @@
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::{
-    ACCOUNT_TREE_DEPTH, Digest,
+    Digest,
     account::{Account, delta::AccountUpdateDetails},
-    block::{BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock},
-    crypto::merkle::{MmrPeaks, SimpleSmt, Smt},
+    block::{
+        AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock,
+    },
+    crypto::merkle::{MmrPeaks, Smt},
     note::Nullifier,
-    utils::serde::{ByteReader, ByteWriter, Deserializable, DeserializationError, Serializable},
+    transaction::OrderedTransactionHeaders,
+    utils::serde::{ByteReader, Deserializable, DeserializationError},
 };
 
 use crate::errors::GenesisError;
@@ -14,11 +17,25 @@ use crate::errors::GenesisError;
 // ================================================================================================
 
 /// Represents the state at genesis, which will be used to derive the genesis block.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenesisState {
     pub accounts: Vec<Account>,
     pub version: u32,
     pub timestamp: u32,
+}
+
+/// A type-safety wrapper ensuring that genesis block data can only be created from
+/// [`GenesisState`].
+pub struct GenesisBlock(ProvenBlock);
+
+impl GenesisBlock {
+    pub fn inner(&self) -> &ProvenBlock {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> ProvenBlock {
+        self.0
+    }
 }
 
 impl GenesisState {
@@ -27,7 +44,7 @@ impl GenesisState {
     }
 
     /// Returns the block header and the account SMT
-    pub fn into_block(self) -> Result<ProvenBlock, GenesisError> {
+    pub fn into_block(self) -> Result<GenesisBlock, GenesisError> {
         let accounts: Vec<BlockAccountUpdate> = self
             .accounts
             .iter()
@@ -38,25 +55,24 @@ impl GenesisState {
                     AccountUpdateDetails::Private
                 };
 
-                BlockAccountUpdate::new(
-                    account.id(),
-                    account.commitment(),
-                    account_update_details,
-                    vec![],
-                )
+                BlockAccountUpdate::new(account.id(), account.commitment(), account_update_details)
             })
             .collect();
 
-        let account_smt: SimpleSmt<ACCOUNT_TREE_DEPTH> =
-            SimpleSmt::with_leaves(accounts.iter().map(|update| {
-                (update.account_id().prefix().into(), update.final_state_commitment().into())
-            }))?;
+        let account_smt = AccountTree::with_entries(
+            accounts
+                .iter()
+                .map(|update| (update.account_id(), update.final_state_commitment())),
+        )
+        .map_err(GenesisError::AccountTree)?;
 
         let empty_nullifiers: Vec<Nullifier> = Vec::new();
         let empty_nullifier_tree = Smt::new();
 
         let empty_output_notes = Vec::new();
         let empty_block_note_tree = BlockNoteTree::empty();
+
+        let empty_transactions = OrderedTransactionHeaders::new_unchecked(Vec::new());
 
         let header = BlockHeader::new(
             self.version,
@@ -75,28 +91,18 @@ impl GenesisState {
         // SAFETY: Header and accounts should be valid by construction.
         // No notes or nullifiers are created at genesis, which is consistent with the above empty
         // block note tree root and empty nullifier tree root.
-        Ok(ProvenBlock::new_unchecked(
+        Ok(GenesisBlock(ProvenBlock::new_unchecked(
             header,
             accounts,
             empty_output_notes,
             empty_nullifiers,
-        ))
+            empty_transactions,
+        )))
     }
 }
 
 // SERIALIZATION
 // ================================================================================================
-
-impl Serializable for GenesisState {
-    fn write_into<W: ByteWriter>(&self, target: &mut W) {
-        assert!(u64::try_from(self.accounts.len()).is_ok(), "too many accounts in GenesisState");
-        target.write_usize(self.accounts.len());
-        target.write_many(&self.accounts);
-
-        target.write_u32(self.version);
-        target.write_u32(self.timestamp);
-    }
-}
 
 impl Deserializable for GenesisState {
     fn read_from<R: ByteReader>(source: &mut R) -> Result<Self, DeserializationError> {

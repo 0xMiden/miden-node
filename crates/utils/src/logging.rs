@@ -57,6 +57,30 @@ pub fn setup_tracing(otel: OpenTelemetry) -> Result<()> {
     tracing::subscriber::set_global_default(subscriber).map_err(Into::into)
 }
 
+/// Initializes tracing to a test exporter.
+///
+/// Allows trace content to be inspected via the returned receiver.
+///
+/// All tests that use this function must be annotated with `#[serial(open_telemetry_tracing)]`.
+/// This forces serialization of all such tests. Otherwise, the tested spans could
+/// be interleaved during runtime. Also, the global exporter could be re-initialized in
+/// the middle of a concurrently running test.
+#[cfg(feature = "testing")]
+pub fn setup_test_tracing() -> Result<(
+    tokio::sync::mpsc::UnboundedReceiver<opentelemetry_sdk::trace::SpanData>,
+    tokio::sync::mpsc::UnboundedReceiver<()>,
+)> {
+    let (exporter, rx_export, rx_shutdown) =
+        opentelemetry_sdk::testing::trace::new_tokio_test_exporter();
+
+    let otel_layer = open_telemetry_layer(exporter);
+    let subscriber = Registry::default()
+        .with(stdout_layer().with_filter(env_or_default_filter()))
+        .with(otel_layer.with_filter(env_or_default_filter()));
+    tracing::subscriber::set_global_default(subscriber)?;
+    Ok((rx_export, rx_shutdown))
+}
+
 fn open_telemetry_layer<S>(
     exporter: impl SpanExporter + 'static,
 ) -> Box<dyn tracing_subscriber::Layer<S> + Send + Sync + 'static>

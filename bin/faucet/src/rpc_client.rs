@@ -1,19 +1,16 @@
-use std::str::FromStr;
+use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::generated::{
-    requests::{
-        GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
-    },
-    rpc::api_client::ApiClient as GeneratedClient,
+use miden_node_proto::generated::requests::{
+    GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
 };
+use miden_node_rpc::ApiClient;
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
     transaction::ProvenTransaction,
 };
 use miden_tx::utils::{Deserializable, Serializable};
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use url::Url;
 
 use crate::faucet::FaucetId;
@@ -21,24 +18,21 @@ use crate::faucet::FaucetId;
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
     #[error("gRPC error encountered")]
-    Transport(#[source] tonic::Status),
+    Transport(#[source] Box<tonic::Status>),
     #[error("error parsing the gRPC response")]
     ResponseParsing(#[source] anyhow::Error),
 }
 
 pub struct RpcClient {
-    inner: GeneratedClient<Channel>,
+    inner: ApiClient,
 }
 
 impl RpcClient {
     /// Creates an RPC client to the given address.
     ///
-    /// Connection is lazy and will re-establish in the background on disconnection.
-    pub fn connect_lazy(url: &Url) -> Result<Self, tonic::transport::Error> {
-        let client = Endpoint::from_str(url.as_ref())?
-            .tls_config(ClientTlsConfig::default().with_native_roots())?
-            .connect_lazy();
-        let client = GeneratedClient::new(client);
+    /// The connection is lazy and will re-establish in the background on disconnection.
+    pub fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
+        let client = ApiClient::connect_lazy(url, Duration::from_millis(timeout_ms), None)?;
 
         Ok(Self { inner: client })
     }
@@ -52,7 +46,7 @@ impl RpcClient {
             .inner
             .get_block_header_by_number(request)
             .await
-            .map_err(RpcError::Transport)?;
+            .map_err(|e| RpcError::Transport(e.into()))?;
 
         let root_block_header = response
             .into_inner()
@@ -76,7 +70,7 @@ impl RpcClient {
             .inner
             .get_account_details(request)
             .await
-            .map_err(RpcError::Transport)?
+            .map_err(|e| RpcError::Transport(e.into()))?
             .into_inner()
             .details
             .context("details field is missing")
@@ -103,6 +97,6 @@ impl RpcClient {
             .submit_proven_transaction(request)
             .await
             .map(|response| response.into_inner().block_height.into())
-            .map_err(RpcError::Transport)
+            .map_err(|e| RpcError::Transport(e.into()))
     }
 }

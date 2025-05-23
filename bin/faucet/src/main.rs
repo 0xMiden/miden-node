@@ -7,13 +7,16 @@ mod types;
 #[cfg(test)]
 mod stub_rpc_api;
 
-use std::{path::PathBuf, str::FromStr};
+use std::{collections::BTreeSet, path::PathBuf};
 
 use anyhow::Context;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use clap::{Parser, Subcommand};
 use faucet::Faucet;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
-use miden_node_utils::{config::load_config, crypto::get_rpo_random_coin, version::LongVersion};
+use miden_node_utils::{
+    config::load_config, crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion,
+};
 use miden_objects::{
     Felt,
     account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
@@ -25,7 +28,6 @@ use rand_chacha::ChaCha20Rng;
 use rpc_client::RpcClient;
 use server::Server;
 use tokio::sync::mpsc;
-use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 
@@ -34,7 +36,10 @@ use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
+const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 const REQUESTS_QUEUE_SIZE: usize = 1000;
+const DEFAULT_API_KEYS_COUNT: &str = "1";
+const API_KEY_PREFIX: &str = "miden_faucet_";
 
 // TODO: we should probably parse this from the config file
 const NETWORK_ID: NetworkId = NetworkId::Testnet;
@@ -56,6 +61,13 @@ pub enum Command {
     Start {
         #[arg(short, long, value_name = "FILE", default_value = FAUCET_CONFIG_FILE_PATH)]
         config: PathBuf,
+
+        /// Enables the exporting of traces for OpenTelemetry.
+        ///
+        /// This can be further configured using environment variables as defined in the official
+        /// OpenTelemetry documentation. See our operator manual for further details.
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL)]
+        open_telemetry: bool,
     },
 
     /// Create a new public faucet account and save to the specified file
@@ -78,7 +90,22 @@ pub enum Command {
         config_path: String,
         #[arg(short, long, default_value = DEFAULT_FAUCET_ACCOUNT_PATH)]
         faucet_account_path: String,
+        #[arg(short, long, default_value = DEFAULT_API_KEYS_COUNT)]
+        generated_api_keys_count: u8,
     },
+}
+
+impl Command {
+    fn open_telemetry(&self) -> OpenTelemetry {
+        if match *self {
+            Command::Start { config: _, open_telemetry } => open_telemetry,
+            _ => false,
+        } {
+            OpenTelemetry::Enabled
+        } else {
+            OpenTelemetry::Disabled
+        }
+    }
 }
 
 // MAIN
@@ -86,21 +113,24 @@ pub enum Command {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    setup_tracing();
-
     let cli = Cli::parse();
+
+    // Configure tracing with optional OpenTelemetry exporting support.
+    miden_node_utils::logging::setup_tracing(cli.command.open_telemetry())
+        .context("failed to initialize logging")?;
 
     run_faucet_command(cli).await
 }
 
 async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     match &cli.command {
-        Command::Start { config } => {
+        // Note: open-telemetry is handled in main.
+        Command::Start { config, open_telemetry: _ } => {
             let config: FaucetConfig =
                 load_config(config).context("failed to load configuration file")?;
 
-            let mut rpc_client =
-                RpcClient::connect_lazy(&config.node_url).context("failed to create RPC client")?;
+            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
+                .context("failed to create RPC client")?;
             let account_file = AccountFile::read(&config.faucet_account_path)
                 .context("failed to load faucet account from file")?;
 
@@ -115,6 +145,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 config.asset_amount_options.clone(),
                 tx_requests,
                 config.pow_salt,
+                BTreeSet::from_iter(config.api_keys),
             );
 
             // Capture in a variable to avoid moving into two branches
@@ -155,8 +186,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let config: FaucetConfig =
                 load_config(config_path).context("failed to load configuration file")?;
 
-            let mut rpc_client =
-                RpcClient::connect_lazy(&config.node_url).context("failed to create RPC client")?;
+            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
+                .context("failed to create RPC client")?;
 
             let genesis_header = rpc_client
                 .get_genesis_header()
@@ -194,14 +225,22 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             println!("Faucet account file successfully created at: {}", output_path.display());
         },
 
-        Command::Init { config_path, faucet_account_path } => {
+        Command::Init {
+            config_path,
+            faucet_account_path,
+            generated_api_keys_count,
+        } => {
             let current_dir =
                 std::env::current_dir().context("failed to open current directory")?;
 
             let config_file_path = current_dir.join(config_path);
 
+            let api_keys =
+                (0..*generated_api_keys_count).map(|_| generate_api_key()).collect::<Vec<_>>();
+
             let config = FaucetConfig {
                 faucet_account_path: faucet_account_path.into(),
+                api_keys,
                 ..FaucetConfig::default()
             };
 
@@ -218,37 +257,13 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn setup_tracing() {
-    use tracing::level_filters::LevelFilter;
-    use tracing_subscriber::{
-        EnvFilter,
-        filter::{FilterExt, Targets},
-    };
-
-    let fmt = tracing_subscriber::fmt::layer().pretty();
-
-    let filter = match std::env::var(EnvFilter::DEFAULT_ENV) {
-        Ok(rust_log) => FilterExt::boxed(
-            EnvFilter::from_str(&rust_log)
-                .expect("RUST_LOG should contain a valid filter configuration"),
-        ),
-        Err(std::env::VarError::NotUnicode(_)) => panic!("RUST_LOG contained non-unicode"),
-        Err(std::env::VarError::NotPresent) => {
-            FilterExt::boxed(
-                Targets::new()
-                    .with_default(LevelFilter::INFO)
-                    // axum Extractor rejections are logged at TRACE and are useful for
-                    // errors.
-                    .with_target("axum::rejection", LevelFilter::TRACE)
-                    // Prover and execution log a bunch at INFO level. Disable these.
-                    .with_target("winter_prover", LevelFilter::WARN)
-                    .with_target("miden_processor", LevelFilter::WARN)
-                    .with_target("miden_prover", LevelFilter::WARN),
-            )
-        },
-    };
-
-    tracing_subscriber::registry().with(fmt.with_filter(filter)).init();
+/// Generates a random API key for the faucet.
+/// The API key is a base64 encoded string with the prefix `miden_faucet_`.
+fn generate_api_key() -> String {
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
+    let mut api_key = [0u8; 32];
+    rng.fill(&mut api_key);
+    format!("{API_KEY_PREFIX}{}", BASE64_STANDARD.encode(api_key))
 }
 
 /// Generates [`LongVersion`] using the metadata generated by build.rs.
@@ -277,11 +292,14 @@ mod test {
         str::FromStr,
     };
 
+    use base64::{Engine, prelude::BASE64_STANDARD};
     use fantoccini::ClientBuilder;
     use serde_json::{Map, json};
     use url::Url;
 
-    use crate::{Cli, config::FaucetConfig, run_faucet_command, stub_rpc_api::serve_stub};
+    use crate::{
+        API_KEY_PREFIX, Cli, config::FaucetConfig, run_faucet_command, stub_rpc_api::serve_stub,
+    };
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
     /// to test the faucet website. It then loads the website and checks that all the requests
@@ -335,7 +353,10 @@ mod test {
             // Run the faucet on this thread's runtime
             rt.block_on(async {
                 run_faucet_command(Cli {
-                    command: crate::Command::Start { config: config_path },
+                    command: crate::Command::Start {
+                        config: config_path,
+                        open_telemetry: false,
+                    },
                 })
                 .await
                 .unwrap();
@@ -394,5 +415,13 @@ mod test {
         // Close the client and kill chromedriver
         client.close().await.unwrap();
         chromedriver.kill().unwrap();
+    }
+
+    #[test]
+    fn test_api_key_generation() {
+        let api_key = crate::generate_api_key();
+        assert!(api_key.starts_with(API_KEY_PREFIX));
+        let decoded = BASE64_STANDARD.decode(&api_key.as_bytes()[API_KEY_PREFIX.len()..]).unwrap();
+        assert_eq!(decoded.len(), 32);
     }
 }

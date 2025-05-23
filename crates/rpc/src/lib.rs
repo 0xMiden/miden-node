@@ -1,4 +1,10 @@
-pub mod server;
+mod client;
+mod server;
+#[cfg(test)]
+mod tests;
+
+pub use client::{ApiClient, MetadataInterceptor};
+pub use server::Rpc;
 
 // CONSTANTS
 // =================================================================================================

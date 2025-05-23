@@ -1,3 +1,4 @@
+use anyhow::Context;
 use miden_node_proto::generated::{
     block::BlockHeader,
     digest::Digest,
@@ -10,12 +11,11 @@ use miden_node_proto::generated::{
     responses::{
         CheckNullifiersByPrefixResponse, CheckNullifiersResponse, GetAccountDetailsResponse,
         GetAccountProofsResponse, GetAccountStateDeltaResponse, GetBlockByNumberResponse,
-        GetBlockHeaderByNumberResponse, GetNotesByIdResponse, SubmitProvenTransactionResponse,
-        SyncNoteResponse, SyncStateResponse,
+        GetBlockHeaderByNumberResponse, GetNotesByIdResponse, RpcStatusResponse,
+        SubmitProvenTransactionResponse, SyncNoteResponse, SyncStateResponse,
     },
     rpc::api_server,
 };
-use miden_node_utils::errors::ApiError;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
@@ -57,10 +57,10 @@ impl api_server::Api for StubRpcApi {
                     d3: 0xE423_8D7C_78F3_9D8B,
                 }),
                 account_root: Some(Digest {
-                    d0: 0x8376_1091_8A4C_E7C0,
-                    d1: 0xA569_B0BE_10ED_30AC,
-                    d2: 0x73EA_6699_EC30_7B1B,
-                    d3: 0xC95C_3F75_1F0A_AEC8,
+                    d0: 0xD4A0_CFF6_578C_123E,
+                    d1: 0xF11A_1794_8930_B14A,
+                    d2: 0xD128_DD2A_4213_B53C,
+                    d3: 0x2DF8_FE54_F23F_6B91,
                 }),
                 nullifier_root: Some(Digest {
                     d0: 0xD4A0_CFF6_578C_123E,
@@ -76,10 +76,10 @@ impl api_server::Api for StubRpcApi {
                 }),
                 tx_commitment: Some(Digest { d0: 0, d1: 0, d2: 0, d3: 0 }),
                 tx_kernel_commitment: Some(Digest {
-                    d0: 0xFEE7_E5A0_482C_E43F,
-                    d1: 0x387F_052B_7431_E015,
-                    d2: 0xD3E8_5A17_4038_8CC9,
-                    d3: 0x8E0D_57DE_180E_520B,
+                    d0: 0x7426_1CC3_545B_4661,
+                    d1: 0x8978_5ED8_28C9_B7AB,
+                    d2: 0xC0C3_C134_0497_D9F3,
+                    d3: 0x8D5E_9B8C_2A2E_A43B,
                 }),
                 proof_commitment: Some(Digest { d0: 0, d1: 0, d2: 0, d3: 0 }),
                 timestamp: 1_746_737_038,
@@ -144,12 +144,16 @@ impl api_server::Api for StubRpcApi {
     ) -> Result<Response<GetAccountProofsResponse>, Status> {
         unimplemented!()
     }
+
+    async fn status(&self, _request: Request<()>) -> Result<Response<RpcStatusResponse>, Status> {
+        unimplemented!()
+    }
 }
 
-pub async fn serve_stub(endpoint: &Url) -> Result<(), ApiError> {
+pub async fn serve_stub(endpoint: &Url) -> anyhow::Result<()> {
     let addr = endpoint
         .socket_addrs(|| None)
-        .map_err(ApiError::EndpointToSocketFailed)?
+        .context("failed to convert endpoint to socket address")?
         .into_iter()
         .next()
         .unwrap();
@@ -159,8 +163,8 @@ pub async fn serve_stub(endpoint: &Url) -> Result<(), ApiError> {
 
     tonic::transport::Server::builder()
         .accept_http1(true)
-        .add_service(tonic_web::enable(api_service))
+        .add_service(tonic_web::enable(api_service)) // tonic_web::enable is needed to support grpc-web calls
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await
-        .map_err(ApiError::ApiServeFailed)
+        .context("failed to serve stub RPC API")
 }

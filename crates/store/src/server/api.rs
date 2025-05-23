@@ -1,4 +1,9 @@
-use std::{collections::BTreeSet, convert::Infallible, sync::Arc};
+use std::{
+    collections::BTreeSet,
+    convert::Infallible,
+    num::{NonZero, TryFromIntError},
+    sync::Arc,
+};
 
 use miden_node_proto::{
     convert,
@@ -19,7 +24,8 @@ use miden_node_proto::{
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
             GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
-            GetTransactionInputsResponse, NullifierTransactionInputRecord, NullifierUpdate,
+            GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
+            NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
         },
         store::api_server,
@@ -31,13 +37,13 @@ use miden_objects::{
     account::AccountId,
     block::{BlockNumber, ProvenBlock},
     crypto::hash::rpo::RpoDigest,
-    note::{NoteId, Nullifier},
+    note::{Note, NoteId, Nullifier},
     utils::{Deserializable, Serializable},
 };
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
-use crate::{COMPONENT, state::State};
+use crate::{COMPONENT, db::Page, state::State};
 
 // STORE API
 // ================================================================================================
@@ -277,7 +283,7 @@ impl api_server::Api for StoreApi {
         request: Request<GetAccountDetailsRequest>,
     ) -> Result<Response<GetAccountDetailsResponse>, Status> {
         let request = request.into_inner();
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
@@ -400,7 +406,7 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let nullifiers = validate_nullifiers(&request.nullifiers)?;
         let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
 
@@ -506,7 +512,7 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let delta = self
             .state
             .get_account_state_delta(
@@ -518,6 +524,59 @@ impl api_server::Api for StoreApi {
             .map(|delta| delta.to_bytes());
 
         Ok(Response::new(GetAccountStateDeltaResponse { delta }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.get_unconsumed_network_notes",
+        skip_all,
+        err
+    )]
+    async fn get_unconsumed_network_notes(
+        &self,
+        request: Request<generated::requests::GetUnconsumedNetworkNotesRequest>,
+    ) -> Result<Response<GetUnconsumedNetworkNotesResponse>, Status> {
+        let request = request.into_inner();
+        let state = self.state.clone();
+
+        let size =
+            NonZero::try_from(request.page_size as usize).map_err(|err: TryFromIntError| {
+                invalid_argument(format!("Invalid page_size: {err}"))
+            })?;
+        let page = Page { token: request.page_token, size };
+        // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created
+        // instead
+        let (notes, next_page) =
+            state.get_unconsumed_network_notes(page).await.map_err(internal_error)?;
+
+        let mut network_notes = Vec::with_capacity(notes.len());
+        for note in notes {
+            // SAFETY: Network notes are filtered in the database, so they should have details;
+            // otherwise the state would be corrupted
+            let (assets, recipient) = note.details.unwrap().into_parts();
+            let note = Note::new(assets, note.metadata, recipient);
+            network_notes.push(note.into());
+        }
+
+        Ok(Response::new(GetUnconsumedNetworkNotesResponse {
+            notes: network_notes,
+            next_token: next_page.token,
+        }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.status",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
+        Ok(Response::new(StoreStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: self.state.latest_block_num().await.as_u32(),
+        }))
     }
 }
 
@@ -534,15 +593,13 @@ fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
     Status::invalid_argument(err.to_string())
 }
 
-#[allow(clippy::result_large_err)]
-fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Status> {
+fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Box<Status>> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
-        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")))
+        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
-#[allow(clippy::result_large_err)]
 fn read_account_ids(
     account_ids: &[generated::account::AccountId],
 ) -> Result<Vec<AccountId>, Status> {

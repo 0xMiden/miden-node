@@ -1,54 +1,49 @@
 use std::net::SocketAddr;
 
-use api::RpcService;
+use accept::AcceptLayer;
+use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
-use miden_node_utils::errors::ApiError;
+use miden_node_utils::tracing::grpc::rpc_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
+use tower_http::trace::TraceLayer;
 use tracing::info;
 
 use crate::COMPONENT;
 
+mod accept;
 mod api;
 
-/// Represents an initialized rpc component where the RPC connection is open, but not yet actively
-/// responding to requests.
+/// The RPC server component.
 ///
-/// Separating the connection binding from the server spawning allows the caller to connect other
-/// components to the store without resorting to sleeps or other mechanisms to spawn dependent
-/// components.
+/// On startup, binds to the provided listener and starts serving the RPC API.
+/// It connects lazily to the store and block producer components as needed.
+/// Requests will fail if the components are not available.
 pub struct Rpc {
-    api_service: api_server::ApiServer<RpcService>,
-    listener: TcpListener,
+    pub listener: TcpListener,
+    pub store: SocketAddr,
+    pub block_producer: Option<SocketAddr>,
 }
 
 impl Rpc {
-    pub async fn init(
-        listener: TcpListener,
-        store: SocketAddr,
-        block_producer: SocketAddr,
-    ) -> Result<Self, ApiError> {
-        info!(target: COMPONENT, endpoint=?listener, %store, %block_producer, "Initializing server");
-
-        let api = api::RpcService::new(store, block_producer)
-            .await
-            .map_err(|err| ApiError::ApiInitialisationFailed(err.to_string()))?;
-        let api_service = api_server::ApiServer::new(api);
-
-        info!(target: COMPONENT, "Server initialized");
-
-        Ok(Self { api_service, listener })
-    }
-
     /// Serves the RPC API.
     ///
-    /// Note: this blocks until the server dies.
-    pub async fn serve(self) -> Result<(), ApiError> {
+    /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
+    ///       a fatal error is encountered.
+    pub async fn serve(self) -> anyhow::Result<()> {
+        let api = api::RpcService::new(self.store, self.block_producer);
+        let api_service = api_server::ApiServer::new(api);
+
+        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
+
         tonic::transport::Server::builder()
             .accept_http1(true)
-            .add_service(tonic_web::enable(self.api_service))
+            .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
+            .layer(AcceptLayer::new()?)
+            // Enables gRPC-web support.
+            .add_service(tonic_web::enable(api_service))
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
-            .map_err(ApiError::ApiServeFailed)
+            .context("failed to serve RPC API")
     }
 }

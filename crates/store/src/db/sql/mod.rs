@@ -22,7 +22,7 @@ use miden_objects::{
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, NoteMetadata, NoteType, Nullifier},
-    transaction::TransactionId,
+    transaction::{OrderedTransactionHeaders, TransactionId},
     utils::serde::{Deserializable, Serializable},
 };
 use rusqlite::{params, types::Value};
@@ -42,6 +42,14 @@ use crate::{
     },
     errors::{DatabaseError, NoteSyncError, StateSyncError},
 };
+
+/// The page token and size to query from the DB.
+#[derive(Debug, Copy, Clone)]
+pub struct Page {
+    pub token: Option<u64>,
+    pub size: NonZeroUsize,
+}
+
 // ACCOUNT QUERIES
 // ================================================================================================
 
@@ -696,7 +704,10 @@ pub fn select_nullifiers_by_prefix(
 #[cfg(test)]
 pub fn select_all_notes(transaction: &Transaction) -> Result<Vec<NoteRecord>> {
     let mut stmt = transaction.prepare_cached(&format!(
-        "SELECT {} FROM notes ORDER BY block_num ASC",
+        "SELECT {}
+        FROM notes
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+        ORDER BY block_num ASC",
         NoteRecord::SELECT_COLUMNS,
     ))?;
     let mut rows = stmt.query([])?;
@@ -735,13 +746,15 @@ pub fn insert_notes(
         execution_hint,
         merkle_path,
         consumed,
-        details,
         nullifier,
+        assets,
+        inputs,
+        script_root,
+        serial_num,
     }))?;
 
     let mut count = 0;
     for (note, nullifier) in notes {
-        let details = note.details.as_ref().map(Serializable::to_bytes);
         count += stmt.execute(params![
             note.block_num.as_u32(),
             note.note_index.batch_idx(),
@@ -756,10 +769,44 @@ pub fn insert_notes(
             note.merkle_path.to_bytes(),
             // New notes are always unconsumed.
             false,
-            details,
             // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
             nullifier.as_ref().map(Nullifier::to_bytes),
+            note.details.as_ref().map(|d| d.assets().to_bytes()),
+            note.details.as_ref().map(|d| d.inputs().to_bytes()),
+            note.details.as_ref().map(|d| d.script().root().to_bytes()),
+            note.details.as_ref().map(|d| d.serial_num().to_bytes()),
         ])?;
+    }
+
+    Ok(count)
+}
+
+/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts holded by the
+/// notes passed as parameter. If the script root already exists in the DB, it will be ignored.
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
+pub fn insert_scripts<'a>(
+    transaction: &Transaction,
+    notes: impl IntoIterator<Item = &'a NoteRecord>,
+) -> Result<usize> {
+    let mut stmt =
+        transaction.prepare_cached(insert_sql!(note_scripts { script_root, script } | IGNORE))?;
+
+    let mut count = 0;
+    for note in notes {
+        if let Some(ref details) = note.details {
+            count += stmt.execute(params![
+                details.script().root().to_bytes(),
+                details.script().to_bytes(),
+            ])?;
+        }
     }
 
     Ok(count)
@@ -845,7 +892,10 @@ pub fn select_notes_by_id(
     let note_ids: Vec<Value> = note_ids.iter().map(|id| id.to_bytes().into()).collect();
 
     let mut stmt = transaction.prepare_cached(&format!(
-        "SELECT {} FROM notes WHERE note_id IN rarray(?1)",
+        "SELECT {} 
+        FROM notes
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+        WHERE note_id IN rarray(?1)",
         NoteRecord::SELECT_COLUMNS
     ))?;
     let mut rows = stmt.query(params![Rc::new(note_ids)])?;
@@ -918,14 +968,12 @@ pub fn select_note_inclusion_proofs(
 ///
 /// # Returns
 ///
-/// A set of unconsumed network notes with maximum length of `limit` and a pagination token to get
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
 /// the next set.
-#[cfg_attr(not(test), expect(dead_code, reason = "gRPC method is not yet implemented"))]
 pub fn unconsumed_network_notes(
     transaction: &Transaction,
-    mut token: PaginationToken,
-    limit: NonZeroUsize,
-) -> Result<(Vec<NoteRecord>, PaginationToken)> {
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page)> {
     assert_eq!(
         NoteExecutionMode::Network as u8,
         0,
@@ -938,7 +986,9 @@ pub fn unconsumed_network_notes(
     // `NoteRecord::from_row` call.
     let mut stmt = transaction.prepare_cached(&format!(
         "
-        SELECT {}, rowid FROM notes
+        SELECT {}, rowid 
+        FROM notes
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
             execution_mode = 0 AND consumed = FALSE AND rowid >= ?
         ORDER BY rowid
@@ -947,21 +997,22 @@ pub fn unconsumed_network_notes(
         NoteRecord::SELECT_COLUMNS
     ))?;
 
-    let mut rows = stmt.query(params![token.0, limit])?;
+    // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
+    // check if there are more notes for the next page.
+    let mut rows = stmt.query(params![page.token.unwrap_or(0), page.size.get() + 1])?;
 
-    let mut notes = Vec::with_capacity(limit.into());
+    page.token = None;
+    let mut notes = Vec::with_capacity(page.size.into());
     while let Some(row) = rows.next()? {
+        if notes.len() == page.size.get() {
+            page.token = Some(row.get::<_, u64>(14)?);
+            break;
+        }
         notes.push(NoteRecord::from_row(row)?);
-        // Increment by 1 because we are using rowid >=, and otherwise we would include the last
-        // element in the next page as well.
-        token.0 = row.get::<_, i64>(11)? + 1;
     }
 
-    Ok((notes, token))
+    Ok((notes, page))
 }
-
-#[derive(Default, Debug, Copy, Clone)]
-pub struct PaginationToken(i64);
 
 // BLOCK CHAIN QUERIES
 // ================================================================================================
@@ -1077,7 +1128,7 @@ pub fn select_all_block_headers(transaction: &Transaction) -> Result<Vec<BlockHe
 pub fn insert_transactions(
     transaction: &Transaction,
     block_num: BlockNumber,
-    accounts: &[BlockAccountUpdate],
+    transactions: &OrderedTransactionHeaders,
 ) -> Result<usize> {
     let mut stmt = transaction.prepare_cached(insert_sql!(transactions {
         transaction_id,
@@ -1085,15 +1136,12 @@ pub fn insert_transactions(
         block_num
     }))?;
     let mut count = 0;
-    for update in accounts {
-        let account_id = update.account_id();
-        for transaction_id in update.transactions() {
-            count += stmt.execute(params![
-                transaction_id.to_bytes(),
-                account_id.to_bytes(),
-                block_num.as_u32()
-            ])?;
-        }
+    for tx in transactions.as_slice() {
+        count += stmt.execute(params![
+            tx.id().to_bytes(),
+            tx.account_id().to_bytes(),
+            block_num.as_u32()
+        ])?;
     }
     Ok(count)
 }
@@ -1224,13 +1272,15 @@ pub fn apply_block(
     notes: &[(NoteRecord, Option<Nullifier>)],
     nullifiers: &[Nullifier],
     accounts: &[BlockAccountUpdate],
+    transactions: &OrderedTransactionHeaders,
 ) -> Result<usize> {
     let mut count = 0;
     // Note: ordering here is important as the relevant tables have FK dependencies.
     count += insert_block_header(transaction, block_header)?;
     count += upsert_accounts(transaction, accounts, block_header.block_num())?;
+    count += insert_scripts(transaction, notes.iter().map(|(note, _)| note))?;
     count += insert_notes(transaction, notes)?;
-    count += insert_transactions(transaction, block_header.block_num(), accounts)?;
+    count += insert_transactions(transaction, block_header.block_num(), transactions)?;
     count += insert_nullifiers_for_block(transaction, nullifiers, block_header.block_num())?;
     Ok(count)
 }

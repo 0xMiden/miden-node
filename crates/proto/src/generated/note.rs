@@ -44,6 +44,19 @@ pub struct Note {
     #[prost(bytes = "vec", optional, tag = "6")]
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
+/// Represents a network note.
+///
+/// The note is composed of the note metadata and its serialized details. The note's tag
+/// must express that the note is for network usage instead of local.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NetworkNote {
+    /// The note's metadata.
+    #[prost(message, optional, tag = "1")]
+    pub metadata: ::core::option::Option<NoteMetadata>,
+    /// Serialized note details (i.e., assets and recipient).
+    #[prost(bytes = "vec", tag = "2")]
+    pub details: ::prost::alloc::vec::Vec<u8>,
+}
 /// Represents a proof of note's inclusion in a block.
 ///
 /// Does not include proof of the block's inclusion in the chain.

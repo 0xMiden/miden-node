@@ -45,13 +45,12 @@ impl AuthenticatedTransaction {
     /// # Errors
     ///
     /// Returns an error if any of the transaction's nullifiers are marked as spent by the inputs.
-    #[allow(clippy::result_large_err)]
     pub fn new(
         tx: ProvenTransaction,
         inputs: TransactionInputs,
     ) -> Result<AuthenticatedTransaction, VerifyTxError> {
         let nullifiers_already_spent = tx
-            .get_nullifiers()
+            .nullifiers()
             .filter(|nullifier| inputs.nullifiers.get(nullifier).copied().flatten().is_some())
             .collect::<Vec<_>>();
         if !nullifiers_already_spent.is_empty() {
@@ -87,7 +86,7 @@ impl AuthenticatedTransaction {
     }
 
     pub fn nullifiers(&self) -> impl Iterator<Item = Nullifier> + '_ {
-        self.inner.get_nullifiers()
+        self.inner.nullifiers()
     }
 
     pub fn output_notes(&self) -> impl Iterator<Item = NoteId> + '_ {
@@ -110,7 +109,7 @@ impl AuthenticatedTransaction {
     /// not authenticated by the store inputs.
     pub fn unauthenticated_notes(&self) -> impl Iterator<Item = NoteId> + '_ {
         self.inner
-            .get_unauthenticated_notes()
+            .unauthenticated_notes()
             .copied()
             .map(|header| header.id())
             .filter(|note_id| !self.notes_authenticated_by_store.contains(note_id))
@@ -144,7 +143,7 @@ impl AuthenticatedTransaction {
         let inputs = TransactionInputs {
             account_id: inner.account_id(),
             account_commitment: store_account_state,
-            nullifiers: inner.get_nullifiers().map(|nullifier| (nullifier, None)).collect(),
+            nullifiers: inner.nullifiers().map(|nullifier| (nullifier, None)).collect(),
             found_unauthenticated_notes: BTreeSet::default(),
             current_block_height: 0.into(),
         };

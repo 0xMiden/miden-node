@@ -21,9 +21,9 @@ target/
 .code/
 .fleet/
 
-# Genesis files
+# Node files
 /accounts
-genesis.dat
+/data
 
 # Sqlite db files
 *.sqlite3

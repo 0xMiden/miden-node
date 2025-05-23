@@ -8,6 +8,7 @@ use miden_lib::{
 use miden_objects::{
     AccountError, Digest, Felt, NoteError,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
+    assembly::DefaultSourceManager,
     asset::FungibleAsset,
     block::BlockNumber,
     crypto::{
@@ -16,8 +17,8 @@ use miden_objects::{
     },
     note::Note,
     transaction::{
-        ChainMmr, ExecutedTransaction, ProvenTransaction, TransactionArgs, TransactionId,
-        TransactionWitness,
+        ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction, TransactionArgs,
+        TransactionId, TransactionWitness,
     },
     vm::AdviceMap,
 };
@@ -138,7 +139,6 @@ type MintResult<T> = Result<T, MintError>;
 
 /// Error indicating what went wrong in the minting process for a request.
 #[derive(Debug, thiserror::Error)]
-#[allow(clippy::large_enum_variant)]
 pub enum MintError {
     #[error("compiling the tx script failed")]
     ScriptCompilation(#[source] AccountInterfaceError),
@@ -208,8 +208,8 @@ impl Faucet {
             .await
             .context("fetching genesis header from the node")?;
 
-        // SAFETY: An empty chain MMR should be valid.
-        let genesis_chain_mmr = ChainMmr::new(
+        // SAFETY: An empty Partial Blockchain should be valid.
+        let genesis_chain_mmr = PartialBlockchain::new(
             PartialMmr::from_peaks(
                 MmrPeaks::new(0, Vec::new()).expect("Empty MmrPeak should be valid"),
             ),
@@ -389,6 +389,10 @@ impl Faucet {
         // Build the note
         let notes = p2id_notes.into_inner();
         let tx_args = self.compile(&notes)?;
+
+        self.data_store
+            .load_transaction_script(tx_args.tx_script().expect("should have script"));
+
         updater.send_updates(MintUpdate::Built).await;
 
         // Execute the transaction
@@ -409,7 +413,6 @@ impl Faucet {
     }
 
     /// Compiles the transaction script that creates the given set of notes.
-    #[allow(clippy::result_large_err)]
     fn compile(&self, notes: &[Note]) -> MintResult<TransactionArgs> {
         let partial_notes = notes.iter().map(Into::into).collect::<Vec<_>>();
         let script = self
@@ -417,7 +420,8 @@ impl Faucet {
             .build_send_notes_script(&partial_notes, None, false)
             .map_err(MintError::ScriptCompilation)?;
 
-        let mut transaction_args = TransactionArgs::new(Some(script), None, AdviceMap::new());
+        let mut transaction_args =
+            TransactionArgs::new(Some(script), None, AdviceMap::new(), vec![]);
         transaction_args.extend_output_note_recipients(notes);
 
         Ok(transaction_args)
@@ -428,7 +432,13 @@ impl Faucet {
         tx_args: TransactionArgs,
     ) -> MintResult<ExecutedTransaction> {
         self.tx_executor
-            .execute_transaction(self.id.inner(), BlockNumber::GENESIS, &[], tx_args)
+            .execute_transaction(
+                self.id.inner(),
+                BlockNumber::GENESIS,
+                InputNotes::default(),
+                tx_args,
+                Arc::new(DefaultSourceManager::default()),
+            )
             .await
             .map_err(MintError::Execution)
     }
@@ -476,7 +486,6 @@ impl P2IdNotes {
     /// # Errors
     ///
     /// Returns an error if creating any p2id note fails.
-    #[allow(clippy::result_large_err)]
     fn build(
         source: FaucetId,
         requests: &[MintRequest],
@@ -551,7 +560,7 @@ mod tests {
     #[tokio::test]
     async fn faucet_batches_requests() {
         let stub_node_url = Url::from_str("http://localhost:50052").unwrap();
-        let mut rpc_client = RpcClient::connect_lazy(&stub_node_url).unwrap();
+        let mut rpc_client = RpcClient::connect_lazy(&stub_node_url, 1000).unwrap();
 
         // Start the stub node
         tokio::spawn(async move { serve_stub(&stub_node_url).await.unwrap() });
@@ -602,6 +611,11 @@ mod tests {
         // Build and execute the transaction
         let notes = P2IdNotes::build(faucet.faucet_id(), &requests, &mut rng).unwrap().into_inner();
         let tx_args = faucet.compile(&notes).unwrap();
+
+        faucet
+            .data_store
+            .load_transaction_script(tx_args.tx_script().expect("should have script"));
+
         let executed_tx = faucet.execute_transaction(tx_args).await.unwrap();
 
         assert_eq!(executed_tx.output_notes().num_notes(), num_requests as usize);

@@ -1,13 +1,12 @@
-use std::sync::Mutex;
+use std::{collections::BTreeSet, sync::Mutex};
 
 use miden_objects::{
-    Word,
+    MastForest, Word,
     account::{Account, AccountId},
     block::{BlockHeader, BlockNumber},
-    note::NoteId,
-    transaction::{ChainMmr, InputNotes, TransactionInputs},
+    transaction::{PartialBlockchain, TransactionScript},
 };
-use miden_tx::{DataStore, DataStoreError};
+use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 use winter_maybe_async::maybe_async_trait;
 
 pub struct FaucetDataStore {
@@ -15,7 +14,8 @@ pub struct FaucetDataStore {
     /// Optional initial seed used for faucet account creation.
     init_seed: Option<Word>,
     block_header: BlockHeader,
-    chain_mmr: ChainMmr,
+    partial_block_chain: PartialBlockchain,
+    mast_store: TransactionMastStore,
 }
 
 // FAUCET DATA STORE
@@ -26,13 +26,17 @@ impl FaucetDataStore {
         faucet_account: Account,
         init_seed: Option<Word>,
         block_header: BlockHeader,
-        chain_mmr: ChainMmr,
+        partial_block_chain: PartialBlockchain,
     ) -> Self {
+        let mast_store = TransactionMastStore::new();
+        mast_store.insert(faucet_account.code().mast());
+
         Self {
             faucet_account: Mutex::new(faucet_account),
             init_seed,
             block_header,
-            chain_mmr,
+            partial_block_chain,
+            mast_store,
         }
     }
 
@@ -45,6 +49,14 @@ impl FaucetDataStore {
     pub fn update_faucet_state(&self, new_faucet_state: Account) {
         *self.faucet_account.lock().expect("Poisoned lock") = new_faucet_state;
     }
+
+    /// Updates the stored faucet account with the new one.
+    pub fn load_transaction_script(&self, tx_script: &TransactionScript) {
+        // TODO: because the script string is interpolated, the MAST is different and needs to be
+        // loaded each time. Maybe it should be compiled once and inputs could be passed some other
+        // way
+        self.mast_store.insert(tx_script.mast().clone());
+    }
 }
 
 #[maybe_async_trait(?Send)]
@@ -53,21 +65,24 @@ impl DataStore for FaucetDataStore {
     fn get_transaction_inputs(
         &self,
         account_id: AccountId,
-        _block_ref: BlockNumber,
-        _notes: &[NoteId],
-    ) -> Result<TransactionInputs, DataStoreError> {
+        _ref_blocks: BTreeSet<BlockNumber>,
+    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
         let account = self.faucet_account.lock().expect("Poisoned lock");
         if account_id != account.id() {
             return Err(DataStoreError::AccountNotFound(account_id));
         }
 
-        TransactionInputs::new(
+        Ok((
             account.clone(),
             account.is_new().then_some(self.init_seed).flatten(),
             self.block_header.clone(),
-            self.chain_mmr.clone(),
-            InputNotes::default(),
-        )
-        .map_err(DataStoreError::InvalidTransactionInput)
+            self.partial_block_chain.clone(),
+        ))
+    }
+}
+
+impl MastForestStore for FaucetDataStore {
+    fn get(&self, procedure_hash: &miden_objects::Digest) -> Option<std::sync::Arc<MastForest>> {
+        self.mast_store.get(procedure_hash)
     }
 }

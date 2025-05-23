@@ -1,10 +1,24 @@
 # Changelog
 
-## Unreleased
+## v0.9.0 (TBD)
 
+### Changes
+
+- [BREAKING] Simplified node bootstrapping (#776).
+  - Database is now created during bootstrap process instead of on first startup.
+  - Data directory is no longer created but is instead expected to exist.
+  - The genesis block can no longer be configured which also removes the `store dump-genesis` command.
+- [BREAKING] Use `AccountTree` and update account witness proto definitions (#783).
+- Enabled running RPC component in `read-only` mode (#802).
+- [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
+- Added gRPC `/status` endpoint on all components (#817).
+- Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
+- [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
 - Faucet now supports the usage of a remote transaction prover (#830).
 - [BUGFIX] Prevents duplicated note IDs (#842).
 - Added a required Proof-of-Work in the faucet to request tokens (#831).
+- Added an optional API key request parameter to skip PoW in faucet (#839).
+- Block producer now emits network note information (#805).
 
 ## v0.8.2 (2025-05-04)
 
@@ -18,7 +32,7 @@
 ### Fixes
 
 - Faucet times out during high load (#819).
- 
+
 ## v0.8.0 (2025-03-26)
 
 ### Enhancements
@@ -40,7 +54,6 @@
 - Optimized database by adding missing indexes (#728).
 - Added support for `Content-type` header in `get_tokens` endpoint of the faucet (#754).
 - Block frequency is now configurable (#750).
-- Batch frequency is now configurable (#750).
 
 ### Changes
 
@@ -51,7 +64,7 @@
 - [BREAKING] Update `GetBlockInputs` RPC (#709).
 - [BREAKING] Added `batch_prover_url` to block producer configuration (#701).
 - [BREAKING] Added `block_prover_url` to block producer configuration (#719).
-- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723). 
+- [BREAKING] Removed `miden-rpc-proto` and introduced `miden-node-proto-build` (#723).
 - [BREAKING] Updated to Rust Edition 2024 (#727).
 - [BREAKING] MSRV bumped to 1.85 (#727).
 - [BREAKING] Replaced `toml` configuration with CLI (#732).

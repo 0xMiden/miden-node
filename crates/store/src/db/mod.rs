@@ -1,21 +1,24 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs::{self, create_dir_all},
     path::PathBuf,
-    sync::Arc,
 };
 
+use anyhow::Context;
+use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
     generated::note as proto,
 };
 use miden_objects::{
+    Word,
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
-    note::{NoteId, NoteInclusionProof, NoteMetadata, Nullifier},
+    note::{
+        NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
+        NoteRecipient, NoteScript, Nullifier,
+    },
     transaction::TransactionId,
-    utils::Serializable,
 };
 use sql::utils::{column_value_as_u64, read_block_number};
 use tokio::sync::oneshot;
@@ -23,18 +26,18 @@ use tracing::{info, info_span, instrument};
 
 use crate::{
     COMPONENT,
-    blocks::BlockStore,
     db::{
         migrations::apply_migrations,
         pool_manager::{Pool, SqlitePoolManager},
     },
-    errors::{DatabaseError, DatabaseSetupError, GenesisError, NoteSyncError, StateSyncError},
-    genesis::GenesisState,
+    errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
+    genesis::GenesisBlock,
 };
 
 mod migrations;
 #[macro_use]
 mod sql;
+pub use sql::Page;
 
 mod connection;
 mod pool_manager;
@@ -70,7 +73,7 @@ pub struct NoteRecord {
     pub note_index: BlockNoteIndex,
     pub note_id: RpoDigest,
     pub metadata: NoteMetadata,
-    pub details: Option<Vec<u8>>,
+    pub details: Option<NoteDetails>,
     pub merkle_path: MerklePath,
 }
 
@@ -87,7 +90,10 @@ impl NoteRecord {
             aux,
             execution_hint,
             merkle_path,
-            details
+            assets,
+            inputs,
+            script,
+            serial_num
     ";
 
     /// Parses a row from the `notes` table. The sql selection must use [`Self::SELECT_COLUMNS`] to
@@ -110,8 +116,34 @@ impl NoteRecord {
         let execution_hint = column_value_as_u64(row, 8)?;
         let merkle_path_data = row.get_ref(9)?.as_blob()?;
         let merkle_path = MerklePath::read_from_bytes(merkle_path_data)?;
-        let details_data = row.get_ref(10)?.as_blob_or_null()?;
-        let details = details_data.map(<Vec<u8>>::read_from_bytes).transpose()?;
+
+        let assets = row.get_ref(10)?.as_blob_or_null()?;
+        let inputs = row.get_ref(11)?.as_blob_or_null()?;
+        let script = row.get_ref(12)?.as_blob_or_null()?;
+        let serial_num = row.get_ref(13)?.as_blob_or_null()?;
+
+        debug_assert!(
+            (assets.is_some() && inputs.is_some() && script.is_some() && serial_num.is_some())
+                || (assets.is_none()
+                    && inputs.is_none()
+                    && script.is_none()
+                    && serial_num.is_none()),
+            "assets, inputs, script, serial_num must be either all present or all absent"
+        );
+        let details = if let (Some(assets), Some(inputs), Some(script), Some(serial_num)) =
+            (assets, inputs, script, serial_num)
+        {
+            Some(NoteDetails::new(
+                NoteAssets::read_from_bytes(assets)?,
+                NoteRecipient::new(
+                    Word::read_from_bytes(serial_num)?,
+                    NoteScript::from_bytes(script)?,
+                    NoteInputs::read_from_bytes(inputs)?,
+                ),
+            ))
+        } else {
+            None
+        };
 
         let metadata =
             NoteMetadata::new(sender, note_type, tag.into(), execution_hint.try_into()?, aux)?;
@@ -135,7 +167,7 @@ impl From<NoteRecord> for proto::Note {
             note_id: Some(note.note_id.into()),
             metadata: Some(note.metadata.into()),
             merkle_path: Some(Into::into(&note.merkle_path)),
-            details: note.details,
+            details: note.details.as_ref().map(Serializable::to_bytes),
         }
     }
 }
@@ -187,21 +219,44 @@ impl From<NoteRecord> for NoteSyncRecord {
 }
 
 impl Db {
-    /// Open a connection to the DB, apply any pending migrations, and ensure that the genesis block
-    /// is as expected and present in the database.
-    // TODO: This span is logged in a root span, we should connect it to the parent one.
+    /// Creates a new database and inserts the genesis block.
+    #[instrument(
+        target = COMPONENT,
+        name = "store.database.bootstrap",
+        skip_all,
+        fields(path=%database_filepath.display())
+        err,
+    )]
+    pub fn bootstrap(database_filepath: PathBuf, genesis: &GenesisBlock) -> anyhow::Result<()> {
+        // Create database.
+        //
+        // This will create the file if it does not exist, but will also happily open it if already
+        // exists. In the latter case we will error out when attempting to insert the genesis
+        // block so this isn't such a problem.
+        let mut conn = connection::Connection::open(database_filepath)
+            .context("failed to open a database connection")?;
+
+        // Run migrations.
+        apply_migrations(&mut conn).context("failed to apply database migrations")?;
+
+        // Insert genesis block data.
+        let db_tx = conn.transaction().context("failed to create database transaction")?;
+        let genesis = genesis.inner();
+        sql::apply_block(
+            &db_tx,
+            genesis.header(),
+            &[],
+            &[],
+            genesis.updated_accounts(),
+            genesis.transactions(),
+        )
+        .context("failed to insert genesis block")?;
+        db_tx.commit().context("failed to commit database transaction")
+    }
+
+    /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
-    pub async fn setup(
-        database_filepath: PathBuf,
-        genesis_filepath: &str,
-        block_store: Arc<BlockStore>,
-    ) -> Result<Self, DatabaseSetupError> {
-        info!(target: COMPONENT, ?database_filepath, "Connecting to the database");
-
-        if let Some(p) = database_filepath.parent() {
-            create_dir_all(p).map_err(DatabaseError::IoError)?;
-        }
-
+    pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
         let sqlite_pool_manager = SqlitePoolManager::new(database_filepath.clone());
         let pool = Pool::builder(sqlite_pool_manager).build()?;
 
@@ -217,10 +272,7 @@ impl Db {
             DatabaseError::InteractError(format!("Migration task failed: {err}"))
         })??;
 
-        let db = Db { pool };
-        db.ensure_genesis_block(genesis_filepath, block_store).await?;
-
-        Ok(db)
+        Ok(Db { pool })
     }
 
     /// Loads all the nullifiers from the DB.
@@ -491,6 +543,7 @@ impl Db {
                     &notes,
                     block.created_nullifiers(),
                     block.updated_accounts(),
+                    block.transactions(),
                 )?;
 
                 let _ = allow_acquire.send(());
@@ -548,82 +601,18 @@ impl Db {
             })?
     }
 
-    // HELPERS
-    // ---------------------------------------------------------------------------------------------
-
-    /// If the database is empty, generates and stores the genesis block. Otherwise, it ensures that
-    /// the genesis block in the database is consistent with the genesis block data in the
-    /// genesis JSON file.
-    #[instrument(target = COMPONENT, skip_all, err)]
-    async fn ensure_genesis_block(
+    /// Loads the network notes that have not been consumed yet, using pagination to limit the
+    /// number of notes returned.
+    pub(crate) async fn select_unconsumed_network_notes(
         &self,
-        genesis_filepath: &str,
-        block_store: Arc<BlockStore>,
-    ) -> Result<(), GenesisError> {
-        let genesis_block = {
-            let file_contents = fs::read(genesis_filepath).map_err(|source| {
-                GenesisError::FailedToReadGenesisFile {
-                    genesis_filepath: genesis_filepath.to_string(),
-                    source,
-                }
-            })?;
-
-            let genesis_state = GenesisState::read_from_bytes(&file_contents)
-                .map_err(GenesisError::GenesisFileDeserializationError)?;
-
-            genesis_state.into_block()?
-        };
-
-        let maybe_block_header_in_store = self
-            .select_block_header_by_block_num(Some(BlockNumber::GENESIS))
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page)> {
+        self.pool
+            .get()
             .await
-            .map_err(|err| GenesisError::SelectBlockHeaderByBlockNumError(err.into()))?;
-
-        let expected_genesis_header = genesis_block.header().clone();
-
-        match maybe_block_header_in_store {
-            Some(block_header_in_store) => {
-                // ensure that expected header is what's also in the store
-                if expected_genesis_header != block_header_in_store {
-                    Err(GenesisError::GenesisBlockHeaderMismatch {
-                        expected_genesis_header: Box::new(expected_genesis_header),
-                        block_header_in_store: Box::new(block_header_in_store),
-                    })?;
-                }
-            },
-            None => {
-                // add genesis header to store
-                self.pool
-                    .get()
-                    .await
-                    .map_err(DatabaseError::MissingDbConnection)?
-                    .interact(move |conn| -> Result<()> {
-                        // TODO: This span is logged in a root span, we should connect it to the
-                        // parent one.
-                        let span = info_span!(target: COMPONENT, "write_genesis_block_to_db");
-                        let guard = span.enter();
-
-                        let transaction = conn.transaction()?;
-                        sql::apply_block(
-                            &transaction,
-                            &expected_genesis_header,
-                            &[],
-                            &[],
-                            genesis_block.updated_accounts(),
-                        )?;
-
-                        block_store.save_block_blocking(0.into(), &genesis_block.to_bytes())?;
-
-                        transaction.commit()?;
-
-                        drop(guard);
-                        Ok(())
-                    })
-                    .await
-                    .map_err(GenesisError::ApplyBlockFailed)??;
-            },
-        }
-
-        Ok(())
+            .map_err(DatabaseError::MissingDbConnection)?
+            .interact(move |conn| sql::unconsumed_network_notes(&conn.transaction()?, page))
+            .await
+            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
     }
 }

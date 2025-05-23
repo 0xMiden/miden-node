@@ -1,9 +1,12 @@
 #![allow(clippy::similar_names, reason = "naming dummy test values is hard")]
 #![allow(clippy::too_many_lines, reason = "test code can be long")]
 
-use std::num::NonZeroUsize;
+use std::{
+    num::NonZeroUsize,
+    sync::{Arc, Mutex},
+};
 
-use miden_lib::transaction::TransactionKernel;
+use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
 use miden_node_proto::domain::account::AccountSummary;
 use miden_objects::{
     Felt, FieldElement, Word, ZERO,
@@ -14,19 +17,22 @@ use miden_objects::{
     },
     asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
+    crypto::{hash::rpo::RpoDigest, merkle::MerklePath, rand::RpoRandomCoin},
     note::{
-        NoteExecutionHint, NoteExecutionMode, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
+        Note, NoteDetails, NoteExecutionHint, NoteExecutionMode, NoteId, NoteMetadata, NoteTag,
+        NoteType, Nullifier,
     },
     testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     },
+    transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId},
 };
+use rand::Rng;
 
 use super::{AccountInfo, NoteRecord, NullifierInfo, sql};
 use crate::db::{
-    TransactionSummary, connection::Connection, migrations::apply_migrations, sql::PaginationToken,
+    TransactionSummary, connection::Connection, migrations::apply_migrations, sql::Page,
 };
 
 fn create_db() -> Connection {
@@ -167,6 +173,23 @@ fn sql_select_nullifiers() {
     }
 }
 
+pub fn create_note(account_id: AccountId) -> Note {
+    let coin_seed: [u64; 4] = rand::rng().random();
+    let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
+    let mut rng = rng.lock().unwrap();
+    create_p2id_note(
+        account_id,
+        account_id,
+        vec![Asset::Fungible(
+            FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 10).unwrap(),
+        )],
+        NoteType::Public,
+        Felt::default(),
+        &mut *rng,
+    )
+    .expect("Failed to create note")
+}
+
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn sql_select_notes() {
@@ -188,27 +211,32 @@ fn sql_select_notes() {
 
     transaction.commit().unwrap();
 
+    let new_note = create_note(account_id);
+
     // test multiple entries
     let mut state = vec![];
     for i in 0..10 {
         let note = NoteRecord {
             block_num,
-            note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
-            note_id: num_to_rpo_digest(u64::from(i)),
-            metadata: NoteMetadata::new(
-                account_id,
-                NoteType::Public,
-                i.into(),
-                NoteExecutionHint::none(),
-                Felt::default(),
-            )
-            .unwrap(),
-            details: Some(vec![1, 2, 3]),
+            note_index: BlockNoteIndex::new(0, i.try_into().unwrap()).unwrap(),
+            note_id: num_to_rpo_digest(u64::try_from(i).unwrap()),
+            metadata: *new_note.metadata(),
+            details: Some(NoteDetails::from(&new_note)),
             merkle_path: MerklePath::new(vec![]),
         };
         state.push(note.clone());
 
         let transaction = conn.transaction().unwrap();
+
+        // insert scripts (after the first iteration the script is already in the db)
+        let res = sql::insert_scripts(&transaction, [&note]);
+        if i == 0 {
+            assert_eq!(res.unwrap(), 1, "One element must have been inserted");
+        } else {
+            assert_eq!(res.unwrap(), 0, "No new elements must have been inserted");
+        }
+
+        // insert notes
         let res = sql::insert_notes(&transaction, &[(note, None)]);
         assert_eq!(res.unwrap(), 1, "One element must have been inserted");
         transaction.commit().unwrap();
@@ -240,6 +268,8 @@ fn sql_select_notes_different_execution_hints() {
     // test multiple entries
     let mut state = vec![];
 
+    let new_note = create_note(sender);
+
     let note_none = NoteRecord {
         block_num,
         note_index: BlockNoteIndex::new(0, 0).unwrap(),
@@ -252,12 +282,13 @@ fn sql_select_notes_different_execution_hints() {
             Felt::default(),
         )
         .unwrap(),
-        details: Some(vec![1, 2, 3]),
+        details: Some(NoteDetails::from(&new_note)),
         merkle_path: MerklePath::new(vec![]),
     };
     state.push(note_none.clone());
 
     let transaction = conn.transaction().unwrap();
+    sql::insert_scripts(&transaction, [&note_none]).unwrap(); // only necessary for the first note
     let res = sql::insert_notes(&transaction, &[(note_none, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
     transaction.commit().unwrap();
@@ -273,12 +304,12 @@ fn sql_select_notes_different_execution_hints() {
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
-            1.into(),
+            0.into(),
             NoteExecutionHint::always(),
             Felt::default(),
         )
         .unwrap(),
-        details: Some(vec![1, 2, 3]),
+        details: Some(NoteDetails::from(&new_note)),
         merkle_path: MerklePath::new(vec![]),
     };
     state.push(note_always.clone());
@@ -304,7 +335,7 @@ fn sql_select_notes_different_execution_hints() {
             Felt::default(),
         )
         .unwrap(),
-        details: Some(vec![1, 2, 3]),
+        details: Some(NoteDetails::from(&new_note)),
         merkle_path: MerklePath::new(vec![]),
     };
     state.push(note_after_block.clone());
@@ -338,7 +369,7 @@ fn sql_unconsumed_network_notes() {
 
     let account = mock_account_code_and_storage(
         AccountType::RegularAccountUpdatableCode,
-        AccountStorageMode::Public,
+        AccountStorageMode::Network,
         [],
     );
     let account_id = account.id();
@@ -348,13 +379,14 @@ fn sql_unconsumed_network_notes() {
             account_id,
             account.commitment(),
             AccountUpdateDetails::New(account),
-            vec![],
         )],
         block_num,
     )
     .unwrap();
 
     transaction.commit().unwrap();
+
+    let new_note = create_note(account_id);
 
     // Create some notes, of which half are network notes.
     let notes = (0..N)
@@ -377,7 +409,7 @@ fn sql_unconsumed_network_notes() {
                     Felt::default(),
                 )
                 .unwrap(),
-                details: is_network.then_some(vec![1, 2, 3]),
+                details: is_network.then_some(NoteDetails::from(&new_note)),
                 merkle_path: MerklePath::new(vec![]),
             };
 
@@ -393,32 +425,32 @@ fn sql_unconsumed_network_notes() {
 
     // Insert the set of notes.
     let db_tx = conn.transaction().unwrap();
+    sql::insert_scripts(&db_tx, notes.iter().map(|(note, _)| note)).unwrap();
     sql::insert_notes(&db_tx, &notes).unwrap();
 
     // Fetch all network notes by setting a limit larger than the amount available.
     let (result, _) = sql::unconsumed_network_notes(
         &db_tx,
-        PaginationToken::default(),
-        NonZeroUsize::new(N as usize * 10).unwrap(),
+        Page {
+            token: None,
+            size: NonZeroUsize::new(N as usize * 10).unwrap(),
+        },
     )
     .unwrap();
     assert_eq!(result, network_notes);
 
     // Check pagination works as expected.
     let limit = 5;
-    let mut token = PaginationToken::default();
+    let mut page = Page {
+        token: None,
+        size: NonZeroUsize::new(limit).unwrap(),
+    };
     network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_token) =
-            sql::unconsumed_network_notes(&db_tx, token, NonZeroUsize::new(limit).unwrap())
-                .unwrap();
-        token = new_token;
+        let (result, new_page) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
+        page = new_page;
         assert_eq!(result, expected);
     });
-
-    // Returns empty when paging past the total.
-    let (result, _) =
-        sql::unconsumed_network_notes(&db_tx, token, NonZeroUsize::new(100).unwrap()).unwrap();
-    assert!(result.is_empty());
+    assert!(page.token.is_none());
 
     // Consume every third network note and ensure these are now excluded from the results.
     let consumed = notes
@@ -434,12 +466,11 @@ fn sql_unconsumed_network_notes() {
         .filter(|(i, _)| i % 3 != 0)
         .map(|(_, note)| note.clone())
         .collect::<Vec<_>>();
-    let (result, _) = sql::unconsumed_network_notes(
-        &db_tx,
-        PaginationToken::default(),
-        NonZeroUsize::new(N as usize * 10).unwrap(),
-    )
-    .unwrap();
+    let page = Page {
+        token: None,
+        size: NonZeroUsize::new(N as usize * 10).unwrap(),
+    };
+    let (result, _) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
     assert_eq!(result, expected);
 }
 
@@ -480,7 +511,6 @@ fn sql_select_accounts() {
                 account_id,
                 account_commitment,
                 AccountUpdateDetails::Private,
-                vec![],
             )],
             block_num,
         );
@@ -526,7 +556,6 @@ fn sql_public_account_details() {
             account.id(),
             account.commitment(),
             AccountUpdateDetails::New(account.clone()),
-            vec![],
         )],
         1.into(),
     )
@@ -574,7 +603,6 @@ fn sql_public_account_details() {
             account.id(),
             account.commitment(),
             AccountUpdateDetails::Delta(delta2.clone()),
-            vec![],
         )],
         2.into(),
     )
@@ -620,7 +648,6 @@ fn sql_public_account_details() {
             account.id(),
             account.commitment(),
             AccountUpdateDetails::Delta(delta3.clone()),
-            vec![],
         )],
         3.into(),
     )
@@ -905,7 +932,6 @@ fn db_account() {
             account_id.try_into().unwrap(),
             account_commitment,
             AccountUpdateDetails::Private,
-            vec![],
         )],
         block_num,
     )
@@ -985,22 +1011,21 @@ fn notes() {
     sql::upsert_accounts(&transaction, &[mock_block_account_update(sender, 0)], block_num_1)
         .unwrap();
 
+    let new_note = create_note(sender);
     let note_index = BlockNoteIndex::new(0, 2).unwrap();
-    let note_id = num_to_rpo_digest(3);
     let tag = 5u32;
     let note_metadata =
         NoteMetadata::new(sender, NoteType::Public, tag.into(), NoteExecutionHint::none(), ZERO)
             .unwrap();
 
-    let values = [(note_index, note_id.into(), note_metadata)];
+    let values = [(note_index, new_note.id(), note_metadata)];
     let notes_db = BlockNoteTree::with_entries(values.iter().copied()).unwrap();
-    let details = Some(vec![1, 2, 3]);
     let merkle_path = notes_db.get_note_path(note_index);
 
     let note = NoteRecord {
         block_num: block_num_1,
         note_index,
-        note_id,
+        note_id: new_note.id().into(),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -1009,10 +1034,11 @@ fn notes() {
             Felt::default(),
         )
         .unwrap(),
-        details,
+        details: Some(NoteDetails::from(&new_note)),
         merkle_path: merkle_path.clone(),
     };
 
+    sql::insert_scripts(&transaction, [&note]).unwrap();
     sql::insert_notes(&transaction, &[(note.clone(), None)]).unwrap();
     transaction.commit().unwrap();
 
@@ -1053,7 +1079,7 @@ fn notes() {
     let note2 = NoteRecord {
         block_num: block_num_2,
         note_index: note.note_index,
-        note_id: num_to_rpo_digest(3),
+        note_id: new_note.id().into(),
         metadata: note.metadata,
         details: None,
         merkle_path,
@@ -1084,7 +1110,7 @@ fn notes() {
     assert_eq!(res, vec![note2.clone().into()]);
 
     // test query notes by id
-    let notes = vec![note, note2];
+    let notes = vec![note.clone(), note2];
     let note_ids: Vec<RpoDigest> = notes.clone().iter().map(|note| note.note_id).collect();
     let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
 
@@ -1094,7 +1120,7 @@ fn notes() {
     // test notes have correct details
     let note_0 = res[0].clone();
     let note_1 = res[1].clone();
-    assert_eq!(note_0.details, Some(vec![1, 2, 3]));
+    assert_eq!(note_0.details, note.details);
     assert_eq!(note_1.details, None);
 }
 
@@ -1113,11 +1139,30 @@ fn num_to_nullifier(n: u64) -> Nullifier {
 }
 
 fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpdate {
-    BlockAccountUpdate::new(
+    BlockAccountUpdate::new(account_id, num_to_rpo_digest(num), AccountUpdateDetails::Private)
+}
+
+fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader {
+    let initial_state_commitment = RpoDigest::try_from([num, 0, 0, 0]).unwrap();
+    let final_account_commitment = RpoDigest::try_from([0, num, 0, 0]).unwrap();
+    let input_notes_commitment = RpoDigest::try_from([0, 0, num, 0]).unwrap();
+    let output_notes_commitment = RpoDigest::try_from([0, 0, 0, num]).unwrap();
+
+    TransactionHeader::new_unchecked(
+        TransactionId::new(
+            initial_state_commitment,
+            final_account_commitment,
+            input_notes_commitment,
+            output_notes_commitment,
+        ),
         account_id,
-        num_to_rpo_digest(num),
-        AccountUpdateDetails::Private,
-        vec![num_to_rpo_digest(num + 1000).into(), num_to_rpo_digest(num + 1001).into()],
+        initial_state_commitment,
+        final_account_commitment,
+        vec![num_to_nullifier(num)],
+        vec![NoteId::new(
+            RpoDigest::try_from([num, num, 0, 0]).unwrap(),
+            RpoDigest::try_from([0, 0, num, num]).unwrap(),
+        )],
     )
 }
 
@@ -1126,15 +1171,19 @@ fn insert_transactions(conn: &mut Connection) -> usize {
     create_block(conn, block_num);
 
     let transaction = conn.transaction().unwrap();
+    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
-    let account_updates = vec![mock_block_account_update(
-        AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(),
-        1,
-    )];
+    let account_updates = vec![mock_block_account_update(account_id, 1)];
+
+    let mock_tx1 =
+        mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 1);
+    let mock_tx2 =
+        mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 2);
+    let transactions = OrderedTransactionHeaders::new_unchecked(vec![mock_tx1, mock_tx2]);
 
     sql::upsert_accounts(&transaction, &account_updates, block_num).unwrap();
 
-    let count = sql::insert_transactions(&transaction, block_num, &account_updates).unwrap();
+    let count = sql::insert_transactions(&transaction, block_num, &transactions).unwrap();
     transaction.commit().unwrap();
 
     count

@@ -30,7 +30,7 @@ impl ClientUpdater {
     /// Sends an update to all the batch clients.
     /// Errors when sending through the channel are ignored since the client may have cancelled the
     /// request.
-    pub async fn send_updates(&self, update: MintUpdate) {
+    pub async fn send_updates(&self, update: MintUpdate<'_>) {
         let event = update.into_event();
         for sender in &self.clients {
             let _ = sender.send(Ok(event.clone())).await;
@@ -49,24 +49,23 @@ impl ClientUpdater {
     ) {
         for (note, sender) in notes.iter().zip(&self.clients) {
             let _ = sender
-                .send(Ok(MintUpdate::Minted(note.clone(), block_number, tx_id).into_event()))
+                .send(Ok(MintUpdate::Minted(note, block_number, tx_id).into_event()))
                 .await;
         }
     }
 }
 
 /// The different stages of the minting process.
-#[allow(clippy::large_enum_variant)]
-pub enum MintUpdate {
+pub enum MintUpdate<'a> {
     // TODO: add PoW verification event
     Built,
     Executed,
     Proven,
     Submitted,
-    Minted(Note, BlockNumber, TransactionId),
+    Minted(&'a Note, BlockNumber, TransactionId),
 }
 
-impl MintUpdate {
+impl MintUpdate<'_> {
     /// Converts the mint update into an sse event.
     /// Event types:
     /// - `MintUpdate::Built`: event type "update"

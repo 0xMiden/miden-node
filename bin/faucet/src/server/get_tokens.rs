@@ -137,6 +137,10 @@ impl RawMintRequest {
     /// Returns an error if:
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
+    ///   - the API key is invalid
+    ///   - the server timestamp is expired
+    ///   - the server signature does not match
+    ///   - the PoW solution is invalid
     fn validate(
         self,
         options: &AssetOptions,

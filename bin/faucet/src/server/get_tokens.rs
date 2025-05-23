@@ -170,12 +170,9 @@ impl RawMintRequest {
         }
 
         if let Ok(pow_parameters) = PowParameters::try_from(&self) {
-            server
-                .challenge_cache
-                .validate_challenge(&pow_parameters.pow_seed, &pow_parameters.server_signature)?;
+            pow_parameters.check_pow_solution(&server.challenge_cache)?;
             pow_parameters.check_server_timestamp()?;
             pow_parameters.check_server_signature(&server.pow_salt)?;
-            pow_parameters.check_pow_solution(&server.challenge_cache)?;
         } else {
             return Err(InvalidRequest::MissingPowParameters);
         }

@@ -84,6 +84,17 @@ impl PowParameters {
         &self,
         challenge_cache: &ChallengeCache,
     ) -> Result<(), InvalidRequest> {
+        let mut challenges =
+            challenge_cache.challenges.lock().expect("PoW challenge cache lock poisoned");
+
+        if let Some(challenge) = challenges.get(&self.pow_seed) {
+            if challenge.server_signature != self.server_signature {
+                return Err(InvalidRequest::ServerSignaturesDoNotMatch);
+            }
+        } else {
+            return Err(InvalidRequest::InvalidChallenge);
+        }
+
         // Then check the PoW solution
         let mut hasher = Sha3_256::new();
         hasher.update(&self.pow_seed);
@@ -97,7 +108,7 @@ impl PowParameters {
 
         // If we get here, the solution is valid
         // Remove the challenge to prevent reuse
-        challenge_cache.remove(&self.pow_seed);
+        challenges.remove(&self.pow_seed);
 
         Ok(())
     }
@@ -157,27 +168,6 @@ impl ChallengeCache {
         challenges.insert(seed.to_string(), Challenge { timestamp, server_signature });
     }
 
-    /// Validate a challenge.
-    ///
-    /// The challenge is valid if it is present in the state and the server signature matches.
-    pub fn validate_challenge(
-        &self,
-        seed: &str,
-        server_signature: &str,
-    ) -> Result<(), InvalidRequest> {
-        let challenges = self.challenges.lock().unwrap();
-
-        if let Some(challenge) = challenges.get(seed) {
-            if challenge.server_signature != server_signature {
-                return Err(InvalidRequest::ServerSignaturesDoNotMatch);
-            }
-
-            Ok(())
-        } else {
-            Err(InvalidRequest::InvalidChallenge)
-        }
-    }
-
     /// Cleanup expired challenges.
     ///
     /// Challenges are expired if they are older than [`SERVER_TIMESTAMP_TOLERANCE_SECONDS`]
@@ -192,12 +182,6 @@ impl ChallengeCache {
         challenges.retain(|_, challenge| {
             (current_time - challenge.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
         });
-    }
-
-    /// Remove a challenge from the state.
-    pub fn remove(&self, seed: &str) {
-        let mut challenges = self.challenges.lock().unwrap();
-        challenges.remove(seed);
     }
 }
 

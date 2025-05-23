@@ -182,9 +182,15 @@ pub enum BuildBlockError {
 #[derive(Debug, Error)]
 pub enum StoreError {
     #[error("gRPC client error")]
-    GrpcClientError(#[from] tonic::Status),
+    GrpcClientError(Box<tonic::Status>),
     #[error("malformed response from store: {0}")]
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
+}
+
+impl From<tonic::Status> for StoreError {
+    fn from(value: tonic::Status) -> Self {
+        StoreError::GrpcClientError(value.into())
+    }
 }

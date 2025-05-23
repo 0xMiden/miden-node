@@ -155,7 +155,7 @@ impl BundledCommand {
         let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to block-producer gRPC endpoint")?;
-        let grpc_network_tx_builder = TcpListener::bind("127.0.0.1:0")
+        let grpc_ntx_builder = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to network transaction builder gRPC endpoint")?;
 
@@ -164,7 +164,7 @@ impl BundledCommand {
         let block_producer_address = grpc_block_producer
             .local_addr()
             .context("Failed to retrieve the block-producer's gRPC address")?;
-        let ntx_builder_address = grpc_network_tx_builder
+        let ntx_builder_address = grpc_ntx_builder
             .local_addr()
             .context("Failed to retrieve the network transaction builder's gRPC address")?;
 

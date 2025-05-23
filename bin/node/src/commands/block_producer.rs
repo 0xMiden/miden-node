@@ -85,14 +85,14 @@ impl BlockProducerCommand {
             open_telemetry: _,
             block_interval,
             batch_interval,
-            ntx_builder_url: network_tx_builder_url,
+            ntx_builder_url,
             monitor_interval,
         } = self;
 
         let store_address = store_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
-        let ntx_builder_address = network_tx_builder_url
+        let ntx_builder_address = ntx_builder_url
             .to_socket()
             .context("Failed to extract socket address from network transaction builder URL")?;
 

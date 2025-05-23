@@ -1,6 +1,7 @@
 use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
+        note::NetworkNote as ProtoNetworkNote,
         requests::{
             GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
             GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
@@ -9,7 +10,7 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_node_utils::{note_tag::NetworkNote, tracing::grpc::OtelInterceptor};
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
@@ -103,7 +104,7 @@ impl StoreClient {
 
     /// Returns the latest block's header from the store.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
-    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<Note>, StoreError> {
+    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
         let mut page_token: Option<u64> = None;
 
@@ -111,8 +112,11 @@ impl StoreClient {
             let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
-            let page: Vec<Note> =
-                resp.notes.into_iter().map(Note::try_from).collect::<Result<Vec<_>, _>>()?;
+            let page: Vec<NetworkNote> = resp
+                .notes
+                .into_iter()
+                .map(|n:ProtoNetworkNote| NetworkNote::try_from)
+                .collect::<Result<Vec<_>, _>>()?;
 
             all_notes.extend(page);
 
@@ -130,7 +134,6 @@ impl StoreClient {
         &self,
         note_tag: NoteTag,
     ) -> Result<Option<Account>, StoreError> {
-        // TODO: this account ID prefix needs its own type
         let tag_inner = note_tag.inner();
         let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
 

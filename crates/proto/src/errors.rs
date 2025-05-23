@@ -1,5 +1,6 @@
 use std::{any::type_name, num::TryFromIntError};
 
+use miden_node_utils::note_tag::NetworkNoteError;
 use miden_objects::{
     crypto::merkle::{SmtLeafError, SmtProofError},
     utils::DeserializationError,
@@ -12,6 +13,8 @@ pub enum ConversionError {
     HexError(#[from] hex::FromHexError),
     #[error("note error")]
     NoteError(#[from] miden_objects::NoteError),
+    #[error("network note error")]
+    NetworkNoteError(#[from] NetworkNoteError),
     #[error("SMT leaf error")]
     SmtLeafError(#[from] SmtLeafError),
     #[error("SMT proof error")]

@@ -1,6 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
-use account_cache::AccountCache;
+use account_cache::NetworkAccountCache;
+use miden_node_utils::{account::NetworkAccountPrefix, note_tag::NetworkNote};
 use miden_objects::{
     AccountError, MastForest, Word,
     account::{Account, AccountId},
@@ -24,14 +25,14 @@ mod account_cache;
 pub struct NtxBuilderDataStore {
     mast_forest_store: TransactionMastStore,
     store_client: StoreClient,
-    account_cache: AccountCache,
+    account_cache: NetworkAccountCache,
     block_ref: Mutex<BlockHeader>,
     partial_mmr: Mutex<PartialMmr>,
 }
 
 impl NtxBuilderDataStore {
     pub async fn new(store_client: StoreClient) -> Result<Self, StoreError> {
-        let account_cache = AccountCache::new(128);
+        let account_cache = NetworkAccountCache::new(128);
         let mast_forest_store = TransactionMastStore::new();
 
         // SAFETY: ok to unwrap because passing `None` should return the latest data everytime
@@ -55,8 +56,7 @@ impl NtxBuilderDataStore {
         &self,
         note_tag: NoteTag,
     ) -> Result<Option<Account>, StoreError> {
-        // SAFETY: we are trusting that notes from the store were correctly filtered
-        let account_prefix = note_tag.try_into().unwrap();
+        let account_prefix: NetworkAccountPrefix = note_tag.try_into().unwrap();
         // look in cache, try the store otherwise
         let account = if let Some(acc) = self.account_cache.get(account_prefix) {
             Some(acc)
@@ -101,12 +101,14 @@ impl NtxBuilderDataStore {
     }
 
     pub fn update_account(&self, transaction: &ExecutedTransaction) -> Result<(), AccountError> {
-        let Some(mut account) = self.account_cache.get(transaction.account_id().into()) else {
+        // SAFETY: datastore impl checks that the account ID is a valid network account
+        let account_id_prefix = transaction.account_id().try_into().unwrap();
+        let Some(mut account) = self.account_cache.get(account_id_prefix) else {
             warn!(target:COMPONENT, "account was expected to be found in the cache");
             return Ok(());
         };
         account.apply_delta(transaction.account_delta())?;
-        self.account_cache.put(&account);
+        self.account_cache.put(&account).unwrap();
         Ok(())
     }
 }
@@ -122,7 +124,11 @@ impl DataStore for NtxBuilderDataStore {
         let block_num = ref_blocks.first().unwrap();
         assert_eq!(*block_num, self.block_ref.lock().await.block_num());
 
-        let Some(account) = self.account_cache.get(account_id.into()) else {
+        let Ok(account_id_prefix) = NetworkAccountPrefix::try_from(account_id) else {
+            return Err(DataStoreError::other("account is not a valid network account"));
+        };
+
+        let Some(account) = self.account_cache.get(account_id_prefix) else {
             return Err(DataStoreError::other(
                 "account not found in cache; should have been retrieved before execution",
             ));

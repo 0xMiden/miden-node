@@ -1,3 +1,4 @@
+use miden_node_utils::note_tag::NetworkNote;
 use miden_objects::{
     Digest, Felt,
     note::{
@@ -40,7 +41,7 @@ impl From<Note> for proto::NetworkNote {
     }
 }
 
-impl TryFrom<proto::NetworkNote> for Note {
+impl TryFrom<proto::NetworkNote> for NetworkNote {
     type Error = ConversionError;
 
     fn try_from(proto_note: proto::NetworkNote) -> Result<Self, Self::Error> {
@@ -52,7 +53,9 @@ impl TryFrom<proto::NetworkNote> for Note {
             .metadata
             .ok_or_else(|| proto::NetworkNote::missing_field(stringify!(metadata)))?
             .try_into()?;
-        Ok(Note::new(assets, metadata, recipient))
+        let note = Note::new(assets, metadata, recipient);
+
+        Ok(NetworkNote::try_from(note)?)
     }
 }
 

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use miden_node_utils::note_tag::NetworkNote;
 use miden_objects::{
     note::{Note, NoteId, NoteTag, Nullifier},
     transaction::TransactionId,
@@ -19,15 +20,15 @@ pub struct PendingNotes {
     /// Contains a queue that provides ordering of accounts to execute against
     account_queue: VecDeque<NoteTag>,
     /// Pending network notes that have not been consumed as part of a committed transaction.
-    by_tag: BTreeMap<NoteTag, Vec<Note>>,
+    by_tag: BTreeMap<NoteTag, Vec<NetworkNote>>,
     /// A map of nullifiers mapped to their note IDs
     by_nullifier: BTreeMap<Nullifier, NoteId>,
     /// Inflight network notes with their associated transaction IDs
-    inflight_txs: BTreeMap<TransactionId, Vec<Note>>,
+    inflight_txs: BTreeMap<TransactionId, Vec<NetworkNote>>,
 }
 
 impl PendingNotes {
-    pub fn new(unconsumed_network_notes: Vec<Note>) -> Self {
+    pub fn new(unconsumed_network_notes: Vec<NetworkNote>) -> Self {
         let mut state = Self {
             account_queue: VecDeque::new(),
             by_tag: BTreeMap::new(),
@@ -39,7 +40,7 @@ impl PendingNotes {
     }
 
     /// Add network notes to the pending notes queue.
-    pub fn queue_unconsumed_notes(&mut self, notes: impl IntoIterator<Item = Note>) {
+    pub fn queue_unconsumed_notes(&mut self, notes: impl IntoIterator<Item = NetworkNote>) {
         for n in notes {
             let tag = n.metadata().tag();
 
@@ -52,12 +53,12 @@ impl PendingNotes {
 
     /// Returns the next set of notes with the next scheduled tag in the global queue
     /// (up to `MAX_BATCH`)
-    pub fn take_next_notes_by_tag(&mut self) -> Option<(NoteTag, Vec<Note>)> {
+    pub fn take_next_notes_by_tag(&mut self) -> Option<(NoteTag, Vec<NetworkNote>)> {
         let next_tag = *self.account_queue.front()?;
 
         let bucket = self.by_tag.get_mut(&next_tag)?;
         let note_count = bucket.len().min(MAX_BATCH);
-        let batch: Vec<Note> = bucket.drain(..note_count).collect();
+        let batch: Vec<NetworkNote> = bucket.drain(..note_count).collect();
 
         if bucket.is_empty() {
             self.by_tag.remove(&next_tag);
@@ -67,7 +68,7 @@ impl PendingNotes {
     }
 
     /// Move the input notes into inflight status under the given transaction ID
-    pub fn mark_inflight(&mut self, tx_id: TransactionId, notes: Vec<Note>) {
+    pub fn mark_inflight(&mut self, tx_id: TransactionId, notes: Vec<NetworkNote>) {
         if !notes.is_empty() {
             self.inflight_txs.entry(tx_id).or_default().extend(notes);
         }
@@ -112,7 +113,6 @@ impl PendingNotes {
     pub fn rollback_inflight(&mut self, tx_id: TransactionId) -> usize {
         if let Some(notes) = self.inflight_txs.remove(&tx_id) {
             let count = notes.len();
-
             // SAFETY: All transactions contain at least a note
             self.account_queue.push_back(notes.first().unwrap().metadata().tag());
             for n in notes {

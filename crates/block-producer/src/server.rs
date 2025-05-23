@@ -296,9 +296,9 @@ impl BlockProducerRpcServer {
                 SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
             });
 
-        let mut ntx_client = self.ntx_builder.clone();
-        if let Err(err) = ntx_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await {
-            debug!(
+        let mut ntx_builder = self.ntx_builder.clone();
+        if let Err(err) = ntx_builder.update_network_notes(tx_id, tx_nullifiers.into_iter()).await {
+            error!(
                 target: COMPONENT,
                 message = %err,
                 "error submitting network notes updates to ntx builder"
@@ -350,10 +350,11 @@ mod test {
                 .expect("Failed to get block-producer address")
         };
 
-        let ntx_builder_addr = {
-            let ntx_builder_listener =
-                TcpListener::bind("127.0.0.1:0").await.expect("failed to bind ntx builder");
-            ntx_builder_listener.local_addr().expect("failed to get ntx builder address")
+        let ntx_builder_address = {
+            let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("failed to bind the ntx builder address");
+            ntx_builder_address.local_addr().expect("failed to get ntx builder address")
         };
 
         // start the block producer
@@ -365,7 +366,7 @@ mod test {
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
-                ntx_builder_address: ntx_builder_addr,
+                ntx_builder_address,
             }
             .serve()
             .await

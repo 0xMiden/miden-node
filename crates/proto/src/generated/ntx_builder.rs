@@ -120,8 +120,8 @@ pub mod api_client {
         }
         /// Update network transaction builder with transaction status changes.
         ///
-        /// Any transactions that get committed or reverted need to be communicated to the NTB in order
-        /// for it to update the status of inflight transactions with its correspondent nullifiers.
+        /// Any transaction that has been either committed or reverted is communicated to the NTB so
+        /// it can track the lifecycle of inflight transactions and notes correctly.
         pub async fn update_transaction_status(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -199,8 +199,8 @@ pub mod api_server {
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
         /// Update network transaction builder with transaction status changes.
         ///
-        /// Any transactions that get committed or reverted need to be communicated to the NTB in order
-        /// for it to update the status of inflight transactions with its correspondent nullifiers.
+        /// Any transaction that has been either committed or reverted is communicated to the NTB so
+        /// it can track the lifecycle of inflight transactions and notes correctly.
         async fn update_transaction_status(
             &self,
             request: tonic::Request<

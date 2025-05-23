@@ -11,9 +11,9 @@ const MAX_BATCH: usize = 50;
 
 /// Maintains state of the network notes for the transaction builder.
 ///
-/// Notes are mainly kept in a [`VecDeque`], but also indexed by nullifiers and note tags in order
-/// to enable simple lookups when discarding by nullifiers and deciding which notes to execute
-/// against a unique account, respectively.
+/// Note tags are mainly kept in a [`VecDeque`], but also indexed by nullifiers and note tags in
+/// order to enable simple lookups when discarding by nullifiers and deciding which notes to
+/// execute against a unique account, respectively.
 /// Additionally, a list of inflight notes is kept to track their lifecycle.
 #[derive(Debug)]
 pub struct PendingNotes {

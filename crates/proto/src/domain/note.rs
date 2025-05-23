@@ -48,7 +48,6 @@ impl TryFrom<proto::NetworkNote> for NetworkNote {
         let details = NoteDetails::read_from_bytes(&proto_note.details)
             .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
         let (assets, recipient) = details.into_parts();
-
         let metadata: NoteMetadata = proto_note
             .metadata
             .ok_or_else(|| proto::NetworkNote::missing_field(stringify!(metadata)))?

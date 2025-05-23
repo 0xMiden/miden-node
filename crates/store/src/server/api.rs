@@ -25,9 +25,10 @@ use miden_node_proto::{
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
             GetBlockHeaderByNumberResponse, GetBlockInputsResponse,
-            GetCurrentBlockchainDataResponse, GetNotesByIdResponse, GetTransactionInputsResponse,
-            GetUnconsumedNetworkNotesResponse, NullifierTransactionInputRecord, NullifierUpdate,
-            StoreStatusResponse, SyncNoteResponse, SyncStateResponse,
+            GetCurrentBlockchainDataResponse, GetNetworkAccountDetailsByPrefixResponse,
+            GetNotesByIdResponse, GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
+            NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
+            SyncNoteResponse, SyncStateResponse,
         },
         store::api_server,
         transaction::TransactionSummary,
@@ -321,7 +322,7 @@ impl api_server::Api for StoreApi {
         request: Request<GetAccountDetailsRequest>,
     ) -> Result<Response<GetAccountDetailsResponse>, Status> {
         let request = request.into_inner();
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
@@ -339,13 +340,13 @@ impl api_server::Api for StoreApi {
     async fn get_network_account_details_by_prefix(
         &self,
         request: Request<GetNetworkAccountDetailsByPrefixRequest>,
-    ) -> Result<Response<GetAccountDetailsResponse>, Status> {
+    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
         let request = request.into_inner();
         let prefix = request.account_id_prefix;
         assert!(prefix >> 30 == 0, "account_id_prefix must be 30 bits");
         let account_info: AccountInfo = self.state.get_account_details_by_prefix(prefix).await?;
 
-        Ok(Response::new(GetAccountDetailsResponse {
+        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
             details: Some((&account_info).into()),
         }))
     }
@@ -465,7 +466,7 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let nullifiers = validate_nullifiers(&request.nullifiers)?;
         let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
 
@@ -571,7 +572,7 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let delta = self
             .state
             .get_account_state_delta(
@@ -652,15 +653,13 @@ fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
     Status::invalid_argument(err.to_string())
 }
 
-#[allow(clippy::result_large_err)]
-fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Status> {
+fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Box<Status>> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
-        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")))
+        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
-#[allow(clippy::result_large_err)]
 fn read_account_ids(
     account_ids: &[generated::account::AccountId],
 ) -> Result<Vec<AccountId>, Status> {

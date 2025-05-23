@@ -195,14 +195,15 @@ pub mod api_client {
             self.inner.unary(req, path, codec).await
         }
         /// Returns the latest state of an account with the specified ID.
-        /// TODO: would probably be cleaner to do a specific response type instead of reusing GetAccountDetailsResponse
         pub async fn get_network_account_details_by_prefix(
             &mut self,
             request: impl tonic::IntoRequest<
                 super::super::requests::GetNetworkAccountDetailsByPrefixRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::responses::GetAccountDetailsResponse>,
+            tonic::Response<
+                super::super::responses::GetNetworkAccountDetailsByPrefixResponse,
+            >,
             tonic::Status,
         > {
             self.inner
@@ -626,14 +627,15 @@ pub mod api_server {
             tonic::Status,
         >;
         /// Returns the latest state of an account with the specified ID.
-        /// TODO: would probably be cleaner to do a specific response type instead of reusing GetAccountDetailsResponse
         async fn get_network_account_details_by_prefix(
             &self,
             request: tonic::Request<
                 super::super::requests::GetNetworkAccountDetailsByPrefixRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::responses::GetAccountDetailsResponse>,
+            tonic::Response<
+                super::super::responses::GetNetworkAccountDetailsByPrefixResponse,
+            >,
             tonic::Status,
         >;
         /// Returns the latest state proofs of the specified accounts.
@@ -1049,7 +1051,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::requests::GetNetworkAccountDetailsByPrefixRequest,
                     > for GetNetworkAccountDetailsByPrefixSvc<T> {
-                        type Response = super::super::responses::GetAccountDetailsResponse;
+                        type Response = super::super::responses::GetNetworkAccountDetailsByPrefixResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

@@ -9,22 +9,43 @@ use miden_tx::utils::ToHex;
 use rand::{Rng, rng};
 use serde::Serialize;
 use sha3::{Digest, Sha3_256};
-use tokio::time::{Duration, interval};
+use tokio::{time::{interval, Duration}};
 
 use super::{Server, get_tokens::InvalidRequest};
 
+/// The difficulty of the PoW.
+///
+/// The difficulty is the number of leading zeros in the hash of the seed and the solution.
 const DIFFICULTY: u64 = 5;
+
+/// The tolerance for the server timestamp.
+///
+/// The server timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of
+/// the current time.
 const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
 
+// CHALLENGE STATE
+// ================================================================================================
+
+/// A state for managing challenges.
+///
+/// Challenges are used to validate the PoW solution.
+/// We store the challenges in a map with the seed as the key to ensure that each challenge is
+/// only used once. Once a challenge is created, it gets added to the map and is removed once the
+/// challenge is solved.
+#[derive(Clone)]
+pub struct ChallengeState {
+    /// The challenges are stored in a map with the seed as the key to ensure that each challenge is
+    /// only used once. Once a challenge is created, it gets added to the map and is removed once the
+    /// challenge is solved.
+    challenges: Arc<Mutex<HashMap<String, Challenge>>>,
+}
+
+/// A challenge is a single PoW challenge.
 #[derive(Clone)]
 pub struct Challenge {
     timestamp: u64,
     server_signature: String,
-}
-
-#[derive(Clone)]
-pub struct ChallengeState {
-    challenges: Arc<Mutex<HashMap<String, Challenge>>>,
 }
 
 impl ChallengeState {
@@ -34,11 +55,16 @@ impl ChallengeState {
         }
     }
 
+    /// Add a challenge to the state.
     pub fn add_challenge(&self, seed: &str, server_signature: String, timestamp: u64) {
         let mut challenges = self.challenges.lock().unwrap();
         challenges.insert(seed.to_string(), Challenge { timestamp, server_signature });
     }
 
+    /// Validate a challenge.
+    ///
+    /// The challenge is valid if the server signature matches and the timestamp is within the
+    /// tolerance.
     pub fn validate_challenge(
         &self,
         seed: &str,
@@ -69,6 +95,9 @@ impl ChallengeState {
         }
     }
 
+    /// Cleanup expired challenges.
+    ///
+    /// Challenges are expired if they are older than [`SERVER_TIMESTAMP_TOLERANCE_SECONDS`] seconds.
     pub fn cleanup_expired_challenges(&self) {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -81,13 +110,18 @@ impl ChallengeState {
         });
     }
 
+    /// Remove a challenge from the state.
     pub fn remove_challenge(&self, seed: &str) {
         let mut challenges = self.challenges.lock().unwrap();
         challenges.remove(seed);
     }
 }
 
-pub async fn start_cleanup_task(challenge_state: ChallengeState) {
+/// Run the cleanup task.
+///
+/// The cleanup task is responsible for removing expired challenges from the state.
+/// It runs every minute.
+pub async fn run_cleanup(challenge_state: ChallengeState) {
     let mut interval = interval(Duration::from_secs(60));
 
     loop {

@@ -74,7 +74,7 @@ impl Server {
         // Start the cleanup task
         let cleanup_state = challenge_state.clone();
         tokio::spawn(async move {
-            pow::start_cleanup_task(cleanup_state).await;
+            pow::run_cleanup(cleanup_state).await;
         });
 
         Server {

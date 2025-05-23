@@ -4,6 +4,8 @@ use std::net::IpAddr;
 use miden_objects::{Digest, batch::BatchId, block::BlockNumber};
 use opentelemetry::{Key, Value, trace::Status};
 
+use crate::ErrorReport;
+
 /// Utility functions for converting types into [`opentelemetry::Value`].
 pub trait ToValue {
     fn to_value(&self) -> Value;
@@ -112,7 +114,7 @@ where
 
         tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
             self,
-            Status::Error { description: report.into() },
+            Status::Error { description: err.as_report().into() },
         );
     }
 }

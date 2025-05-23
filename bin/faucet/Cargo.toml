@@ -36,11 +36,8 @@ serde_json                   = { version = "1.0" }
 sha3                         = { version = "0.10" }
 thiserror                    = { workspace = true }
 tokio                        = { features = ["fs"], workspace = true }
-tokio                        = { features = ["fs"], workspace = true }
-tokio-stream                 = { features = ["net"], workspace = true }
 tokio-stream                 = { features = ["net"], workspace = true }
 toml                         = { version = "0.8" }
-tonic                        = { features = ["tls-native-roots"], workspace = true }
 tonic                        = { features = ["tls-native-roots"], workspace = true }
 tower                        = { workspace = true }
 tower-http                   = { features = ["cors", "set-header", "trace"], workspace = true }
@@ -52,16 +49,12 @@ winter-maybe-async           = { version = "0.12" }
 [build-dependencies]
 # Required to inject build metadata.
 miden-node-utils = { features = ["vergen"], workspace = true }
-miden-node-utils = { features = ["vergen"], workspace = true }
 
 [dev-dependencies]
 fantoccini                = { version = "0.21" }
 miden-node-block-producer = { features = ["testing"], workspace = true }
-miden-node-block-producer = { features = ["testing"], workspace = true }
-miden-objects             = { features = ["testing"], workspace = true }
 miden-objects             = { features = ["testing"], workspace = true }
 serde_json                = { version = "1.0" }
-tokio-stream              = { features = ["net"], workspace = true }
 tokio-stream              = { features = ["net"], workspace = true }
 tonic-web                 = { version = "0.12" }
 

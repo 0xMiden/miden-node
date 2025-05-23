@@ -1,113 +1,123 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use miden_node_utils::network_note::NetworkNote;
 use miden_objects::{
-    note::{Note, NoteId, NoteTag, Nullifier},
+    note::{NoteId, NoteTag, Nullifier},
     transaction::TransactionId,
 };
 
-/// Contains state of the network transaction builder.
+/// Max number of notes taken for executing a single network transaction
+const MAX_BATCH: usize = 50;
+
+/// Maintains state of the network notes for the transaction builder.
 ///
-/// Notes are mainly kept in a [`VecDeque`], but also indexed by nullifiers and note tags in order
-/// to enable simple lookups when discarding by nullifiers and deciding which notes to execute
-/// against a unique account, respectively.
+/// Note tags are mainly kept in a [`VecDeque`], but also indexed by nullifiers and note tags in
+/// order to enable simple lookups when discarding by nullifiers and deciding which notes to
+/// execute against a unique account, respectively.
 /// Additionally, a list of inflight notes is kept to track their lifecycle.
 #[derive(Debug)]
-pub struct NtxBuilderState {
+pub struct PendingNotes {
     /// Contains a queue that provides ordering of accounts to execute against
     account_queue: VecDeque<NoteTag>,
-    /// A map of nullifiers mapped to their note IDs
-    notes_by_nullifiers: BTreeMap<Nullifier, NoteId>,
     /// Pending network notes that have not been consumed as part of a committed transaction.
-    pending_notes_by_tag: BTreeMap<NoteTag, Vec<Note>>,
+    by_tag: BTreeMap<NoteTag, Vec<NetworkNote>>,
+    /// A map of nullifiers mapped to their note IDs
+    by_nullifier: BTreeMap<Nullifier, NoteId>,
     /// Inflight network notes with their associated transaction IDs
-    inflight_transactions: BTreeMap<TransactionId, Vec<Note>>,
+    inflight_txs: BTreeMap<TransactionId, Vec<NetworkNote>>,
 }
 
-impl NtxBuilderState {
-    pub fn new(unconsumed_network_notes: Vec<Note>) -> Self {
+impl PendingNotes {
+    pub fn new(unconsumed_network_notes: Vec<NetworkNote>) -> Self {
         let mut state = Self {
             account_queue: VecDeque::new(),
-            notes_by_nullifiers: BTreeMap::new(),
-            pending_notes_by_tag: BTreeMap::new(),
-            inflight_transactions: BTreeMap::new(),
+            by_tag: BTreeMap::new(),
+            by_nullifier: BTreeMap::new(),
+            inflight_txs: BTreeMap::new(),
         };
-        state.add_unconsumed_notes(unconsumed_network_notes);
+        state.queue_unconsumed_notes(unconsumed_network_notes);
         state
     }
 
-    /// Check if there are any pending notes
-    pub fn has_unconsumed_notes(&self) -> bool {
-        !self.account_queue.is_empty()
-    }
-
     /// Add network notes to the pending notes queue.
-    /// Also adds nullifier |-> note ID mapping, and adds it to the set of notes by tag.
-    pub fn add_unconsumed_notes(&mut self, notes: Vec<Note>) {
-        for note in notes {
-            self.notes_by_nullifiers.insert(note.nullifier(), note.id());
+    pub fn queue_unconsumed_notes(&mut self, notes: impl IntoIterator<Item = NetworkNote>) {
+        for n in notes {
+            let tag = n.metadata().tag();
 
-            let tag = note.metadata().tag();
-            self.pending_notes_by_tag.entry(tag).or_default().push(note.clone());
+            self.by_nullifier.insert(n.nullifier(), n.id());
+            self.by_tag.entry(tag).or_default().push(n.clone());
 
-            self.account_queue.push_back(note.metadata().tag());
+            self.account_queue.push_back(tag);
         }
     }
 
-    /// Discard a transaction, moving its notes back to pending
-    /// Returns the number of notes moved back to pending status
-    pub fn discard_transaction(&mut self, tx_id: TransactionId) -> usize {
-        if let Some(notes) = self.inflight_transactions.remove(&tx_id) {
-            let n = notes.len();
-            // SAFETY: All transactions contain at least a note
-            self.account_queue.push_back(notes.first().unwrap().metadata().tag());
-            for note in notes {
-                let tag = note.metadata().tag();
-                self.pending_notes_by_tag.entry(tag).or_default().push(note);
-            }
-            n
-        } else {
-            0
+    /// Returns the next set of notes with the next scheduled tag in the global queue
+    /// (up to `MAX_BATCH`)
+    pub fn take_next_notes_by_tag(&mut self) -> Option<(NoteTag, Vec<NetworkNote>)> {
+        let next_tag = *self.account_queue.front()?;
+
+        let bucket = self.by_tag.get_mut(&next_tag)?;
+        let note_count = bucket.len().min(MAX_BATCH);
+        let batch: Vec<NetworkNote> = bucket.drain(..note_count).collect();
+
+        if bucket.is_empty() {
+            self.by_tag.remove(&next_tag);
         }
+
+        Some((next_tag, batch))
+    }
+
+    /// Discard every note whose nullifier is in the input set.
+    pub fn discard_by_nullifiers(&mut self, nullifiers: &[Nullifier]) {
+        let mut ids = BTreeSet::new();
+        for nf in nullifiers {
+            if let Some(id) = self.by_nullifier.remove(nf) {
+                ids.insert(id);
+            }
+        }
+        if ids.is_empty() {
+            return;
+        }
+
+        self.by_tag.retain(|_, bucket| {
+            bucket.retain(|n| !ids.contains(&n.id()));
+            !bucket.is_empty()
+        });
+
+        self.inflight_txs.retain(|_, notes| {
+            notes.retain(|n| !ids.contains(&n.id()));
+            !notes.is_empty()
+        });
     }
 
     /// Mark a transaction as committed, removing its notes from the inflight notes set.
-    /// Returns the number of notes that were committed
-    pub fn commit_transaction(&mut self, tx_id: TransactionId) -> usize {
-        if let Some(notes) = self.inflight_transactions.remove(&tx_id) {
+    /// Returns the number of notes that were committed.
+    pub fn commit_inflight(&mut self, tx_id: TransactionId) -> usize {
+        if let Some(notes) = self.inflight_txs.remove(&tx_id) {
+            for n in &notes {
+                self.by_nullifier.remove(&n.nullifier());
+            }
             notes.len()
         } else {
             0
         }
     }
 
-    /// Returns the tag of the next note scheduled in the global queue
-    pub fn get_next_note_tag(&self) -> Option<NoteTag> {
-        self.account_queue.front().copied()
-    }
-
-    /// Discard every note whose nullifier is in the input slice.
-    pub fn discard_by_nullifiers(&mut self, nullifiers: &[Nullifier]) {
-        let mut to_remove: BTreeSet<NoteId> = BTreeSet::new();
-        for n in nullifiers {
-            if let Some(id) = self.notes_by_nullifiers.remove(n) {
-                to_remove.insert(id);
+    pub fn rollback_inflight(&mut self, tx_id: TransactionId) -> usize {
+        if let Some(notes) = self.inflight_txs.remove(&tx_id) {
+            let count = notes.len();
+            // SAFETY: All transactions contain at least a note
+            self.account_queue.push_back(notes.first().unwrap().metadata().tag());
+            for n in notes {
+                self.by_tag.entry(n.metadata().tag()).or_default().push(n.clone());
+                self.by_nullifier.insert(n.nullifier(), n.id());
             }
+
+            count
+        } else {
+            0
         }
-
-        if to_remove.is_empty() {
-            return;
-        }
-
-        self.pending_notes_by_tag.retain(|_, q| {
-            q.retain(|note| !to_remove.contains(&note.id()));
-            !q.is_empty()
-        });
-
-        self.inflight_transactions.retain(|_, notes| {
-            notes.retain(|note| !to_remove.contains(&note.id()));
-            !notes.is_empty()
-        });
     }
 }
 
-// TODO: Add tests
+// TODO: tests

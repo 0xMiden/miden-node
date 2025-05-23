@@ -10,11 +10,9 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_objects::{
-    Digest,
-    note::{Note, Nullifier},
-};
-use state::NtxBuilderState;
+use miden_node_utils::network_note::NetworkNote;
+use miden_objects::{Digest, note::Nullifier};
+use state::PendingNotes;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
@@ -24,16 +22,16 @@ mod state;
 
 #[derive(Debug)]
 pub struct NtxBuilderApi {
-    state: Arc<Mutex<NtxBuilderState>>,
+    state: Arc<Mutex<PendingNotes>>,
 }
 
 impl NtxBuilderApi {
-    pub fn new(unconsumed_network_notes: Vec<Note>) -> Self {
-        let state = NtxBuilderState::new(unconsumed_network_notes);
+    pub fn new(unconsumed_network_notes: Vec<NetworkNote>) -> Self {
+        let state = PendingNotes::new(unconsumed_network_notes);
         Self { state: Arc::new(Mutex::new(state)) }
     }
 
-    pub fn state(&self) -> Arc<Mutex<NtxBuilderState>> {
+    pub fn state(&self) -> Arc<Mutex<PendingNotes>> {
         self.state.clone()
     }
 }
@@ -47,7 +45,7 @@ impl Api for NtxBuilderApi {
     ) -> Result<Response<()>, Status> {
         let req = request.into_inner();
 
-        let notes: Vec<Note> = try_convert(req.note)
+        let notes: Vec<NetworkNote> = try_convert(req.note)
             .map_err(|err| Status::invalid_argument(format!("invalid note list: {err}")))?;
 
         let mut state = self
@@ -55,7 +53,7 @@ impl Api for NtxBuilderApi {
             .lock()
             .map_err(|e| Status::internal(format!("Failed to lock state: {e}")))?;
 
-        state.add_unconsumed_notes(notes);
+        state.queue_unconsumed_notes(notes);
 
         Ok(Response::new(()))
     }
@@ -116,9 +114,9 @@ impl Api for NtxBuilderApi {
                 })?;
 
             if TransactionStatus::Commited == tx.status() {
-                state.commit_transaction(tx_id.into());
+                state.commit_inflight(tx_id.into());
             } else {
-                state.discard_transaction(tx_id.into());
+                state.rollback_inflight(tx_id.into());
             }
         }
         Ok(Response::new(()))

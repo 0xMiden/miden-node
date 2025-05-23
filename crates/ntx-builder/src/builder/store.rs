@@ -8,12 +8,8 @@ use miden_node_proto::{
         store::api_client as store_client,
     },
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
-use miden_objects::{
-    account::Account,
-    block::BlockHeader,
-    note::{Note, NoteTag},
-};
+use miden_node_utils::{network_note::NetworkNote, tracing::grpc::OtelInterceptor};
+use miden_objects::{account::Account, block::BlockHeader, note::NoteTag};
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -68,7 +64,7 @@ impl StoreClient {
 
     /// Returns the latest block's header from the store.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
-    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<Note>, StoreError> {
+    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
         let mut page_token: Option<u64> = None;
 
@@ -76,8 +72,11 @@ impl StoreClient {
             let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
-            let page: Vec<Note> =
-                resp.notes.into_iter().map(Note::try_from).collect::<Result<Vec<_>, _>>()?;
+            let page: Vec<NetworkNote> = resp
+                .notes
+                .into_iter()
+                .map(NetworkNote::try_from)
+                .collect::<Result<Vec<_>, _>>()?;
 
             all_notes.extend(page);
 

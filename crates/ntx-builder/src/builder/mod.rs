@@ -57,7 +57,7 @@ impl NetworkTransactionBuilder {
                 interval.tick().await;
 
                 {
-                    let state_guard = match api_state.lock() {
+                    let mut state_guard = match api_state.lock() {
                         Ok(guard) => guard,
                         Err(e) => {
                             warn!(target: COMPONENT, error=%e, "Failed to lock API state - poisoned lock");
@@ -65,16 +65,14 @@ impl NetworkTransactionBuilder {
                         },
                     };
 
-                    if state_guard.has_unconsumed_notes() {
-                        // Get a tag with pending notes
-                        if let Some(tag) = state_guard.get_next_note_tag() {
-                            debug!(
-                                target: COMPONENT,
-                                tag=%tag,
-                                "Found note tag to process"
-                            );
-                            // TODO: call executor
-                        }
+                    // Get a tag with pending notes
+                    if let Some((tag, _notes)) = state_guard.take_next_notes_by_tag() {
+                        debug!(
+                            target: COMPONENT,
+                            tag=%tag,
+                            "Found note tag to process"
+                        );
+                        // TODO: call executor
                     }
                 }
             }

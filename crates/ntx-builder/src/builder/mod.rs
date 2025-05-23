@@ -8,6 +8,7 @@ use tokio::{net::TcpListener, time};
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, info, warn};
+use url::Url;
 
 use crate::COMPONENT;
 
@@ -23,8 +24,8 @@ mod store;
 pub struct NetworkTransactionBuilder {
     /// The address of the network transaction builder gRPC server.
     pub address: SocketAddr,
-    /// Address of the store gRPC server.
-    pub store_address: SocketAddr,
+    /// URL of the store gRPC server.
+    pub store_url: Url,
 }
 
 impl NetworkTransactionBuilder {
@@ -39,7 +40,7 @@ impl NetworkTransactionBuilder {
             "Starting network transaction builder server"
         );
 
-        let store = StoreClient::new(self.store_address);
+        let store = StoreClient::new(self.store_url);
         let unconsumed_network_notes = store.get_unconsumed_network_notes().await?;
 
         let api = NtxBuilderApi::new(unconsumed_network_notes);

@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
@@ -20,6 +18,7 @@ use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{info, instrument};
+use url::Url;
 
 use crate::COMPONENT;
 
@@ -38,12 +37,12 @@ pub struct StoreClient {
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub fn new(store_address: SocketAddr) -> Self {
-        let store_url = format!("http://{store_address}");
-        // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-        let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
+    pub fn new(store_url: Url) -> Self {
+        let channel = tonic::transport::Endpoint::try_from(store_url.to_string())
+            .expect("valid gRPC endpoint URL")
+            .connect_lazy();
         let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
-        info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+        info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 
         Self { inner: store }
     }
@@ -97,7 +96,6 @@ impl StoreClient {
         note_tag: NoteTag,
     ) -> Result<Option<Account>, StoreError> {
         let tag_inner = note_tag.inner();
-        assert!(tag_inner >> 30 == 0, "first 2 bits have to be 0");
         let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
 
         let store_response = self

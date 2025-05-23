@@ -1,6 +1,8 @@
-use miden_objects::{account::{Account, AccountId}, note::{NoteExecutionMode, NoteTag}};
+use miden_objects::{
+    account::AccountId,
+    note::{NoteExecutionMode, NoteTag},
+};
 use thiserror::Error;
-
 
 pub type AccountPrefix = u32;
 
@@ -10,7 +12,7 @@ pub struct NetworkAccountPrefix(u32);
 
 impl NetworkAccountPrefix {
     pub fn inner(&self) -> u32 {
-        return self.0
+        return self.0;
     }
 }
 
@@ -18,7 +20,7 @@ impl From<NetworkAccountPrefix> for u32 {
     fn from(value: NetworkAccountPrefix) -> Self {
         value.inner()
     }
-} 
+}
 
 impl TryFrom<u32> for NetworkAccountPrefix {
     type Error = NetworkAccountError;
@@ -48,11 +50,11 @@ impl TryFrom<NoteTag> for NetworkAccountPrefix {
     type Error = NetworkAccountError;
 
     fn try_from(tag: NoteTag) -> Result<Self, Self::Error> {
-        if tag.execution_mode() != NoteExecutionMode::Network || !tag.is_single_target(){
+        if tag.execution_mode() != NoteExecutionMode::Network || !tag.is_single_target() {
             return Err(NetworkAccountError::InvalidExecutionMode(tag));
         }
 
-        let tag_inner:u32 = tag.into();
+        let tag_inner: u32 = tag.into();
         assert!(tag_inner >> 30 == 0, "first 2 bits have to be 0");
         Ok(NetworkAccountPrefix(tag_inner))
     }

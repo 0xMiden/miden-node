@@ -185,15 +185,16 @@ impl BundledCommand {
             .id();
 
         // Start network transaction builder. The endpoint is available after loading completes.
+        // SAFETY: socket addr yields valid URLs
+        let store_url =
+            Url::parse(&format!("http://{}:{}/", store_address.ip(), store_address.port()))
+                .unwrap();
         let ntx_builder_id = join_set
             .spawn(async move {
-                NetworkTransactionBuilder {
-                    address: ntx_builder_address,
-                    store_address,
-                }
-                .serve()
-                .await
-                .context("failed while serving store component")
+                NetworkTransactionBuilder { address: ntx_builder_address, store_url }
+                    .serve()
+                    .await
+                    .context("failed while serving store component")
             })
             .id();
 

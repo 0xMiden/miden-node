@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, convert::Infallible};
+use std::convert::Infallible;
 
 use axum::{
     extract::{Query, State},
@@ -15,10 +15,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::error;
 
-use super::{
-    Server,
-    pow::{ChallengeCache, check_pow_solution, check_server_signature, check_server_timestamp},
-};
+use super::{Server, pow::PowParameters};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -46,10 +43,7 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
-    pub pow_seed: Option<String>,
-    pub pow_solution: Option<u64>,
-    pub server_signature: Option<String>,
-    pub server_timestamp: Option<u64>,
+    pub pow_parameters: Option<PowParameters>,
     pub api_key: Option<String>,
 }
 
@@ -138,16 +132,12 @@ impl RawMintRequest {
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
     ///   - the API key is invalid
-    ///   - the server timestamp is expired
-    ///   - the server signature does not match
+    ///   - the `PoW` parameters are missing
     ///   - the `PoW` solution is invalid
-    fn validate(
-        self,
-        options: &AssetOptions,
-        pow_salt: &str,
-        challenge_state: &ChallengeCache,
-        api_keys: &BTreeSet<String>,
-    ) -> Result<MintRequest, InvalidRequest> {
+    ///   - the `PoW` server signature does not match
+    ///   - the `PoW` server timestamp is expired
+    ///   - the `PoW` challenge is invalid or expired
+    fn validate(self, server: &Server) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -161,38 +151,31 @@ impl RawMintRequest {
         }
         .map_err(InvalidRequest::AccountId)?;
 
-        let asset_amount = options
+        let asset_amount = server
+            .mint_state
+            .asset_options
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
         // Check the API key, if provided
         if let Some(api_key) = &self.api_key {
-            if api_keys.contains(api_key) {
+            if server.api_keys.contains(api_key) {
                 // If the API key is valid, we skip the PoW check
                 return Ok(MintRequest { account_id, note_type, asset_amount });
             }
             return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
         }
 
-        let (server_timestamp, pow_seed, server_signature, pow_solution) = {
-            let pow_seed = self.pow_seed.ok_or(InvalidRequest::MissingPowParameters)?;
-            let server_signature =
-                self.server_signature.ok_or(InvalidRequest::MissingPowParameters)?;
-            let server_timestamp =
-                self.server_timestamp.ok_or(InvalidRequest::MissingPowParameters)?;
-            let pow_solution = self.pow_solution.ok_or(InvalidRequest::MissingPowParameters)?;
-
-            (server_timestamp, pow_seed, server_signature, pow_solution)
-        };
-
-        // Check the server timestamp
-        check_server_timestamp(server_timestamp)?;
-
-        // Check the server signature
-        check_server_signature(pow_salt, &server_signature, &pow_seed, server_timestamp)?;
-
-        // Check the PoW solution
-        check_pow_solution(challenge_state, &pow_seed, &server_signature, pow_solution)?;
+        if let Some(pow_parameters) = &self.pow_parameters {
+            server
+                .challenge_cache
+                .validate_challenge(&pow_parameters.pow_seed, &pow_parameters.server_signature)?;
+            pow_parameters.check_server_timestamp()?;
+            pow_parameters.check_server_signature(&server.pow_salt)?;
+            pow_parameters.check_pow_solution(&server.challenge_cache)?;
+        } else {
+            return Err(InvalidRequest::MissingPowParameters);
+        }
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
@@ -206,12 +189,7 @@ pub async fn get_tokens(
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
     let mint_error = request
-        .validate(
-            &server.mint_state.asset_options,
-            &server.pow_salt,
-            &server.challenge_state,
-            &server.api_keys,
-        )
+        .validate(&server)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
             let span = tracing::Span::current();

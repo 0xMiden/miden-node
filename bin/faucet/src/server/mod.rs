@@ -49,7 +49,7 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow_salt: String,
-    challenge_state: pow::ChallengeCache,
+    challenge_cache: pow::ChallengeCache,
     api_keys: BTreeSet<String>,
 }
 
@@ -81,7 +81,7 @@ impl Server {
             mint_state,
             metadata,
             pow_salt,
-            challenge_state,
+            challenge_cache: challenge_state,
             api_keys,
         }
     }
@@ -288,7 +288,12 @@ impl KeyExtractor for ApiKeyExtractor {
             // timestamp we get a somewhat unique key each time so this rate limiter won't affect
             // requests without an api key.
             Ok(params.account_id.clone()
-                + &params.server_timestamp.ok_or(GovernorError::UnableToExtractKey)?.to_string())
+                + &params
+                    .pow_parameters
+                    .as_ref()
+                    .ok_or(GovernorError::UnableToExtractKey)?
+                    .server_timestamp
+                    .to_string())
         }
     }
 }

@@ -7,7 +7,7 @@ use std::{
 use axum::{Json, extract::State, response::IntoResponse};
 use miden_tx::utils::ToHex;
 use rand::{Rng, rng};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use tokio::time::{Duration, interval};
 
@@ -22,7 +22,88 @@ const DIFFICULTY: u64 = 5;
 ///
 /// The server timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of
 /// the current time.
-const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
+pub(crate) const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
+
+// POW PARAMETERS
+// ================================================================================================
+
+/// Parameters for the `PoW` challenge.
+///
+/// This struct is used to store the parameters for the `PoW` challenge.
+/// It is used to validate the `PoW` challenge and to store the parameters for the `PoW` challenge.
+#[derive(Deserialize)]
+pub(crate) struct PowParameters {
+    pub(crate) pow_seed: String,
+    pub(crate) server_signature: String,
+    pub(crate) server_timestamp: u64,
+    pub(crate) pow_solution: u64,
+}
+
+impl PowParameters {
+    /// Check the server signature.
+    ///
+    /// The server signature is the result of hashing the server salt, seed and timestamp.
+    pub fn check_server_signature(&self, server_salt: &str) -> Result<(), InvalidRequest> {
+        let hash = get_server_signature(server_salt, &self.pow_seed, self.server_timestamp);
+        if hash != self.server_signature {
+            return Err(InvalidRequest::ServerSignaturesDoNotMatch);
+        }
+        Ok(())
+    }
+
+    /// Check the received timestamp.
+    ///
+    /// The timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of the
+    /// current time.
+    pub fn check_server_timestamp(&self) -> Result<(), InvalidRequest> {
+        let server_timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+
+        if (server_timestamp - self.server_timestamp) > SERVER_TIMESTAMP_TOLERANCE_SECONDS {
+            return Err(InvalidRequest::ExpiredServerTimestamp(
+                self.server_timestamp,
+                server_timestamp,
+            ));
+        }
+
+        Ok(())
+    }
+
+    /// Check a `PoW` solution.
+    ///
+    /// * `challenge_state` - The challenge state to be used to validate the challenge.
+    /// * `seed` - The seed to be used by the client as the `PoW` seed.
+    /// * `server_signature` - The server signature to be used to validate the challenge.
+    /// * `solution` - The solution to be checked.
+    ///
+    /// The solution is valid if the hash of the seed and the solution has at least `DIFFICULTY`
+    /// leading zeros.
+    ///
+    /// Returns `true` if the solution is valid, `false` otherwise.
+    pub fn check_pow_solution(
+        &self,
+        challenge_state: &ChallengeCache,
+    ) -> Result<(), InvalidRequest> {
+        // Then check the PoW solution
+        let mut hasher = Sha3_256::new();
+        hasher.update(&self.pow_seed);
+        hasher.update(self.pow_solution.to_string().as_bytes());
+        let hash = &hasher.finalize().to_hex();
+
+        let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
+        if leading_zeros < DIFFICULTY as usize {
+            return Err(InvalidRequest::InvalidPoW);
+        }
+
+        // If we get here, the solution is valid
+        // Remove the challenge to prevent reuse
+        challenge_state.remove_challenge(&self.pow_seed);
+
+        Ok(())
+    }
+}
 
 // CHALLENGE STATE
 // ================================================================================================
@@ -63,8 +144,7 @@ impl ChallengeCache {
 
     /// Validate a challenge.
     ///
-    /// The challenge is valid if the server signature matches and the timestamp is within the
-    /// tolerance.
+    /// The challenge is valid if the server signature matches.
     pub fn validate_challenge(
         &self,
         seed: &str,
@@ -75,18 +155,6 @@ impl ChallengeCache {
         if let Some(challenge) = challenges.get(seed) {
             if challenge.server_signature != server_signature {
                 return Err(InvalidRequest::ServerSignaturesDoNotMatch);
-            }
-
-            let current_time = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("Time went backwards")
-                .as_secs();
-
-            if (current_time - challenge.timestamp) > SERVER_TIMESTAMP_TOLERANCE_SECONDS {
-                return Err(InvalidRequest::ExpiredServerTimestamp(
-                    challenge.timestamp,
-                    current_time,
-                ));
             }
 
             Ok(())
@@ -176,7 +244,7 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
 
     // Store the challenge
     server
-        .challenge_state
+        .challenge_cache
         .add_challenge(&random_seed, server_signature.clone(), timestamp);
 
     Json(PoWResponse {
@@ -185,79 +253,6 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
         server_signature,
         timestamp,
     })
-}
-
-/// Check the server signature.
-///
-/// The server signature is the result of hashing the server salt and the seed.
-pub(crate) fn check_server_signature(
-    server_salt: &str,
-    server_signature: &str,
-    seed: &str,
-    timestamp: u64,
-) -> Result<(), InvalidRequest> {
-    let hash = get_server_signature(server_salt, seed, timestamp);
-
-    if hash != server_signature {
-        return Err(InvalidRequest::ServerSignaturesDoNotMatch);
-    }
-
-    Ok(())
-}
-
-/// Check a `PoW` solution.
-///
-/// * `challenge_state` - The challenge state to be used to validate the challenge.
-/// * `seed` - The seed to be used by the client as the `PoW` seed.
-/// * `server_signature` - The server signature to be used to validate the challenge.
-/// * `solution` - The solution to be checked.
-///
-/// The solution is valid if the hash of the seed and the solution has at least `DIFFICULTY`
-/// leading zeros.
-///
-/// Returns `true` if the solution is valid, `false` otherwise.
-pub(crate) fn check_pow_solution(
-    challenge_state: &ChallengeCache,
-    seed: &str,
-    server_signature: &str,
-    solution: u64,
-) -> Result<(), InvalidRequest> {
-    // First validate the challenge
-    challenge_state.validate_challenge(seed, server_signature)?;
-
-    // Then check the PoW solution
-    let mut hasher = Sha3_256::new();
-    hasher.update(seed);
-    hasher.update(solution.to_string().as_bytes());
-    let hash = &hasher.finalize().to_hex();
-
-    let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-    if leading_zeros < DIFFICULTY as usize {
-        return Err(InvalidRequest::InvalidPoW);
-    }
-
-    // If we get here, the solution is valid
-    // Remove the challenge to prevent reuse
-    challenge_state.remove_challenge(seed);
-
-    Ok(())
-}
-
-/// Check the received timestamp.
-///
-/// The timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of the
-/// current time.
-pub(crate) fn check_server_timestamp(timestamp: u64) -> Result<(), InvalidRequest> {
-    let server_timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
-
-    if (server_timestamp - timestamp) > SERVER_TIMESTAMP_TOLERANCE_SECONDS {
-        return Err(InvalidRequest::ExpiredServerTimestamp(timestamp, server_timestamp));
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -297,14 +292,22 @@ mod tests {
         hasher.update(timestamp.to_string().as_bytes());
         let server_signature = hasher.finalize().to_hex();
 
-        let result = check_server_signature(server_salt, &server_signature, seed, timestamp);
-        assert!(result.is_ok());
-
         let solution = find_pow_solution(seed);
 
+        let pow_parameters = PowParameters {
+            pow_seed: seed.to_string(),
+            server_signature: server_signature.clone(),
+            server_timestamp: timestamp,
+            pow_solution: solution,
+        };
+
+        let result = pow_parameters.check_server_signature(server_salt);
+
+        assert!(result.is_ok());
+
         let challenge_state = ChallengeCache::new();
-        challenge_state.add_challenge(seed, server_signature.clone(), timestamp);
-        let result = check_pow_solution(&challenge_state, seed, &server_signature, solution);
+        challenge_state.add_challenge(seed, server_signature, timestamp);
+        let result = pow_parameters.check_pow_solution(&challenge_state);
 
         assert!(result.is_ok());
     }
@@ -316,13 +319,17 @@ mod tests {
         let timestamp = 1_234_567_890;
         let server_signature = "0x1234567890abcdef";
 
-        let result = check_server_signature(server_salt, server_signature, seed, timestamp);
+        let pow_parameters = PowParameters {
+            pow_seed: seed.to_string(),
+            server_signature: server_signature.to_string(),
+            server_timestamp: timestamp,
+            pow_solution: 0,
+        };
+        let result = pow_parameters.check_server_signature(server_salt);
         assert!(result.is_err());
 
-        let solution = 1_234_567_890;
-
         let challenge_state = ChallengeCache::new();
-        let result = check_pow_solution(&challenge_state, seed, server_signature, solution);
+        let result = pow_parameters.check_pow_solution(&challenge_state);
 
         assert!(result.is_err());
     }

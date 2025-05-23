@@ -1,4 +1,4 @@
-use std::convert::Infallible;
+use std::{collections::BTreeSet, convert::Infallible};
 
 use axum::{
     extract::{Query, State},
@@ -46,10 +46,11 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
-    pub pow_seed: String,
-    pub pow_solution: u64,
-    pub server_signature: String,
-    pub server_timestamp: u64,
+    pub pow_seed: Option<String>,
+    pub pow_solution: Option<u64>,
+    pub server_signature: Option<String>,
+    pub server_timestamp: Option<u64>,
+    pub api_key: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -58,8 +59,12 @@ pub enum InvalidRequest {
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
     AssetAmount(u64),
+    #[error("API key {0} is invalid")]
+    InvalidApiKey(String),
     #[error("invalid POW solution")]
     InvalidPoW,
+    #[error("POW parameters are missing")]
+    MissingPowParameters,
     #[error("server signatures do not match")]
     ServerSignaturesDoNotMatch,
     #[error("server timestamp expired, received: {0}, current time: {1}")]
@@ -137,6 +142,7 @@ impl RawMintRequest {
         options: &AssetOptions,
         pow_salt: &str,
         challenge_state: &ChallengeState,
+        api_keys: &BTreeSet<String>,
     ) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
@@ -155,24 +161,34 @@ impl RawMintRequest {
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
+        // Check the API key, if provided
+        if let Some(api_key) = &self.api_key {
+            if api_keys.contains(api_key) {
+                // If the API key is valid, we skip the PoW check
+                return Ok(MintRequest { account_id, note_type, asset_amount });
+            }
+            return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
+        }
+
+        let (server_timestamp, pow_seed, server_signature, pow_solution) = {
+            let pow_seed = self.pow_seed.ok_or(InvalidRequest::MissingPowParameters)?;
+            let server_signature =
+                self.server_signature.ok_or(InvalidRequest::MissingPowParameters)?;
+            let server_timestamp =
+                self.server_timestamp.ok_or(InvalidRequest::MissingPowParameters)?;
+            let pow_solution = self.pow_solution.ok_or(InvalidRequest::MissingPowParameters)?;
+
+            (server_timestamp, pow_seed, server_signature, pow_solution)
+        };
+
         // Check the server timestamp
-        check_server_timestamp(self.server_timestamp)?;
+        check_server_timestamp(server_timestamp)?;
 
         // Check the server signature
-        check_server_signature(
-            pow_salt,
-            &self.server_signature,
-            &self.pow_seed,
-            self.server_timestamp,
-        )?;
+        check_server_signature(pow_salt, &server_signature, &pow_seed, server_timestamp)?;
 
         // Check the PoW solution
-        check_pow_solution(
-            challenge_state,
-            &self.pow_seed,
-            &self.server_signature,
-            self.pow_solution,
-        )?;
+        check_pow_solution(challenge_state, &pow_seed, &server_signature, pow_solution)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
@@ -186,7 +202,12 @@ pub async fn get_tokens(
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
     let mint_error = request
-        .validate(&server.mint_state.asset_options, &server.pow_salt, &server.challenge_state)
+        .validate(
+            &server.mint_state.asset_options,
+            &server.pow_salt,
+            &server.challenge_state,
+            &server.api_keys,
+        )
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
             let span = tracing::Span::current();

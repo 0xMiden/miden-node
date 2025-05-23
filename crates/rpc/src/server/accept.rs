@@ -93,8 +93,10 @@ where
         let accept = match AcceptHeaderValue::try_from(accept_str) {
             Ok(value) => value,
             Err(e) => {
+                // If the accept header value is different from expected, don't enforce the version
+                // requirement.
                 debug!(target: COMPONENT, "Failed to parse accept header value: {}", e);
-                return bad_request("Invalid accept header value".into()).boxed();
+                return self.inner.call(request).boxed();
             },
         };
 

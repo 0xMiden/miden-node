@@ -1,4 +1,4 @@
-use std::{convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::BTreeSet, convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use axum::{
@@ -50,6 +50,7 @@ pub struct Server {
     metadata: &'static Metadata,
     pow_salt: String,
     challenge_state: pow::ChallengeState,
+    api_keys: BTreeSet<String>,
 }
 
 impl Server {
@@ -58,6 +59,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_salt: String,
+        api_keys: BTreeSet<String>,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
         let metadata = Metadata {
@@ -80,9 +82,13 @@ impl Server {
             metadata,
             pow_salt,
             challenge_state,
+            api_keys,
         }
     }
 
+    // TODO: Cannot move the rate limiter creation to its own function because it requires
+    // defining types that the `governor` crate does not export.
+    #[allow(clippy::too_many_lines)]
     pub async fn serve(self, url: Url) -> anyhow::Result<()> {
         // Rate limits by IP. We do additional per account rate limiting in the get_tokens method.
         //
@@ -110,15 +116,27 @@ impl Server {
             .unwrap();
         let account_rate_limiter = Arc::new(account_rate_limiter);
 
+        // TODO: We should move the rate limiter paramers to the config file or as env vars. The
+        // same goes for the other rate limiters in this function.
+        let api_key_rate_limiter = GovernorConfigBuilder::default()
+            .const_burst_size(3)
+            .const_per_second(10)
+            .key_extractor(ApiKeyExtractor)
+            .finish()
+            .unwrap();
+        let api_key_rate_limiter = Arc::new(api_key_rate_limiter);
+
         // Rate limiter requires periodic state cleanup.
         tokio::spawn({
             let ip_rate_limiter = ip_rate_limiter.limiter().clone();
             let account_rate_limiter = account_rate_limiter.limiter().clone();
+            let api_key_rate_limiter = api_key_rate_limiter.limiter().clone();
             async move {
                 loop {
                     tokio::time::sleep(Duration::from_secs(60)).await;
                     ip_rate_limiter.retain_recent();
                     account_rate_limiter.retain_recent();
+                    api_key_rate_limiter.retain_recent();
                 }
             }
         });
@@ -156,9 +174,19 @@ impl Server {
                                         // Disable failure logs since we already trace errors in the method.
                                         .on_failure(())
                                 ))
-                                .layer( GovernorLayer {
-                                    config: account_rate_limiter,
-                                })
+                                .layer(
+                                    ServiceBuilder::new()
+                                    .layer(
+                                        GovernorLayer {
+                                            config: account_rate_limiter,
+                                        }
+                                    )
+                                    .layer(
+                                        GovernorLayer {
+                                            config: api_key_rate_limiter,
+                                        }
+                                    )
+                                )
                 )
                 .layer(
                     ServiceBuilder::new()
@@ -236,5 +264,31 @@ impl KeyExtractor for AccountKeyExtractor {
             msg: Some("Invalid account id".to_string()),
             headers: None,
         })
+    }
+}
+
+#[derive(Clone)]
+struct ApiKeyExtractor;
+
+impl KeyExtractor for ApiKeyExtractor {
+    type Key = String;
+
+    fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, GovernorError> {
+        let params = Query::<RawMintRequest>::try_from_uri(req.uri())
+            .map_err(|_| GovernorError::UnableToExtractKey)?;
+
+        if let Some(api_key) = params.api_key.as_ref() {
+            // Requests with the same api key are rate limited together.
+            Ok(api_key.to_string())
+        } else {
+            // The naive approach would be to use an empty string as the extracted key for this case
+            // but by doing this then all non-api key requests will be grouped together and the
+            // limit will be reached almost instantly. To avoid this, we want to return a "unique"
+            // extracted key for each request. By concatenating the account id and the server
+            // timestamp we get a somewhat unique key each time so this rate limiter won't affect
+            // requests without an api key.
+            Ok(params.account_id.clone()
+                + &params.server_timestamp.ok_or(GovernorError::UnableToExtractKey)?.to_string())
+        }
     }
 }

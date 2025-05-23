@@ -18,7 +18,7 @@
 - [BUGFIX] Prevents duplicated note IDs (#842).
 - Added a required Proof-of-Work in the faucet to request tokens (#831).
 - Added an optional API key request parameter to skip PoW in faucet (#839).
-- Block producer now emits network note information (#805).
+- Block producer now emits network note information (#833).
 - Introduced Network Transaction Builder (#840).
 
 ## v0.8.2 (2025-05-04)

@@ -56,6 +56,7 @@ miden-node-block-producer = { features = ["testing"], workspace = true }
 miden-objects             = { features = ["testing"], workspace = true }
 serde_json                = { version = "1.0" }
 tokio-stream              = { features = ["net"], workspace = true }
+tokio                     = { features = ["process"], workspace = true }
 tonic-web                 = { version = "0.12" }
 
 # Required to avoid false positives in cargo-machete

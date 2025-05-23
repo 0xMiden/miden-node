@@ -459,7 +459,6 @@ pub fn upsert_accounts(
         accounts {
             account_id,
             id_prefix,
-            id_prefix,
             account_commitment,
             block_num,
             details

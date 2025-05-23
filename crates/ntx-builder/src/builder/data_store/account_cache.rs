@@ -138,7 +138,7 @@ mod tests {
         let account = create_account(10);
         let cache = NetworkAccountCache::new(2);
 
-        cache.put(&account.clone()).unwrap();
+        cache.put(&account.clone()).    unwrap();
         assert_eq!(cache.get(account.id().try_into().unwrap()).unwrap(), account);
     }
 
@@ -266,7 +266,9 @@ mod tests {
     }
 
     fn create_account(id: u32) -> Account {
+        // Network storage mode
+        let storage_mode:u128 = 0b01;
         // NOTE: this shifts the ID to generate a different prefix
-        Account::mock(u128::from(id) << 99, Felt::new(0), TransactionKernel::testing_assembler())
+        Account::mock((u128::from(id) << 99) | ((storage_mode << 70) as u128), Felt::new(0), TransactionKernel::testing_assembler())
     }
 }

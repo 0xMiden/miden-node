@@ -8,7 +8,7 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::note_tag::NetworkNote;
+use miden_node_utils::network_note::NetworkNote;
 use miden_objects::{Digest, note::Nullifier, transaction::TransactionId};
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};

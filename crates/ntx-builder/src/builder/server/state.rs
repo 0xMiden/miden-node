@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use miden_node_utils::note_tag::NetworkNote;
+use miden_node_utils::network_note::NetworkNote;
 use miden_objects::{
     note::{NoteId, NoteTag, Nullifier},
     transaction::TransactionId,

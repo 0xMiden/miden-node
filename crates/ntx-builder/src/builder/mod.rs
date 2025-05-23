@@ -4,7 +4,7 @@ use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
 use miden_node_proto::generated::ntx_builder::api_server;
-use miden_node_utils::note_tag::NetworkNote;
+use miden_node_utils::network_note::NetworkNote;
 use miden_objects::{
     assembly::DefaultSourceManager,
     note::Note,

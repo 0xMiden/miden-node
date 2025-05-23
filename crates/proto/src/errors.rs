@@ -1,6 +1,6 @@
 use std::{any::type_name, num::TryFromIntError};
 
-use miden_node_utils::note_tag::NetworkNoteError;
+use miden_node_utils::network_note::NetworkNoteError;
 use miden_objects::{
     crypto::merkle::{SmtLeafError, SmtProofError},
     utils::DeserializationError,

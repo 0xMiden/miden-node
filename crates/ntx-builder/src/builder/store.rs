@@ -37,7 +37,7 @@ pub struct StoreClient {
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub fn new(store_url: Url) -> Self {
+    pub fn new(store_url: &Url) -> Self {
         let channel = tonic::transport::Endpoint::try_from(store_url.to_string())
             .expect("valid gRPC endpoint URL")
             .connect_lazy();

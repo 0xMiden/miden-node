@@ -58,12 +58,12 @@ impl NtxBuilderState {
     pub fn discard_transaction(&mut self, tx_id: TransactionId) -> usize {
         if let Some(notes) = self.inflight_transactions.remove(&tx_id) {
             let n = notes.len();
+            // SAFETY: All transactions contain at least a note
             self.account_queue.push_back(notes.first().unwrap().metadata().tag());
             for note in notes {
                 let tag = note.metadata().tag();
                 self.pending_notes_by_tag.entry(tag).or_default().push(note);
             }
-            // SAFETY: All transactions contain at least a note
             n
         } else {
             0

@@ -40,7 +40,7 @@ impl NetworkTransactionBuilder {
             "Starting network transaction builder server"
         );
 
-        let store = StoreClient::new(self.store_url);
+        let store = StoreClient::new(&self.store_url);
         let unconsumed_network_notes = store.get_unconsumed_network_notes().await?;
 
         let api = NtxBuilderApi::new(unconsumed_network_notes);

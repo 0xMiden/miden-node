@@ -20,7 +20,7 @@ miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 miden-tx         = { workspace = true }
 thiserror        = { workspace = true }
-tokio            = { workspace = true, features = ["full"] }
+tokio            = { features = ["full"], workspace = true }
 tokio-stream     = { workspace = true }
 tonic            = { workspace = true }
 tower-http       = { workspace = true }

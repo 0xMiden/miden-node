@@ -12,7 +12,7 @@ pub struct NetworkAccountPrefix(u32);
 
 impl NetworkAccountPrefix {
     pub fn inner(&self) -> u32 {
-        return self.0;
+        self.0
     }
 }
 
@@ -29,7 +29,7 @@ impl TryFrom<u32> for NetworkAccountPrefix {
         if value >> 30 != 0 {
             return Err(NetworkAccountError::InvalidPrefix(value));
         }
-        return Ok(NetworkAccountPrefix(value));
+        Ok(NetworkAccountPrefix(value))
     }
 }
 
@@ -38,11 +38,10 @@ impl TryFrom<AccountId> for NetworkAccountPrefix {
 
     fn try_from(id: AccountId) -> Result<Self, Self::Error> {
         if !id.is_network() {
-            Err(NetworkAccountError::NotNetworkAccount(id))
-        } else {
-            let prefix = get_account_id_tag_prefix(id);
-            Ok(NetworkAccountPrefix(prefix))
+            return Err(NetworkAccountError::NotNetworkAccount(id));
         }
+        let prefix = get_account_id_tag_prefix(id);
+        Ok(NetworkAccountPrefix(prefix))
     }
 }
 

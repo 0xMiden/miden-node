@@ -38,7 +38,7 @@ impl TryFrom<Note> for NetworkNote {
         {
             return Ok(NetworkNote(note));
         }
-        return Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()));
+        Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()))
     }
 }
 

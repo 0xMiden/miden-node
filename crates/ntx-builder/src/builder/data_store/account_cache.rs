@@ -266,11 +266,11 @@ mod tests {
     }
 
     fn create_account(id: u32) -> Account {
-        // Network storage mode
+        // network storage mode bits
         let storage_mode: u128 = 0b01;
         // NOTE: this shifts the ID to generate a different prefix
         Account::mock(
-            (u128::from(id) << 99) | ((storage_mode << 70) as u128),
+            (u128::from(id) << 99) | (storage_mode << 70),
             Felt::new(0),
             TransactionKernel::testing_assembler(),
         )

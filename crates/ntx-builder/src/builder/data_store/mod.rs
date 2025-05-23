@@ -154,9 +154,9 @@ impl MastForestStore for NtxBuilderDataStore {
 #[derive(Debug, Error)]
 pub enum NtxBuilderError {
     #[error("store error")]
-    StoreError(#[from] StoreError),
+    Store(#[from] StoreError),
     #[error("block producer client error")]
-    BlockProducerError(#[from] tonic::Status),
+    BlockProducer(#[from] tonic::Status),
     #[error("network account error")]
-    NetworkAccountError(#[from] NetworkAccountError),
+    NetworkAccount(#[from] NetworkAccountError),
 }

@@ -164,24 +164,17 @@ impl BundledCommand {
 
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
-        let block_producer_address = {
-            let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-                .await
-                .context("Failed to bind to block-producer gRPC endpoint")?;
+        let block_producer_address = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to block-producer gRPC endpoint")?
+            .local_addr()
+            .context("Failed to retrieve the block-producer's gRPC address")?;
 
-            grpc_block_producer
-                .local_addr()
-                .context("Failed to retrieve the block-producer's gRPC address")?
-        };
-        let ntx_builder_address = {
-            let grpc_network_tx_builder = TcpListener::bind("127.0.0.1:0")
-                .await
-                .context("Failed to bind to network transaction builder gRPC endpoint")?;
-
-            grpc_network_tx_builder
-                .local_addr()
-                .context("Failed to retrieve the network transaction builder's gRPC address")?
-        };
+        let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to network transaction builder gRPC endpoint")?
+            .local_addr()
+            .context("Failed to retrieve the network transaction builder's gRPC address")?;
 
         let mut join_set = JoinSet::new();
 
@@ -281,7 +274,6 @@ impl BundledCommand {
 
         // We could abort and gracefully shutdown the other components, but since we're crashing the
         // node there is no point.
-
         err.context(format!("Component {component} failed"))
     }
 

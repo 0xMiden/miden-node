@@ -164,7 +164,7 @@ impl ChallengeCache {
 
     /// Validate a challenge.
     ///
-    /// The challenge is valid if the server signature matches.
+    /// The challenge is valid if it is present in the state and the server signature matches.
     pub fn validate_challenge(
         &self,
         seed: &str,

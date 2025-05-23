@@ -17,7 +17,7 @@ use tracing::error;
 
 use super::{
     Server,
-    pow::{ChallengeState, check_pow_solution, check_server_signature, check_server_timestamp},
+    pow::{ChallengeCache, check_pow_solution, check_server_signature, check_server_timestamp},
 };
 use crate::{
     faucet::MintRequest,
@@ -140,12 +140,12 @@ impl RawMintRequest {
     ///   - the API key is invalid
     ///   - the server timestamp is expired
     ///   - the server signature does not match
-    ///   - the PoW solution is invalid
+    ///   - the `PoW` solution is invalid
     fn validate(
         self,
         options: &AssetOptions,
         pow_salt: &str,
-        challenge_state: &ChallengeState,
+        challenge_state: &ChallengeCache,
         api_keys: &BTreeSet<String>,
     ) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {

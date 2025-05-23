@@ -49,7 +49,7 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow_salt: String,
-    challenge_state: pow::ChallengeState,
+    challenge_state: pow::ChallengeCache,
     api_keys: BTreeSet<String>,
 }
 
@@ -69,7 +69,7 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        let challenge_state = pow::ChallengeState::new();
+        let challenge_state = pow::ChallengeCache::new();
 
         // Start the cleanup task
         let cleanup_state = challenge_state.clone();

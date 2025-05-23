@@ -285,16 +285,12 @@ fn long_version() -> LongVersion {
 
 #[cfg(test)]
 mod test {
-    use std::{
-        env::temp_dir,
-        io::{BufRead, BufReader},
-        process::{Command, Stdio},
-        str::FromStr,
-    };
+    use std::{env::temp_dir, process::Stdio, str::FromStr, time::Duration};
 
     use base64::{Engine, prelude::BASE64_STANDARD};
     use fantoccini::ClientBuilder;
     use serde_json::{Map, json};
+    use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
 
     use crate::{
@@ -306,6 +302,115 @@ mod test {
     /// made return status 200.
     #[tokio::test]
     async fn test_website() {
+        let website_url = start_test_faucet().await;
+        let client = start_fantoccini_client().await;
+
+        // Open the website
+        client.goto(website_url.as_str()).await.unwrap();
+
+        let title = client.title().await.unwrap();
+        assert_eq!(title, "Miden Faucet");
+
+        // Execute a script to get all the failed requests
+        let script = r"
+            let errors = [];
+            performance.getEntriesByType('resource').forEach(entry => {
+                if (entry.responseStatus && entry.responseStatus >= 400) {
+                    errors.push({url: entry.name, status: entry.responseStatus});
+                }
+            });
+            return errors;
+        ";
+        let failed_requests = client.execute(script, vec![]).await.unwrap();
+
+        // Verify all requests are successful
+        assert!(failed_requests.as_array().unwrap().is_empty());
+
+        // Fill in the account address
+        client
+            .find(fantoccini::Locator::Css("#account-id"))
+            .await
+            .unwrap()
+            .send_keys("mtst1qrvhealccdyj7gqqqrlxl4n4f53uxwaw")
+            .await
+            .unwrap();
+
+        // Select the first asset amount option
+        client
+            .find(fantoccini::Locator::Css("#asset-amount"))
+            .await
+            .unwrap()
+            .click()
+            .await
+            .unwrap();
+        client
+            .find(fantoccini::Locator::Css("#asset-amount option"))
+            .await
+            .unwrap()
+            .click()
+            .await
+            .unwrap();
+
+        // Click the public note button
+        client
+            .find(fantoccini::Locator::Css("#button-public"))
+            .await
+            .unwrap()
+            .click()
+            .await
+            .unwrap();
+
+        // Inject JavaScript to capture sse events
+        let capture_events_script = r"
+            window.capturedEvents = [];
+            const original = EventSource.prototype.addEventListener;
+            EventSource.prototype.addEventListener = function(type, listener) {
+                const wrappedListener = function(event) {
+                    window.capturedEvents.push({
+                        type: type,
+                        data: event.data
+                    });
+                    return listener(event);
+                };
+                return original.call(this, type, wrappedListener);
+            };
+        ";
+        client.execute(capture_events_script, vec![]).await.unwrap();
+
+        // Poll until minting is complete. We will wait 10s and then poll every 2s for a
+        // max of 50 times.
+        sleep(Duration::from_secs(10)).await;
+        let mut captured_events: Vec<serde_json::Value> = vec![];
+        for _ in 0..50 {
+            let events = client
+                .execute("return window.capturedEvents;", vec![])
+                .await
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .clone();
+            if events.iter().any(|event| event["type"] == "note") {
+                captured_events = events;
+                break;
+            }
+            sleep(Duration::from_secs(2)).await;
+        }
+
+        // Verify the received events
+        assert!(!captured_events.is_empty(), "Took too long to capture any events");
+        assert!(captured_events.iter().any(|event| event["type"] == "update"));
+        let note_event = captured_events.iter().find(|event| event["type"] == "note").unwrap();
+        let note_data: serde_json::Value =
+            serde_json::from_str(note_event["data"].as_str().unwrap()).unwrap();
+        assert!(note_data["note_id"].is_string());
+        assert!(note_data["account_id"].is_string());
+        assert!(note_data["transaction_id"].is_string());
+        assert!(note_data["explorer_url"].is_string());
+
+        client.close().await.unwrap();
+    }
+
+    async fn start_test_faucet() -> Url {
         let stub_node_url = Url::from_str("http://localhost:50051").unwrap();
 
         // Start the stub node
@@ -340,8 +445,6 @@ mod test {
         .unwrap();
 
         // Start the faucet connected to the stub
-        let website_url = config.endpoint.clone();
-
         // Use std::thread to launch faucet - avoids Send requirements
         std::thread::spawn(move || {
             // Create a new runtime for this thread
@@ -363,18 +466,26 @@ mod test {
             });
         });
 
+        config.endpoint
+    }
+
+    async fn start_fantoccini_client() -> fantoccini::Client {
         // Start chromedriver. This requires having chromedriver and chrome installed
-        let chromedriver_port = "57709";
-        #[expect(clippy::zombie_processes)]
-        let mut chromedriver = Command::new("chromedriver")
+        let chromedriver_port = "57708";
+        let mut chromedriver = tokio::process::Command::new("chromedriver")
             .arg(format!("--port={chromedriver_port}"))
             .stdout(Stdio::piped())
+            .kill_on_drop(true)
             .spawn()
             .expect("failed to start chromedriver");
-        // Wait for chromedriver to be running
         let stdout = chromedriver.stdout.take().unwrap();
-        for line in BufReader::new(stdout).lines() {
-            if line.unwrap().contains("ChromeDriver was started successfully") {
+        tokio::spawn(
+            async move { chromedriver.wait().await.expect("chromedriver process failed") },
+        );
+        // Wait for chromedriver to be running
+        let mut reader = tokio::io::BufReader::new(stdout).lines();
+        while let Some(line) = reader.next_line().await.unwrap() {
+            if line.contains("ChromeDriver was started successfully") {
                 break;
             }
         }
@@ -393,28 +504,7 @@ mod test {
             .await
             .expect("failed to connect to WebDriver");
 
-        // Open the website
-        client.goto(website_url.as_str()).await.unwrap();
-
-        let title = client.title().await.unwrap();
-        assert_eq!(title, "Miden Faucet");
-
-        // Execute a script to get all the failed requests
-        let script = r"
-            let errors = [];
-            performance.getEntriesByType('resource').forEach(entry => {
-                if (entry.responseStatus && entry.responseStatus >= 400) {
-                    errors.push({url: entry.name, status: entry.responseStatus});
-                }
-            });
-            return errors;
-        ";
-        let failed_requests = client.execute(script, vec![]).await.unwrap();
-        assert!(failed_requests.as_array().unwrap().is_empty());
-
-        // Close the client and kill chromedriver
-        client.close().await.unwrap();
-        chromedriver.kill().unwrap();
+        client
     }
 
     #[test]

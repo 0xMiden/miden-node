@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -16,10 +19,10 @@ use super::{
     get_tokens::{InvalidRequest, RawMintRequest},
 };
 
-/// The difficulty of the `PoW`.
+/// The maximum difficulty of the `PoW`.
 ///
 /// The difficulty is the number of leading zeros in the hash of the seed and the solution.
-const DIFFICULTY: u64 = 5;
+const MAX_DIFFICULTY: u64 = 6;
 
 /// The tolerance for the server timestamp.
 ///
@@ -40,6 +43,7 @@ pub(crate) struct PowParameters {
     pub(crate) server_signature: String,
     pub(crate) server_timestamp: u64,
     pub(crate) pow_solution: u64,
+    pub(crate) difficulty: u64,
 }
 
 impl PowParameters {
@@ -47,7 +51,12 @@ impl PowParameters {
     ///
     /// The server signature is the result of hashing the server salt, seed and timestamp.
     pub fn check_server_signature(&self, server_salt: &str) -> Result<(), InvalidRequest> {
-        let hash = get_server_signature(server_salt, &self.pow_seed, self.server_timestamp);
+        let hash = get_server_signature(
+            server_salt,
+            &self.pow_seed,
+            self.server_timestamp,
+            self.difficulty,
+        );
         if hash != self.server_signature {
             return Err(InvalidRequest::ServerSignaturesDoNotMatch);
         }
@@ -91,7 +100,7 @@ impl PowParameters {
         let hash = &hasher.finalize().to_hex();
 
         let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-        if leading_zeros < DIFFICULTY as usize {
+        if leading_zeros < self.difficulty as usize {
             return Err(InvalidRequest::InvalidPoW);
         }
 
@@ -122,11 +131,37 @@ impl TryFrom<&RawMintRequest> for PowParameters {
                 .pow_solution
                 .as_ref()
                 .ok_or(InvalidRequest::MissingPowParameters)?,
+            difficulty: *value
+                .pow_difficulty
+                .as_ref()
+                .ok_or(InvalidRequest::MissingPowParameters)?,
         })
     }
 }
 
-// CHALLENGE STATE
+// POW
+// ================================================================================================
+
+#[derive(Clone)]
+pub struct PoW {
+    pub(crate) salt: String,
+    pub(crate) difficulty: Arc<AtomicU64>,
+    pub(crate) challenge_cache: ChallengeCache,
+}
+
+impl PoW {
+    /// Adjust the difficulty of the `PoW`.
+    ///
+    /// The difficulty is adjusted based on the number of active requests.
+    /// The difficulty is increased by 1 for every 100 active requests.
+    /// The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
+    pub fn adjust_difficulty(&self, active_requests: usize) {
+        let new_difficulty = (active_requests as u64 / 100).clamp(1, MAX_DIFFICULTY);
+        self.difficulty.store(new_difficulty, Ordering::Relaxed);
+    }
+}
+
+// CHALLENGE CACHE
 // ================================================================================================
 
 /// A state for managing challenges.
@@ -225,11 +260,17 @@ struct PoWResponse {
 /// Get the server signature.
 ///
 /// The server signature is the result of hashing the server salt, the seed, and the timestamp.
-pub(crate) fn get_server_signature(server_salt: &str, seed: &str, timestamp: u64) -> String {
+pub(crate) fn get_server_signature(
+    server_salt: &str,
+    seed: &str,
+    timestamp: u64,
+    difficulty: u64,
+) -> String {
     let mut hasher = Sha3_256::new();
     hasher.update(server_salt);
     hasher.update(seed);
     hasher.update(timestamp.to_string().as_bytes());
+    hasher.update(difficulty.to_string().as_bytes());
     hasher.finalize().to_hex()
 }
 
@@ -255,14 +296,22 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
 
     let random_seed = random_hex_string(32);
 
-    let server_signature = get_server_signature(&server.pow_salt, &random_seed, timestamp);
+    let server_signature = get_server_signature(
+        &server.pow.salt,
+        &random_seed,
+        timestamp,
+        server.pow.difficulty.load(Ordering::Relaxed),
+    );
 
     // Store the challenge
-    server.challenge_cache.put(&random_seed, server_signature.clone(), timestamp);
+    server
+        .pow
+        .challenge_cache
+        .put(&random_seed, server_signature.clone(), timestamp);
 
     Json(PoWResponse {
         seed: random_seed,
-        difficulty: DIFFICULTY,
+        difficulty: server.pow.difficulty.load(Ordering::Relaxed),
         server_signature,
         timestamp,
     })
@@ -274,7 +323,7 @@ mod tests {
 
     use super::*;
 
-    fn find_pow_solution(seed: &str) -> u64 {
+    fn find_pow_solution(seed: &str, difficulty: u64) -> u64 {
         let mut solution = 0;
         loop {
             let mut hasher = Sha3_256::new();
@@ -282,7 +331,7 @@ mod tests {
             hasher.update(solution.to_string().as_bytes());
             let hash = &hasher.finalize().to_hex();
             let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-            if leading_zeros >= DIFFICULTY as usize {
+            if leading_zeros >= difficulty as usize {
                 return solution;
             }
 
@@ -299,19 +348,23 @@ mod tests {
             .expect("Time went backwards")
             .as_secs();
 
+        let difficulty = 3;
+
         let mut hasher = Sha3_256::new();
         hasher.update(server_salt);
         hasher.update(seed);
         hasher.update(timestamp.to_string().as_bytes());
+        hasher.update(difficulty.to_string().as_bytes());
         let server_signature = hasher.finalize().to_hex();
 
-        let solution = find_pow_solution(seed);
+        let solution = find_pow_solution(seed, difficulty);
 
         let pow_parameters = PowParameters {
             pow_seed: seed.to_string(),
             server_signature: server_signature.clone(),
             server_timestamp: timestamp,
             pow_solution: solution,
+            difficulty,
         };
 
         let result = pow_parameters.check_server_signature(server_salt);
@@ -332,11 +385,14 @@ mod tests {
         let timestamp = 1_234_567_890;
         let server_signature = "0x1234567890abcdef";
 
+        let difficulty = 3;
+
         let pow_parameters = PowParameters {
             pow_seed: seed.to_string(),
             server_signature: server_signature.to_string(),
             server_timestamp: timestamp,
-            pow_solution: 0,
+            pow_solution: 1_234_567_890,
+            difficulty,
         };
         let result = pow_parameters.check_server_signature(server_salt);
         assert!(result.is_err());

@@ -1,4 +1,13 @@
-use std::{collections::BTreeSet, convert::Infallible, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeSet,
+    convert::Infallible,
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize},
+    },
+    time::Duration,
+};
 
 use anyhow::Context;
 use axum::{
@@ -13,6 +22,7 @@ use http::{HeaderValue, Request, StatusCode};
 use miden_node_utils::grpc::UrlExt;
 use miden_objects::account::AccountId;
 use miden_tx::utils::Serializable;
+use pow::PoW;
 use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
 use tower_governor::{
@@ -48,9 +58,10 @@ type RequestSender = mpsc::Sender<(MintRequest, mpsc::Sender<Result<Event, Infal
 pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
-    pow_salt: String,
-    challenge_cache: pow::ChallengeCache,
+    pow: PoW,
     api_keys: BTreeSet<String>,
+    active_requests: Arc<AtomicUsize>,
+    queued_requests: Arc<AtomicUsize>,
 }
 
 impl Server {
@@ -77,11 +88,18 @@ impl Server {
             pow::run_cleanup(cleanup_state).await;
         });
 
+        let pow = PoW {
+            salt: pow_salt,
+            difficulty: Arc::new(AtomicU64::new(1)), // Initialize difficulty to 1
+            challenge_cache,
+        };
+
         Server {
             mint_state,
             metadata,
-            pow_salt,
-            challenge_cache,
+            pow,
+            active_requests: Arc::new(AtomicUsize::new(0)),
+            queued_requests: Arc::new(AtomicUsize::new(0)),
             api_keys,
         }
     }

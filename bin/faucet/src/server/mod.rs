@@ -2,7 +2,10 @@ use std::{
     collections::BTreeSet,
     convert::Infallible,
     net::SocketAddr,
-    sync::{Arc, Mutex, atomic::AtomicUsize},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize},
+    },
     time::Duration,
 };
 
@@ -87,7 +90,7 @@ impl Server {
 
         let pow = PoW {
             salt: pow_salt,
-            difficulty: Arc::new(Mutex::new(1)), // Initialize difficulty to 1
+            difficulty: Arc::new(AtomicU64::new(1)), // Initialize difficulty to 1
             challenge_cache,
         };
 

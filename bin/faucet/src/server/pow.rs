@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -157,14 +160,14 @@ pub struct ChallengeCache {
 #[derive(Clone)]
 pub struct PoW {
     pub(crate) salt: String,
-    pub(crate) difficulty: Arc<Mutex<u64>>,
+    pub(crate) difficulty: Arc<AtomicU64>,
     pub(crate) challenge_cache: ChallengeCache,
 }
 
 impl PoW {
     pub fn adjust_difficulty(&self, active_requests: usize) {
-        let mut difficulty = self.difficulty.lock().unwrap();
-        *difficulty = (active_requests as u64 / 100).clamp(1, MAX_DIFFICULTY);
+        let new_difficulty = (active_requests as u64 / 100).clamp(1, MAX_DIFFICULTY);
+        self.difficulty.store(new_difficulty, Ordering::Relaxed);
     }
 }
 
@@ -289,7 +292,7 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
         &server.pow.salt,
         &random_seed,
         timestamp,
-        *server.pow.difficulty.lock().unwrap(),
+        server.pow.difficulty.load(Ordering::Relaxed),
     );
 
     // Store the challenge
@@ -300,7 +303,7 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
 
     Json(PoWResponse {
         seed: random_seed,
-        difficulty: *server.pow.difficulty.lock().unwrap(),
+        difficulty: server.pow.difficulty.load(Ordering::Relaxed),
         server_signature,
         timestamp,
     })

@@ -1,6 +1,7 @@
 use std::io;
 
 use deadpool::managed::PoolError;
+use miden_node_utils::account::NetworkAccountError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
@@ -39,6 +40,8 @@ pub enum DatabaseError {
     MigrationError(#[from] rusqlite_migration::Error),
     #[error("missing database connection")]
     MissingDbConnection(#[from] PoolError<rusqlite::Error>),
+    #[error("network account error")]
+    NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
@@ -210,12 +213,6 @@ pub enum GetBlockInputsError {
         highest_block_number: BlockNumber,
         latest_block_number: BlockNumber,
     },
-}
-
-#[derive(Error, Debug)]
-pub enum GetMmrPeaksError {
-    #[error("database error")]
-    DatabaseError(#[from] DatabaseError),
 }
 
 #[derive(Error, Debug)]

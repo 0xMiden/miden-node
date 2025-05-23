@@ -83,12 +83,6 @@ impl Api for NtxBuilderApi {
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
-        info!(
-            target: COMPONENT,
-            update_count = request.updates.len(),
-            "Received transaction status updates"
-        );
-
         let mut state = self.state.lock().await;
 
         for tx in request.updates {

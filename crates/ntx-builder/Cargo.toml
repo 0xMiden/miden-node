@@ -20,10 +20,10 @@ miden-lib                    = { workspace = true }
 miden-node-proto             = { workspace = true }
 miden-node-utils             = { workspace = true }
 miden-objects                = { workspace = true }
-miden-proving-service-client = { workspace = true, features = ["tx-prover"] }
+miden-proving-service-client = { features = ["tx-prover"], workspace = true }
 miden-tx                     = { workspace = true }
 thiserror                    = { workspace = true }
-tokio                        = { workspace = true, features = ["full"] }
+tokio                        = { features = ["full"], workspace = true }
 tokio-stream                 = { workspace = true }
 tonic                        = { workspace = true }
 tower-http                   = { workspace = true }

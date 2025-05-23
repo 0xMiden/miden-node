@@ -52,15 +52,15 @@ miden-proving-service-client = { version = "0.9" }
 miden-tx                     = { version = "0.9" }
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }
-thiserror                    = { version = "2.0", default-features = false }
-tokio                        = { version = "1.44", features = ["rt-multi-thread"] }
+thiserror                    = { default-features = false, version = "2.0" }
+tokio                        = { features = ["rt-multi-thread"], version = "1.44" }
 tokio-stream                 = { version = "0.1" }
 tonic                        = { version = "0.12" }
 tower                        = { version = "0.5" }
-tower-http                   = { version = "0.6", features = ["trace"] }
+tower-http                   = { features = ["trace"], version = "0.6" }
 tracing                      = { version = "0.1" }
-tracing-subscriber           = { version = "0.3", features = ["env-filter", "fmt", "json"] }
-url                          = { version = "2.5", features = ["serde"] }
+tracing-subscriber           = { features = ["env-filter", "fmt", "json"], version = "0.3" }
+url                          = { features = ["serde"], version = "2.5" }
 
 # Lints are set to warn for development, which are promoted to errors in CI.
 [workspace.lints.clippy]

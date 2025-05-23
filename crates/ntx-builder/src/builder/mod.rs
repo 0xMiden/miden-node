@@ -52,7 +52,7 @@ pub struct NetworkTransactionBuilder {
     /// The address for the network transaction builder gRPC server.
     pub ntx_builder_address: SocketAddr,
     /// Address of the store gRPC server.
-    pub store_address: SocketAddr,
+    pub store_url: Url,
     /// Address of the block producer gRPC server.
     pub block_producer_address: SocketAddr,
     /// Address of the remote proving service. If `None`, transactions will be proven locally,
@@ -83,7 +83,7 @@ impl NetworkTransactionBuilder {
             "Starting network transaction builder server"
         );
 
-        let store = StoreClient::new(self.store_address);
+        let store = StoreClient::new(&self.store_url);
 
         // Initialize unconsumed notes
         let unconsumed_network_notes = store.get_unconsumed_network_notes().await?;
@@ -113,7 +113,7 @@ impl NetworkTransactionBuilder {
     /// The ticker is in charge of periodically checking the network notes set and executing the
     /// next set of notes.
     fn spawn_ticker(&self, api_state: SharedPendingNotes) -> JoinHandle<anyhow::Result<()>> {
-        let store_addr = self.store_address;
+        let store_url = self.store_url.clone();
         let block_addr = self.block_producer_address;
         let prover_addr = self.proving_service_address.clone();
 
@@ -124,7 +124,7 @@ impl NetworkTransactionBuilder {
                 .context("failed to build runtime")?;
 
             rt.block_on(async move {
-                let store = StoreClient::new(store_addr);
+                let store = StoreClient::new(&store_url);
                 let data_store = Arc::new(NtxBuilderDataStore::new(store).await?);
                 let tx_executor = TransactionExecutor::new(data_store.clone(), None);
                 let block_prod = BlockProducerClient::new(block_addr);

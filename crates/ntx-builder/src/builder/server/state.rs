@@ -16,19 +16,23 @@ const MAX_BATCH: usize = 50;
 /// Additionally, a list of inflight notes is kept to track their lifecycle.
 #[derive(Debug)]
 pub struct PendingNotes {
-    queue: VecDeque<Note>,
+    /// Contains a queue that provides ordering of accounts to execute against
+    account_queue: VecDeque<NoteTag>,
+    /// Pending network notes that have not been consumed as part of a committed transaction.
     by_tag: BTreeMap<NoteTag, Vec<Note>>,
+    /// A map of nullifiers mapped to their note IDs
     by_nullifier: BTreeMap<Nullifier, NoteId>,
-    inflight: BTreeMap<TransactionId, Vec<Note>>,
+    /// Inflight network notes with their associated transaction IDs
+    inflight_txs: BTreeMap<TransactionId, Vec<Note>>,
 }
 
 impl PendingNotes {
     pub fn new(unconsumed_network_notes: Vec<Note>) -> Self {
         let mut state = Self {
-            queue: VecDeque::new(),
+            account_queue: VecDeque::new(),
             by_tag: BTreeMap::new(),
             by_nullifier: BTreeMap::new(),
-            inflight: BTreeMap::new(),
+            inflight_txs: BTreeMap::new(),
         };
         state.queue_unconsumed_notes(unconsumed_network_notes);
         state
@@ -37,17 +41,19 @@ impl PendingNotes {
     /// Add network notes to the pending notes queue.
     pub fn queue_unconsumed_notes(&mut self, notes: impl IntoIterator<Item = Note>) {
         for n in notes {
-            self.by_nullifier.insert(n.nullifier(), n.id());
-            self.by_tag.entry(n.metadata().tag()).or_default().push(n.clone());
+            let tag = n.metadata().tag();
 
-            self.queue.push_back(n);
+            self.by_nullifier.insert(n.nullifier(), n.id());
+            self.by_tag.entry(tag).or_default().push(n.clone());
+
+            self.account_queue.push_back(tag);
         }
     }
 
     /// Returns the next set of notes with the next scheduled tag in the global queue
     /// (up to `MAX_BATCH`)
     pub fn take_next_notes_by_tag(&mut self) -> Option<(NoteTag, Vec<Note>)> {
-        let next_tag = self.queue.front()?.metadata().tag();
+        let next_tag = *self.account_queue.front()?;
 
         let bucket = self.by_tag.get_mut(&next_tag)?;
         let note_count = bucket.len().min(MAX_BATCH);
@@ -57,16 +63,13 @@ impl PendingNotes {
             self.by_tag.remove(&next_tag);
         }
 
-        let ids: BTreeSet<NoteId> = batch.iter().map(Note::id).collect();
-        self.queue.retain(|n| !ids.contains(&n.id()));
-
         Some((next_tag, batch))
     }
 
     /// Move the input notes into inflight status under the given transaction ID
     pub fn mark_inflight(&mut self, tx_id: TransactionId, notes: Vec<Note>) {
         if !notes.is_empty() {
-            self.inflight.entry(tx_id).or_default().extend(notes);
+            self.inflight_txs.entry(tx_id).or_default().extend(notes);
         }
     }
 
@@ -87,9 +90,7 @@ impl PendingNotes {
             !bucket.is_empty()
         });
 
-        self.queue.retain(|n| !ids.contains(&n.id()));
-
-        self.inflight.retain(|_, notes| {
+        self.inflight_txs.retain(|_, notes| {
             notes.retain(|n| !ids.contains(&n.id()));
             !notes.is_empty()
         });
@@ -98,7 +99,7 @@ impl PendingNotes {
     /// Mark a transaction as committed, removing its notes from the inflight notes set.
     /// Returns the number of notes that were committed.
     pub fn commit_inflight(&mut self, tx_id: TransactionId) -> usize {
-        if let Some(notes) = self.inflight.remove(&tx_id) {
+        if let Some(notes) = self.inflight_txs.remove(&tx_id) {
             for n in &notes {
                 self.by_nullifier.remove(&n.nullifier());
             }
@@ -109,11 +110,12 @@ impl PendingNotes {
     }
 
     pub fn rollback_inflight(&mut self, tx_id: TransactionId) -> usize {
-        if let Some(notes) = self.inflight.remove(&tx_id) {
+        if let Some(notes) = self.inflight_txs.remove(&tx_id) {
             let count = notes.len();
 
+            // SAFETY: All transactions contain at least a note
+            self.account_queue.push_back(notes.first().unwrap().metadata().tag());
             for n in notes {
-                self.queue.push_back(n.clone());
                 self.by_tag.entry(n.metadata().tag()).or_default().push(n.clone());
                 self.by_nullifier.insert(n.nullifier(), n.id());
             }

@@ -200,11 +200,15 @@ impl BundledCommand {
             .id();
 
         // Start network transaction builder. The endpoint is available after loading completes.
+        // SAFETY: socket addr yields valid URLs
+        let store_url =
+            Url::parse(&format!("http://{}:{}/", store_address.ip(), store_address.port()))
+                .unwrap();
         let ntx_builder_id = join_set
             .spawn(async move {
                 NetworkTransactionBuilder {
                     ntx_builder_address,
-                    store_address,
+                    store_url,
                     block_producer_address,
                     proving_service_address: ntx_proving_service_address,
                 }

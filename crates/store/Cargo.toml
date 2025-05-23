@@ -16,28 +16,28 @@ workspace = true
 
 [dependencies]
 anyhow             = { workspace = true }
-deadpool           = { version = "0.12", features = ["managed", "rt_tokio_1"], default-features = false }
+deadpool           = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
 deadpool-sync      = { version = "0.1" }
 hex                = { version = "0.4" }
 miden-lib          = { workspace = true }
 miden-node-proto   = { workspace = true }
 miden-node-utils   = { workspace = true }
 miden-objects      = { workspace = true }
-rusqlite           = { version = "0.35", features = ["array", "buildtime_bindgen", "bundled"] }
+rusqlite           = { features = ["array", "buildtime_bindgen", "bundled"], version = "0.35" }
 rusqlite_migration = { version = "2.1" }
 thiserror          = { workspace = true }
-tokio              = { workspace = true, features = ["fs", "macros", "net", "rt-multi-thread"] }
-tokio-stream       = { workspace = true, features = ["net"] }
+tokio              = { features = ["fs", "macros", "net", "rt-multi-thread"], workspace = true }
+tokio-stream       = { features = ["net"], workspace = true }
 tonic              = { workspace = true }
-tower-http         = { workspace = true, features = ["util"] }
+tower-http         = { features = ["util"], workspace = true }
 tracing            = { workspace = true }
 
 [dev-dependencies]
 assert_matches        = { workspace = true }
-miden-lib             = { workspace = true, features = ["testing"] }
+miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
-miden-node-utils      = { workspace = true, features = ["tracing-forest"] }
-miden-objects         = { workspace = true, features = ["testing"] }
+miden-node-utils      = { features = ["tracing-forest"], workspace = true }
+miden-objects         = { features = ["testing"], workspace = true }
 rand                  = { version = "0.9" }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }

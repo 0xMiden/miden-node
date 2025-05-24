@@ -198,6 +198,12 @@ message GetAccountDetailsResponse {
     account.AccountInfo details = 1;
 }
 
+// Represents the result of getting network account details by prefix.
+message GetNetworkAccountDetailsByPrefixResponse {
+    // Account info.
+    account.AccountInfo details = 1;
+}
+
 // Represents the result of getting block by number.
 message GetBlockByNumberResponse {
     // The requested block data encoded using [winter_utils::Serializable] implementation for

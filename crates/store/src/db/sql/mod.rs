@@ -10,7 +10,7 @@ use std::{
     rc::Rc,
 };
 
-use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
+use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_objects::{
     Digest, Word,
     account::{
@@ -174,6 +174,36 @@ pub fn select_account(transaction: &Transaction, account_id: AccountId) -> Resul
 
     let mut rows = stmt.query(params![account_id.to_bytes()])?;
     let row = rows.next()?.ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+
+    account_info_from_row(row)
+}
+
+// TODO: Handle account prefix collision in a more robust way
+/// Select the latest account details by account ID prefix from the DB using the given [Connection]
+/// This method is meant to be used by the network transaction builder. Because network notes get
+/// matched through accounts through the account's 30-bit prefix, it is possible that multiple
+/// accounts match against a single prefix. In this scenario, the first account is returned.
+///
+/// # Returns
+///
+/// The latest account details, or an error.
+pub fn select_account_by_prefix(transaction: &Transaction, id_prefix: u32) -> Result<AccountInfo> {
+    let mut stmt = transaction.prepare_cached(
+        "
+        SELECT
+            account_id,
+            account_commitment,
+            block_num,
+            details
+        FROM
+            accounts
+        WHERE
+            id_prefix = ?1;
+        ",
+    )?;
+
+    let mut rows = stmt.query(params![i64::from(id_prefix)])?;
+    let row = rows.next()?.ok_or(DatabaseError::AccountPrefixNotFound(id_prefix))?;
 
     account_info_from_row(row)
 }
@@ -427,6 +457,7 @@ pub fn upsert_accounts(
     let mut upsert_stmt = transaction.prepare_cached(insert_sql!(
         accounts {
             account_id,
+            network_account_id_prefix,
             account_commitment,
             block_num,
             details
@@ -438,6 +469,14 @@ pub fn upsert_accounts(
     let mut count = 0;
     for update in accounts {
         let account_id = update.account_id();
+        // Extract the 30-bit prefix to provide easy look ups for NTB
+        // Do not store prefix for accounts that are not network
+        let account_id_prefix = if account_id.is_network() {
+            Some(NetworkAccountPrefix::try_from(account_id)?.inner())
+        } else {
+            None
+        };
+
         let (full_account, insert_delta) = match update.details() {
             AccountUpdateDetails::Private => (None, None),
             AccountUpdateDetails::New(account) => {
@@ -473,6 +512,7 @@ pub fn upsert_accounts(
 
         let inserted = upsert_stmt.execute(params![
             account_id.to_bytes(),
+            account_id_prefix,
             update.final_state_commitment().to_bytes(),
             block_num.as_u32(),
             full_account.as_ref().map(|account| account.to_bytes()),

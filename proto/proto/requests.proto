@@ -139,6 +139,12 @@ message GetAccountDetailsRequest {
     account.AccountId account_id = 1;
 }
 
+// Returns the latest state of a network account based on the account ID prefix.
+message GetNetworkAccountDetailsByPrefixRequest {
+    // Account ID prefix.
+    fixed32 account_id_prefix = 1;
+}
+
 // Retrieves block data by given block number.
 message GetBlockByNumberRequest {
     // The block number of the target block.

@@ -6,12 +6,16 @@ use miden_objects::{
 };
 use thiserror::Error;
 
+use crate::domain::note::NetworkNoteError;
+
 #[derive(Debug, Error)]
 pub enum ConversionError {
     #[error("hex error")]
     HexError(#[from] hex::FromHexError),
     #[error("note error")]
     NoteError(#[from] miden_objects::NoteError),
+    #[error("network note error")]
+    NetworkNoteError(#[from] NetworkNoteError),
     #[error("SMT leaf error")]
     SmtLeafError(#[from] SmtLeafError),
     #[error("SMT proof error")]

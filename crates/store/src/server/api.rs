@@ -7,7 +7,7 @@ use std::{
 
 use miden_node_proto::{
     convert,
-    domain::account::{AccountInfo, AccountProofRequest},
+    domain::account::{AccountInfo, AccountProofRequest, NetworkAccountPrefix},
     errors::ConversionError,
     generated::{
         self,
@@ -16,14 +16,15 @@ use miden_node_proto::{
             ApplyBlockRequest, CheckNullifiersByPrefixRequest, CheckNullifiersRequest,
             GetAccountDetailsRequest, GetAccountProofsRequest, GetAccountStateDeltaRequest,
             GetBatchInputsRequest, GetBlockByNumberRequest, GetBlockHeaderByNumberRequest,
-            GetBlockInputsRequest, GetNotesByIdRequest, GetTransactionInputsRequest,
-            SyncNoteRequest, SyncStateRequest,
+            GetBlockInputsRequest, GetNetworkAccountDetailsByPrefixRequest, GetNotesByIdRequest,
+            GetTransactionInputsRequest, SyncNoteRequest, SyncStateRequest,
         },
         responses::{
             AccountTransactionInputRecord, ApplyBlockResponse, CheckNullifiersByPrefixResponse,
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
-            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetNotesByIdResponse,
+            GetBlockHeaderByNumberResponse, GetBlockInputsResponse,
+            GetNetworkAccountDetailsByPrefixResponse, GetNotesByIdResponse,
             GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
             NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
@@ -287,6 +288,33 @@ impl api_server::Api for StoreApi {
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
+            details: Some((&account_info).into()),
+        }))
+    }
+
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.get_network_account_details_by_prefix",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_network_account_details_by_prefix(
+        &self,
+        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
+    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
+        let request = request.into_inner();
+        // Validate that the call is for a valid network account prefix
+        let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
+            Status::invalid_argument(format!(
+                "request does not contain a valid network account prefix: {err}"
+            ))
+        })?;
+
+        let account_info: AccountInfo =
+            self.state.get_account_details_by_prefix(prefix.inner()).await?;
+
+        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
             details: Some((&account_info).into()),
         }))
     }

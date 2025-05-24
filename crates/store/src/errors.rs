@@ -1,6 +1,7 @@
 use std::io;
 
 use deadpool::managed::PoolError;
+use miden_node_proto::domain::account::NetworkAccountError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
@@ -39,6 +40,8 @@ pub enum DatabaseError {
     MigrationError(#[from] rusqlite_migration::Error),
     #[error("missing database connection")]
     MissingDbConnection(#[from] PoolError<rusqlite::Error>),
+    #[error("network account error")]
+    NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
@@ -53,6 +56,8 @@ pub enum DatabaseError {
     },
     #[error("account {0} not found")]
     AccountNotFoundInDb(AccountId),
+    #[error("account with prefix {0:#010x} not found")]
+    AccountPrefixNotFound(u32),
     #[error("accounts {0:?} not found")]
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]

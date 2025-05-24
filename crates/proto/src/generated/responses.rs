@@ -205,6 +205,13 @@ pub struct GetAccountDetailsResponse {
     #[prost(message, optional, tag = "1")]
     pub details: ::core::option::Option<super::account::AccountInfo>,
 }
+/// Represents the result of getting network account details by prefix.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetNetworkAccountDetailsByPrefixResponse {
+    /// Account info.
+    #[prost(message, optional, tag = "1")]
+    pub details: ::core::option::Option<super::account::AccountInfo>,
+}
 /// Represents the result of getting block by number.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetBlockByNumberResponse {

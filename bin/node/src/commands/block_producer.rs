@@ -95,6 +95,7 @@ impl BlockProducerCommand {
         let ntx_builder_address = ntx_builder_url
             .to_socket()
             .context("Failed to extract socket address from network transaction builder URL")?;
+
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
 

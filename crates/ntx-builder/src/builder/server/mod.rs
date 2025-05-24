@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use miden_node_proto::{
+    domain::note::NetworkNote,
     generated::{
         ntx_builder::api_server::Api,
         requests::{
@@ -10,8 +11,7 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::network_note::NetworkNote;
-use miden_objects::{Digest, note::Nullifier};
+use miden_objects::{Digest, note::Nullifier, transaction::TransactionId};
 use state::PendingNotes;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
@@ -65,6 +65,12 @@ impl Api for NtxBuilderApi {
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
+        let tx_id = request
+            .transaction_id
+            .map(TransactionId::try_from)
+            .ok_or(Status::not_found("transaction ID not found in request"))?
+            .map_err(|err| Status::invalid_argument(format!("invalid transaction ID: {err}")))?;
+
         let nullifiers: Vec<Nullifier> = request
             .nullifiers
             .into_iter()
@@ -72,7 +78,7 @@ impl Api for NtxBuilderApi {
             .map(|res| res.map(Nullifier::from))
             .collect::<Result<_, _>>()
             .map_err(|err| {
-                Status::invalid_argument(format!("error when convertinf input nullifiers: {err}"))
+                Status::invalid_argument(format!("error when converting input nullifiers: {err}"))
             })?;
 
         let mut state = self
@@ -80,7 +86,7 @@ impl Api for NtxBuilderApi {
             .lock()
             .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
 
-        state.discard_by_nullifiers(&nullifiers);
+        state.insert_inflight(tx_id, &nullifiers);
 
         Ok(Response::new(()))
     }
@@ -102,8 +108,9 @@ impl Api for NtxBuilderApi {
             .state
             .lock()
             .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
+
         for tx in request.updates {
-            let tx_id: Digest = tx
+            let tx_id: TransactionId = tx
                 .transaction_id
                 .ok_or(Status::not_found("transaction ID not found in request"))?
                 .try_into()
@@ -114,9 +121,9 @@ impl Api for NtxBuilderApi {
                 })?;
 
             if TransactionStatus::Commited == tx.status() {
-                state.commit_inflight(tx_id.into());
+                state.commit_inflight(tx_id);
             } else {
-                state.rollback_inflight(tx_id.into());
+                state.rollback_inflight(tx_id);
             }
         }
         Ok(Response::new(()))

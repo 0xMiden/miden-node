@@ -120,11 +120,10 @@ impl Api for NtxBuilderApi {
                     ))
                 })?;
 
-            if TransactionStatus::Commited == tx.status() {
-                state.commit_inflight(tx_id);
-            } else {
-                state.rollback_inflight(tx_id);
-            }
+            match tx.status() {
+                TransactionStatus::Committed => state.commit_inflight(tx_id),
+                TransactionStatus::Reverted => state.rollback_inflight(tx_id),
+            };
         }
         Ok(Response::new(()))
     }

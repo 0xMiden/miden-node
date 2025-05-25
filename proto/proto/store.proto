@@ -23,7 +23,7 @@ service Api {
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(requests.GetAccountDetailsRequest) returns (responses.GetAccountDetailsResponse) {}
 
-    // Returns the latest state of a network account with the specified account oprefix.
+    // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetNetworkAccountDetailsByPrefixResponse) {}
 
     // Returns the latest state proofs of the specified accounts.

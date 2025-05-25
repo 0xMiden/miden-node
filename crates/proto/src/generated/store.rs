@@ -194,7 +194,7 @@ pub mod api_client {
                 .insert(GrpcMethod::new("store.Api", "GetAccountDetails"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state of a network account with the specified account oprefix.
+        /// Returns the latest state of a network account with the specified account prefix.
         pub async fn get_network_account_details_by_prefix(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -598,7 +598,7 @@ pub mod api_server {
             tonic::Response<super::super::responses::GetAccountDetailsResponse>,
             tonic::Status,
         >;
-        /// Returns the latest state of a network account with the specified account oprefix.
+        /// Returns the latest state of a network account with the specified account prefix.
         async fn get_network_account_details_by_prefix(
             &self,
             request: tonic::Request<

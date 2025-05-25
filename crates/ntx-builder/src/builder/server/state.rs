@@ -70,7 +70,7 @@ impl PendingNotes {
         let take = bucket.len().min(MAX_BATCH);
         let ids: Vec<NoteId> = bucket.drain(..take).collect();
 
-        self.prune_if_empty(next_tag);
+        self.prune_map_if_empty(next_tag);
 
         let notes: Vec<NetworkNote> =
             ids.iter().filter_map(|id| self.note_by_id.get(id).cloned()).collect();
@@ -94,10 +94,10 @@ impl PendingNotes {
                 if let Some(note) = self.note_by_id.get(&id) {
                     let tag = note.metadata().tag();
 
-                    if let Some(bucket) = self.by_tag.get_mut(&tag) {
-                        bucket.retain(|&x| x != id);
-                        self.prune_if_empty(tag);
-                    }
+                    let bucket =
+                        self.by_tag.get_mut(&tag).expect("any tracked note is on the by_tag map");
+                    bucket.retain(|&x| x != id);
+                    self.prune_map_if_empty(tag);
                 }
             }
         }
@@ -126,13 +126,13 @@ impl PendingNotes {
         if let Some(ids) = self.inflight_txs.remove(&tx_id) {
             let count = ids.len();
             for id in ids {
-                if let Some(note) = self.note_by_id.get(&id) {
-                    let tag = note.metadata().tag();
-                    self.by_nullifier.insert(note.nullifier(), id);
-                    self.by_tag.entry(tag).or_default().push(id);
+                let note =
+                    self.note_by_id.get(&id).expect("notes inserted on any incoming transaction");
+                let tag = note.metadata().tag();
+                self.by_nullifier.insert(note.nullifier(), id);
+                self.by_tag.entry(tag).or_default().push(id);
 
-                    self.push_tag_once(note.metadata().tag());
-                }
+                self.push_tag_once(note.metadata().tag());
             }
             count
         } else {
@@ -147,15 +147,18 @@ impl PendingNotes {
         }
     }
 
-    fn prune_if_empty(&mut self, tag: NoteTag) {
+    /// Removes tag from the `by_tag` map if the current set of notes is empty for the input `tag`.
+    /// Additionally, removes the tag from the account queue.
+    fn prune_map_if_empty(&mut self, tag: NoteTag) {
         if matches!(self.by_tag.get(&tag), Some(bucket) if bucket.is_empty()) {
             self.by_tag.remove(&tag);
-        }
-        if !self.by_tag.contains_key(&tag) {
             self.account_queue.retain(|t| t != &tag);
         }
     }
 }
+
+// TESTS
+// ================================================================================================
 
 #[cfg(test)]
 mod tests {

@@ -350,7 +350,7 @@ mod test {
                 .expect("Failed to get block-producer address")
         };
 
-        let ntx_builder_address = {
+        let ntx_builder_addr = {
             let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
                 .await
                 .expect("failed to bind the ntx builder address");
@@ -366,7 +366,7 @@ mod test {
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
-                ntx_builder_address,
+                ntx_builder_address: ntx_builder_addr,
             }
             .serve()
             .await

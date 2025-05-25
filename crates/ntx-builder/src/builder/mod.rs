@@ -57,8 +57,9 @@ pub struct NetworkTransactionBuilder {
     pub block_producer_address: SocketAddr,
     /// Address of the remote proving service. If `None`, transactions will be proven locally,
     /// which is undesirable.
-    pub proving_service_address: Option<Url>,
+    pub tx_prover_url: Option<Url>,
 }
+
 impl NetworkTransactionBuilder {
     /// Serves the transaction builder service.
     ///
@@ -115,7 +116,7 @@ impl NetworkTransactionBuilder {
     fn spawn_ticker(&self, api_state: SharedPendingNotes) -> JoinHandle<anyhow::Result<()>> {
         let store_url = self.store_url.clone();
         let block_addr = self.block_producer_address;
-        let prover_addr = self.proving_service_address.clone();
+        let prover_addr = self.tx_prover_url.clone();
 
         spawn_blocking(move || {
             let rt = RtBuilder::new_current_thread()

@@ -47,6 +47,11 @@ pub enum BundledCommand {
         #[arg(long = "data-directory", env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
 
+        /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
+        /// will default to running a prover in-process which is expensive.
+        #[arg(long = "tx-prover.url", env = ENV_NTX_PROVER_URL, value_name = "URL")]
+        tx_prover_url: Option<Url>,
+
         /// The remote batch prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
         #[arg(long = "batch-prover.url", env = ENV_BATCH_PROVER_URL, value_name = "URL")]
@@ -56,11 +61,6 @@ pub enum BundledCommand {
         /// in-process which is expensive.
         #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
         block_prover_url: Option<Url>,
-
-        /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
-        /// will default to running a prover in-process which is expensive.
-        #[arg(long = "tx-prover.url", env = ENV_NTX_PROVER_URL, value_name = "URL")]
-        tx_prover_url: Option<Url>,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
@@ -144,7 +144,7 @@ impl BundledCommand {
         data_directory: PathBuf,
         batch_prover_url: Option<Url>,
         block_prover_url: Option<Url>,
-        ntx_proving_service_address: Option<Url>,
+        tx_prover_url: Option<Url>,
         batch_interval: Duration,
         block_interval: Duration,
         monitor_interval: Duration,
@@ -203,7 +203,7 @@ impl BundledCommand {
                     ntx_builder_address,
                     store_url,
                     block_producer_address,
-                    proving_service_address: ntx_proving_service_address,
+                    tx_prover_url,
                 }
                 .serve_resilient()
                 .await

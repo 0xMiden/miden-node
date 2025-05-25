@@ -285,12 +285,12 @@ impl BlockBuilder {
             let committed = delta
                 .committed_transactions
                 .into_iter()
-                .map(|tx| (tx, TransactionStatus::Commited));
+                .map(|tx| (tx, TransactionStatus::Committed));
 
             let reverted = delta
                 .reverted_transactions
                 .into_iter()
-                .map(|tx| (tx, TransactionStatus::Failed));
+                .map(|tx| (tx, TransactionStatus::Reverted));
             self.ntx_builder
                 .clone()
                 .update_transaction_status(committed.chain(reverted))

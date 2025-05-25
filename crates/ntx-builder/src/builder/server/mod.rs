@@ -100,23 +100,25 @@ impl Api for NtxBuilderApi {
                     ))
                 })?;
 
-            if TransactionStatus::Commited == tx.status() {
-                let n = state.commit_inflight(tx_id);
-                info!(
-                    target: COMPONENT,
-                    committed = n,
-                    tx_id = tx_id.to_hex(),
-                    "Committed notes notes for transaction"
-                );
-            } else {
-                let n = state.rollback_inflight(tx_id);
-
-                info!(
-                    target: COMPONENT,
-                    rolled_back = n,
-                    tx_id = tx_id.to_hex(),
-                    "Rolled back inflight notes notes after transaction got discarded"
-                );
+            match tx.status() {
+                TransactionStatus::Committed => {
+                    let n = state.commit_inflight(tx_id);
+                    info!(
+                        target: COMPONENT,
+                        committed = n,
+                        tx_id = tx_id.to_hex(),
+                        "Committed notes notes for transaction"
+                    );
+                },
+                TransactionStatus::Reverted => {
+                    let n = state.rollback_inflight(tx_id);
+                    info!(
+                        target: COMPONENT,
+                        rolled_back = n,
+                        tx_id = tx_id.to_hex(),
+                        "Rolled back inflight notes notes after transaction got discarded"
+                    );
+                },
             }
         }
         Ok(Response::new(()))

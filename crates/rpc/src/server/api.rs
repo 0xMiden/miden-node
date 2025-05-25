@@ -212,15 +212,12 @@ impl api_server::Api for RpcService {
             .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
 
         // Only allow deployment transactions for new network accounts
-        if tx.account_id().is_network() {
-            match tx.account_update().details() {
-                AccountUpdateDetails::New(_) => {},
-                _ => {
-                    return Err(Status::invalid_argument(
-                        "Network transactions may not be submitted by users yet",
-                    ));
-                },
-            }
+        if tx.account_id().is_network()
+            && !matches!(tx.account_update().details(), AccountUpdateDetails::New(_))
+        {
+            return Err(Status::invalid_argument(
+                "Network transactions may not be submitted by users yet",
+            ));
         }
 
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);

@@ -94,14 +94,17 @@ impl PendingNotes {
             if let Some(id) = self.by_nullifier.remove(nullifier) {
                 moved.push(id);
 
-                if let Some(note) = self.note_by_id.get(&id) {
-                    let tag = note.metadata().tag();
+                let tag = self
+                    .note_by_id
+                    .get(&id)
+                    .expect("note must be on the map if nullifier was found")
+                    .metadata()
+                    .tag();
 
-                    let bucket =
-                        self.by_tag.get_mut(&tag).expect("any tracked note is on the by_tag map");
-                    bucket.retain(|&x| x != id);
-                    self.prune_map_if_empty(tag);
-                }
+                let bucket =
+                    self.by_tag.get_mut(&tag).expect("any tracked note is in the by_tag map");
+                bucket.retain(|&x| x != id);
+                self.prune_map_if_empty(tag);
             }
         }
 

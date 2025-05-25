@@ -362,11 +362,11 @@ mod test {
             BlockProducer {
                 block_producer_address: block_producer_addr,
                 store_address: store_addr,
+                ntx_builder_address: ntx_builder_addr,
                 batch_prover_url: None,
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
-                ntx_builder_address: ntx_builder_addr,
             }
             .serve()
             .await

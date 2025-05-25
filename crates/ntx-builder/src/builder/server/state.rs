@@ -88,6 +88,9 @@ impl PendingNotes {
         let mut moved = Vec::new();
 
         for nullifier in nullifiers {
+            // NOTE: If the note is on the map, it is effectively a network note.
+            // Otherwise, unless it was consumed before reaching the NTB, it is likely not a 
+            // network note.
             if let Some(id) = self.by_nullifier.remove(nullifier) {
                 moved.push(id);
 

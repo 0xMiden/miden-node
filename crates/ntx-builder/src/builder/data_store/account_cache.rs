@@ -3,7 +3,7 @@ use std::{
     sync::Mutex,
 };
 
-use miden_node_utils::account::{NetworkAccountError, NetworkAccountPrefix};
+use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
 use miden_objects::account::{Account, AccountId};
 
 // ACCOUNT CACHE

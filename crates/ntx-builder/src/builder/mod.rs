@@ -3,13 +3,12 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
-use miden_node_proto::generated::ntx_builder::api_server;
-use miden_node_utils::network_note::NetworkNote;
+use miden_node_proto::{domain::note::NetworkNote, generated::ntx_builder::api_server};
 use miden_objects::{
     assembly::DefaultSourceManager,
     note::Note,
     transaction::{
-        ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionWitness,
+        self, ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionWitness,
     },
 };
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
@@ -280,22 +279,18 @@ async fn prove_and_submit(
     executed_tx: &ExecutedTransaction,
     remote_tx_prover: Option<&RemoteTransactionProver>,
 ) -> anyhow::Result<()> {
-    api_state.lock().await.mark_inflight(
+    api_state.lock().await.insert_inflight(
         executed_tx.id(),
         executed_tx
             .input_notes()
             .iter()
-            .map(|n| {
-                NetworkNote::try_from(n.note().clone())
-                    .expect("any executed note was checked to be network")
-            })
-            .collect(),
+            .map(transaction::ToInputNoteCommitments::nullifier),
     );
 
     let tx_witness = TransactionWitness::from(executed_tx.clone());
     let proven_tx = if let Some(tx_prover) = remote_tx_prover {
         tx_prover.prove(tx_witness).await
-        // TODO: should we fall back to a local tx prover here?
+        // TODO: should we fall back to a local tx prover if proving fails?
     } else {
         let local_tx_prover = LocalTransactionProver::new(ProvingOptions::default());
         local_tx_prover.prove(tx_witness).await

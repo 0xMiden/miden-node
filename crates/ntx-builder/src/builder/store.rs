@@ -1,4 +1,5 @@
 use miden_node_proto::{
+    domain::note::NetworkNote,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         requests::{
@@ -9,7 +10,7 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::{network_note::NetworkNote, tracing::grpc::OtelInterceptor};
+use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},

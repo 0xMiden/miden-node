@@ -10,8 +10,7 @@ use std::{
     rc::Rc,
 };
 
-use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
-use miden_node_utils::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_objects::{
     Digest, Word,
     account::{
@@ -458,7 +457,7 @@ pub fn upsert_accounts(
     let mut upsert_stmt = transaction.prepare_cached(insert_sql!(
         accounts {
             account_id,
-            id_prefix,
+            network_account_id_prefix,
             account_commitment,
             block_num,
             details
@@ -472,12 +471,11 @@ pub fn upsert_accounts(
     for update in accounts {
         let account_id = update.account_id();
         // Extract the 30-bit prefix to provide easy look ups for NTB
-        // TODO: this is hacky:
         // Do not store prefix for accounts that are not network
         let account_id_prefix = if account_id.is_network() {
-            NetworkAccountPrefix::try_from(account_id)?.inner()
+            Some(NetworkAccountPrefix::try_from(account_id)?.inner())
         } else {
-            0
+            None
         };
 
         let (full_account, insert_delta) = match update.details() {

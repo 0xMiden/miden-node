@@ -1,7 +1,7 @@
 use std::io;
 
 use deadpool::managed::PoolError;
-use miden_node_utils::account::NetworkAccountError;
+use miden_node_proto::domain::account::NetworkAccountError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,

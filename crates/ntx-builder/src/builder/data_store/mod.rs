@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use account_cache::NetworkAccountCache;
-use miden_node_utils::account::{NetworkAccountError, NetworkAccountPrefix};
+use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
 use miden_objects::{
     AccountError, MastForest, Word,
     account::{Account, AccountId},

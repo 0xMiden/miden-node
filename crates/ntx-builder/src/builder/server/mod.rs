@@ -1,4 +1,5 @@
 use miden_node_proto::{
+    domain::note::NetworkNote,
     generated::{
         ntx_builder::api_server::Api,
         requests::{
@@ -8,7 +9,6 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::network_note::NetworkNote;
 use miden_objects::{Digest, note::Nullifier, transaction::TransactionId};
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
@@ -57,6 +57,12 @@ impl Api for NtxBuilderApi {
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
+        let tx_id = request
+            .transaction_id
+            .map(TransactionId::try_from)
+            .ok_or(Status::not_found("transaction ID not found in request"))?
+            .map_err(|err| Status::invalid_argument(format!("invalid transaction ID: {err}")))?;
+
         let nullifiers: Vec<Nullifier> = request
             .nullifiers
             .into_iter()
@@ -68,7 +74,8 @@ impl Api for NtxBuilderApi {
             })?;
 
         let mut state = self.state.lock().await;
-        state.discard_by_nullifiers(&nullifiers);
+
+        state.insert_inflight(tx_id, nullifiers);
 
         Ok(Response::new(()))
     }
@@ -83,7 +90,7 @@ impl Api for NtxBuilderApi {
         let mut state = self.state.lock().await;
 
         for tx in request.updates {
-            let tx_id: Digest = tx
+            let tx_id: TransactionId = tx
                 .transaction_id
                 .ok_or(Status::not_found("transaction ID not found in request"))?
                 .try_into()
@@ -93,7 +100,6 @@ impl Api for NtxBuilderApi {
                     ))
                 })?;
 
-            let tx_id: TransactionId = tx_id.into();
             if TransactionStatus::Commited == tx.status() {
                 let n = state.commit_inflight(tx_id);
                 info!(

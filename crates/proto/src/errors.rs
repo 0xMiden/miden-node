@@ -1,11 +1,12 @@
 use std::{any::type_name, num::TryFromIntError};
 
-use miden_node_utils::network_note::NetworkNoteError;
 use miden_objects::{
     crypto::merkle::{SmtLeafError, SmtProofError},
     utils::DeserializationError,
 };
 use thiserror::Error;
+
+use crate::domain::note::NetworkNoteError;
 
 #[derive(Debug, Error)]
 pub enum ConversionError {

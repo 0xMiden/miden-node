@@ -7,7 +7,7 @@ use std::{
 
 use miden_node_proto::{
     convert,
-    domain::account::{AccountInfo, AccountProofRequest},
+    domain::account::{AccountInfo, AccountProofRequest, NetworkAccountPrefix},
     errors::ConversionError,
     generated::{
         self,
@@ -342,9 +342,15 @@ impl api_server::Api for StoreApi {
         request: Request<GetNetworkAccountDetailsByPrefixRequest>,
     ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
         let request = request.into_inner();
-        let prefix = request.account_id_prefix;
-        assert!(prefix >> 30 == 0, "account_id_prefix must be 30 bits");
-        let account_info: AccountInfo = self.state.get_account_details_by_prefix(prefix).await?;
+        // Validate that the call is for a valid network account prefix
+        let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
+            Status::invalid_argument(format!(
+                "request does not contain a valid network account prefix: {err}"
+            ))
+        })?;
+
+        let account_info: AccountInfo =
+            self.state.get_account_details_by_prefix(prefix.inner()).await?;
 
         Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
             details: Some((&account_info).into()),

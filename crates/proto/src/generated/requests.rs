@@ -143,6 +143,13 @@ pub struct GetNotesByIdRequest {
     #[prost(message, repeated, tag = "1")]
     pub note_ids: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }
+/// Returns peaks for the given block number, or the chain tip if a block number not provided.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetCurrentBlockchainDataRequest {
+    /// Last client-known block number. If not specified, the latest header and peaks will be retrieved.
+    #[prost(fixed32, optional, tag = "1")]
+    pub block_num: ::core::option::Option<u32>,
+}
 /// Returns the latest state of an account with the specified ID.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetAccountDetailsRequest {

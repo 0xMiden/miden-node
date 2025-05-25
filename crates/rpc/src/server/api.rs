@@ -23,8 +23,11 @@ use miden_node_proto::{
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, account::AccountId,
-    crypto::hash::rpo::RpoDigest, transaction::ProvenTransaction, utils::serde::Deserializable,
+    Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
+    account::{AccountId, delta::AccountUpdateDetails},
+    crypto::hash::rpo::RpoDigest,
+    transaction::ProvenTransaction,
+    utils::serde::Deserializable,
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
@@ -207,6 +210,18 @@ impl api_server::Api for RpcService {
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
             .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
+
+        // Only allow deployment transactions for new network accounts
+        if tx.account_id().is_network() {
+            match tx.account_update().details() {
+                AccountUpdateDetails::New(_) => {},
+                _ => {
+                    return Err(Status::invalid_argument(
+                        "Network transactions may not be submitted by users yet",
+                    ));
+                },
+            }
+        }
 
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
 

@@ -236,6 +236,14 @@ pub enum NoteSyncError {
 }
 
 #[derive(Error, Debug)]
+pub enum GetCurrentBlockchainDataError {
+    #[error("failed to retrieve block header")]
+    ErrorRetrievingBlockHeader(#[source] DatabaseError),
+    #[error("failed to instantiate MMR peaks")]
+    InvalidPeaks(MmrError),
+}
+
+#[derive(Error, Debug)]
 pub enum GetBatchInputsError {
     #[error("failed to select note inclusion proofs")]
     SelectNoteInclusionProofError(#[source] DatabaseError),

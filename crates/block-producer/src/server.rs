@@ -268,7 +268,7 @@ impl BlockProducerRpcServer {
 
         let tx_id = tx.id();
 
-        info!(
+        debug!(
             target: COMPONENT,
             tx_id = %tx_id.to_hex(),
             account_id = %tx.account_id().to_hex(),
@@ -289,7 +289,8 @@ impl BlockProducerRpcServer {
 
         let tx = AuthenticatedTransaction::new(tx, inputs)?;
 
-        // Update the mempool with the new transaction
+        // Launch a task for updating the mempool, and send the update to the network transaction
+        // builder
         let submit_tx_response =
             self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
                 SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
@@ -361,11 +362,11 @@ mod test {
             BlockProducer {
                 block_producer_address: block_producer_addr,
                 store_address: store_addr,
-                ntx_builder_address,
                 batch_prover_url: None,
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
+                ntx_builder_address,
             }
             .serve()
             .await
@@ -404,6 +405,7 @@ mod test {
             });
             store_runtime
         };
+
         // we need to wait for the exponential backoff of the block producer to connect to the store
         sleep(Duration::from_secs(1)).await;
 

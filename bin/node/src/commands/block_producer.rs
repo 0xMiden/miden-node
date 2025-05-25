@@ -1,8 +1,7 @@
-use std::time::Duration;
-
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
+use tokio::time::Duration;
 use url::Url;
 
 use super::{

@@ -7,7 +7,6 @@ use miden_objects::{
     transaction::{PartialBlockchain, TransactionScript},
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
-use winter_maybe_async::maybe_async_trait;
 
 pub struct FaucetDataStore {
     faucet_account: Mutex<Account>,
@@ -59,10 +58,9 @@ impl FaucetDataStore {
     }
 }
 
-#[maybe_async_trait(?Send)]
+#[async_trait::async_trait(?Send)]
 impl DataStore for FaucetDataStore {
-    #[maybe_async]
-    fn get_transaction_inputs(
+    async fn get_transaction_inputs(
         &self,
         account_id: AccountId,
         _ref_blocks: BTreeSet<BlockNumber>,

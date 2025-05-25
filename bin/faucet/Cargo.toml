@@ -44,7 +44,6 @@ tower-http                   = { features = ["cors", "set-header", "trace"], wor
 tower_governor               = { version = "0.7.0" }
 tracing                      = { workspace = true }
 url                          = { workspace = true }
-winter-maybe-async           = { version = "0.12" }
 
 [build-dependencies]
 # Required to inject build metadata.

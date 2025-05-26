@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, net::SocketAddr, num::NonZeroUsize, sync::Arc, 
 use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
-use futures::{FutureExt, TryFutureExt};
+use futures::TryFutureExt;
 use miden_node_proto::{
     domain::{account::NetworkAccountError, note::NetworkNote},
     generated::ntx_builder::api_server,
@@ -227,7 +227,7 @@ impl NetworkTransactionBuilder {
         };
 
         // Execution: Filter notes, execute, prove and submit tx
-        let executed_tx = Self::filter_consumable_notes(tx_executor, &tx_request)
+        let executed_tx = Self::filter_consumable_notes(data_store,tx_executor, &tx_request)
             .and_then(|filtered_tx_req| Self::execute_transaction(tx_executor, filtered_tx_req))
             .and_then(|executed_tx| Self::prove_and_submit_transaction(tx_prover, block_prod, executed_tx))
             .inspect_ok(|tx| {
@@ -235,25 +235,26 @@ impl NetworkTransactionBuilder {
             })
             .inspect_err(|err| {
                 warn!(target: COMPONENT, error = %err, "Error in transaction processing");
-                Span::current().set_error(err)
+                Span::current().set_error(err);
             })
             .instrument(Span::current())
             .await;
 
         // If execution succeeded, requeue notes we did not use and update account cache
         if let Ok(tx) = executed_tx {
-            let executed_ids: BTreeSet<NoteId> = tx.input_notes().iter().map(|n| n.id()).collect();
+            let executed_ids: BTreeSet<NoteId> =
+                tx.input_notes().iter().map(InputNote::id).collect();
             let failed_notes = tx_request
                 .notes_to_execute
                 .iter()
-                .cloned()
-                .filter(|n| !executed_ids.contains(&n.id()));
+                .filter(|n| !executed_ids.contains(&n.id()))
+                .cloned();
 
             api_state.lock().await.queue_unconsumed_notes(failed_notes);
 
             data_store
-                .update_account(tx)
-                .map_err(NtxBuilderError::AccountCacheUpdateFailed)?
+                .update_account(&tx)
+                .map_err(NtxBuilderError::AccountCacheUpdateFailed)?;
         } else {
             // Otherwise, roll back
             Self::rollback_tx(tx_request, api_state, data_store).await;
@@ -312,6 +313,7 @@ impl NetworkTransactionBuilder {
     /// the executing account.
     #[instrument(target = COMPONENT, name = "ntx_builder.filter_consumable_notes", skip_all, err)]
     async fn filter_consumable_notes(
+        data_store: &Arc<NtxBuilderDataStore>,
         tx_executor: &TransactionExecutor,
         tx_request: &NetworkTransactionRequest,
     ) -> Result<NetworkTransactionRequest, NtxBuilderError> {
@@ -324,6 +326,10 @@ impl NetworkTransactionBuilder {
                 .map(InputNote::unauthenticated)
                 .collect(),
         )?;
+
+        for note in input_notes.iter() {
+            data_store.insert_note_script_mast(note.note().script());
+        }
 
         let checker = NoteConsumptionChecker::new(tx_executor);
         match checker
@@ -354,6 +360,10 @@ impl NetworkTransactionBuilder {
                 }
                 Span::current()
                     .set_attribute("ntx.failed_note_id", failed_note_id.to_hex().as_str());
+
+                if successful_network_notes.is_empty() {
+                    return Err(NtxBuilderError::NoteSetIsEmpty(tx_request.account_id));
+                }
 
                 Ok(NetworkTransactionRequest::new(
                     tx_request.account_id,

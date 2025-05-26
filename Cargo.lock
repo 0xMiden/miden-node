@@ -2130,6 +2130,7 @@ version = "0.9.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "futures",
  "lru",
  "miden-lib",
  "miden-node-proto",

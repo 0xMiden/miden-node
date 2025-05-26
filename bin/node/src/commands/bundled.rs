@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -204,6 +204,8 @@ impl BundledCommand {
                     store_url,
                     block_producer_address,
                     tx_prover_url,
+                    ticker_interval_ms: 200u64,
+                    account_cache_capacity: NonZeroUsize::new(128).expect("non-zero"),
                 }
                 .serve_resilient()
                 .await

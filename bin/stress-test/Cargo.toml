@@ -17,7 +17,7 @@ workspace = true
 
 [dependencies]
 clap                      = { features = ["derive"], version = "4.5" }
-futures                   = { version = "0.3" }
+futures                   = { workspace = true }
 miden-air                 = { workspace = true }
 miden-block-prover        = { features = ["testing"], version = "0.9" }
 miden-lib                 = { workspace = true }

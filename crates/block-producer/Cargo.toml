@@ -20,7 +20,7 @@ tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
 anyhow                       = { workspace = true }
-futures                      = { version = "0.3" }
+futures                      = { workspace = true }
 itertools                    = { workspace = true }
 miden-block-prover           = { version = "0.9" }
 miden-lib                    = { workspace = true }

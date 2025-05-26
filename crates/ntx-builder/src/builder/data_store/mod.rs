@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use account_cache::NetworkAccountCache;
-use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_objects::{
     AccountError, MastForest, Word,
     account::{Account, AccountId},
@@ -11,11 +11,13 @@ use miden_objects::{
     transaction::{ExecutedTransaction, PartialBlockchain},
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
-use thiserror::Error;
 use tokio::sync::Mutex;
 use tracing::warn;
 
-use super::store::{StoreClient, StoreError};
+use super::{
+    NtxBuilderError,
+    store::{StoreClient, StoreError},
+};
 use crate::COMPONENT;
 
 mod account_cache;
@@ -119,7 +121,7 @@ impl NtxBuilderDataStore {
     }
 
     /// After a succesful execution, updates the account cache with the new account details.
-    pub fn update_account(&self, transaction: &ExecutedTransaction) -> Result<(), AccountError> {
+    pub fn update_account(&self, transaction: ExecutedTransaction) -> Result<(), AccountError> {
         // SAFETY: datastore impl checks that the account ID is a valid network account
         let account_id_prefix = transaction.account_id().try_into().unwrap();
         let Some(mut account) = self.account_cache.get(account_id_prefix) else {
@@ -164,17 +166,4 @@ impl MastForestStore for NtxBuilderDataStore {
     fn get(&self, procedure_hash: &miden_objects::Digest) -> Option<Arc<MastForest>> {
         self.mast_forest_store.get(procedure_hash)
     }
-}
-
-// BUILDER ERRORS
-// =================================================================================================
-
-#[derive(Debug, Error)]
-pub enum NtxBuilderError {
-    #[error("store error")]
-    Store(#[from] StoreError),
-    #[error("block producer client error")]
-    BlockProducer(#[from] tonic::Status),
-    #[error("network account error")]
-    NetworkAccount(#[from] NetworkAccountError),
 }

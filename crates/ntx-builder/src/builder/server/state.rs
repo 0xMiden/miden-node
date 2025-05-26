@@ -61,6 +61,11 @@ impl PendingNotes {
         }
     }
 
+    /// Returns the next tag, but does not change the internal state.
+    pub fn peek_next_tag(&mut self) -> Option<NoteTag> {
+        self.account_queue.front().copied()
+    }
+
     /// Returns the next set of notes with the next scheduled tag in the global queue
     /// (up to `MAX_BATCH`)
     pub fn take_next_notes_by_tag(&mut self) -> Option<(NoteTag, Vec<NetworkNote>)> {

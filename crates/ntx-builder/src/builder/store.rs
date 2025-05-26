@@ -69,6 +69,9 @@ impl StoreClient {
         BlockHeader::try_from(response).map_err(Into::into)
     }
 
+    /// Returns the block header and MMR peaks at the chain tip if the input `block_num` is either
+    /// `None` or an outdated block number. If the input `block_num` is equal to the current
+    /// chain tip, this function returns `None`.
     #[instrument(target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
     pub async fn get_current_blockchain_data(
         &self,

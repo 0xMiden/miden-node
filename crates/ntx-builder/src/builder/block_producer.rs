@@ -33,8 +33,8 @@ impl BlockProducerClient {
         Self { inner: block_producer }
     }
 
-    #[instrument(target = COMPONENT, name = "block_producer.client.submit_proven_network_transaction", skip_all, err)]
-    pub async fn submit_proven_network_transaction(
+    #[instrument(target = COMPONENT, name = "block_producer.client.submit_proven_transaction", skip_all, err)]
+    pub async fn submit_proven_transaction(
         &self,
         proven_tx: ProvenTransaction,
     ) -> Result<(), Status> {

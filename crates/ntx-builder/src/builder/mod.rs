@@ -8,7 +8,7 @@ use miden_objects::{
     assembly::DefaultSourceManager,
     note::Note,
     transaction::{
-        self, ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionWitness,
+        ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionWitness,
     },
 };
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
@@ -38,6 +38,50 @@ mod server;
 mod store;
 
 type SharedPendingNotes = Arc<Mutex<PendingNotes>>;
+
+// TRANSACTION PROVER
+// ================================================================================================
+
+enum NtbTransactionProver {
+    Local(LocalTransactionProver),
+    Remote(RemoteTransactionProver),
+}
+
+impl NtbTransactionProver {
+    /// Proves and submits the given executed transaction.
+    async fn prove_and_submit(
+        &self,
+        block_producer_client: &BlockProducerClient,
+        executed_tx: &ExecutedTransaction,
+    ) -> anyhow::Result<()> {
+        let tx_witness = TransactionWitness::from(executed_tx.clone());
+
+        let proven_tx = match self {
+            NtbTransactionProver::Local(prover) => prover.prove(tx_witness).await,
+            NtbTransactionProver::Remote(prover) => prover.prove(tx_witness).await,
+        }
+        .context("failed to prove transaction")?;
+
+        block_producer_client
+            .submit_proven_transaction(proven_tx)
+            .await
+            .context("failed to submit proven transaction")
+    }
+}
+
+impl From<Option<Url>> for NtbTransactionProver {
+    fn from(url: Option<Url>) -> Self {
+        if let Some(url) = url {
+            let tx_prover = RemoteTransactionProver::new(url);
+            NtbTransactionProver::Remote(tx_prover)
+        } else {
+            NtbTransactionProver::Local(LocalTransactionProver::new(ProvingOptions::default()))
+        }
+    }
+}
+
+// NETWORK TRANSACTION BUILDER
+// ================================================================================================
 
 /// Interval for checking pending notes
 const NOTE_CHECK_INTERVAL_MS: u64 = 200;
@@ -128,9 +172,8 @@ impl NetworkTransactionBuilder {
                 let store = StoreClient::new(&store_url);
                 let data_store = Arc::new(NtxBuilderDataStore::new(store).await?);
                 let tx_executor = TransactionExecutor::new(data_store.clone(), None);
+                let tx_prover = NtbTransactionProver::from(prover_addr);
                 let block_prod = BlockProducerClient::new(block_addr);
-                let remote_tx_prover =
-                    prover_addr.map(|uri| RemoteTransactionProver::new(uri.to_string()));
 
                 let mut interval = time::interval(Duration::from_millis(NOTE_CHECK_INTERVAL_MS));
 
@@ -139,7 +182,7 @@ impl NetworkTransactionBuilder {
 
                     let tx = filter_next_and_execute(&api_state, &tx_executor, &data_store).await?;
                     if let Some(tx) = &tx {
-                        let proof_result = prove_and_submit(&api_state, &block_prod, tx, remote_tx_prover.as_ref()).await;
+                        let proof_result = tx_prover.prove_and_submit(&block_prod, tx).await;
                         if let Err(err) = proof_result {
                             warn!(target: COMPONENT,err = %err,"Error proving and submitting transaction");
 
@@ -271,35 +314,4 @@ async fn filter_next_and_execute(
             Ok(None)
         },
     }
-}
-
-/// Proves and submit an executed transaction
-async fn prove_and_submit(
-    api_state: &SharedPendingNotes,
-    block_producer_client: &BlockProducerClient,
-    executed_tx: &ExecutedTransaction,
-    remote_tx_prover: Option<&RemoteTransactionProver>,
-) -> anyhow::Result<()> {
-    api_state.lock().await.insert_inflight(
-        executed_tx.id(),
-        executed_tx
-            .input_notes()
-            .iter()
-            .map(transaction::ToInputNoteCommitments::nullifier),
-    );
-
-    let tx_witness = TransactionWitness::from(executed_tx.clone());
-    let proven_tx = if let Some(tx_prover) = remote_tx_prover {
-        tx_prover.prove(tx_witness).await
-        // TODO: should we fall back to a local tx prover if proving fails?
-    } else {
-        let local_tx_prover = LocalTransactionProver::new(ProvingOptions::default());
-        local_tx_prover.prove(tx_witness).await
-    }
-    .context("failed to prove transaction")?;
-
-    block_producer_client
-        .submit_proven_network_transaction(proven_tx)
-        .await
-        .context("Failed to submit proven tx")
 }

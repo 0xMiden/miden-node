@@ -23,6 +23,12 @@ mod account_cache;
 // DATA STORE
 // =================================================================================================
 
+/// Network Transaction Builder data store.
+///
+/// [`NtxBuilderDataStore`] implements [`DataStore`] and provides all input data required by the NTB
+/// transaction executor. It maintains both a partial MMR and up-to-date account data. Accounts are
+/// kept fresh via an LRU cache, falling back to the backing store on a miss. The partial MMR is
+/// refreshed from the store whenever it becomes outdated.
 pub struct NtxBuilderDataStore {
     mast_forest_store: TransactionMastStore,
     store_client: StoreClient,
@@ -32,11 +38,12 @@ pub struct NtxBuilderDataStore {
 }
 
 impl NtxBuilderDataStore {
+    /// Creates a new [`NtxBuilderDataStore`].
     pub async fn new(store_client: StoreClient) -> Result<Self, NtxBuilderError> {
-        let account_cache = NetworkAccountCache::new(128);
+        let account_cache = NetworkAccountCache::new(128.try_into().expect("not zero"));
         let mast_forest_store = TransactionMastStore::new();
 
-        // SAFETY: ok to unwrap because passing `None` should return the latest data everytime
+        // SAFETY: OK to unwrap because passing `None` should return the latest data everytime
         let (block_ref, partial_mmr) =
             store_client.get_current_blockchain_data(None).await?.unwrap();
 
@@ -49,20 +56,27 @@ impl NtxBuilderDataStore {
         })
     }
 
+    /// Inserts a note script's MAST forest into the MAST forest store.
     pub fn insert_note_script_mast(&self, note_script: &NoteScript) {
         self.mast_forest_store.insert(note_script.mast());
     }
 
+    /// Retrieves the network account associated with a note tag and updates the state of the data
+    /// store accordingly to be able to execute transactions with the account.
+    /// Specifically, updating the state involves:
+    ///
+    /// - Retrieving the network account from the cache or through the Store and updating the cache
+    /// - Loading the account's MAST forest into the data store's MAST forest
     pub async fn get_cached_acc_or_fetch_by_tag(
         &self,
         note_tag: NoteTag,
     ) -> Result<Option<Account>, NtxBuilderError> {
         let account_prefix: NetworkAccountPrefix = note_tag.try_into().unwrap();
-        // look in cache, try the store otherwise
+        // Look in cache, try the store otherwise
         let account = if let Some(acc) = self.account_cache.get(account_prefix) {
             Some(acc)
         } else if let Some(acc) = self.store_client.get_network_account_by_tag(note_tag).await? {
-            // insert to cache
+            // Insert to cache
             self.account_cache.put(&acc)?;
             Some(acc)
         } else {
@@ -76,6 +90,7 @@ impl NtxBuilderDataStore {
         Ok(account)
     }
 
+    /// Updates the blockchain-related data by
     pub async fn update_blockchain_data(&self) -> Result<BlockNumber, StoreError> {
         let current_block = { self.block_ref.lock().await.block_num() };
 
@@ -97,10 +112,13 @@ impl NtxBuilderDataStore {
         Ok(new_block_num)
     }
 
+    /// Evict an account from the cache. This forces the NTB to retrieve account details from the
+    /// store the next time a transaction is built for this account.
     pub fn evict_account(&self, account_id: AccountId) {
         self.account_cache.evict(account_id);
     }
 
+    /// After a succesful execution, updates the account cache with the new account details.
     pub fn update_account(&self, transaction: &ExecutedTransaction) -> Result<(), AccountError> {
         // SAFETY: datastore impl checks that the account ID is a valid network account
         let account_id_prefix = transaction.account_id().try_into().unwrap();

@@ -792,6 +792,14 @@ impl State {
         self.db.select_account(id).await
     }
 
+    /// Returns details for public (on-chain) account.
+    pub async fn get_account_details_by_prefix(
+        &self,
+        id_prefix: u32,
+    ) -> Result<AccountInfo, DatabaseError> {
+        self.db.select_account_by_prefix(id_prefix).await
+    }
+
     /// Returns account proofs with optional account and storage headers.
     pub async fn get_account_proofs(
         &self,

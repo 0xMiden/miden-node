@@ -2,6 +2,7 @@ use std::{collections::HashMap, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
+use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
 use miden_node_store::{DataDirectory, Store};
 use miden_node_utils::grpc::UrlExt;
@@ -151,17 +152,21 @@ impl BundledCommand {
         let grpc_store = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to store gRPC endpoint")?;
+        let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to block-producer gRPC endpoint")?;
+        let grpc_ntx_builder = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to network transaction builder gRPC endpoint")?;
+
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
-
-        let block_producer_address = {
-            let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-                .await
-                .context("Failed to bind to block-producer gRPC endpoint")?;
-            grpc_block_producer
-                .local_addr()
-                .context("Failed to retrieve the block-producer's gRPC address")?
-        };
+        let block_producer_address = grpc_block_producer
+            .local_addr()
+            .context("Failed to retrieve the block-producer's gRPC address")?;
+        let ntx_builder_address = grpc_ntx_builder
+            .local_addr()
+            .context("Failed to retrieve the network transaction builder's gRPC address")?;
 
         let mut join_set = JoinSet::new();
 
@@ -179,12 +184,27 @@ impl BundledCommand {
             })
             .id();
 
+        // Start network transaction builder. The endpoint is available after loading completes.
+        // SAFETY: socket addr yields valid URLs
+        let store_url =
+            Url::parse(&format!("http://{}:{}/", store_address.ip(), store_address.port()))
+                .unwrap();
+        let ntx_builder_id = join_set
+            .spawn(async move {
+                NetworkTransactionBuilder { address: ntx_builder_address, store_url }
+                    .serve()
+                    .await
+                    .context("failed while serving store component")
+            })
+            .id();
+
         // Start block-producer. The block-producer's endpoint is available after loading completes.
         let block_producer_id = join_set
             .spawn(async move {
                 BlockProducer {
                     block_producer_address,
                     store_address,
+                    ntx_builder_address,
                     batch_prover_url,
                     block_prover_url,
                     batch_interval,
@@ -223,6 +243,7 @@ impl BundledCommand {
             (store_id, "store"),
             (block_producer_id, "block-producer"),
             (rpc_id, "rpc"),
+            (ntx_builder_id, "ntx-builder"),
         ]);
 
         // SAFETY: The joinset is definitely not empty.

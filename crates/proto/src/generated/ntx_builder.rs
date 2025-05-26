@@ -91,6 +91,10 @@ pub mod api_client {
             self
         }
         /// Submit a list of network notes to the network transaction builder.
+        ///
+        /// When a block gets committed in the blockchain, the list of new network notes needs to be
+        /// submitted to the NTB through this endpoint in order for it to track them and eventually
+        /// consume them.
         pub async fn submit_network_notes(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -115,6 +119,9 @@ pub mod api_client {
             self.inner.unary(req, path, codec).await
         }
         /// Update network transaction builder with transaction status changes.
+        ///
+        /// Any transaction that has been either committed or reverted is communicated to the NTB so
+        /// it can track the lifecycle of inflight transactions and notes correctly.
         pub async fn update_transaction_status(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -138,6 +145,34 @@ pub mod api_client {
                 .insert(GrpcMethod::new("ntx_builder.Api", "UpdateTransactionStatus"));
             self.inner.unary(req, path, codec).await
         }
+        /// Update the status of network notes that were consumed externally.
+        ///
+        /// When a new transaction enters the mempool, the NTB needs to be notified of the nullifiers
+        /// that this transaction consumes through this endpoint. This way, the NTB can discard
+        /// nullified notes correctly.
+        pub async fn update_network_notes(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::requests::UpdateNetworkNotesRequest,
+            >,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ntx_builder.Api/UpdateNetworkNotes",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("ntx_builder.Api", "UpdateNetworkNotes"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -154,16 +189,32 @@ pub mod api_server {
     #[async_trait]
     pub trait Api: std::marker::Send + std::marker::Sync + 'static {
         /// Submit a list of network notes to the network transaction builder.
+        ///
+        /// When a block gets committed in the blockchain, the list of new network notes needs to be
+        /// submitted to the NTB through this endpoint in order for it to track them and eventually
+        /// consume them.
         async fn submit_network_notes(
             &self,
             request: tonic::Request<super::super::requests::SubmitNetworkNotesRequest>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
         /// Update network transaction builder with transaction status changes.
+        ///
+        /// Any transaction that has been either committed or reverted is communicated to the NTB so
+        /// it can track the lifecycle of inflight transactions and notes correctly.
         async fn update_transaction_status(
             &self,
             request: tonic::Request<
                 super::super::requests::UpdateTransactionStatusRequest,
             >,
+        ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
+        /// Update the status of network notes that were consumed externally.
+        ///
+        /// When a new transaction enters the mempool, the NTB needs to be notified of the nullifiers
+        /// that this transaction consumes through this endpoint. This way, the NTB can discard
+        /// nullified notes correctly.
+        async fn update_network_notes(
+            &self,
+            request: tonic::Request<super::super::requests::UpdateNetworkNotesRequest>,
         ) -> std::result::Result<tonic::Response<()>, tonic::Status>;
     }
     #[derive(Debug)]
@@ -323,6 +374,54 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = UpdateTransactionStatusSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ntx_builder.Api/UpdateNetworkNotes" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateNetworkNotesSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::requests::UpdateNetworkNotesRequest,
+                    > for UpdateNetworkNotesSvc<T> {
+                        type Response = ();
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::requests::UpdateNetworkNotesRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::update_network_notes(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateNetworkNotesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

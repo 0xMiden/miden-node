@@ -23,6 +23,6 @@ message TransactionSummary {
 }
 
 enum TransactionStatus {
-    COMMITED = 0;
-    FAILED = 1;
+    COMMITTED = 0;
+    REVERTED = 1;
 }

@@ -22,7 +22,7 @@ use super::{
 /// The maximum difficulty of the `PoW`.
 ///
 /// The difficulty is the number of leading zeros in the hash of the seed and the solution.
-const MAX_DIFFICULTY: u64 = 6;
+const MAX_DIFFICULTY: u64 = 24;
 
 /// The tolerance for the server timestamp.
 ///
@@ -164,10 +164,10 @@ impl PoW {
     /// Adjust the difficulty of the `PoW`.
     ///
     /// The difficulty is adjusted based on the number of active requests.
-    /// The difficulty is increased by 1 for every 100 active requests.
+    /// The difficulty is increased by 1 for every 50 active requests.
     /// The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
     pub fn adjust_difficulty(&self, active_requests: usize) {
-        let new_difficulty = (active_requests as u64 / 100).clamp(1, MAX_DIFFICULTY);
+        let new_difficulty = (active_requests as u64 / 50).clamp(1, MAX_DIFFICULTY);
         self.difficulty.store(new_difficulty, Ordering::Relaxed);
     }
 }

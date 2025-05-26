@@ -12,7 +12,10 @@ use crate::{
 
 type Hash = Blake3Digest<20>;
 
-const MIGRATION_SCRIPTS: [&str; 1] = [include_str!("migrations/001-init.sql")];
+const MIGRATION_SCRIPTS: [&str; 2] = [
+    include_str!("migrations/001-init.sql"),
+    include_str!("migrations/002-release-0.9.sql"),
+];
 static MIGRATION_HASHES: LazyLock<Vec<Hash>> = LazyLock::new(compute_migration_hashes);
 static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(prepare_migrations);
 

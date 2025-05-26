@@ -290,11 +290,12 @@ mod test {
     use base64::{Engine, prelude::BASE64_STANDARD};
     use fantoccini::ClientBuilder;
     use serde_json::{Map, json};
-    use tokio::{io::AsyncBufReadExt, time::sleep};
+    use tokio::{io::AsyncBufReadExt, task::JoinSet, time::sleep};
     use url::Url;
 
     use crate::{
-        API_KEY_PREFIX, Cli, config::FaucetConfig, run_faucet_command, stub_rpc_api::serve_stub,
+        API_KEY_PREFIX, Cli, config::FaucetConfig, generate_api_key, run_faucet_command,
+        stub_rpc_api::serve_stub,
     };
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
@@ -303,16 +304,23 @@ mod test {
     #[tokio::test]
     async fn test_website() {
         let website_url = start_test_faucet().await;
-        let client = start_fantoccini_client().await;
+        let chromedriver_port = start_chromedriver().await;
+        let mut join_set = JoinSet::new();
+        for i in 0..1 {
+            let website_url = website_url.clone();
+            let chromedriver_port = chromedriver_port.clone();
+            join_set.spawn(async move {
+                let client = start_fantoccini_client(chromedriver_port).await;
 
-        // Open the website
-        client.goto(website_url.as_str()).await.unwrap();
+                // Open the website
+                client.goto(website_url.as_str()).await.unwrap();
 
-        let title = client.title().await.unwrap();
-        assert_eq!(title, "Miden Faucet");
+                let title = client.title().await.unwrap();
+                assert_eq!(title, "Miden Faucet");
+                dbg!(i);
 
-        // Execute a script to get all the failed requests
-        let script = r"
+                // Execute a script to get all the failed requests
+                let script = r"
             let errors = [];
             performance.getEntriesByType('resource').forEach(entry => {
                 if (entry.responseStatus && entry.responseStatus >= 400) {
@@ -320,48 +328,48 @@ mod test {
                 }
             });
             return errors;
-        ";
-        let failed_requests = client.execute(script, vec![]).await.unwrap();
+            ";
+                let failed_requests = client.execute(script, vec![]).await.unwrap();
 
-        // Verify all requests are successful
-        assert!(failed_requests.as_array().unwrap().is_empty());
+                // Verify all requests are successful
+                assert!(failed_requests.as_array().unwrap().is_empty());
 
-        // Fill in the account address
-        client
-            .find(fantoccini::Locator::Css("#account-id"))
-            .await
-            .unwrap()
-            .send_keys("mtst1qrvhealccdyj7gqqqrlxl4n4f53uxwaw")
-            .await
-            .unwrap();
+                // Fill in the account address
+                client
+                    .find(fantoccini::Locator::Css("#account-id"))
+                    .await
+                    .unwrap()
+                    .send_keys("mtst1qrvhealccdyj7gqqqrlxl4n4f53uxwaw")
+                    .await
+                    .unwrap();
 
-        // Select the first asset amount option
-        client
-            .find(fantoccini::Locator::Css("#asset-amount"))
-            .await
-            .unwrap()
-            .click()
-            .await
-            .unwrap();
-        client
-            .find(fantoccini::Locator::Css("#asset-amount option"))
-            .await
-            .unwrap()
-            .click()
-            .await
-            .unwrap();
+                // Select the first asset amount option
+                client
+                    .find(fantoccini::Locator::Css("#asset-amount"))
+                    .await
+                    .unwrap()
+                    .click()
+                    .await
+                    .unwrap();
+                client
+                    .find(fantoccini::Locator::Css("#asset-amount option"))
+                    .await
+                    .unwrap()
+                    .click()
+                    .await
+                    .unwrap();
 
-        // Click the public note button
-        client
-            .find(fantoccini::Locator::Css("#button-public"))
-            .await
-            .unwrap()
-            .click()
-            .await
-            .unwrap();
+                // Click the public note button
+                client
+                    .find(fantoccini::Locator::Css("#button-public"))
+                    .await
+                    .unwrap()
+                    .click()
+                    .await
+                    .unwrap();
 
-        // Inject JavaScript to capture sse events
-        let capture_events_script = r"
+                // Inject JavaScript to capture sse events
+                let capture_events_script = r"
             window.capturedEvents = [];
             const original = EventSource.prototype.addEventListener;
             EventSource.prototype.addEventListener = function(type, listener) {
@@ -374,40 +382,45 @@ mod test {
                 };
                 return original.call(this, type, wrappedListener);
             };
-        ";
-        client.execute(capture_events_script, vec![]).await.unwrap();
+            ";
+                client.execute(capture_events_script, vec![]).await.unwrap();
 
-        // Poll until minting is complete. We will wait 10s and then poll every 2s for a
-        // max of 50 times.
-        sleep(Duration::from_secs(10)).await;
-        let mut captured_events: Vec<serde_json::Value> = vec![];
-        for _ in 0..50 {
-            let events = client
-                .execute("return window.capturedEvents;", vec![])
-                .await
-                .unwrap()
-                .as_array()
-                .unwrap()
-                .clone();
-            if events.iter().any(|event| event["type"] == "note") {
-                captured_events = events;
-                break;
-            }
-            sleep(Duration::from_secs(2)).await;
+                // Poll until minting is complete. We wait 10s and then poll every 2s for a max of 25 times.
+                sleep(Duration::from_secs(10)).await;
+                dbg!("polling for events");
+                let mut captured_events: Vec<serde_json::Value> = vec![];
+                for _ in 0..25 {
+                    let events = client
+                        .execute("return window.capturedEvents;", vec![])
+                        .await
+                        .unwrap()
+                        .as_array()
+                        .unwrap()
+                        .clone();
+                    if events.iter().any(|event| event["type"] == "note") {
+                        captured_events = events;
+                        break;
+                    }
+                    dbg!("poll");
+                    sleep(Duration::from_secs(2)).await;
+                }
+
+                // Verify the received events
+                assert!(!captured_events.is_empty(), "Took too long to capture any events");
+                assert!(captured_events.iter().any(|event| event["type"] == "update"));
+                let note_event =
+                    captured_events.iter().find(|event| event["type"] == "note").unwrap();
+                let note_data: serde_json::Value =
+                    serde_json::from_str(note_event["data"].as_str().unwrap()).unwrap();
+                assert!(note_data["note_id"].is_string());
+                assert!(note_data["account_id"].is_string());
+                assert!(note_data["transaction_id"].is_string());
+                assert!(note_data["explorer_url"].is_string());
+
+                client.close().await.unwrap();
+            });
         }
-
-        // Verify the received events
-        assert!(!captured_events.is_empty(), "Took too long to capture any events");
-        assert!(captured_events.iter().any(|event| event["type"] == "update"));
-        let note_event = captured_events.iter().find(|event| event["type"] == "note").unwrap();
-        let note_data: serde_json::Value =
-            serde_json::from_str(note_event["data"].as_str().unwrap()).unwrap();
-        assert!(note_data["note_id"].is_string());
-        assert!(note_data["account_id"].is_string());
-        assert!(note_data["transaction_id"].is_string());
-        assert!(note_data["explorer_url"].is_string());
-
-        client.close().await.unwrap();
+        join_set.join_all().await;
     }
 
     async fn start_test_faucet() -> Url {
@@ -422,10 +435,13 @@ mod test {
         let config_path = temp_dir().join("faucet.toml");
         let faucet_account_path = temp_dir().join("account.mac");
 
+        // We use an api key to avoid computation needed for pow
+        let api_key = generate_api_key();
         // Create config
         let config = FaucetConfig {
             node_url: stub_node_url,
             faucet_account_path: faucet_account_path.clone(),
+            api_keys: vec![api_key],
             ..FaucetConfig::default()
         };
         let config_as_toml_string = toml::to_string(&config).unwrap();
@@ -444,7 +460,6 @@ mod test {
         .await
         .unwrap();
 
-        // Start the faucet connected to the stub
         // Use std::thread to launch faucet - avoids Send requirements
         std::thread::spawn(move || {
             // Create a new runtime for this thread
@@ -469,7 +484,7 @@ mod test {
         config.endpoint
     }
 
-    async fn start_fantoccini_client() -> fantoccini::Client {
+    async fn start_chromedriver() -> String {
         // Start chromedriver. This requires having chromedriver and chrome installed
         let chromedriver_port = "57708";
         let mut chromedriver = tokio::process::Command::new("chromedriver")
@@ -489,13 +504,16 @@ mod test {
                 break;
             }
         }
+        chromedriver_port.to_string()
+    }
 
+    async fn start_fantoccini_client(chromedriver_port: String) -> fantoccini::Client {
         // Start fantoccini client
         ClientBuilder::native()
             .capabilities(
                 [(
                     "goog:chromeOptions".to_string(),
-                    json!({"args": ["--headless", "--disable-gpu", "--no-sandbox"]}),
+                    json!({"args": ["--disable-gpu", "--no-sandbox"]}),
                 )]
                 .into_iter()
                 .collect::<Map<_, _>>(),

@@ -37,7 +37,7 @@ use miden_objects::{
     account::AccountId,
     block::{BlockNumber, ProvenBlock},
     crypto::hash::rpo::RpoDigest,
-    note::{NoteId, Nullifier},
+    note::{Note, NoteId, Nullifier},
     utils::{Deserializable, Serializable},
 };
 use tonic::{Request, Response, Status};
@@ -283,7 +283,7 @@ impl api_server::Api for StoreApi {
         request: Request<GetAccountDetailsRequest>,
     ) -> Result<Response<GetAccountDetailsResponse>, Status> {
         let request = request.into_inner();
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
@@ -406,7 +406,7 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let nullifiers = validate_nullifiers(&request.nullifiers)?;
         let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
 
@@ -512,7 +512,7 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id)?;
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let delta = self
             .state
             .get_account_state_delta(
@@ -544,11 +544,22 @@ impl api_server::Api for StoreApi {
                 invalid_argument(format!("Invalid page_size: {err}"))
             })?;
         let page = Page { token: request.page_token, size };
+        // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created
+        // instead
         let (notes, next_page) =
             state.get_unconsumed_network_notes(page).await.map_err(internal_error)?;
 
+        let mut network_notes = Vec::with_capacity(notes.len());
+        for note in notes {
+            // SAFETY: Network notes are filtered in the database, so they should have details;
+            // otherwise the state would be corrupted
+            let (assets, recipient) = note.details.unwrap().into_parts();
+            let note = Note::new(assets, note.metadata, recipient);
+            network_notes.push(note.into());
+        }
+
         Ok(Response::new(GetUnconsumedNetworkNotesResponse {
-            notes: notes.into_iter().map(Into::into).collect(),
+            notes: network_notes,
             next_token: next_page.token,
         }))
     }
@@ -582,10 +593,10 @@ fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
     Status::invalid_argument(err.to_string())
 }
 
-fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Status> {
+fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Box<Status>> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
-        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")))
+        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]

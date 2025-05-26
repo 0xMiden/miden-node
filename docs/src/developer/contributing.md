@@ -7,7 +7,7 @@ We want to make contributing to this project as easy and transparent as possible
 ## Before you begin..
 
 Start by commenting your interest in the issue you want to address - this let's us assign the issue to you and prevents
-multipe people from repeating the same work. This also lets us add any additional information or context you may need.
+multiple people from repeating the same work. This also lets us add any additional information or context you may need.
 
 We use the `next` branch as our active development branch. This means your work should fork off the `next` branch (and
 not `main`).

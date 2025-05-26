@@ -236,7 +236,17 @@ pub struct SubmitNetworkNotesRequest {
     pub transaction_id: ::core::option::Option<super::digest::Digest>,
     /// The network notes to submit.
     #[prost(message, repeated, tag = "2")]
-    pub note: ::prost::alloc::vec::Vec<super::note::Note>,
+    pub note: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
+}
+/// Update the status of network notes that were consumed externally.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct UpdateNetworkNotesRequest {
+    /// Id of the transaction that consumed the notes.
+    #[prost(message, optional, tag = "1")]
+    pub transaction_id: ::core::option::Option<super::digest::Digest>,
+    /// The output nullifiers.
+    #[prost(message, repeated, tag = "2")]
+    pub nullifiers: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }
 /// Update network transaction builder with transaction status changes.
 #[derive(Clone, PartialEq, ::prost::Message)]

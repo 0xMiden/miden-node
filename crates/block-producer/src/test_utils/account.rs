@@ -2,10 +2,7 @@ use std::{collections::HashMap, ops::Not, sync::LazyLock};
 
 use miden_objects::{
     Digest, Hasher,
-    account::{
-        AccountId, AccountIdAnchor, AccountIdVersion, AccountStorageMode, AccountType,
-        NetworkAccount,
-    },
+    account::{AccountId, AccountIdAnchor, AccountIdVersion, AccountStorageMode, AccountType},
 };
 
 pub static MOCK_ACCOUNTS: LazyLock<std::sync::Mutex<HashMap<u32, (AccountId, Digest)>>> =
@@ -39,7 +36,6 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
             init_seed,
             AccountType::RegularAccountUpdatableCode,
             AccountStorageMode::Private,
-            NetworkAccount::Disabled,
             AccountIdVersion::Version0,
             Digest::default(),
             Digest::default(),

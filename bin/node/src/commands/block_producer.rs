@@ -6,10 +6,11 @@ use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{
-    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_STORE_URL,
-    parse_duration_ms,
+    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
+    ENV_BATCH_PROVER_URL, ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL,
+    ENV_NTX_BUILDER_URL, ENV_STORE_URL, parse_duration_ms,
 };
+use crate::system_monitor::SystemMonitor;
 
 #[derive(clap::Subcommand)]
 pub enum BlockProducerCommand {
@@ -22,6 +23,10 @@ pub enum BlockProducerCommand {
         /// The store's gRPC url.
         #[arg(long = "store.url", env = ENV_STORE_URL)]
         store_url: Url,
+
+        /// The network transaction builder's gRPC url.
+        #[arg(long = "ntx-builder.url", env = ENV_NTX_BUILDER_URL)]
+        ntx_builder_url: Url,
 
         /// The remote batch prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
@@ -57,6 +62,15 @@ pub enum BlockProducerCommand {
             value_name = "MILLISECONDS"
         )]
         batch_interval: Duration,
+
+        /// Interval at which to monitor the system in milliseconds.
+        #[arg(
+            long = "monitor.interval",
+            default_value = DEFAULT_MONITOR_INTERVAL_MS,
+            value_parser = parse_duration_ms,
+            value_name = "MILLISECONDS"
+        )]
+        monitor_interval: Duration,
     },
 }
 
@@ -71,19 +85,26 @@ impl BlockProducerCommand {
             open_telemetry: _,
             block_interval,
             batch_interval,
+            ntx_builder_url,
+            monitor_interval,
         } = self;
 
         let store_address = store_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
-
-        let block_producer_address = url
+        let ntx_builder_address = ntx_builder_url
             .to_socket()
-            .context("Failed to extract socket address from block producer URL")?;
+            .context("Failed to extract socket address from network transaction builder URL")?;
+        let block_producer_address =
+            url.to_socket().context("Failed to extract socket address from store URL")?;
+
+        // Start system monitor.
+        SystemMonitor::new(monitor_interval).run_with_supervisor();
 
         BlockProducer {
             block_producer_address,
             store_address,
+            ntx_builder_address,
             batch_prover_url,
             block_prover_url,
             batch_interval,

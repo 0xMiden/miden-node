@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 use miden_node_utils::{logging::OpenTelemetry, version::LongVersion};
 
 mod commands;
+mod system_monitor;
 
 // COMMANDS
 // ================================================================================================

@@ -16,6 +16,7 @@ workspace = true
 
 [dependencies]
 hex              = { version = "0.4" }
+http             = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 prost            = { workspace = true }
@@ -27,7 +28,7 @@ proptest = { version = "1.5" }
 
 [build-dependencies]
 anyhow                 = { workspace = true }
-miden-node-proto-build = { workspace = true, features = ["internal"] }
+miden-node-proto-build = { features = ["internal"], workspace = true }
 prost                  = { workspace = true }
 prost-build            = { version = "0.13" }
 protox                 = { version = "0.8" }

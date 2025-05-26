@@ -69,14 +69,13 @@ Client specify the note tags of interest and the block height from which to sear
 
 The response includes each note's metadata and inclusion proof.
 
-A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of
-the chain.
+A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of the chain.
 
 ## SyncState
 
 Iteratively sync data for specific notes and accounts.
 
-This request returns the next block containing data of interest. number in the chain. Client is expected to repeat these requests in a loop until the response reaches the head of the chain, at which point the data is fully synced.
+This request returns the next block containing data of interest. Client is expected to repeat these requests in a loop until the response reaches the head of the chain, at which point the data is fully synced.
 
 Each update response also contains info about new notes, accounts etc. created. It also returns Chain MMR delta that can be used to update the state of Chain MMR. This includes both chain MMR peaks and chain MMR nodes.
 

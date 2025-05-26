@@ -1,6 +1,10 @@
 use miden_objects::{
     Digest, Felt,
-    note::{NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag, NoteType},
+    note::{
+        Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
+        NoteType,
+    },
+    utils::Serializable,
 };
 
 use crate::{
@@ -24,6 +28,15 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
         let aux = Felt::try_from(value.aux).map_err(|_| ConversionError::NotAValidFelt)?;
 
         Ok(NoteMetadata::new(sender, note_type, tag, execution_hint, aux)?)
+    }
+}
+
+impl From<Note> for proto::NetworkNote {
+    fn from(note: Note) -> Self {
+        Self {
+            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            details: NoteDetails::from(note).to_bytes(),
+        }
     }
 }
 

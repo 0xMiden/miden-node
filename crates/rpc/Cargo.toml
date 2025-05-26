@@ -16,19 +16,25 @@ workspace = true
 
 [dependencies]
 anyhow           = { workspace = true }
+futures          = { version = "0.3" }
+http             = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 miden-tx         = { workspace = true }
-tokio            = { workspace = true, features = ["macros", "net", "rt-multi-thread"] }
-tokio-stream     = { workspace = true, features = ["net"] }
+nom              = { version = "8.0" }
+semver           = { version = "1.0" }
+tokio            = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
+tokio-stream     = { features = ["net"], workspace = true }
 tonic            = { workspace = true }
 tonic-web        = { version = "0.12" }
-tower-http       = { workspace = true, features = ["trace"] }
+tower            = { workspace = true }
+tower-http       = { features = ["trace"], workspace = true }
 tracing          = { workspace = true }
+url              = { workspace = true }
 
 [dev-dependencies]
 miden-node-rpc   = { workspace = true }
 miden-node-store = { workspace = true }
-miden-node-utils = { workspace = true, features = ["tracing-forest"] }
+miden-node-utils = { features = ["tracing-forest"], workspace = true }
 tempfile         = { version = "3.5" }

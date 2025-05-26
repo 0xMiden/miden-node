@@ -104,41 +104,43 @@ impl NetworkTransactionBuilder {
             }
 
             // sleep before retrying to not spin the server
-            time::sleep(Duration::from_secs(5)).await;
+            time::sleep(Duration::from_secs(1)).await;
         }
     }
 
     pub async fn serve_once(&self) -> anyhow::Result<()> {
-        let listener = TcpListener::bind(self.ntx_builder_address).await?;
-        info!(
-            target: COMPONENT,
-            endpoint = ?listener.local_addr()?,
-            "Starting network transaction builder server"
-        );
-
         let store = StoreClient::new(&self.store_url);
+        let unconsumed = store.get_unconsumed_network_notes().await?;
+        let notes_queue = Arc::new(Mutex::new(PendingNotes::new(unconsumed)));
 
-        // Initialize unconsumed notes
-        let unconsumed_network_notes = store.get_unconsumed_network_notes().await?;
-        let notes_queue: SharedPendingNotes =
-            Arc::new(Mutex::new(PendingNotes::new(unconsumed_network_notes)));
-
-        // Initialize tx ticker
-        let tick_handle = self.spawn_ticker(notes_queue.clone());
-
-        // Initialize grpc server
-        let api = NtxBuilderApi::new(notes_queue);
-        let api_service = api_server::ApiServer::new(api);
-        let server_result = tonic::transport::Server::builder()
+        let listener = TcpListener::bind(self.ntx_builder_address).await?;
+        let server = tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc())
-            .add_service(api_service)
-            .serve_with_incoming(TcpListenerStream::new(listener))
-            .await;
+            .add_service(api_server::ApiServer::new(NtxBuilderApi::new(notes_queue.clone())))
+            .serve_with_incoming(TcpListenerStream::new(listener));
+        tokio::pin!(server);
 
-        tick_handle.abort();
+        let mut ticker = self.spawn_ticker(notes_queue.clone());
 
-        server_result.context("failed to serve network transaction builder API")
+        loop {
+            tokio::select! {
+                // gRPC server ended, shut down ticker and bubble error up
+                result = &mut server => {
+                    ticker.abort();
+                    return result.context("gRPC server stopped");
+                }
+                // ticker ended or panicked, respawn it; RPC server keeps running
+                outcome = &mut ticker => {
+                    match outcome {
+                        Ok(Ok(())) => warn!(target: COMPONENT, "ticker stopped; respawning"),
+                        Ok(Err(e)) => error!(target: COMPONENT, error=%e, "ticker errored; respawning"),
+                        Err(join_err) => error!(target: COMPONENT, error=%join_err, "ticker panicked; respawning"),
+                    }
+                    ticker = self.spawn_ticker(notes_queue.clone());
+                }
+            }
+        }
     }
 
     /// Spawns the ticker task and returns a handle to it.

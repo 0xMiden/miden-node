@@ -259,7 +259,6 @@ impl BundledCommand {
             (block_producer_id, "block-producer"),
             (rpc_id, "rpc"),
             (ntx_builder_id, "ntx-builder"),
-            (ntx_builder_id, "ntx-builder"),
         ]);
 
         // SAFETY: The joinset is definitely not empty.

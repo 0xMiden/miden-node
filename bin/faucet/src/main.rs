@@ -491,7 +491,7 @@ mod test {
         }
 
         // Start fantoccini client
-        let client = ClientBuilder::native()
+        ClientBuilder::native()
             .capabilities(
                 [(
                     "goog:chromeOptions".to_string(),
@@ -502,9 +502,7 @@ mod test {
             )
             .connect(&format!("http://localhost:{chromedriver_port}"))
             .await
-            .expect("failed to connect to WebDriver");
-
-        client
+            .expect("failed to connect to WebDriver")
     }
 
     #[test]

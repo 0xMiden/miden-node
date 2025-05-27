@@ -2172,6 +2172,7 @@ dependencies = [
  "miden-objects",
  "rand 0.9.1",
  "rayon",
+ "rusqlite",
  "tokio",
  "tonic",
  "winterfell",

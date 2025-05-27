@@ -336,7 +336,7 @@ mod test {
 
                 // Fill in the account address
                 client
-                    .find(fantoccini::Locator::Css("#account-id"))
+                    .find(fantoccini::Locator::Css("#account-address"))
                     .await
                     .unwrap()
                     .send_keys("mtst1qrvhealccdyj7gqqqrlxl4n4f53uxwaw")
@@ -385,7 +385,8 @@ mod test {
             ";
                 client.execute(capture_events_script, vec![]).await.unwrap();
 
-                // Poll until minting is complete. We wait 10s and then poll every 2s for a max of 25 times.
+                // Poll until minting is complete. We wait 10s and then poll every 2s for a max of
+                // 25 times.
                 sleep(Duration::from_secs(10)).await;
                 dbg!("polling for events");
                 let mut captured_events: Vec<serde_json::Value> = vec![];

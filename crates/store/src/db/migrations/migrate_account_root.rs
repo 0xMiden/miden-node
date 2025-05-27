@@ -1,4 +1,3 @@
-use anyhow::Context;
 use miden_objects::{
     Digest,
     account::AccountId,

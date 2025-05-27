@@ -196,7 +196,7 @@ struct RequestCounterGuard {
 impl RequestCounterGuard {
     fn new(active_count: Arc<AtomicUsize>, queued_count: Arc<AtomicUsize>) -> Self {
         active_count.fetch_add(1, Ordering::Relaxed);
-        RequestCounterGuard { active_count, queued_count }
+        Self { active_count, queued_count }
     }
 
     fn mark_queued(&self) {

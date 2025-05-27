@@ -6,7 +6,10 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
     COMPONENT,
-    db::{connection::Connection, settings::Settings, sql::utils::schema_version},
+    db::{
+        connection::Connection, migrations::migrate_account_root::migrate_account_root,
+        settings::Settings, sql::utils::schema_version,
+    },
     errors::DatabaseError,
 };
 
@@ -95,6 +98,9 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
     debug!(target: COMPONENT, new_schema_version, "Updating schema version in settings table");
     Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD, &new_schema_version)?;
 
+    if env!("CARGO_PKG_VERSION") == "0.9.0" {
+        migrate_account_root(conn).expect("account root migration should succeed");
+    }
     info!(target: COMPONENT, %version_after, "Finished database migrations");
 
     Ok(())

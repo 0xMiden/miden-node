@@ -66,7 +66,6 @@ pub async fn seed_store(
     public_accounts_percentage: u8,
 ) {
     let start = Instant::now();
-
     // Recreate the data directory (it should be empty for store bootstrapping).
     //
     // Ignore the error since it will also error if it does not exist.

@@ -3,14 +3,20 @@ use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         requests::{
-            GetBlockHeaderByNumberRequest, GetNetworkAccountDetailsByPrefixRequest,
-            GetUnconsumedNetworkNotesRequest,
+            GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
+            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
         },
         store::api_client as store_client,
     },
+    try_convert,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
-use miden_objects::{account::Account, block::BlockHeader, note::NoteTag};
+use miden_objects::{
+    account::Account,
+    block::{BlockHeader, BlockNumber},
+    crypto::merkle::{MmrPeaks, PartialMmr},
+    note::NoteTag,
+};
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -63,7 +69,43 @@ impl StoreClient {
         BlockHeader::try_from(response).map_err(Into::into)
     }
 
-    /// Returns the latest block's header from the store.
+    /// Returns the block header and MMR peaks at the chain tip if the input `block_num` is either
+    /// `None` or an outdated block number. If the input `block_num` is equal to the current
+    /// chain tip, this function returns `None`.
+    #[instrument(target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
+    pub async fn get_current_blockchain_data(
+        &self,
+        block_num: Option<BlockNumber>,
+    ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
+        let request = tonic::Request::new(GetCurrentBlockchainDataRequest {
+            block_num: block_num.as_ref().map(BlockNumber::as_u32),
+        });
+
+        let response = self.inner.clone().get_current_blockchain_data(request).await?.into_inner();
+
+        match response.current_block_header {
+            // There are new blocks compared to the builder's latest state
+            Some(block) => {
+                let peaks = try_convert(response.current_peaks)?;
+                let header =
+                    BlockHeader::try_from(block).map_err(StoreError::DeserializationError)?;
+
+                let peaks = MmrPeaks::new(header.block_num().as_usize(), peaks).map_err(|_| {
+                    StoreError::MalformedResponse(
+                        "returned peaks are not valid for the sent request".into(),
+                    )
+                })?;
+
+                let partial_mmr = PartialMmr::from_peaks(peaks);
+
+                Ok(Some((header, partial_mmr)))
+            },
+            // No new blocks were created, return
+            None => Ok(None),
+        }
+    }
+
+    /// Returns the list of unconsumed network notes.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
@@ -107,7 +149,7 @@ impl StoreClient {
             .details;
 
         // we only care about the case where the account returns and is actually a network account,
-        // which implies details being public
+        // which implies details being public, so OK to error otherwise
         let account = match store_response.map(|acc| acc.details) {
             Some(Some(details)) => Some(Account::read_from_bytes(&details).map_err(|err| {
                 StoreError::DeserializationError(ConversionError::deserialization_error(
@@ -128,6 +170,8 @@ impl StoreClient {
 pub enum StoreError {
     #[error("gRPC client error")]
     GrpcClientError(#[from] tonic::Status),
+    #[error("malformed response from store: {0}")]
+    MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
 }

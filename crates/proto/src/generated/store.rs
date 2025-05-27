@@ -405,6 +405,34 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("store.Api", "GetNotesById"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
+        /// header for executing network transactions.
+        pub async fn get_current_blockchain_data(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::requests::GetCurrentBlockchainDataRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::responses::GetCurrentBlockchainDataResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/store.Api/GetCurrentBlockchainData",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("store.Api", "GetCurrentBlockchainData"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Returns data required to validate a new transaction.
         pub async fn get_transaction_inputs(
             &mut self,
@@ -668,6 +696,17 @@ pub mod api_server {
             request: tonic::Request<super::super::requests::GetNotesByIdRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::responses::GetNotesByIdResponse>,
+            tonic::Status,
+        >;
+        /// Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
+        /// header for executing network transactions.
+        async fn get_current_blockchain_data(
+            &self,
+            request: tonic::Request<
+                super::super::requests::GetCurrentBlockchainDataRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::responses::GetCurrentBlockchainDataResponse>,
             tonic::Status,
         >;
         /// Returns data required to validate a new transaction.
@@ -1378,6 +1417,55 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNotesByIdSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/store.Api/GetCurrentBlockchainData" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetCurrentBlockchainDataSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::requests::GetCurrentBlockchainDataRequest,
+                    > for GetCurrentBlockchainDataSvc<T> {
+                        type Response = super::super::responses::GetCurrentBlockchainDataResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::requests::GetCurrentBlockchainDataRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::get_current_blockchain_data(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetCurrentBlockchainDataSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, time::Duration};
+use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -11,8 +11,8 @@ use url::Url;
 
 use super::{
     DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
-    ENV_BATCH_PROVER_URL, ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_RPC_URL,
-    parse_duration_ms,
+    ENV_BATCH_PROVER_URL, ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL,
+    ENV_NTX_PROVER_URL, ENV_RPC_URL, parse_duration_ms,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -46,6 +46,11 @@ pub enum BundledCommand {
         /// Directory in which the Store component should store the database and raw block data.
         #[arg(long = "data-directory", env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
+
+        /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
+        /// will default to running a prover in-process which is expensive.
+        #[arg(long = "tx-prover.url", env = ENV_NTX_PROVER_URL, value_name = "URL")]
+        tx_prover_url: Option<Url>,
 
         /// The remote batch prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
@@ -115,6 +120,7 @@ impl BundledCommand {
                 open_telemetry: _,
                 block_interval,
                 batch_interval,
+                tx_prover_url,
                 monitor_interval,
             } => {
                 Self::start(
@@ -122,6 +128,7 @@ impl BundledCommand {
                     data_directory,
                     batch_prover_url,
                     block_prover_url,
+                    tx_prover_url,
                     batch_interval,
                     block_interval,
                     monitor_interval,
@@ -131,11 +138,13 @@ impl BundledCommand {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn start(
         rpc_url: Url,
         data_directory: PathBuf,
         batch_prover_url: Option<Url>,
         block_prover_url: Option<Url>,
+        tx_prover_url: Option<Url>,
         batch_interval: Duration,
         block_interval: Duration,
         monitor_interval: Duration,
@@ -152,19 +161,18 @@ impl BundledCommand {
         let grpc_store = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to store gRPC endpoint")?;
-        let grpc_block_producer = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to block-producer gRPC endpoint")?;
-        let grpc_ntx_builder = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to network transaction builder gRPC endpoint")?;
 
         let store_address =
             grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
-        let block_producer_address = grpc_block_producer
+        let block_producer_address = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to block-producer gRPC endpoint")?
             .local_addr()
             .context("Failed to retrieve the block-producer's gRPC address")?;
-        let ntx_builder_address = grpc_ntx_builder
+
+        let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to network transaction builder gRPC endpoint")?
             .local_addr()
             .context("Failed to retrieve the network transaction builder's gRPC address")?;
 
@@ -191,10 +199,17 @@ impl BundledCommand {
                 .unwrap();
         let ntx_builder_id = join_set
             .spawn(async move {
-                NetworkTransactionBuilder { address: ntx_builder_address, store_url }
-                    .serve()
-                    .await
-                    .context("failed while serving store component")
+                NetworkTransactionBuilder {
+                    ntx_builder_address,
+                    store_url,
+                    block_producer_address,
+                    tx_prover_url,
+                    ticker_interval_ms: 200u64,
+                    account_cache_capacity: NonZeroUsize::new(128).expect("non-zero"),
+                }
+                .serve_resilient()
+                .await
+                .context("failed while serving ntx builder component")
             })
             .id();
 
@@ -261,7 +276,6 @@ impl BundledCommand {
 
         // We could abort and gracefully shutdown the other components, but since we're crashing the
         // node there is no point.
-
         err.context(format!("Component {component} failed"))
     }
 

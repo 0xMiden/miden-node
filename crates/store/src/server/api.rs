@@ -16,7 +16,8 @@ use miden_node_proto::{
             ApplyBlockRequest, CheckNullifiersByPrefixRequest, CheckNullifiersRequest,
             GetAccountDetailsRequest, GetAccountProofsRequest, GetAccountStateDeltaRequest,
             GetBatchInputsRequest, GetBlockByNumberRequest, GetBlockHeaderByNumberRequest,
-            GetBlockInputsRequest, GetNetworkAccountDetailsByPrefixRequest, GetNotesByIdRequest,
+            GetBlockInputsRequest, GetCurrentBlockchainDataRequest,
+            GetNetworkAccountDetailsByPrefixRequest, GetNotesByIdRequest,
             GetTransactionInputsRequest, SyncNoteRequest, SyncStateRequest,
         },
         responses::{
@@ -24,8 +25,8 @@ use miden_node_proto::{
             CheckNullifiersResponse, GetAccountDetailsResponse, GetAccountProofsResponse,
             GetAccountStateDeltaResponse, GetBatchInputsResponse, GetBlockByNumberResponse,
             GetBlockHeaderByNumberResponse, GetBlockInputsResponse,
-            GetNetworkAccountDetailsByPrefixResponse, GetNotesByIdResponse,
-            GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
+            GetCurrentBlockchainDataResponse, GetNetworkAccountDetailsByPrefixResponse,
+            GetNotesByIdResponse, GetTransactionInputsResponse, GetUnconsumedNetworkNotesResponse,
             NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
         },
@@ -150,6 +151,43 @@ impl api_server::Api for StoreApi {
             .collect();
 
         Ok(Response::new(CheckNullifiersByPrefixResponse { nullifiers }))
+    }
+
+    /// Returns the chain tip's header and MMR peaks corresponding to that header.
+    /// If there are N blocks, the peaks will represent the MMR at block `N - 1`.
+    ///
+    /// This returns all the blockchain-related information needed for executing transactions
+    /// without authenticating notes.
+    #[instrument(
+        target = COMPONENT,
+        name = "store.server.get_current_blockchain_data",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_current_blockchain_data(
+        &self,
+        request: Request<GetCurrentBlockchainDataRequest>,
+    ) -> Result<Response<GetCurrentBlockchainDataResponse>, Status> {
+        let block_num = request.into_inner().block_num.map(BlockNumber::from);
+
+        let response = match self
+            .state
+            .get_current_blockchain_data(block_num)
+            .await
+            .map_err(internal_error)?
+        {
+            Some((header, peaks)) => GetCurrentBlockchainDataResponse {
+                current_peaks: peaks.peaks().iter().map(Into::into).collect(),
+                current_block_header: Some(header.into()),
+            },
+            None => GetCurrentBlockchainDataResponse {
+                current_peaks: vec![],
+                current_block_header: None,
+            },
+        };
+
+        Ok(Response::new(response))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain

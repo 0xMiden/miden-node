@@ -81,8 +81,13 @@ impl PendingNotes {
     /// Move the notes whose nullifiers belong to the input `nullifiers` into the in-flight
     /// set for the given `tx_id`, removing them from the indices and pruning empty tag buckets and
     /// queue entries.
-    pub fn insert_inflight(&mut self, tx_id: TransactionId, nullifiers: &[Nullifier]) {
-        if nullifiers.is_empty() {
+    pub fn insert_inflight(
+        &mut self,
+        tx_id: TransactionId,
+        nullifiers: impl IntoIterator<Item = Nullifier>,
+    ) {
+        let mut nullifiers = nullifiers.into_iter().peekable();
+        if nullifiers.peek().is_none() {
             return;
         }
         let mut moved = Vec::new();
@@ -91,7 +96,7 @@ impl PendingNotes {
             // NOTE: If the note is on the map, it is effectively a network note.
             // Otherwise, unless it was consumed before reaching the NTB, it is not a
             // network note.
-            if let Some(id) = self.by_nullifier.remove(nullifier) {
+            if let Some(id) = self.by_nullifier.remove(&nullifier) {
                 moved.push(id);
 
                 let tag = self
@@ -235,7 +240,7 @@ mod tests {
         let mut pending = PendingNotes::new(vec![a.clone(), b.clone(), c.clone()]);
 
         let tx = mock_tx_id();
-        pending.insert_inflight(tx, &[a.nullifier(), c.nullifier()]);
+        pending.insert_inflight(tx, [a.nullifier(), c.nullifier()]);
 
         assert!(!pending.by_nullifier.contains_key(&a.nullifier()));
         assert!(!pending.by_nullifier.contains_key(&c.nullifier()));
@@ -256,7 +261,7 @@ mod tests {
         let mut pending = PendingNotes::new(vec![a.clone()]);
 
         let tx = mock_tx_id();
-        pending.insert_inflight(tx, &[a.nullifier()]);
+        pending.insert_inflight(tx, [a.nullifier()]);
 
         let n = pending.commit_inflight(tx);
         assert_eq!(n, 1);
@@ -272,7 +277,7 @@ mod tests {
         let mut pending = PendingNotes::new(vec![a.clone()]);
 
         let tx = mock_tx_id();
-        pending.insert_inflight(tx, &[a.nullifier()]);
+        pending.insert_inflight(tx, [a.nullifier()]);
 
         let n = pending.rollback_inflight(tx);
         assert_eq!(n, 1);

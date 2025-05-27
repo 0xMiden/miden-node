@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, convert::Infallible};
+use std::convert::Infallible;
 
 use axum::{
     extract::{Query, State},
@@ -15,10 +15,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::error;
 
-use super::{
-    Server,
-    pow::{check_pow_solution, check_server_signature, check_server_timestamp},
-};
+use super::{Server, pow::PowParameters};
 use crate::{
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
@@ -69,6 +66,8 @@ pub enum InvalidRequest {
     ServerSignaturesDoNotMatch,
     #[error("server timestamp expired, received: {0}, current time: {1}")]
     ExpiredServerTimestamp(u64, u64),
+    #[error("invalid or expired challenge")]
+    InvalidChallenge,
 }
 
 pub enum GetTokenError {
@@ -135,12 +134,13 @@ impl RawMintRequest {
     /// Returns an error if:
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
-    fn validate(
-        self,
-        options: &AssetOptions,
-        pow_salt: &str,
-        api_keys: &BTreeSet<String>,
-    ) -> Result<MintRequest, InvalidRequest> {
+    ///   - the API key is invalid
+    ///   - the `PoW` parameters are missing
+    ///   - the `PoW` solution is invalid
+    ///   - the `PoW` server signature does not match
+    ///   - the `PoW` server timestamp is expired
+    ///   - the `PoW` challenge is invalid or expired
+    fn validate(self, server: &Server) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -154,38 +154,28 @@ impl RawMintRequest {
         }
         .map_err(InvalidRequest::AccountId)?;
 
-        let asset_amount = options
+        let asset_amount = server
+            .mint_state
+            .asset_options
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
         // Check the API key, if provided
         if let Some(api_key) = &self.api_key {
-            if api_keys.contains(api_key) {
+            if server.api_keys.contains(api_key) {
                 // If the API key is valid, we skip the PoW check
                 return Ok(MintRequest { account_id, note_type, asset_amount });
             }
             return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
         }
 
-        let (server_timestamp, pow_seed, server_signature, pow_solution) = {
-            let pow_seed = self.pow_seed.ok_or(InvalidRequest::MissingPowParameters)?;
-            let server_signature =
-                self.server_signature.ok_or(InvalidRequest::MissingPowParameters)?;
-            let server_timestamp =
-                self.server_timestamp.ok_or(InvalidRequest::MissingPowParameters)?;
-            let pow_solution = self.pow_solution.ok_or(InvalidRequest::MissingPowParameters)?;
-
-            (server_timestamp, pow_seed, server_signature, pow_solution)
-        };
-
-        // Check the server timestamp
-        check_server_timestamp(server_timestamp)?;
-
-        // Check the server signature
-        check_server_signature(pow_salt, &server_signature, &pow_seed, server_timestamp)?;
-
-        // Check the PoW solution
-        check_pow_solution(&pow_seed, pow_solution)?;
+        if let Ok(pow_parameters) = PowParameters::try_from(&self) {
+            pow_parameters.check_pow_solution(&server.challenge_cache)?;
+            pow_parameters.check_server_timestamp()?;
+            pow_parameters.check_server_signature(&server.pow_salt)?;
+        } else {
+            return Err(InvalidRequest::MissingPowParameters);
+        }
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
@@ -199,7 +189,7 @@ pub async fn get_tokens(
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
     let mint_error = request
-        .validate(&server.mint_state.asset_options, &server.pow_salt, &server.api_keys)
+        .validate(&server)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
             let span = tracing::Span::current();

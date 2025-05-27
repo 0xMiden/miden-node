@@ -27,7 +27,7 @@ miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }
 miden-objects             = { features = ["testing"], workspace = true }
 rand                      = { workspace = true }
-rayon                     = { version = "1.5" }
+rayon                     = { version = "1.10" }
 tokio                     = { workspace = true }
 tonic                     = { workspace = true }
 winterfell                = { version = "0.12" }

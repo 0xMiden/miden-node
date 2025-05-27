@@ -1999,7 +1999,6 @@ dependencies = [
  "tower_governor",
  "tracing",
  "url",
- "winter-maybe-async",
 ]
 
 [[package]]

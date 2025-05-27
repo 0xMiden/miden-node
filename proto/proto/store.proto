@@ -23,6 +23,9 @@ service Api {
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(requests.GetAccountDetailsRequest) returns (responses.GetAccountDetailsResponse) {}
 
+    // Returns the latest state of a network account with the specified account prefix.
+    rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetNetworkAccountDetailsByPrefixResponse) {}
+
     // Returns the latest state proofs of the specified accounts.
     rpc GetAccountProofs(requests.GetAccountProofsRequest) returns (responses.GetAccountProofsResponse) {}
 
@@ -45,6 +48,10 @@ service Api {
 
     // Returns a list of notes matching the provided note IDs.
     rpc GetNotesById(requests.GetNotesByIdRequest) returns (responses.GetNotesByIdResponse) {}
+
+    // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this 
+    // header for executing network transactions. 
+    rpc GetCurrentBlockchainData(requests.GetCurrentBlockchainDataRequest) returns (responses.GetCurrentBlockchainDataResponse) {}
 
     // Returns data required to validate a new transaction.
     rpc GetTransactionInputs(requests.GetTransactionInputsRequest) returns (responses.GetTransactionInputsResponse) {}

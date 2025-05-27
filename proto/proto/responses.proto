@@ -198,11 +198,23 @@ message GetAccountDetailsResponse {
     account.AccountInfo details = 1;
 }
 
+// Represents the result of getting network account details by prefix.
+message GetNetworkAccountDetailsByPrefixResponse {
+    // Account info.
+    account.AccountInfo details = 1;
+}
+
 // Represents the result of getting block by number.
 message GetBlockByNumberResponse {
     // The requested block data encoded using [winter_utils::Serializable] implementation for
     // [miden_objects::block::Block].
     optional bytes block = 1;
+}
+
+// TODO: comments
+message GetCurrentBlockchainDataResponse {
+    repeated digest.Digest current_peaks = 1;
+    optional block.BlockHeader current_block_header = 2;
 }
 
 // Represents the result of getting account state delta.

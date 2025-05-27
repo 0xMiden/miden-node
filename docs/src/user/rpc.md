@@ -19,6 +19,7 @@ The gRPC service definition can be found in the Miden node's `proto`
 - [SubmitProvenTransaction](#submitproventransaction)
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
+- [Status](#status)
 
 <!--toc:end-->
 
@@ -30,8 +31,7 @@ Request proofs for a set of nullifiers.
 
 Request nullifiers filtered by prefix and created after some block number.
 
-The prefix is used to obscure the callers interest in a specific nullifier. Currently only 16-bit prefixes are
-supported.
+The prefix is used to obscure the callers interest in a specific nullifier. Currently only 16-bit prefixes are supported.
 
 ## GetAccountDetails
 
@@ -43,8 +43,7 @@ Request state proofs for accounts, including specific storage slots.
 
 ## GetAccountStateDelta
 
-Request the delta of an account's state for a range of blocks. This can be used to update your local account state to
-the latest network state.
+Request the delta of an account's state for a range of blocks. This can be used to update your local account state to the latest network state.
 
 ## GetBlockByNumber
 
@@ -66,23 +65,22 @@ Submit a transaction to the network.
 
 Iteratively sync data for a given set of note tags.
 
-Client specify the note tags of interest and the block height from which to search. The response returns the next block
-containing note matching the provided tags.
+Client specify the note tags of interest and the block height from which to search. The response returns the next block containing note matching the provided tags.
 
 The response includes each note's metadata and inclusion proof.
 
-A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of
-the chain.
+A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of the chain.
 
 ## SyncState
 
 Iteratively sync data for specific notes and accounts.
 
-This request returns the next block containing data of interest. number in the chain. Client is expected to repeat these
-requests in a loop until the response reaches the head of the chain, at which point the data is fully synced.
+This request returns the next block containing data of interest. Client is expected to repeat these requests in a loop until the response reaches the head of the chain, at which point the data is fully synced.
 
-Each update response also contains info about new notes, accounts etc. created. It also returns Chain MMR delta that can
-be used to update the state of Chain MMR. This includes both chain MMR peaks and chain MMR nodes.
+Each update response also contains info about new notes, accounts etc. created. It also returns Chain MMR delta that can be used to update the state of Chain MMR. This includes both chain MMR peaks and chain MMR nodes.
 
-The low part of note tags are redacted to preserve some degree of privacy. Returned data therefore contains additional
-notes which should be filtered out by the client.
+The low part of note tags are redacted to preserve some degree of privacy. Returned data therefore contains additional notes which should be filtered out by the client.
+
+## Status
+
+Request the status of the node components. The response contains the current version of the RPC component and the connection status of the other components, including their versions and the number of the most recent block in the chain (chain tip).

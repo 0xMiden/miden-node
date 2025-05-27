@@ -20,15 +20,14 @@ tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
 anyhow                       = { workspace = true }
-futures                      = { version = "0.3" }
+futures                      = { workspace = true }
 itertools                    = { workspace = true }
 miden-block-prover           = { version = "0.9" }
 miden-lib                    = { workspace = true }
 miden-node-proto             = { workspace = true }
 miden-node-utils             = { features = ["testing"], workspace = true }
 miden-objects                = { workspace = true }
-miden-processor              = { workspace = true }
-miden-proving-service-client = { features = ["batch-prover", "block-prover"], version = "0.9" }
+miden-proving-service-client = { features = ["batch-prover", "block-prover"], workspace = true }
 miden-tx                     = { workspace = true }
 miden-tx-batch-prover        = { version = "0.9" }
 rand                         = { version = "0.9" }
@@ -52,6 +51,6 @@ miden-tx              = { features = ["testing"], workspace = true }
 pretty_assertions     = "1.4"
 rand_chacha           = { default-features = false, version = "0.9" }
 serial_test           = "3.2"
-tempfile              = { version = "3.5" }
+tempfile              = { version = "3.20" }
 tokio                 = { features = ["test-util"], workspace = true }
 winterfell            = { version = "0.12" }

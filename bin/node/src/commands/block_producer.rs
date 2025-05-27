@@ -1,8 +1,7 @@
-use std::time::Duration;
-
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
+use tokio::time::Duration;
 use url::Url;
 
 use super::{
@@ -95,6 +94,7 @@ impl BlockProducerCommand {
         let ntx_builder_address = ntx_builder_url
             .to_socket()
             .context("Failed to extract socket address from network transaction builder URL")?;
+
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
 

@@ -49,6 +49,7 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow_salt: String,
+    challenge_cache: pow::ChallengeCache,
     api_keys: BTreeSet<String>,
 }
 
@@ -68,7 +69,21 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        Server { mint_state, metadata, pow_salt, api_keys }
+        let challenge_cache = pow::ChallengeCache::default();
+
+        // Start the cleanup task
+        let cleanup_state = challenge_cache.clone();
+        tokio::spawn(async move {
+            pow::run_cleanup(cleanup_state).await;
+        });
+
+        Server {
+            mint_state,
+            metadata,
+            pow_salt,
+            challenge_cache,
+            api_keys,
+        }
     }
 
     // TODO: Cannot move the rate limiter creation to its own function because it requires
@@ -273,7 +288,11 @@ impl KeyExtractor for ApiKeyExtractor {
             // timestamp we get a somewhat unique key each time so this rate limiter won't affect
             // requests without an api key.
             Ok(params.account_id.clone()
-                + &params.server_timestamp.ok_or(GovernorError::UnableToExtractKey)?.to_string())
+                + &params
+                    .server_timestamp
+                    .as_ref()
+                    .ok_or(GovernorError::UnableToExtractKey)?
+                    .to_string())
         }
     }
 }

@@ -137,9 +137,9 @@ impl TryFrom<Note> for NetworkNote {
         if !note.metadata().tag().is_single_target()
             || note.metadata().tag().execution_mode() != NoteExecutionMode::Network
         {
-            return Ok(NetworkNote(note));
+            return Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()));
         }
-        Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()))
+        Ok(NetworkNote(note))
     }
 }
 

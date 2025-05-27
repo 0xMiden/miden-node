@@ -201,7 +201,7 @@ message GetAccountDetailsResponse {
 // Represents the result of getting network account details by prefix.
 message GetNetworkAccountDetailsByPrefixResponse {
     // Account info.
-    account.AccountInfo details = 1;
+    optional account.AccountInfo details = 1;
 }
 
 // Represents the result of getting block by number.

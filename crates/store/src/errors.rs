@@ -56,8 +56,6 @@ pub enum DatabaseError {
     },
     #[error("account {0} not found")]
     AccountNotFoundInDb(AccountId),
-    #[error("account with prefix {0:#010x} not found")]
-    AccountPrefixNotFound(u32),
     #[error("accounts {0:?} not found")]
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]

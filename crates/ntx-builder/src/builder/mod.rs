@@ -182,7 +182,7 @@ impl NetworkTransactionBuilder {
                     .await;
 
                     if let Err(e) = result {
-                        error!(target: COMPONENT,err=%e, "Error while preparing transaction");
+                        error!(target: COMPONENT,err=%e, "Error preparing transaction");
                     }
                 }
             })
@@ -224,7 +224,7 @@ impl NetworkTransactionBuilder {
     ) -> Result<(), NtxBuilderError> {
         // Preflight: Look for next account and blockchain data, and select notes
         let Some(tx_request) = Self::select_next_tx(api_state, data_store).await? else {
-            debug!(target: COMPONENT, "No transactions available, returning.");
+            debug!(target: COMPONENT, "No notes for existing network accounts found, returning.");
             return Ok(());
         };
 
@@ -271,7 +271,7 @@ impl NetworkTransactionBuilder {
     ///
     /// If this function errors, the notes are effectively discarded because [`Self::rollback_tx()`]
     /// is not called.
-    #[instrument(target = COMPONENT, name = "ntx_builder.select_next_batch", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx_builder.select_next_batch", skip_all)]
     async fn select_next_tx(
         api_state: &SharedPendingNotes,
         data_store: &Arc<NtxBuilderDataStore>,
@@ -285,7 +285,11 @@ impl NetworkTransactionBuilder {
         let block_num = Self::prepare_blockchain_data(data_store).await?;
         let account_id = Self::get_account_for_ntx(data_store, tag).await?;
 
-        Ok(Some(NetworkTransactionRequest::new(account_id, block_num, notes)))
+        match account_id {
+            Some(id) => Ok(Some(NetworkTransactionRequest::new(id, block_num, notes))),
+            // No network account found for note tag, discard (notes are not requeued)
+            None => Ok(None),
+        }
     }
 
     /// Updates the partial blockchain and latest header within the datastore.
@@ -301,14 +305,15 @@ impl NetworkTransactionBuilder {
     async fn get_account_for_ntx(
         data_store: &Arc<NtxBuilderDataStore>,
         tag: NoteTag,
-    ) -> Result<AccountId, NtxBuilderError> {
+    ) -> Result<Option<AccountId>, NtxBuilderError> {
         let account = data_store.get_cached_acc_or_fetch_by_tag(tag).await?;
 
         let Some(account) = account else {
-            return Err(NtxBuilderError::AccountNotFound(tag));
+            warn!(target: COMPONENT, "Network account details for tag {tag} not found in the store");
+            return Ok(None);
         };
 
-        Ok(account.id())
+        Ok(Some(account.id()))
     }
 
     /// Filters the [`NetworkTransactionRequest`]'s notes by making one consumption check against
@@ -438,8 +443,6 @@ impl NetworkTransactionBuilder {
 
 #[derive(Debug, Error)]
 pub enum NtxBuilderError {
-    #[error("account for tag {0} not found in the cache nor the store")]
-    AccountNotFound(NoteTag),
     #[error("account cache update error")]
     AccountCacheUpdateFailed(#[from] AccountError),
     #[error("store error")]

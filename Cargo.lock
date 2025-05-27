@@ -1853,23 +1853,11 @@ checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
 
 [[package]]
 name = "miden-air"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00e2e77c57ae798e02553af158c04d467f6479ab798a8c84459d343a89ff9c50"
-dependencies = [
- "miden-core 0.13.2",
- "thiserror 2.0.12",
- "winter-air",
- "winter-prover",
-]
-
-[[package]]
-name = "miden-air"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "71f9878c75891951ac4e8dd42793a84c4d07e5aaf27a8c88bfc097b70cd2c1cd"
 dependencies = [
- "miden-core 0.14.0",
+ "miden-core",
  "thiserror 2.0.12",
  "winter-air",
  "winter-prover",
@@ -1884,7 +1872,7 @@ dependencies = [
  "aho-corasick",
  "lalrpop",
  "lalrpop-util",
- "miden-core 0.14.0",
+ "miden-core",
  "miden-miette",
  "rustc_version 0.4.1",
  "smallvec",
@@ -1902,25 +1890,6 @@ dependencies = [
  "miden-lib",
  "miden-objects",
  "thiserror 2.0.12",
-]
-
-[[package]]
-name = "miden-core"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d7d408e01421b5df2e4cfaf1a91efefe3fb5b729f1c99b668d3a69eec0044a6b"
-dependencies = [
- "lock_api",
- "loom",
- "memchr",
- "miden-crypto",
- "miden-formatting",
- "num-derive",
- "num-traits",
- "parking_lot",
- "thiserror 2.0.12",
- "winter-math",
- "winter-utils",
 ]
 
 [[package]]
@@ -2097,7 +2066,7 @@ dependencies = [
  "assert_matches",
  "futures",
  "itertools 0.14.0",
- "miden-air 0.14.0",
+ "miden-air",
  "miden-block-prover",
  "miden-lib",
  "miden-node-proto",
@@ -2105,7 +2074,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-processor 0.13.2",
+ "miden-processor",
  "miden-proving-service-client",
  "miden-tx",
  "miden-tx-batch-prover",
@@ -2237,7 +2206,7 @@ version = "0.9.0"
 dependencies = [
  "clap",
  "futures",
- "miden-air 0.14.0",
+ "miden-air",
  "miden-block-prover",
  "miden-lib",
  "miden-node-block-producer",
@@ -2294,9 +2263,9 @@ dependencies = [
  "bech32",
  "getrandom 0.3.3",
  "miden-assembly",
- "miden-core 0.14.0",
+ "miden-core",
  "miden-crypto",
- "miden-processor 0.14.0",
+ "miden-processor",
  "miden-verifier",
  "rand 0.9.1",
  "rand_xoshiro",
@@ -2309,25 +2278,12 @@ dependencies = [
 
 [[package]]
 name = "miden-processor"
-version = "0.13.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4e70b053c587014396d06be3502e3952777923bee11729b7514c060fdc0d2c8"
-dependencies = [
- "miden-air 0.13.2",
- "miden-core 0.13.2",
- "thiserror 2.0.12",
- "tracing",
- "winter-prover",
-]
-
-[[package]]
-name = "miden-processor"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2796a5c11589731286ca1cb761b13be13e69e4e0606a5469ce815491989402ea"
 dependencies = [
- "miden-air 0.14.0",
- "miden-core 0.14.0",
+ "miden-air",
+ "miden-core",
  "miden-miette",
  "thiserror 2.0.12",
  "tracing",
@@ -2340,8 +2296,8 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "89bc4b989306ca1b8bdba364af72547c563419e77220f4cd244ed2bf3557d351"
 dependencies = [
- "miden-air 0.14.0",
- "miden-processor 0.14.0",
+ "miden-air",
+ "miden-processor",
  "tracing",
  "winter-maybe-async",
  "winter-prover",
@@ -2375,7 +2331,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "887189ccce4f9bbf15dfdaff0e6842fb138a7432a8f21adde756fac114b07184"
 dependencies = [
  "miden-assembly",
- "miden-core 0.14.0",
+ "miden-core",
 ]
 
 [[package]]
@@ -2387,7 +2343,7 @@ dependencies = [
  "async-trait",
  "miden-lib",
  "miden-objects",
- "miden-processor 0.14.0",
+ "miden-processor",
  "miden-prover",
  "miden-verifier",
  "rand 0.9.1",
@@ -2411,8 +2367,8 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2b6edc80bf70f276be1c001748c1edf10bea6273a57ee3694fd73d79050fc09"
 dependencies = [
- "miden-air 0.14.0",
- "miden-core 0.14.0",
+ "miden-air",
+ "miden-core",
  "thiserror 2.0.12",
  "tracing",
  "winter-verifier",

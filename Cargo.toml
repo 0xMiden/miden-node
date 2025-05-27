@@ -49,7 +49,7 @@ miden-node-store             = { path = "crates/store", version = "0.9" }
 miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.9" }
 miden-objects                = { version = "0.9" }
-miden-processor              = { version = "0.13" }
+miden-processor              = { version = "0.14" }
 miden-proving-service-client = { version = "0.9" }
 miden-tx                     = { version = "0.9" }
 prost                        = { version = "0.13" }

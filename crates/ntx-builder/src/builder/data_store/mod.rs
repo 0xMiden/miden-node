@@ -92,7 +92,8 @@ impl NtxBuilderDataStore {
         Ok(account)
     }
 
-    /// Updates the blockchain-related data by
+    /// Updates the blockchain-related data by retrieving new block header data and MMR peaks
+    /// from the store.
     pub async fn update_blockchain_data(&self) -> Result<BlockNumber, StoreError> {
         let current_block = { self.block_ref.lock().await.block_num() };
 

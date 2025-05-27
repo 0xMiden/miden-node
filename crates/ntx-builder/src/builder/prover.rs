@@ -1,6 +1,6 @@
 use miden_objects::transaction::{ExecutedTransaction, TransactionWitness};
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
-use miden_tx::{LocalTransactionProver, ProvingOptions, TransactionProver};
+use miden_tx::{LocalTransactionProver, TransactionProver};
 use url::Url;
 
 use super::{NtxBuilderError, block_producer::BlockProducerClient};
@@ -40,7 +40,7 @@ impl From<Option<Url>> for NtbTransactionProver {
             let tx_prover = RemoteTransactionProver::new(url);
             NtbTransactionProver::Remote(tx_prover)
         } else {
-            NtbTransactionProver::Local(LocalTransactionProver::new(ProvingOptions::default()))
+            NtbTransactionProver::Local(LocalTransactionProver::default())
         }
     }
 }

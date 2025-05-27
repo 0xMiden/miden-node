@@ -24,6 +24,7 @@ pub struct BlockProducerClient {
 impl BlockProducerClient {
     /// Creates a new block producer client with a lazy connection.
     pub fn new(block_producer_address: SocketAddr) -> Self {
+        // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
         let block_producer_url = format!("http://{block_producer_address}");
         let channel =
             tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();

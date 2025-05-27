@@ -282,11 +282,14 @@ mod tests {
         assert!(result.is_ok());
 
         let challenge_cache = ChallengeCache::default();
-        let mut challenges = challenge_cache.challenges.lock().unwrap();
-        challenges.insert(seed.to_string(), timestamp);
+
         let result = pow_parameters.check_pow_solution(&challenge_cache);
 
         assert!(result.is_ok());
+
+        // Check that the challenge is not valid anymore
+        let result = pow_parameters.check_pow_solution(&challenge_cache);
+        assert!(result.is_err());
     }
 
     #[test]

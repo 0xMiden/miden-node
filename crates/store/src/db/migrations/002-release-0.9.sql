@@ -25,6 +25,7 @@ CREATE TABLE notes_new (
     merkle_path    BLOB    NOT NULL,
     consumed       INTEGER NOT NULL, -- boolean
     nullifier      BLOB,             -- Only known for public notes, null for private notes
+    details        BLOB,             -- Temporary column for the migration
     assets         BLOB,
     inputs         BLOB,
     script_root    BLOB,
@@ -50,12 +51,9 @@ INSERT INTO notes_new (
 SELECT 
     block_num, batch_index, note_index, note_id, note_type, sender, tag,
     execution_mode, aux, execution_hint, merkle_path, consumed, nullifier,
-    NULL, NULL, NULL, NULL
+    details, NULL, NULL, NULL, NULL
 FROM notes;
 
--- Swap the old notes table with the new one
-DROP TABLE notes;
-ALTER TABLE notes_new RENAME TO notes;
 
 -- Recreate indexes
 CREATE INDEX idx_notes_note_id ON notes(note_id);

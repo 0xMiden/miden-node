@@ -7,8 +7,8 @@ use tracing::{debug, error, info, instrument};
 use crate::{
     COMPONENT,
     db::{
-        connection::Connection, migrations::migrate_account_root::migrate_account_root,
-        settings::Settings, sql::utils::schema_version,
+        connection::Connection, migrations::migrate_release_0_9, settings::Settings,
+        sql::utils::schema_version,
     },
     errors::DatabaseError,
 };
@@ -99,7 +99,7 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
     Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD, &new_schema_version)?;
 
     if env!("CARGO_PKG_VERSION") == "0.9.0" {
-        migrate_account_root(conn).expect("account root migration should succeed");
+        migrate_release_0_9(conn).expect("release 0.9 migration should succeed");
     }
     info!(target: COMPONENT, %version_after, "Finished database migrations");
 

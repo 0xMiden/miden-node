@@ -186,7 +186,7 @@ mod tests {
 
     use super::*;
 
-    /// Creates a note for a netwokr account with a 30-bit prefix based on the input.
+    /// Creates a note for a network account with a 30-bit prefix based on the input.
     fn mock_note(account_id_diff: u32) -> NetworkNote {
         let metadata = NoteMetadata::new(
             ACCOUNT_ID_PRIVATE_SENDER.try_into().unwrap(),

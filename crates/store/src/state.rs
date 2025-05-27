@@ -820,7 +820,7 @@ impl State {
         self.db.select_account(id).await
     }
 
-    /// Returns details for public (on-chain) ntework accounts.
+    /// Returns details for public (on-chain) network accounts.
     pub async fn get_network_account_details_by_prefix(
         &self,
         id_prefix: u32,

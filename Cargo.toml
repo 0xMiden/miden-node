@@ -49,13 +49,12 @@ miden-node-store             = { path = "crates/store", version = "0.9" }
 miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.9" }
 miden-objects                = { version = "0.9" }
-miden-processor              = { version = "0.14" }
 miden-proving-service-client = { version = "0.9" }
 miden-tx                     = { version = "0.9" }
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }
 thiserror                    = { default-features = false, version = "2.0" }
-tokio                        = { features = ["rt-multi-thread"], version = "1.44" }
+tokio                        = { features = ["rt-multi-thread"], version = "1.45" }
 tokio-stream                 = { version = "0.1" }
 tonic                        = { version = "0.12" }
 tower                        = { version = "0.5" }

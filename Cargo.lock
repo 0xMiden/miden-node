@@ -1968,7 +1968,6 @@ dependencies = [
  "tower_governor",
  "tracing",
  "url",
- "winter-maybe-async",
 ]
 
 [[package]]
@@ -2074,7 +2073,6 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-processor",
  "miden-proving-service-client",
  "miden-tx",
  "miden-tx-batch-prover",

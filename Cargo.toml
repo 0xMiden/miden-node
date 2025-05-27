@@ -4,6 +4,8 @@ members = [
   "bin/node",
   "bin/stress-test",
   "crates/block-producer",
+  "crates/ntx-builder",
+  "crates/ntx-builder",
   "crates/proto",
   "crates/rpc",
   "crates/store",
@@ -30,34 +32,36 @@ version      = "0.9.0"
 opt-level = 2
 
 [workspace.dependencies]
-anyhow                    = { version = "1.0" }
-assert_matches            = { version = "1.5" }
-futures                   = { version = "0.3" }
-http                      = { version = "1.3" }
-itertools                 = { version = "0.14" }
-miden-air                 = { version = "0.14" }
-miden-lib                 = { version = "0.9" }
-miden-node-block-producer = { path = "crates/block-producer", version = "0.9" }
-miden-node-proto          = { path = "crates/proto", version = "0.9" }
-miden-node-proto-build    = { path = "proto", version = "0.9" }
-miden-node-rpc            = { path = "crates/rpc", version = "0.9" }
-miden-node-store          = { path = "crates/store", version = "0.9" }
-miden-node-test-macro     = { path = "crates/test-macro" }
-miden-node-utils          = { path = "crates/utils", version = "0.9" }
-miden-objects             = { version = "0.9" }
-miden-processor           = { version = "0.14" }
-miden-tx                  = { version = "0.9" }
-prost                     = { version = "0.13" }
-rand                      = { version = "0.9" }
-thiserror                 = { default-features = false, version = "2.0" }
-tokio                     = { features = ["rt-multi-thread"], version = "1.44" }
-tokio-stream              = { version = "0.1" }
-tonic                     = { version = "0.12" }
-tower                     = { version = "0.5" }
-tower-http                = { features = ["trace"], version = "0.6" }
-tracing                   = { version = "0.1" }
-tracing-subscriber        = { features = ["env-filter", "fmt", "json"], version = "0.3" }
-url                       = { features = ["serde"], version = "2.5" }
+anyhow                       = { version = "1.0" }
+assert_matches               = { version = "1.5" }
+async-trait                  = { version = "0.1" }
+futures                      = { version = "0.3" }
+http                         = { version = "1.3" }
+itertools                    = { version = "0.14" }
+miden-air                    = { version = "0.14" }
+miden-lib                    = { version = "0.9" }
+miden-node-block-producer    = { path = "crates/block-producer", version = "0.9" }
+miden-node-ntx-builder       = { path = "crates/ntx-builder", version = "0.9" }
+miden-node-proto             = { path = "crates/proto", version = "0.9" }
+miden-node-proto-build       = { path = "proto", version = "0.9" }
+miden-node-rpc               = { path = "crates/rpc", version = "0.9" }
+miden-node-store             = { path = "crates/store", version = "0.9" }
+miden-node-test-macro        = { path = "crates/test-macro" }
+miden-node-utils             = { path = "crates/utils", version = "0.9" }
+miden-objects                = { version = "0.9" }
+miden-proving-service-client = { version = "0.9" }
+miden-tx                     = { version = "0.9" }
+prost                        = { version = "0.13" }
+rand                         = { version = "0.9" }
+thiserror                    = { default-features = false, version = "2.0" }
+tokio                        = { features = ["rt-multi-thread"], version = "1.45" }
+tokio-stream                 = { version = "0.1" }
+tonic                        = { version = "0.12" }
+tower                        = { version = "0.5" }
+tower-http                   = { features = ["trace"], version = "0.6" }
+tracing                      = { version = "0.1" }
+tracing-subscriber           = { features = ["env-filter", "fmt", "json"], version = "0.3" }
+url                          = { features = ["serde"], version = "2.5" }
 
 # Lints are set to warn for development, which are promoted to errors in CI.
 [workspace.lints.clippy]

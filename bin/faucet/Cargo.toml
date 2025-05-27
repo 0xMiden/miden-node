@@ -27,8 +27,8 @@ miden-node-proto             = { workspace = true }
 miden-node-rpc               = { workspace = true }
 miden-node-utils             = { workspace = true }
 miden-objects                = { workspace = true }
-miden-proving-service-client = { features = ["tx-prover"], version = "0.9" }
-miden-tx                     = { features = ["concurrent"], workspace = true }
+miden-proving-service-client = { features = ["tx-prover"], workspace = true }
+miden-tx                     = { features = ["async", "concurrent"], workspace = true }
 rand                         = { features = ["thread_rng"], workspace = true }
 rand_chacha                  = { version = "0.9" }
 serde                        = { features = ["derive"], version = "1.0" }
@@ -44,7 +44,6 @@ tower-http                   = { features = ["cors", "set-header", "trace"], wor
 tower_governor               = { version = "0.7.0" }
 tracing                      = { workspace = true }
 url                          = { workspace = true }
-winter-maybe-async           = { version = "0.12" }
 
 [build-dependencies]
 # Required to inject build metadata.

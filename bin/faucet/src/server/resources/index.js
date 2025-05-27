@@ -107,12 +107,23 @@ document.addEventListener('DOMContentLoaded', function () {
         const powData = await powResponse.json();
 
         // Search for a nonce that satisfies the proof of work
-        status.textContent = "Resolving Proof of Work...";
+        status.textContent = "Solving Proof of Work...";
+
         const nonce = await findValidNonce(powData.seed, powData.difficulty);
 
-        const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams({
-            account_id: accountId, is_private_note: isPrivateNote, asset_amount: parseInt(assetSelect.value), pow_seed: powData.seed, pow_solution: nonce, server_signature: powData.server_signature, server_timestamp: powData.timestamp
-        }));
+        // Build query parameters for the request
+        const params = {
+            account_id: accountId,
+            is_private_note: isPrivateNote,
+            asset_amount: parseInt(assetSelect.value),
+            pow_seed: powData.seed,
+            pow_solution: nonce,
+            server_signature: powData.server_signature,
+            server_timestamp: powData.timestamp
+        };
+
+
+        const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams(params));
 
         evtSource.onopen = function () {
             status.textContent = "Request on queue...";

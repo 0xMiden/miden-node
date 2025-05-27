@@ -1,17 +1,21 @@
-use std::ops::Range;
+use std::{collections::BTreeSet, ops::Range};
 
+use anyhow::Context;
 use futures::{FutureExt, never::Never};
 use miden_block_prover::LocalBlockProver;
-use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_node_proto::generated::transaction::TransactionStatus;
+use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
 use miden_objects::{
-    MIN_PROOF_SECURITY_LEVEL,
+    Digest, MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
     block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::NoteHeader,
+    note::{Note, NoteExecutionMode, NoteHeader},
+    transaction::{OutputNote, TransactionHeader, TransactionId},
 };
 use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
+use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{Span, info, instrument};
 use url::Url;
 
@@ -22,6 +26,9 @@ use crate::{
 
 // BLOCK BUILDER
 // =================================================================================================
+
+pub type NtxClient =
+    miden_node_proto::ntx_builder::Client<InterceptedService<Channel, OtelInterceptor>>;
 
 pub struct BlockBuilder {
     pub block_interval: Duration,
@@ -37,6 +44,12 @@ pub struct BlockBuilder {
 
     /// The prover used to prove a proposed block into a proven block.
     pub block_prover: BlockProver,
+
+    // Client to the network transaction builder.
+    //
+    // This client is used to submit network notes and transaction updates to the network
+    // transaction builder.
+    pub ntx_builder: NtxClient,
 }
 
 impl BlockBuilder {
@@ -45,6 +58,7 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
+        ntx_builder: NtxClient,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -60,6 +74,7 @@ impl BlockBuilder {
             failure_rate: 0.0,
             block_prover,
             store,
+            ntx_builder,
         }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
@@ -85,7 +100,13 @@ impl BlockBuilder {
         loop {
             interval.tick().await;
 
-            self.build_block(&mempool).await;
+            // Non-fatal errors are handled internally by the block building process.
+            //
+            // As such, any error returned here should be treated as fatal.
+            if let Err(err) = self.build_block(&mempool).await {
+                tracing::error!(%err, "fatal error while building a block, aborting block production");
+                return;
+            }
         }
     }
 
@@ -101,7 +122,7 @@ impl BlockBuilder {
     /// - A failed stage will emit an error event, and both its own span and the root span will be
     ///   marked as errors.
     #[instrument(parent = None, target = COMPONENT, name = "block_builder.build_block", skip_all)]
-    async fn build_block(&self, mempool: &SharedMempool) {
+    async fn build_block(&self, mempool: &SharedMempool) -> anyhow::Result<()> {
         use futures::TryFutureExt;
 
         Self::select_block(mempool)
@@ -119,9 +140,11 @@ impl BlockBuilder {
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
             .or_else(|_err| self.rollback_block(mempool).never_error())
-            // Error has been handled, this is just type manipulation to remove the result wrapper.
-            .unwrap_or_else(|_: Never| ())
-            .await;
+            // All errors were handled and discarded above, so this is just type juggling
+            // to drop the result.
+            .unwrap_or_else(|_: Never| StateDelta::default())
+            .then(|delta| self.update_ntx_builder(delta))
+            .await
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.select_block", skip_all)]
@@ -223,20 +246,78 @@ impl BlockBuilder {
         &self,
         mempool: &SharedMempool,
         built_block: ProvenBlock,
-    ) -> Result<(), BuildBlockError> {
+    ) -> Result<StateDelta, BuildBlockError> {
         self.store
             .apply_block(&built_block)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        mempool.lock().await.commit_block();
+        let reverted_transactions = mempool.lock().await.commit_block();
+        let committed_transactions = built_block
+            .transactions()
+            .as_slice()
+            .iter()
+            .map(TransactionHeader::id)
+            .collect();
 
-        Ok(())
+        let committed_network_notes = get_network_notes(&built_block);
+
+        Ok(StateDelta {
+            committed_transactions,
+            reverted_transactions,
+            committed_network_notes,
+        })
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.rollback_block", skip_all)]
-    async fn rollback_block(&self, mempool: &SharedMempool) {
-        mempool.lock().await.rollback_block();
+    async fn rollback_block(&self, mempool: &SharedMempool) -> StateDelta {
+        let reverted_transactions = mempool.lock().await.rollback_block();
+
+        StateDelta {
+            reverted_transactions,
+            ..Default::default()
+        }
+    }
+
+    #[instrument(target = COMPONENT, name = "block_builder.update_ntx_builder", skip_all, err)]
+    async fn update_ntx_builder(&self, delta: StateDelta) -> anyhow::Result<()> {
+        if !(delta.committed_transactions.is_empty() && delta.reverted_transactions.is_empty()) {
+            let committed = delta
+                .committed_transactions
+                .into_iter()
+                .map(|tx| (tx, TransactionStatus::Committed));
+
+            let reverted = delta
+                .reverted_transactions
+                .into_iter()
+                .map(|tx| (tx, TransactionStatus::Reverted));
+            self.ntx_builder
+                .clone()
+                .update_transaction_status(committed.chain(reverted))
+                .await
+                .context("submitting transaction status updates to network transaction builder")?;
+        }
+
+        if !delta.committed_network_notes.is_empty() {
+            self.ntx_builder
+                .clone()
+                .submit_network_notes(
+                    // TODO: using default here until there is a good reason not to
+                    TransactionId::new(
+                        Digest::default(),
+                        Digest::default(),
+                        Digest::default(),
+                        Digest::default(),
+                    ),
+                    delta.committed_network_notes.into_iter(),
+                )
+                .await
+                .context(
+                    "failed to submit newly committed notes to the network transaction builder",
+                )?;
+        }
+
+        Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.simulate_proving", skip_all)]
@@ -361,6 +442,14 @@ impl TelemetryInjectorExt for ProvenBlock {
     }
 }
 
+/// Change in transaction and note state as a result of the block building process.
+#[derive(Default)]
+struct StateDelta {
+    committed_transactions: Vec<TransactionId>,
+    reverted_transactions: BTreeSet<TransactionId>,
+    committed_network_notes: Vec<Note>,
+}
+
 // BLOCK PROVER
 // ================================================================================================
 
@@ -394,4 +483,21 @@ impl BlockProver {
             },
         }
     }
+}
+
+// HELPER
+// ================================================================================================
+
+fn get_network_notes(proven_block: &ProvenBlock) -> Vec<Note> {
+    proven_block
+        .output_notes()
+        .filter_map(|(_idx, note)| match note {
+            OutputNote::Full(inner)
+                if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
+            {
+                Some(inner.clone())
+            },
+            _ => None,
+        })
+        .collect()
 }

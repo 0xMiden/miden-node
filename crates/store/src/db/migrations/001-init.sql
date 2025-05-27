@@ -16,15 +16,19 @@ CREATE TABLE block_headers (
     CONSTRAINT block_header_block_num_is_u32 CHECK (block_num BETWEEN 0 AND 0xFFFFFFFF)
 ) STRICT;
 
-CREATE TABLE accounts (
-      account_id            BLOB    NOT NULL,
-      account_commitment    BLOB    NOT NULL,
-      block_num             INTEGER NOT NULL,
-      details               BLOB,
 
-      PRIMARY KEY (account_id),
-      FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
+CREATE TABLE accounts (
+    account_id                              BLOB NOT NULL,
+    network_account_id_prefix               INTEGER NULL, -- 30-bit account ID prefix, only filled for network accounts
+    account_commitment                      BLOB NOT NULL,
+    block_num                               INTEGER NOT NULL,
+    details                                 BLOB,
+
+    PRIMARY KEY (account_id),
+    FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
 ) STRICT, WITHOUT ROWID;
+
+CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
 
 CREATE TABLE notes (
     block_num      INTEGER NOT NULL,

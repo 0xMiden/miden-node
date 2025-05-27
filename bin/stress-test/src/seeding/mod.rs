@@ -19,16 +19,15 @@ use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client:
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    Digest, Felt, Word,
+    Felt,
     account::{
         Account, AccountBuilder, AccountId, AccountIdAnchor, AccountStorageMode, AccountType,
     },
     asset::{Asset, FungibleAsset, TokenSymbol},
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
-    block::{AccountTree, BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
+    block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
     crypto::{
         dsa::rpo_falcon512::{PublicKey, SecretKey},
-        merkle::{SimpleSmt, Smt},
         rand::RpoRandomCoin,
     },
     note::{Note, NoteHeader, NoteId, NoteInclusionProof},
@@ -43,7 +42,6 @@ use rayon::{
     iter::{IntoParallelIterator, ParallelIterator},
     prelude::ParallelSlice,
 };
-use rusqlite::{Connection, params};
 use tokio::{fs, io::AsyncWriteExt, net::TcpListener, task};
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use winterfell::Proof;
@@ -61,91 +59,12 @@ pub const ACCOUNTS_FILENAME: &str = "accounts.txt";
 // SEED STORE
 // ================================================================================================
 
-use miden_objects::utils::Deserializable;
-pub fn migrate_account_root(data_directory: PathBuf) {
-    // start a connection with the db using deadpool
-    let mut conn =
-        Connection::open(format!("{}/miden-store.sqlite3", data_directory.to_str().unwrap()))
-            .unwrap();
-
-    // get the latest block header (code taken from `miden_node_store::sql::select_block_header_by_block_num`)
-    let transaction = conn.transaction().unwrap(); // TODO: same transaction for all queries?
-    let latest_header = {
-        let mut stmt = transaction
-            .prepare_cached(
-                "SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1",
-            )
-            .unwrap();
-        let mut rows = stmt.query([]).unwrap();
-
-        let data = rows.next().unwrap().unwrap().get_ref(0).unwrap().as_blob().unwrap();
-        BlockHeader::read_from_bytes(data).unwrap()
-    };
-
-    // get the account commitments from the store (code taken from `miden_node_store::sql::select_all_account_commitments`) and build the account tree to get the root
-    let new_account_root = {
-        let mut stmt = transaction
-            .prepare_cached(
-                "SELECT account_id, account_commitment FROM accounts ORDER BY block_num ASC;",
-            )
-            .unwrap();
-        let mut rows = stmt.query([]).unwrap();
-
-        let mut entries = Vec::new();
-        while let Some(row) = rows.next().unwrap() {
-            let account_id_data = row.get_ref(0).unwrap().as_blob().unwrap();
-            let account_id = AccountId::read_from_bytes(account_id_data).unwrap();
-
-            let account_commitment_data = row.get_ref(1).unwrap().as_blob().unwrap();
-            let account_commitment = Digest::read_from_bytes(account_commitment_data).unwrap();
-
-            entries.push((account_id, account_commitment));
-        }
-
-        AccountTree::with_entries(entries).unwrap().root()
-    };
-
-    // create a new header with same fields but different account root
-    let new_header = BlockHeader::new(
-        latest_header.version(),
-        latest_header.prev_block_commitment(),
-        latest_header.block_num(),
-        latest_header.chain_commitment(),
-        new_account_root,
-        latest_header.nullifier_root(),
-        latest_header.note_root(),
-        latest_header.tx_commitment(),
-        latest_header.tx_kernel_commitment(),
-        latest_header.proof_commitment(),
-        latest_header.timestamp(),
-    );
-
-    assert!(new_header.to_bytes() != latest_header.to_bytes());
-    assert_eq!(new_header.block_num(), latest_header.block_num());
-
-    // update the header in the db
-    let affected_rows = {
-        let mut stmt = transaction
-            .prepare_cached("UPDATE block_headers SET block_header = ? WHERE block_num = ?;")
-            .unwrap();
-        stmt.execute(params![new_header.to_bytes(), latest_header.block_num().as_u64()])
-            .unwrap()
-    };
-
-    assert_eq!(affected_rows, 1);
-
-    transaction.commit().unwrap();
-}
-
 /// Seeds the store with a given number of accounts.
 pub async fn seed_store(
     data_directory: PathBuf,
     num_accounts: usize,
     public_accounts_percentage: u8,
 ) {
-    migrate_account_root(data_directory);
-    return;
-
     let start = Instant::now();
     // Recreate the data directory (it should be empty for store bootstrapping).
     //

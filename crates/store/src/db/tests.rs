@@ -32,7 +32,7 @@ use rand::Rng;
 
 use super::{AccountInfo, NoteRecord, NullifierInfo, sql};
 use crate::db::{
-    TransactionSummary, connection::Connection, migrations::apply_migrations, sql::Page,
+    TransactionSummary, connection::Connection, migration::apply_migrations, sql::Page,
 };
 
 fn create_db() -> Connection {

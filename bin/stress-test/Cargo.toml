@@ -31,4 +31,3 @@ rayon                     = { version = "1.5" }
 tokio                     = { workspace = true }
 tonic                     = { workspace = true }
 winterfell                = { version = "0.12" }
-rusqlite                  = { version = "0.35" }

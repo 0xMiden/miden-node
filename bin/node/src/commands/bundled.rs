@@ -84,11 +84,11 @@ pub enum BundledCommand {
 
         /// Interval at which to run the network transaction builder's ticker.
         #[arg(
-                    long = "ntb.interval",
-                    default_value = DEFAULT_NTX_TICKER_INTERVAL_MS,
-                    value_parser = parse_duration_ms,
-                    value_name = "MILLISECONDS"
-                )]
+            long = "ntb.interval",
+            default_value = DEFAULT_NTX_TICKER_INTERVAL_MS,
+            value_parser = parse_duration_ms,
+            value_name = "MILLISECONDS"
+        )]
         ntx_ticker_interval: Duration,
 
         /// Interval at which to procude batches in milliseconds.

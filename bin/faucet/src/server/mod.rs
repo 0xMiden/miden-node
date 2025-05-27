@@ -58,7 +58,6 @@ pub struct Server {
     pow: PoW,
     api_keys: BTreeSet<String>,
     active_requests: Arc<AtomicUsize>,
-    queued_requests: Arc<AtomicUsize>,
 }
 
 impl Server {
@@ -96,7 +95,6 @@ impl Server {
             metadata,
             pow,
             active_requests: Arc::new(AtomicUsize::new(0)),
-            queued_requests: Arc::new(AtomicUsize::new(0)),
             api_keys,
         }
     }

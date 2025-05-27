@@ -88,7 +88,7 @@ impl PowParameters {
             challenge_cache.challenges.lock().expect("PoW challenge cache lock poisoned");
 
         if challenges.get(&self.pow_seed).is_some() {
-            return Err(InvalidRequest::InvalidChallenge);
+            return Err(InvalidRequest::ChallengeAlreadyUsed);
         }
 
         // Then check the PoW solution
@@ -103,7 +103,7 @@ impl PowParameters {
         }
 
         // If we get here, the solution is valid
-        // Remove the challenge to prevent reuse
+        // Add the challenge to the cache to prevent reuse
         challenges.insert(self.pow_seed.to_string(), self.server_timestamp);
 
         Ok(())

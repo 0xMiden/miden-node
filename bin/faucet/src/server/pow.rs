@@ -87,12 +87,8 @@ impl PowParameters {
         let mut challenges =
             challenge_cache.challenges.lock().expect("PoW challenge cache lock poisoned");
 
-        if let Some(challenge) = challenges.get(&self.pow_seed) {
-            if challenge.server_signature != self.server_signature {
-                return Err(InvalidRequest::ServerSignaturesDoNotMatch);
-            }
-        } else {
-            return Err(InvalidRequest::InvalidChallenge);
+        if challenges.get(&self.pow_seed).is_some() {
+            return Err(InvalidRequest::ChallengeAlreadyUsed);
         }
 
         // Then check the PoW solution
@@ -107,8 +103,8 @@ impl PowParameters {
         }
 
         // If we get here, the solution is valid
-        // Remove the challenge to prevent reuse
-        challenges.remove(&self.pow_seed);
+        // Add the challenge to the cache to prevent reuse
+        challenges.insert(self.pow_seed.to_string(), self.server_timestamp);
 
         Ok(())
     }
@@ -143,31 +139,16 @@ impl TryFrom<&RawMintRequest> for PowParameters {
 /// A cache for managing challenges.
 ///
 /// Challenges are used to validate the `PoW` solution.
-/// We store the challenges in a map with the seed as the key to ensure that each challenge is
-/// only used once. Once a challenge is created, it gets added to the map and is removed once the
-/// challenge is solved.
+/// We store the solved challenges in a map with the seed as the key to ensure that each challenge
+/// is only used once.
+/// Challenges gets removed periodically.
 #[derive(Clone, Default)]
 pub struct ChallengeCache {
-    /// The challenges are stored in a map with the seed as the key to ensure that each challenge
-    /// is only used once. Once a challenge is created, it gets added to the map and is removed
-    /// once the challenge is solved.
-    challenges: Arc<Mutex<HashMap<String, Challenge>>>,
-}
-
-/// A challenge is a single `PoW` challenge.
-#[derive(Clone)]
-pub struct Challenge {
-    timestamp: u64,
-    server_signature: String,
+    /// Once a challenge is added, it cannot be submitted again.
+    challenges: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl ChallengeCache {
-    /// Add a challenge to the cache.
-    pub fn put(&self, seed: &str, server_signature: String, timestamp: u64) {
-        let mut challenges = self.challenges.lock().unwrap();
-        challenges.insert(seed.to_string(), Challenge { timestamp, server_signature });
-    }
-
     /// Cleanup expired challenges.
     ///
     /// Challenges are expired if they are older than [`SERVER_TIMESTAMP_TOLERANCE_SECONDS`]
@@ -179,22 +160,23 @@ impl ChallengeCache {
             .as_secs();
 
         let mut challenges = self.challenges.lock().unwrap();
-        challenges.retain(|_, challenge| {
-            (current_time - challenge.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+        challenges.retain(|_, timestamp| {
+            (current_time - *timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
         });
     }
-}
 
-/// Run the cleanup task.
-///
-/// The cleanup task is responsible for removing expired challenges from the cache.
-/// It runs every minute.
-pub async fn run_cleanup(challenge_cache: ChallengeCache) {
-    let mut interval = interval(Duration::from_secs(60));
+    /// Run the cleanup task.
+    ///
+    /// The cleanup task is responsible for removing expired challenges from the cache.
+    /// It runs every minute and removes challenges that are not longer valid because of its
+    /// timestamp.
+    pub async fn run_cleanup(self) {
+        let mut interval = interval(Duration::from_secs(60));
 
-    loop {
-        interval.tick().await;
-        challenge_cache.cleanup_expired_challenges();
+        loop {
+            interval.tick().await;
+            self.cleanup_expired_challenges();
+        }
     }
 }
 
@@ -240,9 +222,6 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
     let random_seed = random_hex_string(32);
 
     let server_signature = get_server_signature(&server.pow_salt, &random_seed, timestamp);
-
-    // Store the challenge
-    server.challenge_cache.put(&random_seed, server_signature.clone(), timestamp);
 
     Json(PoWResponse {
         seed: random_seed,
@@ -303,10 +282,14 @@ mod tests {
         assert!(result.is_ok());
 
         let challenge_cache = ChallengeCache::default();
-        challenge_cache.put(seed, server_signature, timestamp);
+
         let result = pow_parameters.check_pow_solution(&challenge_cache);
 
         assert!(result.is_ok());
+
+        // Check that the challenge is not valid anymore
+        let result = pow_parameters.check_pow_solution(&challenge_cache);
+        assert!(result.is_err());
     }
 
     #[test]

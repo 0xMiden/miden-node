@@ -463,6 +463,7 @@ pub fn upsert_accounts(
             details
         } | REPLACE
     ))?;
+
     let mut select_details_stmt =
         transaction.prepare_cached("SELECT details FROM accounts WHERE account_id = ?1")?;
 

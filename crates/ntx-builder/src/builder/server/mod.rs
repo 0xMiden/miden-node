@@ -1,5 +1,3 @@
-use std::sync::{Arc, Mutex};
-
 use miden_node_proto::{
     domain::note::NetworkNote,
     generated::{
@@ -12,27 +10,24 @@ use miden_node_proto::{
     try_convert,
 };
 use miden_objects::{Digest, note::Nullifier, transaction::TransactionId};
-use state::PendingNotes;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
 use crate::COMPONENT;
 
 mod state;
+pub use state::PendingNotes;
+
+use super::SharedPendingNotes;
 
 #[derive(Debug)]
 pub struct NtxBuilderApi {
-    state: Arc<Mutex<PendingNotes>>,
+    state: SharedPendingNotes,
 }
 
 impl NtxBuilderApi {
-    pub fn new(unconsumed_network_notes: Vec<NetworkNote>) -> Self {
-        let state = PendingNotes::new(unconsumed_network_notes);
-        Self { state: Arc::new(Mutex::new(state)) }
-    }
-
-    pub fn state(&self) -> Arc<Mutex<PendingNotes>> {
-        self.state.clone()
+    pub fn new(notes_queue: SharedPendingNotes) -> Self {
+        Self { state: notes_queue }
     }
 }
 
@@ -48,10 +43,7 @@ impl Api for NtxBuilderApi {
         let notes: Vec<NetworkNote> = try_convert(req.note)
             .map_err(|err| Status::invalid_argument(format!("invalid note list: {err}")))?;
 
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|e| Status::internal(format!("Failed to lock state: {e}")))?;
+        let mut state = self.state.lock().await;
 
         state.queue_unconsumed_notes(notes);
 
@@ -81,12 +73,9 @@ impl Api for NtxBuilderApi {
                 Status::invalid_argument(format!("error when converting input nullifiers: {err}"))
             })?;
 
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
+        let mut state = self.state.lock().await;
 
-        state.insert_inflight(tx_id, &nullifiers);
+        state.insert_inflight(tx_id, nullifiers);
 
         Ok(Response::new(()))
     }
@@ -98,16 +87,7 @@ impl Api for NtxBuilderApi {
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
-        info!(
-            target: COMPONENT,
-            update_count = request.updates.len(),
-            "Received transaction status updates"
-        );
-
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|e| Status::internal(format!("failed to lock state: {e}")))?;
+        let mut state = self.state.lock().await;
 
         for tx in request.updates {
             let tx_id: TransactionId = tx
@@ -121,9 +101,25 @@ impl Api for NtxBuilderApi {
                 })?;
 
             match tx.status() {
-                TransactionStatus::Committed => state.commit_inflight(tx_id),
-                TransactionStatus::Reverted => state.rollback_inflight(tx_id),
-            };
+                TransactionStatus::Committed => {
+                    let n = state.commit_inflight(tx_id);
+                    info!(
+                        target: COMPONENT,
+                        committed = n,
+                        tx_id = tx_id.to_hex(),
+                        "Committed notes notes for transaction"
+                    );
+                },
+                TransactionStatus::Reverted => {
+                    let n = state.rollback_inflight(tx_id);
+                    info!(
+                        target: COMPONENT,
+                        rolled_back = n,
+                        tx_id = tx_id.to_hex(),
+                        "Rolled back inflight notes notes after transaction got discarded"
+                    );
+                },
+            }
         }
         Ok(Response::new(()))
     }

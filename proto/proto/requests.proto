@@ -133,6 +133,12 @@ message GetNotesByIdRequest {
     repeated digest.Digest note_ids = 1;
 }
 
+// Returns peaks for the given block number, or the chain tip if a block number not provided.
+message GetCurrentBlockchainDataRequest {
+    // Last client-known block number. If not specified, the latest header and peaks will be retrieved.
+    optional fixed32 block_num = 1;
+}
+
 // Returns the latest state of an account with the specified ID.
 message GetAccountDetailsRequest {
     // Account ID to get details.

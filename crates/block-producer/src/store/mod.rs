@@ -29,7 +29,6 @@ use miden_objects::{
     transaction::ProvenTransaction,
     utils::Serializable,
 };
-use miden_processor::crypto::RpoDigest;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{debug, info, instrument};
 
@@ -104,7 +103,7 @@ impl TryFrom<GetTransactionInputsResponse> for TransactionInputs {
         let found_unauthenticated_notes = response
             .found_unauthenticated_notes
             .into_iter()
-            .map(|digest| Ok(RpoDigest::try_from(digest)?.into()))
+            .map(|digest| Ok(Digest::try_from(digest)?.into()))
             .collect::<Result<_, ConversionError>>()?;
 
         let current_block_height = response.block_height.into();

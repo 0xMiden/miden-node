@@ -34,7 +34,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
-use tracing::{debug, error, info, info_span, instrument, warn, Instrument, Span};
+use tracing::{Instrument, Span, debug, error, info, info_span, instrument, warn};
 use url::Url;
 
 use crate::COMPONENT;
@@ -277,7 +277,7 @@ impl NetworkTransactionBuilder {
         let Some((tag, notes)) = api_state.lock().await.take_next_notes_by_tag() else {
             return Ok(None);
         };
-        
+
         let span = info_span!("ntx_builder.select_next_batch");
         span.set_attribute("ntx.tag", tag.inner());
 

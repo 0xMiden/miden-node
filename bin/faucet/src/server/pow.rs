@@ -391,4 +391,85 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_adjust_difficulty_minimum_clamp() {
+        // Test that difficulty is clamped to minimum value of 1
+        let pow = PoW {
+            salt: "test-salt".to_string(),
+            difficulty: Arc::new(AtomicUsize::new(10)),
+            challenge_cache: ChallengeCache::default(),
+        };
+
+        // With 0 active requests, difficulty should be clamped to 1
+        pow.adjust_difficulty(0);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
+
+        // With requests less than ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY (41),
+        // difficulty should still be 1
+        pow.adjust_difficulty(40);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn test_adjust_difficulty_maximum_clamp() {
+        // Test that difficulty is clamped to maximum value of MAX_DIFFICULTY (24)
+        let pow = PoW {
+            salt: "test-salt".to_string(),
+            difficulty: Arc::new(AtomicUsize::new(1)),
+            challenge_cache: ChallengeCache::default(),
+        };
+
+        // With very high number of active requests, difficulty should be clamped to MAX_DIFFICULTY
+        pow.adjust_difficulty(2000);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), MAX_DIFFICULTY);
+
+        // Test with an extremely high number
+        pow.adjust_difficulty(100_000);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), MAX_DIFFICULTY);
+    }
+
+    #[test]
+    fn test_adjust_difficulty_linear_scaling() {
+        // Test that difficulty scales linearly with active requests
+        let pow = PoW {
+            salt: "test-salt".to_string(),
+            difficulty: Arc::new(AtomicUsize::new(1)),
+            challenge_cache: ChallengeCache::default(),
+        };
+
+        // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY = 1000 / 24
+        // = 41
+
+        // 41 active requests should give difficulty 1
+        pow.adjust_difficulty(41);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
+
+        // 82 active requests should give difficulty 2 (82 / 41 = 2)
+        pow.adjust_difficulty(82);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 2);
+
+        // 123 active requests should give difficulty 3 (123 / 41 = 3)
+        pow.adjust_difficulty(123);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 3);
+
+        // 205 active requests should give difficulty 5 (205 / 41 = 5)
+        pow.adjust_difficulty(205);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 5);
+
+        // 984 active requests should give difficulty 24 (984 / 41 = 24)
+        pow.adjust_difficulty(984);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 24);
+    }
+
+    #[test]
+    fn test_adjust_difficulty_constants_validation() {
+        assert_eq!(MAX_DIFFICULTY, 24);
+        assert_eq!(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY);
+
+        // With current values: REQUESTS_QUEUE_SIZE = 1000, MAX_DIFFICULTY = 24
+        // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY should be 41 (1000 / 24 = 41.666... truncated to
+        // 41)
+        assert_eq!(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, 41);
+    }
 }

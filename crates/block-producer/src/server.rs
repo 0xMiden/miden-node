@@ -46,7 +46,7 @@ pub struct BlockProducer {
     /// The address of the store component.
     pub store_address: SocketAddr,
     /// The address of the network transaction builder.
-    pub ntx_builder_address: SocketAddr,
+    pub ntx_builder_address: Option<SocketAddr>,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -99,8 +99,9 @@ impl BlockProducer {
             .await
             .context("failed to bind to block producer address")?;
 
-        let ntx_builder =
-            ntx_builder::Client::connect_lazy(self.ntx_builder_address, OtelInterceptor);
+        let ntx_builder = self
+            .ntx_builder_address
+            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
 
         info!(target: COMPONENT, "Server initialized");
 
@@ -151,8 +152,10 @@ impl BlockProducer {
             })
             .id();
 
-        let ntx_builder =
-            ntx_builder::Client::connect_lazy(self.ntx_builder_address, OtelInterceptor);
+        let ntx_builder = self
+            .ntx_builder_address
+            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
+
         let rpc_id = tasks
             .spawn(async move {
                 BlockProducerRpcServer::new(mempool, store, ntx_builder).serve(listener).await
@@ -200,7 +203,7 @@ struct BlockProducerRpcServer {
 
     store: StoreClient,
 
-    ntx_builder: NtxClient,
+    ntx_builder: Option<NtxClient>,
 }
 
 #[tonic::async_trait]
@@ -234,7 +237,7 @@ impl api_server::Api for BlockProducerRpcServer {
 }
 
 impl BlockProducerRpcServer {
-    pub fn new(mempool: SharedMempool, store: StoreClient, ntx_client: NtxClient) -> Self {
+    pub fn new(mempool: SharedMempool, store: StoreClient, ntx_client: Option<NtxClient>) -> Self {
         Self {
             mempool: Mutex::new(mempool),
             store,
@@ -296,15 +299,17 @@ impl BlockProducerRpcServer {
                 SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
             });
 
-        let mut ntx_builder = self.ntx_builder.clone();
-        if let Err(err) = ntx_builder.update_network_notes(tx_id, tx_nullifiers.into_iter()).await {
-            error!(
-                target: COMPONENT,
-                message = %err,
-                "error submitting network notes updates to ntx builder"
-            );
+        if let Some(mut ntb_client) = self.ntx_builder.clone() {
+            if let Err(err) =
+                ntb_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await
+            {
+                error!(
+                    target: COMPONENT,
+                    message = %err,
+                    "error submitting network notes updates to ntx builder"
+                );
+            }
         }
-
         submit_tx_response
     }
 }
@@ -362,7 +367,7 @@ mod test {
             BlockProducer {
                 block_producer_address: block_producer_addr,
                 store_address: store_addr,
-                ntx_builder_address: ntx_builder_addr,
+                ntx_builder_address: Some(ntx_builder_addr),
                 batch_prover_url: None,
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),

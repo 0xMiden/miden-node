@@ -197,7 +197,7 @@ impl NetworkTransactionBuilder {
     ///   - If the executor account is not found, the notes are **discarded** and note requeued.
     /// - Executes, proves and submits a network transaction.
     /// - After executing, updates the account cache with the new account state and any notes that
-    /// were note used are requeued
+    ///   were note used are requeued
     ///
     /// A failure on the second stage will result in the transaction being rolled back.
     ///
@@ -213,7 +213,7 @@ impl NetworkTransactionBuilder {
     /// # Errors
     ///
     /// - Returns an error only when the preflight stage errors. On the execution stage, errors are
-    /// logged and the transaction gets rolled back.
+    ///   logged and the transaction gets rolled back.
     async fn build_network_tx(
         api_state: &SharedPendingNotes,
         tx_executor: &TransactionExecutor,

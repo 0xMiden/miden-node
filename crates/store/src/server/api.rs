@@ -159,12 +159,12 @@ impl api_server::Api for StoreApi {
     /// This returns all the blockchain-related information needed for executing transactions
     /// without authenticating notes.
     #[instrument(
-    target = COMPONENT,
-    name = "store.server.get_current_blockchain_data",
-    skip_all,
-    ret(level = "debug"),
-    err
-)]
+        target = COMPONENT,
+        name = "store.server.get_current_blockchain_data",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
     async fn get_current_blockchain_data(
         &self,
         request: Request<GetCurrentBlockchainDataRequest>,

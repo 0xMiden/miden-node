@@ -146,60 +146,6 @@ pub async fn seed_store(
     migrate_account_root(data_directory);
     return;
 
-    // create account
-    let init_seed: Vec<_> = 1_u64.to_be_bytes().into_iter().chain([0u8; 24]).collect();
-    let (account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
-        .anchor(AccountIdAnchor::PRE_GENESIS)
-        .account_type(AccountType::RegularAccountImmutableCode)
-        .storage_mode(AccountStorageMode::Public)
-        .with_component(BasicWallet)
-        .build()
-        .unwrap();
-
-    // print id and commitment
-    println!("id: {}", account.id());
-    println!("commitment: {}", account.commitment());
-
-    // create account tree
-
-    let entries: std::array::IntoIter<(AccountId, Digest), 1> =
-        [(account.id(), account.commitment().into())].into_iter();
-
-    fn id_to_smt_key(account_id: AccountId) -> Digest {
-        let mut key = [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ZERO];
-        key[2] = account_id.suffix();
-        key[3] = account_id.prefix().as_felt();
-
-        Digest::from(key)
-    }
-
-    let smt: SimpleSmt<64> = SimpleSmt::with_leaves(
-        entries.map(|(id, commitment)| (id.prefix().into(), Word::from(commitment))),
-    )
-    .unwrap();
-
-    // If the number of leaves in the SMT is smaller than the number of accounts that were
-    // passed in, it means that at least one account ID pair ended up in the same leaf. If this
-    // is the case, we iterate the SMT entries to find the duplicated account ID prefix.
-
-    println!("account tree: {}", smt.root());
-
-    // serialize it
-    // let mut file = fs::File::create(format!("test{num_accounts}.txt")).await.unwrap();
-    // file.write_all(account.to_bytes().as_slice()).await.unwrap();
-
-    // // deserialize it
-    // let a = fs::read(format!("test{num_accounts}.txt")).await.unwrap();
-    // let b = Account::read_from_bytes(a.as_slice()).unwrap();
-    // println!("{b:?}");
-
-    // do it again, it should be same id
-
-    // then do it from v0.8 and store serialization
-    // run 0.9 and deserialize it to see if it works
-
-    return;
-
     let start = Instant::now();
     // Recreate the data directory (it should be empty for store bootstrapping).
     //

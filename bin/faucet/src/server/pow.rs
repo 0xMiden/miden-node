@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     sync::{
         Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicUsize, Ordering},
     },
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -18,11 +18,15 @@ use super::{
     Server,
     get_tokens::{InvalidRequest, RawMintRequest},
 };
+use crate::REQUESTS_QUEUE_SIZE;
 
 /// The maximum difficulty of the `PoW`.
 ///
 /// The difficulty is the number of leading zeros in the hash of the seed and the solution.
-const MAX_DIFFICULTY: u64 = 24;
+const MAX_DIFFICULTY: usize = 24;
+
+/// The number of active requests to increase the difficulty by 1.
+const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY;
 
 /// The tolerance for the server timestamp.
 ///
@@ -43,7 +47,7 @@ pub(crate) struct PowParameters {
     pub(crate) server_signature: String,
     pub(crate) server_timestamp: u64,
     pub(crate) pow_solution: u64,
-    pub(crate) difficulty: u64,
+    pub(crate) difficulty: usize,
 }
 
 impl PowParameters {
@@ -111,7 +115,7 @@ impl PowParameters {
         let hash = &hasher.finalize().to_hex();
 
         let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-        if leading_zeros < self.difficulty as usize {
+        if leading_zeros < self.difficulty {
             return Err(InvalidRequest::InvalidPoW);
         }
 
@@ -156,7 +160,7 @@ impl TryFrom<&RawMintRequest> for PowParameters {
 #[derive(Clone)]
 pub struct PoW {
     pub(crate) salt: String,
-    pub(crate) difficulty: Arc<AtomicU64>,
+    pub(crate) difficulty: Arc<AtomicUsize>,
     pub(crate) challenge_cache: ChallengeCache,
 }
 
@@ -167,7 +171,8 @@ impl PoW {
     /// The difficulty is increased by 1 for every 50 active requests.
     /// The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
     pub fn adjust_difficulty(&self, active_requests: usize) {
-        let new_difficulty = (active_requests as u64 / 50).clamp(1, MAX_DIFFICULTY);
+        let new_difficulty =
+            (active_requests / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY);
         self.difficulty.store(new_difficulty, Ordering::Relaxed);
     }
 }
@@ -236,7 +241,7 @@ pub async fn run_cleanup(challenge_cache: ChallengeCache) {
 #[derive(Serialize)]
 struct PoWResponse {
     seed: String,
-    difficulty: u64,
+    difficulty: usize,
     server_signature: String,
     timestamp: u64,
 }
@@ -248,7 +253,7 @@ pub(crate) fn get_server_signature(
     server_salt: &str,
     seed: &str,
     timestamp: u64,
-    difficulty: u64,
+    difficulty: usize,
 ) -> String {
     let mut hasher = Sha3_256::new();
     hasher.update(server_salt);
@@ -307,7 +312,7 @@ mod tests {
 
     use super::*;
 
-    fn find_pow_solution(seed: &str, difficulty: u64) -> u64 {
+    fn find_pow_solution(seed: &str, difficulty: usize) -> u64 {
         let mut solution = 0;
         loop {
             let mut hasher = Sha3_256::new();
@@ -315,7 +320,7 @@ mod tests {
             hasher.update(solution.to_string().as_bytes());
             let hash = &hasher.finalize().to_hex();
             let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-            if leading_zeros >= difficulty as usize {
+            if leading_zeros >= difficulty {
                 return solution;
             }
 

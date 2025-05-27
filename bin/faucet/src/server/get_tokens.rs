@@ -51,7 +51,7 @@ pub struct RawMintRequest {
     pub asset_amount: u64,
     pub pow_seed: Option<String>,
     pub pow_solution: Option<u64>,
-    pub pow_difficulty: Option<u64>,
+    pub pow_difficulty: Option<usize>,
     pub server_signature: Option<String>,
     pub server_timestamp: Option<u64>,
     pub api_key: Option<String>,
@@ -194,9 +194,12 @@ struct RequestCounterGuard {
 }
 
 impl RequestCounterGuard {
-    fn new(active_count: Arc<AtomicUsize>, queued_count: Arc<AtomicUsize>) -> Self {
+    fn new(active_count: &Arc<AtomicUsize>, queued_count: &Arc<AtomicUsize>) -> Self {
         active_count.fetch_add(1, Ordering::Relaxed);
-        Self { active_count, queued_count }
+        Self {
+            active_count: active_count.clone(),
+            queued_count: queued_count.clone(),
+        }
     }
 
     fn mark_queued(&self) {
@@ -218,8 +221,7 @@ pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let request_guard =
-        RequestCounterGuard::new(server.active_requests.clone(), server.queued_requests.clone());
+    let request_guard = RequestCounterGuard::new(&server.active_requests, &server.queued_requests);
 
     let current_active_requests = server.active_requests.load(Ordering::Relaxed);
     let current_queued_requests = server.queued_requests.load(Ordering::Relaxed);

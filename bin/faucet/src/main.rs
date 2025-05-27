@@ -37,7 +37,7 @@ use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 const COMPONENT: &str = "miden-faucet";
 const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
-const REQUESTS_QUEUE_SIZE: usize = 1000;
+pub const REQUESTS_QUEUE_SIZE: usize = 1000;
 const DEFAULT_API_KEYS_COUNT: &str = "1";
 const API_KEY_PREFIX: &str = "miden_faucet_";
 

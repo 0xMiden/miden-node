@@ -22,7 +22,12 @@ pub fn migrate_account_root(conn: &mut Connection) -> anyhow::Result<()> {
         )?;
         let mut rows = stmt.query([])?;
 
-        let data = rows.next()?.context("No header found")?.get_ref(0)?.as_blob()?;
+        let Some(data) = rows.next()? else {
+            // if there is no header, the db is empty and we can return early
+            return Ok(());
+        };
+        let data = data.get_ref(0)?.as_blob()?;
+
         BlockHeader::read_from_bytes(data)?
     };
 

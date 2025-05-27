@@ -73,8 +73,8 @@ pub enum InvalidRequest {
     ServerSignaturesDoNotMatch,
     #[error("server timestamp expired, received: {0}, current time: {1}")]
     ExpiredServerTimestamp(u64, u64),
-    #[error("invalid or expired challenge")]
-    InvalidChallenge,
+    #[error("challenge already used")]
+    ChallengeAlreadyUsed,
 }
 
 pub enum GetTokenError {

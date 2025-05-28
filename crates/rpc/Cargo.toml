@@ -23,7 +23,7 @@ miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 miden-tx         = { workspace = true }
 nom              = { version = "8.0" }
-semver           = { version = "1.0" }
+semver           = { version = "1.0.26" }
 tokio            = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream     = { features = ["net"], workspace = true }
 tonic            = { workspace = true }

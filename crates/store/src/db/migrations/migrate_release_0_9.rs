@@ -1,4 +1,5 @@
-use miden_lib::utils::{ByteReader, ReadAdapter, SliceReader, ToHex};
+use miden_core::mast::serialization::read_from_old;
+use miden_lib::utils::{ByteReader, DeserializationError, ReadAdapter, SliceReader, ToHex};
 use miden_objects::{
     Digest, MastForest, MastNodeId,
     account::AccountId,
@@ -136,7 +137,8 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
 
             let note_assets = NoteAssets::new(assets).unwrap();
 
-            let mast = MastForest::read_from(&mut byte_reader).unwrap();
+            let mast = read_from_old(&mut byte_reader).unwrap();
+            // let mast = MastForest::read_from(&mut byte_reader).unwrap();
             let entrypoint =
                 MastNodeId::from_u32_safe(byte_reader.read_u32().unwrap(), &mast).unwrap();
 

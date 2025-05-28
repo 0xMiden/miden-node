@@ -26,6 +26,17 @@ your one-stop-shop for all things Miden.
 For node operators living on the development edge, we also host the latest unreleased documentation
 [here](https://0xMiden.github.io/miden-node/index.html).
 
+## Node Architecture
+
+Miden Node consists of three main components:
+- **Store** – the blockchain database, providing a gRPC API for internal services.
+- **Block Producer** – aggregates transactions into blocks and submits them to the Store.
+- **RPC** – public gRPC API for users, proxies queries to the Store and Block Producer.
+
+Optionally, a **Faucet** component is provided for testnet token distribution.
+
+These components can be run as a single process for convenience or as separate services for scalability. Internal communication is performed via a trusted gRPC API.
+
 ## Contributing
 
 Developer documentation and onboarding guide is available

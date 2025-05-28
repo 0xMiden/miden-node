@@ -98,7 +98,6 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
     debug!(target: COMPONENT, new_schema_version, "Updating schema version in settings table");
     Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD, &new_schema_version)?;
 
-    conn.flush_prepared_statement_cache();
     if env!("CARGO_PKG_VERSION") == "0.9.0" {
         migrate_release_0_9(conn).expect("release 0.9 migration should succeed");
     }

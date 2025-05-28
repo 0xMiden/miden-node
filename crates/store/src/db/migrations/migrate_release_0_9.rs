@@ -93,55 +93,49 @@ pub fn migrate_account_root(conn: &mut Connection) -> anyhow::Result<()> {
 /// because the way the note details are stored in the db changed in v0.9.
 pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
     let transaction = conn.transaction().unwrap();
-    // in the sql migration the details are migrated to the assets column, so we read them from
-    // there
-    let mut stmt = transaction.prepare_cached(
-        "SELECT note_id, details
-        FROM notes_new
-        WHERE details IS NOT NULL
-        AND assets IS NULL
-        AND inputs IS NULL
+    {
+        // in the sql migration the details are migrated to the assets column, so we read them from
+        // there
+        let mut stmt = transaction.prepare_cached(
+            "SELECT note_id, assets
+        FROM notes
+        WHERE inputs IS NULL
         AND script_root IS NULL
         AND serial_num IS NULL",
-    )?;
-    let mut rows = stmt.query([])?;
-
-    while let Some(row) = rows.next()? {
-        let note_id = row.get_ref(0)?.as_blob()?;
-        let note_details = row.get_ref(1)?.as_blob()?;
-
-        let note_details = NoteDetails::read_from_bytes(note_details)?;
-
-        let note_assets = note_details.assets().to_bytes();
-        let note_inputs = note_details.inputs().to_bytes();
-        let note_script_root = note_details.script().root().to_bytes();
-        let note_serial_num = note_details.serial_num().to_bytes();
-
-        // add the script to the note_scripts table
-        let mut stmt = transaction
-            .prepare_cached("INSERT INTO note_scripts (script_root, script) VALUES (?, ?)")?;
-        stmt.execute(params![note_script_root, note_details.script().to_bytes()])?;
-
-        // add the details to the notes table
-        let mut stmt = transaction.prepare_cached(
-            "UPDATE notes_new SET assets = ?, inputs = ?, script_root = ?, serial_num = ? WHERE note_id = ?",
         )?;
-        stmt.execute(params![
-            note_assets,
-            note_inputs,
-            note_script_root,
-            note_serial_num,
-            note_id
-        ])?;
+        let mut rows = stmt.query([])?;
+
+        while let Some(row) = rows.next()? {
+            let note_id = row.get_ref(0)?.as_blob()?;
+            let note_details = row.get_ref(1)?.as_blob()?;
+
+            let note_details = NoteDetails::read_from_bytes(note_details)?;
+
+            let note_assets = note_details.assets().to_bytes();
+            let note_inputs = note_details.inputs().to_bytes();
+            let note_script_root = note_details.script().root().to_bytes();
+            let note_serial_num = note_details.serial_num().to_bytes();
+
+            // add the script to the note_scripts table
+            let mut stmt = transaction
+                .prepare_cached("INSERT INTO note_scripts (script_root, script) VALUES (?, ?)")?;
+            stmt.execute(params![note_script_root, note_details.script().to_bytes()])?;
+
+            // add the details to the notes table
+            let mut stmt = transaction.prepare_cached(
+            "UPDATE notes SET assets = ?, inputs = ?, script_root = ?, serial_num = ? WHERE note_id = ?",
+        )?;
+            stmt.execute(params![
+                note_assets,
+                note_inputs,
+                note_script_root,
+                note_serial_num,
+                note_id
+            ])?;
+        }
     }
 
-    // drop the old table and rename the new one
-    let mut stmt = transaction.prepare_cached("DROP TABLE notes")?;
-    stmt.execute([])?;
-    let mut stmt = transaction.prepare_cached("ALTER TABLE notes_new RENAME TO notes")?;
-    stmt.execute([])?;
-    let mut stmt = transaction.prepare_cached("ALTER TABLE notes_new DROP COLUMN details")?;
-    stmt.execute([])?;
+    transaction.commit()?;
 
     Ok(())
 }

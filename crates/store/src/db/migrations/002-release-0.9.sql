@@ -25,7 +25,6 @@ CREATE TABLE notes_new (
     merkle_path    BLOB    NOT NULL,
     consumed       INTEGER NOT NULL, -- boolean
     nullifier      BLOB,             -- Only known for public notes, null for private notes
-    details        BLOB,             -- Temporary column for the migration
     assets         BLOB,
     inputs         BLOB,
     script_root    BLOB,
@@ -40,23 +39,27 @@ CREATE TABLE notes_new (
     CONSTRAINT notes_consumed_is_bool CHECK (execution_mode BETWEEN 0 AND 1),
     CONSTRAINT notes_batch_index_is_u32 CHECK (batch_index BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_note_index_is_u32 CHECK (note_index BETWEEN 0 AND 0xFFFFFFFF)
-) STRICT;
+);
 
 -- Copy data from the old notes table to the new one
 INSERT INTO notes_new (
     block_num, batch_index, note_index, note_id, note_type, sender, tag,
     execution_mode, aux, execution_hint, merkle_path, consumed, nullifier,
-    details, assets, inputs, script_root, serial_num
+    assets, inputs, script_root, serial_num
 )
 SELECT 
     block_num, batch_index, note_index, note_id, note_type, sender, tag,
     execution_mode, aux, execution_hint, merkle_path, consumed, nullifier,
-    details, NULL, NULL, NULL, NULL
+    details, NULL, NULL, NULL
 FROM notes;
 
+-- Swap the old notes table with the new one
+DROP TABLE notes;
+ALTER TABLE notes_new RENAME TO notes;
+
 -- Recreate indexes
-CREATE INDEX idx_new_notes_note_id ON notes_new(note_id);
-CREATE INDEX idx_new_notes_sender ON notes_new(sender, block_num);
-CREATE INDEX idx_new_notes_tag ON notes_new(tag, block_num);
-CREATE INDEX idx_new_notes_nullifier ON notes_new(nullifier);
-CREATE INDEX idx_new_unconsumed_network_notes ON notes_new(execution_mode, consumed);
+CREATE INDEX idx_notes_note_id ON notes(note_id);
+CREATE INDEX idx_notes_sender ON notes(sender, block_num);
+CREATE INDEX idx_notes_tag ON notes(tag, block_num);
+CREATE INDEX idx_notes_nullifier ON notes(nullifier);
+CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed);

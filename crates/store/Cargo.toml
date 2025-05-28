@@ -16,14 +16,14 @@ workspace = true
 
 [dependencies]
 anyhow             = { workspace = true }
-deadpool           = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
+deadpool           = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12.2" }
 deadpool-sync      = { version = "0.1" }
-hex                = { version = "0.4" }
+hex                = { version = "0.4.3" }
 miden-lib          = { workspace = true }
 miden-node-proto   = { workspace = true }
 miden-node-utils   = { workspace = true }
 miden-objects      = { workspace = true }
-rusqlite           = { features = ["array", "buildtime_bindgen", "bundled"], version = "0.35" }
+rusqlite           = { features = ["array", "bundled"], version = "0.35" }
 rusqlite_migration = { version = "2.1" }
 thiserror          = { workspace = true }
 tokio              = { features = ["fs", "macros", "net", "rt-multi-thread"], workspace = true }
@@ -40,4 +40,4 @@ miden-node-utils      = { features = ["tracing-forest"], workspace = true }
 miden-objects         = { features = ["testing"], workspace = true }
 rand                  = { version = "0.9" }
 regex                 = { version = "1.11" }
-termtree              = { version = "0.5" }
+termtree              = { version = "0.5.1" }

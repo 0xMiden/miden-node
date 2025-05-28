@@ -27,14 +27,13 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     db::{
-        migration::apply_migrations,
+        migrations::apply_migrations,
         pool_manager::{Pool, SqlitePoolManager},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
     genesis::GenesisBlock,
 };
 
-mod migration;
 mod migrations;
 #[macro_use]
 mod sql;

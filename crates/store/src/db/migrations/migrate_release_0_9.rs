@@ -2,7 +2,7 @@ use miden_objects::{
     Digest,
     account::AccountId,
     block::{AccountTree, BlockHeader},
-    note::NoteDetails,
+    note::{Note, NoteDetails},
     utils::{Deserializable, Serializable},
 };
 use rusqlite::{Connection, params};
@@ -98,29 +98,33 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
         // there
         let mut stmt = transaction.prepare_cached(
             "SELECT note_id, assets
-        FROM notes
-        WHERE inputs IS NULL
-        AND script_root IS NULL
-        AND serial_num IS NULL 
-        AND assets IS NOT NULL",
+            FROM notes
+            WHERE inputs IS NULL
+            AND script_root IS NULL
+            AND serial_num IS NULL 
+            AND assets IS NOT NULL
+            AND note_type = 1",
         )?;
         let mut rows = stmt.query([])?;
 
         while let Some(row) = rows.next()? {
             let note_id = row.get_ref(0)?.as_blob()?;
-            let note_details = row.get_ref(1)?.as_blob()?;
+            let note = row.get_ref(1)?.as_blob_or_null()?;
+            let Some(note) = note else {
+                // if the note has no details, we skip it
+                continue;
+            };
+            let note: Note = Deserializable::read_from_bytes(note)?;
 
-            let note_details = NoteDetails::read_from_bytes(note_details)?;
-
-            let note_assets = note_details.assets().to_bytes();
-            let note_inputs = note_details.inputs().to_bytes();
-            let note_script_root = note_details.script().root().to_bytes();
-            let note_serial_num = note_details.serial_num().to_bytes();
+            let note_assets = note.assets().to_bytes();
+            let note_inputs = note.inputs().to_bytes();
+            let note_script_root = note.script().root().to_bytes();
+            let note_serial_num = note.serial_num().to_bytes();
 
             // add the script to the note_scripts table
             let mut stmt = transaction
                 .prepare_cached("INSERT INTO note_scripts (script_root, script) VALUES (?, ?)")?;
-            stmt.execute(params![note_script_root, note_details.script().to_bytes()])?;
+            stmt.execute(params![note_script_root, note.script().to_bytes()])?;
 
             // add the details to the notes table
             let mut stmt = transaction.prepare_cached(

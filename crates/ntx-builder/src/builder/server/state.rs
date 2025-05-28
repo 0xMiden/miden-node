@@ -105,10 +105,10 @@ impl PendingNotes {
                     .expect("note must be on the map if nullifier was found")
                     .metadata()
                     .tag();
-
-                let bucket =
-                    self.by_tag.get_mut(&tag).expect("any tracked note is in the by_tag map");
-                bucket.retain(|&x| x != id);
+                // The bucket may have been pruned already, so check before
+                if let Some(bucket) = self.by_tag.get_mut(&tag) {
+                    bucket.retain(|&x| x != id);
+                }
                 self.prune_map_if_empty(tag);
             }
         }
@@ -180,17 +180,24 @@ mod tests {
             Note, NoteAssets, NoteExecutionMode, NoteInputs, NoteMetadata, NoteRecipient,
             NoteScript,
         },
-        testing::account_id::ACCOUNT_ID_PRIVATE_SENDER,
+        testing::account_id::{ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_SENDER},
     };
     use rand::{Rng, rng};
 
     use super::*;
 
-    fn mock_note(tag_suffix: u16) -> NetworkNote {
+    /// Creates a note for a network account with a 30-bit prefix based on the input.
+    fn mock_note(account_id_diff: u32) -> NetworkNote {
         let metadata = NoteMetadata::new(
             ACCOUNT_ID_PRIVATE_SENDER.try_into().unwrap(),
             miden_objects::note::NoteType::Public,
-            NoteTag::for_public_use_case(0, tag_suffix, NoteExecutionMode::Network).unwrap(),
+            NoteTag::from_account_id(
+                (ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET + (u128::from(account_id_diff) << 99))
+                    .try_into()
+                    .unwrap(),
+                NoteExecutionMode::Network,
+            )
+            .unwrap(),
             miden_objects::note::NoteExecutionHint::Always,
             Felt::new(0),
         )

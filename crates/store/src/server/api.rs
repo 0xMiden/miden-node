@@ -342,18 +342,18 @@ impl api_server::Api for StoreApi {
         request: Request<GetNetworkAccountDetailsByPrefixRequest>,
     ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
         let request = request.into_inner();
+
         // Validate that the call is for a valid network account prefix
         let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
             Status::invalid_argument(format!(
                 "request does not contain a valid network account prefix: {err}"
             ))
         })?;
-
-        let account_info: AccountInfo =
-            self.state.get_account_details_by_prefix(prefix.inner()).await?;
+        let account_info: Option<AccountInfo> =
+            self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
 
         Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
-            details: Some((&account_info).into()),
+            details: account_info.map(|acc| (&acc).into()),
         }))
     }
 

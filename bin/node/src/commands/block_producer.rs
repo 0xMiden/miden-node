@@ -25,7 +25,7 @@ pub enum BlockProducerCommand {
 
         /// The network transaction builder's gRPC url.
         #[arg(long = "ntx-builder.url", env = ENV_NTX_BUILDER_URL)]
-        ntx_builder_url: Url,
+        ntx_builder_url: Option<Url>,
 
         /// The remote batch prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
@@ -92,8 +92,12 @@ impl BlockProducerCommand {
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
         let ntx_builder_address = ntx_builder_url
-            .to_socket()
-            .context("Failed to extract socket address from network transaction builder URL")?;
+            .map(|url| {
+                url.to_socket().context(
+                    "Failed to extract socket address from network transaction builder URL",
+                )
+            })
+            .transpose()?;
 
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;

@@ -21,6 +21,7 @@
 - Block producer now emits network note information (#833).
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
+- Added options for configuring NTB in `bundled` command (#884).
 - Proof-of-Work difficulty is now adjusted based on the number of concurrent requests (#865).
 
 ## v0.8.2 (2025-05-04)

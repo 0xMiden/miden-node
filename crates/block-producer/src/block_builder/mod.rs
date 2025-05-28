@@ -49,7 +49,7 @@ pub struct BlockBuilder {
     //
     // This client is used to submit network notes and transaction updates to the network
     // transaction builder.
-    pub ntx_builder: NtxClient,
+    pub ntx_builder: Option<NtxClient>,
 }
 
 impl BlockBuilder {
@@ -58,7 +58,7 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
-        ntx_builder: NtxClient,
+        ntx_builder: Option<NtxClient>,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -291,30 +291,33 @@ impl BlockBuilder {
                 .reverted_transactions
                 .into_iter()
                 .map(|tx| (tx, TransactionStatus::Reverted));
-            self.ntx_builder
-                .clone()
-                .update_transaction_status(committed.chain(reverted))
-                .await
-                .context("submitting transaction status updates to network transaction builder")?;
+
+            if let Some(mut ntb_client) = self.ntx_builder.clone() {
+                ntb_client.update_transaction_status(committed.chain(reverted)).await.context(
+                    "submitting transaction status updates to network transaction builder",
+                )?;
+            }
         }
 
         if !delta.committed_network_notes.is_empty() {
-            self.ntx_builder
-                .clone()
-                .submit_network_notes(
-                    // TODO: using default here until there is a good reason not to
-                    TransactionId::new(
-                        Digest::default(),
-                        Digest::default(),
-                        Digest::default(),
-                        Digest::default(),
-                    ),
-                    delta.committed_network_notes.into_iter(),
-                )
-                .await
-                .context(
-                    "failed to submit newly committed notes to the network transaction builder",
-                )?;
+            if let Some(ntb_client) = self.ntx_builder.clone() {
+                ntb_client
+                    .clone()
+                    .submit_network_notes(
+                        // TODO: using default here until there is a good reason not to
+                        TransactionId::new(
+                            Digest::default(),
+                            Digest::default(),
+                            Digest::default(),
+                            Digest::default(),
+                        ),
+                        delta.committed_network_notes.into_iter(),
+                    )
+                    .await
+                    .context(
+                        "failed to submit newly committed notes to the network transaction builder",
+                    )?;
+            }
         }
 
         Ok(())

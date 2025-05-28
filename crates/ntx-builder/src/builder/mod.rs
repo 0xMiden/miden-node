@@ -34,7 +34,7 @@ use tokio::{
 };
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
-use tracing::{Instrument, Span, debug, error, info, instrument, warn};
+use tracing::{Instrument, Span, debug, error, info, info_span, instrument, warn};
 use url::Url;
 
 use crate::COMPONENT;
@@ -87,7 +87,7 @@ pub struct NetworkTransactionBuilder {
     /// which is undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
-    pub ticker_interval_ms: u64,
+    pub ticker_interval: Duration,
     /// Capacity of the in-memory account cache for the executor's data store.
     pub account_cache_capacity: NonZeroUsize,
 }
@@ -151,7 +151,7 @@ impl NetworkTransactionBuilder {
         let store_url = self.store_url.clone();
         let block_addr = self.block_producer_address;
         let prover_addr = self.tx_prover_url.clone();
-        let ticker_interval_ms = self.ticker_interval_ms;
+        let ticker_interval = self.ticker_interval;
 
         spawn_blocking(move || {
             let rt = RtBuilder::new_current_thread()
@@ -160,14 +160,14 @@ impl NetworkTransactionBuilder {
                 .context("failed to build runtime")?;
 
             rt.block_on(async move {
-                info!(target: COMPONENT, "Spawned NTB ticker (ticks every {} ms)", &ticker_interval_ms);
+                info!(target: COMPONENT, "Spawned NTB ticker (ticks every {} ms)", &ticker_interval.as_millis());
                 let store = StoreClient::new(&store_url);
                 let data_store = Arc::new(NtxBuilderDataStore::new(store).await?);
                 let tx_executor = TransactionExecutor::new(data_store.clone(), None);
                 let tx_prover = NtbTransactionProver::from(prover_addr);
                 let block_prod = BlockProducerClient::new(block_addr);
 
-                let mut interval = time::interval(Duration::from_millis(ticker_interval_ms));
+                let mut interval = time::interval(ticker_interval);
 
                 loop {
                     interval.tick().await;
@@ -182,7 +182,7 @@ impl NetworkTransactionBuilder {
                     .await;
 
                     if let Err(e) = result {
-                        error!(target: COMPONENT,err=%e, "Error while preparing transaction");
+                        error!(target: COMPONENT,err=%e, "Error preparing transaction");
                     }
                 }
             })
@@ -197,7 +197,7 @@ impl NetworkTransactionBuilder {
     ///   - If the executor account is not found, the notes are **discarded** and note requeued.
     /// - Executes, proves and submits a network transaction.
     /// - After executing, updates the account cache with the new account state and any notes that
-    /// were note used are requeued
+    ///   were note used are requeued
     ///
     /// A failure on the second stage will result in the transaction being rolled back.
     ///
@@ -213,8 +213,7 @@ impl NetworkTransactionBuilder {
     /// # Errors
     ///
     /// - Returns an error only when the preflight stage errors. On the execution stage, errors are
-    /// logged and the transaction gets rolled back.
-    #[instrument(parent = None,target = COMPONENT, name = "ntx_builder.build_network_tx", skip_all)]
+    ///   logged and the transaction gets rolled back.
     async fn build_network_tx(
         api_state: &SharedPendingNotes,
         tx_executor: &TransactionExecutor,
@@ -224,7 +223,7 @@ impl NetworkTransactionBuilder {
     ) -> Result<(), NtxBuilderError> {
         // Preflight: Look for next account and blockchain data, and select notes
         let Some(tx_request) = Self::select_next_tx(api_state, data_store).await? else {
-            debug!(target: COMPONENT, "No transactions available, returning.");
+            debug!(target: COMPONENT, "No notes for existing network accounts found, returning.");
             return Ok(());
         };
 
@@ -271,7 +270,6 @@ impl NetworkTransactionBuilder {
     ///
     /// If this function errors, the notes are effectively discarded because [`Self::rollback_tx()`]
     /// is not called.
-    #[instrument(target = COMPONENT, name = "ntx_builder.select_next_batch", skip_all, err)]
     async fn select_next_tx(
         api_state: &SharedPendingNotes,
         data_store: &Arc<NtxBuilderDataStore>,
@@ -280,12 +278,17 @@ impl NetworkTransactionBuilder {
             return Ok(None);
         };
 
-        Span::current().set_attribute("ntx.tag", tag.inner());
+        let span = info_span!("ntx_builder.select_next_batch");
+        span.set_attribute("ntx.tag", tag.inner());
 
         let block_num = Self::prepare_blockchain_data(data_store).await?;
         let account_id = Self::get_account_for_ntx(data_store, tag).await?;
 
-        Ok(Some(NetworkTransactionRequest::new(account_id, block_num, notes)))
+        match account_id {
+            Some(id) => Ok(Some(NetworkTransactionRequest::new(id, block_num, notes))),
+            // No network account found for note tag, discard (notes are not requeued)
+            None => Ok(None),
+        }
     }
 
     /// Updates the partial blockchain and latest header within the datastore.
@@ -301,14 +304,15 @@ impl NetworkTransactionBuilder {
     async fn get_account_for_ntx(
         data_store: &Arc<NtxBuilderDataStore>,
         tag: NoteTag,
-    ) -> Result<AccountId, NtxBuilderError> {
+    ) -> Result<Option<AccountId>, NtxBuilderError> {
         let account = data_store.get_cached_acc_or_fetch_by_tag(tag).await?;
 
         let Some(account) = account else {
-            return Err(NtxBuilderError::AccountNotFound(tag));
+            warn!(target: COMPONENT, "Network account details for tag {tag} not found in the store");
+            return Ok(None);
         };
 
-        Ok(account.id())
+        Ok(Some(account.id()))
     }
 
     /// Filters the [`NetworkTransactionRequest`]'s notes by making one consumption check against
@@ -438,8 +442,6 @@ impl NetworkTransactionBuilder {
 
 #[derive(Debug, Error)]
 pub enum NtxBuilderError {
-    #[error("account for tag {0} not found in the cache nor the store")]
-    AccountNotFound(NoteTag),
     #[error("account cache update error")]
     AccountCacheUpdateFailed(#[from] AccountError),
     #[error("store error")]

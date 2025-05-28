@@ -1,8 +1,10 @@
+use miden_lib::utils::{ByteReader, ReadAdapter, SliceReader, ToHex};
 use miden_objects::{
-    Digest,
+    Digest, MastForest, MastNodeId,
     account::AccountId,
+    asset::{Asset, FungibleAsset},
     block::{AccountTree, BlockHeader},
-    note::{Note, NoteDetails},
+    note::{Note, NoteAssets, NoteDetails, NoteHeader, NoteMetadata, NoteRecipient, NoteScript},
     utils::{Deserializable, Serializable},
 };
 use rusqlite::{Connection, params};
@@ -109,12 +111,38 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
 
         while let Some(row) = rows.next()? {
             let note_id = row.get_ref(0)?.as_blob()?;
-            let note = row.get_ref(1)?.as_blob_or_null()?;
-            let Some(note) = note else {
-                // if the note has no details, we skip it
-                continue;
-            };
-            let note: Note = Deserializable::read_from_bytes(note)?;
+            let details_data = row.get_ref(1)?.as_blob_or_null()?.unwrap();
+            let details = <Vec<u8>>::read_from_bytes(details_data).unwrap();
+            let mut byte_reader = SliceReader::new(&details);
+
+            // 40 bytes metadata
+            let metadata = NoteMetadata::read_from(&mut byte_reader).unwrap();
+            dbg!(metadata.to_bytes().to_hex_with_prefix());
+
+            // details: 192 bytes = 56 bytes assets + 136 bytes recipient
+            // let d = NoteDetails::read_from_bytes(&details[32..]).unwrap();
+
+            // assets: 56 bytes = 1 byte count + 40 byte assets * COUNT
+            let assets_count = byte_reader.read_u8().unwrap();
+            dbg!(assets_count); // should be 1
+
+            // each fungible asset is 23 bytes
+            // let assets = Vec::<Asset>::read_from_bytes(&details[33..56]).unwrap();
+            let mut assets = Vec::new();
+            for _ in 0..assets_count {
+                let a = FungibleAsset::read_from(&mut byte_reader).unwrap();
+                assets.push(Asset::Fungible(a));
+            }
+
+            let note_assets = NoteAssets::new(assets).unwrap();
+
+            let mast = MastForest::read_from(&mut byte_reader).unwrap();
+            let entrypoint =
+                MastNodeId::from_u32_safe(byte_reader.read_u32().unwrap(), &mast).unwrap();
+
+            let recipient = NoteRecipient::read_from(&mut byte_reader).unwrap();
+
+            let note = Note::read_from(&mut byte_reader).unwrap();
 
             let note_assets = note.assets().to_bytes();
             let note_inputs = note.inputs().to_bytes();

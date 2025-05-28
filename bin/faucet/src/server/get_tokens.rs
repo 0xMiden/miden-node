@@ -19,10 +19,11 @@ use miden_objects::{AccountIdError, account::AccountId};
 use serde::Deserialize;
 use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
-use tracing::error;
+use tracing::{error, instrument};
 
 use super::{Server, pow::PowParameters};
 use crate::{
+    COMPONENT,
     faucet::MintRequest,
     types::{AssetOptions, NoteType},
 };
@@ -147,6 +148,7 @@ impl RawMintRequest {
     ///   - the `PoW` server signature does not match
     ///   - the `PoW` server timestamp is expired
     ///   - the `PoW` challenge is invalid or expired
+    #[instrument(target = COMPONENT, name = "faucet.server.validate", skip_all)]
     fn validate(self, server: &Server) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
@@ -209,6 +211,14 @@ impl Drop for ActiveRequestGuard {
     }
 }
 
+#[instrument(
+    parent = None, target = COMPONENT, name = "faucet.server.get_tokens", skip_all,
+    fields(
+        account_id = %request.account_id,
+        is_private_note = %request.is_private_note,
+        asset_amount = %request.asset_amount,
+    )
+)]
 pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,

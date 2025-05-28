@@ -101,7 +101,8 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
         FROM notes
         WHERE inputs IS NULL
         AND script_root IS NULL
-        AND serial_num IS NULL",
+        AND serial_num IS NULL 
+        AND assets IS NOT NULL",
         )?;
         let mut rows = stmt.query([])?;
 

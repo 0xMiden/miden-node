@@ -48,7 +48,7 @@ miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["testing"], workspace = true }
 miden-objects         = { features = ["testing"], workspace = true }
 miden-tx              = { features = ["testing"], workspace = true }
-pretty_assertions     = "1.4"
+pretty_assertions     = "1.4.1"
 rand_chacha           = { default-features = false, version = "0.9" }
 serial_test           = "3.2"
 tempfile              = { version = "3.20" }

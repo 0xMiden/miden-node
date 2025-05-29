@@ -85,6 +85,7 @@ impl RpcService {
 #[tonic::async_trait]
 impl api_server::Api for RpcService {
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.check_nullifiers",
         skip_all,
@@ -108,6 +109,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.check_nullifiers_by_prefix",
         skip_all,
@@ -124,6 +126,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_header_by_number",
         skip_all,
@@ -140,6 +143,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_state",
         skip_all,
@@ -156,6 +160,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_notes",
         skip_all,
@@ -172,6 +177,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_notes_by_id",
         skip_all,
@@ -193,7 +199,7 @@ impl api_server::Api for RpcService {
         self.store.clone().get_notes_by_id(request).await
     }
 
-    #[instrument(target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
     async fn submit_proven_transaction(
         &self,
         request: Request<SubmitProvenTransactionRequest>,
@@ -231,6 +237,7 @@ impl api_server::Api for RpcService {
 
     /// Returns details for public (public) account by id.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_details",
         skip_all,
@@ -256,6 +263,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_by_number",
         skip_all,
@@ -274,6 +282,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_state_delta",
         skip_all,
@@ -292,6 +301,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_proofs",
         skip_all,
@@ -323,6 +333,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.status",
         skip_all,

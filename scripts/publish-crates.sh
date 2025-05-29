@@ -12,9 +12,8 @@ set -e
 credentials=~/.cargo/credentials.toml
 if [ ! -f "$credentials" ]; then
     red="\033[0;31m"
-    echo "${red}Error: $credentials not found.
-see https://doc.rust-lang.org/cargo/reference/publishing.html."
-    exit 1
+    echo "${red}WARNING: $credentials not found. See https://doc.rust-lang.org/cargo/reference/publishing.html."
+    echo "\033[0m"
 fi
 
 # Checkout
@@ -28,10 +27,10 @@ crates=(
 miden-node-utils
 miden-node-proto-build
 miden-node-proto
-miden-node-rpc
 miden-node-store
 miden-node-block-producer
 miden-node-ntx-builder
+miden-node-rpc
 miden-node
 miden-faucet
 )

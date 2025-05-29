@@ -22,46 +22,47 @@ pub fn migrate_release_0_9(conn: &mut Connection) -> anyhow::Result<()> {
 fn migrate_account_codes(conn: &mut Connection) -> anyhow::Result<()> {
     let transaction = conn.transaction().unwrap();
     {
-        let mut stmt = transaction.prepare_cached("SELECT details FROM accounts")?;
+        let mut stmt =
+            transaction.prepare_cached("SELECT details FROM accounts WHERE details IS NOT NULL")?;
         let mut rows = stmt.query([])?;
 
         while let Some(data) = rows.next()? {
-            let data = data.get_ref(0)?.as_blob_or_null()?;
-            if let Some(public_details) = data {
-                let mut reader = SliceReader::new(public_details);
-                let id = AccountId::read_from(&mut reader)?;
-                let vault = AssetVault::read_from(&mut reader)?;
-                let storage = AccountStorage::read_from(&mut reader)?;
+            let public_details = data.get_ref(0)?.as_blob()?;
+            let mut reader = SliceReader::new(public_details);
+            let id = AccountId::read_from(&mut reader)?;
+            let vault = AssetVault::read_from(&mut reader)?;
+            let storage = AccountStorage::read_from(&mut reader)?;
 
-                let mut buffer: Vec<u8> = vec![];
-                while reader.has_more_bytes() {
-                    buffer.push(reader.read_u8()?);
-                }
-
-                let module = if let Err(_) = MastForest::read_from(&mut SliceReader::new(&buffer)) {
-                    // try old version
-                    read_from_old(&mut reader)?
-                } else {
-                    // was already converted
-                    continue;
-                };
-                let module = Arc::new(MastForest::read_from_bytes(&module.to_bytes())?);
-                let num_procedures = (reader.read_u8()? as usize) + 1;
-                let procedures = reader.read_many::<AccountProcedureInfo>(num_procedures)?;
-
-                let code = AccountCode::from_parts(module, procedures);
-
-                let nonce = Felt::read_from(&mut reader)?;
-
-                let account = Account::from_parts(id, vault, storage, code, nonce);
-
-                let mut stmt = transaction
-                    .prepare_cached("UPDATE accounts SET details = ? WHERE account_id=?")?;
-
-                let result =
-                    stmt.execute(params![Some(account.to_bytes()), account.id().to_bytes()])?;
-                println!("updated {result} account (id {})", account.id());
+            let mut buffer: Vec<u8> = vec![];
+            while reader.has_more_bytes() {
+                buffer.push(reader.read_u8()?);
             }
+            let mut reader_for_0_8 = SliceReader::new(&buffer);
+            let mut reader = SliceReader::new(&buffer);
+
+            let module = if let Err(_) = MastForest::read_from(&mut reader_for_0_8) {
+                // try old version
+                read_from_old(&mut reader)?
+            } else {
+                // was already converted
+                continue;
+            };
+            let module = Arc::new(MastForest::read_from_bytes(&module.to_bytes())?);
+            let num_procedures = (reader.read_u8()? as usize) + 1;
+            let procedures = reader.read_many::<AccountProcedureInfo>(num_procedures)?;
+
+            let code = AccountCode::from_parts(module, procedures);
+
+            let nonce = Felt::read_from(&mut reader)?;
+
+            let account = Account::from_parts(id, vault, storage, code, nonce);
+
+            let mut stmt =
+                transaction.prepare_cached("UPDATE accounts SET details = ? WHERE account_id=?")?;
+
+            let result =
+                stmt.execute(params![Some(account.to_bytes()), account.id().to_bytes()])?;
+            println!("updated {result} account (id {})", account.id());
         }
     }
 

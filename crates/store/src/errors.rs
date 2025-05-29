@@ -118,9 +118,6 @@ pub enum GenesisError {
     // ---------------------------------------------------------------------------------------------
     #[error("database error")]
     Database(#[from] DatabaseError),
-    // TODO: Check if needed.
-    #[error("block error")]
-    Block,
     #[error("failed to build genesis account tree")]
     AccountTree(#[source] AccountTreeError),
     #[error("failed to deserialize genesis file")]

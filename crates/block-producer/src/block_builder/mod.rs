@@ -304,7 +304,6 @@ impl BlockBuilder {
                 ntb_client
                     .clone()
                     .submit_network_notes(
-                        // TODO: using default here until there is a good reason not to
                         TransactionId::new(
                             Digest::default(),
                             Digest::default(),

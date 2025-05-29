@@ -3,7 +3,6 @@ name: Publish Crates Dry Run
 on:
   push:
     branches: [main]
-  pull_request: # TODO: delete before merge
 
 permissions:
   contents: read

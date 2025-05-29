@@ -14,7 +14,6 @@
 - Added gRPC `/status` endpoint on all components (#817).
 - Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
-- Use `MockChain` instead of hardcoded BlockHeader (#864).
 
 ## v0.8.0 (2025-03-26)
 

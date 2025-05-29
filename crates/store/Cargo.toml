@@ -31,6 +31,7 @@ tokio-stream       = { features = ["net"], workspace = true }
 tonic              = { workspace = true }
 tower-http         = { features = ["util"], workspace = true }
 tracing            = { workspace = true }
+miden-core = {git="https://github.com/lambdaclass/miden-vm/", branch="tomasarrachea-notes-migration"}
 
 [dev-dependencies]
 assert_matches        = { workspace = true }

@@ -131,7 +131,7 @@ impl BlockBudget {
 pub struct SharedMempool(Arc<Mutex<Mempool>>);
 
 impl SharedMempool {
-    #[instrument(target = COMPONENT, name = "mempool.lock", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.lock", skip_all)]
     pub async fn lock(&self) -> MutexGuard<'_, Mempool> {
         self.0.lock().await
     }
@@ -213,7 +213,7 @@ impl Mempool {
     /// # Errors
     ///
     /// Returns an error if the transaction's initial conditions don't match the current state.
-    #[instrument(target = COMPONENT, name = "mempool.add_transaction", skip_all, fields(tx=%transaction.id()))]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.add_transaction", skip_all, fields(tx=%transaction.id()))]
     pub fn add_transaction(
         &mut self,
         transaction: AuthenticatedTransaction,
@@ -235,7 +235,7 @@ impl Mempool {
     /// Transactions are returned in a valid execution ordering.
     ///
     /// Returns `None` if no transactions are available.
-    #[instrument(target = COMPONENT, name = "mempool.select_batch", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.select_batch", skip_all)]
     pub fn select_batch(&mut self) -> Option<(BatchId, Vec<AuthenticatedTransaction>)> {
         let (batch, parents) = self.transactions.select_batch(self.batch_budget);
         if batch.is_empty() {
@@ -251,7 +251,7 @@ impl Mempool {
     /// Drops the failed batch and all of its descendants.
     ///
     /// Transactions are placed back in the queue.
-    #[instrument(target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
     pub fn rollback_batch(&mut self, batch: BatchId) {
         // Batch may already have been removed as part of a parent batches failure.
         if !self.batches.contains(&batch) {
@@ -275,7 +275,7 @@ impl Mempool {
     }
 
     /// Marks a batch as proven if it exists.
-    #[instrument(target = COMPONENT, name = "mempool.commit_batch", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.commit_batch", skip_all)]
     pub fn commit_batch(&mut self, batch: ProvenBatch) {
         // Batch may have been removed as part of a parent batches failure.
         if !self.batches.contains(&batch.id()) {
@@ -294,7 +294,7 @@ impl Mempool {
     /// # Panics
     ///
     /// Panics if there is already a block in flight.
-    #[instrument(target = COMPONENT, name = "mempool.select_block", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.select_block", skip_all)]
     pub fn select_block(&mut self) -> (BlockNumber, Vec<ProvenBatch>) {
         assert!(self.block_in_progress.is_none(), "Cannot have two blocks inflight.");
 
@@ -317,7 +317,7 @@ impl Mempool {
     /// # Panics
     ///
     /// Panics if there is no block in flight.
-    #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.commit_block", skip_all)]
     pub fn commit_block(&mut self) -> BTreeSet<TransactionId> {
         // Remove committed batches and transactions from graphs.
         let batches = self.block_in_progress.take().expect("No block in progress to commit");
@@ -350,7 +350,7 @@ impl Mempool {
     /// # Panics
     ///
     /// Panics if there is no block in flight.
-    #[instrument(target = COMPONENT, name = "mempool.rollback_block", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.rollback_block", skip_all)]
     pub fn rollback_block(&mut self) -> BTreeSet<TransactionId> {
         let batches = self.block_in_progress.take().expect("No block in progress to be failed");
 
@@ -376,7 +376,7 @@ impl Mempool {
 
     /// Gets all transactions that expire at the new chain tip and reverts them (and their
     /// descendants) from the mempool. Returns the set of transactions that were purged.
-    #[instrument(target = COMPONENT, name = "mempool.revert_expired_transactions", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.revert_expired_transactions", skip_all)]
     fn revert_expired_transactions(&mut self) -> BTreeSet<TransactionId> {
         let expired = self.expirations.get(self.chain_tip);
 
@@ -402,7 +402,7 @@ impl Mempool {
     ///
     /// Returns an error if any transaction was not in the transaction graph i.e. if the transaction
     /// is unknown.
-    #[instrument(target = COMPONENT, name = "mempool.revert_transactions", skip_all, fields(transactions.expired.ids))]
+    #[instrument(level = "debug", target = COMPONENT, name = "mempool.revert_transactions", skip_all, fields(transactions.expired.ids))]
     fn revert_transactions(
         &mut self,
         txs: Vec<TransactionId>,

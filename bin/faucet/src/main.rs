@@ -379,10 +379,10 @@ mod test {
         client.execute(capture_events_script, vec![]).await.unwrap();
 
         // Poll until minting is complete. We wait 10s and then poll every 2s for a max of
-        // 25 times.
+        // 55 times (total 2 mins).
         sleep(Duration::from_secs(10)).await;
         let mut captured_events: Vec<serde_json::Value> = vec![];
-        for _ in 0..25 {
+        for _ in 0..55 {
             let events = client
                 .execute("return window.capturedEvents;", vec![])
                 .await

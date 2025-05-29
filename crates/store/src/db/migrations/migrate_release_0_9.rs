@@ -40,7 +40,7 @@ fn migrate_account_codes(conn: &mut Connection) -> anyhow::Result<()> {
             let mut reader_for_0_8 = SliceReader::new(&buffer);
             let mut reader = SliceReader::new(&buffer);
 
-            let module = if let Err(_) = MastForest::read_from(&mut reader_for_0_8) {
+            let module = if MastForest::read_from(&mut reader_for_0_8).is_err() {
                 // try old version
                 read_from_old(&mut reader)?
             } else {

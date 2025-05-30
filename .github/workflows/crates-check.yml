@@ -3,6 +3,7 @@ name: Publish Crates Dry Run
 on:
   push:
     branches: [main]
+  pull_request: # TODO: remove before merge
 
 permissions:
   contents: read
@@ -15,4 +16,5 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Cargo Publish Dry Run
+        shell: bash
         run: ./scripts/publish-crates.sh --dry-run

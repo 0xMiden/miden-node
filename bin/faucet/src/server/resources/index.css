@@ -15,7 +15,6 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    justify-content: center;
     align-items: center;
     background-image: url(./background.png);
     background-repeat: no-repeat;
@@ -32,9 +31,6 @@ body {
 }
 
 #navbar {
-    position: fixed;
-    top: 0;
-    left: 0;
     background-color: rgb(17, 24, 39);
     width: 100%;
     padding: 18px;
@@ -59,6 +55,7 @@ body {
     padding: 45px;
     width: 450px;
     height: 450px;
+    scale: 0.90;
 }
 
 #subtitle {
@@ -145,7 +142,7 @@ body {
     background-color: rgb(17, 24, 39);
     border-radius: 10px;
     padding: 18px;
-    margin-top: 10px;
+    scale: 0.90;
 }
 
 #tx-link {

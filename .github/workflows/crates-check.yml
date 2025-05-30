@@ -16,4 +16,4 @@ jobs:
 
       - name: Cargo Publish Dry Run
         shell: bash
-        run: ./scripts/publish-crates.sh --dry-run
+        run: cargo +nightly -Z package-workspace publish --workspace --dry-run

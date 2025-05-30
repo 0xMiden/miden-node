@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # Script to publish all miden-node crates to crates.io.
 # Usage: ./publish-crates.sh [args]

@@ -52,20 +52,46 @@ pub struct FaucetConfig {
     pub rate_limiter: RateLimiterConfig,
 }
 
+/// Configuration for rate limiting requests to the faucet.
+///
+/// We have three rate limiters:
+///
+/// 1. IP-based rate limiting: restricts requests from the same IP address
+/// 2. Account-based rate limiting: restricts requests to `get_tokens` with the same account
+/// 3. API key-based rate limiting: restricts requests using the same API key
+///
+/// Each rate limiter uses a token bucket algorithm with two parameters:
+/// - `burst_size`: Maximum number of requests allowed in a burst before replenishment
+/// - `per_second`: Rate at which tokens are replenished (1 token per X seconds)
+///
+/// # Examples
+///
+/// With the default configuration:
+/// ```rust
+/// let config = RateLimiterConfig {
+///     ip_rate_limit_burst_size: 8,
+///     ip_rate_limit_per_second: 1,
+///     account_rate_limit_burst_size: 1,
+///     account_rate_limit_per_second: 10,
+///     api_key_rate_limit_burst_size: 3,
+///     api_key_rate_limit_per_second: 10,
+/// };
+/// ```
+///
+/// This means:
+/// - An IP can make up to 8 requests in quick succession, then must wait 1 second between requests
+/// - An account can make 1 request, then must wait 0.1 seconds (1/10 second) before the next
+///   request
+/// - An API key can make up to 3 requests in quick succession, then must wait 0.1 seconds between
+///   requests
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RateLimiterConfig {
-    /// Max burst of requests per IP
     pub ip_rate_limit_burst_size: u32,
-    /// Max requests per IP per second
     pub ip_rate_limit_per_second: u64,
-    /// Max burst of requests per account
     pub account_rate_limit_burst_size: u32,
-    /// Max requests per account per second
     pub account_rate_limit_per_second: u64,
-    /// Max burst of requests per API key
     pub api_key_rate_limit_burst_size: u32,
-    /// Max requests per API key per second
     pub api_key_rate_limit_per_second: u64,
 }
 

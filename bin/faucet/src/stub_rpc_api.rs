@@ -15,7 +15,7 @@ use miden_node_proto::generated::{
     },
     rpc::api_server,
 };
-use miden_testing::{Auth, MockChain};
+use miden_testing::MockChain;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
@@ -44,8 +44,7 @@ impl api_server::Api for StubRpcApi {
         &self,
         _request: Request<GetBlockHeaderByNumberRequest>,
     ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
-        let mut mock_chain = MockChain::new();
-        mock_chain.add_pending_new_faucet(Auth::BasicAuth, "USDT", 100_000);
+        let mock_chain = MockChain::new();
 
         let block_header = BlockHeader::from(mock_chain.latest_block_header()).into();
 

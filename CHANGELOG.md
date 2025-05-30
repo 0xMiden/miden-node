@@ -1,8 +1,12 @@
 # Changelog
 
-## v0.9.0 (2025-05-30)
+## Unreleased (TBD)
 
 ### Changes
+
+- Added configurable rate limiter settings for the faucet (#905).
+
+## v0.9.0 (2025-05-30)
 
 ### Enhancements
 

@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function showError(message) {
         errorMessage.textContent = message;
         errorMessage.style.visibility = 'visible';
+        info.style.visibility = 'hidden';
     }
 
     function hideError() {
@@ -84,10 +85,9 @@ document.addEventListener('DOMContentLoaded', function () {
         hideError();
 
         if (!validateAccountAddress(accountAddress)) {
+            setLoadingState(false);
             return;
         }
-
-        setLoadingState(true);
 
         // Check if SHA3 library is loaded
         if (typeof sha3_256 === 'undefined') {
@@ -98,9 +98,21 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // Get the pow seed, difficulty, and server signature
-        const powResponse = await fetch(window.location.href + 'pow', {
-            method: "GET"
-        });
+        let powResponse;
+        try {
+            powResponse = await fetch(window.location.href + 'pow', {
+                method: "GET"
+            });
+        } catch (error) {
+            showError('Connection failed.');
+            return;
+        }
+
+        if (!powResponse.ok) {
+            showError('Please try again soon.');
+            return;
+        }
+        setLoadingState(true);
 
         status.textContent = "Received Proof of Work challenge";
 
@@ -133,8 +145,8 @@ document.addEventListener('DOMContentLoaded', function () {
         evtSource.onerror = function (_) {
             // Either rate limit exceeded or invalid account id. The error event does not contain the reason.
             evtSource.close();
-            showError('Please try again soon.');
             setLoadingState(false);
+            showError('Please try again soon.');
         };
 
         evtSource.addEventListener("get-tokens-error", function (event) {
@@ -171,6 +183,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const blob = new Blob([byteArray], { type: 'application/octet-stream' });
                 downloadBlob(blob, 'note.mno');
+            } else {
+                importCommand.style.display = 'none';
             }
             txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
             txLink.textContent = data.transaction_id;

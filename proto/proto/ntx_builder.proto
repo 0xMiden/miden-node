@@ -8,8 +8,22 @@ import "google/protobuf/empty.proto";
 
 service Api {
     // Submit a list of network notes to the network transaction builder.
+    //
+    // When a block gets committed in the blockchain, the list of new network notes needs to be 
+    // submitted to the NTB through this endpoint in order for it to track them and eventually 
+    // consume them.
     rpc SubmitNetworkNotes(requests.SubmitNetworkNotesRequest) returns (google.protobuf.Empty) {}
 
     // Update network transaction builder with transaction status changes.
+    //
+    // Any transaction that has been either committed or reverted is communicated to the NTB so
+    // it can track the lifecycle of inflight transactions and notes correctly.
     rpc UpdateTransactionStatus(requests.UpdateTransactionStatusRequest) returns (google.protobuf.Empty) {}
+
+    // Update the status of network notes that were consumed externally.
+    //
+    // When a new transaction enters the mempool, the NTB needs to be notified of the nullifiers
+    // that this transaction consumes through this endpoint. This way, the NTB can discard
+    // nullified notes correctly.
+    rpc UpdateNetworkNotes(requests.UpdateNetworkNotesRequest) returns (google.protobuf.Empty) {}
 }

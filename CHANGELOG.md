@@ -1,6 +1,17 @@
 # Changelog
 
-## v0.9.0 (TBD)
+## v0.9.0 (2025-05-30)
+
+### Changes
+
+### Enhancements
+
+- Enabled running RPC component in `read-only` mode (#802).
+- Added gRPC `/status` endpoint on all components (#817).
+- Block producer now emits network note information (#833).
+- Introduced Network Transaction Builder (#840).
+- Added way of executing and proving network transactions (#841).
+- [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
 
 ### Changes
 
@@ -9,11 +20,31 @@
   - Data directory is no longer created but is instead expected to exist.
   - The genesis block can no longer be configured which also removes the `store dump-genesis` command.
 - [BREAKING] Use `AccountTree` and update account witness proto definitions (#783).
-- Enabled running RPC component in `read-only` mode (#802).
 - [BREAKING] Update name of `ChainMmr` to `PartialBlockchain` (#807).
-- Added gRPC `/status` endpoint on all components (#817).
 - Added `--enable-otel` and `MIDEN_FAUCET_ENABLE_OTEL` flag to faucet (#834).
-- [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
+- Faucet now supports the usage of a remote transaction prover (#830).
+- Added a required Proof-of-Work in the faucet to request tokens (#831).
+- Added an optional API key request parameter to skip PoW in faucet (#839).
+- Proof-of-Work difficulty is now adjusted based on the number of concurrent requests (#865).
+- Added options for configuring NTB in `bundled` command (#884).
+- [BREAKING] Updated MSRV to 1.87
+
+### Fixes
+
+- Prevents duplicated note IDs (#842).
+
+## v0.8.2 (2025-05-04)
+
+### Enhancements
+
+- gRPC error messages now include more context (#819).
+- Faucet now detects and recovers from state desync (#819).
+- Faucet implementation is now more robust (#819).
+- Faucet now supports TLS connection to the node RPC (#819).
+
+### Fixes
+
+- Faucet times out during high load (#819).
 
 ## v0.8.0 (2025-03-26)
 
@@ -36,7 +67,6 @@
 - Optimized database by adding missing indexes (#728).
 - Added support for `Content-type` header in `get_tokens` endpoint of the faucet (#754).
 - Block frequency is now configurable (#750).
-- Batch frequency is now configurable (#750).
 
 ### Changes
 

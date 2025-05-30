@@ -205,6 +205,13 @@ pub struct GetAccountDetailsResponse {
     #[prost(message, optional, tag = "1")]
     pub details: ::core::option::Option<super::account::AccountInfo>,
 }
+/// Represents the result of getting network account details by prefix.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetNetworkAccountDetailsByPrefixResponse {
+    /// Account info.
+    #[prost(message, optional, tag = "1")]
+    pub details: ::core::option::Option<super::account::AccountInfo>,
+}
 /// Represents the result of getting block by number.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetBlockByNumberResponse {
@@ -212,6 +219,14 @@ pub struct GetBlockByNumberResponse {
     /// \[miden_objects::block::Block\].
     #[prost(bytes = "vec", optional, tag = "1")]
     pub block: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
+/// TODO: comments
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetCurrentBlockchainDataResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub current_peaks: ::prost::alloc::vec::Vec<super::digest::Digest>,
+    #[prost(message, optional, tag = "2")]
+    pub current_block_header: ::core::option::Option<super::block::BlockHeader>,
 }
 /// Represents the result of getting account state delta.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -281,7 +296,7 @@ pub struct GetUnconsumedNetworkNotesResponse {
     pub next_token: ::core::option::Option<u64>,
     /// The list of unconsumed network notes.
     #[prost(message, repeated, tag = "2")]
-    pub notes: ::prost::alloc::vec::Vec<super::note::Note>,
+    pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
 }
 /// Represents the status of the node.
 #[derive(Clone, PartialEq, ::prost::Message)]

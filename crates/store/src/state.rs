@@ -27,7 +27,7 @@ use miden_objects::{
     },
     crypto::{
         hash::rpo::RpoDigest,
-        merkle::{Mmr, MmrDelta, MmrProof, PartialMmr, SmtProof},
+        merkle::{Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof},
     },
     note::{NoteDetails, NoteId, Nullifier},
     transaction::{OutputNote, PartialBlockchain},
@@ -45,8 +45,8 @@ use crate::{
     db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate},
     errors::{
         ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError,
-        GetBlockInputsError, InvalidBlockError, NoteSyncError, StateInitializationError,
-        StateSyncError,
+        GetBlockInputsError, GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError,
+        StateInitializationError, StateSyncError,
     },
 };
 // STRUCTURES
@@ -417,6 +417,34 @@ impl State {
         note_ids: Vec<NoteId>,
     ) -> Result<Vec<NoteRecord>, DatabaseError> {
         self.db.select_notes_by_id(note_ids).await
+    }
+
+    /// If the input block number is the current chain tip, `None` is returned.
+    /// Otherwise, gets the current chain tip's block header with its corresponding MMR peaks.
+    pub async fn get_current_blockchain_data(
+        &self,
+        block_num: Option<BlockNumber>,
+    ) -> Result<Option<(BlockHeader, MmrPeaks)>, GetCurrentBlockchainDataError> {
+        let blockchain = &self.inner.read().await.blockchain;
+        if let Some(number) = block_num {
+            if number == self.latest_block_num().await {
+                return Ok(None);
+            }
+        }
+
+        // SAFETY: `select_block_header_by_block_num` will always return `Some(chain_tip_header)`
+        // when `None` is passed
+        let block_header: BlockHeader = self
+            .db
+            .select_block_header_by_block_num(None)
+            .await
+            .map_err(GetCurrentBlockchainDataError::ErrorRetrievingBlockHeader)?
+            .unwrap();
+        let peaks = blockchain
+            .peaks_at(block_header.block_num())
+            .map_err(GetCurrentBlockchainDataError::InvalidPeaks)?;
+
+        Ok(Some((block_header, peaks)))
     }
 
     /// Fetches the inputs for a transaction batch from the database.
@@ -790,6 +818,14 @@ impl State {
     /// Returns details for public (on-chain) account.
     pub async fn get_account_details(&self, id: AccountId) -> Result<AccountInfo, DatabaseError> {
         self.db.select_account(id).await
+    }
+
+    /// Returns details for public (on-chain) network accounts.
+    pub async fn get_network_account_details_by_prefix(
+        &self,
+        id_prefix: u32,
+    ) -> Result<Option<AccountInfo>, DatabaseError> {
+        self.db.select_network_account_by_prefix(id_prefix).await
     }
 
     /// Returns account proofs with optional account and storage headers.

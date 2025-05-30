@@ -411,6 +411,25 @@ impl Db {
             })?
     }
 
+    /// Loads public account details from the DB based on the account ID's prefix.
+    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_network_account_by_prefix(
+        &self,
+        id_prefix: u32,
+    ) -> Result<Option<AccountInfo>> {
+        self.pool
+            .get()
+            .await?
+            .interact(move |conn| {
+                let transaction = conn.transaction()?;
+                sql::select_network_account_by_prefix(&transaction, id_prefix)
+            })
+            .await
+            .map_err(|err| {
+                DatabaseError::InteractError(format!("Get account details task failed: {err}"))
+            })?
+    }
+
     /// Loads public accounts details from the DB.
     #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_accounts_by_ids(

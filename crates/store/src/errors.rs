@@ -1,6 +1,7 @@
 use std::io;
 
 use deadpool::managed::PoolError;
+use miden_node_proto::domain::account::NetworkAccountError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
@@ -39,6 +40,8 @@ pub enum DatabaseError {
     MigrationError(#[from] rusqlite_migration::Error),
     #[error("missing database connection")]
     MissingDbConnection(#[from] PoolError<rusqlite::Error>),
+    #[error("network account error")]
+    NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
@@ -228,6 +231,14 @@ pub enum NoteSyncError {
     EmptyBlockHeadersTable,
     #[error("error retrieving the merkle proof for the block")]
     MmrError(#[from] MmrError),
+}
+
+#[derive(Error, Debug)]
+pub enum GetCurrentBlockchainDataError {
+    #[error("failed to retrieve block header")]
+    ErrorRetrievingBlockHeader(#[source] DatabaseError),
+    #[error("failed to instantiate MMR peaks")]
+    InvalidPeaks(MmrError),
 }
 
 #[derive(Error, Debug)]

@@ -133,10 +133,22 @@ message GetNotesByIdRequest {
     repeated digest.Digest note_ids = 1;
 }
 
+// Returns peaks for the given block number, or the chain tip if a block number not provided.
+message GetCurrentBlockchainDataRequest {
+    // Last client-known block number. If not specified, the latest header and peaks will be retrieved.
+    optional fixed32 block_num = 1;
+}
+
 // Returns the latest state of an account with the specified ID.
 message GetAccountDetailsRequest {
     // Account ID to get details.
     account.AccountId account_id = 1;
+}
+
+// Returns the latest state of a network account based on the account ID prefix.
+message GetNetworkAccountDetailsByPrefixRequest {
+    // Account ID prefix.
+    fixed32 account_id_prefix = 1;
 }
 
 // Retrieves block data by given block number.
@@ -210,7 +222,16 @@ message SubmitNetworkNotesRequest {
     digest.Digest transaction_id = 1;
 
     // The network notes to submit.
-    repeated note.Note note = 2;
+    repeated note.NetworkNote note = 2;
+}
+
+// Update the status of network notes that were consumed externally.
+message UpdateNetworkNotesRequest {    
+    // Id of the transaction that consumed the notes.
+    digest.Digest transaction_id = 1;
+
+    // The output nullifiers.
+    repeated digest.Digest nullifiers = 2;
 }
 
 // Update network transaction builder with transaction status changes.

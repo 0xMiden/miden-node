@@ -58,8 +58,9 @@ impl FaucetDataStore {
     }
 }
 
+#[async_trait::async_trait(?Send)]
 impl DataStore for FaucetDataStore {
-    fn get_transaction_inputs(
+    async fn get_transaction_inputs(
         &self,
         account_id: AccountId,
         _ref_blocks: BTreeSet<BlockNumber>,

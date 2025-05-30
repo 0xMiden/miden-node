@@ -35,7 +35,7 @@ mkdir accounts
 # implementation whose operation is described in a later section.
 miden-node bundled bootstrap \
   --data-directory data \
-  --accounts-directory accounts \
+  --accounts-directory accounts
 ```
 
 ## Operation

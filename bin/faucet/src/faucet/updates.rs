@@ -57,7 +57,6 @@ impl ClientUpdater {
 
 /// The different stages of the minting process.
 pub enum MintUpdate<'a> {
-    // TODO: add PoW verification event
     Built,
     Executed,
     Proven,

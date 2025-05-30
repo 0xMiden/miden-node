@@ -294,8 +294,7 @@ mod test {
     use url::Url;
 
     use crate::{
-        API_KEY_PREFIX, Cli, config::FaucetConfig, generate_api_key, run_faucet_command,
-        stub_rpc_api::serve_stub,
+        API_KEY_PREFIX, Cli, config::FaucetConfig, run_faucet_command, stub_rpc_api::serve_stub,
     };
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
@@ -423,13 +422,10 @@ mod test {
         let config_path = temp_dir().join("faucet.toml");
         let faucet_account_path = temp_dir().join("account.mac");
 
-        // We use an api key to avoid computation needed for pow
-        let api_key = generate_api_key();
         // Create config
         let config = FaucetConfig {
             node_url: stub_node_url,
             faucet_account_path: faucet_account_path.clone(),
-            api_keys: vec![api_key],
             ..FaucetConfig::default()
         };
         let config_as_toml_string = toml::to_string(&config).unwrap();

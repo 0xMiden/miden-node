@@ -17,9 +17,9 @@ if [ ! -f "$credentials" ]; then
 fi
 
 # Checkout
-echo "Checking out main branch..."
-git checkout main
-git pull origin main
+#echo "Checking out main branch..."
+#git checkout main
+#git pull origin main
 
 # Publish
 echo "Publishing crates..."

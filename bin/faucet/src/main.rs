@@ -326,6 +326,23 @@ mod test {
         // Verify all requests are successful
         assert!(failed_requests.as_array().unwrap().is_empty());
 
+        // Inject JavaScript to capture sse events
+        let capture_events_script = r"
+            window.capturedEvents = [];
+            const original = EventSource.prototype.addEventListener;
+            EventSource.prototype.addEventListener = function(type, listener) {
+                const wrappedListener = function(event) {
+                    window.capturedEvents.push({
+                        type: type,
+                        data: event.data
+                    });
+                    return listener(event);
+                };
+                return original.call(this, type, wrappedListener);
+            };
+        ";
+        client.execute(capture_events_script, vec![]).await.unwrap();
+
         // Fill in the account address
         client
             .find(fantoccini::Locator::Css("#account-address"))
@@ -359,23 +376,6 @@ mod test {
             .click()
             .await
             .unwrap();
-
-        // Inject JavaScript to capture sse events
-        let capture_events_script = r"
-            window.capturedEvents = [];
-            const original = EventSource.prototype.addEventListener;
-            EventSource.prototype.addEventListener = function(type, listener) {
-                const wrappedListener = function(event) {
-                    window.capturedEvents.push({
-                        type: type,
-                        data: event.data
-                    });
-                    return listener(event);
-                };
-                return original.call(this, type, wrappedListener);
-            };
-        ";
-        client.execute(capture_events_script, vec![]).await.unwrap();
 
         // Poll until minting is complete. We wait 10s and then poll every 2s for a max of
         // 55 times (total 2 mins).

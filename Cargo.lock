@@ -1952,6 +1952,7 @@ dependencies = [
  "miden-node-utils",
  "miden-objects",
  "miden-proving-service-client",
+ "miden-testing",
  "miden-tx",
  "rand 0.9.1",
  "rand_chacha 0.9.0",

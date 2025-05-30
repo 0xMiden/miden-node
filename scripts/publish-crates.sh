@@ -16,11 +16,6 @@ if [ ! -f "$credentials" ]; then
     echo "\033[0m"
 fi
 
-# Checkout
-#echo "Checking out main branch..."
-#git checkout main
-#git pull origin main
-
 # Publish
 echo "Publishing crates..."
 crates=(

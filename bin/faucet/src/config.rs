@@ -18,6 +18,16 @@ pub const DEFAULT_FAUCET_ACCOUNT_PATH: &str = "accounts/faucet.mac";
 /// Default timeout for RPC requests
 pub const DEFAULT_RPC_TIMEOUT_MS: u64 = 10000;
 
+/// Default rate limiter settings.
+/// Limits chosen somewhat arbitrarily, but we have five assets required to load the webpage.
+/// So allowing 8 in a burst seems okay.
+pub const DEFAULT_IP_RATE_LIMIT_BURST_SIZE: u32 = 8;
+pub const DEFAULT_IP_RATE_LIMIT_PER_SECOND: u64 = 1;
+pub const DEFAULT_ACCOUNT_RATE_LIMIT_BURST_SIZE: u32 = 1;
+pub const DEFAULT_ACCOUNT_RATE_LIMIT_PER_SECOND: u64 = 10;
+pub const DEFAULT_API_KEY_RATE_LIMIT_BURST_SIZE: u32 = 3;
+pub const DEFAULT_API_KEY_RATE_LIMIT_PER_SECOND: u64 = 10;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FaucetConfig {
@@ -38,6 +48,25 @@ pub struct FaucetConfig {
     pub pow_salt: String,
     /// List of API keys
     pub api_keys: Vec<String>,
+    /// Rate limiter configuration
+    pub rate_limiter: RateLimiterConfig,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RateLimiterConfig {
+    /// Max burst of requests per IP
+    pub ip_rate_limit_burst_size: u32,
+    /// Max requests per IP per second
+    pub ip_rate_limit_per_second: u64,
+    /// Max burst of requests per account
+    pub account_rate_limit_burst_size: u32,
+    /// Max requests per account per second
+    pub account_rate_limit_per_second: u64,
+    /// Max burst of requests per API key
+    pub api_key_rate_limit_burst_size: u32,
+    /// Max requests per API key per second
+    pub api_key_rate_limit_per_second: u64,
 }
 
 impl Display for FaucetConfig {
@@ -63,6 +92,14 @@ impl Default for FaucetConfig {
             remote_tx_prover_url: None,
             pow_salt: rand::random::<[u8; 32]>().into_iter().map(|b| b as char).collect(),
             api_keys: Vec::new(),
+            rate_limiter: RateLimiterConfig {
+                ip_rate_limit_burst_size: DEFAULT_IP_RATE_LIMIT_BURST_SIZE,
+                ip_rate_limit_per_second: DEFAULT_IP_RATE_LIMIT_PER_SECOND,
+                account_rate_limit_burst_size: DEFAULT_ACCOUNT_RATE_LIMIT_BURST_SIZE,
+                account_rate_limit_per_second: DEFAULT_ACCOUNT_RATE_LIMIT_PER_SECOND,
+                api_key_rate_limit_burst_size: DEFAULT_API_KEY_RATE_LIMIT_BURST_SIZE,
+                api_key_rate_limit_per_second: DEFAULT_API_KEY_RATE_LIMIT_PER_SECOND,
+            },
         }
     }
 }

@@ -37,6 +37,7 @@ use url::Url;
 
 use crate::{
     COMPONENT,
+    config::RateLimiterConfig,
     faucet::{FaucetId, MintRequest},
     types::AssetOptions,
 };
@@ -102,16 +103,12 @@ impl Server {
     // TODO: Cannot move the rate limiter creation to its own function because it requires
     // defining types that the `governor` crate does not export.
     #[allow(clippy::too_many_lines)]
-    pub async fn serve(self, url: Url) -> anyhow::Result<()> {
+    pub async fn serve(self, url: Url, rate_limiter: RateLimiterConfig) -> anyhow::Result<()> {
         // Rate limits by IP. We do additional per account rate limiting in the get_tokens method.
-        //
-        // Limits chosen somewhat arbitrarily, but we have five assets required to load the webpage.
-        // So allowing 8 in a burst seems okay.
-        //
         // SAFETY: No non-zero elements, so we are okay.
         let ip_rate_limiter = GovernorConfigBuilder::default()
-            .const_burst_size(8)
-            .const_per_second(1)
+            .const_burst_size(rate_limiter.ip_rate_limit_burst_size)
+            .const_per_second(rate_limiter.ip_rate_limit_per_second)
             // The default extractor uses the peer address which is incorrect
             // if used behind a proxy.
             .key_extractor(SmartIpKeyExtractor)
@@ -120,8 +117,8 @@ impl Server {
         let ip_rate_limiter = Arc::new(ip_rate_limiter);
 
         let account_rate_limiter = GovernorConfigBuilder::default()
-            .const_burst_size(1)
-            .const_per_second(10)
+            .const_burst_size(rate_limiter.account_rate_limit_burst_size)
+            .const_per_second(rate_limiter.account_rate_limit_per_second)
             // The default extractor uses the peer address which is incorrect
             // if used behind a proxy.
             .key_extractor(AccountKeyExtractor)
@@ -129,11 +126,9 @@ impl Server {
             .unwrap();
         let account_rate_limiter = Arc::new(account_rate_limiter);
 
-        // TODO: We should move the rate limiter paramers to the config file or as env vars. The
-        // same goes for the other rate limiters in this function.
         let api_key_rate_limiter = GovernorConfigBuilder::default()
-            .const_burst_size(3)
-            .const_per_second(10)
+            .const_burst_size(rate_limiter.api_key_rate_limit_burst_size)
+            .const_per_second(rate_limiter.api_key_rate_limit_per_second)
             .key_extractor(ApiKeyExtractor)
             .finish()
             .unwrap();

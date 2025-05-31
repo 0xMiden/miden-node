@@ -15,4 +15,5 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Cargo Publish Dry Run
-        run: ./scripts/publish-crates.sh --dry-run
+        shell: bash
+        run: cargo +nightly -Z package-workspace publish --workspace --dry-run

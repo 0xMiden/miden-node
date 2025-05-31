@@ -1,10 +1,4 @@
-#!/bin/sh
-
-# Script to publish all miden-node crates to crates.io.
-# Usage: ./publish-crates.sh [args]
-#
-# E.G:   ./publish-crates.sh
-#        ./publish-crates.sh --dry-run
+#!/bin/bash
 
 set -e
 
@@ -36,5 +30,5 @@ miden-faucet
 )
 for crate in ${crates[@]}; do
     echo "Publishing $crate..."
-    cargo publish -p "$crate" $@
+    cargo publish -p "$crate"
 done

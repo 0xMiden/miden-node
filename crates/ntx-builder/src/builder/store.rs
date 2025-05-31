@@ -51,7 +51,7 @@ impl StoreClient {
     }
 
     /// Returns the latest block's header from the store.
-    #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
     pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
             .inner
@@ -72,7 +72,7 @@ impl StoreClient {
     /// Returns the block header and MMR peaks at the chain tip if the input `block_num` is either
     /// `None` or an outdated block number. If the input `block_num` is equal to the current
     /// chain tip, this function returns `None`.
-    #[instrument(target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
     pub async fn get_current_blockchain_data(
         &self,
         block_num: Option<BlockNumber>,
@@ -106,7 +106,7 @@ impl StoreClient {
     }
 
     /// Returns the list of unconsumed network notes.
-    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
         let mut page_token: Option<u64> = None;
@@ -132,7 +132,7 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account_by_tag(
         &self,
         note_tag: NoteTag,

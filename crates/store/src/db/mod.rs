@@ -276,7 +276,7 @@ impl Db {
     }
 
     /// Loads all the nullifiers from the DB.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_nullifiers(&self) -> Result<Vec<(Nullifier, BlockNumber)>> {
         self.pool
             .get()
@@ -292,7 +292,7 @@ impl Db {
     }
 
     /// Loads the nullifiers that match the prefixes from the DB.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_nullifiers_by_prefix(
         &self,
         prefix_len: u32,
@@ -322,7 +322,7 @@ impl Db {
     /// Search for a [BlockHeader] from the database by its `block_num`.
     ///
     /// When `block_number` is [None], the latest block header is returned.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_block_header_by_block_num(
         &self,
         block_number: Option<BlockNumber>,
@@ -341,7 +341,7 @@ impl Db {
     }
 
     /// Loads multiple block headers from the DB.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_block_headers(
         &self,
         blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
@@ -362,7 +362,7 @@ impl Db {
     }
 
     /// Loads all the block headers from the DB.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_block_headers(&self) -> Result<Vec<BlockHeader>> {
         self.pool
             .get()
@@ -378,7 +378,7 @@ impl Db {
     }
 
     /// Loads all the account commitments from the DB.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
         self.pool
             .get()
@@ -396,7 +396,7 @@ impl Db {
     }
 
     /// Loads public account details from the DB.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
         self.pool
             .get()
@@ -412,7 +412,7 @@ impl Db {
     }
 
     /// Loads public account details from the DB based on the account ID's prefix.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_network_account_by_prefix(
         &self,
         id_prefix: u32,
@@ -431,7 +431,7 @@ impl Db {
     }
 
     /// Loads public accounts details from the DB.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_accounts_by_ids(
         &self,
         account_ids: Vec<AccountId>,
@@ -449,7 +449,7 @@ impl Db {
             })?
     }
 
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,
         block_num: BlockNumber,
@@ -470,7 +470,7 @@ impl Db {
             })?
     }
 
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_note_sync(
         &self,
         block_num: BlockNumber,
@@ -491,7 +491,7 @@ impl Db {
     }
 
     /// Loads all the Note's matching a certain NoteId from the database.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
         self.pool
             .get()
@@ -507,7 +507,7 @@ impl Db {
     }
 
     /// Loads inclusion proofs for notes matching the given IDs.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_note_inclusion_proofs(
         &self,
         note_ids: BTreeSet<NoteId>,
@@ -528,7 +528,7 @@ impl Db {
     }
 
     /// Loads all note IDs matching a certain NoteId from the database.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<BTreeSet<NoteId>> {
         self.select_notes_by_id(note_ids)
             .await
@@ -540,7 +540,7 @@ impl Db {
     /// `allow_acquire` and `acquire_done` are used to synchronize writes to the DB with writes to
     /// the in-memory trees. Further details available on [super::state::State::apply_block].
     // TODO: This span is logged in a root span, we should connect it to the parent one.
-    #[instrument(target = COMPONENT, skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
     pub async fn apply_block(
         &self,
         allow_acquire: oneshot::Sender<()>,
@@ -604,7 +604,7 @@ impl Db {
     }
 
     /// Runs database optimization.
-    #[instrument(target = COMPONENT, skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
     pub async fn optimize(&self) -> Result<(), DatabaseError> {
         self.pool
             .get()

@@ -147,7 +147,7 @@ impl BlockBuilder {
             .await
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.select_block", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.select_block", skip_all)]
     async fn select_block(mempool: &SharedMempool) -> SelectedBlock {
         let (block_number, batches) = mempool.lock().await.select_block();
         SelectedBlock { block_number, batches }
@@ -169,7 +169,7 @@ impl BlockBuilder {
     ///     which nullifiers the block will actually create, we fetch witnesses for all nullifiers
     ///     created by batches. If we knew that a certain note will be erased, we would not have to
     ///     supply a nullifier witness for it.
-    #[instrument(target = COMPONENT, name = "block_builder.get_block_inputs", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.get_block_inputs", skip_all, err)]
     async fn get_block_inputs(
         &self,
         selected_block: SelectedBlock,
@@ -209,7 +209,7 @@ impl BlockBuilder {
         Ok(BlockBatchesAndInputs { batches, inputs })
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.propose_block", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.propose_block", skip_all, err)]
     async fn propose_block(
         &self,
         batches_inputs: BlockBatchesAndInputs,
@@ -222,7 +222,7 @@ impl BlockBuilder {
         Ok(proposed_block)
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
     async fn prove_block(
         &self,
         proposed_block: ProposedBlock,
@@ -241,7 +241,7 @@ impl BlockBuilder {
         Ok(proven_block)
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.commit_block", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.commit_block", skip_all, err)]
     async fn commit_block(
         &self,
         mempool: &SharedMempool,
@@ -269,7 +269,7 @@ impl BlockBuilder {
         })
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.rollback_block", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.rollback_block", skip_all)]
     async fn rollback_block(&self, mempool: &SharedMempool) -> StateDelta {
         let reverted_transactions = mempool.lock().await.rollback_block();
 
@@ -279,7 +279,7 @@ impl BlockBuilder {
         }
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.update_ntx_builder", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.update_ntx_builder", skip_all, err)]
     async fn update_ntx_builder(&self, delta: StateDelta) -> anyhow::Result<()> {
         if !(delta.committed_transactions.is_empty() && delta.reverted_transactions.is_empty()) {
             let committed = delta
@@ -323,7 +323,7 @@ impl BlockBuilder {
         Ok(())
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.simulate_proving", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.simulate_proving", skip_all)]
     async fn simulate_proving(&self) {
         let proving_duration = rand::rng().random_range(self.simulated_proof_time.clone());
 
@@ -334,7 +334,7 @@ impl BlockBuilder {
         tokio::time::sleep(proving_duration).await;
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.inject_failure", skip_all, err)]
+    #[instrument(level = "debug", target = COMPONENT, name = "block_builder.inject_failure", skip_all, err)]
     fn inject_failure<T>(&self, value: T) -> Result<T, BuildBlockError> {
         let roll = rand::rng().random::<f64>();
 
@@ -472,11 +472,8 @@ impl BlockProver {
         Self::Remote(RemoteBlockProver::new(endpoint))
     }
 
-    #[instrument(target = COMPONENT, skip_all, err)]
-    pub async fn prove(
-        &self,
-        proposed_block: ProposedBlock,
-    ) -> Result<ProvenBlock, BuildBlockError> {
+    #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
+    async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
         match self {
             Self::Local(prover) => {
                 prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)

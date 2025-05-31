@@ -148,7 +148,7 @@ impl RawMintRequest {
     ///   - the `PoW` server signature does not match
     ///   - the `PoW` server timestamp is expired
     ///   - the `PoW` challenge is invalid or expired
-    #[instrument(target = COMPONENT, name = "faucet.server.validate", skip_all)]
+    #[instrument(level = "debug", target = COMPONENT, name = "faucet.server.validate", skip_all)]
     fn validate(self, server: &Server) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private

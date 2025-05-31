@@ -1,6 +1,7 @@
 use std::sync::LazyLock;
 
 use miden_objects::crypto::hash::blake::{Blake3_160, Blake3Digest};
+use migrate_release_0_9::migrate_release_0_9;
 use rusqlite_migration::{M, Migrations, SchemaVersion};
 use tracing::{debug, error, info, instrument};
 
@@ -10,9 +11,12 @@ use crate::{
     errors::DatabaseError,
 };
 
+mod migrate_release_0_9;
+
 type Hash = Blake3Digest<20>;
 
-const MIGRATION_SCRIPTS: [&str; 1] = [include_str!("migrations/001-init.sql")];
+const MIGRATION_SCRIPTS: [&str; 2] =
+    [include_str!("001-init.sql"), include_str!("002-release-0.9.sql")];
 static MIGRATION_HASHES: LazyLock<Vec<Hash>> = LazyLock::new(compute_migration_hashes);
 static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(prepare_migrations);
 
@@ -92,6 +96,9 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
     debug!(target: COMPONENT, new_schema_version, "Updating schema version in settings table");
     Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD, &new_schema_version)?;
 
+    if env!("CARGO_PKG_VERSION") == "0.9.0" {
+        migrate_release_0_9(conn).expect("release 0.9 migration should succeed");
+    }
     info!(target: COMPONENT, %version_after, "Finished database migrations");
 
     Ok(())

@@ -1,8 +1,8 @@
 # Changelog
 
-## v0.9.0 (2025-05-30)
+## v0.10.0 (TBD)
 
-### Changes
+## v0.9.0 (2025-05-30)
 
 ### Enhancements
 

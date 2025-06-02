@@ -39,6 +39,7 @@ futures                      = { version = "0.3" }
 http                         = { version = "1.3" }
 itertools                    = { version = "0.14" }
 miden-air                    = { version = "0.14" }
+miden-block-prover           = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-lib                    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-node-block-producer    = { path = "crates/block-producer", version = "0.10" }
 miden-node-ntx-builder       = { path = "crates/ntx-builder", version = "0.10" }
@@ -50,6 +51,7 @@ miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.10" }
 miden-objects                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-proving-service-client = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-testing                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-tx                     = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }

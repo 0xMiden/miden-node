@@ -72,8 +72,6 @@ pub enum Command {
 
     /// Create a new public faucet account and save to the specified file
     CreateFaucetAccount {
-        #[arg(short, long, value_name = "FILE", default_value = FAUCET_CONFIG_FILE_PATH)]
-        config_path: PathBuf,
         #[arg(short, long, value_name = "FILE", default_value = DEFAULT_FAUCET_ACCOUNT_PATH)]
         output_path: PathBuf,
         #[arg(short, long)]
@@ -175,7 +173,6 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         },
 
         Command::CreateFaucetAccount {
-            config_path: _,
             output_path,
             token_symbol,
             decimals,
@@ -422,7 +419,6 @@ mod test {
         // Create faucet account
         run_faucet_command(Cli {
             command: crate::Command::CreateFaucetAccount {
-                config_path: config_path.clone(),
                 output_path: faucet_account_path.clone(),
                 token_symbol: "TEST".to_string(),
                 decimals: 2,

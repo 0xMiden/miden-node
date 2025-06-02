@@ -19,7 +19,7 @@ workspace = true
 clap                      = { features = ["derive"], version = "4.5" }
 futures                   = { workspace = true }
 miden-air                 = { workspace = true }
-miden-block-prover        = { features = ["testing"], version = "0.9" }
+miden-block-prover        = { branch = "next", features = ["testing"], git = "https://github.com/0xMiden/miden-base" }
 miden-lib                 = { workspace = true }
 miden-node-block-producer = { workspace = true }
 miden-node-proto          = { workspace = true }

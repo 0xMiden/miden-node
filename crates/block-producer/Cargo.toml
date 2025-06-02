@@ -22,14 +22,14 @@ tracing-forest = ["miden-node-utils/tracing-forest"]
 anyhow                       = { workspace = true }
 futures                      = { workspace = true }
 itertools                    = { workspace = true }
-miden-block-prover           = { version = "0.9" }
+miden-block-prover           = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-lib                    = { workspace = true }
 miden-node-proto             = { workspace = true }
 miden-node-utils             = { features = ["testing"], workspace = true }
 miden-objects                = { workspace = true }
 miden-proving-service-client = { features = ["batch-prover", "block-prover"], workspace = true }
 miden-tx                     = { workspace = true }
-miden-tx-batch-prover        = { version = "0.9" }
+miden-tx-batch-prover        = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 rand                         = { version = "0.9" }
 thiserror                    = { workspace = true }
 tokio                        = { features = ["macros", "net", "rt-multi-thread", "sync", "time"], workspace = true }

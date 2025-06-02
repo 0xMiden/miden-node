@@ -20,9 +20,7 @@ use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     Felt,
-    account::{
-        Account, AccountBuilder, AccountId, AccountIdAnchor, AccountStorageMode, AccountType,
-    },
+    account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType},
     asset::{Asset, FungibleAsset, TokenSymbol},
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
     block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
@@ -154,7 +152,6 @@ async fn generate_blocks(
         let (pub_accounts, pub_notes) = create_accounts_and_notes(
             num_public_accounts,
             AccountStorageMode::Private,
-            &current_anchor_header,
             &key_pair,
             &rng,
             faucet.id(),
@@ -165,7 +162,6 @@ async fn generate_blocks(
         let (priv_accounts, priv_notes) = create_accounts_and_notes(
             num_private_accounts,
             AccountStorageMode::Private,
-            &current_anchor_header,
             &key_pair,
             &rng,
             faucet.id(),
@@ -258,7 +254,6 @@ async fn apply_block(
 fn create_accounts_and_notes(
     num_accounts: usize,
     storage_mode: AccountStorageMode,
-    anchor_block: &BlockHeader,
     key_pair: &SecretKey,
     rng: &Arc<Mutex<RpoRandomCoin>>,
     faucet_id: AccountId,
@@ -268,7 +263,6 @@ fn create_accounts_and_notes(
         .into_par_iter()
         .map(|account_index| {
             let account = create_account(
-                anchor_block,
                 key_pair.public_key(),
                 ((block_num * num_accounts) + account_index) as u64,
                 storage_mode,
@@ -299,15 +293,9 @@ fn create_note(faucet_id: AccountId, target_id: AccountId, rng: &mut RpoRandomCo
 
 /// Creates a new private account with a given public key and anchor block. Generates the seed from
 /// the given index.
-fn create_account(
-    anchor_block: &BlockHeader,
-    public_key: PublicKey,
-    index: u64,
-    storage_mode: AccountStorageMode,
-) -> Account {
+fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorageMode) -> Account {
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
     let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
-        .anchor(anchor_block.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
         .with_component(RpoFalcon512::new(public_key))
@@ -326,7 +314,6 @@ fn create_faucet() -> Account {
 
     let token_symbol = TokenSymbol::new("TEST").unwrap();
     let (new_faucet, _seed) = AccountBuilder::new(init_seed)
-        .anchor(AccountIdAnchor::PRE_GENESIS)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
         .with_component(RpoFalcon512::new(key_pair.public_key()))

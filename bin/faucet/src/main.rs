@@ -175,24 +175,13 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         },
 
         Command::CreateFaucetAccount {
-            config_path,
+            config_path: _,
             output_path,
             token_symbol,
             decimals,
             max_supply,
         } => {
             println!("Generating new faucet account. This may take a few minutes...");
-
-            let config: FaucetConfig =
-                load_config(config_path).context("failed to load configuration file")?;
-
-            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
-                .context("failed to create RPC client")?;
-
-            let genesis_header = rpc_client
-                .get_genesis_header()
-                .await
-                .context("fetching genesis header from the node")?;
 
             let current_dir =
                 std::env::current_dir().context("failed to open current directory")?;
@@ -203,7 +192,6 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             let (account, account_seed) = create_basic_fungible_faucet(
                 rng.random(),
-                (&genesis_header).try_into().context("failed to create anchor block")?,
                 TokenSymbol::try_from(token_symbol.as_str())
                     .context("failed to parse token symbol")?,
                 *decimals,

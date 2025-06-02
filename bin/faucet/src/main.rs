@@ -273,10 +273,16 @@ fn long_version() -> LongVersion {
 
 #[cfg(test)]
 mod test {
-    use std::{env::temp_dir, process::Stdio, str::FromStr, time::Duration};
+    use std::{
+        env::temp_dir,
+        process::Stdio,
+        str::FromStr,
+        time::{Duration, Instant},
+    };
 
     use base64::{Engine, prelude::BASE64_STANDARD};
     use fantoccini::ClientBuilder;
+    use miden_node_utils::grpc::UrlExt;
     use serde_json::{Map, json};
     use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
@@ -453,6 +459,20 @@ mod test {
                 .unwrap();
             });
         });
+
+        // Wait for faucet to be up
+        let addr = config.endpoint.to_socket().unwrap();
+        let start = Instant::now();
+        let timeout = Duration::from_secs(10);
+        loop {
+            match tokio::net::TcpStream::connect(addr).await {
+                Ok(_) => break,
+                Err(_) if start.elapsed() < timeout => {
+                    sleep(Duration::from_millis(200)).await;
+                },
+                Err(e) => panic!("faucet never became reachable: {e}"),
+            }
+        }
 
         config.endpoint
     }

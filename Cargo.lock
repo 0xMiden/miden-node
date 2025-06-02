@@ -1952,6 +1952,7 @@ dependencies = [
  "miden-node-utils",
  "miden-objects",
  "miden-proving-service-client",
+ "miden-testing",
  "miden-tx",
  "rand 0.9.1",
  "rand_chacha 0.9.0",
@@ -2330,6 +2331,26 @@ checksum = "887189ccce4f9bbf15dfdaff0e6842fb138a7432a8f21adde756fac114b07184"
 dependencies = [
  "miden-assembly",
  "miden-core",
+]
+
+[[package]]
+name = "miden-testing"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84e090a40f3233faf965938c68700fa39697c1c3958847c1cebd2d97f128b879"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "miden-block-prover",
+ "miden-crypto",
+ "miden-lib",
+ "miden-objects",
+ "miden-processor",
+ "miden-tx",
+ "rand 0.9.1",
+ "rand_chacha 0.9.0",
+ "winter-maybe-async",
+ "winterfell",
 ]
 
 [[package]]

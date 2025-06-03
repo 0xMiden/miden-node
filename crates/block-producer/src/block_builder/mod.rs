@@ -229,8 +229,6 @@ impl BlockBuilder {
     ) -> Result<ProvenBlock, BuildBlockError> {
         let proven_block = self.block_prover.prove(proposed_block).await?;
 
-        info!(transaction_count = %proven_block.transactions().as_slice().len(), "Proved block");
-
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
                 proven_block.proof_security_level(),
@@ -363,6 +361,11 @@ impl SelectedBlock {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
         span.set_attribute("block.batches.count", self.batches.len() as u32);
+        let tx_count = self
+            .batches
+            .iter()
+            .fold(0, |acc, batch| acc + batch.transactions().as_slice().len());
+        span.set_attribute("block.transactions.count", tx_count);
     }
 }
 

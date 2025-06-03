@@ -165,7 +165,7 @@ pub struct Faucet {
 
 impl Faucet {
     /// Loads the faucet state from the node and the account file.
-    #[instrument(name = "Faucet::load", fields(id), skip_all)]
+    #[instrument(name = "faucet.load", fields(id), skip_all)]
     pub async fn load(
         account_file: AccountFile,
         rpc_client: &mut RpcClient,

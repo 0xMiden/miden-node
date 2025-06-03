@@ -63,6 +63,7 @@ impl api_server::Api for StoreApi {
     ///
     /// If the block number is not provided, block header for the latest block is returned.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_block_header_by_number",
         skip_all,
@@ -95,6 +96,7 @@ impl api_server::Api for StoreApi {
     /// This endpoint also returns Merkle authentication path for each requested nullifier which can
     /// be verified against the latest root of the nullifier database.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.check_nullifiers",
         skip_all,
@@ -119,6 +121,7 @@ impl api_server::Api for StoreApi {
     ///
     /// Currently the only supported prefix length is 16 bits.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.check_nullifiers_by_prefix",
         skip_all,
@@ -159,6 +162,7 @@ impl api_server::Api for StoreApi {
     /// This returns all the blockchain-related information needed for executing transactions
     /// without authenticating notes.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_current_blockchain_data",
         skip_all,
@@ -193,6 +197,7 @@ impl api_server::Api for StoreApi {
     /// Returns info which can be used by the client to sync up to the latest state of the chain
     /// for the objects the client is interested in.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.sync_state",
         skip_all,
@@ -247,6 +252,7 @@ impl api_server::Api for StoreApi {
 
     /// Returns info which can be used by the client to sync note state.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.sync_notes",
         skip_all,
@@ -279,6 +285,7 @@ impl api_server::Api for StoreApi {
     ///
     /// If the list is empty or no Note matched the requested NoteId and empty list is returned.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_notes_by_id",
         skip_all,
@@ -311,6 +318,7 @@ impl api_server::Api for StoreApi {
 
     /// Returns details for public (public) account by id.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_account_details",
         skip_all,
@@ -331,6 +339,7 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_network_account_details_by_prefix",
         skip_all,
@@ -362,6 +371,7 @@ impl api_server::Api for StoreApi {
 
     /// Updates the local DB by inserting a new block header and the related data.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.apply_block",
         skip_all,
@@ -398,6 +408,7 @@ impl api_server::Api for StoreApi {
 
     /// Returns data needed by the block producer to construct and prove the next block.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_block_inputs",
         skip_all,
@@ -428,6 +439,7 @@ impl api_server::Api for StoreApi {
     ///
     /// See [`State::get_batch_inputs`] for details.
     #[instrument(
+      parent = None,
       target = COMPONENT,
       name = "store.server.get_batch_inputs",
       skip_all,
@@ -458,6 +470,7 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_transaction_inputs",
         skip_all,
@@ -506,6 +519,7 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_block_by_number",
         skip_all,
@@ -526,6 +540,7 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_account_proofs",
         skip_all,
@@ -564,6 +579,7 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_account_state_delta",
         skip_all,
@@ -593,6 +609,7 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.get_unconsumed_network_notes",
         skip_all,
@@ -631,6 +648,7 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "store.server.status",
         skip_all,
@@ -665,7 +683,7 @@ fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountI
         .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
 }
 
-#[instrument(target = COMPONENT, skip_all, err)]
+#[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 fn read_account_ids(
     account_ids: &[generated::account::AccountId],
 ) -> Result<Vec<AccountId>, Status> {
@@ -677,7 +695,7 @@ fn read_account_ids(
         .map_err(|_| invalid_argument("Byte array is not a valid AccountId"))
 }
 
-#[instrument(target = COMPONENT, skip_all, err)]
+#[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 fn validate_nullifiers(nullifiers: &[generated::digest::Digest]) -> Result<Vec<Nullifier>, Status> {
     nullifiers
         .iter()
@@ -687,7 +705,7 @@ fn validate_nullifiers(nullifiers: &[generated::digest::Digest]) -> Result<Vec<N
         .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 
-#[instrument(target = COMPONENT, skip_all, err)]
+#[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
     notes
         .iter()
@@ -696,7 +714,7 @@ fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, St
         .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 
-#[instrument(target = COMPONENT, skip_all)]
+#[instrument(level = "debug",target = COMPONENT, skip_all)]
 fn read_block_numbers(block_numbers: &[u32]) -> BTreeSet<BlockNumber> {
     block_numbers.iter().map(|raw_number| BlockNumber::from(*raw_number)).collect()
 }

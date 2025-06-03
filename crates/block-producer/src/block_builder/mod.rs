@@ -473,10 +473,7 @@ impl BlockProver {
     }
 
     #[instrument(target = COMPONENT, skip_all, err)]
-    pub async fn prove(
-        &self,
-        proposed_block: ProposedBlock,
-    ) -> Result<ProvenBlock, BuildBlockError> {
+    async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
         match self {
             Self::Local(prover) => {
                 prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)

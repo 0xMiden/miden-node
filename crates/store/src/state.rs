@@ -784,7 +784,7 @@ impl State {
     }
 
     /// Returns data needed by the block producer to verify transactions validity.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret)]
+    #[instrument(target = COMPONENT, skip_all, ret)]
     pub async fn get_transaction_inputs(
         &self,
         account_id: AccountId,

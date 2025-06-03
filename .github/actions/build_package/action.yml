@@ -1,6 +1,5 @@
-# Creates miden-node.deb and miden-faucet.deb DEBIAN packages.
-name: build-package
-description: Builds miden-node and miden-faucet debian packages for the given git reference
+name: Build Debian Packages
+description: Builds miden-node and miden-faucet Debian packages for the given git reference.
 inputs:
   gitref:
     required: true
@@ -67,11 +66,11 @@ runs:
         Section: base
         Priority: optional
         Architecture: $arch
-        Maintainer: Polygon Devops <devops@polygon.technology>
+        Maintainer: Miden <sergerad@miden.team>
         Description: miden-node binary package
-        Homepage: https://polygon.technology/polygon-miden
-        Vcs-Git: git@github.com:0xMiden/miden-node.git
-        Vcs-Browser: https://github.com/0xMiden/miden-node
+        Homepage: https://miden.xyz
+        Vcs-Git: git@github.com:0xMiden/miden-base.git
+        Vcs-Browser: https://github.com/0xMiden/miden-base
         EOF
 
         cat > packaging/deb/miden-faucet/DEBIAN/control << EOF
@@ -80,11 +79,11 @@ runs:
         Section: base
         Priority: optional
         Architecture: $arch
-        Maintainer: Polygon Devops <devops@polygon.technology>
+        Maintainer: Miden <sergerad@miden.team>
         Description: miden-faucet binary package
-        Homepage: https://polygon.technology/polygon-miden
-        Vcs-Git: git@github.com:0xMiden/miden-node.git
-        Vcs-Browser: https://github.com/0xMiden/miden-node
+        Homepage: https://miden.xyz
+        Vcs-Git: git@github.com:0xMiden/miden-base.git
+        Vcs-Browser: https://github.com/0xMiden/miden-base
         EOF
 
     - name: Build binaries

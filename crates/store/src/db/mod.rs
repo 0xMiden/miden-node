@@ -540,7 +540,7 @@ impl Db {
     /// `allow_acquire` and `acquire_done` are used to synchronize writes to the DB with writes to
     /// the in-memory trees. Further details available on [super::state::State::apply_block].
     // TODO: This span is logged in a root span, we should connect it to the parent one.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
+    #[instrument(target = COMPONENT, skip_all, err)]
     pub async fn apply_block(
         &self,
         allow_acquire: oneshot::Sender<()>,

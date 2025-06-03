@@ -567,12 +567,10 @@ mod tests {
 
         // Create the faucet
         let faucet = {
-            let genesis_header = rpc_client.get_genesis_header().await.unwrap();
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let (account, account_seed) = create_basic_fungible_faucet(
                 rng.random(),
-                (&genesis_header).try_into().unwrap(),
                 TokenSymbol::try_from("POL").unwrap(),
                 2,
                 Felt::from(1_000_000_u32),

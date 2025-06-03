@@ -215,7 +215,6 @@ impl NetworkTransactionBuilder {
     ///
     /// - Returns an error only when the preflight stage errors. On the execution stage, errors are
     ///   logged and the transaction gets rolled back.
-    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.build_network_tx", skip_all, err)]
     async fn build_network_tx(
         api_state: &SharedPendingNotes,
         tx_executor: &TransactionExecutor,
@@ -294,7 +293,7 @@ impl NetworkTransactionBuilder {
     }
 
     /// Updates the partial blockchain and latest header within the datastore.
-    #[instrument(level = "debug", target = COMPONENT, name = "ntx_builder.prepare_blockchain_data", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx_builder.prepare_blockchain_data", skip_all, err)]
     async fn prepare_blockchain_data(
         data_store: &Arc<NtxBuilderDataStore>,
     ) -> Result<BlockNumber, StoreError> {
@@ -302,7 +301,7 @@ impl NetworkTransactionBuilder {
     }
 
     /// Gets the account from the cache or from the store if it's not found in the cache.
-    #[instrument(level = "debug", target = COMPONENT, name = "ntx_builder.get_account_for_batch", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx_builder.get_account_for_batch", skip_all, err)]
     async fn get_account_for_ntx(
         data_store: &Arc<NtxBuilderDataStore>,
         tag: NoteTag,
@@ -319,7 +318,7 @@ impl NetworkTransactionBuilder {
 
     /// Filters the [`NetworkTransactionRequest`]'s notes by making one consumption check against
     /// the executing account.
-    #[instrument(level = "debug", target = COMPONENT, name = "ntx_builder.filter_consumable_notes", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx_builder.filter_consumable_notes", skip_all, err)]
     async fn filter_consumable_notes(
         data_store: &Arc<NtxBuilderDataStore>,
         tx_executor: &TransactionExecutor,
@@ -384,7 +383,7 @@ impl NetworkTransactionBuilder {
     }
 
     /// Executes the transaction with the account described by the request.
-    #[instrument(level = "debug", target = COMPONENT, name = "ntx_builder.execute_transaction", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx_builder.execute_transaction", skip_all, err)]
     async fn execute_transaction(
         tx_executor: &TransactionExecutor,
         tx_request: NetworkTransactionRequest,
@@ -412,7 +411,7 @@ impl NetworkTransactionBuilder {
     }
 
     /// Proves the transaction and submits it to the mempool.
-    #[instrument(level = "debug", target = COMPONENT, name = "ntx_builder.prove_and_submit_transaction", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx_builder.prove_and_submit_transaction", skip_all, err)]
     async fn prove_and_submit_transaction(
         tx_prover: &NtbTransactionProver,
         block_prod: &BlockProducerClient,
@@ -426,7 +425,7 @@ impl NetworkTransactionBuilder {
     /// Rolls back the transaction. This should be executed if the execution stage of the pipeline
     /// failed. Specifically, this involves requeuing notes and evicting the account from the
     /// cache.
-    #[instrument(level = "debug", target = COMPONENT, name = "ntx_builder.rollback_tx", skip_all)]
+    #[instrument(target = COMPONENT, name = "ntx_builder.rollback_tx", skip_all)]
     async fn rollback_tx(
         tx_request: NetworkTransactionRequest,
         api_state: &SharedPendingNotes,

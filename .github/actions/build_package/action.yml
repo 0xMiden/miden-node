@@ -69,8 +69,8 @@ runs:
         Maintainer: Miden <sergerad@miden.team>
         Description: miden-node binary package
         Homepage: https://miden.xyz
-        Vcs-Git: git@github.com:0xMiden/miden-base.git
-        Vcs-Browser: https://github.com/0xMiden/miden-base
+        Vcs-Git: git@github.com:0xMiden/miden-node.git
+        Vcs-Browser: https://github.com/0xMiden/miden-node
         EOF
 
         cat > packaging/deb/miden-faucet/DEBIAN/control << EOF
@@ -82,8 +82,8 @@ runs:
         Maintainer: Miden <sergerad@miden.team>
         Description: miden-faucet binary package
         Homepage: https://miden.xyz
-        Vcs-Git: git@github.com:0xMiden/miden-base.git
-        Vcs-Browser: https://github.com/0xMiden/miden-base
+        Vcs-Git: git@github.com:0xMiden/miden-node.git
+        Vcs-Browser: https://github.com/0xMiden/miden-node
         EOF
 
     - name: Build binaries

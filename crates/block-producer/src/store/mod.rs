@@ -144,7 +144,7 @@ impl StoreClient {
     }
 
     /// Returns the latest block's header from the store.
-    #[instrument(level = "debug", target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
     pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
             .inner
@@ -162,7 +162,7 @@ impl StoreClient {
         BlockHeader::try_from(response).map_err(Into::into)
     }
 
-    #[instrument(level = "debug", target = COMPONENT, name = "store.client.get_tx_inputs", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "store.client.get_tx_inputs", skip_all, err)]
     pub async fn get_tx_inputs(
         &self,
         proven_tx: &ProvenTransaction,
@@ -199,7 +199,7 @@ impl StoreClient {
         Ok(tx_inputs)
     }
 
-    #[instrument(level = "debug", target = COMPONENT, name = "store.client.get_block_inputs", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "store.client.get_block_inputs", skip_all, err)]
     pub async fn get_block_inputs(
         &self,
         updated_accounts: impl Iterator<Item = AccountId> + Send,
@@ -219,7 +219,7 @@ impl StoreClient {
         store_response.try_into().map_err(Into::into)
     }
 
-    #[instrument(level = "debug", target = COMPONENT, name = "store.client.get_batch_inputs", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "store.client.get_batch_inputs", skip_all, err)]
     pub async fn get_batch_inputs(
         &self,
         block_references: impl Iterator<Item = (BlockNumber, Digest)> + Send,
@@ -235,7 +235,7 @@ impl StoreClient {
         store_response.try_into().map_err(Into::into)
     }
 
-    #[instrument(level = "debug", target = COMPONENT, name = "store.client.apply_block", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "store.client.apply_block", skip_all, err)]
     pub async fn apply_block(&self, block: &ProvenBlock) -> Result<(), StoreError> {
         let request = tonic::Request::new(ApplyBlockRequest { block: block.to_bytes() });
 

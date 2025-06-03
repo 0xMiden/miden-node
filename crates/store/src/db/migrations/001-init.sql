@@ -16,19 +16,15 @@ CREATE TABLE block_headers (
     CONSTRAINT block_header_block_num_is_u32 CHECK (block_num BETWEEN 0 AND 0xFFFFFFFF)
 ) STRICT;
 
-
 CREATE TABLE accounts (
-    account_id                              BLOB NOT NULL,
-    network_account_id_prefix               INTEGER NULL, -- 30-bit account ID prefix, only filled for network accounts
-    account_commitment                      BLOB NOT NULL,
-    block_num                               INTEGER NOT NULL,
-    details                                 BLOB,
+      account_id            BLOB    NOT NULL,
+      account_commitment    BLOB    NOT NULL,
+      block_num             INTEGER NOT NULL,
+      details               BLOB,
 
-    PRIMARY KEY (account_id),
-    FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
+      PRIMARY KEY (account_id),
+      FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
 ) STRICT, WITHOUT ROWID;
-
-CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
 
 CREATE TABLE notes (
     block_num      INTEGER NOT NULL,
@@ -44,15 +40,11 @@ CREATE TABLE notes (
     merkle_path    BLOB    NOT NULL,
     consumed       INTEGER NOT NULL, -- boolean
     nullifier      BLOB,             -- Only known for public notes, null for private notes
-    assets         BLOB,
-    inputs         BLOB,
-    script_root    BLOB,
-    serial_num     BLOB,
+    details        BLOB,
 
     PRIMARY KEY (block_num, batch_index, note_index),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
     FOREIGN KEY (sender) REFERENCES accounts(account_id),
-    FOREIGN KEY (script_root) REFERENCES note_scripts(script_root),
     CONSTRAINT notes_type_in_enum CHECK (note_type BETWEEN 1 AND 3),
     CONSTRAINT notes_execution_mode_in_enum CHECK (execution_mode BETWEEN 0 AND 1),
     CONSTRAINT notes_consumed_is_bool CHECK (execution_mode BETWEEN 0 AND 1),
@@ -65,13 +57,6 @@ CREATE INDEX idx_notes_sender ON notes(sender, block_num);
 CREATE INDEX idx_notes_tag ON notes(tag, block_num);
 CREATE INDEX idx_notes_nullifier ON notes(nullifier);
 CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed);
-
-CREATE TABLE note_scripts (
-    script_root BLOB NOT NULL,
-    script      BLOB NOT NULL,
-  
-    PRIMARY KEY (script_root)
-) STRICT, WITHOUT ROWID;
 
 CREATE TABLE account_deltas (
     account_id  BLOB NOT NULL,

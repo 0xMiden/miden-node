@@ -1,5 +1,6 @@
 use std::{thread, time::Duration};
 
+use anyhow::Context;
 use miden_node_store::DataDirectory;
 use sysinfo::{Disks, Pid, System};
 use tokio::task;
@@ -143,14 +144,19 @@ impl SystemMonitor {
             });
         };
 
-        let db_file = std::fs::metadata(data_dir.database_path())?.len();
-        let db_wal =
-            std::fs::metadata(format!("{}-wal", data_dir.database_path().display()))?.len();
-        let block_storage = std::fs::metadata(data_dir.block_store_dir())?.len();
+        let db_file = std::fs::metadata(data_dir.database_path())
+            .context("failed to get database")?
+            .len();
+        let db_wal = std::fs::metadata(format!("{}-wal", data_dir.database_path().display()))
+            .map(|m| m.len())
+            .ok();
+        let block_storage = std::fs::metadata(data_dir.block_store_dir())
+            .context("failed to get block storage directory")?
+            .len();
 
         Ok(StoreMetrics {
             db_file: Some(db_file),
-            db_wal: Some(db_wal),
+            db_wal,
             block_storage: Some(block_storage),
         })
     }

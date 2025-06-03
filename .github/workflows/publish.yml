@@ -1,4 +1,4 @@
-name: Publish Debian Release
+name: Publish Release Artefacts
 
 on:
   release:
@@ -17,10 +17,12 @@ env:
 permissions:
   id-token: write
   contents: write
+  packages: write
 
 jobs:
-  publish:
-    name: Publish ${{ inputs.version }} for ${{ matrix.arch }}
+  # DEBIAN
+  publish-debian:
+    name: Publish ${{ env.version }}-${{ matrix.arch }} Debian
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -76,3 +78,38 @@ jobs:
             ${{ env.faucet-package }} \
             ${{ env.faucet-package }}.checksum \
             --clobber
+
+  # DOCKER
+  publish-docker:
+    name: Publish ${{ inputs.version }} Docker
+    strategy:
+      matrix:
+        component: [node]
+    runs-on:
+      labels: "ubuntu-latest"
+    steps:
+      # Note that this checkout is _not_ used as the source for the package.
+      # Instead this is required to access the workflow actions. Package source
+      # selection is handled by the packaging action.
+      - name: Checkout repo
+        uses: actions/checkout@main
+        with:
+          fetch-depth: 0
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./bin/${{ matrix.component }}/Dockerfile
+          push: true
+          tags: ${{ env.version }}

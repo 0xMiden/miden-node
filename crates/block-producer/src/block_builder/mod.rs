@@ -356,7 +356,7 @@ struct SelectedBlock {
     batches: Vec<ProvenBatch>,
 }
 
-impl SelectedBlock {
+impl TelemetryInjectorExt for SelectedBlock {
     fn inject_telemetry(&self) {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
@@ -376,7 +376,7 @@ struct BlockBatchesAndInputs {
     inputs: BlockInputs,
 }
 
-impl BlockBatchesAndInputs {
+impl TelemetryInjectorExt for BlockBatchesAndInputs {
     fn inject_telemetry(&self) {
         let span = Span::current();
 

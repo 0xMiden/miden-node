@@ -34,7 +34,6 @@ tracing          = { workspace = true }
 url              = { workspace = true }
 
 [dev-dependencies]
-miden-node-rpc   = { workspace = true }
 miden-node-store = { workspace = true }
 miden-node-utils = { features = ["tracing-forest"], workspace = true }
 tempfile         = { version = "3.20" }

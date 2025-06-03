@@ -60,7 +60,7 @@ async fn rpc_server_accepts_requests_with_accept_header() {
 
 #[tokio::test]
 async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
-    for version in ["1.9.0", "0.8.1", "0.8.0", "0.10.0"] {
+    for version in ["1.9.0", "0.8.1", "0.8.0", "0.999.0", "99.0.0"] {
         // Start the RPC.
         let (_, rpc_addr, store_addr) = start_rpc().await;
         let (store_runtime, _data_directory) = start_store(store_addr).await;

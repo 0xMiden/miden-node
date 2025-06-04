@@ -356,11 +356,16 @@ struct SelectedBlock {
     batches: Vec<ProvenBatch>,
 }
 
-impl SelectedBlock {
+impl TelemetryInjectorExt for SelectedBlock {
     fn inject_telemetry(&self) {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
         span.set_attribute("block.batches.count", self.batches.len() as u32);
+        let tx_count = self
+            .batches
+            .iter()
+            .fold(0, |acc, batch| acc + batch.transactions().as_slice().len());
+        span.set_attribute("block.transactions.count", tx_count);
     }
 }
 
@@ -371,7 +376,7 @@ struct BlockBatchesAndInputs {
     inputs: BlockInputs,
 }
 
-impl BlockBatchesAndInputs {
+impl TelemetryInjectorExt for BlockBatchesAndInputs {
     fn inject_telemetry(&self) {
         let span = Span::current();
 

@@ -119,7 +119,8 @@ impl PowParameters {
 
         // Convert hash to a number (taking first 16 bytes to fit in u128)
         let hash_num = BigUint::from_bytes_be(&hash[..32]);
-        let target = BigUint::parse_bytes(self.target.as_bytes(), 16).unwrap(); // TODO: check error
+        let target =
+            BigUint::parse_bytes(self.target.as_bytes(), 16).ok_or(InvalidRequest::InvalidPoW)?;
 
         if hash_num >= target {
             return Err(InvalidRequest::InvalidPoW);
@@ -184,7 +185,7 @@ impl PoW {
 
     /// Get the target value for a given difficulty.
     ///
-    /// The target for the challenge will be computed as `max_target / difficulty`.
+    /// The target for the challenge is computed as `max_target / difficulty`.
     pub fn get_target(difficulty: usize) -> String {
         let max_target = BigUint::from_bytes_be(&[0xff; 32]) >> INITIAL_TARGET_SHIFT;
         let target = max_target / difficulty;

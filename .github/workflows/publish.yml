@@ -29,12 +29,10 @@ jobs:
     runs-on:
       labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     steps:
-      # Note that this checkout is _not_ used as the source for the package.
-      # Instead this is required to access the workflow actions. Package source
-      # selection is handled by the packaging action.
       - name: Checkout repo
         uses: actions/checkout@main
         with:
+          ref: ${{ env.version}}
           fetch-depth: 0
 
       - name: Rust cache
@@ -88,12 +86,10 @@ jobs:
     runs-on:
       labels: "ubuntu-latest"
     steps:
-      # Note that this checkout is _not_ used as the source for the package.
-      # Instead this is required to access the workflow actions. Package source
-      # selection is handled by the packaging action.
       - name: Checkout repo
         uses: actions/checkout@main
         with:
+          ref: ${{ env.version}}
           fetch-depth: 0
 
       - name: Checkout repository

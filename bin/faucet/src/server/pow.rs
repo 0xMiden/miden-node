@@ -9,15 +9,11 @@ use std::{
 
 use axum::{Json, extract::State, response::IntoResponse};
 use miden_tx::utils::ToHex;
-use rand::{Rng, rng};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use tokio::time::{Duration, interval};
 
-use super::{
-    Server,
-    get_tokens::{InvalidRequest, RawMintRequest},
-};
+use super::{Server, get_tokens::InvalidRequest};
 use crate::REQUESTS_QUEUE_SIZE;
 
 /// The maximum difficulty of the `PoW`.
@@ -34,119 +30,117 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 /// the current time.
 pub(crate) const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
 
-// POW PARAMETERS
+// CHALLENGE
 // ================================================================================================
 
-/// Parameters for the `PoW` challenge.
-///
-/// This struct is used to store the parameters for the `PoW` challenge.
-/// It is used to validate the `PoW` challenge and to store the parameters for the `PoW` challenge.
-#[derive(Deserialize)]
-pub(crate) struct PowParameters {
-    pub(crate) pow_seed: String,
-    pub(crate) server_signature: String,
-    pub(crate) server_timestamp: u64,
-    pub(crate) pow_solution: u64,
-    pub(crate) difficulty: usize,
+/// A challenge for proof-of-work validation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Challenge {
+    difficulty: usize,
+    timestamp: u64,
+    signature: [u8; 32],
 }
 
-impl PowParameters {
-    /// Check the server signature.
-    ///
-    /// The server signature is the result of hashing the server salt, seed and timestamp.
-    pub fn check_server_signature(&self, server_salt: &str) -> Result<(), InvalidRequest> {
-        let hash = get_server_signature(
-            server_salt,
-            &self.pow_seed,
-            self.server_timestamp,
-            self.difficulty,
-        );
-        if hash != self.server_signature {
-            return Err(InvalidRequest::ServerSignaturesDoNotMatch);
-        }
-        Ok(())
+impl Challenge {
+    /// Creates a new challenge with the given parameters.
+    pub fn new(difficulty: usize, timestamp: u64, signature: [u8; 32]) -> Self {
+        Self { difficulty, timestamp, signature }
     }
 
-    /// Check the received timestamp.
-    ///
-    /// The timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of the
-    /// current time.
-    pub fn check_server_timestamp(&self) -> Result<(), InvalidRequest> {
-        let server_timestamp = SystemTime::now()
+    /// Decodes the challenge and verifies that the signature part of the challenge is valid
+    /// in the context of the specified salt.
+    pub fn decode(value: &str, salt: [u8; 32]) -> Result<Self, InvalidRequest> {
+        // Parse the hex-encoded challenge string
+        let bytes = Self::hex_decode(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
+
+        if bytes.len() != 48 {
+            // 8 + 8 + 32 bytes
+            return Err(InvalidRequest::MissingPowParameters);
+        }
+
+        let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
+        let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+        let signature: [u8; 32] = bytes[16..48].try_into().unwrap();
+
+        let challenge = Self::new(difficulty, timestamp, signature);
+
+        // Verify the signature
+        let expected_signature = Self::compute_signature(salt, difficulty, timestamp);
+        if signature != expected_signature {
+            return Err(InvalidRequest::ServerSignaturesDoNotMatch);
+        }
+
+        Ok(challenge)
+    }
+
+    /// Encodes the challenge into a hex string.
+    pub fn encode(&self) -> String {
+        let mut bytes = Vec::with_capacity(48);
+        bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
+        bytes.extend_from_slice(&self.timestamp.to_le_bytes());
+        bytes.extend_from_slice(&self.signature);
+        Self::hex_encode(&bytes)
+    }
+
+    /// Checks whether the provided nonce satisfies the difficulty requirement encoded in the
+    /// challenge.
+    pub fn validate_pow(&self, nonce: u64) -> bool {
+        let mut hasher = Sha3_256::new();
+        hasher.update(self.encode());
+        hasher.update(nonce.to_string().as_bytes());
+        let hash = hasher.finalize();
+        let hash_hex = hash.to_hex();
+
+        let leading_zeros = hash_hex.chars().take_while(|&c| c == '0').count();
+        leading_zeros >= self.difficulty
+    }
+
+    /// Checks if the challenge timestamp is still valid.
+    pub fn is_timestamp_valid(&self) -> bool {
+        let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
 
-        if (server_timestamp - self.server_timestamp) > SERVER_TIMESTAMP_TOLERANCE_SECONDS {
-            return Err(InvalidRequest::ExpiredServerTimestamp(
-                self.server_timestamp,
-                server_timestamp,
-            ));
-        }
-
-        Ok(())
+        (current_time - self.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
     }
 
-    /// Check a `PoW` solution.
-    ///
-    /// * `challenge_cache` - The challenge cache to be used to validate the challenge.
-    ///
-    /// The solution is valid if the hash of the seed and the solution has at least `DIFFICULTY`
-    /// leading zeros.
-    pub fn check_pow_solution(
-        &self,
-        challenge_cache: &ChallengeCache,
-    ) -> Result<(), InvalidRequest> {
-        let mut challenges =
-            challenge_cache.challenges.lock().expect("PoW challenge cache lock poisoned");
-
-        if challenges.get(&self.pow_seed).is_some() {
-            return Err(InvalidRequest::ChallengeAlreadyUsed);
-        }
-
-        // Then check the PoW solution
+    /// Computes the signature for a challenge.
+    fn compute_signature(salt: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
-        hasher.update(&self.pow_seed);
-        hasher.update(self.pow_solution.to_string().as_bytes());
-        let hash = &hasher.finalize().to_hex();
+        hasher.update(salt);
+        hasher.update(difficulty.to_string().as_bytes());
+        hasher.update(timestamp.to_string().as_bytes());
+        hasher.finalize().into()
+    }
 
-        let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-        if leading_zeros < self.difficulty {
-            return Err(InvalidRequest::InvalidPoW);
+    /// Simple hex encoding function.
+    fn hex_encode(bytes: &[u8]) -> String {
+        use std::fmt::Write;
+        bytes.iter().fold(String::new(), |mut acc, b| {
+            write!(acc, "{b:02x}").unwrap();
+            acc
+        })
+    }
+
+    /// Simple hex decoding function.
+    fn hex_decode(s: &str) -> Result<Vec<u8>, ()> {
+        if s.len() % 2 != 0 {
+            return Err(());
         }
 
-        // If we get here, the solution is valid
-        // Add the challenge to the cache to prevent reuse
-        challenges.insert(self.pow_seed.to_string(), self.server_timestamp);
-
-        Ok(())
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| ()))
+            .collect()
     }
-}
 
-impl TryFrom<&RawMintRequest> for PowParameters {
-    type Error = InvalidRequest;
+    pub fn difficulty(&self) -> usize {
+        self.difficulty
+    }
 
-    fn try_from(value: &RawMintRequest) -> Result<Self, Self::Error> {
-        Ok(Self {
-            pow_seed: value.pow_seed.as_ref().ok_or(InvalidRequest::MissingPowParameters)?.clone(),
-            server_signature: value
-                .server_signature
-                .as_ref()
-                .ok_or(InvalidRequest::MissingPowParameters)?
-                .clone(),
-            server_timestamp: *value
-                .server_timestamp
-                .as_ref()
-                .ok_or(InvalidRequest::MissingPowParameters)?,
-            pow_solution: *value
-                .pow_solution
-                .as_ref()
-                .ok_or(InvalidRequest::MissingPowParameters)?,
-            difficulty: *value
-                .pow_difficulty
-                .as_ref()
-                .ok_or(InvalidRequest::MissingPowParameters)?,
-        })
+    pub fn timestamp(&self) -> u64 {
+        self.timestamp
     }
 }
 
@@ -155,17 +149,80 @@ impl TryFrom<&RawMintRequest> for PowParameters {
 
 #[derive(Clone)]
 pub struct PoW {
-    pub(crate) salt: String,
+    pub(crate) salt: [u8; 32],
     pub(crate) difficulty: Arc<AtomicUsize>,
     pub(crate) challenge_cache: ChallengeCache,
 }
 
 impl PoW {
+    /// Creates a new `PoW` instance.
+    pub fn new(salt: [u8; 32]) -> Self {
+        Self {
+            salt,
+            difficulty: Arc::new(AtomicUsize::new(1)),
+            challenge_cache: ChallengeCache::default(),
+        }
+    }
+
+    /// Generates a new challenge.
+    pub fn build_challenge(&self) -> Challenge {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+
+        let difficulty = self.difficulty.load(Ordering::Relaxed);
+        let signature = Challenge::compute_signature(self.salt, difficulty, timestamp);
+
+        Challenge::new(difficulty, timestamp, signature)
+    }
+
+    /// Verifies that the challenge is valid (e.g., timestamp is within range, difficulty is
+    /// satisfied etc.), and adds the validated challenge to the cache.
+    pub fn validate_challenge(
+        &self,
+        challenge: &Challenge,
+        nonce: u64,
+    ) -> Result<(), InvalidRequest> {
+        // Check timestamp validity
+        if !challenge.is_timestamp_valid() {
+            return Err(InvalidRequest::ExpiredServerTimestamp(
+                challenge.timestamp(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("Time went backwards")
+                    .as_secs(),
+            ));
+        }
+
+        // Check if challenge was already used
+        let challenge_key = challenge.encode();
+        let mut challenges = self
+            .challenge_cache
+            .challenges
+            .lock()
+            .expect("PoW challenge cache lock poisoned");
+
+        if challenges.contains_key(&challenge_key) {
+            return Err(InvalidRequest::ChallengeAlreadyUsed);
+        }
+
+        // Validate the proof of work
+        if !challenge.validate_pow(nonce) {
+            return Err(InvalidRequest::InvalidPoW);
+        }
+
+        // Add to cache to prevent reuse
+        challenges.insert(challenge_key, challenge.timestamp());
+
+        Ok(())
+    }
+
     /// Adjust the difficulty of the `PoW`.
     ///
     /// The difficulty is adjusted based on the number of active requests.
-    /// The difficulty is increased by 1 for every 50 active requests.
-    /// The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
+    /// The difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY` active
+    /// requests. The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
     pub fn adjust_difficulty(&self, active_requests: usize) {
         let new_difficulty =
             (active_requests / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY);
@@ -179,9 +236,9 @@ impl PoW {
 /// A cache for managing challenges.
 ///
 /// Challenges are used to validate the `PoW` solution.
-/// We store the solved challenges in a map with the seed as the key to ensure that each challenge
+/// We store the solved challenges in a map with the challenge key to ensure that each challenge
 /// is only used once.
-/// Challenges gets removed periodically.
+/// Challenges get removed periodically.
 #[derive(Clone, Default)]
 pub struct ChallengeCache {
     /// Once a challenge is added, it cannot be submitted again.
@@ -208,7 +265,7 @@ impl ChallengeCache {
     /// Run the cleanup task.
     ///
     /// The cleanup task is responsible for removing expired challenges from the cache.
-    /// It runs every minute and removes challenges that are not longer valid because of its
+    /// It runs every minute and removes challenges that are no longer valid because of their
     /// timestamp.
     pub async fn run_cleanup(self) {
         let mut interval = interval(Duration::from_secs(60));
@@ -222,170 +279,85 @@ impl ChallengeCache {
 
 #[derive(Serialize)]
 struct PoWResponse {
-    seed: String,
+    challenge: String,
     difficulty: usize,
-    server_signature: String,
     timestamp: u64,
 }
 
-/// Get the server signature.
-///
-/// The server signature is the result of hashing the server salt, the seed, and the timestamp.
-pub(crate) fn get_server_signature(
-    server_salt: &str,
-    seed: &str,
-    timestamp: u64,
-    difficulty: usize,
-) -> String {
-    let mut hasher = Sha3_256::new();
-    hasher.update(server_salt);
-    hasher.update(seed);
-    hasher.update(timestamp.to_string().as_bytes());
-    hasher.update(difficulty.to_string().as_bytes());
-    hasher.finalize().to_hex()
-}
-
-/// Generate a random hex string of specified length in nibbles.
-fn random_hex_string(num_nibbles: usize) -> String {
-    // Generate random bytes
-    let mut rng = rng();
-    let mut random_bytes = vec![0u8; num_nibbles / 2];
-    rng.fill(&mut random_bytes[..]);
-
-    // Convert bytes to hex string
-    random_bytes.iter().fold(String::new(), |acc, byte| format!("{acc}{byte:02x}"))
-}
-
-/// Get a seed to be used by a client as the `PoW` seed.
-///
-/// The seed is a 64 character random hex string.
-pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoResponse {
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_secs();
-
-    let random_seed = random_hex_string(32);
-
-    let server_signature = get_server_signature(
-        &server.pow.salt,
-        &random_seed,
-        timestamp,
-        server.pow.difficulty.load(Ordering::Relaxed),
-    );
+/// Get a challenge to be used by a client for `PoW`.
+pub(crate) async fn get_pow_challenge(State(server): State<Server>) -> impl IntoResponse {
+    let challenge = server.pow.build_challenge();
 
     Json(PoWResponse {
-        seed: random_seed,
-        difficulty: server.pow.difficulty.load(Ordering::Relaxed),
-        server_signature,
-        timestamp,
+        challenge: challenge.encode(),
+        difficulty: challenge.difficulty(),
+        timestamp: challenge.timestamp(),
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use sha3::{Digest, Sha3_256};
-
     use super::*;
 
-    fn find_pow_solution(seed: &str, difficulty: usize) -> u64 {
-        let mut solution = 0;
-        loop {
-            let mut hasher = Sha3_256::new();
-            hasher.update(seed);
-            hasher.update(solution.to_string().as_bytes());
-            let hash = &hasher.finalize().to_hex();
-            let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-            if leading_zeros >= difficulty {
-                return solution;
-            }
+    fn create_test_salt() -> [u8; 32] {
+        let mut salt = [0u8; 32];
+        salt[..12].copy_from_slice(b"miden-faucet");
+        salt
+    }
 
-            solution += 1;
-        }
+    fn find_pow_solution(challenge: &Challenge, max_iterations: u64) -> Option<u64> {
+        (0..max_iterations).find(|&nonce| challenge.validate_pow(nonce))
     }
 
     #[test]
-    fn test_check_server_signature() {
-        let server_salt = "miden-faucet";
-        let seed = "0x1234567890abcdef";
+    fn test_challenge_encode_decode() {
+        let salt = create_test_salt();
+        let difficulty = 3;
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
 
-        let difficulty = 3;
+        let signature = Challenge::compute_signature(salt, difficulty, timestamp);
+        let challenge = Challenge::new(difficulty, timestamp, signature);
 
-        let mut hasher = Sha3_256::new();
-        hasher.update(server_salt);
-        hasher.update(seed);
-        hasher.update(timestamp.to_string().as_bytes());
-        hasher.update(difficulty.to_string().as_bytes());
-        let server_signature = hasher.finalize().to_hex();
+        let encoded = challenge.encode();
+        let decoded = Challenge::decode(&encoded, salt).unwrap();
 
-        let solution = find_pow_solution(seed, difficulty);
-
-        let pow_parameters = PowParameters {
-            pow_seed: seed.to_string(),
-            server_signature: server_signature.clone(),
-            server_timestamp: timestamp,
-            pow_solution: solution,
-            difficulty,
-        };
-
-        let result = pow_parameters.check_server_signature(server_salt);
-
-        assert!(result.is_ok());
-
-        let challenge_cache = ChallengeCache::default();
-
-        let result = pow_parameters.check_pow_solution(&challenge_cache);
-
-        assert!(result.is_ok());
-
-        // Check that the challenge is not valid anymore
-        let result = pow_parameters.check_pow_solution(&challenge_cache);
-        assert!(result.is_err());
+        assert_eq!(challenge.difficulty, decoded.difficulty);
+        assert_eq!(challenge.timestamp, decoded.timestamp);
+        assert_eq!(challenge.signature, decoded.signature);
     }
 
     #[test]
-    fn test_check_server_signature_failure() {
-        let server_salt = "miden-faucet";
-        let seed = "0x1234567890abcdef";
-        let timestamp = 1_234_567_890;
-        let server_signature = "0x1234567890abcdef";
+    fn test_pow_validation() {
+        let salt = create_test_salt();
+        let pow = PoW::new(salt);
 
-        let difficulty = 3;
+        // Set difficulty to 1 for faster testing
+        pow.difficulty.store(1, Ordering::Relaxed);
 
-        let pow_parameters = PowParameters {
-            pow_seed: seed.to_string(),
-            server_signature: server_signature.to_string(),
-            server_timestamp: timestamp,
-            pow_solution: 1_234_567_890,
-            difficulty,
-        };
-        let result = pow_parameters.check_server_signature(server_salt);
-        assert!(result.is_err());
+        let challenge = pow.build_challenge();
+        let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let challenge_cache = ChallengeCache::default();
-        let result = pow_parameters.check_pow_solution(&challenge_cache);
+        let result = pow.validate_challenge(&challenge, nonce);
+        assert!(result.is_ok());
 
+        // Try to use the same challenge again - should fail
+        let result = pow.validate_challenge(&challenge, nonce);
         assert!(result.is_err());
     }
 
     #[test]
     fn test_adjust_difficulty_minimum_clamp() {
-        // Test that difficulty is clamped to minimum value of 1
-        let pow = PoW {
-            salt: "test-salt".to_string(),
-            difficulty: Arc::new(AtomicUsize::new(10)),
-            challenge_cache: ChallengeCache::default(),
-        };
+        let salt = create_test_salt();
+        let pow = PoW::new(salt);
 
         // With 0 active requests, difficulty should be clamped to 1
         pow.adjust_difficulty(0);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
 
-        // With requests less than ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY (41),
+        // With requests less than ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY,
         // difficulty should still be 1
         pow.adjust_difficulty(40);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
@@ -393,12 +365,8 @@ mod tests {
 
     #[test]
     fn test_adjust_difficulty_maximum_clamp() {
-        // Test that difficulty is clamped to maximum value of MAX_DIFFICULTY (24)
-        let pow = PoW {
-            salt: "test-salt".to_string(),
-            difficulty: Arc::new(AtomicUsize::new(1)),
-            challenge_cache: ChallengeCache::default(),
-        };
+        let salt = create_test_salt();
+        let pow = PoW::new(salt);
 
         // With very high number of active requests, difficulty should be clamped to MAX_DIFFICULTY
         pow.adjust_difficulty(2000);
@@ -411,12 +379,8 @@ mod tests {
 
     #[test]
     fn test_adjust_difficulty_linear_scaling() {
-        // Test that difficulty scales linearly with active requests
-        let pow = PoW {
-            salt: "test-salt".to_string(),
-            difficulty: Arc::new(AtomicUsize::new(1)),
-            challenge_cache: ChallengeCache::default(),
-        };
+        let salt = create_test_salt();
+        let pow = PoW::new(salt);
 
         // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY = 1000 / 24
         // = 41
@@ -451,5 +415,25 @@ mod tests {
         // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY should be 41 (1000 / 24 = 41.666... truncated to
         // 41)
         assert_eq!(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, 41);
+    }
+
+    #[test]
+    fn test_timestamp_validation() {
+        let salt = create_test_salt();
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards")
+            .as_secs();
+
+        // Valid timestamp (current time)
+        let signature = Challenge::compute_signature(salt, 1, current_time);
+        let challenge = Challenge::new(1, current_time, signature);
+        assert!(challenge.is_timestamp_valid());
+
+        // Expired timestamp (too old)
+        let old_timestamp = current_time - SERVER_TIMESTAMP_TOLERANCE_SECONDS - 10;
+        let signature = Challenge::compute_signature(salt, 1, old_timestamp);
+        let challenge = Challenge::new(1, old_timestamp, signature);
+        assert!(!challenge.is_timestamp_valid());
     }
 }

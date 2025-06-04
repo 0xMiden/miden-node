@@ -97,7 +97,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // Get the pow seed, difficulty, and server signature
+        // Get the PoW challenge from the new /pow endpoint
         let powResponse;
         try {
             powResponse = await fetch(window.location.href + 'pow', {
@@ -121,18 +121,15 @@ document.addEventListener('DOMContentLoaded', function () {
         // Search for a nonce that satisfies the proof of work
         status.textContent = "Solving Proof of Work...";
 
-        const nonce = await findValidNonce(powData.seed, powData.difficulty);
+        const nonce = await findValidNonce(powData.challenge, powData.difficulty);
 
-        // Build query parameters for the request
+        // Build query parameters for the request using new challenge format
         const params = {
             account_id: accountAddress,
             is_private_note: isPrivateNote,
             asset_amount: parseInt(assetSelect.value),
-            pow_seed: powData.seed,
-            pow_solution: nonce,
-            pow_difficulty: powData.difficulty,
-            server_signature: powData.server_signature,
-            server_timestamp: powData.timestamp
+            challenge: powData.challenge,
+            nonce: nonce
         };
 
 
@@ -191,15 +188,15 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // Function to find a valid nonce for proof of work
-    async function findValidNonce(seed, difficulty) {
+    // Function to find a valid nonce for proof of work using the new challenge format
+    async function findValidNonce(challenge, difficulty) {
         // Check again if SHA3 is available
         if (typeof sha3_256 === 'undefined') {
             console.error("SHA3 library not properly loaded. SHA3 object:", sha3_256);
             throw new Error('SHA3 library not properly loaded. Please refresh the page.');
         }
 
-        // Parse difficulty (number of required trailing zeros)
+        // Parse difficulty (number of required leading zeros)
         const requiredZeros = parseInt(difficulty);
         const requiredPattern = '0'.repeat(requiredZeros);
 
@@ -211,11 +208,11 @@ document.addEventListener('DOMContentLoaded', function () {
             nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
 
             try {
-                // Compute hash using SHA3
+                // Compute hash using SHA3 with the challenge and nonce
                 let hash = sha3_256.create();
-                hash.update(seed);
+                hash.update(challenge);  // Use the hex-encoded challenge string directly
                 hash.update(nonce.toString());
-                // Trim leading 0x
+                // Get the hex digest
                 let digest = hash.hex().toString();
 
                 // Check if the hash starts with the required number of zeros

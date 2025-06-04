@@ -85,6 +85,11 @@ jobs:
 
   # DOCKER
   publish-docker:
+    permissions:
+      id-token: write
+      contents: write
+      packages: write
+      attestations: write
     name: Publish ${{ inputs.version }} Docker
     strategy:
       matrix:

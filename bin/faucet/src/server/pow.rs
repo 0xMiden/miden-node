@@ -117,7 +117,7 @@ impl PowParameters {
         hasher.update(self.pow_solution.to_string().as_bytes());
         let hash = hasher.finalize();
 
-        // Convert hash to a number (taking first 16 bytes to fit in u128)
+        // Convert hash to a number
         let hash_num = BigUint::from_bytes_be(&hash[..32]);
         let target =
             BigUint::parse_bytes(self.target.as_bytes(), 16).ok_or(InvalidRequest::InvalidPoW)?;

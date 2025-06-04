@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version tag (E.G. v0.10.0-rc.1, v0.10.0)"
+        description: "Version to release (E.G. v0.10.0-rc.1, v0.10.0). Corresponding git tag must already exist."
         required: true
         type: string
 
@@ -19,11 +19,7 @@ env:
   registry: ghcr.io
   image_name: ${{ github.repository }}
 
-permissions:
-  id-token: write
-  contents: write
-  packages: write
-  attestations: write
+permissions: write-all
 
 jobs:
   # DEBIAN

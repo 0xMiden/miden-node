@@ -17,7 +17,7 @@ env:
   #version: ${{ inputs.version || github.ref_name }}
   version: testing
   registry: ghcr.io
-  image_name: ${{ github.repository }}
+  image_name: 0xmiden/miden-node # NOTE: Cannot use ${{ github.repository }} because it contains uppercase 'M'.
 
 permissions:
   id-token: write

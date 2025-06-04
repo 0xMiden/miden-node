@@ -72,8 +72,6 @@ pub enum Command {
 
     /// Create a new public faucet account and save to the specified file
     CreateFaucetAccount {
-        #[arg(short, long, value_name = "FILE", default_value = FAUCET_CONFIG_FILE_PATH)]
-        config_path: PathBuf,
         #[arg(short, long, value_name = "FILE", default_value = DEFAULT_FAUCET_ACCOUNT_PATH)]
         output_path: PathBuf,
         #[arg(short, long)]
@@ -175,24 +173,12 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         },
 
         Command::CreateFaucetAccount {
-            config_path,
             output_path,
             token_symbol,
             decimals,
             max_supply,
         } => {
             println!("Generating new faucet account. This may take a few minutes...");
-
-            let config: FaucetConfig =
-                load_config(config_path).context("failed to load configuration file")?;
-
-            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
-                .context("failed to create RPC client")?;
-
-            let genesis_header = rpc_client
-                .get_genesis_header()
-                .await
-                .context("fetching genesis header from the node")?;
 
             let current_dir =
                 std::env::current_dir().context("failed to open current directory")?;
@@ -203,7 +189,6 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             let (account, account_seed) = create_basic_fungible_faucet(
                 rng.random(),
-                (&genesis_header).try_into().context("failed to create anchor block")?,
                 TokenSymbol::try_from(token_symbol.as_str())
                     .context("failed to parse token symbol")?,
                 *decimals,
@@ -285,10 +270,16 @@ fn long_version() -> LongVersion {
 
 #[cfg(test)]
 mod test {
-    use std::{env::temp_dir, process::Stdio, str::FromStr, time::Duration};
+    use std::{
+        env::temp_dir,
+        process::Stdio,
+        str::FromStr,
+        time::{Duration, Instant},
+    };
 
     use base64::{Engine, prelude::BASE64_STANDARD};
     use fantoccini::ClientBuilder;
+    use miden_node_utils::grpc::UrlExt;
     use serde_json::{Map, json};
     use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
@@ -434,7 +425,6 @@ mod test {
         // Create faucet account
         run_faucet_command(Cli {
             command: crate::Command::CreateFaucetAccount {
-                config_path: config_path.clone(),
                 output_path: faucet_account_path.clone(),
                 token_symbol: "TEST".to_string(),
                 decimals: 2,
@@ -465,6 +455,20 @@ mod test {
                 .unwrap();
             });
         });
+
+        // Wait for faucet to be up
+        let addr = config.endpoint.to_socket().unwrap();
+        let start = Instant::now();
+        let timeout = Duration::from_secs(10);
+        loop {
+            match tokio::net::TcpStream::connect(addr).await {
+                Ok(_) => break,
+                Err(_) if start.elapsed() < timeout => {
+                    sleep(Duration::from_millis(200)).await;
+                },
+                Err(e) => panic!("faucet never became reachable: {e}"),
+            }
+        }
 
         config.endpoint
     }

@@ -11,7 +11,7 @@ use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
-    account::{AccountFile, AccountIdAnchor, AuthSecretKey},
+    account::{AccountFile, AuthSecretKey},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -153,7 +153,6 @@ impl StoreCommand {
 
         let (mut account, account_seed) = create_basic_fungible_faucet(
             rng.random(),
-            AccountIdAnchor::PRE_GENESIS,
             TokenSymbol::try_from("POL").expect("POL should be a valid token symbol"),
             12,
             Felt::from(1_000_000u32),

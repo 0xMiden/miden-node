@@ -108,6 +108,7 @@ impl NetworkTransactionBuilder {
         }
     }
 
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.serve_once", skip_all, err)]
     pub async fn serve_once(&self) -> anyhow::Result<()> {
         let store = StoreClient::new(&self.store_url);
         let unconsumed = store.get_unconsumed_network_notes().await?;

@@ -65,7 +65,7 @@ impl Server {
         faucet_id: FaucetId,
         asset_options: AssetOptions,
         request_sender: RequestSender,
-        pow_salt: String,
+        pow_salt: &str,
         api_keys: BTreeSet<String>,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
@@ -84,11 +84,13 @@ impl Server {
             cleanup_state.run_cleanup().await;
         });
 
-        let pow = PoW {
-            salt: pow_salt,
-            difficulty: Arc::new(AtomicUsize::new(1)), // Initialize difficulty to 1
-            challenge_cache,
-        };
+        // Convert string salt to [u8; 32] for PoW
+        let mut salt_bytes = [0u8; 32];
+        let salt_str_bytes = pow_salt.as_bytes();
+        let copy_len = salt_str_bytes.len().min(32);
+        salt_bytes[..copy_len].copy_from_slice(&salt_str_bytes[..copy_len]);
+
+        let pow = PoW::new(salt_bytes);
 
         Server {
             mint_state,
@@ -161,7 +163,7 @@ impl Server {
                 .route("/background.png", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
-                .route("/pow", get(pow::get_pow_seed))
+                .route("/pow", get(pow::get_pow_challenge))
                 // TODO: This feels rather ugly, and would be nice to move but I can't figure out the types.
                 .route(
                     "/get_tokens",
@@ -297,15 +299,11 @@ impl KeyExtractor for ApiKeyExtractor {
             // The naive approach would be to use an empty string as the extracted key for this case
             // but by doing this then all non-api key requests will be grouped together and the
             // limit will be reached almost instantly. To avoid this, we want to return a "unique"
-            // extracted key for each request. By concatenating the account id and the server
-            // timestamp we get a somewhat unique key each time so this rate limiter won't affect
+            // extracted key for each request. By concatenating the account id and the challenge
+            // we get a somewhat unique key each time so this rate limiter won't affect
             // requests without an api key.
             Ok(params.account_id.clone()
-                + &params
-                    .server_timestamp
-                    .as_ref()
-                    .ok_or(GovernorError::UnableToExtractKey)?
-                    .to_string())
+                + &params.challenge.as_ref().ok_or(GovernorError::UnableToExtractKey)?.to_string())
         }
     }
 }

@@ -29,7 +29,7 @@ use super::{
 /// The target for the challenge will be computed as `max_target / difficulty`.
 /// `max_target` is the maximum target value, which is `2^256 - 1` shifted right by
 /// `INITIAL_TARGET_SHIFT`.
-const INITIAL_TARGET_SHIFT: usize = 16;
+const INITIAL_TARGET_SHIFT: usize = 8;
 
 /// The number of active requests to increase the difficulty by 1.
 const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = 10;
@@ -409,14 +409,14 @@ mod tests {
         pow.adjust_difficulty(0);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
 
-        // With requests less than ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY (8),
-        // difficulty should still be 1
-        pow.adjust_difficulty(7);
+        // With requests less than `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY`, difficulty should still
+        // be 1
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY - 1);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
     }
 
     #[test]
-    fn test_adjust_difficulty_caling() {
+    fn test_adjust_difficulty_scaling() {
         // Test that difficulty scales with active requests
         let pow = PoW {
             salt: "test-salt".to_string(),
@@ -424,24 +424,19 @@ mod tests {
             challenge_cache: ChallengeCache::default(),
         };
 
-        // 10 active requests should give difficulty 1
-        pow.adjust_difficulty(10);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
 
-        // 20 active requests should give difficulty 2 (20 / 10 = 2)
-        pow.adjust_difficulty(20);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 2);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 2);
 
-        // 30 active requests should give difficulty 3 (30 / 10 = 3)
-        pow.adjust_difficulty(30);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 3);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 3);
 
-        // 40 active requests should give difficulty 4 (40 / 10 = 4)
-        pow.adjust_difficulty(40);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 4);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 4);
 
-        // 300 active requests should give difficulty 30 (300 / 10 = 30)
-        pow.adjust_difficulty(300);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 30);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 30);
     }
 }

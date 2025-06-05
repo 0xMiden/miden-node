@@ -49,8 +49,6 @@ pub enum DatabaseError {
     #[error("Setup deadpool connection pool failed")]
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error(transparent)]
-    DeadpoolInteract(#[from] deadpool_sync::InteractError),
-    #[error(transparent)]
     Diesel(#[from] diesel::result::Error),
 
     // OTHER ERRORS
@@ -264,4 +262,42 @@ pub enum GetBatchInputsError {
         highest_block_num: BlockNumber,
         latest_block_num: BlockNumber,
     },
+}
+
+mod compile_tests {
+    use std::marker::PhantomData;
+
+    use super::*;
+
+    #[allow(dead_code)]
+    fn pinky_promise<E>(_phony: PhantomData<E>)
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+    }
+
+    /// Ensure all enum variants remain compat with the desired
+    /// trait bounds
+    #[allow(dead_code)]
+    fn phony() {
+        pinky_promise::<AccountError>(Default::default());
+        pinky_promise::<AccountDeltaError>(Default::default());
+        pinky_promise::<RecvError>(Default::default());
+        pinky_promise::<DeserializationError>(Default::default());
+        pinky_promise::<FromSqlError>(Default::default());
+        pinky_promise::<NetworkAccountError>(Default::default());
+        pinky_promise::<NoteError>(Default::default());
+        pinky_promise::<rusqlite_migration::Error>(Default::default());
+        pinky_promise::<hex::FromHexError>(Default::default());
+        pinky_promise::<PoolError<rusqlite::Error>>(Default::default());
+        pinky_promise::<rusqlite::Error>(Default::default());
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(Default::default());
+        pinky_promise::<diesel::result::Error>(Default::default());
+        pinky_promise::<DatabaseError>(Default::default());
+        pinky_promise::<DatabaseSetupError>(Default::default());
+        pinky_promise::<diesel::result::Error>(Default::default());
+        pinky_promise::<GenesisError>(Default::default());
+        pinky_promise::<StateInitializationError>(Default::default());
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(Default::default());
+    }
 }

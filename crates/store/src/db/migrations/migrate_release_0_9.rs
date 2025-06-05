@@ -11,8 +11,7 @@ use miden_objects::{
     utils::{Deserializable, Serializable},
 };
 use rayon::prelude::*;
-use rusqlite::{Connection, ToSql, params, params_from_iter};
-use serde_json::json;
+use rusqlite::{Connection, params, params_from_iter};
 
 pub fn migrate_release_0_9(conn: &mut Connection) -> anyhow::Result<()> {
     migrate_note_details(conn)?;
@@ -28,6 +27,8 @@ fn migrate_account_codes(conn: &mut Connection) -> anyhow::Result<()> {
             transaction.prepare_cached("SELECT details FROM accounts WHERE details IS NOT NULL")?;
         let mut rows = stmt.query([])?;
 
+        let mut skipped = 0;
+
         while let Some(data) = rows.next()? {
             let public_details = data.get_ref(0)?.as_blob()?;
             let mut reader = SliceReader::new(public_details);
@@ -38,6 +39,12 @@ fn migrate_account_codes(conn: &mut Connection) -> anyhow::Result<()> {
             let mut buffer: Vec<u8> = vec![];
             while reader.has_more_bytes() {
                 buffer.push(reader.read_u8()?);
+            }
+
+            // FIX THIS: there are some accounts that crash when deserializing the `MastForest`
+            if buffer.len() > 350 {
+                skipped += 1;
+                continue;
             }
             let mut reader_for_0_8 = SliceReader::new(&buffer);
             let mut reader = SliceReader::new(&buffer);
@@ -62,10 +69,9 @@ fn migrate_account_codes(conn: &mut Connection) -> anyhow::Result<()> {
             let mut stmt =
                 transaction.prepare_cached("UPDATE accounts SET details = ? WHERE account_id=?")?;
 
-            let result =
-                stmt.execute(params![Some(account.to_bytes()), account.id().to_bytes()])?;
-            println!("updated {result} account (id {})", account.id());
+            stmt.execute(params![Some(account.to_bytes()), account.id().to_bytes()])?;
         }
+        println!("skipped {skipped} accounts");
     }
 
     transaction.commit()?;
@@ -153,7 +159,7 @@ pub fn migrate_account_root(conn: &mut Connection) -> anyhow::Result<()> {
 /// because the way the note details are stored in the db changed in v0.9.
 pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
     let transaction = conn.transaction()?;
-    {
+    let (script_values, note_values) = {
         // in the sql migration the details are migrated to the assets column, so we read them from
         // there
         let mut stmt: rusqlite::CachedStatement<'_> = transaction.prepare_cached(
@@ -171,7 +177,6 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
                 Ok((row.get_ref(0)?.as_blob()?.to_vec(), row.get_ref(1)?.as_blob()?.to_vec()))
             })?
             .collect::<Result<Vec<_>, _>>()?;
-        println!("loaded {} notes", rows.len());
 
         // Process rows in parallel
         let processed_notes: Vec<_> = rows
@@ -218,40 +223,51 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
 
         // Prepare the data for batch insertion
         let script_values: Vec<_> = processed_notes
-            .iter()
+            .clone()
+            .into_iter()
             .map(|(_, _, _, note_script_root, _, note_script)| (note_script_root, note_script))
             .collect();
 
         let note_values: Vec<_> = processed_notes
-            .iter()
+            .into_iter()
+            .take(1000)
             .map(|(note_id, note_assets, note_inputs, note_script_root, note_serial_num, _)| {
                 (note_id, note_assets, note_inputs, note_script_root, note_serial_num)
             })
             .collect();
 
-        // Batch insert all scripts at once
-        let values_clause =
-            (0..script_values.len()).map(|_| "(?, ?)").collect::<Vec<_>>().join(",");
+        (script_values, note_values)
+    };
+    transaction.commit()?;
+    let transaction = conn.transaction()?;
 
+    // Insert scripts in batches
+    let batch_size = 1000;
+    for chunk in script_values.chunks(batch_size) {
+        let values_clause = chunk.iter().map(|_| "(?, ?)").collect::<Vec<_>>().join(",");
         let mut script_stmt = transaction.prepare_cached(&format!(
-            "INSERT OR REPLACE INTO note_scripts (script_root, script) VALUES {}",
+            "INSERT OR IGNORE INTO note_scripts (script_root, script) VALUES {}",
             values_clause
         ))?;
+        let params: Vec<&[u8]> = chunk
+            .into_iter()
+            .flat_map(|(root, script)| [root.as_slice(), script.as_slice()])
+            .collect();
+        script_stmt.execute(params_from_iter(params))?;
+    }
 
-        let mut params: Vec<Box<dyn ToSql>> = Vec::new();
-        for (script_root, script) in script_values {
-            params.push(Box::new(script_root));
-            params.push(Box::new(script));
-        }
-        script_stmt.execute(params_from_iter(params.iter().map(|b| &**b)))?;
+    transaction.commit()?;
 
-        println!("inserted scripts");
+    // This is workaround to avoid fk errors with note_scripts, it should not be needed
+    conn.pragma_update(None, "foreign_keys", "OFF")?;
+    let transaction = conn.transaction()?;
 
-        // Batch update all notes at once
-        let when_then_clauses = (0..note_values.len())
-            .map(|_| format!("WHEN ? THEN ?"))
-            .collect::<Vec<_>>()
-            .join(" ");
+    // Update notes in batches
+    let batch_size = 1000;
+    println!("updating notes in batches of {}", batch_size);
+    for chunk in note_values.chunks(batch_size) {
+        let when_then_clauses =
+            chunk.iter().map(|_| format!("WHEN ? THEN ?")).collect::<Vec<_>>().join(" ");
         let sql = format!(
             "UPDATE notes 
              SET assets = CASE note_id {}
@@ -262,42 +278,37 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
                  ELSE script_root END,
              serial_num = CASE note_id {}
                  ELSE serial_num END
-             WHERE note_id IN {}",
+             WHERE note_id IN ({})",
             when_then_clauses,
             when_then_clauses,
             when_then_clauses,
             when_then_clauses,
-            note_values.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+            chunk.iter().map(|_| "?").collect::<Vec<_>>().join(",")
         );
-        let mut note_stmt = transaction.prepare_cached(&sql)?;
+        let mut note_stmt = transaction.prepare_cached(&sql).unwrap();
 
-        // Build all parameters in a single flat slice
-        let mut all_params: Vec<Box<dyn ToSql>> = Vec::new();
-        for (id, assets, inputs, script_root, serial_num) in &note_values {
-            // For each CASE statement (assets, inputs, script_root, serial_num)
-            all_params.push(Box::new(*id));
-            all_params.push(Box::new(*assets));
+        let params: Vec<&[u8]> = chunk
+            .iter()
+            .flat_map(|(id, assets, inputs, script_root, serial_num)| {
+                [
+                    id.as_slice(),
+                    assets.as_slice(),
+                    id.as_slice(),
+                    inputs.as_slice(),
+                    id.as_slice(),
+                    script_root.as_slice(),
+                    id.as_slice(),
+                    serial_num.as_slice(),
+                ]
+            })
+            .chain(chunk.iter().map(|(id, _, _, _, _)| id.as_slice()))
+            .collect();
 
-            all_params.push(Box::new(*id));
-            all_params.push(Box::new(*inputs));
-
-            all_params.push(Box::new(*id));
-            all_params.push(Box::new(*script_root));
-
-            all_params.push(Box::new(*id));
-            all_params.push(Box::new(*serial_num));
-        }
-        // Add WHERE clause parameters
-        for (id, _, _, _, _) in note_values {
-            all_params.push(Box::new(id));
-        }
-
-        // Execute with all parameters as a single slice
-        note_stmt.execute(params_from_iter(all_params.iter().map(|b| &**b)))?;
+        note_stmt.execute(params_from_iter(params))?;
     }
-    println!("updated notes");
 
     transaction.commit()?;
+    conn.pragma_update(None, "foreign_keys", "ON")?;
 
     Ok(())
 }

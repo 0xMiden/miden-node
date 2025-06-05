@@ -79,10 +79,9 @@ impl Store {
             })?);
 
         let database_filepath = data_directory.database_path();
-        let db = Db::load(database_filepath.clone()).await
-            .with_context(|| {
-                format!("failed to load database at {}", database_filepath.display())
-            })?;
+        let db = Db::load(database_filepath.clone()).await.with_context(|| {
+            format!("failed to load database at {}", database_filepath.display())
+        })?;
 
         let state = Arc::new(State::load(db, block_store).await.context("failed to load state")?);
 

@@ -44,8 +44,8 @@ pub fn slice_to_array<const N: usize>(bytes: &[u8]) -> Option<[u8; N]> {
 }
 
 #[inline]
-pub fn from_be_to_u64(bytes: &[u8]) -> Option<u64> {
-    slice_to_array::<8>(bytes).map(u64::from_be_bytes)
+pub fn from_be_to_u32(bytes: &[u8]) -> Option<u32> {
+    slice_to_array::<4>(bytes).map(u32::from_be_bytes)
 }
 
 /// Returns the schema version of the database.

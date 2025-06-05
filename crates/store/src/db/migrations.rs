@@ -9,7 +9,7 @@ use crate::{
     db::{
         connection::Connection,
         settings::Settings,
-        sql::utils::{from_be_to_u64, schema_version},
+        sql::utils::{from_be_to_u32 as from_be_to_u32, schema_version},
     },
     errors::DatabaseError,
 };
@@ -40,7 +40,7 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
         }
 
         let last_schema_version = Settings::get_value::<Vec<u8>>(conn, DB_SCHEMA_VERSION_FIELD)?
-            .map(|bytes| from_be_to_u64(&bytes[..]))
+            .map(|bytes| from_be_to_u32(&bytes[..]))
             .flatten()
             .ok_or_else(|| {
                 error!(target: COMPONENT, "No schema version in the settings table");

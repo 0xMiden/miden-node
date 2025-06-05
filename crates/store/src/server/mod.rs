@@ -5,7 +5,7 @@ use std::{
 };
 
 use anyhow::Context;
-use miden_node_proto::generated::store::api_server;
+use miden_node_proto::generated::store;
 use miden_node_utils::tracing::grpc::store_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -87,7 +87,16 @@ impl Store {
 
         let db_maintenance_service =
             DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
-        let api_service = api_server::ApiServer::new(api::StoreApi { state });
+
+        let api_service =
+            store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
+        let ntx_builder_service = store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
+            state: Arc::clone(&state),
+        });
+        let block_producer_service =
+            store::block_producer_server::BlockProducerServer::new(api::StoreApi {
+                state: Arc::clone(&state),
+            });
 
         info!(target: COMPONENT, "Database loaded");
 

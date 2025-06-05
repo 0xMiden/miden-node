@@ -30,7 +30,7 @@ use miden_node_proto::{
             NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
         },
-        store::api_server,
+        store::{block_producer_server, ntx_builder_server, rpc_server},
         transaction::TransactionSummary,
     },
     try_convert,
@@ -54,11 +54,10 @@ pub struct StoreApi {
     pub(super) state: Arc<State>,
 }
 
+// CLIENT ENDPOINTS
+// --------------------------------------------------------------------------------------------
 #[tonic::async_trait]
-impl api_server::Api for StoreApi {
-    // CLIENT ENDPOINTS
-    // --------------------------------------------------------------------------------------------
-
+impl rpc_server::Rpc for StoreApi {
     /// Returns block header for the specified block number.
     ///
     /// If the block number is not provided, block header for the latest block is returned.
@@ -154,44 +153,6 @@ impl api_server::Api for StoreApi {
             .collect();
 
         Ok(Response::new(CheckNullifiersByPrefixResponse { nullifiers }))
-    }
-
-    /// Returns the chain tip's header and MMR peaks corresponding to that header.
-    /// If there are N blocks, the peaks will represent the MMR at block `N - 1`.
-    ///
-    /// This returns all the blockchain-related information needed for executing transactions
-    /// without authenticating notes.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.get_current_blockchain_data",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_current_blockchain_data(
-        &self,
-        request: Request<GetCurrentBlockchainDataRequest>,
-    ) -> Result<Response<GetCurrentBlockchainDataResponse>, Status> {
-        let block_num = request.into_inner().block_num.map(BlockNumber::from);
-
-        let response = match self
-            .state
-            .get_current_blockchain_data(block_num)
-            .await
-            .map_err(internal_error)?
-        {
-            Some((header, peaks)) => GetCurrentBlockchainDataResponse {
-                current_peaks: peaks.peaks().iter().map(Into::into).collect(),
-                current_block_header: Some(header.into()),
-            },
-            None => GetCurrentBlockchainDataResponse {
-                current_peaks: vec![],
-                current_block_header: None,
-            },
-        };
-
-        Ok(Response::new(response))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -341,186 +302,6 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_network_account_details_by_prefix",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_network_account_details_by_prefix(
-        &self,
-        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
-    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
-        let request = request.into_inner();
-
-        // Validate that the call is for a valid network account prefix
-        let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
-            Status::invalid_argument(format!(
-                "request does not contain a valid network account prefix: {err}"
-            ))
-        })?;
-        let account_info: Option<AccountInfo> =
-            self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
-
-        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
-            details: account_info.map(|acc| (&acc).into()),
-        }))
-    }
-
-    // BLOCK PRODUCER ENDPOINTS
-    // --------------------------------------------------------------------------------------------
-
-    /// Updates the local DB by inserting a new block header and the related data.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.apply_block",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn apply_block(
-        &self,
-        request: Request<ApplyBlockRequest>,
-    ) -> Result<Response<ApplyBlockResponse>, Status> {
-        let request = request.into_inner();
-
-        debug!(target: COMPONENT, ?request);
-
-        let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
-            Status::invalid_argument(format!("Block deserialization error: {err}"))
-        })?;
-
-        let block_num = block.header().block_num().as_u32();
-
-        info!(
-            target: COMPONENT,
-            block_num,
-            block_commitment = %block.commitment(),
-            account_count = block.updated_accounts().len(),
-            note_count = block.output_notes().count(),
-            nullifier_count = block.created_nullifiers().len(),
-        );
-
-        self.state.apply_block(block).await?;
-
-        Ok(Response::new(ApplyBlockResponse {}))
-    }
-
-    /// Returns data needed by the block producer to construct and prove the next block.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.get_block_inputs",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_block_inputs(
-        &self,
-        request: Request<GetBlockInputsRequest>,
-    ) -> Result<Response<GetBlockInputsResponse>, Status> {
-        let request = request.into_inner();
-
-        let account_ids = read_account_ids(&request.account_ids)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
-        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
-        let reference_blocks = read_block_numbers(&request.reference_blocks);
-        let unauthenticated_notes = unauthenticated_notes.into_iter().collect();
-
-        self.state
-            .get_block_inputs(account_ids, nullifiers, unauthenticated_notes, reference_blocks)
-            .await
-            .map(GetBlockInputsResponse::from)
-            .map(Response::new)
-            .map_err(internal_error)
-    }
-
-    /// Fetches the inputs for a transaction batch from the database.
-    ///
-    /// See [`State::get_batch_inputs`] for details.
-    #[instrument(
-      parent = None,
-      target = COMPONENT,
-      name = "store.server.get_batch_inputs",
-      skip_all,
-      ret(level = "debug"),
-      err
-    )]
-    async fn get_batch_inputs(
-        &self,
-        request: Request<GetBatchInputsRequest>,
-    ) -> Result<Response<GetBatchInputsResponse>, Status> {
-        let request = request.into_inner();
-
-        let note_ids: Vec<RpoDigest> = try_convert(request.note_ids)
-            .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
-        let note_ids = note_ids.into_iter().map(NoteId::from).collect();
-
-        let reference_blocks: Vec<u32> =
-            try_convert::<_, Infallible, _, _, _>(request.reference_blocks)
-                .expect("operation should be infallible");
-        let reference_blocks = reference_blocks.into_iter().map(BlockNumber::from).collect();
-
-        self.state
-            .get_batch_inputs(reference_blocks, note_ids)
-            .await
-            .map(Into::into)
-            .map(Response::new)
-            .map_err(internal_error)
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.get_transaction_inputs",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_transaction_inputs(
-        &self,
-        request: Request<GetTransactionInputsRequest>,
-    ) -> Result<Response<GetTransactionInputsResponse>, Status> {
-        let request = request.into_inner();
-
-        debug!(target: COMPONENT, ?request);
-
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
-        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
-
-        let tx_inputs = self
-            .state
-            .get_transaction_inputs(account_id, &nullifiers, unauthenticated_notes)
-            .await?;
-
-        let block_height = self.state.latest_block_num().await.as_u32();
-
-        Ok(Response::new(GetTransactionInputsResponse {
-            account_state: Some(AccountTransactionInputRecord {
-                account_id: Some(account_id.into()),
-                account_commitment: Some(tx_inputs.account_commitment.into()),
-            }),
-            nullifiers: tx_inputs
-                .nullifiers
-                .into_iter()
-                .map(|nullifier| NullifierTransactionInputRecord {
-                    nullifier: Some(nullifier.nullifier.into()),
-                    block_num: nullifier.block_num.as_u32(),
-                })
-                .collect(),
-            found_unauthenticated_notes: tx_inputs
-                .found_unauthenticated_notes
-                .into_iter()
-                .map(Into::into)
-                .collect(),
-            block_height,
-        }))
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
         name = "store.server.get_block_by_number",
         skip_all,
         ret(level = "debug"),
@@ -611,6 +392,309 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
+        name = "store.server.status",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
+        Ok(Response::new(StoreStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: self.state.latest_block_num().await.as_u32(),
+        }))
+    }
+}
+
+// BLOCK PRODUCER ENDPOINTS
+// --------------------------------------------------------------------------------------------
+#[tonic::async_trait]
+impl block_producer_server::BlockProducer for StoreApi {
+    // TODO: get_block_header_by_number repeated
+    /// Returns block header for the specified block number.
+    ///
+    /// If the block number is not provided, block header for the latest block is returned.
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.server.get_block_header_by_number",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_block_header_by_number(
+        &self,
+        request: Request<GetBlockHeaderByNumberRequest>,
+    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        info!(target: COMPONENT, ?request);
+        let request = request.into_inner();
+
+        let block_num = request.block_num.map(BlockNumber::from);
+        let (block_header, mmr_proof) = self
+            .state
+            .get_block_header(block_num, request.include_mmr_proof.unwrap_or(false))
+            .await
+            .map_err(internal_error)?;
+
+        Ok(Response::new(GetBlockHeaderByNumberResponse {
+            block_header: block_header.map(Into::into),
+            chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
+            mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
+        }))
+    }
+
+    /// Updates the local DB by inserting a new block header and the related data.
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.server.apply_block",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn apply_block(
+        &self,
+        request: Request<ApplyBlockRequest>,
+    ) -> Result<Response<ApplyBlockResponse>, Status> {
+        let request = request.into_inner();
+
+        debug!(target: COMPONENT, ?request);
+
+        let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
+            Status::invalid_argument(format!("Block deserialization error: {err}"))
+        })?;
+
+        let block_num = block.header().block_num().as_u32();
+
+        info!(
+            target: COMPONENT,
+            block_num,
+            block_commitment = %block.commitment(),
+            account_count = block.updated_accounts().len(),
+            note_count = block.output_notes().count(),
+            nullifier_count = block.created_nullifiers().len(),
+        );
+
+        self.state.apply_block(block).await?;
+
+        Ok(Response::new(ApplyBlockResponse {}))
+    }
+
+    /// Returns data needed by the block producer to construct and prove the next block.
+    #[instrument(
+            parent = None,
+            target = COMPONENT,
+            name = "store.server.get_block_inputs",
+            skip_all,
+            ret(level = "debug"),
+            err
+        )]
+    async fn get_block_inputs(
+        &self,
+        request: Request<GetBlockInputsRequest>,
+    ) -> Result<Response<GetBlockInputsResponse>, Status> {
+        let request = request.into_inner();
+
+        let account_ids = read_account_ids(&request.account_ids)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
+        let reference_blocks = read_block_numbers(&request.reference_blocks);
+        let unauthenticated_notes = unauthenticated_notes.into_iter().collect();
+
+        self.state
+            .get_block_inputs(account_ids, nullifiers, unauthenticated_notes, reference_blocks)
+            .await
+            .map(GetBlockInputsResponse::from)
+            .map(Response::new)
+            .map_err(internal_error)
+    }
+
+    /// Fetches the inputs for a transaction batch from the database.
+    ///
+    /// See [`State::get_batch_inputs`] for details.
+    #[instrument(
+          parent = None,
+          target = COMPONENT,
+          name = "store.server.get_batch_inputs",
+          skip_all,
+          ret(level = "debug"),
+          err
+        )]
+    async fn get_batch_inputs(
+        &self,
+        request: Request<GetBatchInputsRequest>,
+    ) -> Result<Response<GetBatchInputsResponse>, Status> {
+        let request = request.into_inner();
+
+        let note_ids: Vec<RpoDigest> = try_convert(request.note_ids)
+            .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
+        let note_ids = note_ids.into_iter().map(NoteId::from).collect();
+
+        let reference_blocks: Vec<u32> =
+            try_convert::<_, Infallible, _, _, _>(request.reference_blocks)
+                .expect("operation should be infallible");
+        let reference_blocks = reference_blocks.into_iter().map(BlockNumber::from).collect();
+
+        self.state
+            .get_batch_inputs(reference_blocks, note_ids)
+            .await
+            .map(Into::into)
+            .map(Response::new)
+            .map_err(internal_error)
+    }
+
+    #[instrument(
+            parent = None,
+            target = COMPONENT,
+            name = "store.server.get_transaction_inputs",
+            skip_all,
+            ret(level = "debug"),
+            err
+        )]
+    async fn get_transaction_inputs(
+        &self,
+        request: Request<GetTransactionInputsRequest>,
+    ) -> Result<Response<GetTransactionInputsResponse>, Status> {
+        let request = request.into_inner();
+
+        debug!(target: COMPONENT, ?request);
+
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
+
+        let tx_inputs = self
+            .state
+            .get_transaction_inputs(account_id, &nullifiers, unauthenticated_notes)
+            .await?;
+
+        let block_height = self.state.latest_block_num().await.as_u32();
+
+        Ok(Response::new(GetTransactionInputsResponse {
+            account_state: Some(AccountTransactionInputRecord {
+                account_id: Some(account_id.into()),
+                account_commitment: Some(tx_inputs.account_commitment.into()),
+            }),
+            nullifiers: tx_inputs
+                .nullifiers
+                .into_iter()
+                .map(|nullifier| NullifierTransactionInputRecord {
+                    nullifier: Some(nullifier.nullifier.into()),
+                    block_num: nullifier.block_num.as_u32(),
+                })
+                .collect(),
+            found_unauthenticated_notes: tx_inputs
+                .found_unauthenticated_notes
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            block_height,
+        }))
+    }
+}
+
+// NTX BUILDER ENDPOINTS
+// --------------------------------------------------------------------------------------------
+#[tonic::async_trait]
+impl ntx_builder_server::NtxBuilder for StoreApi {
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.server.get_block_header_by_number",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_block_header_by_number(
+        &self,
+        request: Request<GetBlockHeaderByNumberRequest>,
+    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        info!(target: COMPONENT, ?request);
+        let request = request.into_inner();
+
+        let block_num = request.block_num.map(BlockNumber::from);
+        let (block_header, mmr_proof) = self
+            .state
+            .get_block_header(block_num, request.include_mmr_proof.unwrap_or(false))
+            .await
+            .map_err(internal_error)?;
+
+        Ok(Response::new(GetBlockHeaderByNumberResponse {
+            block_header: block_header.map(Into::into),
+            chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
+            mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
+        }))
+    }
+
+    /// Returns the chain tip's header and MMR peaks corresponding to that header.
+    /// If there are N blocks, the peaks will represent the MMR at block `N - 1`.
+    ///
+    /// This returns all the blockchain-related information needed for executing transactions
+    /// without authenticating notes.
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.server.get_current_blockchain_data",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_current_blockchain_data(
+        &self,
+        request: Request<GetCurrentBlockchainDataRequest>,
+    ) -> Result<Response<GetCurrentBlockchainDataResponse>, Status> {
+        let block_num = request.into_inner().block_num.map(BlockNumber::from);
+
+        let response = match self
+            .state
+            .get_current_blockchain_data(block_num)
+            .await
+            .map_err(internal_error)?
+        {
+            Some((header, peaks)) => GetCurrentBlockchainDataResponse {
+                current_peaks: peaks.peaks().iter().map(Into::into).collect(),
+                current_block_header: Some(header.into()),
+            },
+            None => GetCurrentBlockchainDataResponse {
+                current_peaks: vec![],
+                current_block_header: None,
+            },
+        };
+
+        Ok(Response::new(response))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.server.get_network_account_details_by_prefix",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_network_account_details_by_prefix(
+        &self,
+        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
+    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
+        let request = request.into_inner();
+
+        // Validate that the call is for a valid network account prefix
+        let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
+            Status::invalid_argument(format!(
+                "request does not contain a valid network account prefix: {err}"
+            ))
+        })?;
+        let account_info: Option<AccountInfo> =
+            self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
+
+        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
+            details: account_info.map(|acc| (&acc).into()),
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
         name = "store.server.get_unconsumed_network_notes",
         skip_all,
         err
@@ -644,22 +728,6 @@ impl api_server::Api for StoreApi {
         Ok(Response::new(GetUnconsumedNetworkNotesResponse {
             notes: network_notes,
             next_token: next_page.token,
-        }))
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.status",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
-        Ok(Response::new(StoreStatusResponse {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            status: "connected".to_string(),
-            chain_tip: self.state.latest_block_num().await.as_u32(),
         }))
     }
 }

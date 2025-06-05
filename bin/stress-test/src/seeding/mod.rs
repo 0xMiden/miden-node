@@ -15,7 +15,7 @@ use miden_lib::{
     utils::Serializable,
 };
 use miden_node_block_producer::store::StoreClient;
-use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client::ApiClient};
+use miden_node_proto::{domain::batch::BatchInputs, generated::store::rpc_client::RpcClient};
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
@@ -476,7 +476,7 @@ async fn get_block_inputs(
 /// - the address of the store
 pub async fn start_store(
     data_directory: PathBuf,
-) -> (ApiClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
+) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
     let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
     let store_addr = grpc_store.local_addr().expect("Failed to get store address");
     let dir = data_directory.clone();
@@ -497,5 +497,5 @@ pub async fn start_store(
         .await
         .expect("Failed to connect to store");
 
-    (ApiClient::with_interceptor(channel, OtelInterceptor), store_addr)
+    (RpcClient::with_interceptor(channel, OtelInterceptor), store_addr)
 }

@@ -46,6 +46,12 @@ pub enum DatabaseError {
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
     SqliteError(#[from] rusqlite::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
+    #[error(transparent)]
+    DeadpoolInteract(#[from] deadpool_sync::InteractError),
+    #[error(transparent)]
+    Diesel(#[from] diesel::result::Error),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -110,6 +116,8 @@ pub enum DatabaseSetupError {
     PoolBuild(#[from] deadpool::managed::BuildError),
     #[error("SQLite migration error")]
     SqliteMigration(#[from] rusqlite_migration::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Pool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
 }
 
 #[derive(Debug, Error)]

@@ -4,34 +4,26 @@ use std::{
 };
 
 use anyhow::Context;
+use diesel::{query_dsl::methods::{FilterDsl, SelectDsl}, ExpressionMethods, RunQueryDsl};
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
     generated::note as proto,
 };
 use miden_objects::{
-    Word,
-    account::{AccountDelta, AccountId},
-    block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
-    note::{
+    account::{AccountDelta, AccountId}, block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock}, crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable}, note::{
         NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
         NoteRecipient, NoteScript, Nullifier,
-    },
-    transaction::TransactionId,
+    }, transaction::TransactionId, Word
 };
 use sql::utils::{column_value_as_u64, read_block_number};
 use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
 
 use crate::{
-    COMPONENT,
     db::{
-        migrations::apply_migrations,
-        pool_manager::{Pool, SqlitePoolManager},
-    },
-    errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
-    genesis::GenesisBlock,
+        migrations::apply_migrations, pool_manager::{Pool, SqlitePoolManager}
+    }, errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError}, genesis::GenesisBlock, COMPONENT
 };
 
 mod migrations;
@@ -48,10 +40,22 @@ mod settings;
 mod tests;
 mod transaction;
 
+/// [diesel](https://diesel.rs) generated schema
+///
+/// ```sh
+/// cargo binstall diesel_cli
+/// sqlite3 -init ./src/db/migrations/001-init.sql ephemeral_setup.db ""
+/// diesel setup --datebase-url=./ephemeral_setup.db
+/// diesel print-schema > src/db/schema.rs
+/// ```
+pub(crate) mod schema;
+pub(crate) mod models;
+
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
     pool: Pool,
+    diesel: deadpool_diesel::sqlite::Pool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -227,7 +231,7 @@ impl Db {
         fields(path=%database_filepath.display())
         err,
     )]
-    pub fn bootstrap(database_filepath: PathBuf, genesis: &GenesisBlock) -> anyhow::Result<()> {
+    pub fn bootstrap(database_filepath: PathBuf, genesis: &GenesisBlock) -> anyhow::Result<()> {        
         // Create database.
         //
         // This will create the file if it does not exist, but will also happily open it if already
@@ -272,7 +276,11 @@ impl Db {
             DatabaseError::InteractError(format!("Migration task failed: {err}"))
         })??;
 
-        Ok(Db { pool })
+        // TODO rationalize magic numbers, and make them constant
+        let manager = deadpool_diesel::sqlite::Manager::new(database_filepath.to_str().unwrap().to_owned(), deadpool_diesel::sqlite::Runtime::Tokio1);
+        let diesel =  deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
+
+        Ok(Db { pool, diesel })
     }
 
     /// Loads all the nullifiers from the DB.
@@ -436,17 +444,26 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<Vec<AccountInfo>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_accounts_by_ids(&transaction, &account_ids)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get accounts details task failed: {err}"))
-            })?
+        use diesel::SelectableHelper;
+
+        let conn = self.diesel.get().await?;
+        let entries = conn.interact(move |conn| {
+            let account_ids = Vec::from_iter(account_ids
+                .iter()
+                .map(|account_id| account_id.to_bytes().to_vec())
+            );
+    
+            let filter = schema::accounts::account_id.eq_any(&account_ids[..]);
+            let stmt = schema::accounts::table.filter(filter);
+            let accounts_raw = stmt
+                .select(models::AccountInfoRawRow::as_select())
+                .load::<models::AccountInfoRawRow>(conn)?;
+            Result::<Vec<_>,_>::from_iter(accounts_raw.into_iter()
+                .map(|raw| {
+                    raw.try_into().map(|info| AccountInfo::from(info))
+                }))
+        }).await??;
+        Ok(entries)
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

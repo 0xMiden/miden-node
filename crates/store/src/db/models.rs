@@ -2,7 +2,7 @@
 
 use diesel::prelude::*;
 
-use crate::{db::schema::*, errors::DatabaseError};
+use crate::{db::schema::accounts, errors::DatabaseError};
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = accounts)]
@@ -27,10 +27,12 @@ use miden_objects::{
 impl TryInto<proto::domain::account::AccountInfo> for AccountInfoRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
-        use proto::domain::account::*;
+        use proto::domain::account::{AccountInfo, AccountSummary};
         let account_id = AccountId::read_from_bytes(&self.account_id[..])?;
         let account_commitment = RpoDigest::read_from_bytes(&self.account_commitment[..])?;
-        let block_num = BlockNumber::from(self.block_num as u32);
+        let block_num = u32::try_from(self.block_num)
+            .expect("Only values less than `u32::MAX` enter the databe");
+        let block_num = BlockNumber::from(block_num);
         let summary = AccountSummary {
             account_id,
             account_commitment,

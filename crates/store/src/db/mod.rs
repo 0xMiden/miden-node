@@ -465,7 +465,7 @@ impl Db {
         let entries = conn
             .interact(move |conn| {
                 let account_ids = Vec::from_iter(
-                    account_ids.iter().map(|account_id| account_id.to_bytes().to_vec()),
+                    account_ids.iter().map(|account_id| account_id.to_bytes().clone()),
                 );
 
                 let filter = schema::accounts::account_id.eq_any(&account_ids[..]);
@@ -474,9 +474,7 @@ impl Db {
                     .select(models::AccountInfoRawRow::as_select())
                     .load::<models::AccountInfoRawRow>(conn)?;
                 Result::<Vec<_>, _>::from_iter(
-                    accounts_raw
-                        .into_iter()
-                        .map(|raw| raw.try_into().map(|info| AccountInfo::from(info))),
+                    accounts_raw.into_iter().map(std::convert::TryInto::try_into),
                 )
             })
             .await

@@ -17,9 +17,9 @@ workspace = true
 [dependencies]
 anyhow             = { workspace = true }
 deadpool           = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
+deadpool-diesel    = { features = ["sqlite"], version = "0.6" }
 deadpool-sync      = { version = "0.1" }
-deadpool-diesel    = { version = "0.6", features = ["sqlite"]}
-diesel             = { version = "2.2", features = ["sqlite"] }
+diesel             = { features = ["sqlite"], version = "2.2" }
 hex                = { version = "0.4" }
 miden-lib          = { workspace = true }
 miden-node-proto   = { workspace = true }

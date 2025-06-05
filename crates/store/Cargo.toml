@@ -32,6 +32,8 @@ tokio-stream       = { features = ["net"], workspace = true }
 tonic              = { workspace = true }
 tower-http         = { features = ["util"], workspace = true }
 tracing            = { workspace = true }
+rayon              = { version = "1.10" }
+serde_json         = { version = "1.0" }
 
 [dev-dependencies]
 assert_matches        = { workspace = true }

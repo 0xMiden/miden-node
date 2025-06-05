@@ -10,7 +10,9 @@ use miden_objects::{
     note::{Note, NoteAssets, NoteInputs, NoteRecipient, NoteScript},
     utils::{Deserializable, Serializable},
 };
-use rusqlite::{Connection, params};
+use rayon::prelude::*;
+use rusqlite::{Connection, ToSql, params, params_from_iter};
+use serde_json::json;
 
 pub fn migrate_release_0_9(conn: &mut Connection) -> anyhow::Result<()> {
     migrate_note_details(conn)?;
@@ -154,7 +156,7 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
     {
         // in the sql migration the details are migrated to the assets column, so we read them from
         // there
-        let mut stmt = transaction.prepare_cached(
+        let mut stmt: rusqlite::CachedStatement<'_> = transaction.prepare_cached(
             "SELECT note_id, assets
             FROM notes
             WHERE inputs IS NULL
@@ -164,68 +166,136 @@ pub fn migrate_note_details(conn: &mut Connection) -> anyhow::Result<()> {
             AND note_type = 1
             ",
         )?;
-        let mut rows = stmt.query([])?;
+        let rows: Vec<_> = stmt
+            .query_map([], |row| {
+                Ok((row.get_ref(0)?.as_blob()?.to_vec(), row.get_ref(1)?.as_blob()?.to_vec()))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        println!("loaded {} notes", rows.len());
 
-        while let Some(row) = rows.next()? {
-            let note_id = row.get_ref(0)?.as_blob()?;
-            let note_details = row
-                .get_ref(1)?
-                .as_blob_or_null()?
-                .ok_or_else(|| anyhow::anyhow!("unexpected NULL note_details"))?;
-            let note_details = <Vec<u8>>::read_from_bytes(note_details)?;
+        // Process rows in parallel
+        let processed_notes: Vec<_> = rows
+            .par_iter()
+            .map(|(note_id, note_details)| {
+                let note_details = <Vec<u8>>::read_from_bytes(note_details)?;
+                let mut byte_reader = SliceReader::new(&note_details);
 
-            let mut byte_reader = SliceReader::new(&note_details);
+                let note_metadata = miden_objects::note::NoteMetadata::read_from(&mut byte_reader)?;
+                let assets_count = byte_reader.read_u8()?;
 
-            let note_metadata = miden_objects::note::NoteMetadata::read_from(&mut byte_reader)?;
-            let assets_count = byte_reader.read_u8()?;
+                let mut assets = Vec::new();
+                for _ in 0..assets_count {
+                    let a = FungibleAsset::read_from(&mut byte_reader)?;
+                    assets.push(Asset::Fungible(a));
+                }
 
-            let mut assets = Vec::new();
-            for _ in 0..assets_count {
-                let a = FungibleAsset::read_from(&mut byte_reader)?;
-                assets.push(Asset::Fungible(a));
-            }
+                let note_assets = NoteAssets::new(assets)?;
+                let note_mast_forest = read_from_old(&mut byte_reader)?;
+                let note_mast_serialized = note_mast_forest.to_bytes();
+                let new_mast_forest = MastForest::read_from_bytes(&note_mast_serialized)?;
 
-            let note_assets = NoteAssets::new(assets)?;
+                let entrypoint =
+                    MastNodeId::from_u32_safe(byte_reader.read_u32()?, &new_mast_forest)?;
+                let note_script = NoteScript::from_parts(Arc::new(new_mast_forest), entrypoint);
 
-            let note_mast_forest = read_from_old(&mut byte_reader)?;
-            let note_mast_serialized = note_mast_forest.to_bytes();
-            let new_mast_forest = MastForest::read_from_bytes(&note_mast_serialized)?;
+                let inputs = NoteInputs::read_from(&mut byte_reader)?;
+                let serial_num = Word::read_from(&mut byte_reader)?;
+                let recipient = NoteRecipient::new(serial_num, note_script.clone(), inputs);
 
-            let entrypoint = MastNodeId::from_u32_safe(byte_reader.read_u32()?, &new_mast_forest)?;
+                let note = Note::new(note_assets, note_metadata, recipient);
 
-            let note_script = NoteScript::from_parts(Arc::new(new_mast_forest), entrypoint);
-
-            let inputs = NoteInputs::read_from(&mut byte_reader)?;
-            let serial_num = Word::read_from(&mut byte_reader)?;
-            let recipient = NoteRecipient::new(serial_num, note_script.clone(), inputs);
-
-            let note = Note::new(note_assets, note_metadata, recipient);
-
-            let note_assets = note.assets().to_bytes();
-            let note_inputs = note.inputs().to_bytes();
-            let note_script_root = note.script().root().to_bytes();
-            let note_serial_num = note.serial_num().to_bytes();
-
-            // add the script to the note_scripts table
-            let mut stmt = transaction.prepare_cached(
-                "INSERT OR REPLACE INTO note_scripts (script_root, script) VALUES (?, ?)",
+                Ok((
+                    note_id.clone(),
+                    note.assets().to_bytes(),
+                    note.inputs().to_bytes(),
+                    note.script().root().to_bytes(),
+                    note.serial_num().to_bytes(),
+                    note_script.to_bytes(),
+                ))
+            })
+            .collect::<anyhow::Result<Vec<(Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>)>>>(
             )?;
-            stmt.execute(params![note_script_root, note_script.to_bytes()])?;
 
-            // add the details to the notes table
-            let mut stmt = transaction.prepare_cached(
-            "UPDATE notes SET assets = ?, inputs = ?, script_root = ?, serial_num = ? WHERE note_id = ?",
-        )?;
+        // Prepare the data for batch insertion
+        let script_values: Vec<_> = processed_notes
+            .iter()
+            .map(|(_, _, _, note_script_root, _, note_script)| (note_script_root, note_script))
+            .collect();
 
-            stmt.execute(params![
-                note_assets,
-                note_inputs,
-                note_script_root,
-                note_serial_num,
-                note_id
-            ])?;
+        let note_values: Vec<_> = processed_notes
+            .iter()
+            .map(|(note_id, note_assets, note_inputs, note_script_root, note_serial_num, _)| {
+                (note_id, note_assets, note_inputs, note_script_root, note_serial_num)
+            })
+            .collect();
+
+        // Batch insert all scripts at once
+        let values_clause =
+            (0..script_values.len()).map(|_| "(?, ?)").collect::<Vec<_>>().join(",");
+
+        let mut script_stmt = transaction.prepare_cached(&format!(
+            "INSERT OR REPLACE INTO note_scripts (script_root, script) VALUES {}",
+            values_clause
+        ))?;
+
+        let mut params: Vec<Box<dyn ToSql>> = Vec::new();
+        for (script_root, script) in script_values {
+            params.push(Box::new(script_root));
+            params.push(Box::new(script));
         }
+        script_stmt.execute(params_from_iter(params.iter().map(|b| &**b)))?;
+
+        println!("inserted scripts");
+
+        // Batch update all notes at once
+        let when_then_clauses = (0..note_values.len())
+            .map(|_| format!("WHEN ? THEN ?"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let sql = format!(
+            "UPDATE notes 
+             SET assets = CASE note_id {}
+                ELSE assets END,
+             inputs = CASE note_id {}
+                 ELSE inputs END,
+             script_root = CASE note_id {}
+                 ELSE script_root END,
+             serial_num = CASE note_id {}
+                 ELSE serial_num END
+             WHERE note_id IN {}",
+            when_then_clauses,
+            when_then_clauses,
+            when_then_clauses,
+            when_then_clauses,
+            note_values.iter().map(|_| "?").collect::<Vec<_>>().join(",")
+        );
+        let mut note_stmt = transaction.prepare_cached(&sql)?;
+
+        // Build all parameters in a single flat slice
+        let mut all_params: Vec<Box<dyn ToSql>> = Vec::new();
+        for (id, assets, inputs, script_root, serial_num) in &note_values {
+            // For each CASE statement (assets, inputs, script_root, serial_num)
+            all_params.push(Box::new(*id));
+            all_params.push(Box::new(*assets));
+
+            all_params.push(Box::new(*id));
+            all_params.push(Box::new(*inputs));
+
+            all_params.push(Box::new(*id));
+            all_params.push(Box::new(*script_root));
+
+            all_params.push(Box::new(*id));
+            all_params.push(Box::new(*serial_num));
+        }
+        // Add WHERE clause parameters
+        for (id, _, _, _, _) in note_values {
+            all_params.push(Box::new(id));
+        }
+
+        // Execute with all parameters as a single slice
+        note_stmt.execute(params_from_iter(all_params.iter().map(|b| &**b)))?;
     }
+    println!("updated notes");
 
     transaction.commit()?;
 

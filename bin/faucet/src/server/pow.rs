@@ -243,6 +243,7 @@ impl ChallengeCache {
 #[derive(Serialize)]
 struct PoWResponse {
     seed: String,
+    difficulty: usize,
     target: String,
     server_signature: String,
     timestamp: u64,
@@ -293,6 +294,7 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
 
     Json(PoWResponse {
         seed: random_seed,
+        difficulty,
         target: PoW::get_target(difficulty),
         server_signature,
         timestamp,

@@ -131,6 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
             pow_seed: powData.seed,
             pow_solution: nonce,
             pow_difficulty: powData.difficulty,
+            pow_target: powData.target,
             server_signature: powData.server_signature,
             server_timestamp: powData.timestamp
         };

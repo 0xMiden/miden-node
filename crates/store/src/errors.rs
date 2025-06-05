@@ -267,7 +267,11 @@ pub enum GetBatchInputsError {
 mod compile_tests {
     use std::marker::PhantomData;
 
-    use super::*;
+    use super::{
+        AccountDeltaError, AccountError, DatabaseError, DatabaseSetupError, DeserializationError,
+        FromSqlError, GenesisError, NetworkAccountError, NoteError, PoolError, RecvError,
+        StateInitializationError,
+    };
 
     #[allow(dead_code)]
     fn pinky_promise<E>(_phony: PhantomData<E>)
@@ -279,25 +283,25 @@ mod compile_tests {
     /// Ensure all enum variants remain compat with the desired
     /// trait bounds
     #[allow(dead_code)]
-    fn phony() {
-        pinky_promise::<AccountError>(Default::default());
-        pinky_promise::<AccountDeltaError>(Default::default());
-        pinky_promise::<RecvError>(Default::default());
-        pinky_promise::<DeserializationError>(Default::default());
-        pinky_promise::<FromSqlError>(Default::default());
-        pinky_promise::<NetworkAccountError>(Default::default());
-        pinky_promise::<NoteError>(Default::default());
-        pinky_promise::<rusqlite_migration::Error>(Default::default());
-        pinky_promise::<hex::FromHexError>(Default::default());
-        pinky_promise::<PoolError<rusqlite::Error>>(Default::default());
-        pinky_promise::<rusqlite::Error>(Default::default());
-        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(Default::default());
-        pinky_promise::<diesel::result::Error>(Default::default());
-        pinky_promise::<DatabaseError>(Default::default());
-        pinky_promise::<DatabaseSetupError>(Default::default());
-        pinky_promise::<diesel::result::Error>(Default::default());
-        pinky_promise::<GenesisError>(Default::default());
-        pinky_promise::<StateInitializationError>(Default::default());
-        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(Default::default());
+    fn assumed_trait_bounds_upheld() {
+        pinky_promise::<AccountError>(PhantomData);
+        pinky_promise::<AccountDeltaError>(PhantomData);
+        pinky_promise::<RecvError>(PhantomData);
+        pinky_promise::<DeserializationError>(PhantomData);
+        pinky_promise::<FromSqlError>(PhantomData);
+        pinky_promise::<NetworkAccountError>(PhantomData);
+        pinky_promise::<NoteError>(PhantomData);
+        pinky_promise::<rusqlite_migration::Error>(PhantomData);
+        pinky_promise::<hex::FromHexError>(PhantomData);
+        pinky_promise::<PoolError<rusqlite::Error>>(PhantomData);
+        pinky_promise::<rusqlite::Error>(PhantomData);
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
+        pinky_promise::<diesel::result::Error>(PhantomData);
+        pinky_promise::<DatabaseError>(PhantomData);
+        pinky_promise::<DatabaseSetupError>(PhantomData);
+        pinky_promise::<diesel::result::Error>(PhantomData);
+        pinky_promise::<GenesisError>(PhantomData);
+        pinky_promise::<StateInitializationError>(PhantomData);
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
     }
 }

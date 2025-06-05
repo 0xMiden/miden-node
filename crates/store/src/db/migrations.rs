@@ -6,7 +6,11 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
     COMPONENT,
-    db::{connection::Connection, settings::Settings, sql::utils::schema_version},
+    db::{
+        connection::Connection,
+        settings::Settings,
+        sql::utils::{from_be_to_u64, schema_version},
+    },
     errors::DatabaseError,
 };
 
@@ -35,7 +39,9 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
             return Err(DatabaseError::UnsupportedDatabaseVersion);
         }
 
-        let last_schema_version: usize = Settings::get_value(conn, DB_SCHEMA_VERSION_FIELD)?
+        let last_schema_version = Settings::get_value::<Vec<u8>>(conn, DB_SCHEMA_VERSION_FIELD)?
+            .map(|bytes| from_be_to_u64(&bytes[..]))
+            .flatten()
             .ok_or_else(|| {
                 error!(target: COMPONENT, "No schema version in the settings table");
                 DatabaseError::UnsupportedDatabaseVersion
@@ -48,10 +54,8 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
         }
 
         let expected_hash = &*MIGRATION_HASHES[ver.get() - 1];
-        let actual_hash = hex::decode(
-            Settings::get_value::<String>(conn, DB_MIGRATION_HASH_FIELD)?
-                .ok_or(DatabaseError::UnsupportedDatabaseVersion)?,
-        )?;
+        let actual_hash = Settings::get_value::<Vec<u8>>(conn, DB_MIGRATION_HASH_FIELD)?
+            .ok_or(DatabaseError::UnsupportedDatabaseVersion)?;
 
         if actual_hash != expected_hash {
             error!(
@@ -69,9 +73,10 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
     let version_after = MIGRATIONS.current_version(conn)?;
 
     if version_before != version_after {
-        let new_hash = hex::encode(&*MIGRATION_HASHES[MIGRATION_HASHES.len() - 1]);
+        let new_hash_bytes = &*MIGRATION_HASHES[MIGRATION_HASHES.len() - 1];
+        let new_hash = hex::encode(new_hash_bytes);
         debug!(target: COMPONENT, new_hash, "Updating migration hash in settings table");
-        Settings::set_value(conn, DB_MIGRATION_HASH_FIELD, &new_hash)?;
+        Settings::set_value(conn, DB_MIGRATION_HASH_FIELD, &new_hash_bytes)?;
     }
 
     info!(target: COMPONENT, "Starting database optimization");
@@ -90,7 +95,7 @@ pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
 
     let new_schema_version = schema_version(conn)?;
     debug!(target: COMPONENT, new_schema_version, "Updating schema version in settings table");
-    Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD, &new_schema_version)?;
+    Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD, &new_schema_version.to_be_bytes().to_vec())?;
 
     info!(target: COMPONENT, %version_after, "Finished database migrations");
 

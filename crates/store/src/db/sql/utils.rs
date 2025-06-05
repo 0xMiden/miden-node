@@ -49,12 +49,12 @@ pub fn from_be_to_u32(bytes: &[u8]) -> Option<u32> {
 }
 
 /// Returns the schema version of the database.
-pub fn schema_version(connection: &mut Connection) -> rusqlite::Result<u64> {
+pub fn schema_version(connection: &mut Connection) -> rusqlite::Result<u32> {
     let schema_version: u32 =
         connection
             .transaction()?
             .query_row("SELECT * FROM pragma_schema_version", [], |row| row.get(0))?;
-    Ok(schema_version as u64)
+    Ok(schema_version)
 }
 
 /// Auxiliary macro which substitutes `$src` token by `$dst` expression.

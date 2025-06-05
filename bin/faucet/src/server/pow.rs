@@ -29,10 +29,10 @@ use super::{
 /// The target for the challenge will be computed as `max_target / difficulty`.
 /// `max_target` is the maximum target value, which is `2^256 - 1` shifted right by
 /// `INITIAL_TARGET_SHIFT`.
-const INITIAL_TARGET_SHIFT: usize = 8;
+const INITIAL_TARGET_SHIFT: usize = 12;
 
 /// The number of active requests to increase the difficulty by 1.
-const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = 10;
+const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = 8;
 
 /// The tolerance for the server timestamp.
 ///

@@ -59,6 +59,7 @@ impl Challenge {
             return Err(InvalidRequest::MissingPowParameters);
         }
 
+        // SAFETY: Length of 48 is enforced above.
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let signature: [u8; 32] = bytes[16..48].try_into().unwrap();

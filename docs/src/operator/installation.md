@@ -76,5 +76,5 @@ More information on the various `cargo install` options can be found
 > existing chain will not work with the new version. This will change as our protocol and database schema mature and
 > settle.
 
-Updating the node to a new version is as simply as re-running the install process and repeating the [Setup](#setup)
+Updating the node to a new version is as simply as re-running the install process and repeating the [Bootstrapping](./usage.md#bootstrapping)
 instructions.

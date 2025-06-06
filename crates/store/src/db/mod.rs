@@ -4,6 +4,10 @@ use std::{
 };
 
 use anyhow::Context;
+use diesel::{
+    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
+    SqliteConnection, query_dsl::methods::SelectDsl,
+};
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
@@ -28,6 +32,7 @@ use crate::{
     COMPONENT,
     db::{
         migrations::apply_migrations,
+        models::AccountInfoRawRow,
         pool_manager::{Pool, SqlitePoolManager},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
@@ -48,10 +53,22 @@ mod settings;
 mod tests;
 mod transaction;
 
+pub(crate) mod models;
+/// [diesel](https://diesel.rs) generated schema
+///
+/// ```sh
+/// cargo binstall diesel_cli
+/// sqlite3 -init ./src/db/migrations/001-init.sql ephemeral_setup.db ""
+/// diesel setup --datebase-url=./ephemeral_setup.db
+/// diesel print-schema > src/db/schema.rs
+/// ```
+pub(crate) mod schema;
+
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
     pool: Pool,
+    diesel: deadpool_diesel::sqlite::Pool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -254,6 +271,21 @@ impl Db {
         db_tx.commit().context("failed to commit database transaction")
     }
 
+    /// Avoid repeated boilerplate
+    pub(crate) async fn query<Q, R, M>(&self, msg: M, query: Q) -> Result<R>
+    where
+        Q: Send + FnOnce(&mut SqliteConnection) -> Result<R> + 'static,
+        R: Send + 'static,
+        M: Send + ToString,
+    {
+        self.diesel
+            .get()
+            .await?
+            .interact(query)
+            .await
+            .map_err(|err| DatabaseError::interact(&msg.to_string(), &err))?
+    }
+
     /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
@@ -268,27 +300,30 @@ impl Db {
 
         let conn = pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
 
-        conn.interact(apply_migrations).await.map_err(|err| {
-            DatabaseError::InteractError(format!("Migration task failed: {err}"))
-        })??;
+        conn.interact(apply_migrations)
+            .await
+            .map_err(|err| DatabaseError::interact("Migration", &err))??;
 
-        Ok(Db { pool })
+        // TODO rationalize magic numbers, and make them constant
+        let manager = deadpool_diesel::sqlite::Manager::new(
+            database_filepath.to_str().unwrap().to_owned(),
+            deadpool_diesel::sqlite::Runtime::Tokio1,
+        );
+        let diesel = deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
+
+        Ok(Db { pool, diesel })
     }
 
     /// Loads all the nullifiers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_nullifiers(&self) -> Result<Vec<(Nullifier, BlockNumber)>> {
-        self.pool
-            .get()
-            .await?
-            .interact(|conn| {
-                let transaction = conn.transaction()?;
-                sql::select_all_nullifiers(&transaction)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Select nullifiers task failed: {err}"))
-            })?
+    pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
+        self.query("all nullifiers", move |conn| {
+            let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
+            Result::<Vec<_>, _>::from_iter(
+                nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
+            )
+        })
+        .await
     }
 
     /// Loads the nullifiers that match the prefixes from the DB.
@@ -299,24 +334,22 @@ impl Db {
         nullifier_prefixes: Vec<u32>,
         block_num: BlockNumber,
     ) -> Result<Vec<NullifierInfo>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_nullifiers_by_prefix(
-                    &transaction,
-                    prefix_len,
-                    &nullifier_prefixes,
-                    block_num,
-                )
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!(
-                    "Select nullifiers by prefix task failed: {err}"
-                ))
-            })?
+        assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
+
+        self.query("nullifieres by prefix", move |conn| {
+            let prefixes =
+                nullifier_prefixes.into_iter().map(|prefix| i32::try_from(prefix).unwrap()); // TODO XXX ensure these type conversions are sane
+            let nullifiers_raw =
+                SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
+                    .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
+                    .filter(schema::nullifiers::block_num.ge(i64::from(block_num.as_u32())))
+                    .order(schema::nullifiers::block_num.asc())
+                    .load::<models::NullifierRawRow>(conn)?;
+            Result::<Vec<_>, _>::from_iter(
+                nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
+            )
+        })
+        .await
     }
 
     /// Search for a [BlockHeader] from the database by its `block_num`.
@@ -327,17 +360,23 @@ impl Db {
         &self,
         block_number: Option<BlockNumber>,
     ) -> Result<Option<BlockHeader>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_block_header_by_block_num(&transaction, block_number)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Select block header task failed: {err}"))
-            })?
+        self.query("block headers by block number", move |conn| {
+            let sel = SelectDsl::select(
+                schema::block_headers::table,
+                models::BlockHeaderRawRow::as_select(),
+            );
+            let row = if let Some(block_number) = block_number {
+                sel.find(i64::from(block_number.as_u32()))
+                    .first::<models::BlockHeaderRawRow>(conn)
+                    .optional()
+                // invariant: only one block exists with the given block header, so the length is
+                // always zero or one
+            } else {
+                sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
+            }?;
+            row.map(std::convert::TryInto::try_into).transpose()
+        })
+        .await
     }
 
     /// Loads multiple block headers from the DB.
@@ -346,35 +385,30 @@ impl Db {
         &self,
         blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_block_headers(&transaction, blocks)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!(
-                    "Select many block headers task failed: {err}"
-                ))
-            })?
+        self.query("block headers from given block numbers", |conn| {
+            let blocks = Vec::from_iter(blocks.map(|block_num| i64::from(block_num.as_u32())));
+            let raw = QueryDsl::filter(
+                schema::block_headers::table,
+                schema::block_headers::block_num.eq_any(&blocks[..]),
+            )
+            .load::<models::BlockHeaderRawRow>(conn)?;
+            Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
+        })
+        .await
     }
 
     /// Loads all the block headers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_block_headers(&self) -> Result<Vec<BlockHeader>> {
-        self.pool
-            .get()
-            .await?
-            .interact(|conn| {
-                let transaction = conn.transaction()?;
-                sql::select_all_block_headers(&transaction)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Select block headers task failed: {err}"))
-            })?
+        self.query("all block headers", |conn| {
+            let raw = QueryDsl::select(
+                schema::block_headers::table,
+                models::BlockHeaderRawRow::as_select(),
+            )
+            .load::<models::BlockHeaderRawRow>(conn)?;
+            Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
+        })
+        .await
     }
 
     /// Loads all the account commitments from the DB.
@@ -398,17 +432,14 @@ impl Db {
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_account(&transaction, id)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get account details task failed: {err}"))
-            })?
+        self.query("Get account details", move |conn| {
+            let val =
+                QueryDsl::select(schema::accounts::table, models::AccountInfoRawRow::as_select())
+                    .find(id.to_bytes())
+                    .first::<models::AccountInfoRawRow>(conn)?;
+            val.try_into()
+        })
+        .await
     }
 
     /// Loads public account details from the DB based on the account ID's prefix.
@@ -417,17 +448,16 @@ impl Db {
         &self,
         id_prefix: u32,
     ) -> Result<Option<AccountInfo>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_network_account_by_prefix(&transaction, id_prefix)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get account details task failed: {err}"))
-            })?
+        self.query("Get account by id prefix", move |conn| {
+            let maybe_info = QueryDsl::filter(
+                QueryDsl::select(schema::accounts::table, AccountInfoRawRow::as_select()),
+                schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))),
+            )
+            .first(conn)
+            .optional()?;
+            maybe_info.map(std::convert::TryInto::try_into).transpose()
+        })
+        .await
     }
 
     /// Loads public accounts details from the DB.
@@ -436,17 +466,19 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<Vec<AccountInfo>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_accounts_by_ids(&transaction, &account_ids)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get accounts details task failed: {err}"))
-            })?
+        self.query("Select account by id set", move |conn| {
+            let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
+
+            let accounts_raw = QueryDsl::filter(
+                QueryDsl::select(schema::accounts::table, models::AccountInfoRawRow::as_select()),
+                schema::accounts::account_id.eq_any(account_ids),
+            )
+            .load(conn)?;
+            Result::<Vec<_>, _>::from_iter(
+                accounts_raw.into_iter().map(std::convert::TryInto::try_into),
+            )
+        })
+        .await
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

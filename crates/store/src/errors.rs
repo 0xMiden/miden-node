@@ -1,6 +1,7 @@
 use std::io;
 
 use deadpool::managed::PoolError;
+use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
@@ -46,6 +47,10 @@ pub enum DatabaseError {
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
     SqliteError(#[from] rusqlite::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
+    #[error(transparent)]
+    Diesel(#[from] diesel::result::Error),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -71,6 +76,23 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
+}
+
+impl DatabaseError {
+    /// Converts from `InteractError`
+    ///
+    /// Note: Required since `InteractError` has at least one enum
+    /// variant that is _not_ `Send + Sync` and hence prevents the
+    /// `Sync` auto implementation.
+    /// This does an internal conversion to string while maintaining
+    /// convenience.
+    ///
+    /// Using `MSG` as const so it can be called as
+    /// `.map_err(DatabaseError::interact::<"Your message">)`
+    pub fn interact(msg: &(impl ToString + ?Sized), e: &InteractError) -> Self {
+        let msg = msg.to_string();
+        Self::InteractError(format!("{msg} failed: {e:?}"))
+    }
 }
 
 impl From<DatabaseError> for Status {
@@ -110,6 +132,8 @@ pub enum DatabaseSetupError {
     PoolBuild(#[from] deadpool::managed::BuildError),
     #[error("SQLite migration error")]
     SqliteMigration(#[from] rusqlite_migration::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Pool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
 }
 
 #[derive(Debug, Error)]
@@ -253,4 +277,46 @@ pub enum GetBatchInputsError {
         highest_block_num: BlockNumber,
         latest_block_num: BlockNumber,
     },
+}
+
+mod compile_tests {
+    use std::marker::PhantomData;
+
+    use super::{
+        AccountDeltaError, AccountError, DatabaseError, DatabaseSetupError, DeserializationError,
+        FromSqlError, GenesisError, NetworkAccountError, NoteError, PoolError, RecvError,
+        StateInitializationError,
+    };
+
+    #[allow(dead_code)]
+    fn pinky_promise<E>(_phony: PhantomData<E>)
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+    }
+
+    /// Ensure all enum variants remain compat with the desired
+    /// trait bounds. Otherwise one gets very unwieldly errors.
+    #[allow(dead_code)]
+    fn assumed_trait_bounds_upheld() {
+        pinky_promise::<AccountError>(PhantomData);
+        pinky_promise::<AccountDeltaError>(PhantomData);
+        pinky_promise::<RecvError>(PhantomData);
+        pinky_promise::<DeserializationError>(PhantomData);
+        pinky_promise::<FromSqlError>(PhantomData);
+        pinky_promise::<NetworkAccountError>(PhantomData);
+        pinky_promise::<NoteError>(PhantomData);
+        pinky_promise::<rusqlite_migration::Error>(PhantomData);
+        pinky_promise::<hex::FromHexError>(PhantomData);
+        pinky_promise::<PoolError<rusqlite::Error>>(PhantomData);
+        pinky_promise::<rusqlite::Error>(PhantomData);
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
+        pinky_promise::<diesel::result::Error>(PhantomData);
+        pinky_promise::<DatabaseError>(PhantomData);
+        pinky_promise::<DatabaseSetupError>(PhantomData);
+        pinky_promise::<diesel::result::Error>(PhantomData);
+        pinky_promise::<GenesisError>(PhantomData);
+        pinky_promise::<StateInitializationError>(PhantomData);
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
+    }
 }

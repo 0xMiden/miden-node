@@ -2629,7 +2629,6 @@ dependencies = [
  "axum 0.8.4",
  "bytes",
  "clap 4.5.39",
- "futures-util",
  "miden-block-prover",
  "miden-lib",
  "miden-objects",

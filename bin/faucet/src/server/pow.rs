@@ -88,11 +88,10 @@ impl Challenge {
     pub fn validate_pow(&self, nonce: u64) -> bool {
         let mut hasher = Sha3_256::new();
         hasher.update(self.encode());
-        hasher.update(nonce.to_string().as_bytes());
+        hasher.update(nonce.to_be_bytes());
         let hash = hasher.finalize();
-        let hash_hex = hash.to_hex();
 
-        let leading_zeros = hash_hex.chars().take_while(|&c| c == '0').count();
+        let leading_zeros = hash.iter().take_while(|&b| *b == 0).count();
         leading_zeros >= self.difficulty
     }
 
@@ -110,8 +109,8 @@ impl Challenge {
     fn compute_signature(salt: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         hasher.update(salt);
-        hasher.update(difficulty.to_string().as_bytes());
-        hasher.update(timestamp.to_string().as_bytes());
+        hasher.update(difficulty.to_be_bytes());
+        hasher.update(timestamp.to_be_bytes());
         hasher.finalize().into()
     }
 
@@ -170,7 +169,7 @@ impl PoW {
                 challenge.timestamp(),
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
+                    .expect("System time should always be later than UNIX epoch")
                     .as_secs(),
             ));
         }

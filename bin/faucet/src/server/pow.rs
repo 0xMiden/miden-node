@@ -50,9 +50,10 @@ impl Challenge {
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
     /// in the context of the specified salt.
     pub fn decode(value: &str, salt: [u8; 32]) -> Result<Self, InvalidRequest> {
+        // Add the "0x" prefix to the hex string, otherwise the hex_to_bytes function will fail.
+        let value = "0x".to_string() + value;
         // Parse the hex-encoded challenge string
-        let bytes: [u8; 48] =
-            hex_to_bytes(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
+        let bytes = hex_to_bytes::<48>(&value).map_err(|_| InvalidRequest::MissingPowParameters)?;
 
         if bytes.len() != 48 {
             // 8 + 8 + 32 bytes

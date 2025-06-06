@@ -36,9 +36,9 @@ pub(crate) const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
 /// A challenge for proof-of-work validation.
 #[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct Challenge {
-    difficulty: usize,
-    timestamp: u64,
-    signature: [u8; 32],
+    pub(crate) difficulty: usize,
+    pub(crate) timestamp: u64,
+    pub(crate) signature: [u8; 32],
 }
 
 impl Challenge {
@@ -113,14 +113,6 @@ impl Challenge {
         hasher.update(timestamp.to_be_bytes());
         hasher.finalize().into()
     }
-
-    pub fn difficulty(&self) -> usize {
-        self.difficulty
-    }
-
-    pub fn timestamp(&self) -> u64 {
-        self.timestamp
-    }
 }
 
 // POW
@@ -173,7 +165,7 @@ impl PoW {
         // Check timestamp validity
         if !challenge.is_timestamp_valid() {
             return Err(InvalidRequest::ExpiredServerTimestamp(
-                challenge.timestamp(),
+                challenge.timestamp,
                 SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .expect("System time should always be later than UNIX epoch")
@@ -234,7 +226,7 @@ impl ChallengeCache {
 
         let mut challenges = self.challenges.lock().unwrap();
         challenges.retain(|challenge| {
-            (current_time - challenge.timestamp()) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+            (current_time - challenge.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
         });
     }
 
@@ -266,8 +258,8 @@ pub(crate) async fn get_pow_challenge(State(server): State<Server>) -> impl Into
 
     Json(PoWResponse {
         challenge: challenge.encode(),
-        difficulty: challenge.difficulty(),
-        timestamp: challenge.timestamp(),
+        difficulty: challenge.difficulty,
+        timestamp: challenge.timestamp,
     })
 }
 

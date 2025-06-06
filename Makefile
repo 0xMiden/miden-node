@@ -18,7 +18,8 @@ clippy: ## Runs Clippy with configs
 
 .PHONY: fix
 fix: ## Runs Fix with configs
-	cargo fix --allow-staged --allow-dirty --all-targets --all-features
+	cargo fix --allow-staged --allow-dirty --all-targets --all-features --workspace --exclude miden-proving-service # miden-tx async feature on.
+	cargo fix --allow-staged --allow-dirty --all-targets --all-features -p miden-proving-service # miden-tx async feature off.
 
 
 .PHONY: format

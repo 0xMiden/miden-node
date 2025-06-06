@@ -19,6 +19,9 @@ path = "src/main.rs"
 concurrent = ["miden-tx/concurrent"]
 default    = ["concurrent"]
 
+[lints]
+workspace = true
+
 [dependencies]
 async-trait                        = { version = "0.1" }
 axum                               = { version = "0.8" }

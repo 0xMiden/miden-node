@@ -156,9 +156,16 @@ impl PoW {
         Challenge::new(difficulty, timestamp, signature)
     }
 
-    /// Verifies that the challenge is valid (e.g., timestamp is within range, difficulty is
-    /// satisfied etc.), and adds the validated challenge to the cache.
-    pub fn validate_challenge(
+    /// Submits a challenge to the `PoW` instance.
+    ///
+    /// The challenge is validated and added to the cache.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// * The challenge is expired.
+    /// * The challenge is invalid.
+    /// * The challenge was already used.
+    pub fn submit_challenge(
         &self,
         challenge: &Challenge,
         nonce: u64,
@@ -319,11 +326,11 @@ mod tests {
         let challenge = pow.build_challenge();
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let result = pow.validate_challenge(&challenge, nonce);
+        let result = pow.submit_challenge(&challenge, nonce);
         assert!(result.is_ok());
 
         // Try to use the same challenge again - should fail
-        let result = pow.validate_challenge(&challenge, nonce);
+        let result = pow.submit_challenge(&challenge, nonce);
         assert!(result.is_err());
     }
 

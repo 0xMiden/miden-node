@@ -179,7 +179,7 @@ impl RawMintRequest {
         let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
 
         let challenge = Challenge::decode(&challenge_str, server.pow.salt)?;
-        server.pow.validate_challenge(&challenge, nonce)?;
+        server.pow.submit_challenge(&challenge, nonce)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

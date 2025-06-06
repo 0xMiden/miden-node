@@ -2,6 +2,10 @@
 
 ## v0.10.0 (TBD)
 
+### Changes
+
+- Added a faucet Dockerfile (#933).
+
 ## v0.9.0 (2025-05-30)
 
 ### Enhancements

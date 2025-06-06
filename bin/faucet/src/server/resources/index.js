@@ -196,9 +196,9 @@ document.addEventListener('DOMContentLoaded', function () {
             throw new Error('SHA3 library not properly loaded. Please refresh the page.');
         }
 
-        // Parse difficulty (number of required leading zeros)
+        // Parse difficulty (number of required leading zero BYTES, each byte = 2 hex digits)
         const requiredZeros = parseInt(difficulty);
-        const requiredPattern = '0'.repeat(requiredZeros);
+        const requiredPattern = '00'.repeat(requiredZeros); // Each zero byte = "00" in hex
 
         let nonce = 0;
         let validNonceFound = false;
@@ -211,13 +211,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 // Compute hash using SHA3 with the challenge and nonce
                 let hash = sha3_256.create();
                 hash.update(challenge);  // Use the hex-encoded challenge string directly
-                hash.update(nonce.toString());
+
+                // Convert nonce to 8-byte little-endian format to match backend
+                const nonceBytes = new ArrayBuffer(8);
+                const nonceView = new DataView(nonceBytes);
+                nonceView.setBigUint64(0, BigInt(nonce), true); // true = little-endian
+                const nonceByteArray = new Uint8Array(nonceBytes);
+                hash.update(nonceByteArray);
+
                 // Get the hex digest
                 let digest = hash.hex().toString();
 
                 // Check if the hash starts with the required number of zeros
                 if (digest.startsWith(requiredPattern)) {
-                    console.log("Found valid nonce! Nonce:", nonce, "Hash:", digest);
                     validNonceFound = true;
                     return nonce;
                 }

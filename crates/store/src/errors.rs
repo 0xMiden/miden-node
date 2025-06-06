@@ -1,6 +1,7 @@
 use std::io;
 
 use deadpool::managed::PoolError;
+use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
@@ -75,6 +76,23 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
+}
+
+impl DatabaseError {
+    /// Converts from `InteractError`
+    ///
+    /// Note: Required since `InteractError` has at least one enum
+    /// variant that is _not_ `Send + Sync` and hence prevents the
+    /// `Sync` auto implementation.
+    /// This does an internal conversion to string while maintaining
+    /// convenience.
+    ///
+    /// Using `MSG` as const so it can be called as
+    /// `.map_err(DatabaseError::interact::<"Your message">)`
+    pub fn interact(msg: &(impl ToString + ?Sized), e: &InteractError) -> Self {
+        let msg = msg.to_string();
+        Self::InteractError(format!("{msg} failed: {e:?}"))
+    }
 }
 
 impl From<DatabaseError> for Status {
@@ -281,7 +299,7 @@ mod compile_tests {
     }
 
     /// Ensure all enum variants remain compat with the desired
-    /// trait bounds
+    /// trait bounds. Otherwise one gets very unwieldly errors.
     #[allow(dead_code)]
     fn assumed_trait_bounds_upheld() {
         pinky_promise::<AccountError>(PhantomData);

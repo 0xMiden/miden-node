@@ -99,7 +99,7 @@ impl Challenge {
     pub fn is_timestamp_valid(&self) -> bool {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .expect("System time should always be later than UNIX epoch")
             .as_secs();
 
         (current_time - self.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
@@ -174,6 +174,11 @@ impl PoW {
             ));
         }
 
+        // Validate the proof of work
+        if !challenge.validate_pow(nonce) {
+            return Err(InvalidRequest::InvalidPoW);
+        }
+
         // Check if challenge was already used
         let challenge_key = challenge.encode();
         let mut challenges = self
@@ -184,11 +189,6 @@ impl PoW {
 
         if challenges.contains_key(&challenge_key) {
             return Err(InvalidRequest::ChallengeAlreadyUsed);
-        }
-
-        // Validate the proof of work
-        if !challenge.validate_pow(nonce) {
-            return Err(InvalidRequest::InvalidPoW);
         }
 
         // Add to cache to prevent reuse

@@ -62,7 +62,7 @@ impl Store {
         Ok(())
     }
 
-    /// Serves the store's RPC API and DB maintenance background task.
+    /// Serves the store APIs (RPC, NtxBuilder, BlockProducer) and DB maintenance background task.
     ///
     /// Note: this blocks until the server dies.
     pub async fn serve(self) -> anyhow::Result<()> {
@@ -88,7 +88,7 @@ impl Store {
         let db_maintenance_service =
             DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
 
-        let api_service =
+        let rpc_service =
             store::rpc_server::RpcServer::new(api::StoreApi { state: Arc::clone(&state) });
         let ntx_builder_service = store::ntx_builder_server::NtxBuilderServer::new(api::StoreApi {
             state: Arc::clone(&state),
@@ -101,10 +101,12 @@ impl Store {
         info!(target: COMPONENT, "Database loaded");
 
         tokio::spawn(db_maintenance_service.run());
-        // Build the gRPC server with the API service and trace layer.
+        // Build the gRPC server with the API services and trace layer.
         tonic::transport::Server::builder()
             .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
-            .add_service(api_service)
+            .add_service(rpc_service)
+            .add_service(ntx_builder_service)
+            .add_service(block_producer_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve store API")

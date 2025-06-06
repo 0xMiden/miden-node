@@ -64,7 +64,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_block_header_by_number",
+        name = "store.rpc_server.get_block_header_by_number",
         skip_all,
         ret(level = "debug"),
         err
@@ -97,7 +97,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.check_nullifiers",
+        name = "store.rpc_server.check_nullifiers",
         skip_all,
         ret(level = "debug"),
         err
@@ -122,7 +122,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.check_nullifiers_by_prefix",
+        name = "store.rpc_server.check_nullifiers_by_prefix",
         skip_all,
         ret(level = "debug"),
         err
@@ -160,7 +160,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.sync_state",
+        name = "store.rpc_server.sync_state",
         skip_all,
         ret(level = "debug"),
         err
@@ -215,7 +215,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.sync_notes",
+        name = "store.rpc_server.sync_notes",
         skip_all,
         ret(level = "debug"),
         err
@@ -248,7 +248,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_notes_by_id",
+        name = "store.rpc_server.get_notes_by_id",
         skip_all,
         ret(level = "debug"),
         err
@@ -281,7 +281,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_account_details",
+        name = "store.rpc_server.get_account_details",
         skip_all,
         ret(level = "debug"),
         err
@@ -302,7 +302,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_block_by_number",
+        name = "store.rpc_server.get_block_by_number",
         skip_all,
         ret(level = "debug"),
         err
@@ -323,7 +323,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_account_proofs",
+        name = "store.rpc_server.get_account_proofs",
         skip_all,
         ret(level = "debug"),
         err
@@ -362,7 +362,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_account_state_delta",
+        name = "store.rpc_server.get_account_state_delta",
         skip_all,
         ret(level = "debug"),
         err
@@ -392,7 +392,7 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.status",
+        name = "store.rpc_server.status",
         skip_all,
         ret(level = "debug"),
         err
@@ -417,7 +417,7 @@ impl block_producer_server::BlockProducer for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_block_header_by_number",
+        name = "store.block_producer_server.get_block_header_by_number",
         skip_all,
         ret(level = "debug"),
         err
@@ -447,7 +447,7 @@ impl block_producer_server::BlockProducer for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.apply_block",
+        name = "store.block_producer_server.apply_block",
         skip_all,
         ret(level = "debug"),
         err
@@ -484,7 +484,7 @@ impl block_producer_server::BlockProducer for StoreApi {
     #[instrument(
             parent = None,
             target = COMPONENT,
-            name = "store.server.get_block_inputs",
+            name = "store.block_producer_server.get_block_inputs",
             skip_all,
             ret(level = "debug"),
             err
@@ -515,7 +515,7 @@ impl block_producer_server::BlockProducer for StoreApi {
     #[instrument(
           parent = None,
           target = COMPONENT,
-          name = "store.server.get_batch_inputs",
+          name = "store.block_producer_server.get_batch_inputs",
           skip_all,
           ret(level = "debug"),
           err
@@ -546,7 +546,7 @@ impl block_producer_server::BlockProducer for StoreApi {
     #[instrument(
             parent = None,
             target = COMPONENT,
-            name = "store.server.get_transaction_inputs",
+            name = "store.block_producer_server.get_transaction_inputs",
             skip_all,
             ret(level = "debug"),
             err
@@ -600,7 +600,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_block_header_by_number",
+        name = "store.ntx_builder_server.get_block_header_by_number",
         skip_all,
         ret(level = "debug"),
         err
@@ -634,7 +634,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_current_blockchain_data",
+        name = "store.ntx_builder_server.get_current_blockchain_data",
         skip_all,
         ret(level = "debug"),
         err
@@ -667,7 +667,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_network_account_details_by_prefix",
+        name = "store.ntx_builder_server.get_network_account_details_by_prefix",
         skip_all,
         ret(level = "debug"),
         err
@@ -695,7 +695,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_unconsumed_network_notes",
+        name = "store.ntx_builder_server.get_unconsumed_network_notes",
         skip_all,
         err
     )]

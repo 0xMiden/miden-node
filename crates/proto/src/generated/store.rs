@@ -11,7 +11,6 @@ pub mod rpc_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     /// Store API for the RPC
-    /// This is the same api as the RPC, substracting the submit tx method. TODO: remove this and reuse the other proto definition
     #[derive(Debug, Clone)]
     pub struct RpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -972,7 +971,6 @@ pub mod rpc_server {
         >;
     }
     /// Store API for the RPC
-    /// This is the same api as the RPC, substracting the submit tx method. TODO: remove this and reuse the other proto definition
     #[derive(Debug)]
     pub struct RpcServer<T> {
         inner: Arc<T>,

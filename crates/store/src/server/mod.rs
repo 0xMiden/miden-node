@@ -62,7 +62,7 @@ impl Store {
         Ok(())
     }
 
-    /// Serves the store APIs (RPC, NtxBuilder, BlockProducer) and DB maintenance background task.
+    /// Serves the store APIs (rpc, ntx-builder, block-producer) and DB maintenance background task.
     ///
     /// Note: this blocks until the server dies.
     pub async fn serve(self) -> anyhow::Result<()> {

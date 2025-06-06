@@ -9,7 +9,6 @@ import "responses.proto";
 import "google/protobuf/empty.proto";
 
 // Store API for the RPC
-// This is the same api as the RPC, substracting the submit tx method. TODO: remove this and reuse the other proto definition
 service Rpc {
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(requests.CheckNullifiersRequest) returns (responses.CheckNullifiersResponse) {}

@@ -11,7 +11,7 @@ use miden_node_proto::generated::{
         CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
     },
     responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
-    store::api_client::ApiClient,
+    store::rpc_client::RpcClient,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
@@ -74,7 +74,7 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
 /// - the elapsed time.
 /// - the response.
 pub async fn sync_state(
-    api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
+    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
     block_num: u32,
 ) -> (Duration, SyncStateResponse) {
@@ -135,7 +135,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
 /// The note tags are generated from the account ids, so the request will contain a note tag for
 /// each account id, with a block number of 0.
 pub async fn sync_notes(
-    api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
+    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
 ) -> Duration {
     let note_tags = account_ids
@@ -238,7 +238,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 /// - the elapsed time.
 /// - the response.
 async fn check_nullifiers_by_prefix(
-    api_client: &mut ApiClient<InterceptedService<Channel, OtelInterceptor>>,
+    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers_prefixes: Vec<u32>,
 ) -> (Duration, CheckNullifiersByPrefixResponse) {
     let sync_request = CheckNullifiersByPrefixRequest {

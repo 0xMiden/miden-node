@@ -6,7 +6,7 @@ use miden_node_proto::{
             GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
             GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
         },
-        store::api_client as store_client,
+        store::ntx_builder_client as store_client,
     },
     try_convert,
 };
@@ -28,7 +28,7 @@ use crate::COMPONENT;
 // STORE CLIENT
 // ================================================================================================
 
-type InnerClient = store_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+type InnerClient = store_client::NtxBuilderClient<InterceptedService<Channel, OtelInterceptor>>;
 
 /// Interface to the store's gRPC API.
 ///
@@ -44,7 +44,7 @@ impl StoreClient {
         let channel = tonic::transport::Endpoint::try_from(store_url.to_string())
             .expect("valid gRPC endpoint URL")
             .connect_lazy();
-        let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+        let store = store_client::NtxBuilderClient::with_interceptor(channel, OtelInterceptor);
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 
         Self { inner: store }

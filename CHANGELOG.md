@@ -2,6 +2,10 @@
 
 ## v0.10.0 (TBD)
 
+### Changes
+
+- Separated the store API into three separate services (#932).
+
 ## v0.9.0 (2025-05-30)
 
 ### Enhancements

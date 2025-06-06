@@ -30,7 +30,7 @@ use miden_node_proto::{
             NullifierTransactionInputRecord, NullifierUpdate, StoreStatusResponse,
             SyncNoteResponse, SyncStateResponse,
         },
-        store::api_server,
+        store::{block_producer_server, ntx_builder_server, rpc_server},
         transaction::TransactionSummary,
     },
     try_convert,
@@ -54,18 +54,17 @@ pub struct StoreApi {
     pub(super) state: Arc<State>,
 }
 
+// CLIENT ENDPOINTS
+// --------------------------------------------------------------------------------------------
 #[tonic::async_trait]
-impl api_server::Api for StoreApi {
-    // CLIENT ENDPOINTS
-    // --------------------------------------------------------------------------------------------
-
+impl rpc_server::Rpc for StoreApi {
     /// Returns block header for the specified block number.
     ///
     /// If the block number is not provided, block header for the latest block is returned.
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_block_header_by_number",
+        name = "store.rpc_server.get_block_header_by_number",
         skip_all,
         ret(level = "debug"),
         err
@@ -98,7 +97,7 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.check_nullifiers",
+        name = "store.rpc_server.check_nullifiers",
         skip_all,
         ret(level = "debug"),
         err
@@ -123,7 +122,7 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.check_nullifiers_by_prefix",
+        name = "store.rpc_server.check_nullifiers_by_prefix",
         skip_all,
         ret(level = "debug"),
         err
@@ -156,50 +155,12 @@ impl api_server::Api for StoreApi {
         Ok(Response::new(CheckNullifiersByPrefixResponse { nullifiers }))
     }
 
-    /// Returns the chain tip's header and MMR peaks corresponding to that header.
-    /// If there are N blocks, the peaks will represent the MMR at block `N - 1`.
-    ///
-    /// This returns all the blockchain-related information needed for executing transactions
-    /// without authenticating notes.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.get_current_blockchain_data",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_current_blockchain_data(
-        &self,
-        request: Request<GetCurrentBlockchainDataRequest>,
-    ) -> Result<Response<GetCurrentBlockchainDataResponse>, Status> {
-        let block_num = request.into_inner().block_num.map(BlockNumber::from);
-
-        let response = match self
-            .state
-            .get_current_blockchain_data(block_num)
-            .await
-            .map_err(internal_error)?
-        {
-            Some((header, peaks)) => GetCurrentBlockchainDataResponse {
-                current_peaks: peaks.peaks().iter().map(Into::into).collect(),
-                current_block_header: Some(header.into()),
-            },
-            None => GetCurrentBlockchainDataResponse {
-                current_peaks: vec![],
-                current_block_header: None,
-            },
-        };
-
-        Ok(Response::new(response))
-    }
-
     /// Returns info which can be used by the client to sync up to the latest state of the chain
     /// for the objects the client is interested in.
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.sync_state",
+        name = "store.rpc_server.sync_state",
         skip_all,
         ret(level = "debug"),
         err
@@ -254,7 +215,7 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.sync_notes",
+        name = "store.rpc_server.sync_notes",
         skip_all,
         ret(level = "debug"),
         err
@@ -287,7 +248,7 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_notes_by_id",
+        name = "store.rpc_server.get_notes_by_id",
         skip_all,
         ret(level = "debug"),
         err
@@ -320,7 +281,7 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_account_details",
+        name = "store.rpc_server.get_account_details",
         skip_all,
         ret(level = "debug"),
         err
@@ -341,39 +302,152 @@ impl api_server::Api for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_network_account_details_by_prefix",
+        name = "store.rpc_server.get_block_by_number",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn get_network_account_details_by_prefix(
+    async fn get_block_by_number(
         &self,
-        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
-    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
+        request: Request<GetBlockByNumberRequest>,
+    ) -> Result<Response<GetBlockByNumberResponse>, Status> {
         let request = request.into_inner();
 
-        // Validate that the call is for a valid network account prefix
-        let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
-            Status::invalid_argument(format!(
-                "request does not contain a valid network account prefix: {err}"
-            ))
-        })?;
-        let account_info: Option<AccountInfo> =
-            self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
+        debug!(target: COMPONENT, ?request);
 
-        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
-            details: account_info.map(|acc| (&acc).into()),
+        let block = self.state.load_block(request.block_num.into()).await?;
+
+        Ok(Response::new(GetBlockByNumberResponse { block }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.get_account_proofs",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_account_proofs(
+        &self,
+        request: Request<GetAccountProofsRequest>,
+    ) -> Result<Response<GetAccountProofsResponse>, Status> {
+        debug!(target: COMPONENT, ?request);
+        let GetAccountProofsRequest {
+            account_requests,
+            include_headers,
+            code_commitments,
+        } = request.into_inner();
+
+        let include_headers = include_headers.unwrap_or_default();
+        let request_code_commitments: BTreeSet<RpoDigest> = try_convert(code_commitments)
+            .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
+
+        let account_requests: Vec<AccountProofRequest> =
+            try_convert(account_requests).map_err(|err| {
+                Status::invalid_argument(format!("Invalid account proofs request: {err}"))
+            })?;
+
+        let (block_num, infos) = self
+            .state
+            .get_account_proofs(account_requests, request_code_commitments, include_headers)
+            .await?;
+
+        Ok(Response::new(GetAccountProofsResponse {
+            block_num: block_num.as_u32(),
+            account_proofs: infos,
         }))
     }
 
-    // BLOCK PRODUCER ENDPOINTS
-    // --------------------------------------------------------------------------------------------
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.get_account_state_delta",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_account_state_delta(
+        &self,
+        request: Request<GetAccountStateDeltaRequest>,
+    ) -> Result<Response<GetAccountStateDeltaResponse>, Status> {
+        let request = request.into_inner();
+
+        debug!(target: COMPONENT, ?request);
+
+        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
+        let delta = self
+            .state
+            .get_account_state_delta(
+                account_id,
+                request.from_block_num.into(),
+                request.to_block_num.into(),
+            )
+            .await?
+            .map(|delta| delta.to_bytes());
+
+        Ok(Response::new(GetAccountStateDeltaResponse { delta }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.status",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
+        Ok(Response::new(StoreStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: self.state.latest_block_num().await.as_u32(),
+        }))
+    }
+}
+
+// BLOCK PRODUCER ENDPOINTS
+// --------------------------------------------------------------------------------------------
+#[tonic::async_trait]
+impl block_producer_server::BlockProducer for StoreApi {
+    // TODO: get_block_header_by_number repeated
+    /// Returns block header for the specified block number.
+    ///
+    /// If the block number is not provided, block header for the latest block is returned.
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.block_producer_server.get_block_header_by_number",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_block_header_by_number(
+        &self,
+        request: Request<GetBlockHeaderByNumberRequest>,
+    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        info!(target: COMPONENT, ?request);
+        let request = request.into_inner();
+
+        let block_num = request.block_num.map(BlockNumber::from);
+        let (block_header, mmr_proof) = self
+            .state
+            .get_block_header(block_num, request.include_mmr_proof.unwrap_or(false))
+            .await
+            .map_err(internal_error)?;
+
+        Ok(Response::new(GetBlockHeaderByNumberResponse {
+            block_header: block_header.map(Into::into),
+            chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
+            mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
+        }))
+    }
 
     /// Updates the local DB by inserting a new block header and the related data.
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.apply_block",
+        name = "store.block_producer_server.apply_block",
         skip_all,
         ret(level = "debug"),
         err
@@ -408,13 +482,13 @@ impl api_server::Api for StoreApi {
 
     /// Returns data needed by the block producer to construct and prove the next block.
     #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.get_block_inputs",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
+            parent = None,
+            target = COMPONENT,
+            name = "store.block_producer_server.get_block_inputs",
+            skip_all,
+            ret(level = "debug"),
+            err
+        )]
     async fn get_block_inputs(
         &self,
         request: Request<GetBlockInputsRequest>,
@@ -439,13 +513,13 @@ impl api_server::Api for StoreApi {
     ///
     /// See [`State::get_batch_inputs`] for details.
     #[instrument(
-      parent = None,
-      target = COMPONENT,
-      name = "store.server.get_batch_inputs",
-      skip_all,
-      ret(level = "debug"),
-      err
-    )]
+          parent = None,
+          target = COMPONENT,
+          name = "store.block_producer_server.get_batch_inputs",
+          skip_all,
+          ret(level = "debug"),
+          err
+        )]
     async fn get_batch_inputs(
         &self,
         request: Request<GetBatchInputsRequest>,
@@ -470,13 +544,13 @@ impl api_server::Api for StoreApi {
     }
 
     #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.get_transaction_inputs",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
+            parent = None,
+            target = COMPONENT,
+            name = "store.block_producer_server.get_transaction_inputs",
+            skip_all,
+            ret(level = "debug"),
+            err
+        )]
     async fn get_transaction_inputs(
         &self,
         request: Request<GetTransactionInputsRequest>,
@@ -517,101 +591,111 @@ impl api_server::Api for StoreApi {
             block_height,
         }))
     }
+}
 
+// NTX BUILDER ENDPOINTS
+// --------------------------------------------------------------------------------------------
+#[tonic::async_trait]
+impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_block_by_number",
+        name = "store.ntx_builder_server.get_block_header_by_number",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn get_block_by_number(
+    async fn get_block_header_by_number(
         &self,
-        request: Request<GetBlockByNumberRequest>,
-    ) -> Result<Response<GetBlockByNumberResponse>, Status> {
+        request: Request<GetBlockHeaderByNumberRequest>,
+    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        info!(target: COMPONENT, ?request);
         let request = request.into_inner();
 
-        debug!(target: COMPONENT, ?request);
+        let block_num = request.block_num.map(BlockNumber::from);
+        let (block_header, mmr_proof) = self
+            .state
+            .get_block_header(block_num, request.include_mmr_proof.unwrap_or(false))
+            .await
+            .map_err(internal_error)?;
 
-        let block = self.state.load_block(request.block_num.into()).await?;
+        Ok(Response::new(GetBlockHeaderByNumberResponse {
+            block_header: block_header.map(Into::into),
+            chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
+            mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
+        }))
+    }
 
-        Ok(Response::new(GetBlockByNumberResponse { block }))
+    /// Returns the chain tip's header and MMR peaks corresponding to that header.
+    /// If there are N blocks, the peaks will represent the MMR at block `N - 1`.
+    ///
+    /// This returns all the blockchain-related information needed for executing transactions
+    /// without authenticating notes.
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.ntx_builder_server.get_current_blockchain_data",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_current_blockchain_data(
+        &self,
+        request: Request<GetCurrentBlockchainDataRequest>,
+    ) -> Result<Response<GetCurrentBlockchainDataResponse>, Status> {
+        let block_num = request.into_inner().block_num.map(BlockNumber::from);
+
+        let response = match self
+            .state
+            .get_current_blockchain_data(block_num)
+            .await
+            .map_err(internal_error)?
+        {
+            Some((header, peaks)) => GetCurrentBlockchainDataResponse {
+                current_peaks: peaks.peaks().iter().map(Into::into).collect(),
+                current_block_header: Some(header.into()),
+            },
+            None => GetCurrentBlockchainDataResponse {
+                current_peaks: vec![],
+                current_block_header: None,
+            },
+        };
+
+        Ok(Response::new(response))
     }
 
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_account_proofs",
+        name = "store.ntx_builder_server.get_network_account_details_by_prefix",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proofs(
+    async fn get_network_account_details_by_prefix(
         &self,
-        request: Request<GetAccountProofsRequest>,
-    ) -> Result<Response<GetAccountProofsResponse>, Status> {
-        debug!(target: COMPONENT, ?request);
-        let GetAccountProofsRequest {
-            account_requests,
-            include_headers,
-            code_commitments,
-        } = request.into_inner();
+        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
+    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
+        let request = request.into_inner();
 
-        let include_headers = include_headers.unwrap_or_default();
-        let request_code_commitments: BTreeSet<RpoDigest> = try_convert(code_commitments)
-            .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
+        // Validate that the call is for a valid network account prefix
+        let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
+            Status::invalid_argument(format!(
+                "request does not contain a valid network account prefix: {err}"
+            ))
+        })?;
+        let account_info: Option<AccountInfo> =
+            self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
 
-        let account_requests: Vec<AccountProofRequest> =
-            try_convert(account_requests).map_err(|err| {
-                Status::invalid_argument(format!("Invalid account proofs request: {err}"))
-            })?;
-
-        let (block_num, infos) = self
-            .state
-            .get_account_proofs(account_requests, request_code_commitments, include_headers)
-            .await?;
-
-        Ok(Response::new(GetAccountProofsResponse {
-            block_num: block_num.as_u32(),
-            account_proofs: infos,
+        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
+            details: account_info.map(|acc| (&acc).into()),
         }))
     }
 
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.server.get_account_state_delta",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_state_delta(
-        &self,
-        request: Request<GetAccountStateDeltaRequest>,
-    ) -> Result<Response<GetAccountStateDeltaResponse>, Status> {
-        let request = request.into_inner();
-
-        debug!(target: COMPONENT, ?request);
-
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
-        let delta = self
-            .state
-            .get_account_state_delta(
-                account_id,
-                request.from_block_num.into(),
-                request.to_block_num.into(),
-            )
-            .await?
-            .map(|delta| delta.to_bytes());
-
-        Ok(Response::new(GetAccountStateDeltaResponse { delta }))
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.get_unconsumed_network_notes",
+        name = "store.ntx_builder_server.get_unconsumed_network_notes",
         skip_all,
         err
     )]
@@ -644,22 +728,6 @@ impl api_server::Api for StoreApi {
         Ok(Response::new(GetUnconsumedNetworkNotesResponse {
             notes: network_notes,
             next_token: next_page.token,
-        }))
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.server.status",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
-        Ok(Response::new(StoreStatusResponse {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            status: "connected".to_string(),
-            chain_tip: self.state.latest_block_num().await.as_u32(),
         }))
     }
 }

@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::HashSet,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -34,7 +34,7 @@ pub(crate) const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
 // ================================================================================================
 
 /// A challenge for proof-of-work validation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub struct Challenge {
     difficulty: usize,
     timestamp: u64,
@@ -187,19 +187,18 @@ impl PoW {
         }
 
         // Check if challenge was already used
-        let challenge_key = challenge.encode();
         let mut challenges = self
             .challenge_cache
             .challenges
             .lock()
             .expect("PoW challenge cache lock poisoned");
 
-        if challenges.contains_key(&challenge_key) {
+        if challenges.contains(challenge) {
             return Err(InvalidRequest::ChallengeAlreadyUsed);
         }
 
         // Add to cache to prevent reuse
-        challenges.insert(challenge_key, challenge.timestamp());
+        challenges.insert(challenge.clone());
 
         Ok(())
     }
@@ -228,7 +227,7 @@ impl PoW {
 #[derive(Clone, Default)]
 pub struct ChallengeCache {
     /// Once a challenge is added, it cannot be submitted again.
-    challenges: Arc<Mutex<HashMap<String, u64>>>,
+    challenges: Arc<Mutex<HashSet<Challenge>>>,
 }
 
 impl ChallengeCache {
@@ -243,8 +242,8 @@ impl ChallengeCache {
             .as_secs();
 
         let mut challenges = self.challenges.lock().unwrap();
-        challenges.retain(|_, timestamp| {
-            (current_time - *timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+        challenges.retain(|challenge| {
+            (current_time - challenge.timestamp()) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
         });
     }
 

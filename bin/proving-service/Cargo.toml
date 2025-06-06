@@ -24,7 +24,6 @@ async-trait                        = { version = "0.1" }
 axum                               = { version = "0.8" }
 bytes                              = { version = "1.0" }
 clap                               = { version = "4.5", features = ["derive", "env"] }
-futures-util                       = { version = "0.3" }
 miden-block-prover                 = { workspace = true }
 miden-lib                          = { workspace = true }
 miden-objects                      = { workspace = true, features = ["std"] }

@@ -8,7 +8,7 @@ use std::{
 };
 
 use axum::{Json, extract::State, response::IntoResponse};
-use miden_tx::utils::ToHex;
+use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
 use tokio::time::{Duration, interval};
@@ -51,7 +51,8 @@ impl Challenge {
     /// in the context of the specified salt.
     pub fn decode(value: &str, salt: [u8; 32]) -> Result<Self, InvalidRequest> {
         // Parse the hex-encoded challenge string
-        let bytes = Self::hex_decode(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
+        let bytes: [u8; 48] =
+            hex_to_bytes(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
 
         if bytes.len() != 48 {
             // 8 + 8 + 32 bytes
@@ -79,7 +80,7 @@ impl Challenge {
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         bytes.extend_from_slice(&self.signature);
-        Self::hex_encode(&bytes)
+        bytes.to_hex()
     }
 
     /// Checks whether the provided nonce satisfies the difficulty requirement encoded in the
@@ -112,27 +113,6 @@ impl Challenge {
         hasher.update(difficulty.to_string().as_bytes());
         hasher.update(timestamp.to_string().as_bytes());
         hasher.finalize().into()
-    }
-
-    /// Simple hex encoding function.
-    fn hex_encode(bytes: &[u8]) -> String {
-        use std::fmt::Write;
-        bytes.iter().fold(String::new(), |mut acc, b| {
-            write!(acc, "{b:02x}").unwrap();
-            acc
-        })
-    }
-
-    /// Simple hex decoding function.
-    fn hex_decode(s: &str) -> Result<Vec<u8>, ()> {
-        if s.len() % 2 != 0 {
-            return Err(());
-        }
-
-        (0..s.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).map_err(|_| ()))
-            .collect()
     }
 
     pub fn difficulty(&self) -> usize {

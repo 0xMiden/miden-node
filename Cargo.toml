@@ -40,8 +40,8 @@ futures                      = { version = "0.3" }
 http                         = { version = "1.3" }
 itertools                    = { version = "0.14" }
 miden-air                    = { version = "0.14" }
-miden-block-prover           = { branch = "next", git = "https://github.com/0xMiden/miden-base", default-features = false }
-miden-lib                    = { branch = "next", git = "https://github.com/0xMiden/miden-base", default-features = false }
+miden-block-prover           = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-lib                    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-node-block-producer    = { path = "crates/block-producer", version = "0.10" }
 miden-node-ntx-builder       = { path = "crates/ntx-builder", version = "0.10" }
 miden-node-proto             = { path = "crates/proto", version = "0.10" }
@@ -50,11 +50,11 @@ miden-node-rpc               = { path = "crates/rpc", version = "0.10" }
 miden-node-store             = { path = "crates/store", version = "0.10" }
 miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.10" }
-miden-objects                = { branch = "next", git = "https://github.com/0xMiden/miden-base", default-features = false }
+miden-objects                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-proving-service-client = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-testing                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx                     = { branch = "next", git = "https://github.com/0xMiden/miden-base", default-features = false }
-miden-tx-batch-prover        = { branch = "next", git = "https://github.com/0xMiden/miden-base", default-features = false }
+miden-tx                     = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover        = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }
 thiserror                    = { default-features = false, version = "2.0" }

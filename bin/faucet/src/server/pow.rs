@@ -187,18 +187,9 @@ impl PoW {
         }
 
         // Check if challenge was already used
-        let mut challenges = self
-            .challenge_cache
-            .challenges
-            .lock()
-            .expect("PoW challenge cache lock poisoned");
-
-        if challenges.contains(challenge) {
+        if !self.challenge_cache.challenges.lock().unwrap().insert(challenge.clone()) {
             return Err(InvalidRequest::ChallengeAlreadyUsed);
         }
-
-        // Add to cache to prevent reuse
-        challenges.insert(challenge.clone());
 
         Ok(())
     }

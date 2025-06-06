@@ -63,19 +63,22 @@ book: ## Builds the book & serves documentation site
 
 .PHONY: test
 test:  ## Runs all tests
-	cargo nextest run --all-features --workspace 
+	cargo nextest run --all-features --workspace --exclude miden-proving-service # miden-tx async feature on.
+	cargo nextest run --all-features -p miden-proving-service # miden-tx async feature off.
 
 # --- checking ------------------------------------------------------------------------------------
 
 .PHONY: check
 check: ## Check all targets and features for errors without code generation
-	${BUILD_PROTO} cargo check --all-features --all-targets --locked
+	${BUILD_PROTO} cargo check --all-features --all-targets --locked --workspace --exclude miden-proving-service # miden-tx async feature on.
+	${BUILD_PROTO} cargo check --all-features --all-targets --locked -p miden-proving-service  # miden-tx async feature off
 
 # --- building ------------------------------------------------------------------------------------
 
 .PHONY: build
 build: ## Builds all crates and re-builds ptotobuf bindings for proto crates
-	${BUILD_PROTO} cargo build --locked
+	${BUILD_PROTO} cargo build --locked --workspace --exclude miden-proving-service # miden-tx async feature on.
+	${BUILD_PROTO} cargo build --locked -p miden-proving-service  # miden-tx async feature off
 
 # --- installing ----------------------------------------------------------------------------------
 

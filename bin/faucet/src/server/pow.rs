@@ -95,8 +95,8 @@ impl Challenge {
         leading_zeros >= self.difficulty
     }
 
-    /// Checks if the challenge timestamp is still valid.
-    pub fn is_timestamp_valid(&self) -> bool {
+    /// Checks if the challenge timestamp is not expired.
+    pub fn is_not_expired(&self) -> bool {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("System time should always be later than UNIX epoch")
@@ -163,7 +163,7 @@ impl PoW {
         nonce: u64,
     ) -> Result<(), InvalidRequest> {
         // Check timestamp validity
-        if !challenge.is_timestamp_valid() {
+        if !challenge.is_not_expired() {
             return Err(InvalidRequest::ExpiredServerTimestamp(
                 challenge.timestamp,
                 SystemTime::now()
@@ -396,12 +396,12 @@ mod tests {
         // Valid timestamp (current time)
         let signature = Challenge::compute_signature(salt, 1, current_time);
         let challenge = Challenge::new(1, current_time, signature);
-        assert!(challenge.is_timestamp_valid());
+        assert!(challenge.is_not_expired());
 
         // Expired timestamp (too old)
         let old_timestamp = current_time - SERVER_TIMESTAMP_TOLERANCE_SECONDS - 10;
         let signature = Challenge::compute_signature(salt, 1, old_timestamp);
         let challenge = Challenge::new(1, old_timestamp, signature);
-        assert!(!challenge.is_timestamp_valid());
+        assert!(!challenge.is_not_expired());
     }
 }

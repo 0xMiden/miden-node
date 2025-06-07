@@ -121,7 +121,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Search for a nonce that satisfies the proof of work
         status.textContent = "Solving Proof of Work...";
 
-        const nonce = await findValidNonce(powData.seed, powData.difficulty);
+        const nonce = await findValidNonce(powData.seed, powData.target);
 
         // Build query parameters for the request
         const params = {
@@ -131,6 +131,7 @@ document.addEventListener('DOMContentLoaded', function () {
             pow_seed: powData.seed,
             pow_solution: nonce,
             pow_difficulty: powData.difficulty,
+            pow_target: powData.target,
             server_signature: powData.server_signature,
             server_timestamp: powData.timestamp
         };
@@ -192,35 +193,28 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Function to find a valid nonce for proof of work
-    async function findValidNonce(seed, difficulty) {
+    async function findValidNonce(seed, target) {
         // Check again if SHA3 is available
         if (typeof sha3_256 === 'undefined') {
             console.error("SHA3 library not properly loaded. SHA3 object:", sha3_256);
             throw new Error('SHA3 library not properly loaded. Please refresh the page.');
         }
-
-        // Parse difficulty (number of required trailing zeros)
-        const requiredZeros = parseInt(difficulty);
-        const requiredPattern = '0'.repeat(requiredZeros);
-
+        target = BigInt('0x' + target);
         let nonce = 0;
         let validNonceFound = false;
 
         while (!validNonceFound) {
-            // Generate a random nonce
-            nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
-
             try {
                 // Compute hash using SHA3
                 let hash = sha3_256.create();
                 hash.update(seed);
                 hash.update(nonce.toString());
-                // Trim leading 0x
-                let digest = hash.hex().toString();
+                let digest = hash.array().slice(0, 32).map(b => b.toString(16).padStart(2, '0')).join('');
+                const hashNum = BigInt('0x' + digest);
 
-                // Check if the hash starts with the required number of zeros
-                if (digest.startsWith(requiredPattern)) {
-                    console.log("Found valid nonce! Nonce:", nonce, "Hash:", digest);
+                // Check if the hash is less than the target
+                if (hashNum < target) {
+                    console.log("Found valid nonce! Nonce:", nonce, "Hash:", hashNum.toString(16));
                     validNonceFound = true;
                     return nonce;
                 }
@@ -233,6 +227,8 @@ document.addEventListener('DOMContentLoaded', function () {
             if (nonce % 1000 === 0) {
                 await new Promise(resolve => setTimeout(resolve, 0));
             }
+
+            nonce += 1;
         }
     }
 

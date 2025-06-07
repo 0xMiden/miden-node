@@ -9,6 +9,7 @@ use std::{
 
 use axum::{Json, extract::State, response::IntoResponse};
 use miden_tx::utils::ToHex;
+use num_bigint::BigUint;
 use rand::{Rng, rng};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
@@ -18,15 +19,20 @@ use super::{
     Server,
     get_tokens::{InvalidRequest, RawMintRequest},
 };
-use crate::REQUESTS_QUEUE_SIZE;
 
-/// The maximum difficulty of the `PoW`.
+/// The initial target shift.
 ///
-/// The difficulty is the number of leading zeros in the hash of the seed and the solution.
-const MAX_DIFFICULTY: usize = 24;
+/// The target value is the reference value that is used to determine the validity of the
+/// `PoW` solution. The hash of the seed and the solution must be less than the target value to be
+/// valid.
+///
+/// The target for the challenge will be computed as `max_target / difficulty`.
+/// `max_target` is the maximum target value, which is `2^256 - 1` shifted right by
+/// `INITIAL_TARGET_SHIFT`.
+const INITIAL_TARGET_SHIFT: usize = 12;
 
 /// The number of active requests to increase the difficulty by 1.
-const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY;
+const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = 8;
 
 /// The tolerance for the server timestamp.
 ///
@@ -48,6 +54,7 @@ pub(crate) struct PowParameters {
     pub(crate) server_timestamp: u64,
     pub(crate) pow_solution: u64,
     pub(crate) difficulty: usize,
+    pub(crate) target: String,
 }
 
 impl PowParameters {
@@ -91,8 +98,8 @@ impl PowParameters {
     ///
     /// * `challenge_cache` - The challenge cache to be used to validate the challenge.
     ///
-    /// The solution is valid if the hash of the seed and the solution has at least `DIFFICULTY`
-    /// leading zeros.
+    /// The solution is valid if the hash H(seed, solution), when interpreted as a number,
+    /// is less than the target value.
     pub fn check_pow_solution(
         &self,
         challenge_cache: &ChallengeCache,
@@ -104,14 +111,18 @@ impl PowParameters {
             return Err(InvalidRequest::ChallengeAlreadyUsed);
         }
 
-        // Then check the PoW solution
+        // Calculate the hash
         let mut hasher = Sha3_256::new();
         hasher.update(&self.pow_seed);
         hasher.update(self.pow_solution.to_string().as_bytes());
-        let hash = &hasher.finalize().to_hex();
+        let hash = hasher.finalize();
 
-        let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-        if leading_zeros < self.difficulty {
+        // Convert hash to a number
+        let hash_num = BigUint::from_bytes_be(&hash[..32]);
+        let target =
+            BigUint::parse_bytes(self.target.as_bytes(), 16).ok_or(InvalidRequest::InvalidPoW)?;
+
+        if hash_num >= target {
             return Err(InvalidRequest::InvalidPoW);
         }
 
@@ -146,6 +157,7 @@ impl TryFrom<&RawMintRequest> for PowParameters {
                 .pow_difficulty
                 .as_ref()
                 .ok_or(InvalidRequest::MissingPowParameters)?,
+            target: value.pow_target.as_ref().ok_or(InvalidRequest::MissingPowParameters)?.clone(),
         })
     }
 }
@@ -164,12 +176,20 @@ impl PoW {
     /// Adjust the difficulty of the `PoW`.
     ///
     /// The difficulty is adjusted based on the number of active requests.
-    /// The difficulty is increased by 1 for every 50 active requests.
-    /// The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
+    /// The difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY`
+    /// requests.
     pub fn adjust_difficulty(&self, active_requests: usize) {
-        let new_difficulty =
-            (active_requests / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY);
+        let new_difficulty = (active_requests / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).max(1);
         self.difficulty.store(new_difficulty, Ordering::Relaxed);
+    }
+
+    /// Get the target value for a given difficulty.
+    ///
+    /// The target for the challenge is computed as `max_target / difficulty`.
+    pub fn get_target(difficulty: usize) -> String {
+        let max_target = BigUint::from_bytes_be(&[0xff; 32]) >> INITIAL_TARGET_SHIFT;
+        let target = max_target / difficulty;
+        target.to_str_radix(16)
     }
 }
 
@@ -224,6 +244,7 @@ impl ChallengeCache {
 struct PoWResponse {
     seed: String,
     difficulty: usize,
+    target: String,
     server_signature: String,
     timestamp: u64,
 }
@@ -266,17 +287,15 @@ pub(crate) async fn get_pow_seed(State(server): State<Server>) -> impl IntoRespo
         .as_secs();
 
     let random_seed = random_hex_string(32);
+    let difficulty = server.pow.difficulty.load(Ordering::Relaxed);
 
-    let server_signature = get_server_signature(
-        &server.pow.salt,
-        &random_seed,
-        timestamp,
-        server.pow.difficulty.load(Ordering::Relaxed),
-    );
+    let server_signature =
+        get_server_signature(&server.pow.salt, &random_seed, timestamp, difficulty);
 
     Json(PoWResponse {
         seed: random_seed,
-        difficulty: server.pow.difficulty.load(Ordering::Relaxed),
+        difficulty,
+        target: PoW::get_target(difficulty),
         server_signature,
         timestamp,
     })
@@ -288,15 +307,18 @@ mod tests {
 
     use super::*;
 
-    fn find_pow_solution(seed: &str, difficulty: usize) -> u64 {
+    fn find_pow_solution(seed: &str, target: &str) -> u64 {
+        let target = BigUint::parse_bytes(target.as_bytes(), 16).unwrap();
         let mut solution = 0;
+
         loop {
             let mut hasher = Sha3_256::new();
             hasher.update(seed);
             hasher.update(solution.to_string().as_bytes());
-            let hash = &hasher.finalize().to_hex();
-            let leading_zeros = hash.chars().take_while(|&c| c == '0').count();
-            if leading_zeros >= difficulty {
+            let hash = hasher.finalize();
+            let hash_num = BigUint::from_bytes_be(&hash[..32]);
+
+            if hash_num < target {
                 return solution;
             }
 
@@ -322,7 +344,8 @@ mod tests {
         hasher.update(difficulty.to_string().as_bytes());
         let server_signature = hasher.finalize().to_hex();
 
-        let solution = find_pow_solution(seed, difficulty);
+        let target = PoW::get_target(difficulty);
+        let solution = find_pow_solution(seed, &target);
 
         let pow_parameters = PowParameters {
             pow_seed: seed.to_string(),
@@ -330,6 +353,7 @@ mod tests {
             server_timestamp: timestamp,
             pow_solution: solution,
             difficulty,
+            target,
         };
 
         let result = pow_parameters.check_server_signature(server_salt);
@@ -355,6 +379,7 @@ mod tests {
         let server_signature = "0x1234567890abcdef";
 
         let difficulty = 3;
+        let target = PoW::get_target(difficulty);
 
         let pow_parameters = PowParameters {
             pow_seed: seed.to_string(),
@@ -362,6 +387,7 @@ mod tests {
             server_timestamp: timestamp,
             pow_solution: 1_234_567_890,
             difficulty,
+            target,
         };
         let result = pow_parameters.check_server_signature(server_salt);
         assert!(result.is_err());
@@ -385,71 +411,34 @@ mod tests {
         pow.adjust_difficulty(0);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
 
-        // With requests less than ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY (41),
-        // difficulty should still be 1
-        pow.adjust_difficulty(40);
+        // With requests less than `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY`, difficulty should still
+        // be 1
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY - 1);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
     }
 
     #[test]
-    fn test_adjust_difficulty_maximum_clamp() {
-        // Test that difficulty is clamped to maximum value of MAX_DIFFICULTY (24)
+    fn test_adjust_difficulty_scaling() {
+        // Test that difficulty scales with active requests
         let pow = PoW {
             salt: "test-salt".to_string(),
             difficulty: Arc::new(AtomicUsize::new(1)),
             challenge_cache: ChallengeCache::default(),
         };
 
-        // With very high number of active requests, difficulty should be clamped to MAX_DIFFICULTY
-        pow.adjust_difficulty(2000);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), MAX_DIFFICULTY);
-
-        // Test with an extremely high number
-        pow.adjust_difficulty(100_000);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), MAX_DIFFICULTY);
-    }
-
-    #[test]
-    fn test_adjust_difficulty_linear_scaling() {
-        // Test that difficulty scales linearly with active requests
-        let pow = PoW {
-            salt: "test-salt".to_string(),
-            difficulty: Arc::new(AtomicUsize::new(1)),
-            challenge_cache: ChallengeCache::default(),
-        };
-
-        // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY = 1000 / 24
-        // = 41
-
-        // 41 active requests should give difficulty 1
-        pow.adjust_difficulty(41);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
 
-        // 82 active requests should give difficulty 2 (82 / 41 = 2)
-        pow.adjust_difficulty(82);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 2);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 2);
 
-        // 123 active requests should give difficulty 3 (123 / 41 = 3)
-        pow.adjust_difficulty(123);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 3);
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 3);
 
-        // 205 active requests should give difficulty 5 (205 / 41 = 5)
-        pow.adjust_difficulty(205);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 5);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 4);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 4);
 
-        // 984 active requests should give difficulty 24 (984 / 41 = 24)
-        pow.adjust_difficulty(984);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 24);
-    }
-
-    #[test]
-    fn test_adjust_difficulty_constants_validation() {
-        assert_eq!(MAX_DIFFICULTY, 24);
-        assert_eq!(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY);
-
-        // With current values: REQUESTS_QUEUE_SIZE = 1000, MAX_DIFFICULTY = 24
-        // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY should be 41 (1000 / 24 = 41.666... truncated to
-        // 41)
-        assert_eq!(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, 41);
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 30);
+        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 30);
     }
 }

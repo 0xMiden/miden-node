@@ -53,6 +53,7 @@ pub struct RawMintRequest {
     pub pow_seed: Option<String>,
     pub pow_solution: Option<u64>,
     pub pow_difficulty: Option<usize>,
+    pub pow_target: Option<String>,
     pub server_signature: Option<String>,
     pub server_timestamp: Option<u64>,
     pub api_key: Option<String>,

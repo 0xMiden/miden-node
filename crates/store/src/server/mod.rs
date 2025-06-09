@@ -18,7 +18,10 @@ use crate::{
 };
 
 mod api;
+mod block_producer;
 mod db_maintenance;
+mod ntx_builder;
+mod rpc_api;
 
 /// The store server.
 pub struct Store {

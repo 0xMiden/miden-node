@@ -22,9 +22,9 @@ pub struct Challenge {
 
 impl Challenge {
     /// Creates a new challenge with the given parameters.
-    /// The signature is computed internally using the provided salt.
-    pub fn new(difficulty: usize, timestamp: u64, salt: [u8; 32]) -> Self {
-        let signature = Self::compute_signature(salt, difficulty, timestamp);
+    /// The signature is computed internally using the provided secret.
+    pub fn new(difficulty: usize, timestamp: u64, secret: [u8; 32]) -> Self {
+        let signature = Self::compute_signature(secret, difficulty, timestamp);
         Self { difficulty, timestamp, signature }
     }
 
@@ -34,8 +34,8 @@ impl Challenge {
     }
 
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
-    /// in the context of the specified salt.
-    pub fn decode(value: &str, salt: [u8; 32]) -> Result<Self, InvalidRequest> {
+    /// in the context of the specified secret.
+    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidRequest> {
         // Add the "0x" prefix to the hex string, otherwise the hex_to_bytes function will fail.
         let value = "0x".to_string() + value;
         // Parse the hex-encoded challenge string
@@ -54,7 +54,7 @@ impl Challenge {
         let challenge = Self::from_parts(difficulty, timestamp, signature);
 
         // Verify the signature
-        let expected_signature = Self::compute_signature(salt, difficulty, timestamp);
+        let expected_signature = Self::compute_signature(secret, difficulty, timestamp);
         if signature != expected_signature {
             return Err(InvalidRequest::ServerSignaturesDoNotMatch);
         }
@@ -94,11 +94,11 @@ impl Challenge {
     }
 
     /// Computes the signature for a challenge.
-    pub fn compute_signature(salt: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
+    pub fn compute_signature(secret: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
-        hasher.update(salt);
+        hasher.update(secret);
         hasher.update(difficulty.to_be_bytes());
         hasher.update(timestamp.to_be_bytes());
         hasher.finalize().into()
     }
-} 
+}

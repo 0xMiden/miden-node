@@ -66,7 +66,7 @@ impl Server {
         faucet_id: FaucetId,
         asset_options: AssetOptions,
         request_sender: RequestSender,
-        pow_salt: &str,
+        pow_secret: &str,
         api_keys: BTreeSet<String>,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
@@ -85,13 +85,13 @@ impl Server {
             cleanup_state.run_cleanup().await;
         });
 
-        // Convert string salt to [u8; 32] for PoW
-        let mut salt_bytes = [0u8; 32];
-        let salt_str_bytes = pow_salt.as_bytes();
-        let copy_len = salt_str_bytes.len().min(32);
-        salt_bytes[..copy_len].copy_from_slice(&salt_str_bytes[..copy_len]);
+        // Convert string secret to [u8; 32] for PoW
+        let mut secret_bytes = [0u8; 32];
+        let secret_str_bytes = pow_secret.as_bytes();
+        let copy_len = secret_str_bytes.len().min(32);
+        secret_bytes[..copy_len].copy_from_slice(&secret_str_bytes[..copy_len]);
 
-        let pow = PoW::new(salt_bytes);
+        let pow = PoW::new(secret_bytes);
 
         Server {
             mint_state,

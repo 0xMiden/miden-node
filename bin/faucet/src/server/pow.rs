@@ -11,7 +11,11 @@ use axum::{Json, extract::State, response::IntoResponse};
 use serde::Serialize;
 use tokio::time::{Duration, interval};
 
-use super::{Server, get_tokens::InvalidRequest, challenge::{Challenge, SERVER_TIMESTAMP_TOLERANCE_SECONDS}};
+use super::{
+    Server,
+    challenge::{Challenge, SERVER_TIMESTAMP_TOLERANCE_SECONDS},
+    get_tokens::InvalidRequest,
+};
 use crate::REQUESTS_QUEUE_SIZE;
 
 /// The maximum difficulty of the `PoW`.
@@ -22,23 +26,21 @@ const MAX_DIFFICULTY: usize = 24;
 /// The number of active requests to increase the difficulty by 1.
 const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY;
 
-
-
 // POW
 // ================================================================================================
 
 #[derive(Clone)]
 pub struct PoW {
-    pub(crate) salt: [u8; 32],
+    pub(crate) secret: [u8; 32],
     pub(crate) difficulty: Arc<AtomicUsize>,
     pub(crate) challenge_cache: ChallengeCache,
 }
 
 impl PoW {
     /// Creates a new `PoW` instance.
-    pub fn new(salt: [u8; 32]) -> Self {
+    pub fn new(secret: [u8; 32]) -> Self {
         Self {
-            salt,
+            secret,
             difficulty: Arc::new(AtomicUsize::new(1)),
             challenge_cache: ChallengeCache::default(),
         }
@@ -53,7 +55,7 @@ impl PoW {
 
         let difficulty = self.difficulty.load(Ordering::Relaxed);
 
-        Challenge::new(difficulty, timestamp, self.salt)
+        Challenge::new(difficulty, timestamp, self.secret)
     }
 
     /// Submits a challenge to the `PoW` instance.
@@ -175,10 +177,10 @@ pub(crate) async fn get_pow_challenge(State(server): State<Server>) -> impl Into
 mod tests {
     use super::*;
 
-    fn create_test_salt() -> [u8; 32] {
-        let mut salt = [0u8; 32];
-        salt[..12].copy_from_slice(b"miden-faucet");
-        salt
+    fn create_test_secret() -> [u8; 32] {
+        let mut secret = [0u8; 32];
+        secret[..12].copy_from_slice(b"miden-faucet");
+        secret
     }
 
     fn find_pow_solution(challenge: &Challenge, max_iterations: u64) -> Option<u64> {
@@ -187,17 +189,17 @@ mod tests {
 
     #[test]
     fn test_challenge_encode_decode() {
-        let salt = create_test_salt();
+        let secret = create_test_secret();
         let difficulty = 3;
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
 
-        let challenge = Challenge::new(difficulty, timestamp, salt);
+        let challenge = Challenge::new(difficulty, timestamp, secret);
 
         let encoded = challenge.encode();
-        let decoded = Challenge::decode(&encoded, salt).unwrap();
+        let decoded = Challenge::decode(&encoded, secret).unwrap();
 
         assert_eq!(challenge.difficulty, decoded.difficulty);
         assert_eq!(challenge.timestamp, decoded.timestamp);
@@ -206,8 +208,8 @@ mod tests {
 
     #[test]
     fn test_pow_validation() {
-        let salt = create_test_salt();
-        let pow = PoW::new(salt);
+        let secret = create_test_secret();
+        let pow = PoW::new(secret);
 
         // Set difficulty to 1 for faster testing
         pow.difficulty.store(1, Ordering::Relaxed);
@@ -225,8 +227,8 @@ mod tests {
 
     #[test]
     fn test_adjust_difficulty_minimum_clamp() {
-        let salt = create_test_salt();
-        let pow = PoW::new(salt);
+        let secret = create_test_secret();
+        let pow = PoW::new(secret);
 
         // With 0 active requests, difficulty should be clamped to 1
         pow.adjust_difficulty(0);
@@ -240,8 +242,8 @@ mod tests {
 
     #[test]
     fn test_adjust_difficulty_maximum_clamp() {
-        let salt = create_test_salt();
-        let pow = PoW::new(salt);
+        let secret = create_test_secret();
+        let pow = PoW::new(secret);
 
         // With very high number of active requests, difficulty should be clamped to MAX_DIFFICULTY
         pow.adjust_difficulty(2000);
@@ -254,8 +256,8 @@ mod tests {
 
     #[test]
     fn test_adjust_difficulty_linear_scaling() {
-        let salt = create_test_salt();
-        let pow = PoW::new(salt);
+        let secret = create_test_secret();
+        let pow = PoW::new(secret);
 
         // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY = 1000 / 24
         // = 41
@@ -294,19 +296,19 @@ mod tests {
 
     #[test]
     fn test_timestamp_validation() {
-        let salt = create_test_salt();
+        let secret = create_test_secret();
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards")
             .as_secs();
 
         // Valid timestamp (current time)
-        let challenge = Challenge::new(1, current_time, salt);
+        let challenge = Challenge::new(1, current_time, secret);
         assert!(challenge.is_not_expired());
 
         // Expired timestamp (too old)
         let old_timestamp = current_time - SERVER_TIMESTAMP_TOLERANCE_SECONDS - 10;
-        let challenge = Challenge::new(1, old_timestamp, salt);
+        let challenge = Challenge::new(1, old_timestamp, secret);
         assert!(!challenge.is_not_expired());
     }
 }

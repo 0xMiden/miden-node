@@ -142,7 +142,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 faucet.faucet_id(),
                 config.asset_amount_options.clone(),
                 tx_requests,
-                &config.pow_salt,
+                &config.pow_secret,
                 BTreeSet::from_iter(config.api_keys),
             );
 

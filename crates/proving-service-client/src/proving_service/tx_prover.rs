@@ -23,7 +23,7 @@ use crate::{
 // REMOTE TRANSACTION PROVER
 // ================================================================================================
 
-/// A [RemoteTransactionProver] is a transaction prover that sends witness data to a remote
+/// A [`RemoteTransactionProver`] is a transaction prover that sends witness data to a remote
 /// gRPC server and receives a proven transaction.
 ///
 /// When compiled for the `wasm32-unknown-unknown` target, it uses the `tonic_web_wasm_client`
@@ -41,7 +41,7 @@ pub struct RemoteTransactionProver {
 }
 
 impl RemoteTransactionProver {
-    /// Creates a new [RemoteTransactionProver] with the specified gRPC server endpoint. The
+    /// Creates a new [`RemoteTransactionProver`] with the specified gRPC server endpoint. The
     /// endpoint should be in the format `{protocol}://{hostname}:{port}`.
     pub fn new(endpoint: impl Into<String>) -> Self {
         RemoteTransactionProver {

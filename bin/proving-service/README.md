@@ -15,8 +15,8 @@ Install the Debian package:
 ```bash
 set -e
 
-sudo wget https://github.com/0xMiden/miden-base/releases/download/v0.8/miden-prover-v0.8-arm64.deb -O prover.deb
-sudo wget -q -O - https://github.com/0xMiden/miden-base/releases/download/v0.8/miden-prover-v0.8-arm64.deb.checksum | awk '{print $1}' | sudo tee prover.checksum
+sudo wget https://github.com/0xMiden/miden-node/releases/download/v0.8/miden-prover-v0.8-arm64.deb -O prover.deb
+sudo wget -q -O - https://github.com/0xMiden/miden-node/releases/download/v0.8/miden-prover-v0.8-arm64.deb.checksum | awk '{print $1}' | sudo tee prover.checksum
 sudo sha256sum prover.deb | awk '{print $1}' > prover.sha256
 sudo diff prover.sha256 prover.checksum
 sudo dpkg -i prover.deb
@@ -36,8 +36,8 @@ sudo systemctl start miden-prover
 ```bash
 set -e
 
-sudo wget https://github.com/0xMiden/miden-base/releases/download/v0.8/miden-prover-proxy-v0.8-arm64.deb -O prover-proxy.deb
-sudo wget -q -O - https://github.com/0xMiden/miden-base/releases/download/v0.8/miden-prover-proxy-v0.8-arm64.deb.checksum | awk '{print $1}' | sudo tee prover-proxy.checksum
+sudo wget https://github.com/0xMiden/miden-node/releases/download/v0.8/miden-prover-proxy-v0.8-arm64.deb -O prover-proxy.deb
+sudo wget -q -O - https://github.com/0xMiden/miden-node/releases/download/v0.8/miden-prover-proxy-v0.8-arm64.deb.checksum | awk '{print $1}' | sudo tee prover-proxy.checksum
 sudo sha256sum prover-proxy.deb | awk '{print $1}' > prover-proxy.sha256
 sudo diff prover-proxy.sha256 prover-proxy.checksum
 sudo dpkg -i prover-proxy.deb

@@ -16,7 +16,7 @@ use miden_node_proto::generated::{
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::AccountId,
-    note::{Note, NoteExecutionMode, NoteTag},
+    note::{Note, NoteTag},
     utils::{Deserializable, Serializable},
 };
 use tokio::fs;
@@ -80,7 +80,7 @@ pub async fn sync_state(
 ) -> (Duration, SyncStateResponse) {
     let note_tags = account_ids
         .iter()
-        .map(|id| u32::from(NoteTag::from_account_id(*id, NoteExecutionMode::Local).unwrap()))
+        .map(|id| u32::from(NoteTag::from_account_id(*id)))
         .collect::<Vec<_>>();
 
     let account_ids = account_ids
@@ -140,7 +140,7 @@ pub async fn sync_notes(
 ) -> Duration {
     let note_tags = account_ids
         .iter()
-        .map(|id| u32::from(NoteTag::from_account_id(*id, NoteExecutionMode::Local).unwrap()))
+        .map(|id| u32::from(NoteTag::from_account_id(*id)))
         .collect::<Vec<_>>();
     let sync_request = SyncNoteRequest { block_num: 0, note_tags };
 

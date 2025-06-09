@@ -169,7 +169,8 @@ impl RemoteBatchProver {
             }
 
             // Check input notes
-            if proposed_header.input_notes().num_notes() != proven_header.input_notes().len() {
+            let num_notes = proposed_header.input_notes().num_notes() as usize;
+            if num_notes != proven_header.input_notes().len() {
                 return Err(RemoteProverError::other(format!(
                     "transaction header of {} has a different number of input notes than the proposed transaction",
                     proposed_header.id()

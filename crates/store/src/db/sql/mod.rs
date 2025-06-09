@@ -809,7 +809,7 @@ pub fn insert_notes(
             note.note_id.to_bytes(),
             note.metadata.note_type() as u8,
             note.metadata.sender().to_bytes(),
-            note.metadata.tag().inner(),
+            note.metadata.tag().as_u32(),
             note.metadata.tag().execution_mode() as u8,
             u64_to_value(note.metadata.aux().into()),
             u64_to_value(note.metadata.execution_hint().into()),

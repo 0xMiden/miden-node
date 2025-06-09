@@ -2272,7 +2272,7 @@ dependencies = [
  "miden-node-rpc",
  "miden-node-utils",
  "miden-objects",
- "miden-proving-service-client 0.10.0 (git+https://github.com/0xMiden/miden-base?branch=next)",
+ "miden-proving-service-client",
  "miden-testing",
  "miden-tx",
  "rand 0.9.1",
@@ -2395,7 +2395,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-proving-service-client 0.10.0 (git+https://github.com/0xMiden/miden-base?branch=next)",
+ "miden-proving-service-client",
  "miden-tx",
  "miden-tx-batch-prover",
  "pretty_assertions",
@@ -2426,7 +2426,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-proving-service-client 0.10.0 (git+https://github.com/0xMiden/miden-base?branch=next)",
+ "miden-proving-service-client",
  "miden-tx",
  "rand 0.9.1",
  "thiserror 2.0.12",
@@ -2683,26 +2683,6 @@ dependencies = [
  "tonic",
  "tonic-build",
  "tonic-web",
- "tonic-web-wasm-client",
-]
-
-[[package]]
-name = "miden-proving-service-client"
-version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#f2ea4cd44d87282ab3131d7301ce085ed09f76fe"
-dependencies = [
- "async-trait",
- "getrandom 0.3.3",
- "miden-objects",
- "miden-tx",
- "miette",
- "prost",
- "prost-build",
- "protox 0.7.2",
- "thiserror 2.0.12",
- "tokio",
- "tonic",
- "tonic-build",
  "tonic-web-wasm-client",
 ]
 

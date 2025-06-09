@@ -23,9 +23,9 @@ default    = ["concurrent"]
 workspace = true
 
 [dependencies]
-async-trait                        = "0.1"
+async-trait                        = { version = "0.1" }
 axum                               = { version = "0.8" }
-bytes                              = "1.0"
+bytes                              = { version = "1.0" }
 clap                               = { features = ["derive", "env"], version = "4.5" }
 miden-block-prover                 = { workspace = true }
 miden-lib                          = { workspace = true }
@@ -34,13 +34,13 @@ miden-tx                           = { features = ["std"], workspace = true }
 miden-tx-batch-prover              = { features = ["std"], workspace = true }
 opentelemetry                      = { features = ["metrics", "trace"], version = "0.29" }
 opentelemetry-otlp                 = { features = ["grpc-tonic"], version = "0.29" }
-opentelemetry-semantic-conventions = "0.29"
+opentelemetry-semantic-conventions = { version = "0.29" }
 opentelemetry_sdk                  = { features = ["metrics", "rt-tokio"], version = "0.29" }
 pingora                            = { features = ["lb"], version = "0.5" }
-pingora-core                       = "0.5"
-pingora-limits                     = "0.5"
-pingora-proxy                      = "0.5"
-prometheus                         = "0.14"
+pingora-core                       = { version = "0.5" }
+pingora-limits                     = { version = "0.5" }
+pingora-proxy                      = { version = "0.5" }
+prometheus                         = { version = "0.14" }
 prost                              = { default-features = false, features = ["derive"], version = "0.13" }
 reqwest                            = { version = "0.12" }
 semver                             = { version = "1.0" }
@@ -54,7 +54,7 @@ tonic                              = { default-features = false, features = ["co
 tonic-health                       = { version = "0.12" }
 tonic-web                          = { version = "0.12" }
 tracing                            = { version = "0.1" }
-tracing-opentelemetry              = "0.30"
+tracing-opentelemetry              = { version = "0.30" }
 tracing-subscriber                 = { features = ["env-filter", "fmt", "json"], version = "0.3" }
 uuid                               = { features = ["v4"], version = "1.16" }
 

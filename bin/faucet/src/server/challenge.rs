@@ -98,7 +98,7 @@ impl Challenge {
     }
 
     /// Computes the signature for a challenge.
-    pub fn compute_signature(secret: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
+    fn compute_signature(secret: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         hasher.update(secret);
         hasher.update(difficulty.to_be_bytes());

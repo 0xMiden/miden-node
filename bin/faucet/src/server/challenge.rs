@@ -1,5 +1,5 @@
 use miden_tx::utils::{ToHex, hex_to_bytes};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
 
 use super::get_tokens::InvalidRequest;
@@ -11,11 +11,25 @@ use super::get_tokens::InvalidRequest;
 pub(crate) const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
 
 /// A challenge for proof-of-work validation.
-#[derive(Debug, Clone, Serialize, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Hash, PartialEq, Eq)]
 pub struct Challenge {
     pub(crate) difficulty: usize,
     pub(crate) timestamp: u64,
     pub(crate) signature: [u8; 32],
+}
+
+impl Serialize for Challenge {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("Challenge", 3)?;
+        state.serialize_field("challenge", &self.encode())?;
+        state.serialize_field("difficulty", &self.difficulty)?;
+        state.serialize_field("timestamp", &self.timestamp)?;
+        state.end()
+    }
 }
 
 impl Challenge {
@@ -91,5 +105,32 @@ impl Challenge {
         hasher.update(difficulty.to_be_bytes());
         hasher.update(timestamp.to_be_bytes());
         hasher.finalize().into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_challenge_serialization() {
+        let secret = [1u8; 32];
+        let challenge = Challenge::new(2, 1234567890, secret);
+        
+        // Test that it serializes to the expected JSON format
+        let json = serde_json::to_string(&challenge).unwrap();
+        
+        // Should contain the expected fields
+        assert!(json.contains("\"challenge\":"));
+        assert!(json.contains("\"difficulty\":2"));
+        assert!(json.contains("\"timestamp\":1234567890"));
+        
+        // Parse back to verify structure
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed.get("challenge").is_some());
+        assert!(parsed.get("difficulty").is_some());
+        assert!(parsed.get("timestamp").is_some());
+        assert_eq!(parsed["difficulty"], 2);
+        assert_eq!(parsed["timestamp"], 1234567890);
     }
 }

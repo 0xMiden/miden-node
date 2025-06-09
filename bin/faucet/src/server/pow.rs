@@ -8,7 +8,6 @@ use std::{
 };
 
 use axum::{Json, extract::State, response::IntoResponse};
-use serde::Serialize;
 use tokio::time::{Duration, interval};
 
 use super::{
@@ -154,22 +153,13 @@ impl ChallengeCache {
     }
 }
 
-#[derive(Serialize)]
-struct PoWResponse {
-    challenge: String,
-    difficulty: usize,
-    timestamp: u64,
-}
+// API ENDPOINTS
+// ================================================================================================
 
 /// Get a challenge to be used by a client for `PoW`.
 pub(crate) async fn get_pow_challenge(State(server): State<Server>) -> impl IntoResponse {
     let challenge = server.pow.build_challenge();
-
-    Json(PoWResponse {
-        challenge: challenge.encode(),
-        difficulty: challenge.difficulty,
-        timestamp: challenge.timestamp,
-    })
+    Json(challenge)
 }
 
 #[cfg(test)]

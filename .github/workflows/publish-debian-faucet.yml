@@ -1,4 +1,4 @@
-name: Publish Node and Faucet Debian Packages
+name: Publish Faucet Debian Package
 
 on:
   release:
@@ -44,33 +44,10 @@ jobs:
         run: |
           rustup update --no-self-update
 
-      - name: Build packages
-        uses: ./.github/actions/debian/node_faucet.yml
+      - name: Build and Publish Packages
+        uses: ./.github/actions/debian
         with:
           gitref: ${{ env.version }}
-
-      - name: Package names
-        run: |
-          echo "node-package=miden-node-${{ env.version }}-${{ matrix.arch }}.deb"     >> $GITHUB_ENV
-          echo "faucet-package=miden-faucet-${{ env.version }}-${{ matrix.arch }}.deb" >> $GITHUB_ENV
-
-      - name: Rename package files
-        run: |
-          mv miden-node.deb   ${{ env.node-package }}
-          mv miden-faucet.deb ${{ env.faucet-package }}
-
-      - name: shasum packages
-        run: |
-          sha256sum ${{ env.node-package }}   > ${{ env.node-package }}.checksum
-          sha256sum ${{ env.faucet-package }} > ${{ env.faucet-package }}.checksum
-
-      - name: Publish packages
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload ${{ env.version }} \
-            ${{ env.node-package }} \
-            ${{ env.node-package }}.checksum \
-            ${{ env.faucet-package }} \
-            ${{ env.faucet-package }}.checksum \
-            --clobber
+          service: miden-faucet
+          bin: miden-faucet
+          arch: ${{ matrix.arch }}

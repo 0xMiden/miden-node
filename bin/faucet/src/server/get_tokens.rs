@@ -21,7 +21,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::{error, instrument};
 
-use super::{Server, pow::Challenge};
+use super::{Server, challenge::Challenge};
 use crate::{
     COMPONENT,
     faucet::MintRequest,

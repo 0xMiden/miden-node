@@ -41,6 +41,7 @@ use crate::{
     types::AssetOptions,
 };
 
+mod challenge;
 mod frontend;
 mod get_tokens;
 mod pow;

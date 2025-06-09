@@ -39,10 +39,11 @@ const RESOURCE_EXHAUSTED_CODE: u16 = 8;
 /// 2. **Resource Setup**:   Creates a [Resource] containing service metadata (name and version),
 ///    which is attached to all emitted telemetry data to identify the originating service.
 ///
-/// 3. **`TracerProvider` and Sampler**:   Builds a [`SdkTracerProvider`] using a [`Sampler::ParentBased`]
-///    sampler layered over a [`Sampler::TraceIdRatioBased`] sampler set to `1.0`, ensuring all traces
-///    are recorded. A random ID generator is used to produce trace and span IDs. The tracer is
-///    retrieved from this provider, which can then be used by the OpenTelemetry layer of `tracing`.
+/// 3. **`TracerProvider` and Sampler**:   Builds a [`SdkTracerProvider`] using a
+///    [`Sampler::ParentBased`] sampler layered over a [`Sampler::TraceIdRatioBased`] sampler set to
+///    `1.0`, ensuring all traces are recorded. A random ID generator is used to produce trace and
+///    span IDs. The tracer is retrieved from this provider, which can then be used by the
+///    OpenTelemetry layer of `tracing`.
 ///
 /// 4. **Telemetry Integration with tracing**:   Creates a telemetry layer from
 ///    `tracing_opentelemetry` and combines it with a `Registry` subscriber and a formatting layer.

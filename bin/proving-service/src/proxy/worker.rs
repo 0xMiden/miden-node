@@ -133,7 +133,8 @@ impl Worker {
     /// Attempts to recreate the status client for this worker.
     ///
     /// This method will try to create a new gRPC status client using the worker's address
-    /// and timeout configurations. If successful, it will update the worker's `status_client` field.
+    /// and timeout configurations. If successful, it will update the worker's `status_client`
+    /// field.
     ///
     /// # Returns
     /// - `Ok(())` if the client was successfully created

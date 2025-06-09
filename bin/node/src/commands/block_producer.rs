@@ -7,7 +7,7 @@ use url::Url;
 use super::{
     DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
     ENV_BATCH_PROVER_URL, ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL,
-    ENV_NTX_BUILDER_URL, ENV_STORE_URL, parse_duration_ms,
+    ENV_NTX_BUILDER_URL, ENV_STORE_BLOCK_PRODUCER_URL, parse_duration_ms,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -20,7 +20,7 @@ pub enum BlockProducerCommand {
         url: Url,
 
         /// The store's gRPC url.
-        #[arg(long = "store.url", env = ENV_STORE_URL)]
+        #[arg(long = "store.url", env = ENV_STORE_BLOCK_PRODUCER_URL)]
         store_url: Url,
 
         /// The network transaction builder's gRPC url.

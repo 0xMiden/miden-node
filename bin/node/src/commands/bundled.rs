@@ -179,11 +179,27 @@ impl BundledCommand {
         let grpc_rpc = TcpListener::bind(grpc_rpc)
             .await
             .context("Failed to bind to RPC gRPC endpoint")?;
-        let grpc_store = TcpListener::bind("127.0.0.1:0")
+
+        // Store addresses
+        let store_rpc_listener = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to store gRPC endpoint")?;
-        let store_address =
-            grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
+        let store_ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to store gRPC endpoint")?;
+        let store_block_producer_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to store gRPC endpoint")?;
+        let store_rpc_address = store_rpc_listener
+            .local_addr()
+            .context("Failed to retrieve the store's gRPC address")?;
+        let store_block_producer_address = store_block_producer_listener
+            .local_addr()
+            .context("Failed to retrieve the store's gRPC address")?;
+        let store_ntx_builder_address = store_ntx_builder_listener
+            .local_addr()
+            .context("Failed to retrieve the store's gRPC address")?;
+
         let block_producer_address = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to block-producer gRPC endpoint")?
@@ -201,7 +217,9 @@ impl BundledCommand {
         let store_id = join_set
             .spawn(async move {
                 Store {
-                    listener: grpc_store,
+                    rpc_listener: store_rpc_listener,
+                    block_producer_listener: store_block_producer_listener,
+                    ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
                 }
                 .serve()
@@ -210,18 +228,12 @@ impl BundledCommand {
             })
             .id();
 
-        // Start network transaction builder. The endpoint is available after loading completes.
-        // SAFETY: socket addr yields valid URLs
-        let store_url =
-            Url::parse(&format!("http://{}:{}/", store_address.ip(), store_address.port()))
-                .unwrap();
-
         // Start block-producer. The block-producer's endpoint is available after loading completes.
         let block_producer_id = join_set
             .spawn(async move {
                 BlockProducer {
                     block_producer_address,
-                    store_address,
+                    store_address: store_block_producer_address,
                     ntx_builder_address: should_start_ntb.then_some(ntx_builder_address),
                     batch_prover_url,
                     block_prover_url,
@@ -239,7 +251,7 @@ impl BundledCommand {
             .spawn(async move {
                 Rpc {
                     listener: grpc_rpc,
-                    store: store_address,
+                    store: store_rpc_address,
                     block_producer: Some(block_producer_address),
                 }
                 .serve()
@@ -262,12 +274,20 @@ impl BundledCommand {
             (rpc_id, "rpc"),
         ]);
 
+        // Start network transaction builder. The endpoint is available after loading completes.
+        // SAFETY: socket addr yields valid URLs
+        let store_ntx_builder_url = Url::parse(&format!(
+            "http://{}:{}/",
+            store_ntx_builder_address.ip(),
+            store_ntx_builder_address.port()
+        ))
+        .unwrap();
         if should_start_ntb {
             let id = join_set
                 .spawn(async move {
                     NetworkTransactionBuilder {
                         ntx_builder_address,
-                        store_url,
+                        store_url: store_ntx_builder_url,
                         block_producer_address,
                         tx_prover_url,
                         ticker_interval: ntx_ticker_interval,

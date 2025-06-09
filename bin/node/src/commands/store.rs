@@ -20,11 +20,12 @@ use rand_chacha::ChaCha20Rng;
 use url::Url;
 
 use super::{
-    DEFAULT_MONITOR_INTERVAL_MS, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL,
-    parse_duration_ms,
+    DEFAULT_MONITOR_INTERVAL_MS, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_BLOCK_PRODUCER_URL,
+    ENV_STORE_NTX_BUILDER_URL, ENV_STORE_RPC_URL, parse_duration_ms,
 };
 use crate::system_monitor::SystemMonitor;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
     /// Bootstraps the blockchain database with the genesis block.
@@ -44,9 +45,17 @@ pub enum StoreCommand {
 
     /// Starts the store component.
     Start {
-        /// Url at which to serve the gRPC API.
-        #[arg(long, env = ENV_STORE_URL, value_name = "URL")]
-        url: Url,
+        /// Url at which to serve the RPC component gRPC API.
+        #[arg(long, env = ENV_STORE_RPC_URL, value_name = "URL")]
+        rpc_url: Url,
+
+        /// Url at which to serve the network transaction builder component gRPC API.
+        #[arg(long, env = ENV_STORE_NTX_BUILDER_URL, value_name = "URL")]
+        ntx_builder_url: Url,
+
+        /// Url at which to serve the block producer component gRPC API.
+        #[arg(long, env = ENV_STORE_BLOCK_PRODUCER_URL, value_name = "URL")]
+        block_producer_url: Url,
 
         /// Directory in which to store the database and raw block data.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
@@ -79,11 +88,22 @@ impl StoreCommand {
             },
             // Note: open-telemetry is handled in main.
             StoreCommand::Start {
-                url,
+                rpc_url,
+                ntx_builder_url,
+                block_producer_url,
                 data_directory,
                 open_telemetry: _,
                 monitor_interval,
-            } => Self::start(url, data_directory, monitor_interval).await,
+            } => {
+                Self::start(
+                    rpc_url,
+                    ntx_builder_url,
+                    block_producer_url,
+                    data_directory,
+                    monitor_interval,
+                )
+                .await
+            },
         }
     }
 
@@ -96,13 +116,29 @@ impl StoreCommand {
     }
 
     async fn start(
-        url: Url,
+        rpc_url: Url,
+        ntx_builder_url: Url,
+        block_producer_url: Url,
         data_directory: PathBuf,
         monitor_interval: Duration,
     ) -> anyhow::Result<()> {
-        let listener =
-            url.to_socket().context("Failed to extract socket address from store URL")?;
-        let listener = tokio::net::TcpListener::bind(listener)
+        let rpc_listener =
+            rpc_url.to_socket().context("Failed to extract socket address from store URL")?;
+        let rpc_listener = tokio::net::TcpListener::bind(rpc_listener)
+            .await
+            .context("Failed to bind to store's gRPC URL")?;
+
+        let ntx_builder_listener = ntx_builder_url
+            .to_socket()
+            .context("Failed to extract socket address from store URL")?;
+        let ntx_builder_listener = tokio::net::TcpListener::bind(ntx_builder_listener)
+            .await
+            .context("Failed to bind to store's gRPC URL")?;
+
+        let block_producer_listener = block_producer_url
+            .to_socket()
+            .context("Failed to extract socket address from store URL")?;
+        let block_producer_listener = tokio::net::TcpListener::bind(block_producer_listener)
             .await
             .context("Failed to bind to store's gRPC URL")?;
 
@@ -113,10 +149,15 @@ impl StoreCommand {
             .with_store_metrics(data_dir)
             .run_with_supervisor();
 
-        Store { listener, data_directory }
-            .serve()
-            .await
-            .context("failed while serving store component")
+        Store {
+            rpc_listener,
+            ntx_builder_listener,
+            block_producer_listener,
+            data_directory,
+        }
+        .serve()
+        .await
+        .context("failed while serving store component")
     }
 
     fn bootstrap(data_directory: &Path, accounts_directory: &Path) -> anyhow::Result<()> {

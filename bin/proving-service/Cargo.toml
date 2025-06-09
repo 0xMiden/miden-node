@@ -26,46 +26,46 @@ workspace = true
 async-trait                        = "0.1"
 axum                               = { version = "0.8" }
 bytes                              = "1.0"
-clap                               = { version = "4.5", features = ["derive", "env"] }
+clap                               = { features = ["derive", "env"], version = "4.5" }
 miden-block-prover                 = { workspace = true }
 miden-lib                          = { workspace = true }
-miden-objects                      = { workspace = true, features = ["std"] }
-miden-tx                           = { workspace = true, features = ["std"] }
-miden-tx-batch-prover              = { workspace = true, features = ["std"] }
-opentelemetry                      = { version = "0.29", features = ["metrics", "trace"] }
-opentelemetry-otlp                 = { version = "0.29", features = ["grpc-tonic"] }
+miden-objects                      = { features = ["std"], workspace = true }
+miden-tx                           = { features = ["std"], workspace = true }
+miden-tx-batch-prover              = { features = ["std"], workspace = true }
+opentelemetry                      = { features = ["metrics", "trace"], version = "0.29" }
+opentelemetry-otlp                 = { features = ["grpc-tonic"], version = "0.29" }
 opentelemetry-semantic-conventions = "0.29"
-opentelemetry_sdk                  = { version = "0.29", features = ["metrics", "rt-tokio"] }
-pingora                            = { version = "0.5", features = ["lb"] }
+opentelemetry_sdk                  = { features = ["metrics", "rt-tokio"], version = "0.29" }
+pingora                            = { features = ["lb"], version = "0.5" }
 pingora-core                       = "0.5"
 pingora-limits                     = "0.5"
 pingora-proxy                      = "0.5"
 prometheus                         = "0.14"
-prost                              = { version = "0.13", default-features = false, features = ["derive"] }
+prost                              = { default-features = false, features = ["derive"], version = "0.13" }
 reqwest                            = { version = "0.12" }
 semver                             = { version = "1.0" }
-serde                              = { version = "1.0", features = ["derive"] }
+serde                              = { features = ["derive"], version = "1.0" }
 serde_json                         = { version = "1.0" }
 serde_qs                           = { version = "0.15" }
 thiserror                          = { workspace = true }
-tokio                              = { version = "1.44", features = ["full"] }
-tokio-stream                       = { version = "0.1", features = ["net"] }
-tonic                              = { version = "0.12", default-features = false, features = ["codegen", "prost", "transport"] }
+tokio                              = { features = ["full"], version = "1.44" }
+tokio-stream                       = { features = ["net"], version = "0.1" }
+tonic                              = { default-features = false, features = ["codegen", "prost", "transport"], version = "0.12" }
 tonic-health                       = { version = "0.12" }
 tonic-web                          = { version = "0.12" }
 tracing                            = { version = "0.1" }
 tracing-opentelemetry              = "0.30"
-tracing-subscriber                 = { version = "0.3", features = ["env-filter", "fmt", "json"] }
-uuid                               = { version = "1.16", features = ["v4"] }
+tracing-subscriber                 = { features = ["env-filter", "fmt", "json"], version = "0.3" }
+uuid                               = { features = ["v4"], version = "1.16" }
 
 [dev-dependencies]
-miden-lib     = { workspace = true, features = ["testing"] }
-miden-objects = { workspace = true, features = ["testing"] }
+miden-lib     = { features = ["testing"], workspace = true }
+miden-objects = { features = ["testing"], workspace = true }
 miden-testing = { workspace = true }
-miden-tx      = { workspace = true, features = ["testing"] }
+miden-tx      = { features = ["testing"], workspace = true }
 [build-dependencies]
-miette      = { version = "7.5", features = ["fancy"] }
-prost       = { version = "0.13", default-features = false, features = ["derive"] }
+miette      = { features = ["fancy"], version = "7.5" }
+prost       = { default-features = false, features = ["derive"], version = "0.13" }
 prost-build = { version = "0.13" }
 protox      = { version = "0.8" }
 tonic-build = { version = "0.12" }

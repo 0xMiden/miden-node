@@ -64,9 +64,8 @@ impl ProverRpcApi {
         &self,
         transaction_witness: TransactionWitness,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
-        let prover = match &self.prover {
-            Prover::Transaction(prover) => prover,
-            _ => return Err(Status::unimplemented("Transaction prover is not enabled")),
+        let Prover::Transaction(prover) = &self.prover else {
+            return Err(Status::unimplemented("Transaction prover is not enabled"));
         };
 
         let proof = prover
@@ -94,9 +93,8 @@ impl ProverRpcApi {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
-        let prover = match &self.prover {
-            Prover::Batch(prover) => prover,
-            _ => return Err(Status::unimplemented("Batch prover is not enabled")),
+        let Prover::Batch(prover) = &self.prover else {
+            return Err(Status::unimplemented("Batch prover is not enabled"));
         };
 
         let proven_batch = prover
@@ -124,9 +122,8 @@ impl ProverRpcApi {
         &self,
         proposed_block: ProposedBlock,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
-        let prover = match &self.prover {
-            Prover::Block(prover) => prover,
-            _ => return Err(Status::unimplemented("Block prover is not enabled")),
+        let Prover::Block(prover) = &self.prover else {
+            return Err(Status::unimplemented("Block prover is not enabled"));
         };
 
         let proven_block = prover

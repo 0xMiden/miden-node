@@ -67,7 +67,7 @@ impl LoadBalancerState {
     /// # Errors
     /// Returns an error if:
     /// - The worker cannot be created.
-    #[tracing::instrument(name = "proxy:new_load_balancer", skip(initial_workers))]
+    #[tracing::instrument(name = "proxy.new_load_balancer", skip(initial_workers))]
     pub async fn new(
         initial_workers: Vec<String>,
         config: &ProxyConfig,
@@ -88,7 +88,7 @@ impl LoadBalancerState {
 
         info!("Workers created: {:?}", workers);
 
-        WORKER_COUNT.set(workers.len() as i64);
+        WORKER_COUNT.set(i64::try_from(workers.len()).expect("worker count greater than i64::MAX"));
         RATE_LIMIT_VIOLATIONS.reset();
         RATE_LIMITED_REQUESTS.reset();
         REQUEST_RETRIES.reset();
@@ -183,7 +183,7 @@ impl LoadBalancerState {
         }
 
         info!("Workers updated: {:?}", workers);
-        WORKER_COUNT.set(workers.len() as i64);
+        WORKER_COUNT.set(i64::try_from(workers.len()).expect("worker count greater than i64::MAX"));
 
         Ok(())
     }
@@ -286,7 +286,7 @@ impl RequestContext {
             tries: 0,
             request_id,
             worker: None,
-            parent_span: info_span!(target: MIDEN_PROVING_SERVICE, "proxy:new_request", request_id = request_id.to_string()),
+            parent_span: info_span!(target: MIDEN_PROVING_SERVICE, "proxy.new_request", request_id = request_id.to_string()),
             created_at: Instant::now(),
         }
     }
@@ -341,7 +341,7 @@ impl ProxyHttp for LoadBalancer {
     /// Here we apply IP-based rate-limiting to the request. We also check if the queue is full.
     ///
     /// If the request is rate-limited, we return a 429 response. Otherwise, we return false.
-    #[tracing::instrument(name = "proxy:request_filter", parent = &ctx.parent_span, skip(session))]
+    #[tracing::instrument(name = "proxy.request_filter", parent = &ctx.parent_span, skip(session))]
     async fn request_filter(&self, session: &mut Session, ctx: &mut Self::CTX) -> Result<bool>
     where
         Self::CTX: Send + Sync,
@@ -401,7 +401,7 @@ impl ProxyHttp for LoadBalancer {
     ///
     /// Note that the request will be assigned a worker here, and the worker will be removed from
     /// the list of available workers once it reaches the [Self::logging] method.
-    #[tracing::instrument(name = "proxy:upstream_peer", parent = &ctx.parent_span, skip(_session))]
+    #[tracing::instrument(name = "proxy.upstream_peer", parent = &ctx.parent_span, skip(_session))]
     async fn upstream_peer(
         &self,
         _session: &mut Session,
@@ -461,7 +461,7 @@ impl ProxyHttp for LoadBalancer {
     ///
     /// This method is called right after [Self::upstream_peer()] returns a [HttpPeer] and a
     /// connection is established with the worker.
-    #[tracing::instrument(name = "proxy:upstream_request_filter", parent = &_ctx.parent_span, skip(_session))]
+    #[tracing::instrument(name = "proxy.upstream_request_filter", parent = &_ctx.parent_span, skip(_session))]
     async fn upstream_request_filter(
         &self,
         _session: &mut Session,
@@ -483,11 +483,11 @@ impl ProxyHttp for LoadBalancer {
     }
 
     /// Retry the request if the connection fails.
-    #[tracing::instrument(name = "proxy:fail_to_connect", parent = &ctx.parent_span, skip(_session))]
+    #[tracing::instrument(name = "proxy.fail_to_connect", parent = &ctx.parent_span, skip(_session))]
     fn fail_to_connect(
         &self,
         _session: &mut Session,
-        _peer: &HttpPeer,
+        peer: &HttpPeer,
         ctx: &mut Self::CTX,
         mut e: Box<Error>,
     ) -> Box<Error> {
@@ -504,7 +504,7 @@ impl ProxyHttp for LoadBalancer {
     ///
     /// This method is the last one in the request lifecycle, no matter if the request was
     /// processed or not.
-    #[tracing::instrument(name = "proxy:logging", parent = &ctx.parent_span, skip(_session))]
+    #[tracing::instrument(name = "proxy.logging", parent = &ctx.parent_span, skip(_session))]
     async fn logging(&self, _session: &mut Session, e: Option<&Error>, ctx: &mut Self::CTX)
     where
         Self::CTX: Send + Sync,
@@ -522,7 +522,10 @@ impl ProxyHttp for LoadBalancer {
         REQUEST_LATENCY.observe(ctx.created_at.elapsed().as_secs_f64());
 
         // Update the number of busy workers
-        WORKER_BUSY.set(self.0.num_busy_workers().await as i64);
+        WORKER_BUSY.set(
+            i64::try_from(self.0.num_busy_workers().await)
+                .expect("busy worker count greater than i64::MAX"),
+        );
     }
 
     // The following methods are a copy of the default implementation defined in the trait, but
@@ -532,7 +535,7 @@ impl ProxyHttp for LoadBalancer {
     // We use the default implementation by implementing the method for our specific type, adding
     // the tracing instrumentation and internally calling `ProxyHttp` methods.
     // ============================================================================================
-    #[tracing::instrument(name = "proxy:early_request_filter", parent = &ctx.parent_span, skip(_session))]
+    #[tracing::instrument(name = "proxy.early_request_filter", parent = &ctx.parent_span, skip(_session))]
     async fn early_request_filter(
         &self,
         _session: &mut Session,
@@ -541,7 +544,7 @@ impl ProxyHttp for LoadBalancer {
         ProxyHttpDefaultImpl.early_request_filter(_session, &mut ()).await
     }
 
-    #[tracing::instrument(name = "proxy:connected_to_upstream", parent = &ctx.parent_span, skip(_session, _sock, _reused, _peer, _fd, _digest))]
+    #[tracing::instrument(name = "proxy.connected_to_upstream", parent = &ctx.parent_span, skip(_session, _sock, _reused, _peer, _fd, _digest))]
     async fn connected_to_upstream(
         &self,
         _session: &mut Session,
@@ -557,7 +560,7 @@ impl ProxyHttp for LoadBalancer {
             .await
     }
 
-    #[tracing::instrument(name = "proxy:request_body_filter", parent = &ctx.parent_span, skip(session, body))]
+    #[tracing::instrument(name = "proxy.request_body_filter", parent = &ctx.parent_span, skip(session, body))]
     async fn request_body_filter(
         &self,
         session: &mut Session,
@@ -570,7 +573,7 @@ impl ProxyHttp for LoadBalancer {
             .await
     }
 
-    #[tracing::instrument(name = "proxy:upstream_response_filter", parent = &ctx.parent_span, skip(session, upstream_response))]
+    #[tracing::instrument(name = "proxy.upstream_response_filter", parent = &ctx.parent_span, skip(session, upstream_response))]
     fn upstream_response_filter(
         &self,
         session: &mut Session,
@@ -580,7 +583,7 @@ impl ProxyHttp for LoadBalancer {
         ProxyHttpDefaultImpl.upstream_response_filter(session, upstream_response, &mut ())
     }
 
-    #[tracing::instrument(name = "proxy:response_filter", parent = &ctx.parent_span, skip(session, upstream_response))]
+    #[tracing::instrument(name = "proxy.response_filter", parent = &ctx.parent_span, skip(session, upstream_response))]
     async fn response_filter(
         &self,
         session: &mut Session,
@@ -593,7 +596,7 @@ impl ProxyHttp for LoadBalancer {
         ProxyHttpDefaultImpl.response_filter(session, upstream_response, &mut ()).await
     }
 
-    #[tracing::instrument(name = "proxy:upstream_response_body_filter", parent = &ctx.parent_span, skip(session, body))]
+    #[tracing::instrument(name = "proxy.upstream_response_body_filter", parent = &ctx.parent_span, skip(session, body))]
     fn upstream_response_body_filter(
         &self,
         session: &mut Session,
@@ -604,7 +607,7 @@ impl ProxyHttp for LoadBalancer {
         ProxyHttpDefaultImpl.upstream_response_body_filter(session, body, end_of_stream, &mut ())
     }
 
-    #[tracing::instrument(name = "proxy:response_body_filter", parent = &ctx.parent_span, skip(session, body))]
+    #[tracing::instrument(name = "proxy.response_body_filter", parent = &ctx.parent_span, skip(session, body))]
     fn response_body_filter(
         &self,
         session: &mut Session,
@@ -618,7 +621,7 @@ impl ProxyHttp for LoadBalancer {
         ProxyHttpDefaultImpl.response_body_filter(session, body, end_of_stream, &mut ())
     }
 
-    #[tracing::instrument(name = "proxy:fail_to_proxy", parent = &ctx.parent_span, skip(session))]
+    #[tracing::instrument(name = "proxy.fail_to_proxy", parent = &ctx.parent_span, skip(session))]
     async fn fail_to_proxy(
         &self,
         session: &mut Session,
@@ -631,7 +634,7 @@ impl ProxyHttp for LoadBalancer {
         ProxyHttpDefaultImpl.fail_to_proxy(session, e, &mut ()).await
     }
 
-    #[tracing::instrument(name = "proxy:error_while_proxy", parent = &ctx.parent_span, skip(session))]
+    #[tracing::instrument(name = "proxy.error_while_proxy", parent = &ctx.parent_span, skip(session))]
     fn error_while_proxy(
         &self,
         peer: &HttpPeer,

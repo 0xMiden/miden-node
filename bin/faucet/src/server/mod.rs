@@ -20,6 +20,7 @@ use miden_node_utils::grpc::UrlExt;
 use miden_objects::account::AccountId;
 use miden_tx::utils::Serializable;
 use pow::PoW;
+use sha3::{Digest, Sha3_256};
 use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
 use tower_governor::{
@@ -85,11 +86,10 @@ impl Server {
             cleanup_state.run_cleanup().await;
         });
 
-        // Convert string secret to [u8; 32] for PoW
-        let mut secret_bytes = [0u8; 32];
-        let secret_str_bytes = pow_secret.as_bytes();
-        let copy_len = secret_str_bytes.len().min(32);
-        secret_bytes[..copy_len].copy_from_slice(&secret_str_bytes[..copy_len]);
+        // Hash the string secret to [u8; 32] for PoW
+        let mut hasher = Sha3_256::new();
+        hasher.update(pow_secret.as_bytes());
+        let secret_bytes: [u8; 32] = hasher.finalize().into();
 
         let pow = PoW::new(secret_bytes);
 

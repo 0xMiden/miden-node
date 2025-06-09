@@ -157,6 +157,9 @@ pub(crate) async fn get_pow_challenge(State(server): State<Server>) -> impl Into
     Json(challenge)
 }
 
+// TESTS
+// ================================================================================================
+
 #[cfg(test)]
 mod tests {
     use super::*;

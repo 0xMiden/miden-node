@@ -1,10 +1,5 @@
 FROM rust:1.87-slim-bullseye AS builder
 
-RUN apt-get update && \
-    apt-get -y upgrade && \
-    apt-get install -y llvm clang bindgen pkg-config libssl-dev ca-certificates && \
-    rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 COPY . .
 
@@ -22,18 +17,6 @@ RUN miden-faucet create-faucet-account \
     --token-symbol POL \
     --decimals 9 \
     --max-supply 1000000000
-
-FROM debian:bullseye-slim
-
-# Update machine & install required packages
-RUN apt-get update && \
-    apt-get -y upgrade && \
-    apt-get install -y --no-install-recommends \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/faucet.mac faucet.mac
-COPY --from=builder /app/miden-faucet.toml miden-faucet.toml
-COPY --from=builder /usr/local/cargo/bin/miden-faucet /usr/local/bin/miden-faucet
 
 LABEL org.opencontainers.image.authors=miden@polygon.io \
     org.opencontainers.image.url=https://0xpolygonmiden.github.io/ \

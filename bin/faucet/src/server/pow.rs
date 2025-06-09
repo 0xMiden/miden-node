@@ -12,7 +12,7 @@ use tokio::time::{Duration, interval};
 
 use super::{
     Server,
-    challenge::{Challenge, SERVER_TIMESTAMP_TOLERANCE_SECONDS},
+    challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge},
     get_tokens::InvalidRequest,
 };
 use crate::REQUESTS_QUEUE_SIZE;
@@ -124,7 +124,7 @@ pub struct ChallengeCache {
 impl ChallengeCache {
     /// Cleanup expired challenges.
     ///
-    /// Challenges are expired if they are older than [`SERVER_TIMESTAMP_TOLERANCE_SECONDS`]
+    /// Challenges are expired if they are older than [`CHALLENGE_LIFETIME_SECONDS`]
     /// seconds.
     pub fn cleanup_expired_challenges(&self) {
         let current_time = SystemTime::now()
@@ -133,9 +133,8 @@ impl ChallengeCache {
             .as_secs();
 
         let mut challenges = self.challenges.lock().unwrap();
-        challenges.retain(|challenge| {
-            (current_time - challenge.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
-        });
+        challenges
+            .retain(|challenge| (current_time - challenge.timestamp) <= CHALLENGE_LIFETIME_SECONDS);
     }
 
     /// Run the cleanup task.
@@ -296,7 +295,7 @@ mod tests {
         assert!(challenge.is_not_expired(current_time));
 
         // Expired timestamp (too old)
-        let old_timestamp = current_time - SERVER_TIMESTAMP_TOLERANCE_SECONDS - 10;
+        let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
         let challenge = Challenge::new(1, old_timestamp, secret);
         assert!(!challenge.is_not_expired(current_time));
     }

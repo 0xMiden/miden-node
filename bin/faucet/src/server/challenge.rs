@@ -4,11 +4,10 @@ use sha3::{Digest, Sha3_256};
 
 use super::get_tokens::InvalidRequest;
 
-/// The tolerance for the server timestamp.
+/// The lifetime of a challenge.
 ///
-/// The server timestamp is valid if it is within `SERVER_TIMESTAMP_TOLERANCE_SECONDS` seconds of
-/// the current time.
-pub(crate) const SERVER_TIMESTAMP_TOLERANCE_SECONDS: u64 = 30;
+/// A challenge is valid if it is within `CHALLENGE_LIFETIME_SECONDS` seconds of the current time.
+pub(crate) const CHALLENGE_LIFETIME_SECONDS: u64 = 30;
 
 /// A challenge for proof-of-work validation.
 #[derive(Debug, Clone, Deserialize, Hash, PartialEq, Eq)]
@@ -95,7 +94,7 @@ impl Challenge {
 
     /// Checks if the challenge timestamp is not expired.
     pub fn is_not_expired(&self, current_time: u64) -> bool {
-        (current_time - self.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
+        (current_time - self.timestamp) <= CHALLENGE_LIFETIME_SECONDS
     }
 
     /// Computes the signature for a challenge.

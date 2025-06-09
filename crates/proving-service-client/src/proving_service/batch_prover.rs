@@ -39,7 +39,7 @@ pub struct RemoteBatchProver {
 }
 
 impl RemoteBatchProver {
-    /// Creates a new [RemoteBatchProver] with the specified gRPC server endpoint. The
+    /// Creates a new [`RemoteBatchProver`] with the specified gRPC server endpoint. The
     /// endpoint should be in the format `{protocol}://{hostname}:{port}`.
     pub fn new(endpoint: impl Into<String>) -> Self {
         RemoteBatchProver {

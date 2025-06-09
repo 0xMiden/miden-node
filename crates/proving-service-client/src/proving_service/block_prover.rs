@@ -40,7 +40,7 @@ pub struct RemoteBlockProver {
 }
 
 impl RemoteBlockProver {
-    /// Creates a new [RemoteBlockProver] with the specified gRPC server endpoint. The
+    /// Creates a new [`RemoteBlockProver`] with the specified gRPC server endpoint. The
     /// endpoint should be in the format `{protocol}://{hostname}:{port}`.
     pub fn new(endpoint: impl Into<String>) -> Self {
         RemoteBlockProver {
@@ -113,7 +113,7 @@ impl RemoteBlockProver {
             )
         })?;
 
-        Self::validate_tx_headers(&proven_block, proposed_txs)?;
+        Self::validate_tx_headers(&proven_block, &proposed_txs)?;
 
         Ok(proven_block)
     }
@@ -125,7 +125,7 @@ impl RemoteBlockProver {
     /// order, as define by [`OrderedTransactionHeaders`].
     fn validate_tx_headers(
         proven_block: &ProvenBlock,
-        proposed_txs: OrderedTransactionHeaders,
+        proposed_txs: &OrderedTransactionHeaders,
     ) -> Result<(), RemoteProverError> {
         if proposed_txs.as_slice().len() != proven_block.transactions().as_slice().len() {
             return Err(RemoteProverError::other(format!(

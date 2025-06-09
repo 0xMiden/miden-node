@@ -66,11 +66,9 @@ impl PoW {
     /// * The challenge is expired.
     /// * The challenge is invalid.
     /// * The challenge was already used.
-    pub fn submit_challenge(
-        &self,
-        challenge: &Challenge,
-        nonce: u64,
-    ) -> Result<(), InvalidRequest> {
+    pub fn submit_challenge(&self, challenge: &str, nonce: u64) -> Result<(), InvalidRequest> {
+        let challenge = Challenge::decode(challenge, self.secret)?;
+
         // Check timestamp validity
         if challenge.is_expired(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()) {
             return Err(InvalidRequest::ExpiredServerTimestamp(
@@ -203,11 +201,11 @@ mod tests {
         let challenge = pow.build_challenge();
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let result = pow.submit_challenge(&challenge, nonce);
+        let result = pow.submit_challenge(&challenge.encode(), nonce);
         assert!(result.is_ok());
 
         // Try to use the same challenge again - should fail
-        let result = pow.submit_challenge(&challenge, nonce);
+        let result = pow.submit_challenge(&challenge.encode(), nonce);
         assert!(result.is_err());
     }
 

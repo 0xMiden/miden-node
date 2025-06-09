@@ -42,7 +42,7 @@ http                         = { version = "1.3" }
 itertools                    = { version = "0.14" }
 miden-air                    = { version = "0.14" }
 miden-block-prover           = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-lib                    = { rev = "4c1b800e7bc423f5b003a46400f5354243b5fe88", git = "https://github.com/0xMiden/miden-base" }
+miden-lib                    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-node-block-producer    = { path = "crates/block-producer", version = "0.10" }
 miden-node-ntx-builder       = { path = "crates/ntx-builder", version = "0.10" }
 miden-node-proto             = { path = "crates/proto", version = "0.10" }
@@ -51,11 +51,11 @@ miden-node-rpc               = { path = "crates/rpc", version = "0.10" }
 miden-node-store             = { path = "crates/store", version = "0.10" }
 miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.10" }
-miden-objects                = { rev = "4c1b800e7bc423f5b003a46400f5354243b5fe88", git = "https://github.com/0xMiden/miden-base" }
-miden-proving-service-client = { path = "crates/proving-service-client" }
-miden-testing                = { rev = "4c1b800e7bc423f5b003a46400f5354243b5fe88", git = "https://github.com/0xMiden/miden-base" }
-miden-tx                     = { rev = "4c1b800e7bc423f5b003a46400f5354243b5fe88", git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover        = { rev = "4c1b800e7bc423f5b003a46400f5354243b5fe88", git = "https://github.com/0xMiden/miden-base" }
+miden-objects                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-proving-service-client = { path = "crates/proving-service-client", version = "0.10" }
+miden-testing                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx                     = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover        = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }
 thiserror                    = { default-features = false, version = "2.0" }

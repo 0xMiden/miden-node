@@ -19,8 +19,7 @@ use miden_objects::{
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath, rand::RpoRandomCoin},
     note::{
-        Note, NoteDetails, NoteExecutionHint, NoteExecutionMode, NoteId, NoteMetadata, NoteTag,
-        NoteType, Nullifier,
+        Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
     },
     testing::account_id::{
         ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
@@ -392,11 +391,6 @@ fn sql_unconsumed_network_notes() {
     let notes = (0..N)
         .map(|i| {
             let is_network = i % 2 == 0;
-            let execution_mode = if is_network {
-                NoteExecutionMode::Network
-            } else {
-                NoteExecutionMode::Local
-            };
             let note = NoteRecord {
                 block_num,
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
@@ -404,7 +398,7 @@ fn sql_unconsumed_network_notes() {
                 metadata: NoteMetadata::new(
                     account_id,
                     NoteType::Public,
-                    NoteTag::from_account_id(account_id, execution_mode).unwrap(),
+                    NoteTag::from_account_id(account_id),
                     NoteExecutionHint::none(),
                     Felt::default(),
                 )

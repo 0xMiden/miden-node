@@ -137,7 +137,7 @@ impl StoreClient {
         &self,
         note_tag: NoteTag,
     ) -> Result<Option<Account>, StoreError> {
-        let tag_inner = note_tag.inner();
+        let tag_inner = note_tag.as_u32();
         let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
 
         let store_response = self

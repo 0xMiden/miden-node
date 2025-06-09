@@ -98,7 +98,7 @@ impl AuthenticatedTransaction {
     }
 
     pub fn input_note_count(&self) -> usize {
-        self.inner.input_notes().num_notes()
+        self.inner.input_notes().num_notes() as usize
     }
 
     pub fn reference_block(&self) -> (BlockNumber, Digest) {

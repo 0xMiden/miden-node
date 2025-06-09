@@ -52,9 +52,8 @@ impl PoW {
             .as_secs();
 
         let difficulty = self.difficulty.load(Ordering::Relaxed);
-        let signature = Challenge::compute_signature(self.salt, difficulty, timestamp);
 
-        Challenge::new(difficulty, timestamp, signature)
+        Challenge::new(difficulty, timestamp, self.salt)
     }
 
     /// Submits a challenge to the `PoW` instance.
@@ -195,8 +194,7 @@ mod tests {
             .expect("Time went backwards")
             .as_secs();
 
-        let signature = Challenge::compute_signature(salt, difficulty, timestamp);
-        let challenge = Challenge::new(difficulty, timestamp, signature);
+        let challenge = Challenge::new(difficulty, timestamp, salt);
 
         let encoded = challenge.encode();
         let decoded = Challenge::decode(&encoded, salt).unwrap();
@@ -303,14 +301,12 @@ mod tests {
             .as_secs();
 
         // Valid timestamp (current time)
-        let signature = Challenge::compute_signature(salt, 1, current_time);
-        let challenge = Challenge::new(1, current_time, signature);
+        let challenge = Challenge::new(1, current_time, salt);
         assert!(challenge.is_not_expired());
 
         // Expired timestamp (too old)
         let old_timestamp = current_time - SERVER_TIMESTAMP_TOLERANCE_SECONDS - 10;
-        let signature = Challenge::compute_signature(salt, 1, old_timestamp);
-        let challenge = Challenge::new(1, old_timestamp, signature);
+        let challenge = Challenge::new(1, old_timestamp, salt);
         assert!(!challenge.is_not_expired());
     }
 }

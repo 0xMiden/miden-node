@@ -22,7 +22,14 @@ pub struct Challenge {
 
 impl Challenge {
     /// Creates a new challenge with the given parameters.
-    pub fn new(difficulty: usize, timestamp: u64, signature: [u8; 32]) -> Self {
+    /// The signature is computed internally using the provided salt.
+    pub fn new(difficulty: usize, timestamp: u64, salt: [u8; 32]) -> Self {
+        let signature = Self::compute_signature(salt, difficulty, timestamp);
+        Self { difficulty, timestamp, signature }
+    }
+
+    /// Creates a challenge from existing parts (used for decoding).
+    pub fn from_parts(difficulty: usize, timestamp: u64, signature: [u8; 32]) -> Self {
         Self { difficulty, timestamp, signature }
     }
 
@@ -44,7 +51,7 @@ impl Challenge {
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let signature: [u8; 32] = bytes[16..48].try_into().unwrap();
 
-        let challenge = Self::new(difficulty, timestamp, signature);
+        let challenge = Self::from_parts(difficulty, timestamp, signature);
 
         // Verify the signature
         let expected_signature = Self::compute_signature(salt, difficulty, timestamp);

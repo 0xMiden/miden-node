@@ -156,7 +156,7 @@ impl StoreCommand {
             AccountIdAnchor::PRE_GENESIS,
             TokenSymbol::try_from("POL").expect("POL should be a valid token symbol"),
             12,
-            Felt::from(1_000_000u32),
+            Felt::from(u32::MAX),
             miden_objects::account::AccountStorageMode::Public,
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;

@@ -21,28 +21,28 @@ std          = ["miden-objects/std", "miden-tx/std"]
 tx-prover    = ["dep:miden-objects", "dep:tokio", "miden-tx/async"]
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
-getrandom             = { version = "0.3", features = ["wasm_js"] }
-tonic                 = { version = "0.12", default-features = false, features = ["codegen", "prost"] }
-tonic-web-wasm-client = { version = "0.6", default-features = false }
+getrandom             = { features = ["wasm_js"], version = "0.3" }
+tonic                 = { default-features = false, features = ["codegen", "prost"], version = "0.12" }
+tonic-web-wasm-client = { default-features = false, version = "0.6" }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
-tonic     = { version = "0.12", default-features = false, features = ["codegen", "prost", "transport"] }
-tonic-web = { version = "0.12", optional = true }
+tonic     = { default-features = false, features = ["codegen", "prost", "transport"], version = "0.12" }
+tonic-web = { optional = true, version = "0.12" }
 
 [lints]
 workspace = true
 
 [dependencies]
 async-trait   = "0.1"
-miden-objects = { workspace = true, optional = true }
-miden-tx      = { workspace = true, optional = true }
-prost         = { version = "0.13", default-features = false, features = ["derive"] }
+miden-objects = { optional = true, workspace = true }
+miden-tx      = { optional = true, workspace = true }
+prost         = { default-features = false, features = ["derive"], version = "0.13" }
 thiserror     = "2.0"
-tokio         = { version = "1.44", default-features = false, features = ["sync"], optional = true }
+tokio         = { default-features = false, features = ["sync"], optional = true, version = "1.44" }
 
 [build-dependencies]
-miette      = { version = "7.5", features = ["fancy"] }
-prost       = { version = "0.13", default-features = false, features = ["derive"] }
+miette      = { features = ["fancy"], version = "7.5" }
+prost       = { default-features = false, features = ["derive"], version = "0.13" }
 prost-build = { version = "0.13" }
 protox      = { version = "0.7" }
 tonic-build = { version = "0.12" }

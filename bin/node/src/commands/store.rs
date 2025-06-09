@@ -154,7 +154,7 @@ impl StoreCommand {
         let (mut account, account_seed) = create_basic_fungible_faucet(
             rng.random(),
             AccountIdAnchor::PRE_GENESIS,
-            TokenSymbol::try_from("POL").expect("POL should be a valid token symbol"),
+            TokenSymbol::try_from("MIDEN").expect("MIDEN should be a valid token symbol"),
             12,
             Felt::from(u32::MAX),
             miden_objects::account::AccountStorageMode::Public,

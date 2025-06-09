@@ -48,6 +48,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.get_block_header_by_number",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -67,6 +68,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.check_nullifiers",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -92,6 +94,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.check_nullifiers_by_prefix",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -130,6 +133,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.sync_state",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -185,6 +189,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.sync_notes",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -218,6 +223,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.get_notes_by_id",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -251,6 +257,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.get_account_details",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -272,6 +279,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.get_block_by_number",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -293,6 +301,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.get_account_proofs",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -332,6 +341,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.get_account_state_delta",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]
@@ -362,6 +372,7 @@ impl rpc_server::Rpc for StoreApi {
         target = COMPONENT,
         name = "store.rpc_server.status",
         skip_all,
+        level = "debug",
         ret(level = "debug"),
         err
     )]

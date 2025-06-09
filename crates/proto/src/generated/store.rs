@@ -10,7 +10,7 @@ pub mod rpc_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// Store API for the RPC
+    /// Store API for the RPC component
     #[derive(Debug, Clone)]
     pub struct RpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -406,7 +406,7 @@ pub mod block_producer_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// Store API for the BlockProducer
+    /// Store API for the BlockProducer component
     #[derive(Debug, Clone)]
     pub struct BlockProducerClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -636,7 +636,7 @@ pub mod ntx_builder_client {
     )]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
-    /// Store API for the NtxBuilder
+    /// Store API for the network transaction builder component
     #[derive(Debug, Clone)]
     pub struct NtxBuilderClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -970,7 +970,7 @@ pub mod rpc_server {
             tonic::Status,
         >;
     }
-    /// Store API for the RPC
+    /// Store API for the RPC component
     #[derive(Debug)]
     pub struct RpcServer<T> {
         inner: Arc<T>,
@@ -1663,7 +1663,7 @@ pub mod block_producer_server {
             tonic::Status,
         >;
     }
-    /// Store API for the BlockProducer
+    /// Store API for the BlockProducer component
     #[derive(Debug)]
     pub struct BlockProducerServer<T> {
         inner: Arc<T>,
@@ -2086,7 +2086,7 @@ pub mod ntx_builder_server {
             tonic::Status,
         >;
     }
-    /// Store API for the NtxBuilder
+    /// Store API for the network transaction builder component
     #[derive(Debug)]
     pub struct NtxBuilderServer<T> {
         inner: Arc<T>,

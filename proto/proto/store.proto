@@ -8,7 +8,7 @@ import "requests.proto";
 import "responses.proto";
 import "google/protobuf/empty.proto";
 
-// Store API for the RPC
+// Store API for the RPC component
 service Rpc {
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(requests.CheckNullifiersRequest) returns (responses.CheckNullifiersResponse) {}
@@ -70,7 +70,7 @@ service Rpc {
     rpc Status(google.protobuf.Empty) returns (responses.StoreStatusResponse) {}
 }
 
-// Store API for the BlockProducer
+// Store API for the BlockProducer component
 service BlockProducer {
     // Applies changes of a new block to the DB and in-memory data structures.
     rpc ApplyBlock(requests.ApplyBlockRequest) returns (responses.ApplyBlockResponse) {}
@@ -89,7 +89,7 @@ service BlockProducer {
     rpc GetTransactionInputs(requests.GetTransactionInputsRequest) returns (responses.GetTransactionInputsResponse) {}
 }
 
-// Store API for the NtxBuilder
+// Store API for the network transaction builder component
 service NtxBuilder {
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.

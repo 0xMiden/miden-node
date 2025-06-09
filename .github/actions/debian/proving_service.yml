@@ -65,7 +65,7 @@ runs:
         Section: base
         Priority: optional
         Architecture: $arch
-        Maintainer: Miden <sergerad@miden.team>
+        Maintainer: Miden <devops@miden.team>
         Description: miden-prover binary package
         Homepage: https://miden.xyz
         Vcs-Git: git@github.com:0xMiden/miden-base.git
@@ -78,7 +78,7 @@ runs:
         Section: base
         Priority: optional
         Architecture: $arch
-        Maintainer: Miden <sergerad@miden.team>
+        Maintainer: Miden <devops@miden.team>
         Description: miden-prover-proxy binary package
         Homepage: https://miden.xyz
         Vcs-Git: git@github.com:0xMiden/miden-base.git

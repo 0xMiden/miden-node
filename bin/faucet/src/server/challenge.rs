@@ -115,22 +115,22 @@ mod tests {
     #[test]
     fn test_challenge_serialization() {
         let secret = [1u8; 32];
-        let challenge = Challenge::new(2, 1234567890, secret);
-        
+        let challenge = Challenge::new(2, 1_234_567_890, secret);
+
         // Test that it serializes to the expected JSON format
         let json = serde_json::to_string(&challenge).unwrap();
-        
+
         // Should contain the expected fields
         assert!(json.contains("\"challenge\":"));
         assert!(json.contains("\"difficulty\":2"));
         assert!(json.contains("\"timestamp\":1234567890"));
-        
+
         // Parse back to verify structure
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
         assert!(parsed.get("challenge").is_some());
         assert!(parsed.get("difficulty").is_some());
         assert!(parsed.get("timestamp").is_some());
         assert_eq!(parsed["difficulty"], 2);
-        assert_eq!(parsed["timestamp"], 1234567890);
+        assert_eq!(parsed["timestamp"], 1_234_567_890);
     }
 }

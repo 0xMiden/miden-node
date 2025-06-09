@@ -25,10 +25,10 @@ const RESOURCE_EXHAUSTED_CODE: u16 = 8;
 /// This function sets up a tracing pipeline that includes:
 ///
 /// - An OpenTelemetry (OTLP) exporter, which sends span data to an OTLP endpoint using gRPC.
-/// - A [SdkTracerProvider] configured with a [Sampler::ParentBased] sampler at a `1.0` sampling
+/// - A [`SdkTracerProvider`] configured with a [`Sampler::ParentBased`] sampler at a `1.0` sampling
 ///   ratio, ensuring that all traces are recorded.
 /// - A resource containing the service name and version extracted from the crate's metadata.
-/// - A `tracing` subscriber that integrates the configured [SdkTracerProvider] with the Rust
+/// - A `tracing` subscriber that integrates the configured [`SdkTracerProvider`] with the Rust
 ///   `tracing` ecosystem, applying filters from the environment and enabling formatted console
 ///   logs.
 ///
@@ -39,8 +39,8 @@ const RESOURCE_EXHAUSTED_CODE: u16 = 8;
 /// 2. **Resource Setup**:   Creates a [Resource] containing service metadata (name and version),
 ///    which is attached to all emitted telemetry data to identify the originating service.
 ///
-/// 3. **TracerProvider and Sampler**:   Builds a [SdkTracerProvider] using a [Sampler::ParentBased]
-///    sampler layered over a [Sampler::TraceIdRatioBased] sampler set to `1.0`, ensuring all traces
+/// 3. **`TracerProvider` and Sampler**:   Builds a [`SdkTracerProvider`] using a [`Sampler::ParentBased`]
+///    sampler layered over a [`Sampler::TraceIdRatioBased`] sampler set to `1.0`, ensuring all traces
 ///    are recorded. A random ID generator is used to produce trace and span IDs. The tracer is
 ///    retrieved from this provider, which can then be used by the OpenTelemetry layer of `tracing`.
 ///
@@ -62,7 +62,7 @@ pub(crate) fn setup_tracing() -> Result<(), String> {
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
         .build()
-        .map_err(|e| format!("Failed to create OTLP exporter: {:?}", e))?;
+        .map_err(|e| format!("Failed to create OTLP exporter: {e:?}"))?;
 
     let resource = Resource::builder()
         .with_schema_url(
@@ -91,7 +91,7 @@ pub(crate) fn setup_tracing() -> Result<(), String> {
         .with(tracing_subscriber::fmt::layer());
 
     tracing::subscriber::set_global_default(subscriber)
-        .map_err(|e| format!("Failed to set subscriber: {:?}", e))
+        .map_err(|e| format!("Failed to set subscriber: {e:?}"))
 }
 
 /// Create a 503 response for a full queue
@@ -161,7 +161,7 @@ pub fn check_port_availability(
     port: u16,
     service: &str,
 ) -> Result<std::net::TcpListener, ProvingServiceError> {
-    let addr = format!("{}:{}", PROXY_HOST, port);
+    let addr = format!("{PROXY_HOST}:{port}");
     TcpListener::bind(&addr)
         .inspect(|_| tracing::debug!(%service, %port, "Port is available"))
         .map_err(|err| ProvingServiceError::PortAlreadyInUse(err, port))

@@ -1,0 +1,48 @@
+[package]
+authors.workspace      = true
+description            = "Client library for the Miden blockchain proving service"
+edition.workspace      = true
+keywords               = ["miden", "proving", "service"]
+license.workspace      = true
+name                   = "miden-proving-service-client"
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version                = "0.10.0"
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+batch-prover = ["dep:miden-objects", "dep:tokio"]
+block-prover = ["dep:miden-objects", "dep:tokio"]
+default      = ["std"]
+std          = ["miden-objects/std", "miden-tx/std"]
+tx-prover    = ["dep:miden-objects", "dep:tokio", "miden-tx/async"]
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom             = { version = "0.3", features = ["wasm_js"] }
+tonic                 = { version = "0.12", default-features = false, features = ["codegen", "prost"] }
+tonic-web-wasm-client = { version = "0.6", default-features = false }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+tonic     = { version = "0.12", default-features = false, features = ["codegen", "prost", "transport"] }
+tonic-web = { version = "0.12", optional = true }
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait   = "0.1"
+miden-objects = { workspace = true, optional = true }
+miden-tx      = { workspace = true, optional = true }
+prost         = { version = "0.13", default-features = false, features = ["derive"] }
+thiserror     = "2.0"
+tokio         = { version = "1.44", default-features = false, features = ["sync"], optional = true }
+
+[build-dependencies]
+miette      = { version = "7.5", features = ["fancy"] }
+prost       = { version = "0.13", default-features = false, features = ["derive"] }
+prost-build = { version = "0.13" }
+protox      = { version = "0.7" }
+tonic-build = { version = "0.12" }

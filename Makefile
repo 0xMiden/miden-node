@@ -13,7 +13,8 @@ BUILD_PROTO=BUILD_PROTO=1
 
 .PHONY: clippy
 clippy: ## Runs Clippy with configs
-	cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+	cargo clippy --locked --all-targets --all-features --workspace --exclude miden-proving-service -- -D warnings # miden-tx async feature on.
+	cargo clippy --locked --all-targets --all-features -p miden-proving-service -- -D warnings # miden-tx async feature off.
 
 
 .PHONY: fix

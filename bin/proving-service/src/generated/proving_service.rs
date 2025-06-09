@@ -7,9 +7,9 @@ pub struct ProvingRequest {
     pub proof_type: i32,
     /// Serialized payload requiring proof generation. The encoding format is
     /// type-specific:
-    /// - TRANSACTION: TransactionWitness encoded.
-    /// - BATCH: ProposedBatch encoded.
-    /// - BLOCK: ProposedBlock encoded.
+    /// - TRANSACTION: `TransactionWitness` encoded.
+    /// - BATCH: `ProposedBatch` encoded.
+    /// - BLOCK: `ProposedBlock` encoded.
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
@@ -17,9 +17,9 @@ pub struct ProvingRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProvingResponse {
     /// Serialized proof bytes.
-    /// - TRANSACTION: Returns an encoded ProvenTransaction.
-    /// - BATCH: Returns an encoded ProvenBatch.
-    /// - BLOCK: Returns an encoded ProvenBlock.
+    /// - TRANSACTION: Returns an encoded `ProvenTransaction`.
+    /// - BATCH: Returns an encoded `ProvenBatch`.
+    /// - BLOCK: Returns an encoded `ProvenBlock`.
     #[prost(bytes = "vec", tag = "1")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
@@ -35,10 +35,10 @@ pub enum ProofType {
     Block = 2,
 }
 impl ProofType {
-    /// String value of the enum field names used in the ProtoBuf definition.
+    /// String value of the enum field names used in the `ProtoBuf` definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    /// (if the `ProtoBuf` definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Transaction => "TRANSACTION",
@@ -46,7 +46,7 @@ impl ProofType {
             Self::Block => "BLOCK",
         }
     }
-    /// Creates an enum from field names used in the ProtoBuf definition.
+    /// Creates an enum from field names used in the `ProtoBuf` definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "TRANSACTION" => Some(Self::Transaction),

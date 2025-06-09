@@ -8,7 +8,7 @@ WantedBy=multi-user.target
 [Service]
 Type=exec
 EnvironmentFile=/lib/systemd/system/miden-prover.env
-ExecStart=/usr/bin/miden-proving-service start-worker --port 50052 --prover-type transaction
+ExecStart=/usr/bin/miden-proving-service start-worker
 WorkingDirectory=/opt/miden-prover
 User=miden-prover
 RestartSec=5

@@ -21,13 +21,13 @@ use crate::{
 
 /// Starts the proxy.
 ///
-/// Example: `miden-proving-service start-proxy 0.0.0.0:8080 127.0.0.1:9090`
+/// Example: `miden-proving-service start-proxy --workers 0.0.0.0:8080,127.0.0.1:9090`
 #[derive(Debug, Parser)]
 pub struct StartProxy {
     /// List of workers as host:port strings.
     ///
-    /// Example: `127.0.0.1:8080 192.168.1.1:9090`
-    #[arg(value_name = "WORKERS")]
+    /// Example: `127.0.0.1:8080,192.168.1.1:9090`
+    #[arg(long, env = "MPS_PROXY_WORKERS_LIST", value_delimiter = ',')]
     workers: Vec<String>,
     /// Proxy configurations.
     #[command(flatten)]
@@ -105,7 +105,7 @@ impl StartProxy {
 
         // Enable Prometheus metrics if metrics_port is specified
         if let Some(metrics_port) = self.proxy_config.metrics_config.metrics_port {
-            let metrics_addr = format!("{}:{}", PROXY_HOST, metrics_port);
+            let metrics_addr = format!("{PROXY_HOST}:{metrics_port}");
             info!("Starting metrics service on {}", metrics_addr);
             let mut prometheus_service =
                 pingora::services::listening::Service::prometheus_http_service();

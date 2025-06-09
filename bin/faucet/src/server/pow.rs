@@ -72,9 +72,7 @@ impl PoW {
         nonce: u64,
     ) -> Result<(), InvalidRequest> {
         // Check timestamp validity
-        if !challenge
-            .is_not_expired(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs())
-        {
+        if challenge.is_expired(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()) {
             return Err(InvalidRequest::ExpiredServerTimestamp(
                 challenge.timestamp,
                 SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
@@ -292,11 +290,11 @@ mod tests {
 
         // Valid timestamp (current time)
         let challenge = Challenge::new(1, current_time, secret);
-        assert!(challenge.is_not_expired(current_time));
+        assert!(!challenge.is_expired(current_time));
 
         // Expired timestamp (too old)
         let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
         let challenge = Challenge::new(1, old_timestamp, secret);
-        assert!(!challenge.is_not_expired(current_time));
+        assert!(challenge.is_expired(current_time));
     }
 }

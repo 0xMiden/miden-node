@@ -92,9 +92,9 @@ impl Challenge {
         leading_zeros >= self.difficulty
     }
 
-    /// Checks if the challenge timestamp is not expired.
-    pub fn is_not_expired(&self, current_time: u64) -> bool {
-        (current_time - self.timestamp) <= CHALLENGE_LIFETIME_SECONDS
+    /// Checks if the challenge timestamp is expired.
+    pub fn is_expired(&self, current_time: u64) -> bool {
+        (current_time - self.timestamp) > CHALLENGE_LIFETIME_SECONDS
     }
 
     /// Computes the signature for a challenge.

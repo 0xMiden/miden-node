@@ -85,10 +85,11 @@ impl Challenge {
     pub fn validate_pow(&self, nonce: u64) -> bool {
         let mut hasher = Sha3_256::new();
         hasher.update(self.encode());
-        hasher.update(nonce.to_be_bytes());
+        hasher.update(nonce.to_le_bytes());
         let hash = hasher.finalize();
 
         let leading_zeros = hash.iter().take_while(|&b| *b == 0).count();
+
         leading_zeros >= self.difficulty
     }
 
@@ -101,8 +102,8 @@ impl Challenge {
     fn compute_signature(secret: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         hasher.update(secret);
-        hasher.update(difficulty.to_be_bytes());
-        hasher.update(timestamp.to_be_bytes());
+        hasher.update(difficulty.to_le_bytes());
+        hasher.update(timestamp.to_le_bytes());
         hasher.finalize().into()
     }
 }

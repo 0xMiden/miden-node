@@ -52,6 +52,7 @@ impl ProverRpcApi {
         Self { prover }
     }
 
+    #[allow(clippy::result_large_err)]
     #[instrument(
         target = MIDEN_PROVING_SERVICE,
         name = "proving_service:prove_tx",
@@ -81,6 +82,7 @@ impl ProverRpcApi {
         Ok(Response::new(ProvingResponse { payload: proof.to_bytes() }))
     }
 
+    #[allow(clippy::result_large_err)]
     #[instrument(
         target = MIDEN_PROVING_SERVICE,
         name = "proving_service:prove_batch",
@@ -110,6 +112,7 @@ impl ProverRpcApi {
         Ok(Response::new(ProvingResponse { payload: proven_batch.to_bytes() }))
     }
 
+    #[allow(clippy::result_large_err)]
     #[instrument(
         target = MIDEN_PROVING_SERVICE,
         name = "proving_service:prove_block",

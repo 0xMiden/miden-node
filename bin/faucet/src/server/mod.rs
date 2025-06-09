@@ -39,6 +39,7 @@ use url::Url;
 use crate::{
     COMPONENT,
     faucet::{FaucetId, MintRequest},
+    server::{challenge::Challenge, get_tokens::InvalidRequest},
     types::AssetOptions,
 };
 
@@ -236,6 +237,32 @@ impl Server {
         axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
             .await
             .map_err(Into::into)
+    }
+
+    /// Submits a challenge to the `PoW` instance.
+    ///
+    /// The challenge is validated and added to the cache.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// * The challenge is expired.
+    /// * The challenge is invalid.
+    /// * The challenge was already used.
+    pub(crate) fn submit_challenge(
+        &self,
+        challenge: &str,
+        nonce: u64,
+    ) -> Result<(), InvalidRequest> {
+        let challenge = Challenge::decode(challenge, self.pow.secret)?;
+
+        challenge.validate(nonce)?;
+
+        // Check if challenge was already used
+        if !self.pow.challenge_cache.challenges.lock().unwrap().insert(challenge.clone()) {
+            return Err(InvalidRequest::ChallengeAlreadyUsed);
+        }
+
+        Ok(())
     }
 }
 

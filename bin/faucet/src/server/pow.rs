@@ -9,10 +9,7 @@ use std::{
 
 use tokio::time::{Duration, interval};
 
-use super::{
-    challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge},
-    get_tokens::InvalidRequest,
-};
+use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
 use crate::REQUESTS_QUEUE_SIZE;
 
 /// The maximum difficulty of the `PoW`.
@@ -27,7 +24,7 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 // ================================================================================================
 
 #[derive(Clone)]
-pub struct PoW {
+pub(crate) struct PoW {
     pub(crate) secret: [u8; 32],
     pub(crate) difficulty: Arc<AtomicUsize>,
     pub(crate) challenge_cache: ChallengeCache,
@@ -55,39 +52,6 @@ impl PoW {
         Challenge::new(difficulty, timestamp, self.secret)
     }
 
-    /// Submits a challenge to the `PoW` instance.
-    ///
-    /// The challenge is validated and added to the cache.
-    ///
-    /// # Errors
-    /// Returns an error if:
-    /// * The challenge is expired.
-    /// * The challenge is invalid.
-    /// * The challenge was already used.
-    pub fn submit_challenge(&self, challenge: &str, nonce: u64) -> Result<(), InvalidRequest> {
-        let challenge = Challenge::decode(challenge, self.secret)?;
-
-        // Check timestamp validity
-        if challenge.is_expired(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()) {
-            return Err(InvalidRequest::ExpiredServerTimestamp(
-                challenge.timestamp,
-                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
-            ));
-        }
-
-        // Validate the proof of work
-        if !challenge.validate_pow(nonce) {
-            return Err(InvalidRequest::InvalidPoW);
-        }
-
-        // Check if challenge was already used
-        if !self.challenge_cache.challenges.lock().unwrap().insert(challenge.clone()) {
-            return Err(InvalidRequest::ChallengeAlreadyUsed);
-        }
-
-        Ok(())
-    }
-
     /// Adjust the difficulty of the `PoW`.
     ///
     /// The difficulty is adjusted based on the number of active requests.
@@ -110,9 +74,9 @@ impl PoW {
 /// is only used once.
 /// Challenges get removed periodically.
 #[derive(Clone, Default)]
-pub struct ChallengeCache {
+pub(crate) struct ChallengeCache {
     /// Once a challenge is added, it cannot be submitted again.
-    challenges: Arc<Mutex<HashSet<Challenge>>>,
+    pub challenges: Arc<Mutex<HashSet<Challenge>>>,
 }
 
 impl ChallengeCache {
@@ -193,11 +157,11 @@ mod tests {
         let challenge = pow.build_challenge();
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let result = pow.submit_challenge(&challenge.encode(), nonce);
+        let result = challenge.validate(nonce);
         assert!(result.is_ok());
 
         // Try to use the same challenge again - should fail
-        let result = pow.submit_challenge(&challenge.encode(), nonce);
+        let result = challenge.validate(nonce);
         assert!(result.is_err());
     }
 

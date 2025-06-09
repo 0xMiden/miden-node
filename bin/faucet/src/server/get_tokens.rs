@@ -178,7 +178,7 @@ impl RawMintRequest {
         let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;
         let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
 
-        server.pow.submit_challenge(&challenge_str, nonce)?;
+        server.submit_challenge(&challenge_str, nonce)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

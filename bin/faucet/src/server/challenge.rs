@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Deserialize, Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
@@ -105,6 +107,29 @@ impl Challenge {
         hasher.update(difficulty.to_le_bytes());
         hasher.update(timestamp.to_le_bytes());
         hasher.finalize().into()
+    }
+
+    /// Validates the challenge and nonce.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// * The challenge is expired.
+    /// * The challenge is invalid.
+    pub fn validate(&self, nonce: u64) -> Result<(), InvalidRequest> {
+        // Check timestamp validity
+        if self.is_expired(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()) {
+            return Err(InvalidRequest::ExpiredServerTimestamp(
+                self.timestamp,
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            ));
+        }
+
+        // Validate the proof of work
+        if !self.validate_pow(nonce) {
+            return Err(InvalidRequest::InvalidPoW);
+        }
+
+        Ok(())
     }
 }
 

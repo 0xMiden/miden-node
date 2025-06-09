@@ -7,11 +7,9 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use axum::{Json, extract::State, response::IntoResponse};
 use tokio::time::{Duration, interval};
 
 use super::{
-    Server,
     challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge},
     get_tokens::InvalidRequest,
 };
@@ -146,15 +144,6 @@ impl ChallengeCache {
             self.cleanup_expired_challenges();
         }
     }
-}
-
-// API ENDPOINTS
-// ================================================================================================
-
-/// Get a challenge to be used by a client for `PoW`.
-pub(crate) async fn get_pow_challenge(State(server): State<Server>) -> impl IntoResponse {
-    let challenge = server.pow.build_challenge();
-    Json(challenge)
 }
 
 // TESTS

@@ -8,8 +8,8 @@ use std::{
 
 use anyhow::Context;
 use axum::{
-    Router,
-    extract::{FromRef, Query},
+    Json, Router,
+    extract::{FromRef, Query, State},
     response::sse::Event,
     routing::get,
 };
@@ -164,7 +164,9 @@ impl Server {
                 .route("/background.png", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
-                .route("/pow", get(pow::get_pow_challenge))
+                .route("/pow", get(|State(pow): State<PoW>| async move {
+                    Json(pow.build_challenge())
+                }))
                 // TODO: This feels rather ugly, and would be nice to move but I can't figure out the types.
                 .route(
                     "/get_tokens",
@@ -246,6 +248,12 @@ impl FromRef<Server> for &'static Metadata {
 impl FromRef<Server> for GetTokensState {
     fn from_ref(input: &Server) -> Self {
         input.mint_state.clone()
+    }
+}
+
+impl FromRef<Server> for PoW {
+    fn from_ref(input: &Server) -> Self {
+        input.pow.clone()
     }
 }
 

@@ -20,7 +20,7 @@ pub enum ProverType {
 }
 
 impl ProverType {
-    /// Returns the corresponding ProofType from the generated code
+    /// Returns the corresponding `ProofType` from the generated code
     pub fn to_proof_type(&self) -> crate::generated::ProofType {
         match self {
             ProverType::Transaction => crate::generated::ProofType::Transaction,
@@ -48,7 +48,7 @@ impl std::str::FromStr for ProverType {
             "transaction" => Ok(ProverType::Transaction),
             "batch" => Ok(ProverType::Batch),
             "block" => Ok(ProverType::Block),
-            _ => Err(format!("Invalid proof type: {}", s)),
+            _ => Err(format!("Invalid proof type: {s}")),
         }
     }
 }

@@ -8,6 +8,7 @@ members = [
   "crates/ntx-builder",
   "crates/ntx-builder",
   "crates/proto",
+  "crates/proving-service-client",
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
@@ -21,7 +22,7 @@ resolver = "2"
 authors      = ["Miden contributors"]
 edition      = "2024"
 exclude      = [".github/"]
-homepage     = "https://polygon.technology/polygon-miden"
+homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/miden-node"

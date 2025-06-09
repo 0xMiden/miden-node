@@ -40,7 +40,7 @@ impl ProxyStatusService {
         Self { load_balancer }
     }
 
-    async fn handle_request(&self, _session: &mut ServerSession) -> Result<()> {
+    async fn handle_request(&self, session: &mut ServerSession) -> Result<()> {
         let workers = self.load_balancer.workers.read().await;
         let worker_statuses: Vec<WorkerStatus> = workers
             .iter()
@@ -60,14 +60,14 @@ impl ProxyStatusService {
         let response = serde_json::to_string(&status).map_err(|e| {
             Error::explain(
                 ErrorType::Custom("Failed to serialize status"),
-                format!("Failed to serialize status: {}", e),
+                format!("Failed to serialize status: {e}"),
             )
         })?;
 
         let mut header = ResponseHeader::build(200, None)?;
         header.insert_header("Content-Type", "application/json")?;
-        _session.write_response_header(Box::new(header)).await?;
-        _session.write_response_body(response.into(), true).await?;
+        session.write_response_header(Box::new(header)).await?;
+        session.write_response_body(response.into(), true).await?;
 
         Ok(())
     }

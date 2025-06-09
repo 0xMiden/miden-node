@@ -22,6 +22,6 @@ impl RpcListener {
         let status_rpc_api = status::StatusRpcApi::new(prover_type);
         let api_service = ApiServer::new(prover_rpc_api);
         let status_service = StatusApiServer::new(status_rpc_api);
-        Self { listener, api_service, status_service }
+        Self { api_service, status_service, listener }
     }
 }

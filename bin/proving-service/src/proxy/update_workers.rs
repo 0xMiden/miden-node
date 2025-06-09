@@ -24,9 +24,9 @@ pub(crate) struct LoadBalancerUpdateService {
     server_opts: HttpServerOptions,
 }
 
-/// Manually implement Debug for LoadBalancerUpdateService.
-/// [HttpServerOptions] does not implement Debug, so we cannot derive Debug for
-/// [LoadBalancerUpdateService], which is needed for the tracing instrumentation.
+/// Manually implement Debug for `LoadBalancerUpdateService`.
+/// [`HttpServerOptions`] does not implement Debug, so we cannot derive Debug for
+/// [`LoadBalancerUpdateService`], which is needed for the tracing instrumentation.
 impl fmt::Debug for LoadBalancerUpdateService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("LBUpdaterService").field("lb_state", &self.lb_state).finish()
@@ -92,21 +92,18 @@ impl HttpServerApp for LoadBalancerUpdateService {
         info!("Successfully get a new request to update workers");
 
         // Extract and parse query parameters, if there are not any, return early.
-        let query_params = match http.req_header().as_ref().uri.query() {
-            Some(params) => params,
-            None => {
-                let error_message = "No query parameters provided".to_string();
-                error!("{}", error_message);
-                create_response_with_error_message(&mut http, error_message).await.ok();
-                return None;
-            },
+        let query_params = if let Some(params) = http.req_header().as_ref().uri.query() { params } else {
+            let error_message = "No query parameters provided".to_string();
+            error!("{}", error_message);
+            create_response_with_error_message(&mut http, error_message).await.ok();
+            return None;
         };
 
         let update_workers: Result<UpdateWorkers, _> = serde_qs::from_str(query_params);
         let update_workers = match update_workers {
             Ok(workers) => workers,
             Err(err) => {
-                let error_message = format!("Failed to parse query parameters: {}", err);
+                let error_message = format!("Failed to parse query parameters: {err}");
                 error!("{}", error_message);
                 create_response_with_error_message(&mut http, error_message).await.ok();
                 return None;
@@ -115,7 +112,7 @@ impl HttpServerApp for LoadBalancerUpdateService {
 
         // Update workers and handle potential errors
         if let Err(err) = self.lb_state.update_workers(update_workers).await {
-            let error_message = format!("Failed to update workers: {}", err);
+            let error_message = format!("Failed to update workers: {err}");
             error!("{}", error_message);
             create_response_with_error_message(&mut http, error_message).await.ok();
             return None;

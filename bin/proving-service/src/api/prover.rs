@@ -180,9 +180,9 @@ impl ProverApi for ProverRpcApi {
 
 /// Formats an error
 fn internal_error<E: core::fmt::Debug>(err: E) -> Status {
-    Status::internal(format!("{:?}", err))
+    Status::internal(format!("{err:?}"))
 }
 
 fn invalid_argument<E: core::fmt::Debug>(err: E) -> Status {
-    Status::invalid_argument(format!("{:?}", err))
+    Status::invalid_argument(format!("{err:?}"))
 }

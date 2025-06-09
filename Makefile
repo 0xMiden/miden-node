@@ -92,6 +92,10 @@ install-node: ## Installs node
 install-faucet: ## Installs faucet
 	${BUILD_PROTO} cargo install --path bin/faucet --locked
 
+.PHONY: install-proving-service
+install-proving-service: ## Install proving service's CLI
+	$(BUILD_PROTO) cargo install --path bin/proving-service --bin miden-proving-service --features concurrent
+
 .PHONY: install-stress-test
 install-stress-test: ## Installs stress-test binary
 	cargo install --path bin/stress-test --locked

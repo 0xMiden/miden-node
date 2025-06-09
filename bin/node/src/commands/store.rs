@@ -155,8 +155,8 @@ impl StoreCommand {
             rng.random(),
             AccountIdAnchor::PRE_GENESIS,
             TokenSymbol::try_from("MIDEN").expect("MIDEN should be a valid token symbol"),
-            12,
-            Felt::from(u32::MAX),
+            6,
+            Felt::try_from(100_000_000_000u64).expect("1e11 is less than u64::MAX"),
             miden_objects::account::AccountStorageMode::Public,
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;

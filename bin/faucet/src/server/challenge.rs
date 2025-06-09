@@ -1,5 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Sha3_256};
@@ -82,12 +80,7 @@ impl Challenge {
     }
 
     /// Checks if the challenge timestamp is not expired.
-    pub fn is_not_expired(&self) -> bool {
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("System time should always be later than UNIX epoch")
-            .as_secs();
-
+    pub fn is_not_expired(&self, current_time: u64) -> bool {
         (current_time - self.timestamp) <= SERVER_TIMESTAMP_TOLERANCE_SECONDS
     }
 

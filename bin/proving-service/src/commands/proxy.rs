@@ -46,7 +46,7 @@ impl StartProxy {
     /// - The backend cannot be created.
     /// - The Pingora configuration fails.
     /// - The server cannot be started.
-    #[tracing::instrument(target = MIDEN_PROVING_SERVICE, name = "proxy:execute")]
+    #[tracing::instrument(target = MIDEN_PROVING_SERVICE, name = "proxy.execute")]
     pub async fn execute(&self) -> Result<(), String> {
         // Check if all required ports are available
         check_port_availability(self.proxy_config.port, "Proxy")?;

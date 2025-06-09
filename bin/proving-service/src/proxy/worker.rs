@@ -158,6 +158,7 @@ impl Worker {
     /// If the worker is unhealthy, it will be marked as unavailable thus preventing requests from
     /// being sent to it. If a previously unhealthy worker becomes healthy, it will be marked as
     /// available and the proxy will start sending incoming requests to it.
+    #[allow(clippy::too_many_lines)]
     pub async fn check_status(&mut self, supported_prover_type: ProverType) {
         if !self.should_do_health_check() {
             return;
@@ -288,13 +289,12 @@ impl Worker {
     /// Returns the number of failures the worker has had.
     pub fn num_failures(&self) -> usize {
         match &self.health_status {
-            WorkerHealthStatus::Healthy => 0,
+            WorkerHealthStatus::Healthy | WorkerHealthStatus::Unknown => 0,
             WorkerHealthStatus::Unhealthy {
                 num_failed_attempts: failed_attempts,
                 first_fail_timestamp: _,
                 reason: _,
             } => *failed_attempts,
-            WorkerHealthStatus::Unknown => 0,
         }
     }
 
@@ -340,7 +340,7 @@ impl Worker {
     /// 2^[`MAX_BACKOFF_EXPONENT`] seconds.
     fn should_do_health_check(&self) -> bool {
         match self.health_status {
-            WorkerHealthStatus::Healthy => true,
+            WorkerHealthStatus::Healthy | WorkerHealthStatus::Unknown => true,
             WorkerHealthStatus::Unhealthy {
                 num_failed_attempts: failed_attempts,
                 first_fail_timestamp,
@@ -352,7 +352,6 @@ impl Worker {
                         2u64.pow(failed_attempts.min(MAX_BACKOFF_EXPONENT) as u32),
                     )
             },
-            WorkerHealthStatus::Unknown => true,
         }
     }
 
@@ -364,7 +363,7 @@ impl Worker {
         let was_healthy = self.is_healthy();
         self.health_status = health_status;
         match &self.health_status {
-            WorkerHealthStatus::Healthy => {
+            WorkerHealthStatus::Healthy | WorkerHealthStatus::Unknown => {
                 if !was_healthy {
                     self.is_available = true;
                 }
@@ -372,11 +371,6 @@ impl Worker {
             WorkerHealthStatus::Unhealthy { .. } => {
                 WORKER_UNHEALTHY.with_label_values(&[&self.address()]).inc();
                 self.is_available = false;
-            },
-            WorkerHealthStatus::Unknown => {
-                if !was_healthy {
-                    self.is_available = true;
-                }
             },
         }
     }

@@ -29,7 +29,9 @@ pub(crate) struct LoadBalancerUpdateService {
 /// [`LoadBalancerUpdateService`], which is needed for the tracing instrumentation.
 impl fmt::Debug for LoadBalancerUpdateService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LBUpdaterService").field("lb_state", &self.lb_state).finish()
+        f.debug_struct("LBUpdaterService")
+            .field("lb_state", &self.lb_state)
+            .finish_non_exhaustive()
     }
 }
 
@@ -92,7 +94,7 @@ impl HttpServerApp for LoadBalancerUpdateService {
         info!("Successfully get a new request to update workers");
 
         // Extract and parse query parameters, if there are not any, return early.
-        let query_params = if let Some(params) = http.req_header().as_ref().uri.query() { params } else {
+        let Some(query_params) = http.req_header().as_ref().uri.query() else {
             let error_message = "No query parameters provided".to_string();
             error!("{}", error_message);
             create_response_with_error_message(&mut http, error_message).await.ok();

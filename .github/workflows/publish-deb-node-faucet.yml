@@ -45,7 +45,7 @@ jobs:
           rustup update --no-self-update
 
       - name: Build packages
-        uses: ./.github/actions/build_package
+        uses: ./.github/actions/debian/node_faucet.yml
         with:
           gitref: ${{ env.version }}
 

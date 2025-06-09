@@ -47,7 +47,7 @@ jobs:
           rustup update --no-self-update
 
       - name: Build packages
-        uses: ./.github/actions/build_package
+        uses: ./.github/actions/debian/proving_service.yml
         with:
           gitref: ${{ env.version }}
 

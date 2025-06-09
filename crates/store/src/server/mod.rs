@@ -134,7 +134,8 @@ impl Store {
                 .serve_with_incoming(TcpListenerStream::new(self.block_producer_listener)),
         );
 
-        Ok(())
+        // SAFETY: The joinset is definitely not empty.
+        join_set.join_next().await.unwrap()?.map_err(Into::into)
     }
 }
 

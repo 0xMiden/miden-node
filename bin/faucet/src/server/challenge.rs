@@ -51,15 +51,13 @@ impl Challenge {
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let signature: [u8; 32] = bytes[16..48].try_into().unwrap();
 
-        let challenge = Self::from_parts(difficulty, timestamp, signature);
-
         // Verify the signature
         let expected_signature = Self::compute_signature(secret, difficulty, timestamp);
-        if signature != expected_signature {
-            return Err(InvalidRequest::ServerSignaturesDoNotMatch);
+        if signature == expected_signature {
+            Ok(Self::from_parts(difficulty, timestamp, signature))
+        } else {
+            Err(InvalidRequest::ServerSignaturesDoNotMatch)
         }
-
-        Ok(challenge)
     }
 
     /// Encodes the challenge into a hex string.

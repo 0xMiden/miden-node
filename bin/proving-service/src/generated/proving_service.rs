@@ -7,9 +7,9 @@ pub struct ProvingRequest {
     pub proof_type: i32,
     /// Serialized payload requiring proof generation. The encoding format is
     /// type-specific:
-    /// - TRANSACTION: `TransactionWitness` encoded.
-    /// - BATCH: `ProposedBatch` encoded.
-    /// - BLOCK: `ProposedBlock` encoded.
+    /// - TRANSACTION: TransactionWitness encoded.
+    /// - BATCH: ProposedBatch encoded.
+    /// - BLOCK: ProposedBlock encoded.
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
@@ -17,9 +17,9 @@ pub struct ProvingRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProvingResponse {
     /// Serialized proof bytes.
-    /// - TRANSACTION: Returns an encoded `ProvenTransaction`.
-    /// - BATCH: Returns an encoded `ProvenBatch`.
-    /// - BLOCK: Returns an encoded `ProvenBlock`.
+    /// - TRANSACTION: Returns an encoded ProvenTransaction.
+    /// - BATCH: Returns an encoded ProvenBatch.
+    /// - BLOCK: Returns an encoded ProvenBlock.
     #[prost(bytes = "vec", tag = "1")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
@@ -35,18 +35,18 @@ pub enum ProofType {
     Block = 2,
 }
 impl ProofType {
-    /// String value of the enum field names used in the `ProtoBuf` definition.
+    /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
-    /// (if the `ProtoBuf` definition does not change) and safe for programmatic use.
-    pub fn as_str_name(self) -> &'static str {
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
         match self {
             Self::Transaction => "TRANSACTION",
             Self::Batch => "BATCH",
             Self::Block => "BLOCK",
         }
     }
-    /// Creates an enum from field names used in the `ProtoBuf` definition.
+    /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "TRANSACTION" => Some(Self::Transaction),
@@ -63,10 +63,10 @@ pub mod api_client {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value
+        clippy::let_unit_value,
     )]
-    use tonic::codegen::http::Uri;
     use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
     pub struct ApiClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -97,18 +97,22 @@ pub mod api_client {
             let inner = tonic::client::Grpc::with_origin(inner, origin);
             Self { inner }
         }
-        pub fn with_interceptor<F>(inner: T, interceptor: F) -> ApiClient<InterceptedService<T, F>>
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> ApiClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
             T: tonic::codegen::Service<
-                    http::Request<tonic::body::BoxBody>,
-                    Response = http::Response<
-                        <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
-                    >,
+                http::Request<tonic::body::BoxBody>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::BoxBody>>::ResponseBody,
                 >,
-            <T as tonic::codegen::Service<http::Request<tonic::body::BoxBody>>>::Error:
-                Into<StdError> + std::marker::Send + std::marker::Sync,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::BoxBody>,
+            >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
             ApiClient::new(InterceptedService::new(inner, interceptor))
         }
@@ -147,12 +151,22 @@ pub mod api_client {
         pub async fn prove(
             &mut self,
             request: impl tonic::IntoRequest<super::ProvingRequest>,
-        ) -> std::result::Result<tonic::Response<super::ProvingResponse>, tonic::Status> {
-            self.inner.ready().await.map_err(|e| {
-                tonic::Status::unknown(format!("Service was not ready: {}", e.into()))
-            })?;
+        ) -> std::result::Result<
+            tonic::Response<super::ProvingResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/proving_service.Api/Prove");
+            let path = http::uri::PathAndQuery::from_static(
+                "/proving_service.Api/Prove",
+            );
             let mut req = request.into_request();
             req.extensions_mut().insert(GrpcMethod::new("proving_service.Api", "Prove"));
             self.inner.unary(req, path, codec).await
@@ -166,7 +180,7 @@ pub mod api_server {
         dead_code,
         missing_docs,
         clippy::wildcard_imports,
-        clippy::let_unit_value
+        clippy::let_unit_value,
     )]
     use tonic::codegen::*;
     /// Generated trait containing gRPC methods that should be implemented for use with ApiServer.
@@ -193,13 +207,16 @@ pub mod api_server {
         pub fn from_arc(inner: Arc<T>) -> Self {
             Self {
                 inner,
-                accept_compression_encodings: EnabledCompressionEncodings::default(),
-                send_compression_encodings: EnabledCompressionEncodings::default(),
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
                 max_decoding_message_size: None,
                 max_encoding_message_size: None,
             }
         }
-        pub fn with_interceptor<F>(inner: T, interceptor: F) -> InterceptedService<Self, F>
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
         where
             F: tonic::service::Interceptor,
         {
@@ -254,15 +271,21 @@ pub mod api_server {
                 "/proving_service.Api/Prove" => {
                     #[allow(non_camel_case_types)]
                     struct ProveSvc<T: Api>(pub Arc<T>);
-                    impl<T: Api> tonic::server::UnaryService<super::ProvingRequest> for ProveSvc<T> {
+                    impl<T: Api> tonic::server::UnaryService<super::ProvingRequest>
+                    for ProveSvc<T> {
                         type Response = super::ProvingResponse;
-                        type Future = BoxFuture<tonic::Response<Self::Response>, tonic::Status>;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
                         fn call(
                             &mut self,
                             request: tonic::Request<super::ProvingRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { <T as Api>::prove(&inner, request).await };
+                            let fut = async move {
+                                <T as Api>::prove(&inner, request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -283,21 +306,28 @@ pub mod api_server {
                                 max_decoding_message_size,
                                 max_encoding_message_size,
                             );
-                        let result = grpc.unary(method, req).await;
-                        Ok(result)
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
                     };
                     Box::pin(fut)
-                },
-                _ => Box::pin(async move {
-                    let mut response = http::Response::new(empty_body());
-                    let headers = response.headers_mut();
-                    headers.insert(
-                        tonic::Status::GRPC_STATUS,
-                        (tonic::Code::Unimplemented as i32).into(),
-                    );
-                    headers.insert(http::header::CONTENT_TYPE, tonic::metadata::GRPC_CONTENT_TYPE);
-                    Ok(response)
-                }),
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(empty_body());
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
             }
         }
     }

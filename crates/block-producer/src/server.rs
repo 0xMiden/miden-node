@@ -246,11 +246,11 @@ impl BlockProducerRpcServer {
         }
     }
 
-    async fn serve(self, listener: TcpListener) -> Result<(), tonic::transport::Error> {
+    async fn serve(self, listener: TcpListener) -> anyhow::Result<()> {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())
             .build_v1()
-            .unwrap();
+            .context("failed to build reflection service")?;
 
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
@@ -259,6 +259,7 @@ impl BlockProducerRpcServer {
             .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(listener))
             .await
+            .context("failed to serve block producer API")
     }
 
     #[instrument(

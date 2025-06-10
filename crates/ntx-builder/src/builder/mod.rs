@@ -117,7 +117,7 @@ impl NetworkTransactionBuilder {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(ntx_builder_api_descriptor())
             .build_v1()
-            .unwrap();
+            .context("failed to build reflection service")?;
 
         let listener = TcpListener::bind(self.ntx_builder_address).await?;
         let server = tonic::transport::Server::builder()

@@ -92,7 +92,7 @@ impl Store {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(store_api_descriptor())
             .build_v1()
-            .unwrap();
+            .context("failed to build reflection service")?;
 
         info!(target: COMPONENT, "Database loaded");
 

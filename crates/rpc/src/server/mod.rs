@@ -38,7 +38,7 @@ impl Rpc {
         let reflection_service = server::Builder::configure()
             .register_file_descriptor_set(rpc_api_descriptor())
             .build_v1()
-            .unwrap();
+            .context("failed to build reflection service")?;
 
         info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
 

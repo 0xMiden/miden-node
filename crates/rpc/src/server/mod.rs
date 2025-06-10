@@ -3,9 +3,11 @@ use std::net::SocketAddr;
 use accept::AcceptLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
+use miden_node_proto_build::rpc_api_descriptor;
 use miden_node_utils::tracing::grpc::rpc_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
+use tonic_reflection::server;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -33,6 +35,10 @@ impl Rpc {
     pub async fn serve(self) -> anyhow::Result<()> {
         let api = api::RpcService::new(self.store, self.block_producer);
         let api_service = api_server::ApiServer::new(api);
+        let reflection_service = server::Builder::configure()
+            .register_file_descriptor_set(rpc_api_descriptor())
+            .build_v1()
+            .unwrap();
 
         info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
 
@@ -42,6 +48,8 @@ impl Rpc {
             .layer(AcceptLayer::new()?)
             // Enables gRPC-web support.
             .add_service(tonic_web::enable(api_service))
+            // Enables gRPC reflection service.
+            .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve RPC API")

@@ -9,6 +9,7 @@ use miden_node_proto::{
     },
     ntx_builder,
 };
+use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
     tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
@@ -246,10 +247,16 @@ impl BlockProducerRpcServer {
     }
 
     async fn serve(self, listener: TcpListener) -> Result<(), tonic::transport::Error> {
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(block_producer_api_descriptor())
+            .build_v1()
+            .unwrap();
+
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
             .layer(TraceLayer::new_for_grpc().make_span_with(block_producer_trace_fn))
             .add_service(api_server::ApiServer::new(self))
+            .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(listener))
             .await
     }

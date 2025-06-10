@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::Context;
 use miden_node_proto::generated::store::api_server;
+use miden_node_proto_build::store_api_descriptor;
 use miden_node_utils::tracing::grpc::store_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -88,6 +89,10 @@ impl Store {
         let db_maintenance_service =
             DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);
         let api_service = api_server::ApiServer::new(api::StoreApi { state });
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(store_api_descriptor())
+            .build_v1()
+            .unwrap();
 
         info!(target: COMPONENT, "Database loaded");
 
@@ -96,6 +101,7 @@ impl Store {
         tonic::transport::Server::builder()
             .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
             .add_service(api_service)
+            .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve store API")

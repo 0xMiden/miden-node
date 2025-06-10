@@ -107,7 +107,7 @@ impl api_server::Api for StoreApi {
     ) -> Result<Response<CheckNullifiersResponse>, Status> {
         // Validate the nullifiers and convert them to Digest values. Stop on first error.
         let request = request.into_inner();
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers).map_err(|err| *err)?;
 
         // Query the state for the request's nullifiers
         let proofs = self.state.check_nullifiers(&nullifiers).await;
@@ -205,7 +205,8 @@ impl api_server::Api for StoreApi {
     ) -> Result<Response<SyncStateResponse>, Status> {
         let request = request.into_inner();
 
-        let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
+        let account_ids: Vec<AccountId> =
+            read_account_ids(&request.account_ids).map_err(|err| *err)?;
 
         let (state, delta) = self
             .state
@@ -410,9 +411,10 @@ impl api_server::Api for StoreApi {
     ) -> Result<Response<GetBlockInputsResponse>, Status> {
         let request = request.into_inner();
 
-        let account_ids = read_account_ids(&request.account_ids)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
-        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
+        let account_ids = read_account_ids(&request.account_ids).map_err(|err| *err)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers).map_err(|err| *err)?;
+        let unauthenticated_notes =
+            validate_notes(&request.unauthenticated_notes).map_err(|err| *err)?;
         let reference_blocks = read_block_numbers(&request.reference_blocks);
         let unauthenticated_notes = unauthenticated_notes.into_iter().collect();
 
@@ -473,8 +475,9 @@ impl api_server::Api for StoreApi {
         debug!(target: COMPONENT, ?request);
 
         let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
-        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers).map_err(|err| *err)?;
+        let unauthenticated_notes =
+            validate_notes(&request.unauthenticated_notes).map_err(|err| *err)?;
 
         let tx_inputs = self
             .state
@@ -668,32 +671,34 @@ fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountI
 #[instrument(target = COMPONENT, skip_all, err)]
 fn read_account_ids(
     account_ids: &[generated::account::AccountId],
-) -> Result<Vec<AccountId>, Status> {
+) -> Result<Vec<AccountId>, Box<Status>> {
     account_ids
         .iter()
         .cloned()
         .map(AccountId::try_from)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Byte array is not a valid AccountId"))
+        .map_err(|_| invalid_argument("Byte array is not a valid AccountId").into())
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
-fn validate_nullifiers(nullifiers: &[generated::digest::Digest]) -> Result<Vec<Nullifier>, Status> {
+fn validate_nullifiers(
+    nullifiers: &[generated::digest::Digest],
+) -> Result<Vec<Nullifier>, Box<Status>> {
     nullifiers
         .iter()
         .copied()
         .map(TryInto::try_into)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
+        .map_err(|_| invalid_argument("Digest field is not in the modulus range").into())
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
-fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
+fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Box<Status>> {
     notes
         .iter()
         .map(|digest| Ok(RpoDigest::try_from(digest)?.into()))
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
+        .map_err(|_| invalid_argument("Digest field is not in the modulus range").into())
 }
 
 #[instrument(target = COMPONENT, skip_all)]

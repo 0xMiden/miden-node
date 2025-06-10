@@ -51,6 +51,7 @@ impl StoreClient {
     }
 
     /// Returns the latest block's header from the store.
+    #[allow(dead_code)]
     #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
     pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self

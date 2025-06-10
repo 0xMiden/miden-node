@@ -27,12 +27,12 @@ pub enum BlockProducerCommand {
         #[arg(long = "ntx-builder.url", env = ENV_NTX_BUILDER_URL)]
         ntx_builder_url: Option<Url>,
 
-        /// The remote batch prover's gRPC url. If unset, will default to running a prover
+        /// The delegated batch prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
         #[arg(long = "batch-prover.url", env = ENV_BATCH_PROVER_URL)]
         batch_prover_url: Option<Url>,
 
-        /// The remote block prover's gRPC url. If unset, will default to running a prover
+        /// The delegated block prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
         #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL)]
         block_prover_url: Option<Url>,

@@ -147,7 +147,7 @@ impl StoreCommand {
         Store::bootstrap(genesis_state, data_directory)
     }
 
-    pub fn generate_genesis_account() -> anyhow::Result<AccountFile> {
+    fn generate_genesis_account() -> anyhow::Result<AccountFile> {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
 
@@ -191,7 +191,7 @@ mod tests {
     use super::StoreCommand;
 
     #[test]
-    fn test_generate_genesis_account_no_panic() {
+    fn generate_genesis_account_no_panic() {
         let _account = StoreCommand::generate_genesis_account().unwrap();
     }
 }

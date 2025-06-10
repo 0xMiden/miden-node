@@ -352,24 +352,20 @@ fn sql_select_notes_different_execution_hints() {
     );
 }
 
-#[test]
-#[miden_node_test_macro::enable_logging]
-fn sql_unconsumed_network_notes() {
-    // Number of notes to generate.
-    const N: u64 = 32;
-
-    let mut conn = create_db();
-
-    let block_num = BlockNumber::from(1);
-    // An arbitrary public account (network note tag requires public account).
-    create_block(&mut conn, block_num);
-
+// Generates an account, inserts into the database, and creates a note for it.
+fn make_account_and_note(
+    conn: &mut Connection,
+    block_num: BlockNumber,
+    init_seed: [u8; 32],
+    storage_mode: AccountStorageMode,
+) -> (AccountId, Note) {
     let transaction = conn.transaction().unwrap();
 
     let account = mock_account_code_and_storage(
         AccountType::RegularAccountUpdatableCode,
-        AccountStorageMode::Network,
+        storage_mode,
         [],
+        Some(init_seed),
     );
     let account_id = account.id();
     sql::upsert_accounts(
@@ -386,24 +382,46 @@ fn sql_unconsumed_network_notes() {
     transaction.commit().unwrap();
 
     let new_note = create_note(account_id);
+    (account_id, new_note)
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn sql_unconsumed_network_notes() {
+    // Number of notes to generate.
+    const N: u64 = 32;
+
+    let mut conn = create_db();
+
+    let block_num = BlockNumber::from(1);
+    // An arbitrary public account (network note tag requires public account).
+    create_block(&mut conn, block_num);
+
+    let account_notes = vec![
+        make_account_and_note(&mut conn, block_num, [0u8; 32], AccountStorageMode::Public),
+        make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network),
+    ];
 
     // Create some notes, of which half are network notes.
     let notes = (0..N)
         .map(|i| {
-            let is_network = i % 2 == 0;
+            let index = (i % 2) as usize;
+            let is_network = account_notes[index].0.storage_mode() == AccountStorageMode::Network;
+            let account_id = account_notes[index].0;
+            let new_note = &account_notes[index].1;
             let note = NoteRecord {
                 block_num,
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
                 note_id: num_to_rpo_digest(i),
                 metadata: NoteMetadata::new(
-                    account_id,
+                    account_notes[index].0,
                     NoteType::Public,
                     NoteTag::from_account_id(account_id),
                     NoteExecutionHint::none(),
                     Felt::default(),
                 )
                 .unwrap(),
-                details: is_network.then_some(NoteDetails::from(&new_note)),
+                details: is_network.then_some(NoteDetails::from(new_note)),
                 merkle_path: MerklePath::new(vec![]),
             };
 
@@ -537,6 +555,7 @@ fn sql_public_account_details() {
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Public,
         [Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 150).unwrap()), nft1],
+        None,
     );
 
     // test querying empty table
@@ -1187,6 +1206,7 @@ fn mock_account_code_and_storage(
     account_type: AccountType,
     storage_mode: AccountStorageMode,
     assets: impl IntoIterator<Item = Asset>,
+    init_seed: Option<[u8; 32]>,
 ) -> Account {
     let component_code = "\
     export.account_procedure_1
@@ -1212,7 +1232,7 @@ fn mock_account_code_and_storage(
     .unwrap()
     .with_supported_type(account_type);
 
-    AccountBuilder::new([0; 32])
+    AccountBuilder::new(init_seed.unwrap_or([0; 32]))
         .account_type(account_type)
         .storage_mode(storage_mode)
         .with_assets(assets)

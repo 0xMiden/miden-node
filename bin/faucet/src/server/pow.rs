@@ -160,8 +160,8 @@ mod tests {
         let result = challenge.validate_pow(nonce);
         assert!(result);
 
-        // Try to use the same challenge again - should fail
-        let result = challenge.validate_pow(nonce);
+        // Try to use the same challenge again with different nonce- should fail
+        let result = challenge.validate_pow(nonce + 1);
         assert!(!result);
     }
 

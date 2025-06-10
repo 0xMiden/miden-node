@@ -47,3 +47,54 @@ impl Rpc {
             .context("failed to serve RPC API")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use http::{
+        HeaderMap, HeaderValue,
+        header::{ACCEPT, CONTENT_TYPE},
+    };
+    use tokio::net::TcpListener;
+
+    use crate::Rpc;
+
+    #[tokio::test]
+    async fn rpc_server_has_web_support() {
+        // Start server
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let rpc_addr = listener.local_addr().unwrap();
+        let rpc = Rpc {
+            listener,
+            store: "127.0.0.1:50051".parse().unwrap(),
+            block_producer: None,
+        };
+        tokio::spawn(async move { rpc.serve().await.unwrap() });
+
+        // Send a status request
+        let client = reqwest::Client::new();
+
+        let mut headers = HeaderMap::new();
+        let accept_header = concat!("application/vnd.miden.", env!("CARGO_PKG_VERSION"), "+grpc");
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
+        headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
+
+        let mut message = Vec::new();
+        message.push(0); // uncompressed flag
+        message.extend_from_slice(&[0; 4]); // length of empty message
+
+        let response = client
+            .post(format!("http://{rpc_addr}/rpc.Api/Status"))
+            .headers(headers)
+            .body(message)
+            .send()
+            .await
+            .unwrap();
+        let headers = response.headers();
+
+        // If `tonic_web` is enabled, the CORS headers shoud be set in the response
+        assert!(headers.get("access-control-allow-credentials").is_some());
+        assert!(headers.get("access-control-expose-headers").is_some());
+        assert!(headers.get("vary").is_some());
+        assert!(response.status().is_success());
+    }
+}

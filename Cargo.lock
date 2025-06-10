@@ -2480,6 +2480,7 @@ dependencies = [
  "miden-objects",
  "miden-tx",
  "nom 8.0.0",
+ "reqwest",
  "semver 1.0.26",
  "tempfile",
  "tokio",

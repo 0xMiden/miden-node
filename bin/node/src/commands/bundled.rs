@@ -47,7 +47,7 @@ pub enum BundledCommand {
         #[arg(long = "data-directory", env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
 
-        /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
+        /// The delegated transaction prover's gRPC url, used for the ntx builder. If unset,
         /// will default to running a prover in-process which is expensive.
         #[arg(long = "tx-prover.url", env = ENV_NTX_PROVER_URL, value_name = "URL")]
         tx_prover_url: Option<Url>,
@@ -56,12 +56,12 @@ pub enum BundledCommand {
         #[arg(long = "no-ntb", default_value_t = false)]
         no_ntb: bool,
 
-        /// The remote batch prover's gRPC url. If unset, will default to running a prover
+        /// The delegated batch prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
         #[arg(long = "batch-prover.url", env = ENV_BATCH_PROVER_URL, value_name = "URL")]
         batch_prover_url: Option<Url>,
 
-        /// The remote block prover's gRPC url. If unset, will default to running a prover
+        /// The delegated block prover's gRPC url. If unset, will default to running a prover
         /// in-process which is expensive.
         #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
         block_prover_url: Option<Url>,

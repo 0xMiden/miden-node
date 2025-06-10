@@ -107,7 +107,7 @@ impl api_server::Api for StoreApi {
     ) -> Result<Response<CheckNullifiersResponse>, Status> {
         // Validate the nullifiers and convert them to Digest values. Stop on first error.
         let request = request.into_inner();
-        let nullifiers = validate_nullifiers(&request.nullifiers).map_err(|err| *err)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers)?;
 
         // Query the state for the request's nullifiers
         let proofs = self.state.check_nullifiers(&nullifiers).await;
@@ -205,8 +205,7 @@ impl api_server::Api for StoreApi {
     ) -> Result<Response<SyncStateResponse>, Status> {
         let request = request.into_inner();
 
-        let account_ids: Vec<AccountId> =
-            read_account_ids(&request.account_ids).map_err(|err| *err)?;
+        let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
 
         let (state, delta) = self
             .state
@@ -323,7 +322,7 @@ impl api_server::Api for StoreApi {
         request: Request<GetAccountDetailsRequest>,
     ) -> Result<Response<GetAccountDetailsResponse>, Status> {
         let request = request.into_inner();
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
+        let account_id = read_account_id(request.account_id)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
         Ok(Response::new(GetAccountDetailsResponse {
@@ -411,10 +410,9 @@ impl api_server::Api for StoreApi {
     ) -> Result<Response<GetBlockInputsResponse>, Status> {
         let request = request.into_inner();
 
-        let account_ids = read_account_ids(&request.account_ids).map_err(|err| *err)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers).map_err(|err| *err)?;
-        let unauthenticated_notes =
-            validate_notes(&request.unauthenticated_notes).map_err(|err| *err)?;
+        let account_ids = read_account_ids(&request.account_ids)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
         let reference_blocks = read_block_numbers(&request.reference_blocks);
         let unauthenticated_notes = unauthenticated_notes.into_iter().collect();
 
@@ -474,10 +472,9 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers).map_err(|err| *err)?;
-        let unauthenticated_notes =
-            validate_notes(&request.unauthenticated_notes).map_err(|err| *err)?;
+        let account_id = read_account_id(request.account_id)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
 
         let tx_inputs = self
             .state
@@ -581,7 +578,7 @@ impl api_server::Api for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
+        let account_id = read_account_id(request.account_id)?;
         let delta = self
             .state
             .get_account_state_delta(
@@ -662,43 +659,45 @@ fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
     Status::invalid_argument(err.to_string())
 }
 
-fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Box<Status>> {
+#[allow(clippy::result_large_err)]
+fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountId, Status> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
-        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
+        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")))
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
+#[allow(clippy::result_large_err)]
 fn read_account_ids(
     account_ids: &[generated::account::AccountId],
-) -> Result<Vec<AccountId>, Box<Status>> {
+) -> Result<Vec<AccountId>, Status> {
     account_ids
         .iter()
         .cloned()
         .map(AccountId::try_from)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Byte array is not a valid AccountId").into())
+        .map_err(|_| invalid_argument("Byte array is not a valid AccountId"))
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
-fn validate_nullifiers(
-    nullifiers: &[generated::digest::Digest],
-) -> Result<Vec<Nullifier>, Box<Status>> {
+#[allow(clippy::result_large_err)]
+fn validate_nullifiers(nullifiers: &[generated::digest::Digest]) -> Result<Vec<Nullifier>, Status> {
     nullifiers
         .iter()
         .copied()
         .map(TryInto::try_into)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Digest field is not in the modulus range").into())
+        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 
 #[instrument(target = COMPONENT, skip_all, err)]
-fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Box<Status>> {
+#[allow(clippy::result_large_err)]
+fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
     notes
         .iter()
         .map(|digest| Ok(RpoDigest::try_from(digest)?.into()))
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Digest field is not in the modulus range").into())
+        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 
 #[instrument(target = COMPONENT, skip_all)]

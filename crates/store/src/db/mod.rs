@@ -1,3 +1,13 @@
+// The module contains transitions for database representations
+// to in memory representations, where it is _often_ require to
+// convert from the database _signed_ representation to the
+// in-memory _unsigned_ representations, and hence we'd sprinkle
+// the clippy exception around in quite a few places.
+// TODO moving away from the `TryInto` implementations
+// TODO we should be able to isolate the signed to unsigned and
+// TODO vice versa such that this can be removed again.
+#![allow(clippy::cast_sign_loss)]
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
@@ -5,8 +15,8 @@ use std::{
 
 use anyhow::Context;
 use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
-    SqliteConnection, query_dsl::methods::SelectDsl,
+    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
+    SelectableHelper, SqliteConnection, query_dsl::methods::SelectDsl,
 };
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
@@ -32,7 +42,10 @@ use crate::{
     COMPONENT,
     db::{
         migrations::apply_migrations,
-        models::AccountInfoRawRow,
+        models::{
+            AccountInfoRawRow, AccountSummaryRaw, NoteSyncRecordRawRow, TransactionSummaryRaw,
+            vec_raw_try_into, vec_to_raw,
+        },
         pool_manager::{Pool, SqlitePoolManager},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
@@ -272,18 +285,21 @@ impl Db {
     }
 
     /// Avoid repeated boilerplate
-    pub(crate) async fn query<Q, R, M>(&self, msg: M, query: Q) -> Result<R>
+    pub(crate) async fn query<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
-        Q: Send + FnOnce(&mut SqliteConnection) -> Result<R> + 'static,
+        Q: Send + FnOnce(&mut SqliteConnection) -> std::result::Result<R, E> + 'static,
         R: Send + 'static,
         M: Send + ToString,
+        E: From<DatabaseError>,
+        E: std::error::Error + Send + Sync + 'static,
     {
         self.diesel
             .get()
-            .await?
+            .await
+            .map_err(DatabaseError::from)?
             .interact(query)
             .await
-            .map_err(|err| DatabaseError::interact(&msg.to_string(), &err))?
+            .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
     }
 
     /// Open a connection to the DB and apply any pending migrations.
@@ -488,78 +504,94 @@ impl Db {
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
-        
-        let state = self.query("state sync", move |conn| {
-            
-            let desired_senders = Vec::from_iter(account_ids.iter().map(|id| id.to_bytes()));
-            let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| *tag as i32 ));
+        let state = self.query::<_,StateSyncError, _,_>("state sync", move |conn| {
+
+            let desired_senders = vec_to_raw(account_ids.iter());
+            let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes()) ));
 
             // select notes since block by tag and sender
-            let notes = schema::notes::table
-                // .select(S)
+            let desired_block_num: i64 = SelectDsl::select(schema::notes::table, schema::notes::block_num)
+            .filter(
+                schema::notes::tag.eq_any(&desired_note_tags[..])
+                .or(schema::notes::sender.eq_any(&desired_senders[..]))
+            )
+            .order_by(schema::notes::block_num.asc())
+            .limit(1)
+            .get_result(conn)
+            .optional()
+            .map_err(DatabaseError::from)?.unwrap(); // XXX what makes sure it's not None?
+
+
+            let notes =
+                SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
                 // find the next block which contains at least one note with a matching tag or sender
                 .filter(schema::notes::block_num.eq(
-                    QueryDsl::select(schema::notes::table, &schema::notes::block_num)
-                        .filter(
-                            schema::notes::tag.eq_any(&desired_note_tags[..])
-                            .or(schema::notes::sender.eq_any(&desired_senders[..]))
-                        )
-                        .order_by(schema::notes::block_num.asc())
-                        .limit(1)
-                        .single_value()
+                    desired_block_num
                 ))
                 // filter the block's notes and return only the ones matching the requested tags or senders
                 .filter(
-                    schema::notes::tag.eq_any(&desired_note_tags)
-                    .or(schema::notes::sender.eq_any(&desired_senders))
+                    schema::notes::tag
+                    .eq_any(&desired_note_tags)
+                    .or(
+                        schema::notes::sender
+                        .eq_any(&desired_senders)
+                    )
                 )
-                .load::<NoteSyncRecord>(conn)?;
+                .load::<NoteSyncRecordRawRow>(conn)
+                .map_err(DatabaseError::from)?;
 
             // select block header by block num
             let maybe_note_block_num = notes.first().map(|note| note.block_num);
-            let block_header = {
+            let block_header: BlockHeader = {
                 let sel = SelectDsl::select(
                     schema::block_headers::table,
-                    models::BlockHeadersRow::as_select(),
+                    models::BlockHeaderRawRow::as_select(),
                 );
                 let row = if let Some(block_number) = maybe_note_block_num {
-                    sel.find(i64::from(block_number.as_u32()))
-                        .first::<models::BlockHeadersRow>(conn)
+                    sel.find(block_number) // TODO
+                        .first::<models::BlockHeaderRawRow>(conn)
                         .optional()
                     // invariant: only one block exists with the given block header, so the length is
                     // always zero or one
                 } else {
                     sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
-                }?;
+                }.map_err(DatabaseError::from)?;
                 row.map(std::convert::TryInto::try_into).transpose()
             }?.ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
-            
+
             // select accounts by block range
-            let account_ids = account_ids.iter().map(|id| id.to_bytes());
-            let block_start: i64 = block_number.as_u32() as _;
-            let block_end: i64 = block_header.block_num() as _; 
+            let account_ids = vec_to_raw(account_ids.iter());
+            let block_start: i64 = block_number.as_u32().into();
+            let block_end: i64 = block_header.block_num().as_u32().into();
             let account_updates = SelectDsl::select(
                 schema::accounts::table
-                , (schema::accounts::account_id, schema::accounts::account_commitment, schema::accounts::block_num))
+                , AccountSummaryRaw::as_select())
+                // (schema::accounts::account_id, schema::accounts::account_commitment, schema::accounts::block_num))
                 .filter(schema::accounts::block_num.gt(block_start))
                 .filter(schema::accounts::block_num.le(block_end))
                 .filter(schema::accounts::account_id.eq_any(&account_ids))
                 .order(schema::accounts::block_num.asc())
-                .load::<AccountSummary>(conn)?;
+                .load::<AccountSummaryRaw>(conn)
+                .map_err(DatabaseError::from)?;
+            let account_updates = vec_raw_try_into::<AccountSummary,AccountSummaryRaw>(account_updates)?;
+
             // select transactions by accounts and block range
-            let transactions = 
-                SelectDsl::select(schema::accounts::table, (schema::transactions::account_id, schema::transactions::block_num, schema::transactions::transaction_id))
+            let transactions =
+                SelectDsl::select(schema::transactions::table,
+                    (schema::transactions::account_id, schema::transactions::block_num, schema::transactions::transaction_id)
+                )
                 .filter(schema::transactions::block_num.gt(block_start))
                 .filter(schema::transactions::block_num.le(block_end))
                 .filter(schema::transactions::account_id.eq_any(&account_ids))
                 .order(schema::transactions::transaction_id.asc())
-                .load::<TransactionSummary>(conn)?;
-            
+                .load::<TransactionSummaryRaw>(conn)
+                .map_err(DatabaseError::from)?;
+
             Ok(StateSyncUpdate {
-                notes,
+                notes: vec_raw_try_into(notes)?,
                 block_header,
                 account_updates,
-                transactions,
+                transactions: vec_raw_try_into(transactions)?,
             })
         })
         .await?;

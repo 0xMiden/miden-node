@@ -155,7 +155,7 @@ impl StoreCommand {
         let decimals = 6u8;
         let base_unit = 10u64.pow(u32::from(decimals));
         let max_supply = 100_000_000_000u64 * base_unit;
-        let total_supply = Felt::try_from(max_supply).expect("total supply is less than u64::MAX");
+        let max_supply = Felt::try_from(max_supply).expect("max supply is less than u64::MAX");
 
         // Create the faucet.
         let (mut account, account_seed) = create_basic_fungible_faucet(
@@ -163,7 +163,7 @@ impl StoreCommand {
             AccountIdAnchor::PRE_GENESIS,
             TokenSymbol::try_from("MIDEN").expect("MIDEN should be a valid token symbol"),
             decimals,
-            total_supply,
+            max_supply,
             miden_objects::account::AccountStorageMode::Public,
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;

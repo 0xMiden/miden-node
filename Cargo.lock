@@ -1884,9 +1884,9 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58d59a53f9ff3585d1a3a9b9432b949397a014ffa6f9092cab2bd92528a0e382"
+checksum = "f9d56092d4f95231029398f419e4844a029f5751515b28c57e2184e08e0fb84f"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -1982,9 +1982,9 @@ dependencies = [
 
 [[package]]
 name = "miden-lib"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cb98502ec0b2fb58846cdecbaefd7dc1e1655d86c2302c28a3f80a470cdd1d4"
+checksum = "b0c431f6de2408ccad6958c2d2a3f96399d67d05c5d783a692f5399910061452"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2254,9 +2254,9 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.9.1"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76b4c5d037aa609fb247141a0707f0012a12ff7e14bba350b6f119a2010a65f9"
+checksum = "2c826da7048d600fba5794aa85c18366d7379604647f1f5d11ecebf68b5bd16c"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2303,9 +2303,9 @@ dependencies = [
 
 [[package]]
 name = "miden-proving-service-client"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcbd9676d8f6e8b9cbeba33a1c7fb115ef376d2f4101a5f97b5572ce9e10fb47"
+checksum = "00c6bbabefccb613831188b065ebf5a4dd0cc0b002a8ee6a10cc9d50c316ded6"
 dependencies = [
  "async-trait",
  "getrandom 0.3.3",
@@ -2334,9 +2334,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cbea7c2a870e69e86e4d7bdf21936447552442f4ec274e499d2d9b8a90a70653"
+checksum = "df56744ebc643d505b027392e890a8b978f33e705c5f82d7b66363f3333526a5"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2351,9 +2351,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch-prover"
-version = "0.9.0"
+version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8ec59ad67da64407aeb62ca248b09289d32defe70d724484e137652a40f9f74"
+checksum = "f5112cf732734de7c6e59889562601e1a12e8103f093d9f8fb7af828c8d0844b"
 dependencies = [
  "miden-objects",
  "miden-tx",

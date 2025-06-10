@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   publish:
-    name: Publish ${{ env.version }}-${{ matrix.arch }} Debian
+    name: Publish Prover ${{ matrix.arch }} Debian
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@main
         with:
-          ref: ${{ env.version}}
+          ref: ${{ env.version }}
           fetch-depth: 0
 
       - name: Rust cache

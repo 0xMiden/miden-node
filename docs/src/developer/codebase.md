@@ -11,7 +11,7 @@ instead simply serve to enforce code organisation and decoupling.
 | `node`                    | The node executable. Configure and run the node and its components.                                                                                      |
 | `faucet`                  | A reference faucet app implementation used by the official Miden faucet.                                                                                 |
 | `proving-service`         | Delegated proving executables. Includes workers and proxies.                                                                                             |
-| `proving-service-client ` | Delegated proving client implementation.                                                                                                                 |
+| `proving-service-client`  | Delegated proving client implementation.                                                                                                                 |
 | `block-producer`          | Block-producer component implementation.                                                                                                                 |
 | `store`                   | Store component implementation.                                                                                                                          |
 | `rpc`                     | RPC component implementation.                                                                                                                            |

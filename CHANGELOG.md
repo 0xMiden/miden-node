@@ -2,6 +2,10 @@
 
 ## v0.10.0 (TBD)
 
+### Enhancements
+
+- Exposed `miden-prover-service` as a library (#956).
+
 ## v0.9.0 (2025-05-30)
 
 ### Enhancements

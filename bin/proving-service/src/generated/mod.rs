@@ -14,7 +14,7 @@ pub mod status;
 
 pub use proving_service::*;
 
-use crate::commands::worker::ProverType;
+use crate::api::ProverType;
 
 // CONVERSIONS
 // ================================================================================================

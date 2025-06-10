@@ -7,7 +7,7 @@ use miden_objects::{
     note::{NoteId, Nullifier},
     transaction::TransactionId,
 };
-use miden_proving_service_client::RemoteProverError;
+use miden_delegated_prover_client::RemoteProverError;
 use thiserror::Error;
 use tokio::task::JoinError;
 

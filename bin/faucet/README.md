@@ -22,7 +22,7 @@ miden-faucet create-faucet-account \
   --output-path <path to faucet.mac> \
   --token-symbol MIDEN \
   --decimals 6 \
-  --max-supply 100000000000
+  --max-supply 100000000000000000
 ```
 > [!TIP]
 > This account will not be created on chain yet, creation on chain will happen on the first minting transaction.

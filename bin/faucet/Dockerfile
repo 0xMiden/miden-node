@@ -14,9 +14,9 @@ RUN miden-faucet init \
 
 RUN miden-faucet create-faucet-account \
     --output-path faucet.mac \
-    --token-symbol POL \
-    --decimals 9 \
-    --max-supply 1000000000
+    --token-symbol MIDEN \
+    --decimals 6 \
+    --max-supply 100000000000000000
 
 LABEL org.opencontainers.image.authors=devops@miden.team \
     org.opencontainers.image.url=https://0xMiden.github.io/ \

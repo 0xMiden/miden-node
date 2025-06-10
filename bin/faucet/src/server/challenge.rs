@@ -47,10 +47,8 @@ impl Challenge {
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
     /// in the context of the specified secret.
     pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidRequest> {
-        // Add the "0x" prefix to the hex string, otherwise the hex_to_bytes function will fail.
-        let value = "0x".to_string() + value;
         // Parse the hex-encoded challenge string
-        let bytes = hex_to_bytes::<48>(&value).map_err(|_| InvalidRequest::MissingPowParameters)?;
+        let bytes = hex_to_bytes::<48>(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
 
         if bytes.len() != 48 {
             // 8 + 8 + 32 bytes
@@ -77,7 +75,7 @@ impl Challenge {
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         bytes.extend_from_slice(&self.signature);
-        bytes.to_hex()
+        bytes.to_hex_with_prefix()
     }
 
     /// Checks whether the provided nonce satisfies the difficulty requirement encoded in the

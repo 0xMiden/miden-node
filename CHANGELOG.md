@@ -2,6 +2,11 @@
 
 ## v0.10.0 (TBD)
 
+### Enhancements
+
+- Add miden-proving-service and miden-proving-service-client crates (#926).
+- [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#????).
+
 ## v0.9.0 (2025-05-30)
 
 ### Enhancements
@@ -12,7 +17,6 @@
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
-- Add miden-proving-service and miden-proving-service-client crates (#926).
 
 ### Changes
 

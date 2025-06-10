@@ -155,7 +155,7 @@ impl StoreCommand {
         let decimals = 6u8;
         let base_unit = 10u64.pow(u32::from(decimals));
         let max_supply = 100_000_000_000u64 * base_unit;
-        let max_supply = Felt::try_from(max_supply).expect("max supply is less than u64::MAX");
+        let max_supply = Felt::try_from(max_supply).expect("max supply is less than field modulus");
 
         // Create the faucet.
         let (mut account, account_seed) = create_basic_fungible_faucet(

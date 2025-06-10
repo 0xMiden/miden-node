@@ -484,22 +484,86 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,
-        block_num: BlockNumber,
+        block_number: BlockNumber,
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
-        self.pool
-            .get()
-            .await
-            .map_err(DatabaseError::MissingDbConnection)?
-            .interact(move |conn| {
-                let transaction = conn.transaction().map_err(DatabaseError::SqliteError)?;
-                sql::get_state_sync(&transaction, block_num, &account_ids, &note_tags)
+        
+        let state = self.query("state sync", move |conn| {
+            
+            let desired_senders = Vec::from_iter(account_ids.iter().map(|id| id.to_bytes()));
+            let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| *tag as i32 ));
+
+            // select notes since block by tag and sender
+            let notes = schema::notes::table
+                // .select(S)
+                // find the next block which contains at least one note with a matching tag or sender
+                .filter(schema::notes::block_num.eq(
+                    QueryDsl::select(schema::notes::table, &schema::notes::block_num)
+                        .filter(
+                            schema::notes::tag.eq_any(&desired_note_tags[..])
+                            .or(schema::notes::sender.eq_any(&desired_senders[..]))
+                        )
+                        .order_by(schema::notes::block_num.asc())
+                        .limit(1)
+                        .single_value()
+                ))
+                // filter the block's notes and return only the ones matching the requested tags or senders
+                .filter(
+                    schema::notes::tag.eq_any(&desired_note_tags)
+                    .or(schema::notes::sender.eq_any(&desired_senders))
+                )
+                .load::<NoteSyncRecord>(conn)?;
+
+            // select block header by block num
+            let maybe_note_block_num = notes.first().map(|note| note.block_num);
+            let block_header = {
+                let sel = SelectDsl::select(
+                    schema::block_headers::table,
+                    models::BlockHeadersRow::as_select(),
+                );
+                let row = if let Some(block_number) = maybe_note_block_num {
+                    sel.find(i64::from(block_number.as_u32()))
+                        .first::<models::BlockHeadersRow>(conn)
+                        .optional()
+                    // invariant: only one block exists with the given block header, so the length is
+                    // always zero or one
+                } else {
+                    sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
+                }?;
+                row.map(std::convert::TryInto::try_into).transpose()
+            }?.ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
+            
+            // select accounts by block range
+            let account_ids = account_ids.iter().map(|id| id.to_bytes());
+            let block_start: i64 = block_number.as_u32() as _;
+            let block_end: i64 = block_header.block_num() as _; 
+            let account_updates = SelectDsl::select(
+                schema::accounts::table
+                , (schema::accounts::account_id, schema::accounts::account_commitment, schema::accounts::block_num))
+                .filter(schema::accounts::block_num.gt(block_start))
+                .filter(schema::accounts::block_num.le(block_end))
+                .filter(schema::accounts::account_id.eq_any(&account_ids))
+                .order(schema::accounts::block_num.asc())
+                .load::<AccountSummary>(conn)?;
+            // select transactions by accounts and block range
+            let transactions = 
+                SelectDsl::select(schema::accounts::table, (schema::transactions::account_id, schema::transactions::block_num, schema::transactions::transaction_id))
+                .filter(schema::transactions::block_num.gt(block_start))
+                .filter(schema::transactions::block_num.le(block_end))
+                .filter(schema::transactions::account_id.eq_any(&account_ids))
+                .order(schema::transactions::transaction_id.asc())
+                .load::<TransactionSummary>(conn)?;
+            
+            Ok(StateSyncUpdate {
+                notes,
+                block_header,
+                account_updates,
+                transactions,
             })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get state sync task failed: {err}"))
-            })?
+        })
+        .await?;
+        Ok(state)
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

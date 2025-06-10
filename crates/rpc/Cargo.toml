@@ -27,7 +27,7 @@ semver           = { version = "1.0" }
 tokio            = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream     = { features = ["net"], workspace = true }
 tonic            = { workspace = true }
-tonic-web        = { version = "0.12" }
+tonic-web        = { version = "0.13" }
 tower            = { workspace = true }
 tower-http       = { features = ["trace"], workspace = true }
 tracing          = { workspace = true }

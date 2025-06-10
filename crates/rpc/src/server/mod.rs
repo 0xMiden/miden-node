@@ -6,6 +6,7 @@ use miden_node_proto::generated::rpc::api_server;
 use miden_node_utils::tracing::grpc::rpc_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
+use tower::Layer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -41,7 +42,7 @@ impl Rpc {
             .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
             .layer(AcceptLayer::new()?)
             // Enables gRPC-web support.
-            .add_service(tonic_web::enable(api_service))
+            .add_service(tonic_web::GrpcWebLayer::new().layer(api_service))
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve RPC API")

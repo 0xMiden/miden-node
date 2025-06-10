@@ -1,9 +1,23 @@
+// The module contains transitions for database representations
+// to in memory representations, where it is _often_ require to
+// convert from the database _signed_ representation to the
+// in-memory _unsigned_ representations, and hence we'd sprinkle
+// the clippy exception around in quite a few places.
+// TODO moving away from the `TryInto` implementations
+// TODO we should be able to isolate the signed to unsigned and
+// TODO vice versa such that this can be removed again.
+#![allow(clippy::cast_sign_loss)]
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,
 };
 
 use anyhow::Context;
+use diesel::{
+    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
+    SelectableHelper, SqliteConnection, query_dsl::methods::SelectDsl,
+};
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
@@ -28,6 +42,10 @@ use crate::{
     COMPONENT,
     db::{
         migrations::apply_migrations,
+        models::{
+            AccountInfoRawRow, AccountSummaryRaw, NoteSyncRecordRawRow, TransactionSummaryRaw,
+            vec_raw_try_into, vec_to_raw,
+        },
         pool_manager::{Pool, SqlitePoolManager},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
@@ -48,10 +66,22 @@ mod settings;
 mod tests;
 mod transaction;
 
+pub(crate) mod models;
+/// [diesel](https://diesel.rs) generated schema
+///
+/// ```sh
+/// cargo binstall diesel_cli
+/// sqlite3 -init ./src/db/migrations/001-init.sql ephemeral_setup.db ""
+/// diesel setup --datebase-url=./ephemeral_setup.db
+/// diesel print-schema > src/db/schema.rs
+/// ```
+pub(crate) mod schema;
+
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
     pool: Pool,
+    diesel: deadpool_diesel::sqlite::Pool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -254,6 +284,24 @@ impl Db {
         db_tx.commit().context("failed to commit database transaction")
     }
 
+    /// Avoid repeated boilerplate
+    pub(crate) async fn query<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
+    where
+        Q: Send + FnOnce(&mut SqliteConnection) -> std::result::Result<R, E> + 'static,
+        R: Send + 'static,
+        M: Send + ToString,
+        E: From<DatabaseError>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        self.diesel
+            .get()
+            .await
+            .map_err(DatabaseError::from)?
+            .interact(query)
+            .await
+            .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
+    }
+
     /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
@@ -268,27 +316,30 @@ impl Db {
 
         let conn = pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
 
-        conn.interact(apply_migrations).await.map_err(|err| {
-            DatabaseError::InteractError(format!("Migration task failed: {err}"))
-        })??;
+        conn.interact(apply_migrations)
+            .await
+            .map_err(|err| DatabaseError::interact("Migration", &err))??;
 
-        Ok(Db { pool })
+        // TODO rationalize magic numbers, and make them constant
+        let manager = deadpool_diesel::sqlite::Manager::new(
+            database_filepath.to_str().unwrap().to_owned(),
+            deadpool_diesel::sqlite::Runtime::Tokio1,
+        );
+        let diesel = deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
+
+        Ok(Db { pool, diesel })
     }
 
     /// Loads all the nullifiers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_nullifiers(&self) -> Result<Vec<(Nullifier, BlockNumber)>> {
-        self.pool
-            .get()
-            .await?
-            .interact(|conn| {
-                let transaction = conn.transaction()?;
-                sql::select_all_nullifiers(&transaction)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Select nullifiers task failed: {err}"))
-            })?
+    pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
+        self.query("all nullifiers", move |conn| {
+            let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
+            Result::<Vec<_>, _>::from_iter(
+                nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
+            )
+        })
+        .await
     }
 
     /// Loads the nullifiers that match the prefixes from the DB.
@@ -299,24 +350,22 @@ impl Db {
         nullifier_prefixes: Vec<u32>,
         block_num: BlockNumber,
     ) -> Result<Vec<NullifierInfo>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_nullifiers_by_prefix(
-                    &transaction,
-                    prefix_len,
-                    &nullifier_prefixes,
-                    block_num,
-                )
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!(
-                    "Select nullifiers by prefix task failed: {err}"
-                ))
-            })?
+        assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
+
+        self.query("nullifieres by prefix", move |conn| {
+            let prefixes =
+                nullifier_prefixes.into_iter().map(|prefix| i32::try_from(prefix).unwrap()); // TODO XXX ensure these type conversions are sane
+            let nullifiers_raw =
+                SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
+                    .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
+                    .filter(schema::nullifiers::block_num.ge(i64::from(block_num.as_u32())))
+                    .order(schema::nullifiers::block_num.asc())
+                    .load::<models::NullifierRawRow>(conn)?;
+            Result::<Vec<_>, _>::from_iter(
+                nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
+            )
+        })
+        .await
     }
 
     /// Search for a [BlockHeader] from the database by its `block_num`.
@@ -327,17 +376,23 @@ impl Db {
         &self,
         block_number: Option<BlockNumber>,
     ) -> Result<Option<BlockHeader>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_block_header_by_block_num(&transaction, block_number)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Select block header task failed: {err}"))
-            })?
+        self.query("block headers by block number", move |conn| {
+            let sel = SelectDsl::select(
+                schema::block_headers::table,
+                models::BlockHeaderRawRow::as_select(),
+            );
+            let row = if let Some(block_number) = block_number {
+                sel.find(i64::from(block_number.as_u32()))
+                    .first::<models::BlockHeaderRawRow>(conn)
+                    .optional()
+                // invariant: only one block exists with the given block header, so the length is
+                // always zero or one
+            } else {
+                sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
+            }?;
+            row.map(std::convert::TryInto::try_into).transpose()
+        })
+        .await
     }
 
     /// Loads multiple block headers from the DB.
@@ -346,35 +401,30 @@ impl Db {
         &self,
         blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_block_headers(&transaction, blocks)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!(
-                    "Select many block headers task failed: {err}"
-                ))
-            })?
+        self.query("block headers from given block numbers", |conn| {
+            let blocks = Vec::from_iter(blocks.map(|block_num| i64::from(block_num.as_u32())));
+            let raw = QueryDsl::filter(
+                schema::block_headers::table,
+                schema::block_headers::block_num.eq_any(&blocks[..]),
+            )
+            .load::<models::BlockHeaderRawRow>(conn)?;
+            Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
+        })
+        .await
     }
 
     /// Loads all the block headers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_block_headers(&self) -> Result<Vec<BlockHeader>> {
-        self.pool
-            .get()
-            .await?
-            .interact(|conn| {
-                let transaction = conn.transaction()?;
-                sql::select_all_block_headers(&transaction)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Select block headers task failed: {err}"))
-            })?
+        self.query("all block headers", |conn| {
+            let raw = QueryDsl::select(
+                schema::block_headers::table,
+                models::BlockHeaderRawRow::as_select(),
+            )
+            .load::<models::BlockHeaderRawRow>(conn)?;
+            Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
+        })
+        .await
     }
 
     /// Loads all the account commitments from the DB.
@@ -398,17 +448,14 @@ impl Db {
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_account(&transaction, id)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get account details task failed: {err}"))
-            })?
+        self.query("Get account details", move |conn| {
+            let val =
+                QueryDsl::select(schema::accounts::table, models::AccountInfoRawRow::as_select())
+                    .find(id.to_bytes())
+                    .first::<models::AccountInfoRawRow>(conn)?;
+            val.try_into()
+        })
+        .await
     }
 
     /// Loads public account details from the DB based on the account ID's prefix.
@@ -417,17 +464,16 @@ impl Db {
         &self,
         id_prefix: u32,
     ) -> Result<Option<AccountInfo>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_network_account_by_prefix(&transaction, id_prefix)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get account details task failed: {err}"))
-            })?
+        self.query("Get account by id prefix", move |conn| {
+            let maybe_info = QueryDsl::filter(
+                QueryDsl::select(schema::accounts::table, AccountInfoRawRow::as_select()),
+                schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))),
+            )
+            .first(conn)
+            .optional()?;
+            maybe_info.map(std::convert::TryInto::try_into).transpose()
+        })
+        .await
     }
 
     /// Loads public accounts details from the DB.
@@ -436,38 +482,120 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<Vec<AccountInfo>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_accounts_by_ids(&transaction, &account_ids)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get accounts details task failed: {err}"))
-            })?
+        self.query("Select account by id set", move |conn| {
+            let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
+
+            let accounts_raw = QueryDsl::filter(
+                QueryDsl::select(schema::accounts::table, models::AccountInfoRawRow::as_select()),
+                schema::accounts::account_id.eq_any(account_ids),
+            )
+            .load(conn)?;
+            Result::<Vec<_>, _>::from_iter(
+                accounts_raw.into_iter().map(std::convert::TryInto::try_into),
+            )
+        })
+        .await
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,
-        block_num: BlockNumber,
+        block_number: BlockNumber,
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
-        self.pool
-            .get()
-            .await
-            .map_err(DatabaseError::MissingDbConnection)?
-            .interact(move |conn| {
-                let transaction = conn.transaction().map_err(DatabaseError::SqliteError)?;
-                sql::get_state_sync(&transaction, block_num, &account_ids, &note_tags)
+        let state = self.query::<_,StateSyncError, _,_>("state sync", move |conn| {
+
+            let desired_senders = vec_to_raw(account_ids.iter());
+            let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes()) ));
+
+            // select notes since block by tag and sender
+            let desired_block_num: i64 = SelectDsl::select(schema::notes::table, schema::notes::block_num)
+            .filter(
+                schema::notes::tag.eq_any(&desired_note_tags[..])
+                .or(schema::notes::sender.eq_any(&desired_senders[..]))
+            )
+            .order_by(schema::notes::block_num.asc())
+            .limit(1)
+            .get_result(conn)
+            .optional()
+            .map_err(DatabaseError::from)?.unwrap(); // XXX what makes sure it's not None?
+
+
+            let notes =
+                SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
+                // find the next block which contains at least one note with a matching tag or sender
+                .filter(schema::notes::block_num.eq(
+                    desired_block_num
+                ))
+                // filter the block's notes and return only the ones matching the requested tags or senders
+                .filter(
+                    schema::notes::tag
+                    .eq_any(&desired_note_tags)
+                    .or(
+                        schema::notes::sender
+                        .eq_any(&desired_senders)
+                    )
+                )
+                .load::<NoteSyncRecordRawRow>(conn)
+                .map_err(DatabaseError::from)?;
+
+            // select block header by block num
+            let maybe_note_block_num = notes.first().map(|note| note.block_num);
+            let block_header: BlockHeader = {
+                let sel = SelectDsl::select(
+                    schema::block_headers::table,
+                    models::BlockHeaderRawRow::as_select(),
+                );
+                let row = if let Some(block_number) = maybe_note_block_num {
+                    sel.find(block_number) // TODO
+                        .first::<models::BlockHeaderRawRow>(conn)
+                        .optional()
+                    // invariant: only one block exists with the given block header, so the length is
+                    // always zero or one
+                } else {
+                    sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
+                }.map_err(DatabaseError::from)?;
+                row.map(std::convert::TryInto::try_into).transpose()
+            }?.ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
+
+            // select accounts by block range
+            let account_ids = vec_to_raw(account_ids.iter());
+            let block_start: i64 = block_number.as_u32().into();
+            let block_end: i64 = block_header.block_num().as_u32().into();
+            let account_updates = SelectDsl::select(
+                schema::accounts::table
+                , AccountSummaryRaw::as_select())
+                // (schema::accounts::account_id, schema::accounts::account_commitment, schema::accounts::block_num))
+                .filter(schema::accounts::block_num.gt(block_start))
+                .filter(schema::accounts::block_num.le(block_end))
+                .filter(schema::accounts::account_id.eq_any(&account_ids))
+                .order(schema::accounts::block_num.asc())
+                .load::<AccountSummaryRaw>(conn)
+                .map_err(DatabaseError::from)?;
+            let account_updates = vec_raw_try_into::<AccountSummary,AccountSummaryRaw>(account_updates)?;
+
+            // select transactions by accounts and block range
+            let transactions =
+                SelectDsl::select(schema::transactions::table,
+                    (schema::transactions::account_id, schema::transactions::block_num, schema::transactions::transaction_id)
+                )
+                .filter(schema::transactions::block_num.gt(block_start))
+                .filter(schema::transactions::block_num.le(block_end))
+                .filter(schema::transactions::account_id.eq_any(&account_ids))
+                .order(schema::transactions::transaction_id.asc())
+                .load::<TransactionSummaryRaw>(conn)
+                .map_err(DatabaseError::from)?;
+
+            Ok(StateSyncUpdate {
+                notes: vec_raw_try_into(notes)?,
+                block_header,
+                account_updates,
+                transactions: vec_raw_try_into(transactions)?,
             })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get state sync task failed: {err}"))
-            })?
+        })
+        .await?;
+        Ok(state)
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

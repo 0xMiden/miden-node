@@ -1,5 +1,8 @@
 //! Wrapper functions for SQL statements.
 
+// TODO XXX move either the `diesel::` queries into the functions or delete them
+#![allow(dead_code)]
+
 #[macro_use]
 pub(crate) mod utils;
 
@@ -212,45 +215,6 @@ pub fn select_network_account_by_prefix(
     } else {
         Ok(None)
     }
-}
-
-/// Select the latest accounts' details filtered by IDs from the DB using the given
-/// [Connection].
-///
-/// # Returns
-///
-/// The account details vector, or an error.
-pub fn select_accounts_by_ids(
-    transaction: &Transaction,
-    account_ids: &[AccountId],
-) -> Result<Vec<AccountInfo>> {
-    let mut stmt = transaction.prepare_cached(
-        "
-        SELECT
-            account_id,
-            account_commitment,
-            block_num,
-            details
-        FROM
-            accounts
-        WHERE
-            account_id IN rarray(?1);
-    ",
-    )?;
-
-    let account_ids: Vec<Value> = account_ids
-        .iter()
-        .copied()
-        .map(|account_id| account_id.to_bytes().into())
-        .collect();
-    let mut rows = stmt.query(params![Rc::new(account_ids)])?;
-
-    let mut result = Vec::new();
-    while let Some(row) = rows.next()? {
-        result.push(account_info_from_row(row)?);
-    }
-
-    Ok(result)
 }
 
 /// Selects and merges account deltas by account id and block range from the DB using the given

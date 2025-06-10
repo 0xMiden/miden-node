@@ -3,7 +3,7 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
     sync::{Arc, atomic::AtomicUsize},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
@@ -255,7 +255,18 @@ impl Server {
     ) -> Result<(), InvalidRequest> {
         let challenge = Challenge::decode(challenge, self.pow.secret)?;
 
-        challenge.validate(nonce)?;
+        // Check timestamp validity
+        if challenge.is_expired(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()) {
+            return Err(InvalidRequest::ExpiredServerTimestamp(
+                challenge.timestamp,
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            ));
+        }
+
+        // Validate the proof of work
+        if !challenge.validate_pow(nonce) {
+            return Err(InvalidRequest::InvalidPoW);
+        }
 
         // Check if challenge was already used
         if !self.pow.challenge_cache.challenges.lock().unwrap().insert(challenge.clone()) {

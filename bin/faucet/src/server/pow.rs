@@ -157,12 +157,12 @@ mod tests {
         let challenge = pow.build_challenge();
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let result = challenge.validate(nonce);
-        assert!(result.is_ok());
+        let result = challenge.validate_pow(nonce);
+        assert!(result);
 
         // Try to use the same challenge again - should fail
-        let result = challenge.validate(nonce);
-        assert!(result.is_err());
+        let result = challenge.validate_pow(nonce);
+        assert!(!result);
     }
 
     #[test]

@@ -22,12 +22,12 @@ tx-prover    = ["dep:miden-objects", "dep:tokio", "miden-tx/async"]
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom             = { features = ["wasm_js"], version = "0.3" }
-tonic                 = { default-features = false, features = ["codegen", "prost"], version = "0.12" }
-tonic-web-wasm-client = { default-features = false, version = "0.6" }
+tonic                 = { default-features = false, features = ["codegen", "prost"], version = "0.13" }
+tonic-web-wasm-client = { default-features = false, version = "0.7" }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
-tonic     = { default-features = false, features = ["codegen", "prost", "transport"], version = "0.12" }
-tonic-web = { optional = true, version = "0.12" }
+tonic     = { default-features = false, features = ["codegen", "prost", "transport"], version = "0.13" }
+tonic-web = { optional = true, version = "0.13" }
 
 [lints]
 workspace = true
@@ -44,5 +44,5 @@ tokio         = { default-features = false, features = ["sync"], optional = true
 miette      = { features = ["fancy"], version = "7.5" }
 prost       = { default-features = false, features = ["derive"], version = "0.13" }
 prost-build = { version = "0.13" }
-protox      = { version = "0.7" }
-tonic-build = { version = "0.12" }
+protox      = { version = "0.8" }
+tonic-build = { version = "0.13" }

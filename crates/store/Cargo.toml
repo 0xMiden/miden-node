@@ -23,8 +23,8 @@ miden-lib          = { workspace = true }
 miden-node-proto   = { workspace = true }
 miden-node-utils   = { workspace = true }
 miden-objects      = { workspace = true }
-rusqlite           = { features = ["array", "buildtime_bindgen", "bundled"], version = "0.35" }
-rusqlite_migration = { version = "2.1" }
+rusqlite           = { features = ["array", "buildtime_bindgen", "bundled"], version = "0.36" }
+rusqlite_migration = { version = "2.2" }
 thiserror          = { workspace = true }
 tokio              = { features = ["fs", "macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream       = { features = ["net"], workspace = true }

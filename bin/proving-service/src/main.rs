@@ -41,6 +41,7 @@ mod test {
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
     use tonic::Request;
+    use tower::Layer;
 
     use crate::{
         api::ProverRpcApi,
@@ -61,7 +62,7 @@ mod test {
         tokio::spawn(async move {
             tonic::transport::Server::builder()
                 .accept_http1(true)
-                .add_service(tonic_web::enable(api_service))
+                .add_service(tonic_web::GrpcWebLayer::new().layer(api_service))
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();

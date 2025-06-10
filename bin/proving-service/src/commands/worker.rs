@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_health::server::health_reporter;
+use tower::Layer;
 use tracing::{info, instrument};
 
 use crate::{api::RpcListener, generated::api_server::ApiServer, utils::MIDEN_PROVING_SERVICE};
@@ -92,15 +93,15 @@ impl StartWorker {
         );
 
         // Create a health reporter
-        let (mut health_reporter, health_service) = health_reporter();
+        let (health_reporter, health_service) = health_reporter();
 
         // Mark the service as serving
         health_reporter.set_serving::<ApiServer<RpcListener>>().await;
 
         tonic::transport::Server::builder()
             .accept_http1(true)
-            .add_service(tonic_web::enable(rpc.api_service))
-            .add_service(tonic_web::enable(rpc.status_service))
+            .add_service(tonic_web::GrpcWebLayer::new().layer(rpc.api_service))
+            .add_service(tonic_web::GrpcWebLayer::new().layer(rpc.status_service))
             .add_service(health_service)
             .serve_with_incoming(TcpListenerStream::new(rpc.listener))
             .await

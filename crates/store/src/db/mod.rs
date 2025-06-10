@@ -5,8 +5,7 @@ use std::{
 
 use anyhow::Context;
 use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
-    SqliteConnection, query_dsl::methods::SelectDsl,
+    deserialize::{FromSql, FromSqlRow}, query_dsl::methods::SelectDsl, sql_types::BigInt, sqlite::Sqlite, BoolExpressionMethods, ExpressionMethods, NullableExpressionMethods, OptionalExtension, QueryDsl, Queryable, QueryableByName, RunQueryDsl, Selectable, SelectableHelper, SqliteConnection
 };
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
@@ -29,14 +28,11 @@ use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
 
 use crate::{
-    COMPONENT,
     db::{
         migrations::apply_migrations,
-        models::AccountInfoRawRow,
+        models::{AccountIdRaw, AccountInfoRawRow, BlockNumberRaw, NullifierRaw},
         pool_manager::{Pool, SqlitePoolManager},
-    },
-    errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
-    genesis::GenesisBlock,
+    }, errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError}, genesis::GenesisBlock, COMPONENT
 };
 
 mod migrations;
@@ -72,25 +68,34 @@ pub struct Db {
 }
 
 #[derive(Debug, PartialEq)]
+#[derive(diesel::Queryable, diesel::QueryableByName, diesel::Selectable)]
 pub struct NullifierInfo {
-    pub nullifier: Nullifier,
-    pub block_num: BlockNumber,
+    // #[diesel(deserialize_as = NullifierRaw)]
+    pub nullifier: NullifierRaw,
+    // #[diesel(deserialize_as = BlockNumberRaw)]
+    pub block_num: BlockNumberRaw,
 }
 
 #[derive(Debug, PartialEq)]
+#[derive(diesel::Queryable, diesel::QueryableByName, diesel::Selectable)]
 pub struct TransactionSummary {
-    pub account_id: AccountId,
-    pub block_num: BlockNumber,
-    pub transaction_id: TransactionId,
+    // #[diesel(deserialize_as = AccountIdRaw)]
+    pub account_id: AccountIdRaw,
+    // #[diesel(deserialize_as = BlockNumber)]
+    pub block_num: BlockNumberRaw,
+    // #[diesel(deserialize_as = TransactionIdRaw)]
+    pub transaction_id: TransactionIdRaw,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoteRecord {
+    // #[diesel(deserialize_as = BlockNumberRaw)]
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
     pub note_id: RpoDigest,
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
+    // #[diesel(deserialize_as = MerklePathRaw)]
     pub merkle_path: MerklePath,
 }
 
@@ -203,7 +208,7 @@ pub struct NoteSyncUpdate {
     pub block_header: BlockHeader,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Queryable, Selectable)]
 pub struct NoteSyncRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
@@ -318,7 +323,7 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
         self.query("all nullifiers", move |conn| {
-            let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
+            let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRow>(conn)?;
             Result::<Vec<_>, _>::from_iter(
                 nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
             )
@@ -340,11 +345,11 @@ impl Db {
             let prefixes =
                 nullifier_prefixes.into_iter().map(|prefix| i32::try_from(prefix).unwrap()); // TODO XXX ensure these type conversions are sane
             let nullifiers_raw =
-                SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
+                SelectDsl::select(schema::nullifiers::table, models::NullifierRow::as_select())
                     .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
                     .filter(schema::nullifiers::block_num.ge(i64::from(block_num.as_u32())))
                     .order(schema::nullifiers::block_num.asc())
-                    .load::<models::NullifierRawRow>(conn)?;
+                    .load::<models::NullifierRow>(conn)?;
             Result::<Vec<_>, _>::from_iter(
                 nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
             )
@@ -363,11 +368,11 @@ impl Db {
         self.query("block headers by block number", move |conn| {
             let sel = SelectDsl::select(
                 schema::block_headers::table,
-                models::BlockHeaderRawRow::as_select(),
+                models::BlockHeadersRow::as_select(),
             );
             let row = if let Some(block_number) = block_number {
                 sel.find(i64::from(block_number.as_u32()))
-                    .first::<models::BlockHeaderRawRow>(conn)
+                    .first::<models::BlockHeadersRow>(conn)
                     .optional()
                 // invariant: only one block exists with the given block header, so the length is
                 // always zero or one
@@ -387,11 +392,11 @@ impl Db {
     ) -> Result<Vec<BlockHeader>> {
         self.query("block headers from given block numbers", |conn| {
             let blocks = Vec::from_iter(blocks.map(|block_num| i64::from(block_num.as_u32())));
-            let raw = QueryDsl::filter(
-                schema::block_headers::table,
-                schema::block_headers::block_num.eq_any(&blocks[..]),
+            let raw = 
+                schema::block_headers::table.filter(
+                schema::block_headers::block_num.eq_any(&blocks[..])
             )
-            .load::<models::BlockHeaderRawRow>(conn)?;
+            .load::<models::BlockHeadersRow>(conn)?;
             Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
         })
         .await
@@ -403,9 +408,9 @@ impl Db {
         self.query("all block headers", |conn| {
             let raw = QueryDsl::select(
                 schema::block_headers::table,
-                models::BlockHeaderRawRow::as_select(),
+                models::BlockHeadersRow::as_select(),
             )
-            .load::<models::BlockHeaderRawRow>(conn)?;
+            .load::<models::BlockHeadersRow>(conn)?;
             Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
         })
         .await
@@ -484,22 +489,86 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,
-        block_num: BlockNumber,
+        block_number: BlockNumber,
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
-        self.pool
-            .get()
-            .await
-            .map_err(DatabaseError::MissingDbConnection)?
-            .interact(move |conn| {
-                let transaction = conn.transaction().map_err(DatabaseError::SqliteError)?;
-                sql::get_state_sync(&transaction, block_num, &account_ids, &note_tags)
+        
+        let state = self.query("state sync", move |conn| {
+            
+            let desired_senders = Vec::from_iter(account_ids.iter().map(|id| id.to_bytes()));
+            let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| *tag as i32 ));
+
+            // select notes since block by tag and sender
+            let notes = schema::notes::table
+                // .select(S)
+                // find the next block which contains at least one note with a matching tag or sender
+                .filter(schema::notes::block_num.eq(
+                    QueryDsl::select(schema::notes::table, &schema::notes::block_num)
+                        .filter(
+                            schema::notes::tag.eq_any(&desired_note_tags[..])
+                            .or(schema::notes::sender.eq_any(&desired_senders[..]))
+                        )
+                        .order_by(schema::notes::block_num.asc())
+                        .limit(1)
+                        .single_value()
+                ))
+                // filter the block's notes and return only the ones matching the requested tags or senders
+                .filter(
+                    schema::notes::tag.eq_any(&desired_note_tags)
+                    .or(schema::notes::sender.eq_any(&desired_senders))
+                )
+                .load::<NoteSyncRecord>(conn)?;
+
+            // select block header by block num
+            let maybe_note_block_num = notes.first().map(|note| note.block_num);
+            let block_header = {
+                let sel = SelectDsl::select(
+                    schema::block_headers::table,
+                    models::BlockHeadersRow::as_select(),
+                );
+                let row = if let Some(block_number) = maybe_note_block_num {
+                    sel.find(i64::from(block_number.as_u32()))
+                        .first::<models::BlockHeadersRow>(conn)
+                        .optional()
+                    // invariant: only one block exists with the given block header, so the length is
+                    // always zero or one
+                } else {
+                    sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
+                }?;
+                row.map(std::convert::TryInto::try_into).transpose()
+            }?.ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
+            
+            // select accounts by block range
+            let account_ids = account_ids.iter().map(|id| id.to_bytes());
+            let block_start: i64 = block_number.as_u32() as _;
+            let block_end: i64 = block_header.block_num() as _; 
+            let account_updates = SelectDsl::select(
+                schema::accounts::table
+                , (schema::accounts::account_id, schema::accounts::account_commitment, schema::accounts::block_num))
+                .filter(schema::accounts::block_num.gt(block_start))
+                .filter(schema::accounts::block_num.le(block_end))
+                .filter(schema::accounts::account_id.eq_any(&account_ids))
+                .order(schema::accounts::block_num.asc())
+                .load::<AccountSummary>(conn)?;
+            // select transactions by accounts and block range
+            let transactions = 
+                SelectDsl::select(schema::accounts::table, (schema::transactions::account_id, schema::transactions::block_num, schema::transactions::transaction_id))
+                .filter(schema::transactions::block_num.gt(block_start))
+                .filter(schema::transactions::block_num.le(block_end))
+                .filter(schema::transactions::account_id.eq_any(&account_ids))
+                .order(schema::transactions::transaction_id.asc())
+                .load::<TransactionSummary>(conn)?;
+            
+            Ok(StateSyncUpdate {
+                notes,
+                block_header,
+                account_updates,
+                transactions,
             })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get state sync task failed: {err}"))
-            })?
+        })
+        .await?;
+        Ok(state)
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

@@ -122,6 +122,8 @@ pub fn select_accounts_by_block_range(
     block_end: BlockNumber,
     account_ids: &[AccountId],
 ) -> Result<Vec<AccountSummary>> {
+    
+    
     let mut stmt = transaction.prepare_cached(
         "
         SELECT

@@ -91,7 +91,7 @@ mod tests {
             .unwrap();
         let headers = response.headers();
 
-        // If `tonic_web` is enabled, the CORS headers shoud be set in the response
+        // If `tonic_web` is enabled, the CORS headers should be set in the response
         assert!(headers.get("access-control-allow-credentials").is_some());
         assert!(headers.get("access-control-expose-headers").is_some());
         assert!(headers.get("vary").is_some());

@@ -77,7 +77,7 @@ runs:
       shell: bash
       run: |
         pkg=${{ inputs.service }}
-        git show ${{ steps.git-sha.outputs.sha }}:bin/$pkg/.env                > packaging/deb/$pkg/lib/systemd/system/$pkg.env
+        git show ${{ steps.git-sha.outputs.sha }}:bin/$pkg/.env                > packaging/deb/$pkg/lib/systemd/system/$pkg.env || true
         git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/$pkg.service   > packaging/deb/$pkg/lib/systemd/system/$pkg.service
         git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postinst               > packaging/deb/$pkg/DEBIAN/postinst
         git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postrm                 > packaging/deb/$pkg/DEBIAN/postrm

@@ -47,7 +47,8 @@ impl Rpc {
             .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
             .layer(AcceptLayer::new()?)
             // Enables gRPC-web support.
-            .add_service(tonic_web::GrpcWebLayer::new().layer(api_service))
+            .layer(tonic_web::GrpcWebLayer::new())
+            .add_service(api_service)
             .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await

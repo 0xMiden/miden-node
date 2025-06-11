@@ -19,7 +19,7 @@ use miden_testing::MockChain;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
-use tower::Layer;
+use tonic_web::GrpcWebLayer;
 use url::Url;
 
 #[derive(Clone)]
@@ -130,7 +130,8 @@ pub async fn serve_stub(endpoint: &Url) -> anyhow::Result<()> {
 
     tonic::transport::Server::builder()
         .accept_http1(true)
-        .add_service(tonic_web::GrpcWebLayer::new().layer(api_service))
+        .layer(GrpcWebLayer::new())
+        .add_service(api_service)
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await
         .context("failed to serve stub RPC API")

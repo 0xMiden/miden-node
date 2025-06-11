@@ -5,6 +5,5 @@
 ##############
 sudo rm -rf /lib/systemd/system/miden-node.service
 sudo rm -rf /etc/opt/miden-node
-sudo rm -rf /opt/miden-node
 sudo deluser miden-node
 sudo systemctl daemon-reload

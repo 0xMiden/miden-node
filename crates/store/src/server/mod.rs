@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::Context;
 use miden_node_proto::generated::store;
+use miden_node_proto_build::store_api_descriptor;
 use miden_node_utils::tracing::grpc::store_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -100,6 +101,10 @@ impl Store {
             store::block_producer_server::BlockProducerServer::new(api::StoreApi {
                 state: Arc::clone(&state),
             });
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(store_api_descriptor())
+            .build_v1()
+            .context("failed to build reflection service")?;
 
         info!(target: COMPONENT, "Database loaded");
 
@@ -110,6 +115,7 @@ impl Store {
             .add_service(rpc_service)
             .add_service(ntx_builder_service)
             .add_service(block_producer_service)
+            .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve store API")

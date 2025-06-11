@@ -1,6 +1,6 @@
 name: "Task"
 description: "Work item"
-title: "[Task]: "
+type: "Task"
 body:
   - type: markdown
     attributes:
@@ -14,6 +14,8 @@ body:
         - label: "RPC"
         - label: "Block producer"
         - label: "Store"
+        - label: "Network transaction builder"
+        - label: "Proving service"
         - label: "Protobuf messages"
         - label: "Testing"
     validations:
@@ -43,6 +45,6 @@ body:
     id: task-related
     attributes:
       label: "Additional context"
-      description: "Add context to the tasks. E.g. other related tasks or relevant dicussions on PRs/chats."
+      description: "Add context to the tasks. E.g. other related tasks or relevant discussions on PRs/chats."
     validations:
       required: false

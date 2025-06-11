@@ -2,7 +2,7 @@
 #
 # This is a postinstallation script so the service can be configured and started when requested.
 
-# user is expected by the systemd service file and `/opt/<user>` is its working directory, 
+# user is expected by the systemd service file and `/opt/<user>` is its working directory,
 sudo adduser --disabled-password --disabled-login --shell /usr/sbin/nologin --quiet --system --no-create-home --home /nonexistent miden-node
 
 # Working folder.
@@ -11,8 +11,8 @@ then
     echo "Directory /opt/miden-node exists."
 else
     mkdir -p /opt/miden-node
-    sudo chown -R miden-node /opt/miden-node
 fi
+sudo chown -R miden-node /opt/miden-node
 
 # Configuration folder
 if [ -d "/etc/opt/miden-node" ]
@@ -20,7 +20,7 @@ then
     echo "Directory /etc/opt/miden-node exists."
 else
     mkdir -p /etc/opt/miden-node
-    sudo chown -R miden-node /etc/opt/miden-node
 fi
+sudo chown -R miden-node /etc/opt/miden-node
 
 sudo systemctl daemon-reload

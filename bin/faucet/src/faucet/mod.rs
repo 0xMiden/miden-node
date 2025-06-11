@@ -2,7 +2,10 @@ use std::{collections::VecDeque, rc::Rc, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use miden_lib::{
-    account::interface::{AccountInterface, AccountInterfaceError},
+    account::{
+        faucets::BasicFungibleFaucet,
+        interface::{AccountInterface, AccountInterfaceError},
+    },
     note::create_p2id_note,
 };
 use miden_objects::{
@@ -161,7 +164,7 @@ pub struct Faucet {
     tx_prover: Arc<FaucetProver>,
     tx_executor: Rc<TransactionExecutor>,
     account_interface: AccountInterface,
-    asset_decimals: u8,
+    decimals: u8,
 }
 
 impl Faucet {
@@ -218,12 +221,7 @@ impl Faucet {
         )
         .expect("Empty ChainMmr should be valid");
 
-        let asset_decimals =
-            account.storage().get_item(2).expect("faucet should store metadata on slot 2")[1]
-                .as_int()
-                .try_into()
-                .expect("decimals should be less than 256");
-
+        let faucet = BasicFungibleFaucet::try_from(&account)?;
         let account_interface = AccountInterface::from(&account);
 
         let data_store = Arc::new(FaucetDataStore::new(
@@ -257,7 +255,7 @@ impl Faucet {
             tx_prover,
             tx_executor,
             account_interface,
-            asset_decimals,
+            decimals: faucet.decimals(),
         })
     }
 
@@ -392,8 +390,7 @@ impl Faucet {
 
         let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
 
-        let p2id_notes =
-            P2IdNotes::build(self.faucet_id(), self.asset_decimals, requests, &mut rng)?;
+        let p2id_notes = P2IdNotes::build(self.faucet_id(), self.decimals, requests, &mut rng)?;
 
         // Build the note
         let notes = p2id_notes.into_inner();
@@ -497,7 +494,7 @@ impl P2IdNotes {
     /// Returns an error if creating any p2id note fails.
     fn build(
         source: FaucetId,
-        asset_decimals: u8,
+        decimals: u8,
         requests: &[MintRequest],
         rng: &mut RpoRandomCoin,
     ) -> Result<Self, MintError> {
@@ -505,7 +502,7 @@ impl P2IdNotes {
         // ids are validated on the request level.
         let mut notes = Vec::new();
         for request in requests {
-            let amount = request.asset_amount.inner() * 10u64.pow(asset_decimals.into());
+            let amount = request.asset_amount.inner() * 10u64.pow(decimals.into());
             // SAFETY: source is definitely a faucet account, and the amount is valid.
             let asset = FungibleAsset::new(source.inner(), amount).unwrap();
             let note = create_p2id_note(

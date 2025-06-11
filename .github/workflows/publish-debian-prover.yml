@@ -30,7 +30,14 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@main
         with:
+          ref: ${{ github.ref }}
           fetch-depth: 0
+      - name: ls
+        run: |
+          ls
+          ls .github/
+          ls .github/actions/
+          ls .github/actions/debian
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2

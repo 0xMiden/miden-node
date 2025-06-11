@@ -25,6 +25,7 @@ itertools                    = { workspace = true }
 miden-block-prover           = { workspace = true }
 miden-lib                    = { workspace = true }
 miden-node-proto             = { workspace = true }
+miden-node-proto-build       = { features = ["internal"], workspace = true }
 miden-node-utils             = { features = ["testing"], workspace = true }
 miden-objects                = { workspace = true }
 miden-proving-service-client = { features = ["batch-prover", "block-prover"], workspace = true }
@@ -35,6 +36,7 @@ thiserror                    = { workspace = true }
 tokio                        = { features = ["macros", "net", "rt-multi-thread", "sync", "time"], workspace = true }
 tokio-stream                 = { features = ["net"], workspace = true }
 tonic                        = { features = ["transport"], workspace = true }
+tonic-reflection             = { workspace = true }
 tower-http                   = { features = ["util"], workspace = true }
 tracing                      = { workspace = true }
 url                          = { workspace = true }

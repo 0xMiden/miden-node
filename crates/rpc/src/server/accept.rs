@@ -211,10 +211,10 @@ mod tests {
 
     #[test]
     fn valid_accept_header_is_parsed() {
-        let input = "application/vnd.miden.v1.0.0+grpc";
+        let input = "application/vnd.miden.1.0.0+grpc";
         let expected = AcceptHeaderValue {
             app_name: "miden",
-            version: "v1.0.0",
+            version: "1.0.0",
             response_type: "grpc",
         };
         assert_eq!(AcceptHeaderValue::try_from(input), Ok(expected));

@@ -96,10 +96,10 @@ runs:
         svc=${{ inputs.service }}
         pkg=${{ inputs.package }}
         crate=${{ inputs.crate_dir }}
-        git show ${{ steps.git-sha.outputs.sha }}:bin/$crate/.env                > packaging/deb/$svc/lib/systemd/system/$svc.env || true
-        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/$svc.service   > packaging/deb/$svc/lib/systemd/system/$svc.service
-        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postinst               > packaging/deb/$svc/DEBIAN/postinst
-        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postrm                 > packaging/deb/$svc/DEBIAN/postrm
+        git show ${{ steps.git-sha.outputs.sha }}:bin/$crate/.env             > packaging/deb/$svc/lib/systemd/system/$svc.env
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/$svc.service > packaging/deb/$svc/lib/systemd/system/$svc.service
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postinst     > packaging/deb/$svc/DEBIAN/postinst
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postrm       > packaging/deb/$svc/DEBIAN/postrm
         chmod 0775 packaging/deb/$svc/DEBIAN/postinst
         chmod 0775 packaging/deb/$svc/DEBIAN/postrm
 

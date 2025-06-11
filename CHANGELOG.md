@@ -2,6 +2,14 @@
 
 ## v0.10.0 (TBD)
 
+### Enhancements
+
+- Added support for gRPC server side reflection to all components (#949).
+
+### Changes
+
+- Added a faucet Dockerfile (#933).
+
 ### Fixes
 
 - Faucet considers decimals when minting token amounts (#962).

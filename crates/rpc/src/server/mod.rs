@@ -8,6 +8,7 @@ use miden_node_utils::tracing::grpc::rpc_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;
+use tower::Layer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -48,6 +49,7 @@ impl Rpc {
             .layer(AcceptLayer::new()?)
             // Enables gRPC-web support.
             .layer(tonic_web::GrpcWebLayer::new())
+            // .add_service(tonic_web::GrpcWebLayer::new().layer(api_service))
             .add_service(api_service)
             .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
@@ -59,8 +61,7 @@ impl Rpc {
 #[cfg(test)]
 mod tests {
     use http::{
-        HeaderMap, HeaderValue,
-        header::{ACCEPT, CONTENT_TYPE},
+        header::{ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE}, HeaderMap, HeaderValue, Version
     };
     use tokio::net::TcpListener;
 
@@ -85,6 +86,7 @@ mod tests {
         let accept_header = concat!("application/vnd.miden.", env!("CARGO_PKG_VERSION"), "+grpc");
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
         headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
+        headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("gzip"));
 
         // An empty message with header format:
         //   - A byte indicating uncompressed (0)
@@ -98,13 +100,16 @@ mod tests {
 
         let response = client
             .post(format!("http://{rpc_addr}/rpc.Api/Status"))
+            .version(Version::HTTP_11)
             .headers(headers)
             .body(message)
             .send()
             .await
             .unwrap();
-        let headers = response.headers();
 
+        println!("response: {:?}", response);
+        let headers = response.headers();
+        println!("headers: {:?}", headers);
         // CORS headers are usually set when `tonic_web` is enabled.
         //
         // This was deduced by manually checking, and isn't formally described

@@ -1,10 +1,13 @@
 name: Build Debian Packages
 description: Publishes Debian packages for the given git reference
 inputs:
+  github_token:
+    required: true
+    description: GitHub token for authentication.
   gitref:
     required: true
     description: The git ref to build the packages from.
-  gitref:
+  arch:
     required: true
     description: Machine architecture to build packages for.
     type: choice
@@ -133,7 +136,7 @@ runs:
     - name: Publish packages
       shell: bash
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_TOKEN: ${{ inputs.github_token }}
       run: |
         gh release upload ${{ env.version }} \
           ${{ env.package }} \

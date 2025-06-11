@@ -79,14 +79,6 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        let challenge_cache = pow::ChallengeCache::default();
-
-        // Start the cleanup task
-        let cleanup_state = challenge_cache.clone();
-        tokio::spawn(async move {
-            cleanup_state.run_cleanup().await;
-        });
-
         // Hash the string secret to [u8; 32] for PoW
         let mut hasher = Sha3_256::new();
         hasher.update(pow_secret.as_bytes());

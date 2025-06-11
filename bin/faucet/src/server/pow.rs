@@ -33,10 +33,18 @@ pub(crate) struct PoW {
 impl PoW {
     /// Creates a new `PoW` instance.
     pub fn new(secret: [u8; 32]) -> Self {
+        let challenge_cache = ChallengeCache::default();
+
+        // Start the cleanup task
+        let cleanup_state = challenge_cache.clone();
+        tokio::spawn(async move {
+            cleanup_state.run_cleanup().await;
+        });
+
         Self {
             secret,
             difficulty: Arc::new(AtomicUsize::new(1)),
-            challenge_cache: ChallengeCache::default(),
+            challenge_cache,
         }
     }
 
@@ -118,9 +126,9 @@ impl PoW {
 /// is only used once.
 /// Challenges get removed periodically.
 #[derive(Clone, Default)]
-pub(crate) struct ChallengeCache {
+struct ChallengeCache {
     /// Once a challenge is added, it cannot be submitted again.
-    pub challenges: Arc<Mutex<HashSet<Challenge>>>,
+    challenges: Arc<Mutex<HashSet<Challenge>>>,
 }
 
 impl ChallengeCache {
@@ -190,8 +198,8 @@ mod tests {
         assert_eq!(challenge.signature, decoded.signature);
     }
 
-    #[test]
-    fn test_pow_validation() {
+    #[tokio::test]
+    async fn test_pow_validation() {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
 
@@ -209,8 +217,8 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_adjust_difficulty_minimum_clamp() {
+    #[tokio::test]
+    async fn test_adjust_difficulty_minimum_clamp() {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
 
@@ -224,8 +232,8 @@ mod tests {
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
     }
 
-    #[test]
-    fn test_adjust_difficulty_maximum_clamp() {
+    #[tokio::test]
+    async fn test_adjust_difficulty_maximum_clamp() {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
 
@@ -238,8 +246,8 @@ mod tests {
         assert_eq!(pow.difficulty.load(Ordering::Relaxed), MAX_DIFFICULTY);
     }
 
-    #[test]
-    fn test_adjust_difficulty_linear_scaling() {
+    #[tokio::test]
+    async fn test_adjust_difficulty_linear_scaling() {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
 

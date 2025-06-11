@@ -22,6 +22,14 @@ inputs:
       - miden-node
       - miden-faucet
       - miden-proving-service
+  crate:
+    required: true
+    description: Name of crate being packaged.
+    type: choice
+    options:
+      - miden-node
+      - miden-faucet
+      - miden-proving-service
   service:
     required: true
     description: The service to build the packages for.
@@ -31,9 +39,9 @@ inputs:
       - miden-faucet
       - miden-prover
       - miden-prover-proxy
-  service_short:
+  package:
     required: true
-    description: The short form service to build the packages for.
+    description: Name of packaging directory.
     type: choice
     options:
       - node
@@ -85,18 +93,19 @@ runs:
     - name: Copy package install scripts
       shell: bash
       run: |
-        pkg=${{ inputs.service }}
-        pkg_short=${{ inputs.service_short }}
-        cp bin/$pkg_short/.env                 packaging/deb/$pkg/lib/systemd/system/$pkg.env
-        cp packaging/$pkg_short/$pkg.service    packaging/deb/$pkg/lib/systemd/system/$pkg.service
-        cp packaging/$pkg_short/postinst                packaging/deb/$pkg/DEBIAN/postinst
-        cp packaging/$pkg_short/postrm                  packaging/deb/$pkg/DEBIAN/postrm
-        #git show ${{ steps.git-sha.outputs.sha }}:bin/$pkg_short/.env                > packaging/deb/$pkg/lib/systemd/system/$pkg.env || true
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/$pkg.service   > packaging/deb/$pkg/lib/systemd/system/$pkg.service
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/postinst               > packaging/deb/$pkg/DEBIAN/postinst
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/postrm                 > packaging/deb/$pkg/DEBIAN/postrm
-        chmod 0775 packaging/deb/$pkg/DEBIAN/postinst
-        chmod 0775 packaging/deb/$pkg/DEBIAN/postrm
+        svc=${{ inputs.service }}
+        pkg=${{ inputs.package }}
+        crate=${{ inputs.crate }}
+        cp bin/$crate/.env                 packaging/deb/$svc/lib/systemd/system/$svc.env
+        cp packaging/$pkg/$pkg.service    packaging/deb/$svc/lib/systemd/system/$svc.service
+        cp packaging/$pkg/postinst                packaging/deb/$svc/DEBIAN/postinst
+        cp packaging/$pkg/postrm                  packaging/deb/$svc/DEBIAN/postrm
+        #git show ${{ steps.git-sha.outputs.sha }}:bin/$crate/.env                > packaging/deb/$svc/lib/systemd/system/$svc.env || true
+        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$svc/$svc.service   > packaging/deb/$svc/lib/systemd/system/$svc.service
+        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postinst               > packaging/deb/$svc/DEBIAN/postinst
+        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postrm                 > packaging/deb/$svc/DEBIAN/postrm
+        chmod 0775 packaging/deb/$svc/DEBIAN/postinst
+        chmod 0775 packaging/deb/$svc/DEBIAN/postrm
 
     - name: Create control files
       shell: bash

@@ -15,9 +15,18 @@ on:
           - miden-faucet
           - miden-prover
           - miden-prover-proxy
-      service_short:
+      crate:
         required: true
-        description: The short form service to build the packages for.
+        description: "Name of crate directory"
+        type: choice
+        options:
+          - node
+          - faucet
+          - prover
+          - proving-service
+      package:
+        required: true
+        description: "Name of packaging directory"
         type: choice
         options:
           - node
@@ -60,7 +69,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ inputs.version }}
+          crate: ${{ inputs.crate }}
           service: ${{ inputs.service }}
-          service_short: ${{ inputs.service_short }}
+          package: ${{ inputs.package }}
           bin: ${{ inputs.bin }}
           arch: ${{ matrix.arch }}

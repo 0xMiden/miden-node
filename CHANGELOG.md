@@ -2,6 +2,10 @@
 
 ## v0.10.0 (TBD)
 
+### Enhancements
+
+- Added support for gRPC server side reflection to all components (#949).
+
 ### Changes
 
 - Added a faucet Dockerfile (#933).
@@ -16,6 +20,7 @@
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
+- Add miden-proving-service and miden-proving-service-client crates (#926).
 
 ### Changes
 

@@ -151,11 +151,18 @@ impl StoreCommand {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
 
+        // Calculate the max supply of the token.
+        let decimals = 6u8;
+        let base_unit = 10u64.pow(u32::from(decimals));
+        let max_supply = 100_000_000_000u64 * base_unit;
+        let max_supply = Felt::try_from(max_supply).expect("max supply is less than field modulus");
+
+        // Create the faucet.
         let (mut account, account_seed) = create_basic_fungible_faucet(
             rng.random(),
-            TokenSymbol::try_from("POL").expect("POL should be a valid token symbol"),
-            12,
-            Felt::from(1_000_000u32),
+            TokenSymbol::try_from("MIDEN").expect("MIDEN is a valid token symbol"),
+            decimals,
+            max_supply,
             miden_objects::account::AccountStorageMode::Public,
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;
@@ -175,5 +182,15 @@ impl StoreCommand {
             Some(account_seed),
             AuthSecretKey::RpoFalcon512(secret),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StoreCommand;
+
+    #[test]
+    fn generate_genesis_account_no_panic() {
+        let _account = StoreCommand::generate_genesis_account().unwrap();
     }
 }

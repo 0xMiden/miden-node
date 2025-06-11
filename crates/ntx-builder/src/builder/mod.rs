@@ -8,6 +8,7 @@ use miden_node_proto::{
     domain::{account::NetworkAccountError, note::NetworkNote},
     generated::ntx_builder::api_server,
 };
+use miden_node_proto_build::ntx_builder_api_descriptor;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     AccountError, TransactionInputError,
@@ -113,12 +114,17 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(&self.store_url);
         let unconsumed = store.get_unconsumed_network_notes().await?;
         let notes_queue = Arc::new(Mutex::new(PendingNotes::new(unconsumed)));
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(ntx_builder_api_descriptor())
+            .build_v1()
+            .context("failed to build reflection service")?;
 
         let listener = TcpListener::bind(self.ntx_builder_address).await?;
         let server = tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc())
             .add_service(api_server::ApiServer::new(NtxBuilderApi::new(notes_queue.clone())))
+            .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(listener));
         tokio::pin!(server);
 
@@ -280,7 +286,7 @@ impl NetworkTransactionBuilder {
         };
 
         let span = info_span!("ntx_builder.select_next_batch");
-        span.set_attribute("ntx.tag", tag.inner());
+        span.set_attribute("ntx.tag", tag.as_u32());
 
         let block_num = Self::prepare_blockchain_data(data_store).await?;
         let account_id = Self::get_account_for_ntx(data_store, tag).await?;

@@ -683,6 +683,7 @@ fn read_account_id(id: Option<generated::account::AccountId>) -> Result<AccountI
         .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
 }
 
+#[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 fn read_account_ids(
     account_ids: &[generated::account::AccountId],
@@ -695,6 +696,7 @@ fn read_account_ids(
         .map_err(|_| invalid_argument("Byte array is not a valid AccountId"))
 }
 
+#[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 fn validate_nullifiers(nullifiers: &[generated::digest::Digest]) -> Result<Vec<Nullifier>, Status> {
     nullifiers
@@ -705,6 +707,7 @@ fn validate_nullifiers(nullifiers: &[generated::digest::Digest]) -> Result<Vec<N
         .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 
+#[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
     notes

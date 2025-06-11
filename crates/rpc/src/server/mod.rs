@@ -78,9 +78,15 @@ mod tests {
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
         headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
 
+        // An empty message with header format:
+        //   - A byte indicating uncompressed (0)
+        //   - A u64 indicating the data length (0)
+        //
+        // Originally described here:
+        // https://github.com/hyperium/tonic/issues/1040#issuecomment-1191832200
         let mut message = Vec::new();
-        message.push(0); // uncompressed flag
-        message.extend_from_slice(&[0; 4]); // length of empty message
+        message.push(0);
+        message.extend_from_slice(&0u64.to_be_bytes());
 
         let response = client
             .post(format!("http://{rpc_addr}/rpc.Api/Status"))

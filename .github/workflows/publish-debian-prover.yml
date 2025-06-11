@@ -37,9 +37,6 @@ on:
         required: true
         type: string
 
-env:
-  version: ${{ inputs.version || github.ref_name }}
-
 permissions:
   id-token: write
   contents: write
@@ -62,7 +59,7 @@ jobs:
         uses: ./.github/actions/debian
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          gitref: ${{ env.version }}
+          gitref: ${{ inputs.version }}
           service: ${{ inputs.service }}
           service_short: ${{ inputs.service_short }}
           bin: ${{ inputs.bin }}

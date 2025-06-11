@@ -505,7 +505,7 @@ impl P2IdNotes {
         // ids are validated on the request level.
         let mut notes = Vec::new();
         for request in requests {
-            let amount = request.asset_amount.inner() * 10u64.pow(asset_decimals as u32);
+            let amount = request.asset_amount.inner() * 10u64.pow(asset_decimals.into());
             // SAFETY: source is definitely a faucet account, and the amount is valid.
             let asset = FungibleAsset::new(source.inner(), amount).unwrap();
             let note = create_p2id_note(

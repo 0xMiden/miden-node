@@ -2,6 +2,10 @@
 
 ## v0.10.0 (TBD)
 
+### Fixes
+
+- Faucet considers decimals when minting token amounts (#962).
+
 ## v0.9.0 (2025-05-30)
 
 ### Enhancements

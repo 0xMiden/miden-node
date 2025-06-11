@@ -15,8 +15,9 @@ use std::{
 
 use anyhow::Context;
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl,
-    SelectableHelper, SqliteConnection, query_dsl::methods::SelectDsl,
+    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
+    OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper, SqliteConnection,
+    query_dsl::methods::SelectDsl,
 };
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
@@ -43,8 +44,8 @@ use crate::{
     db::{
         migrations::apply_migrations,
         models::{
-            AccountInfoRawRow, AccountSummaryRaw, NoteSyncRecordRawRow, TransactionSummaryRaw,
-            vec_raw_try_into, vec_to_raw,
+            AccountInfoRawRow, AccountSummaryRaw, NoteRecordRaw, NoteSyncRecordRawRow,
+            TransactionSummaryRaw, serialize_vec, vec_raw_try_into,
         },
         pool_manager::{Pool, SqlitePoolManager},
     },
@@ -361,9 +362,7 @@ impl Db {
                     .filter(schema::nullifiers::block_num.ge(i64::from(block_num.as_u32())))
                     .order(schema::nullifiers::block_num.asc())
                     .load::<models::NullifierRawRow>(conn)?;
-            Result::<Vec<_>, _>::from_iter(
-                nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
-            )
+            vec_raw_try_into(nullifiers_raw)
         })
         .await
     }
@@ -408,7 +407,7 @@ impl Db {
                 schema::block_headers::block_num.eq_any(&blocks[..]),
             )
             .load::<models::BlockHeaderRawRow>(conn)?;
-            Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
+            vec_raw_try_into(raw)
         })
         .await
     }
@@ -422,7 +421,7 @@ impl Db {
                 models::BlockHeaderRawRow::as_select(),
             )
             .load::<models::BlockHeaderRawRow>(conn)?;
-            Result::<Vec<_>>::from_iter(raw.into_iter().map(std::convert::TryInto::try_into))
+            vec_raw_try_into(raw)
         })
         .await
     }
@@ -430,19 +429,23 @@ impl Db {
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
-        self.pool
-            .get()
-            .await?
-            .interact(|conn| {
-                let transaction = conn.transaction()?;
-                sql::select_all_account_commitments(&transaction)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!(
-                    "Select account commitments task failed: {err}"
-                ))
-            })?
+        self.query("read all account commitments", move |conn| {
+            let raw = SelectDsl::select(
+                schema::accounts::table,
+                (schema::accounts::account_id, schema::accounts::account_commitment),
+            )
+            .order_by(schema::accounts::block_num.asc())
+            .load::<(Vec<u8>, Vec<u8>)>(conn)?;
+
+            std::result::Result::<Vec<_>, _>::from_iter(raw.into_iter().map(
+                |(raw_account, raw_commitment)| {
+                    let account = AccountId::read_from_bytes(raw_account.as_ref())?;
+                    let commitment = RpoDigest::read_from_bytes(raw_commitment.as_ref())?;
+                    Ok((account, commitment))
+                },
+            ))
+        })
+        .await
     }
 
     /// Loads public account details from the DB.
@@ -490,9 +493,7 @@ impl Db {
                 schema::accounts::account_id.eq_any(account_ids),
             )
             .load(conn)?;
-            Result::<Vec<_>, _>::from_iter(
-                accounts_raw.into_iter().map(std::convert::TryInto::try_into),
-            )
+            vec_raw_try_into(accounts_raw)
         })
         .await
     }
@@ -506,7 +507,7 @@ impl Db {
     ) -> Result<StateSyncUpdate, StateSyncError> {
         let state = self.query::<_,StateSyncError, _,_>("state sync", move |conn| {
 
-            let desired_senders = vec_to_raw(account_ids.iter());
+            let desired_senders = serialize_vec(account_ids.iter());
             let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes()) ));
 
             // select notes since block by tag and sender
@@ -520,7 +521,6 @@ impl Db {
             .get_result(conn)
             .optional()
             .map_err(DatabaseError::from)?.unwrap(); // XXX what makes sure it's not None?
-
 
             let notes =
                 SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
@@ -560,7 +560,7 @@ impl Db {
             }?.ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
             // select accounts by block range
-            let account_ids = vec_to_raw(account_ids.iter());
+            let account_ids = serialize_vec(account_ids.iter());
             let block_start: i64 = block_number.as_u32().into();
             let block_end: i64 = block_header.block_num().as_u32().into();
             let account_updates = SelectDsl::select(
@@ -604,34 +604,62 @@ impl Db {
         block_num: BlockNumber,
         note_tags: Vec<u32>,
     ) -> Result<NoteSyncUpdate, NoteSyncError> {
-        self.pool
-            .get()
-            .await
-            .map_err(DatabaseError::MissingDbConnection)?
-            .interact(move |conn| {
-                let transaction = conn.transaction().map_err(DatabaseError::SqliteError)?;
-                sql::get_note_sync(&transaction, block_num, &note_tags)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Get notes sync task failed: {err}"))
-            })?
+        self.query("notes sync task", move |conn| {
+            let update = models::queries::select_notes_since_block_by_tag_and_sender(
+                conn,
+                block_num,
+                &[],
+                &note_tags,
+            )?;
+            let notes = update.notes;
+            let block_header = models::queries::select_block_header_by_block_num(
+                conn,
+                notes.first().map(|note| note.block_num),
+            )?
+            .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
+            Ok(NoteSyncUpdate { notes, block_header })
+        })
+        .await
     }
 
     /// Loads all the Note's matching a certain NoteId from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_notes_by_id(&transaction, &note_ids)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Select note by id task failed: {err}"))
-            })?
+        self.query("note by id", move |conn| {
+            let note_ids = serialize_vec(&note_ids);
+            let cols = (
+                schema::notes::block_num,
+                schema::notes::batch_index,
+                schema::notes::note_index,
+                schema::notes::note_id,
+                // // metadata
+                schema::notes::note_type,
+                schema::notes::sender,
+                schema::notes::tag,
+                schema::notes::aux,
+                schema::notes::execution_hint,
+                // details
+                schema::notes::assets,
+                schema::notes::inputs,
+                schema::notes::serial_num,
+                // // merkle
+                schema::notes::merkle_path,
+                schema::note_scripts::script.nullable(),
+            );
+
+            let q = schema::notes::table
+                .left_join(schema::note_scripts::table.on(
+                    schema::notes::script_root.eq(schema::note_scripts::script_root.nullable()),
+                ))
+                .filter(schema::notes::note_id.eq_any(&note_ids));
+            let raw: Vec<_> = SelectDsl::select(
+                q, cols, // NoteRecordRaw::as_select()
+            )
+            .load::<NoteRecordRaw>(conn)?;
+            let records = vec_raw_try_into::<NoteRecord, _>(raw)?;
+            Ok(records)
+        })
+        .await
     }
 
     /// Loads inclusion proofs for notes matching the given IDs.

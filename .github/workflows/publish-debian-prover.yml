@@ -30,7 +30,6 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@main
         with:
-          ref: ${{ env.version }}
           fetch-depth: 0
 
       - name: Rust cache

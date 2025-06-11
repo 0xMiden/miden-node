@@ -58,7 +58,7 @@ runs:
           packaging/deb/$pkg/DEBIAN \
           packaging/deb/$pkg/usr/bin \
           packaging/deb/$pkg/lib/systemd/system \
-          packaging/deb/$pkg/opt/$pkg
+          packaging/deb/$pkg/opt/$pkg \
         done
 
     - name: Copy package install scripts

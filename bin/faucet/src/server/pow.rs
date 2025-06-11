@@ -44,7 +44,7 @@ impl PoW {
     pub fn build_challenge(&self) -> Challenge {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .expect("current timestamp should be greater than unix epoch")
             .as_secs();
 
         let difficulty = self.difficulty.load(Ordering::Relaxed);
@@ -87,7 +87,7 @@ impl ChallengeCache {
     pub fn cleanup_expired_challenges(&self) {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .expect("current timestamp should be greater than unix epoch")
             .as_secs();
 
         let mut challenges = self.challenges.lock().unwrap();
@@ -133,7 +133,7 @@ mod tests {
         let difficulty = 3;
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .expect("current timestamp should be greater than unix epoch")
             .as_secs();
 
         let challenge = Challenge::new(difficulty, timestamp, secret);
@@ -239,7 +239,7 @@ mod tests {
         let secret = create_test_secret();
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .expect("Time went backwards")
+            .expect("current timestamp should be greater than unix epoch")
             .as_secs();
 
         // Valid timestamp (current time)

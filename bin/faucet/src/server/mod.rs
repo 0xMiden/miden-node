@@ -256,10 +256,18 @@ impl Server {
         let challenge = Challenge::decode(challenge, self.pow.secret)?;
 
         // Check timestamp validity
-        if challenge.is_expired(SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()) {
+        if challenge.is_expired(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("current timestamp should be greater than unix epoch")
+                .as_secs(),
+        ) {
             return Err(InvalidRequest::ExpiredServerTimestamp(
                 challenge.timestamp,
-                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs(),
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("current timestamp should be greater than unix epoch")
+                    .as_secs(),
             ));
         }
 

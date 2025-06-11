@@ -80,7 +80,7 @@ mod tests {
 
         // An empty message with header format:
         //   - A byte indicating uncompressed (0)
-        //   - A u64 indicating the data length (0)
+        //   - A u32 indicating the data length (0)
         //
         // Originally described here:
         // https://github.com/hyperium/tonic/issues/1040#issuecomment-1191832200

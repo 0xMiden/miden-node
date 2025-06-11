@@ -39,7 +39,7 @@ use url::Url;
 use crate::{
     COMPONENT,
     faucet::{FaucetId, MintRequest},
-    server::{challenge::Challenge, get_tokens::InvalidRequest},
+    server::get_tokens::InvalidRequest,
     types::AssetOptions,
 };
 
@@ -248,40 +248,19 @@ impl Server {
     /// * The challenge is expired.
     /// * The challenge is invalid.
     /// * The challenge was already used.
+    ///
+    /// # Panics
+    /// Panics if the current timestamp is before the UNIX epoch.
     pub(crate) fn submit_challenge(
         &self,
         challenge: &str,
         nonce: u64,
     ) -> Result<(), InvalidRequest> {
-        let challenge = Challenge::decode(challenge, self.pow.secret)?;
-
-        // Check timestamp validity
-        if challenge.is_expired(
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("current timestamp should be greater than unix epoch")
-                .as_secs(),
-        ) {
-            return Err(InvalidRequest::ExpiredServerTimestamp(
-                challenge.timestamp,
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("current timestamp should be greater than unix epoch")
-                    .as_secs(),
-            ));
-        }
-
-        // Validate the proof of work
-        if !challenge.validate_pow(nonce) {
-            return Err(InvalidRequest::InvalidPoW);
-        }
-
-        // Check if challenge was already used
-        if !self.pow.challenge_cache.challenges.lock().unwrap().insert(challenge.clone()) {
-            return Err(InvalidRequest::ChallengeAlreadyUsed);
-        }
-
-        Ok(())
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current timestamp should be greater than unix epoch")
+            .as_secs();
+        self.pow.submit_challenge(timestamp, challenge, nonce)
     }
 }
 

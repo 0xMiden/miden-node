@@ -10,7 +10,7 @@ use std::{
 use tokio::time::{Duration, interval};
 
 use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
-use crate::REQUESTS_QUEUE_SIZE;
+use crate::{REQUESTS_QUEUE_SIZE, server::get_tokens::InvalidRequest};
 
 /// The maximum difficulty of the `PoW`.
 ///
@@ -61,6 +61,50 @@ impl PoW {
         let new_difficulty =
             (active_requests / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY);
         self.difficulty.store(new_difficulty, Ordering::Relaxed);
+    }
+
+    /// Submits a challenge.
+    ///
+    /// The challenge is validated and added to the cache.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// * The challenge is expired.
+    /// * The challenge is invalid.
+    /// * The challenge was already used.
+    ///
+    /// # Panics
+    /// Panics if the challenge cache lock is poisoned.
+    pub(crate) fn submit_challenge(
+        &self,
+        timestamp: u64,
+        challenge: &str,
+        nonce: u64,
+    ) -> Result<(), InvalidRequest> {
+        let challenge = Challenge::decode(challenge, self.secret)?;
+
+        // Check timestamp validity
+        if challenge.is_expired(timestamp) {
+            return Err(InvalidRequest::ExpiredServerTimestamp(challenge.timestamp, timestamp));
+        }
+
+        // Validate the proof of work
+        if !challenge.validate_pow(nonce) {
+            return Err(InvalidRequest::InvalidPoW);
+        }
+
+        // Check if challenge was already used
+        if !self
+            .challenge_cache
+            .challenges
+            .lock()
+            .expect("PoW challenge cache lock poisoned")
+            .insert(challenge)
+        {
+            return Err(InvalidRequest::ChallengeAlreadyUsed);
+        }
+
+        Ok(())
     }
 }
 
@@ -157,12 +201,12 @@ mod tests {
         let challenge = pow.build_challenge();
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let result = challenge.validate_pow(nonce);
-        assert!(result);
+        let result = pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce);
+        assert!(result.is_ok());
 
         // Try to use the same challenge again with different nonce- should fail
-        let result = challenge.validate_pow(nonce + 1);
-        assert!(!result);
+        let result = pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce + 1);
+        assert!(result.is_err());
     }
 
     #[test]

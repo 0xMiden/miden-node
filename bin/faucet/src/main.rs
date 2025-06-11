@@ -28,6 +28,7 @@ use rand_chacha::ChaCha20Rng;
 use rpc_client::RpcClient;
 use server::Server;
 use tokio::sync::mpsc;
+use url::Url;
 
 use crate::config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig};
 
@@ -90,6 +91,8 @@ pub enum Command {
         faucet_account_path: String,
         #[arg(short, long, default_value = DEFAULT_API_KEYS_COUNT)]
         generated_api_keys_count: u8,
+        #[arg(short, long)]
+        node_url: Option<String>,
     },
 }
 
@@ -142,7 +145,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 faucet.faucet_id(),
                 config.asset_amount_options.clone(),
                 tx_requests,
-                config.pow_salt,
+                &config.pow_secret,
                 BTreeSet::from_iter(config.api_keys),
             );
 
@@ -214,6 +217,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             config_path,
             faucet_account_path,
             generated_api_keys_count,
+            node_url,
         } => {
             let current_dir =
                 std::env::current_dir().context("failed to open current directory")?;
@@ -223,12 +227,14 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let api_keys =
                 (0..*generated_api_keys_count).map(|_| generate_api_key()).collect::<Vec<_>>();
 
-            let config = FaucetConfig {
+            let mut config = FaucetConfig {
                 faucet_account_path: faucet_account_path.into(),
                 api_keys,
                 ..FaucetConfig::default()
             };
-
+            if let Some(url) = node_url {
+                config.node_url = Url::parse(url).context("failed to parse node URL")?;
+            }
             let config_as_toml_string =
                 toml::to_string(&config).context("failed to serialize default config")?;
 

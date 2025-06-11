@@ -22,7 +22,6 @@ on:
         options:
           - node
           - faucet
-          - prover
           - proving-service
       package:
         required: true

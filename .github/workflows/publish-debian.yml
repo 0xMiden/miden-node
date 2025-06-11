@@ -12,7 +12,7 @@ on:
           - miden-faucet
           - miden-prover
           - miden-prover-proxy
-      crate:
+      crate_dir:
         required: true
         description: "Name of crate directory"
         type: choice
@@ -29,8 +29,8 @@ on:
           - faucet
           - prover
           - prover-proxy
-      bin:
-        description: "Name of the binary to publish"
+      crate:
+        description: "Name of the binary crate to publish"
         required: true
         type: choice
         options:
@@ -65,8 +65,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ inputs.version }}
-          crate: ${{ inputs.crate }}
+          crate_dir: ${{ inputs.crate_dir }}
           service: ${{ inputs.service }}
           package: ${{ inputs.package }}
-          bin: ${{ inputs.bin }}
+          crate: ${{ inputs.crate }}
           arch: ${{ matrix.arch }}

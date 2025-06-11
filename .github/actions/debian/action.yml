@@ -14,15 +14,15 @@ inputs:
     options:
       - amd64
       - arm64
-  bin:
+  crate:
     required: true
-    description: Name of binary being packages.
+    description: Name of binary crate being packaged.
     type: choice
     options:
       - miden-node
       - miden-faucet
       - miden-proving-service
-  crate:
+  crate_dir:
     required: true
     description: Name of crate being packaged.
     type: choice
@@ -95,7 +95,7 @@ runs:
       run: |
         svc=${{ inputs.service }}
         pkg=${{ inputs.package }}
-        crate=${{ inputs.crate }}
+        crate=${{ inputs.crate_dir }}
         cp bin/$crate/.env                 packaging/deb/$svc/lib/systemd/system/$svc.env
         cp packaging/$pkg/$svc.service    packaging/deb/$svc/lib/systemd/system/$svc.service
         cp packaging/$pkg/postinst                packaging/deb/$svc/DEBIAN/postinst
@@ -141,7 +141,7 @@ runs:
       shell: bash
       run: |
         pkg=${{ inputs.service }}
-        bin=${{ inputs.bin }}
+        bin=${{ inputs.crate }}
         cp -p ./bin/$bin   packaging/deb/$pkg/usr/bin/
 
     - name: Build packages

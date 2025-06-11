@@ -37,10 +37,10 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
-          crate: node
+          crate_dir: node
           service: miden-node
           package: node
-          bin: miden-node
+          crate: miden-node
           arch: ${{ matrix.arch }}
 
       - name: Build and Publish Faucet
@@ -48,10 +48,10 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
-          crate: faucet
+          crate_dir: faucet
           service: miden-faucet
           package: faucet
-          bin: miden-faucet
+          crate: miden-faucet
           arch: ${{ matrix.arch }}
 
       - name: Build and Publish Prover
@@ -59,10 +59,10 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
-          crate: proving-service
+          crate_dir: proving-service
           service: miden-prover
           package: prover
-          bin: miden-proving-service
+          crate: miden-proving-service
           arch: ${{ matrix.arch }}
 
       - name: Build and Publish Prover Proxy
@@ -70,8 +70,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
-          crate: proving-service
+          crate_dir: proving-service
           service: miden-prover-proxy
           package: prover-proxy
-          bin: miden-proving-service
+          crate: miden-proving-service
           arch: ${{ matrix.arch }}

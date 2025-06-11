@@ -25,9 +25,9 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 
 #[derive(Clone)]
 pub(crate) struct PoW {
-    pub(crate) secret: [u8; 32],
-    pub(crate) difficulty: Arc<AtomicUsize>,
-    pub(crate) challenge_cache: ChallengeCache,
+    secret: [u8; 32],
+    difficulty: Arc<AtomicUsize>,
+    challenge_cache: ChallengeCache,
 }
 
 impl PoW {

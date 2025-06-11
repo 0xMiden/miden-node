@@ -291,6 +291,7 @@ impl FromRef<Server> for GetTokensState {
 
 impl FromRef<Server> for PoW {
     fn from_ref(input: &Server) -> Self {
+        // Clone is cheap: only copies a 32-byte array and increments Arc reference counters.
         input.pow.clone()
     }
 }

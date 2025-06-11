@@ -143,7 +143,7 @@ runs:
     - name: Package names
       shell: bash
       run: |
-        echo "package=${{ inputs.service }}-${{ inputs.version }}-${{ inputs.arch }}.deb" >> $GITHUB_ENV
+        echo "package=${{ inputs.service }}-${{ inputs.gitref }}-${{ inputs.arch }}.deb" >> $GITHUB_ENV
 
     - name: Rename package files
       shell: bash

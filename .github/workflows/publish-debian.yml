@@ -12,6 +12,15 @@ on:
           - miden-faucet
           - miden-prover
           - miden-prover-proxy
+      service_short:
+        required: true
+        description: The short form service to build the packages for.
+        type: choice
+        options:
+          - node
+          - faucet
+          - prover
+          - prover-proxy
       bin:
         description: "Name of the binary to publish"
         required: true
@@ -52,5 +61,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
           service: ${{ inputs.service }}
+          service_short: ${{ inputs.service_short }}
           bin: ${{ inputs.bin }}
           arch: ${{ matrix.arch }}

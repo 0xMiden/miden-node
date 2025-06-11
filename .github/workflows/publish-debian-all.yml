@@ -38,6 +38,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
           service: miden-node
+          service_short: node
           bin: miden-node
           arch: ${{ matrix.arch }}
 
@@ -47,6 +48,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
           service: miden-faucet
+          service_short: faucet
           bin: miden-faucet
           arch: ${{ matrix.arch }}
 
@@ -56,6 +58,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
           service: miden-prover
+          service_short: prover
           bin: miden-proving-service
           arch: ${{ matrix.arch }}
 
@@ -65,5 +68,6 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
           service: miden-prover-proxy
+          service_short: prover-proxy
           bin: miden-proving-service
           arch: ${{ matrix.arch }}

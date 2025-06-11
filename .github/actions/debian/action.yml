@@ -31,6 +31,15 @@ inputs:
       - miden-faucet
       - miden-prover
       - miden-prover-proxy
+  service_short:
+    required: true
+    description: The short form service to build the packages for.
+    type: choice
+    options:
+      - node
+      - faucet
+      - prover
+      - prover-proxy
 
 runs:
   using: "composite"
@@ -77,14 +86,11 @@ runs:
       shell: bash
       run: |
         pkg=${{ inputs.service }}
-        cp bin/$pkg/.env               packaging/deb/$pkg/lib/systemd/system/$pkg.env
-        cp packaging/$pkg/$pkg.service packaging/deb/$pkg/lib/systemd/system/$pkg.service
-        cp packaging/$pkg/postinst     packaging/deb/$pkg/DEBIAN/postinst
-        cp packaging/$pkg/postrm       packaging/deb/$pkg/DEBIAN/postrm
-        #git show ${{ steps.git-sha.outputs.sha }}:bin/$pkg/.env                > packaging/deb/$pkg/lib/systemd/system/$pkg.env || true
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/$pkg.service   > packaging/deb/$pkg/lib/systemd/system/$pkg.service
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postinst               > packaging/deb/$pkg/DEBIAN/postinst
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postrm                 > packaging/deb/$pkg/DEBIAN/postrm
+        pkg_short=${{ inputs.service_short }}
+        git show ${{ steps.git-sha.outputs.sha }}:bin/$pkg_short/.env                > packaging/deb/$pkg/lib/systemd/system/$pkg.env || true
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/$pkg.service   > packaging/deb/$pkg/lib/systemd/system/$pkg.service
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/postinst               > packaging/deb/$pkg/DEBIAN/postinst
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/postrm                 > packaging/deb/$pkg/DEBIAN/postrm
         chmod 0775 packaging/deb/$pkg/DEBIAN/postinst
         chmod 0775 packaging/deb/$pkg/DEBIAN/postrm
 

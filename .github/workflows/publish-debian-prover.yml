@@ -10,6 +10,9 @@ on:
         description: "Version to release (E.G. v0.10.0-rc.1, v0.10.0). Corresponding git tag must already exist."
         required: true
         type: string
+  # TODO: delete trigger
+  pull_request:
+    types: [opened, reopened, synchronize]
 
 env:
   version: ${{ inputs.version || github.ref_name }}
@@ -30,8 +33,8 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@main
         with:
-          ref: ${{ github.ref }}
           fetch-depth: 0
+
       - name: ls
         run: |
           ls

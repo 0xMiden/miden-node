@@ -87,10 +87,10 @@ runs:
       run: |
         pkg=${{ inputs.service }}
         pkg_short=${{ inputs.service_short }}
-        cp git show ${{ steps.git-sha.outputs.sha }}:bin/$pkg_short/.env                 packaging/deb/$pkg/lib/systemd/system/$pkg.env
-        cp git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/$pkg.service    packaging/deb/$pkg/lib/systemd/system/$pkg.service
-        cp git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/postinst                packaging/deb/$pkg/DEBIAN/postinst
-        cp git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/postrm                  packaging/deb/$pkg/DEBIAN/postrm
+        cp bin/$pkg_short/.env                 packaging/deb/$pkg/lib/systemd/system/$pkg.env
+        cp packaging/$pkg_short/$pkg.service    packaging/deb/$pkg/lib/systemd/system/$pkg.service
+        cp packaging/$pkg_short/postinst                packaging/deb/$pkg/DEBIAN/postinst
+        cp packaging/$pkg_short/postrm                  packaging/deb/$pkg/DEBIAN/postrm
         #git show ${{ steps.git-sha.outputs.sha }}:bin/$pkg_short/.env                > packaging/deb/$pkg/lib/systemd/system/$pkg.env || true
         #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/$pkg.service   > packaging/deb/$pkg/lib/systemd/system/$pkg.service
         #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg_short/postinst               > packaging/deb/$pkg/DEBIAN/postinst

@@ -39,7 +39,7 @@ futures                      = { version = "0.3" }
 http                         = { version = "1.3" }
 itertools                    = { version = "0.14" }
 miden-air                    = { version = "0.14" }
-miden-lib                    = { version = "0.9" }
+miden-lib                    = { git = "https://github.com/0xmiden/miden-base", branch = "igamigo-midenp-errors" }
 miden-node-block-producer    = { path = "crates/block-producer", version = "0.9" }
 miden-node-ntx-builder       = { path = "crates/ntx-builder", version = "0.9" }
 miden-node-proto             = { path = "crates/proto", version = "0.9" }
@@ -48,9 +48,9 @@ miden-node-rpc               = { path = "crates/rpc", version = "0.9" }
 miden-node-store             = { path = "crates/store", version = "0.9" }
 miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.9" }
-miden-objects                = { version = "0.9" }
-miden-proving-service-client = { version = "0.9" }
-miden-tx                     = { version = "0.9" }
+miden-objects                = { git = "https://github.com/0xmiden/miden-base", branch = "igamigo-midenp-errors" }
+miden-proving-service-client = { git = "https://github.com/0xmiden/miden-base", branch = "igamigo-midenp-errors" }
+miden-tx                     = { git = "https://github.com/0xmiden/miden-base", branch = "igamigo-midenp-errors"}
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }
 thiserror                    = { default-features = false, version = "2.0" }

@@ -1884,9 +1884,8 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9d56092d4f95231029398f419e4844a029f5751515b28c57e2184e08e0fb84f"
+version = "0.9.3"
+source = "git+https://github.com/0xmiden/miden-base?branch=igamigo-midenp-errors#ab1dc8445dd07058918371e04f5603e6709fc0e2"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -1982,9 +1981,8 @@ dependencies = [
 
 [[package]]
 name = "miden-lib"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0c431f6de2408ccad6958c2d2a3f96399d67d05c5d783a692f5399910061452"
+version = "0.9.3"
+source = "git+https://github.com/0xmiden/miden-base?branch=igamigo-midenp-errors#ab1dc8445dd07058918371e04f5603e6709fc0e2"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2254,9 +2252,8 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c826da7048d600fba5794aa85c18366d7379604647f1f5d11ecebf68b5bd16c"
+version = "0.9.3"
+source = "git+https://github.com/0xmiden/miden-base?branch=igamigo-midenp-errors#ab1dc8445dd07058918371e04f5603e6709fc0e2"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2303,9 +2300,8 @@ dependencies = [
 
 [[package]]
 name = "miden-proving-service-client"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00c6bbabefccb613831188b065ebf5a4dd0cc0b002a8ee6a10cc9d50c316ded6"
+version = "0.9.3"
+source = "git+https://github.com/0xmiden/miden-base?branch=igamigo-midenp-errors#ab1dc8445dd07058918371e04f5603e6709fc0e2"
 dependencies = [
  "async-trait",
  "getrandom 0.3.3",
@@ -2334,9 +2330,8 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df56744ebc643d505b027392e890a8b978f33e705c5f82d7b66363f3333526a5"
+version = "0.9.3"
+source = "git+https://github.com/0xmiden/miden-base?branch=igamigo-midenp-errors#ab1dc8445dd07058918371e04f5603e6709fc0e2"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2351,9 +2346,8 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch-prover"
-version = "0.9.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5112cf732734de7c6e59889562601e1a12e8103f093d9f8fb7af828c8d0844b"
+version = "0.9.3"
+source = "git+https://github.com/0xmiden/miden-base?branch=igamigo-midenp-errors#ab1dc8445dd07058918371e04f5603e6709fc0e2"
 dependencies = [
  "miden-objects",
  "miden-tx",

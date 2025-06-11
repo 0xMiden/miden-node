@@ -48,7 +48,7 @@ miden-lib             = { features = ["testing"], workspace = true }
 miden-node-store      = { workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["testing"], workspace = true }
-miden-objects         = { features = ["testing"], workspace = true }
+miden-objects         = { default-features = true, features = ["testing"], workspace = true }
 miden-tx              = { features = ["testing"], workspace = true }
 pretty_assertions     = "1.4"
 rand_chacha           = { default-features = false, version = "0.9" }

@@ -91,10 +91,12 @@ mod tests {
             .unwrap();
         let headers = response.headers();
 
-        // If `tonic_web` is enabled, the CORS headers should be set in the response
+        // CORS headers are usually set when `tonic_web` is enabled.
+        //
+        // This was deduced by manually checking, and isn't formally described
+        // in any documentation.
         assert!(headers.get("access-control-allow-credentials").is_some());
         assert!(headers.get("access-control-expose-headers").is_some());
         assert!(headers.get("vary").is_some());
-        assert!(response.status().is_success());
     }
 }

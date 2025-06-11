@@ -16,6 +16,7 @@
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
+- Add miden-proving-service and miden-proving-service-client crates (#926).
 
 ### Changes
 

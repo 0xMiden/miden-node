@@ -286,7 +286,7 @@ impl NetworkTransactionBuilder {
         };
 
         let span = info_span!("ntx_builder.select_next_batch");
-        span.set_attribute("ntx.tag", tag.inner());
+        span.set_attribute("ntx.tag", tag.as_u32());
 
         let block_num = Self::prepare_blockchain_data(data_store).await?;
         let account_id = Self::get_account_for_ntx(data_store, tag).await?;

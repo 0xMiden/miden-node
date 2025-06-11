@@ -96,14 +96,10 @@ runs:
         svc=${{ inputs.service }}
         pkg=${{ inputs.package }}
         crate=${{ inputs.crate_dir }}
-        cp bin/$crate/.env                 packaging/deb/$svc/lib/systemd/system/$svc.env
-        cp packaging/$pkg/$svc.service    packaging/deb/$svc/lib/systemd/system/$svc.service
-        cp packaging/$pkg/postinst                packaging/deb/$svc/DEBIAN/postinst
-        cp packaging/$pkg/postrm                  packaging/deb/$svc/DEBIAN/postrm
-        #git show ${{ steps.git-sha.outputs.sha }}:bin/$crate/.env                > packaging/deb/$svc/lib/systemd/system/$svc.env || true
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/$svc.service   > packaging/deb/$svc/lib/systemd/system/$svc.service
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postinst               > packaging/deb/$svc/DEBIAN/postinst
-        #git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postrm                 > packaging/deb/$svc/DEBIAN/postrm
+        git show ${{ steps.git-sha.outputs.sha }}:bin/$crate/.env                > packaging/deb/$svc/lib/systemd/system/$svc.env || true
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/$svc.service   > packaging/deb/$svc/lib/systemd/system/$svc.service
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postinst               > packaging/deb/$svc/DEBIAN/postinst
+        git show ${{ steps.git-sha.outputs.sha }}:packaging/$pkg/postrm                 > packaging/deb/$svc/DEBIAN/postrm
         chmod 0775 packaging/deb/$svc/DEBIAN/postinst
         chmod 0775 packaging/deb/$svc/DEBIAN/postrm
 
@@ -135,8 +131,7 @@ runs:
       env:
         repo-url: ${{ github.server_url }}/${{ github.repository }}
       run: |
-        #cargo install ${{ inputs.crate }} --root . --locked --git ${{ env.repo-url }} --rev ${{ steps.git-sha.outputs.sha }}
-        cargo install ${{ inputs.crate }} --root . --locked --git ${{ env.repo-url }} --rev 2bfb3f83df9c2d3b941059177e4aecb5b9b6c103
+        cargo install ${{ inputs.crate }} --root . --locked --git ${{ env.repo-url }} --rev ${{ steps.git-sha.outputs.sha }}
 
     - name: Copy binary files
       shell: bash

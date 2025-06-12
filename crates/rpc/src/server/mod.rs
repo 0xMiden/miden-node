@@ -51,6 +51,7 @@ impl Rpc {
             // Enables gRPC-web support.
             .layer(GrpcWebLayer::new())
             .add_service(api_service)
+            // Enables gRPC reflection service.
             .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await

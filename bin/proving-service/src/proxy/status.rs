@@ -2,11 +2,7 @@ use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use pingora::{server::ListenFds, services::Service};
-use tokio::{
-    net::TcpListener,
-    sync::{RwLock, watch},
-    time::interval,
-};
+use tokio::{net::TcpListener, sync::watch, time::interval};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status, transport::Server};
 use tracing::{error, info};
@@ -34,23 +30,31 @@ type CachedStatus = ProxyStatusResponse;
 pub struct ProxyStatusService {
     load_balancer: Arc<LoadBalancerState>,
     port: u16,
-    cache: Arc<RwLock<Option<CachedStatus>>>,
+    status_tx: watch::Sender<CachedStatus>,
     update_interval: Duration,
 }
 
 /// Internal gRPC service implementation
 pub struct ProxyStatusGrpcService {
-    cache: Arc<RwLock<Option<CachedStatus>>>,
+    status_rx: watch::Receiver<CachedStatus>,
 }
 
 impl ProxyStatusService {
     pub fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
-        let cache = Arc::new(RwLock::new(None));
+        // Create initial empty status
+        let initial_status = ProxyStatusResponse {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            supported_proof_type: 0, // Will be updated immediately
+            workers: Vec::new(),
+        };
+
+        let (status_tx, _) = watch::channel(initial_status);
         let update_interval = Duration::from_secs(CACHE_UPDATE_INTERVAL_SECS);
+
         Self {
             load_balancer,
             port,
-            cache,
+            status_tx,
             update_interval,
         }
     }
@@ -58,7 +62,7 @@ impl ProxyStatusService {
 
 async fn generate_and_store_status(
     load_balancer: &LoadBalancerState,
-    cache: &RwLock<Option<CachedStatus>>,
+    status_tx: &watch::Sender<CachedStatus>,
 ) {
     let workers = load_balancer.workers.read().await;
     let worker_statuses: Vec<WorkerStatus> = workers
@@ -78,13 +82,13 @@ async fn generate_and_store_status(
         workers: worker_statuses,
     };
 
-    let mut cache_write = cache.write().await;
-    *cache_write = Some(status);
+    // This will notify all receivers of the new status
+    let _ = status_tx.send(status);
 }
 
 impl ProxyStatusGrpcService {
-    fn new(cache: Arc<RwLock<Option<CachedStatus>>>) -> Self {
-        Self { cache }
+    fn new(status_rx: watch::Receiver<CachedStatus>) -> Self {
+        Self { status_rx }
     }
 }
 
@@ -94,13 +98,9 @@ impl ProxyStatusApi for ProxyStatusGrpcService {
         &self,
         _request: Request<ProxyStatusRequest>,
     ) -> Result<Response<ProxyStatusResponse>, Status> {
-        let cache_read = self.cache.read().await;
-        if let Some(cached_response) = cache_read.as_ref() {
-            Ok(Response::new(cached_response.clone()))
-        } else {
-            // This should not happen since we populate the cache on startup
-            Err(Status::unavailable("Status not available yet"))
-        }
+        // Get the latest status, or wait for it if it hasn't been set yet
+        let status = self.status_rx.borrow().clone();
+        Ok(Response::new(status))
     }
 }
 
@@ -127,13 +127,13 @@ impl Service for ProxyStatusService {
             },
         };
 
-        // Generate initial cache entry
-        generate_and_store_status(&self.load_balancer, &self.cache).await;
-        info!("Initial cache populated for gRPC status service");
+        // Generate initial status
+        generate_and_store_status(&self.load_balancer, &self.status_tx).await;
+        info!("Initial status populated for gRPC status service");
 
-        // Start the cache updater task
+        // Start the status updater task
         let load_balancer = self.load_balancer.clone();
-        let cache = self.cache.clone();
+        let status_tx = self.status_tx.clone();
         let update_interval = self.update_interval;
         let mut cache_updater_shutdown = shutdown.clone();
 
@@ -143,18 +143,18 @@ impl Service for ProxyStatusService {
             loop {
                 tokio::select! {
                     _ = update_timer.tick() => {
-                        generate_and_store_status(&load_balancer, &cache).await;
+                        generate_and_store_status(&load_balancer, &status_tx).await;
                     }
                     _ = cache_updater_shutdown.changed() => {
-                        info!("Cache updater received shutdown signal");
+                        info!("Status updater received shutdown signal");
                         break;
                     }
                 }
             }
         });
 
-        // Create the gRPC service implementation
-        let grpc_service = ProxyStatusGrpcService::new(self.cache.clone());
+        // Create the gRPC service implementation with a new receiver
+        let grpc_service = ProxyStatusGrpcService::new(self.status_tx.subscribe());
         let status_server = ProxyStatusApiServer::new(grpc_service);
 
         // Build the tonic server

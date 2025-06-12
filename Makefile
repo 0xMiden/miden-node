@@ -81,6 +81,7 @@ check: ## Check all targets and features for errors without code generation
 build: ## Builds all crates and re-builds ptotobuf bindings for proto crates
 	${BUILD_PROTO} cargo build --locked --workspace --exclude miden-proving-service # miden-tx async feature on.
 	${BUILD_PROTO} cargo build --locked -p miden-proving-service  # miden-tx async feature off
+	${BUILD_PROTO} cargo build --locked -p miden-proving-service-client --target wasm32-unknown-unknown --no-default-features  # no-std compatible build
 
 # --- installing ----------------------------------------------------------------------------------
 

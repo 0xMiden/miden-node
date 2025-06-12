@@ -21,8 +21,8 @@ http                   = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { workspace = true }
 miden-node-utils       = { workspace = true }
-miden-objects          = { workspace = true }
-miden-tx               = { workspace = true }
+miden-objects          = { default-features = true, workspace = true }
+miden-tx               = { default-features = true, workspace = true }
 nom                    = { version = "8.0" }
 semver                 = { version = "1.0" }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }

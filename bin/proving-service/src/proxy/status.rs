@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use pingora::{server::ListenFds, services::Service};
 use tokio::{
     net::TcpListener,
-    sync::{RwLock, watch::Receiver},
+    sync::{RwLock, watch},
     time::interval,
 };
 use tokio_stream::wrappers::TcpListenerStream;
@@ -109,7 +109,7 @@ impl Service for ProxyStatusService {
     async fn start_service(
         &mut self,
         #[cfg(unix)] _fds: Option<ListenFds>,
-        mut shutdown: Receiver<bool>,
+        mut shutdown: watch::Receiver<bool>,
         _listeners_per_fd: usize,
     ) {
         info!("Starting gRPC status service on port {}", self.port);
@@ -168,7 +168,7 @@ impl Service for ProxyStatusService {
 
         // Run the server
         if let Err(e) = server.await {
-            error!("gRPC status service error: {}", e);
+            error!(err=?e, "gRPC status service failed");
         } else {
             info!("gRPC status service stopped gracefully");
         }

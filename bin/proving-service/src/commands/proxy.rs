@@ -117,7 +117,7 @@ impl StartProxy {
 
         // Add gRPC status service
         let status_service = ProxyStatusService::new(worker_lb, self.proxy_config.status_port);
-        info!("gRPC status service will start on port {}", self.proxy_config.status_port);
+        info!(port = %self.proxy_config.status_port, "gRPC status service starting");
 
         server.add_service(health_check_service);
         server.add_service(update_workers_service);

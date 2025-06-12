@@ -1,10 +1,9 @@
-use core::time::Duration;
-
 use alloc::{
     string::{String, ToString},
     sync::Arc,
     vec::Vec,
 };
+use core::time::Duration;
 
 use miden_objects::{
     batch::{ProposedBatch, ProvenBatch},

@@ -1,10 +1,9 @@
-use core::time::Duration;
-
 use alloc::{
     boxed::Box,
     string::{String, ToString},
     sync::Arc,
 };
+use core::time::Duration;
 
 use miden_objects::{
     transaction::{ProvenTransaction, TransactionWitness},

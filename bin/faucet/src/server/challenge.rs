@@ -37,12 +37,13 @@ impl Challenge {
     /// Creates a new challenge with the given parameters.
     /// The signature is computed internally using the provided secret.
     pub fn new(difficulty: usize, timestamp: u64, secret: [u8; 32], account_id: AccountId) -> Self {
-        let signature = Self::compute_signature(secret, difficulty, timestamp);
+        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
+        let signature = Self::compute_signature(secret, difficulty, timestamp, &account_id_bytes);
         Self {
             difficulty,
             timestamp,
             signature,
-            account_id: account_id.into(),
+            account_id: account_id_bytes,
         }
     }
 
@@ -70,11 +71,12 @@ impl Challenge {
 
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-        let signature: [u8; 32] = bytes[16..48].try_into().unwrap();
-        let account_id: [u8; AccountId::SERIALIZED_SIZE] = bytes[48..63].try_into().unwrap();
+        let account_id: [u8; AccountId::SERIALIZED_SIZE] = bytes[16..31].try_into().unwrap();
+        let signature: [u8; 32] = bytes[31..63].try_into().unwrap();
 
         // Verify the signature
-        let expected_signature = Self::compute_signature(secret, difficulty, timestamp);
+        let expected_signature =
+            Self::compute_signature(secret, difficulty, timestamp, &account_id);
         if signature == expected_signature {
             Ok(Self::from_parts(difficulty, timestamp, account_id, signature))
         } else {
@@ -87,8 +89,8 @@ impl Challenge {
         let mut bytes = Vec::with_capacity(63);
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
-        bytes.extend_from_slice(&self.signature);
         bytes.extend_from_slice(&self.account_id);
+        bytes.extend_from_slice(&self.signature);
         bytes.to_hex_with_prefix()
     }
 
@@ -105,17 +107,29 @@ impl Challenge {
         leading_zeros >= self.difficulty
     }
 
+    /// Checks that the requested account ID matches the one in the challenge.
+    pub fn validate_account_id(&self, account_id: AccountId) -> bool {
+        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
+        self.account_id == account_id_bytes
+    }
+
     /// Checks if the challenge timestamp is expired.
     pub fn is_expired(&self, current_time: u64) -> bool {
         (current_time - self.timestamp) > CHALLENGE_LIFETIME_SECONDS
     }
 
     /// Computes the signature for a challenge.
-    fn compute_signature(secret: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
+    fn compute_signature(
+        secret: [u8; 32],
+        difficulty: usize,
+        timestamp: u64,
+        account_id: &[u8],
+    ) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         hasher.update(secret);
         hasher.update(difficulty.to_le_bytes());
         hasher.update(timestamp.to_le_bytes());
+        hasher.update(account_id);
         hasher.finalize().into()
     }
 }

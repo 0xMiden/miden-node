@@ -138,12 +138,18 @@ impl PoW {
         timestamp: u64,
         challenge: &str,
         nonce: u64,
+        account_id: AccountId,
     ) -> Result<(), InvalidRequest> {
         let challenge = Challenge::decode(challenge, self.secret)?;
 
         // Check timestamp validity
         if challenge.is_expired(timestamp) {
             return Err(InvalidRequest::ExpiredServerTimestamp(challenge.timestamp, timestamp));
+        }
+
+        // Validate the account ID
+        if !challenge.validate_account_id(account_id) {
+            return Err(InvalidRequest::InvalidPoW);
         }
 
         // Validate the proof of work
@@ -261,11 +267,13 @@ mod tests {
         let challenge = pow.build_challenge(account_id);
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let result = pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce);
+        let result =
+            pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce, account_id);
         assert!(result.is_ok());
 
         // Try to use the same challenge again with different nonce- should fail
-        let result = pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce + 1);
+        let result =
+            pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce + 1, account_id);
         assert!(result.is_err());
     }
 

@@ -245,12 +245,13 @@ impl Server {
         &self,
         challenge: &str,
         nonce: u64,
+        account_id: AccountId,
     ) -> Result<(), InvalidRequest> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
-        self.pow.submit_challenge(timestamp, challenge, nonce)
+        self.pow.submit_challenge(timestamp, challenge, nonce, account_id)
     }
 }
 

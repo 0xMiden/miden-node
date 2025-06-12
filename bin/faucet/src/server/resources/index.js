@@ -100,7 +100,9 @@ document.addEventListener('DOMContentLoaded', function () {
         // Get the PoW challenge from the new /pow endpoint
         let powResponse;
         try {
-            powResponse = await fetch(window.location.href + 'pow', {
+            powResponse = await fetch(window.location.href + 'pow?' + new URLSearchParams({
+                account_id: accountAddress
+            }), {
                 method: "GET"
             });
         } catch (error) {
@@ -132,7 +134,6 @@ document.addEventListener('DOMContentLoaded', function () {
             nonce: nonce
         };
 
-
         const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams(params));
 
         evtSource.onopen = function () {
@@ -151,7 +152,7 @@ document.addEventListener('DOMContentLoaded', function () {
             evtSource.close();
 
             const data = JSON.parse(event.data);
-            showError('Failed to receive tokens. ' + data.message);
+            showError('Failed to receive tokens: ' + data.message);
             setLoadingState(false);
         });
 

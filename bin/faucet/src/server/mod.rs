@@ -1,15 +1,15 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     convert::Infallible,
     net::SocketAddr,
-    sync::{Arc, atomic::AtomicUsize},
+    sync::{Arc, Mutex, atomic::AtomicUsize},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
 use axum::{
-    Json, Router,
-    extract::{FromRef, Query, State},
+    Router,
+    extract::{FromRef, Query},
     response::sse::Event,
     routing::get,
 };
@@ -39,14 +39,17 @@ use url::Url;
 use crate::{
     COMPONENT,
     faucet::{FaucetId, MintRequest},
-    server::get_tokens::InvalidRequest,
+    server::{get_pow::get_pow, get_tokens::InvalidRequest},
     types::AssetOptions,
 };
 
+mod api_key;
 mod challenge;
 mod frontend;
+mod get_pow;
 mod get_tokens;
 mod pow;
+pub use api_key::ApiKey;
 
 // FAUCET STATE
 // ================================================================================================
@@ -59,8 +62,8 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow: PoW,
-    api_keys: BTreeSet<String>,
-    active_requests: Arc<AtomicUsize>,
+    api_keys: BTreeSet<ApiKey>,
+    active_requests_per_key: Arc<Mutex<HashMap<ApiKey, Arc<AtomicUsize>>>>,
 }
 
 impl Server {
@@ -69,7 +72,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_secret: &str,
-        api_keys: BTreeSet<String>,
+        api_keys: BTreeSet<ApiKey>,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
         let metadata = Metadata {
@@ -90,7 +93,7 @@ impl Server {
             mint_state,
             metadata,
             pow,
-            active_requests: Arc::new(AtomicUsize::new(0)),
+            active_requests_per_key: Arc::new(Mutex::new(HashMap::new())),
             api_keys,
         }
     }
@@ -157,9 +160,7 @@ impl Server {
                 .route("/background.png", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
-                .route("/pow", get(|State(pow): State<PoW>| async move {
-                    Json(pow.build_challenge())
-                }))
+                .route("/pow", get(get_pow))
                 // TODO: This feels rather ugly, and would be nice to move but I can't figure out the types.
                 .route(
                     "/get_tokens",
@@ -247,12 +248,20 @@ impl Server {
         &self,
         challenge: &str,
         nonce: u64,
+        account_id: AccountId,
+        api_key: Option<String>,
     ) -> Result<(), InvalidRequest> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
-        self.pow.submit_challenge(timestamp, challenge, nonce)
+        self.pow.submit_challenge(
+            timestamp,
+            challenge,
+            nonce,
+            account_id,
+            &ApiKey::decode(api_key)?,
+        )
     }
 }
 

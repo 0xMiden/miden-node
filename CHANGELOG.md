@@ -11,6 +11,7 @@
 
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#TODO).
 
 ### Fixes
 

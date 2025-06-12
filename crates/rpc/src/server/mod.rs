@@ -4,7 +4,7 @@ use accept::AcceptLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
 use miden_node_proto_build::rpc_api_descriptor;
-use miden_node_utils::{cors::cors_layer, tracing::grpc::rpc_trace_fn};
+use miden_node_utils::{cors::cors_for_grpc_web_layer, tracing::grpc::rpc_trace_fn};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;
@@ -47,7 +47,7 @@ impl Rpc {
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
             .layer(AcceptLayer::new()?)
-            .layer(cors_layer())
+            .layer(cors_for_grpc_web_layer())
             // Enables gRPC-web support.
             .layer(GrpcWebLayer::new())
             .add_service(api_service)

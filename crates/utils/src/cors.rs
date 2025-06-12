@@ -37,7 +37,7 @@ const DEFAULT_ALLOW_HEADERS: [HeaderName; 4] = [
 ///   - `http::header::CONTENT_TYPE`
 ///   - `HeaderName::from_static("x-user-agent")`
 ///   - `HeaderName::from_static("grpc-timeout")`
-pub fn cors_layer() -> CorsLayer {
+pub fn cors_for_grpc_web_layer() -> CorsLayer {
     CorsLayer::new()
         .allow_origin(AllowOrigin::mirror_request())
         .allow_credentials(true)

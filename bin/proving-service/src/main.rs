@@ -28,7 +28,7 @@ mod test {
     use std::time::Duration;
 
     use miden_lib::transaction::TransactionKernel;
-    use miden_node_utils::cors::cors_layer;
+    use miden_node_utils::cors::cors_for_grpc_web_layer;
     use miden_objects::{
         asset::{Asset, FungibleAsset},
         note::NoteType,
@@ -63,7 +63,7 @@ mod test {
         tokio::spawn(async move {
             tonic::transport::Server::builder()
                 .accept_http1(true)
-                .layer(cors_layer())
+                .layer(cors_for_grpc_web_layer())
                 .layer(GrpcWebLayer::new())
                 .add_service(api_service)
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))

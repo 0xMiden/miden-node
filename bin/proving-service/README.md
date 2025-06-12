@@ -218,7 +218,7 @@ You can query the status endpoint using a gRPC client. For example, using `grpcu
 
 ```bash
 grpcurl -plaintext -import-path ./proto -proto proxy_status.proto \
-  -d '{}' localhost:<status_port> proxy_status.ProxyStatusApi.Status
+  -d '{}' localhost:8084 proxy_status.ProxyStatusApi.Status
 ```
 
 Example response:

@@ -1,3 +1,5 @@
+use core::time::Duration;
+
 use alloc::{
     string::{String, ToString},
     sync::Arc,
@@ -65,9 +67,16 @@ impl RemoteBatchProver {
 
         #[cfg(not(target_arch = "wasm32"))]
         let new_client = {
-            ApiClient::connect(self.endpoint.clone())
+            let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
+                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .timeout(Duration::from_millis(10000));
+            let channel = endpoint
+                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
+                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .connect()
                 .await
-                .map_err(|_| RemoteProverError::ConnectionFailed(self.endpoint.to_string()))?
+                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?;
+            ApiClient::new(channel)
         };
 
         *client = Some(new_client);

@@ -68,7 +68,7 @@ impl RemoteBlockProver {
         let new_client = {
             ApiClient::connect(self.endpoint.clone())
                 .await
-                .map_err(|_| RemoteProverError::ConnectionFailed(self.endpoint.to_string()))?
+                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
         };
 
         *client = Some(new_client);

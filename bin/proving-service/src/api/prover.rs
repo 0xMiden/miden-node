@@ -73,7 +73,7 @@ impl ProverRpcApi {
             .try_lock()
             .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
             .prove(transaction_witness)
-            .map_err(internal_error)?;
+            .map_err(internal_error.into())?;
 
         // Record the transaction_id in the current tracing span
         let transaction_id = proof.id();

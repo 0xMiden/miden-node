@@ -14,7 +14,7 @@ pub mod status;
 
 pub use proving_service::*;
 
-use crate::api::ProverType;
+use crate::api::ProofType as DomainProofType;
 
 // CONVERSIONS
 // ================================================================================================
@@ -57,33 +57,33 @@ impl TryFrom<ProvingRequest> for ProposedBlock {
     }
 }
 
-impl From<ProverType> for ProofType {
-    fn from(value: ProverType) -> Self {
+impl From<DomainProofType> for ProofType {
+    fn from(value: DomainProofType) -> Self {
         match value {
-            ProverType::Transaction => ProofType::Transaction,
-            ProverType::Batch => ProofType::Batch,
-            ProverType::Block => ProofType::Block,
+            DomainProofType::Transaction => ProofType::Transaction,
+            DomainProofType::Batch => ProofType::Batch,
+            DomainProofType::Block => ProofType::Block,
         }
     }
 }
 
-impl From<ProofType> for ProverType {
+impl From<ProofType> for DomainProofType {
     fn from(value: ProofType) -> Self {
         match value {
-            ProofType::Transaction => ProverType::Transaction,
-            ProofType::Batch => ProverType::Batch,
-            ProofType::Block => ProverType::Block,
+            ProofType::Transaction => DomainProofType::Transaction,
+            ProofType::Batch => DomainProofType::Batch,
+            ProofType::Block => DomainProofType::Block,
         }
     }
 }
 
-impl TryFrom<i32> for ProverType {
+impl TryFrom<i32> for DomainProofType {
     type Error = String;
     fn try_from(value: i32) -> Result<Self, Self::Error> {
         match value {
-            0 => Ok(ProverType::Transaction),
-            1 => Ok(ProverType::Batch),
-            2 => Ok(ProverType::Block),
+            0 => Ok(DomainProofType::Transaction),
+            1 => Ok(DomainProofType::Batch),
+            2 => Ok(DomainProofType::Block),
             _ => Err(format!("unknown ProverType value: {value}")),
         }
     }

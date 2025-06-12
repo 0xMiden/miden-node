@@ -4,7 +4,7 @@ use std::{
 };
 
 use miden_proving_service::{
-    api::ProverType,
+    api::ProofType,
     error::ProvingServiceError,
     generated::status::{StatusRequest, status_api_client::StatusApiClient},
 };
@@ -160,7 +160,7 @@ impl Worker {
     /// being sent to it. If a previously unhealthy worker becomes healthy, it will be marked as
     /// available and the proxy will start sending incoming requests to it.
     #[allow(clippy::too_many_lines)]
-    pub async fn check_status(&mut self, supported_prover_type: ProverType) {
+    pub async fn check_status(&mut self, supported_proof_type: ProofType) {
         if !self.should_do_health_check() {
             return;
         }
@@ -240,7 +240,7 @@ impl Worker {
         self.version = worker_status.version;
 
         let worker_supported_proof_type =
-            match ProverType::try_from(worker_status.supported_proof_type) {
+            match ProofType::try_from(worker_status.supported_proof_type) {
                 Ok(proof_type) => proof_type,
                 Err(e) => {
                     error!(
@@ -262,7 +262,7 @@ impl Worker {
                 },
             };
 
-        if supported_prover_type != worker_supported_proof_type {
+        if supported_proof_type != worker_supported_proof_type {
             self.set_health_status(WorkerHealthStatus::Unhealthy {
                 num_failed_attempts: failed_attempts + 1,
                 first_fail_timestamp: match &self.health_status {

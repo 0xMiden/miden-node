@@ -29,6 +29,7 @@ pub struct RemoveWorkers {
     /// Workers to be removed from the proxy.
     ///
     /// The workers are passed as host:port strings.
+    #[arg(value_name = "WORKERS", env = "MPS_PROXY_WORKERS_LIST", value_delimiter = ',')]
     workers: Vec<String>,
     /// Port of the proxy endpoint to update workers.
     #[arg(long, default_value = "8083", env = "MPS_CONTROL_PORT")]

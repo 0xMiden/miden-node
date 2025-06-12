@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use miden_proving_service::api::ProverType;
+use miden_proving_service::api::ProofType;
 use pingora::{
     apps::HttpServerApp,
     http::ResponseHeader,
@@ -27,7 +27,7 @@ pub struct WorkerStatus {
 #[derive(Debug, Serialize)]
 pub struct ProxyStatus {
     version: String,
-    prover_type: ProverType,
+    proof_type: ProofType,
     workers: Vec<WorkerStatus>,
 }
 
@@ -54,7 +54,7 @@ impl ProxyStatusService {
 
         let status = ProxyStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            prover_type: self.load_balancer.supported_prover_type,
+            proof_type: self.load_balancer.supported_proof_type,
             workers: worker_statuses,
         };
 

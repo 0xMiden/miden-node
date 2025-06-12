@@ -10,13 +10,13 @@ use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 
-use crate::generated::{ProofType, ProvingRequest, ProvingResponse, api_server::Api as ProverApi};
+use crate::generated::{self, ProvingRequest, ProvingResponse, api_server::Api as ProverApi};
 
 pub const MIDEN_PROVING_SERVICE: &str = "miden-proving-service";
 
 /// Specifies the type of proving supported.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
-pub enum ProverType {
+pub enum ProofType {
     /// Transaction proving
     #[default]
     Transaction,
@@ -26,35 +26,24 @@ pub enum ProverType {
     Block,
 }
 
-impl ProverType {
-    /// Returns the corresponding `ProofType` from the generated code
-    pub fn to_proof_type(&self) -> crate::generated::ProofType {
-        match self {
-            ProverType::Transaction => crate::generated::ProofType::Transaction,
-            ProverType::Batch => crate::generated::ProofType::Batch,
-            ProverType::Block => crate::generated::ProofType::Block,
-        }
-    }
-}
-
-impl std::fmt::Display for ProverType {
+impl std::fmt::Display for ProofType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ProverType::Transaction => write!(f, "transaction"),
-            ProverType::Batch => write!(f, "batch"),
-            ProverType::Block => write!(f, "block"),
+            ProofType::Transaction => write!(f, "transaction"),
+            ProofType::Batch => write!(f, "batch"),
+            ProofType::Block => write!(f, "block"),
         }
     }
 }
 
-impl std::str::FromStr for ProverType {
+impl std::str::FromStr for ProofType {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "transaction" => Ok(ProverType::Transaction),
-            "batch" => Ok(ProverType::Batch),
-            "block" => Ok(ProverType::Block),
+            "transaction" => Ok(ProofType::Transaction),
+            "batch" => Ok(ProofType::Batch),
+            "block" => Ok(ProofType::Block),
             _ => Err(format!("Invalid proof type: {s}")),
         }
     }
@@ -71,15 +60,15 @@ enum Prover {
 }
 
 impl Prover {
-    fn new(prover_type: ProverType) -> Self {
-        match prover_type {
-            ProverType::Transaction => {
+    fn new(proof_type: ProofType) -> Self {
+        match proof_type {
+            ProofType::Transaction => {
                 Self::Transaction(Mutex::new(LocalTransactionProver::default()))
             },
-            ProverType::Batch => {
+            ProofType::Batch => {
                 Self::Batch(Mutex::new(LocalBatchProver::new(MIN_PROOF_SECURITY_LEVEL)))
             },
-            ProverType::Block => {
+            ProofType::Block => {
                 Self::Block(Mutex::new(LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL)))
             },
         }
@@ -91,8 +80,8 @@ pub struct ProverRpcApi {
 }
 
 impl ProverRpcApi {
-    pub fn new(prover_type: ProverType) -> Self {
-        let prover = Prover::new(prover_type);
+    pub fn new(proof_type: ProofType) -> Self {
+        let prover = Prover::new(proof_type);
 
         Self { prover }
     }
@@ -204,15 +193,15 @@ impl ProverApi for ProverRpcApi {
         request: Request<ProvingRequest>,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
         match request.get_ref().proof_type() {
-            ProofType::Transaction => {
+            generated::ProofType::Transaction => {
                 let tx_witness = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_tx(tx_witness)
             },
-            ProofType::Batch => {
+            generated::ProofType::Batch => {
                 let proposed_batch = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_batch(proposed_batch)
             },
-            ProofType::Block => {
+            generated::ProofType::Block => {
                 let proposed_block = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_block(proposed_block)
             },
@@ -255,8 +244,8 @@ mod test {
     use tonic::Request;
 
     use crate::{
-        api::{ProverRpcApi, prover::ProverType},
-        generated::{ProofType, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
+        api::{ProverRpcApi, prover::ProofType},
+        generated::{self, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
     };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -264,9 +253,9 @@ mod test {
         // Start the server in the background
         let listener = TcpListener::bind("127.0.0.1:50052").await.unwrap();
 
-        let prover_type = ProverType::Transaction;
+        let proof_type = ProofType::Transaction;
 
-        let api_service = ApiServer::new(ProverRpcApi::new(prover_type));
+        let api_service = ApiServer::new(ProverRpcApi::new(proof_type));
 
         // Spawn the server as a background task
         tokio::spawn(async move {
@@ -317,12 +306,12 @@ mod test {
         let transaction_witness = TransactionWitness::from(executed_transaction);
 
         let request_1 = Request::new(ProvingRequest {
-            proof_type: ProofType::Transaction.into(),
+            proof_type: generated::ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });
 
         let request_2 = Request::new(ProvingRequest {
-            proof_type: ProofType::Transaction.into(),
+            proof_type: generated::ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });
 

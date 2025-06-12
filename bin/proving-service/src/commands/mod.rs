@@ -1,9 +1,11 @@
 use clap::Parser;
-use miden_proving_service::api::{MIDEN_PROVING_SERVICE, ProverType};
+use miden_proving_service::api::ProofType;
 use proxy::StartProxy;
 use tracing::instrument;
 use update_workers::{AddWorkers, RemoveWorkers, UpdateWorkers};
 use worker::StartWorker;
+
+use crate::utils::MIDEN_PROVING_SERVICE;
 
 pub mod proxy;
 pub mod update_workers;
@@ -51,8 +53,8 @@ pub(crate) struct ProxyConfig {
     ///
     /// The type of proof the proxy will handle. Only workers that support the same prover type
     /// will be able to connect to the proxy.
-    #[arg(long, default_value = "transaction", env = "MPS_PROVER_TYPE")]
-    pub(crate) prover_type: ProverType,
+    #[arg(long, default_value = "transaction", env = "MPS_PROOF_TYPE")]
+    pub(crate) proof_type: ProofType,
     /// Status port.
     ///
     /// Port used to get the status of the proxy. It is used to get the list of workers and their

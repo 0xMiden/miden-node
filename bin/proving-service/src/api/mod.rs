@@ -5,7 +5,7 @@ use crate::generated::{api_server::ApiServer, status::status_api_server::StatusA
 pub(crate) mod prover;
 mod status;
 
-pub use prover::{MIDEN_PROVING_SERVICE, ProverRpcApi, ProverType};
+pub use prover::{ProofType, ProverRpcApi};
 
 pub struct RpcListener {
     pub api_service: ApiServer<ProverRpcApi>,
@@ -14,9 +14,9 @@ pub struct RpcListener {
 }
 
 impl RpcListener {
-    pub fn new(listener: TcpListener, prover_type: ProverType) -> Self {
-        let prover_rpc_api = ProverRpcApi::new(prover_type);
-        let status_rpc_api = status::StatusRpcApi::new(prover_type);
+    pub fn new(listener: TcpListener, proof_type: ProofType) -> Self {
+        let prover_rpc_api = ProverRpcApi::new(proof_type);
+        let status_rpc_api = status::StatusRpcApi::new(proof_type);
         let api_service = ApiServer::new(prover_rpc_api);
         let status_service = StatusApiServer::new(status_rpc_api);
         Self { api_service, status_service, listener }

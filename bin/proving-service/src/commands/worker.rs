@@ -1,12 +1,14 @@
 use clap::Parser;
 use miden_proving_service::{
-    api::{MIDEN_PROVING_SERVICE, ProverType, RpcListener},
+    api::{ProofType, RpcListener},
     generated::api_server::ApiServer,
 };
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_health::server::health_reporter;
 use tracing::{info, instrument};
+
+use crate::utils::MIDEN_PROVING_SERVICE;
 
 /// Starts a worker.
 #[derive(Debug, Parser)]
@@ -17,9 +19,9 @@ pub struct StartWorker {
     /// The port of the worker
     #[arg(long, default_value = "50051", env = "MPS_WORKER_PORT")]
     port: u16,
-    /// The type of prover that the worker will be handling
-    #[arg(long, env = "MPS_WORKER_PROVER_TYPE")]
-    prover_type: ProverType,
+    /// The type of proof that the worker will be handling
+    #[arg(long, env = "MPS_WORKER_PROOF_TYPE")]
+    proof_type: ProofType,
 }
 
 impl StartWorker {
@@ -38,7 +40,7 @@ impl StartWorker {
         let worker_addr = format!("{}:{}", host, self.port);
         let rpc = RpcListener::new(
             TcpListener::bind(&worker_addr).await.map_err(|err| err.to_string())?,
-            self.prover_type,
+            self.proof_type,
         );
 
         info!(

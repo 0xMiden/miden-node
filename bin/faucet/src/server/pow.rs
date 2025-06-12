@@ -7,6 +7,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use axum::{
+    Json,
+    extract::{Query, State},
+    response::IntoResponse,
+};
+use http::StatusCode;
+use miden_node_utils::ErrorReport;
+use miden_objects::{AccountIdError, account::AccountId};
+use serde::Deserialize;
 use tokio::time::{Duration, interval};
 
 use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
@@ -20,7 +29,48 @@ const MAX_DIFFICULTY: usize = 24;
 /// The number of active requests to increase the difficulty by 1.
 const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY;
 
-// POW
+// POW REQUEST VALIDATION
+// ================================================================================================
+
+/// Used to receive the initial `get_pow` request from the user.
+#[derive(Deserialize)]
+pub struct RawPowRequest {
+    pub account_id: String,
+}
+
+impl RawPowRequest {
+    pub fn validate(self) -> Result<AccountId, InvalidPowRequest> {
+        let account_id =
+            AccountId::from_hex(&self.account_id).map_err(InvalidPowRequest::AccountId)?;
+        Ok(account_id)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum InvalidPowRequest {
+    #[error("account ID failed to parse")]
+    AccountId(#[source] AccountIdError),
+}
+
+impl IntoResponse for InvalidPowRequest {
+    fn into_response(self) -> axum::response::Response {
+        (StatusCode::BAD_REQUEST, self.as_report()).into_response()
+    }
+}
+
+// POW ENDPOINT
+// ================================================================================================
+
+pub async fn get_pow(
+    State(pow): State<PoW>,
+    Query(params): Query<RawPowRequest>,
+) -> Result<impl IntoResponse, InvalidPowRequest> {
+    let account_id = params.validate()?;
+    let challenge = pow.build_challenge(account_id);
+    Ok(Json(challenge))
+}
+
+// POW STATE
 // ================================================================================================
 
 #[derive(Clone)]
@@ -49,7 +99,7 @@ impl PoW {
     }
 
     /// Generates a new challenge.
-    pub fn build_challenge(&self) -> Challenge {
+    pub fn build_challenge(&self, account_id: AccountId) -> Challenge {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
@@ -57,7 +107,7 @@ impl PoW {
 
         let difficulty = self.difficulty.load(Ordering::Relaxed);
 
-        Challenge::new(difficulty, timestamp, self.secret)
+        Challenge::new(difficulty, timestamp, self.secret, account_id)
     }
 
     /// Adjust the difficulty of the `PoW`.
@@ -187,8 +237,9 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
 
-        let challenge = Challenge::new(difficulty, timestamp, secret);
+        let challenge = Challenge::new(difficulty, timestamp, secret, account_id);
 
         let encoded = challenge.encode();
         let decoded = Challenge::decode(&encoded, secret).unwrap();
@@ -206,7 +257,8 @@ mod tests {
         // Set difficulty to 1 for faster testing
         pow.difficulty.store(1, Ordering::Relaxed);
 
-        let challenge = pow.build_challenge();
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let challenge = pow.build_challenge(account_id);
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
         let result = pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce);
@@ -295,12 +347,13 @@ mod tests {
             .as_secs();
 
         // Valid timestamp (current time)
-        let challenge = Challenge::new(1, current_time, secret);
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let challenge = Challenge::new(1, current_time, secret, account_id);
         assert!(!challenge.is_expired(current_time));
 
         // Expired timestamp (too old)
         let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
-        let challenge = Challenge::new(1, old_timestamp, secret);
+        let challenge = Challenge::new(1, old_timestamp, secret, account_id);
         assert!(challenge.is_expired(current_time));
     }
 }

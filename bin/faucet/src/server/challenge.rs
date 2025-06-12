@@ -1,3 +1,4 @@
+use miden_objects::account::AccountId;
 use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Deserialize, Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
@@ -14,6 +15,7 @@ pub(crate) const CHALLENGE_LIFETIME_SECONDS: u64 = 30;
 pub struct Challenge {
     pub(crate) difficulty: usize,
     pub(crate) timestamp: u64,
+    pub(crate) account_id: [u8; AccountId::SERIALIZED_SIZE],
     pub(crate) signature: [u8; 32],
 }
 
@@ -34,36 +36,47 @@ impl Serialize for Challenge {
 impl Challenge {
     /// Creates a new challenge with the given parameters.
     /// The signature is computed internally using the provided secret.
-    pub fn new(difficulty: usize, timestamp: u64, secret: [u8; 32]) -> Self {
+    pub fn new(difficulty: usize, timestamp: u64, secret: [u8; 32], account_id: AccountId) -> Self {
         let signature = Self::compute_signature(secret, difficulty, timestamp);
-        Self { difficulty, timestamp, signature }
+        Self {
+            difficulty,
+            timestamp,
+            signature,
+            account_id: account_id.into(),
+        }
     }
 
     /// Creates a challenge from existing parts (used for decoding).
-    pub fn from_parts(difficulty: usize, timestamp: u64, signature: [u8; 32]) -> Self {
-        Self { difficulty, timestamp, signature }
+    pub fn from_parts(
+        difficulty: usize,
+        timestamp: u64,
+        account_id: [u8; AccountId::SERIALIZED_SIZE],
+        signature: [u8; 32],
+    ) -> Self {
+        Self {
+            difficulty,
+            timestamp,
+            account_id,
+            signature,
+        }
     }
 
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
     /// in the context of the specified secret.
     pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidRequest> {
         // Parse the hex-encoded challenge string
-        let bytes = hex_to_bytes::<48>(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
+        let bytes: [u8; 63] =
+            hex_to_bytes(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
 
-        if bytes.len() != 48 {
-            // 8 + 8 + 32 bytes
-            return Err(InvalidRequest::MissingPowParameters);
-        }
-
-        // SAFETY: Length of 48 is enforced above.
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let signature: [u8; 32] = bytes[16..48].try_into().unwrap();
+        let account_id: [u8; AccountId::SERIALIZED_SIZE] = bytes[48..63].try_into().unwrap();
 
         // Verify the signature
         let expected_signature = Self::compute_signature(secret, difficulty, timestamp);
         if signature == expected_signature {
-            Ok(Self::from_parts(difficulty, timestamp, signature))
+            Ok(Self::from_parts(difficulty, timestamp, account_id, signature))
         } else {
             Err(InvalidRequest::ServerSignaturesDoNotMatch)
         }
@@ -71,10 +84,11 @@ impl Challenge {
 
     /// Encodes the challenge into a hex string.
     pub fn encode(&self) -> String {
-        let mut bytes = Vec::with_capacity(48);
+        let mut bytes = Vec::with_capacity(63);
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         bytes.extend_from_slice(&self.signature);
+        bytes.extend_from_slice(&self.account_id);
         bytes.to_hex_with_prefix()
     }
 
@@ -113,7 +127,8 @@ mod tests {
     #[test]
     fn test_challenge_serialization() {
         let secret = [1u8; 32];
-        let challenge = Challenge::new(2, 1_234_567_890, secret);
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let challenge = Challenge::new(2, 1_234_567_890, secret, account_id);
 
         // Test that it serializes to the expected JSON format
         let json = serde_json::to_string(&challenge).unwrap();

@@ -5,6 +5,7 @@ use alloc::{
 };
 use core::time::Duration;
 
+use lunal_attestation::verify::verify_attestation;
 use miden_objects::{
     transaction::{ProvenTransaction, TransactionWitness},
     utils::{Deserializable, DeserializationError, Serializable},
@@ -110,6 +111,17 @@ impl TransactionProver for RemoteTransactionProver {
         let response = client.prove(request).await.map_err(|err| {
             TransactionProverError::other_with_source("failed to prove transaction", err)
         })?;
+
+        // Extract the attestation report from metadata
+        if let Some(attestation_value) = response.metadata().get("Attestation-Report") {
+            // Verify the attestation
+            verify_attestation(attestation_value.to_str().unwrap()).await.map_err(|err| {
+                TransactionProverError::other_with_source(
+                    "failed to verify transaction attestation",
+                    err,
+                )
+            })?;
+        }
 
         // Deserialize the response bytes back into a ProvenTransaction.
         let proven_transaction =

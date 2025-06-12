@@ -5,13 +5,13 @@
 ### Enhancements
 
 - Added support for gRPC server side reflection to all components (#949).
-- Added support for TLS to `miden-proving-service-client` (#TODO).
+- Added support for TLS to `miden-proving-service-client` (#968).
 
 ### Changes
 
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
-- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#TODO).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
 
 ### Fixes
 

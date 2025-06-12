@@ -62,8 +62,8 @@ impl Rpc {
 #[cfg(test)]
 mod tests {
     use http::{
-        HeaderMap, HeaderValue, Version,
-        header::{ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE},
+        HeaderMap, HeaderValue,
+        header::{ACCEPT, CONTENT_TYPE},
     };
     use tokio::net::TcpListener;
 
@@ -88,7 +88,6 @@ mod tests {
         let accept_header = concat!("application/vnd.miden.", env!("CARGO_PKG_VERSION"), "+grpc");
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
         headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
-        headers.insert(ACCEPT_ENCODING, HeaderValue::from_static("gzip"));
 
         // An empty message with header format:
         //   - A byte indicating uncompressed (0)
@@ -102,13 +101,11 @@ mod tests {
 
         let response = client
             .post(format!("http://{rpc_addr}/rpc.Api/Status"))
-            .version(Version::HTTP_11)
             .headers(headers)
             .body(message)
             .send()
             .await
             .unwrap();
-
         let headers = response.headers();
 
         // CORS headers are usually set when `tonic_web` is enabled.

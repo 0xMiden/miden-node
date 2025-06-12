@@ -17,7 +17,7 @@ use miden_node_proto::{
             SyncNoteResponse, SyncStateResponse,
         },
         rpc::api_server,
-        store::api_client as store_client,
+        store::rpc_client as store_client,
     },
     try_convert,
 };
@@ -40,7 +40,7 @@ use crate::COMPONENT;
 // RPC SERVICE
 // ================================================================================================
 
-type StoreClient = store_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+type StoreClient = store_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
 type BlockProducerClient =
     block_producer_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 
@@ -58,7 +58,7 @@ impl RpcService {
             let store_url = format!("http://{store_address}");
             // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
             let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-            let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            let store = store_client::RpcClient::with_interceptor(channel, OtelInterceptor);
             info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
             store
         };

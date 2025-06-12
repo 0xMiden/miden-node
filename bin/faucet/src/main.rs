@@ -145,7 +145,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 faucet.faucet_id(),
                 config.asset_amount_options.clone(),
                 tx_requests,
-                config.pow_salt,
+                &config.pow_secret,
                 BTreeSet::from_iter(config.api_keys),
             );
 
@@ -433,8 +433,8 @@ mod test {
             command: crate::Command::CreateFaucetAccount {
                 output_path: faucet_account_path.clone(),
                 token_symbol: "TEST".to_string(),
-                decimals: 2,
-                max_supply: 1000,
+                decimals: 6,
+                max_supply: 1_000_000_000_000,
             },
         })
         .await

@@ -26,7 +26,13 @@ tonic                 = { default-features = false, features = ["codegen", "pros
 tonic-web-wasm-client = { default-features = false, version = "0.7" }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
-tonic     = { default-features = false, features = ["codegen", "prost", "transport"], version = "0.13" }
+tonic     = { default-features = false, features = [
+  "codegen",
+  "prost",
+  "tls",
+  "tls-native-roots",
+  "transport"
+], version = "0.13" }
 tonic-web = { optional = true, version = "0.13" }
 
 [lints]

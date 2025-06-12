@@ -21,7 +21,7 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::{error, instrument};
 
-use super::{Server, pow::PowParameters};
+use super::Server;
 use crate::{
     COMPONENT,
     faucet::MintRequest,
@@ -50,11 +50,8 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
-    pub pow_seed: Option<String>,
-    pub pow_solution: Option<u64>,
-    pub pow_difficulty: Option<usize>,
-    pub server_signature: Option<String>,
-    pub server_timestamp: Option<u64>,
+    pub challenge: Option<String>,
+    pub nonce: Option<u64>,
     pub api_key: Option<String>,
 }
 
@@ -143,11 +140,10 @@ impl RawMintRequest {
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
     ///   - the API key is invalid
-    ///   - the `PoW` parameters are missing
-    ///   - the `PoW` solution is invalid
-    ///   - the `PoW` server signature does not match
-    ///   - the `PoW` server timestamp is expired
-    ///   - the `PoW` challenge is invalid or expired
+    ///   - the challenge is missing or invalid
+    ///   - the nonce is missing or doesn't solve the challenge
+    ///   - the challenge timestamp is expired
+    ///   - the challenge has already been used
     #[instrument(level = "debug", target = COMPONENT, name = "faucet.server.validate", skip_all)]
     fn validate(self, server: &Server) -> Result<MintRequest, InvalidRequest> {
         let note_type = if self.is_private_note {
@@ -178,13 +174,11 @@ impl RawMintRequest {
             return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
         }
 
-        if let Ok(pow_parameters) = PowParameters::try_from(&self) {
-            pow_parameters.check_pow_solution(&server.pow.challenge_cache)?;
-            pow_parameters.check_server_timestamp()?;
-            pow_parameters.check_server_signature(&server.pow.salt)?;
-        } else {
-            return Err(InvalidRequest::MissingPowParameters);
-        }
+        // Validate Challenge and nonce
+        let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;
+        let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
+
+        server.submit_challenge(&challenge_str, nonce)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

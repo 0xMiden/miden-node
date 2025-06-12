@@ -33,6 +33,7 @@ tonic = { default-features = false, features = [
   "tls-native-roots",
   "transport",
 ], version = "0.12" }
+lunal-attestation = { git = "https://github.com/lunal-dot-dev/attestation-rs.git" }
 tonic-web = { optional = true, version = "0.12" }
 
 [lints]

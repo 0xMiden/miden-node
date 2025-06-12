@@ -1,4 +1,5 @@
 use clap::{Parser, ValueEnum};
+use miden_node_utils::cors::cors_layer;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -100,6 +101,7 @@ impl StartWorker {
 
         tonic::transport::Server::builder()
             .accept_http1(true)
+            .layer(cors_layer())
             .layer(GrpcWebLayer::new())
             .add_service(rpc.api_service)
             .add_service(rpc.status_service)

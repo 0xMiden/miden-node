@@ -64,7 +64,7 @@ tokio-stream                 = { version = "0.1" }
 tonic                        = { version = "0.13" }
 tonic-reflection             = { version = "0.13" }
 tower                        = { version = "0.5" }
-tower-http                   = { features = ["trace"], version = "0.6" }
+tower-http                   = { features = ["cors", "trace"], version = "0.6" }
 tracing                      = { version = "0.1" }
 tracing-subscriber           = { features = ["env-filter", "fmt", "json"], version = "0.3" }
 url                          = { features = ["serde"], version = "2.5" }

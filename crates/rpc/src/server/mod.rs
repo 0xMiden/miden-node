@@ -4,11 +4,11 @@ use accept::AcceptLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
 use miden_node_proto_build::rpc_api_descriptor;
-use miden_node_utils::tracing::grpc::rpc_trace_fn;
+use miden_node_utils::{cors::cors_layer, tracing::grpc::rpc_trace_fn};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;
-use tower::Layer;
+use tonic_web::GrpcWebLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
 
@@ -47,9 +47,9 @@ impl Rpc {
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn))
             .layer(AcceptLayer::new()?)
+            .layer(cors_layer())
             // Enables gRPC-web support.
-            .layer(tonic_web::GrpcWebLayer::new())
-            // .add_service(tonic_web::GrpcWebLayer::new().layer(api_service))
+            .layer(GrpcWebLayer::new())
             .add_service(api_service)
             .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
@@ -61,7 +61,8 @@ impl Rpc {
 #[cfg(test)]
 mod tests {
     use http::{
-        header::{ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE}, HeaderMap, HeaderValue, Version
+        HeaderMap, HeaderValue, Version,
+        header::{ACCEPT, ACCEPT_ENCODING, CONTENT_TYPE},
     };
     use tokio::net::TcpListener;
 
@@ -107,9 +108,8 @@ mod tests {
             .await
             .unwrap();
 
-        println!("response: {:?}", response);
         let headers = response.headers();
-        println!("headers: {:?}", headers);
+
         // CORS headers are usually set when `tonic_web` is enabled.
         //
         // This was deduced by manually checking, and isn't formally described

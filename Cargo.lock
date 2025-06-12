@@ -1133,7 +1133,7 @@ checksum = "335ff9f135e4384c8150d6f27c6daed433577f86b4750418338c01a1a2528592"
 dependencies = [
  "cfg-if",
  "libc",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi 0.11.1+wasi-snapshot-preview1",
 ]
 
 [[package]]
@@ -1244,9 +1244,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hermit-abi"
-version = "0.5.1"
+version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f154ce46856750ed433c8649605bf7ed2de3bc35fd9d2a9f30cddd873c80cb08"
+checksum = "fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c"
 
 [[package]]
 name = "hex"
@@ -1671,7 +1671,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.0",
+ "windows-targets 0.53.1",
 ]
 
 [[package]]
@@ -1848,9 +1848,9 @@ checksum = "47e1ffaa40ddd1f3ed91f717a33c8c0ee23fff369e3aa8772b9605cc1d22f4c3"
 
 [[package]]
 name = "memchr"
-version = "2.7.4"
+version = "2.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
+checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 
 [[package]]
 name = "miden-air"
@@ -1884,9 +1884,9 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9d56092d4f95231029398f419e4844a029f5751515b28c57e2184e08e0fb84f"
+checksum = "b520ab886a684af9c29b08f5f902466849ebebc28eb980fd89b5ef31629189f6"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -1935,7 +1935,7 @@ dependencies = [
 
 [[package]]
 name = "miden-faucet"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1982,9 +1982,9 @@ dependencies = [
 
 [[package]]
 name = "miden-lib"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0c431f6de2408ccad6958c2d2a3f96399d67d05c5d783a692f5399910061452"
+checksum = "d0e244ca7fab9fe1d7e6b68871ba84831b26f545b33bbe4dec41b524119b5e82"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2060,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-block-producer"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-ntx-builder"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "hex",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto-build"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "prost",
@@ -2148,7 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-rpc"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "futures",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-store"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-stress-test"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "clap",
  "futures",
@@ -2229,7 +2229,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-utils"
-version = "0.9.1"
+version = "0.9.2"
 dependencies = [
  "anyhow",
  "figment",
@@ -2254,9 +2254,9 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c826da7048d600fba5794aa85c18366d7379604647f1f5d11ecebf68b5bd16c"
+checksum = "e1c136b3d1c22f1dd275a47fbd37dbbd38409f73c0042471dc41a9f12c2091f9"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2303,9 +2303,9 @@ dependencies = [
 
 [[package]]
 name = "miden-proving-service-client"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00c6bbabefccb613831188b065ebf5a4dd0cc0b002a8ee6a10cc9d50c316ded6"
+checksum = "7f13cea231d846e2b64f451311126e139eebc73e49ab2f27da1822a36a83d438"
 dependencies = [
  "async-trait",
  "getrandom 0.3.3",
@@ -2334,9 +2334,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df56744ebc643d505b027392e890a8b978f33e705c5f82d7b66363f3333526a5"
+checksum = "3dab7773df79da0d3fa3d80e7cb0d83a9877befa2b6530cfbe055aefcbc176dc"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2351,9 +2351,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch-prover"
-version = "0.9.2"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5112cf732734de7c6e59889562601e1a12e8103f093d9f8fb7af828c8d0844b"
+checksum = "c886f05fd0c050747da95cc27659843d27211a60a1d293edce453625dcde5f69"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -2430,7 +2430,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78bed444cc8a2160f01cbcf811ef18cac863ad68ae8ca62092e8db51d51c761c"
 dependencies = [
  "libc",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.59.0",
 ]
 
@@ -3138,15 +3138,15 @@ dependencies = [
 
 [[package]]
 name = "quanta"
-version = "0.12.5"
+version = "0.12.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bd1fe6824cea6538803de3ff1bc0cf3949024db3d43c9643024bfb33a807c0e"
+checksum = "f3ab5a9d756f0d97bdc89019bd2e4ea098cf9cde50ee7564dde6b81ccc8f06c7"
 dependencies = [
  "crossbeam-utils",
  "libc",
  "once_cell",
  "raw-cpuid",
- "wasi 0.11.0+wasi-snapshot-preview1",
+ "wasi 0.11.1+wasi-snapshot-preview1",
  "web-sys",
  "winapi",
 ]
@@ -4690,9 +4690,9 @@ dependencies = [
 
 [[package]]
 name = "wasi"
-version = "0.11.0+wasi-snapshot-preview1"
+version = "0.11.1+wasi-snapshot-preview1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
+checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
 
 [[package]]
 name = "wasi"
@@ -4860,9 +4860,9 @@ checksum = "712e227841d057c1ee1cd2fb22fa7e5a5461ae8e48fa2ca79ec42cfc1931183f"
 
 [[package]]
 name = "windows"
-version = "0.61.1"
+version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5ee8f3d025738cb02bad7868bbb5f8a6327501e870bf51f1b455b0a2454a419"
+checksum = "e2b85ac982d24496e0b49912479da8a89c0ba7b1d8bf6de49df12af42e94b325"
 dependencies = [
  "windows-collections",
  "windows-core",
@@ -4928,9 +4928,9 @@ dependencies = [
 
 [[package]]
 name = "windows-link"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76840935b766e1b0a05c0066835fb9ec80071d4c09a16f6bd5f7e655e3c14c38"
+checksum = "d3bfe459f85da17560875b8bf1423d6f113b7a87a5d942e7da0ac71be7c61f8b"
 
 [[package]]
 name = "windows-numerics"
@@ -5020,9 +5020,9 @@ dependencies = [
 
 [[package]]
 name = "windows-targets"
-version = "0.53.0"
+version = "0.53.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b1e4c7e8ceaaf9cb7d7507c974735728ab453b67ef8f18febdd7c11fe59dca8b"
+checksum = "30357ec391cde730f8fbfcdc29adc47518b06504528df977ab5af02ef23fdee9"
 dependencies = [
  "windows_aarch64_gnullvm 0.53.0",
  "windows_aarch64_msvc 0.53.0",
@@ -5183,9 +5183,9 @@ checksum = "271414315aff87387382ec3d271b52d7ae78726f5d44ac98b4f4030c91880486"
 
 [[package]]
 name = "winnow"
-version = "0.7.10"
+version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c06928c8748d81b05c9be96aad92e1b6ff01833332f281e8cfca3be4b35fc9ec"
+checksum = "74c7b26e3480b707944fc872477815d29a8e429d2f93a1ce000f5fa84a15cbcd"
 dependencies = [
  "memchr",
 ]

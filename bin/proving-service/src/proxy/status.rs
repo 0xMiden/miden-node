@@ -26,6 +26,9 @@ const CACHE_UPDATE_INTERVAL_SECS: u64 = 5;
 /// Cached proxy status response
 type CachedStatus = ProxyStatusResponse;
 
+// PROXY STATUS SERVICE
+// ================================================================================================
+
 /// gRPC service that implements Pingora's Service trait
 pub struct ProxyStatusService {
     load_balancer: Arc<LoadBalancerState>,
@@ -40,13 +43,9 @@ pub struct ProxyStatusGrpcService {
 }
 
 impl ProxyStatusService {
-    pub fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
-        // Create initial empty status
-        let initial_status = ProxyStatusResponse {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            supported_proof_type: 0, // Will be updated immediately
-            workers: Vec::new(),
-        };
+    pub async fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
+        // Create initial status
+        let initial_status = generate_status(&load_balancer).await;
 
         let (status_tx, _) = watch::channel(initial_status);
         let update_interval = Duration::from_secs(CACHE_UPDATE_INTERVAL_SECS);
@@ -60,10 +59,19 @@ impl ProxyStatusService {
     }
 }
 
+/// Generates a new status and stores it in the cache.
 async fn generate_and_store_status(
     load_balancer: &LoadBalancerState,
     status_tx: &watch::Sender<CachedStatus>,
 ) {
+    let status = generate_status(load_balancer).await;
+
+    // This will notify all receivers of the new status
+    let _ = status_tx.send(status);
+}
+
+/// Generates a new status from the load balancer.
+async fn generate_status(load_balancer: &LoadBalancerState) -> ProxyStatusResponse {
     let workers = load_balancer.workers.read().await;
     let worker_statuses: Vec<WorkerStatus> = workers
         .iter()
@@ -76,16 +84,14 @@ async fn generate_and_store_status(
 
     let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
 
-    let status = ProxyStatusResponse {
+    ProxyStatusResponse {
         version: env!("CARGO_PKG_VERSION").to_string(),
         supported_proof_type: supported_proof_type as i32,
         workers: worker_statuses,
-    };
-
-    // This will notify all receivers of the new status
-    let _ = status_tx.send(status);
+    }
 }
 
+/// gRPC service that implements Pingora's Service trait
 impl ProxyStatusGrpcService {
     fn new(status_rx: watch::Receiver<CachedStatus>) -> Self {
         Self { status_rx }

@@ -54,7 +54,6 @@ tokio-stream                       = { features = ["net"], version = "0.1" }
 tonic                              = { default-features = false, features = ["codegen", "prost", "router", "transport"], version = "0.13" }
 tonic-health                       = { version = "0.13" }
 tonic-web                          = { version = "0.13" }
-tower                              = { workspace = true }
 tracing                            = { version = "0.1" }
 tracing-opentelemetry              = { version = "0.31" }
 tracing-subscriber                 = { features = ["env-filter", "fmt", "json"], version = "0.3" }

@@ -2556,6 +2556,7 @@ dependencies = [
  "clap 4.5.40",
  "miden-block-prover",
  "miden-lib",
+ "miden-node-proto-build",
  "miden-node-utils",
  "miden-objects",
  "miden-testing",
@@ -2598,6 +2599,7 @@ version = "0.10.0"
 dependencies = [
  "async-trait",
  "getrandom 0.3.3",
+ "miden-node-proto-build",
  "miden-objects",
  "miden-tx",
  "miette",

@@ -25,7 +25,7 @@ jobs:
         with:
           cache-binary: true
 
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           push: false

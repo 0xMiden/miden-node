@@ -34,7 +34,7 @@ impl BackgroundService for LoadBalancerState {
                     let mut workers = self.workers.write().await;
 
                     for worker in workers.iter_mut() {
-                        let status_result = worker.check_status(self.supported_prover_type).await;
+                        let status_result = worker.check_status(self.supported_proof_type).await;
 
                         if let Err(ref reason) = status_result {
                             error!(

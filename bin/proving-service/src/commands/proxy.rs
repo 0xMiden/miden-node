@@ -1,4 +1,5 @@
 use clap::Parser;
+use miden_proving_service::error::ProvingServiceError;
 use pingora::{
     apps::HttpServerOptions,
     prelude::{Opt, background_service},
@@ -11,7 +12,6 @@ use tracing::{info, warn};
 use super::ProxyConfig;
 use crate::{
     commands::PROXY_HOST,
-    error::ProvingServiceError,
     proxy::{
         LoadBalancer, LoadBalancerState, status::ProxyStatusService,
         update_workers::LoadBalancerUpdateService,

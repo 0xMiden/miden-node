@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -29,6 +29,10 @@ const MAX_DIFFICULTY: usize = 24;
 /// The number of active requests to increase the difficulty by 1.
 const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY;
 
+/// The time window in seconds for rate limiting per account ID.
+/// Must be less than [`CHALLENGE_LIFETIME_SECONDS`] to effectively rate limit.
+const ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS: u64 = 2;
+
 // POW REQUEST VALIDATION
 // ================================================================================================
 
@@ -40,8 +44,12 @@ pub struct RawPowRequest {
 
 impl RawPowRequest {
     pub fn validate(self) -> Result<AccountId, InvalidPowRequest> {
-        let account_id =
-            AccountId::from_hex(&self.account_id).map_err(InvalidPowRequest::AccountId)?;
+        let account_id = if self.account_id.starts_with("0x") {
+            AccountId::from_hex(&self.account_id)
+        } else {
+            AccountId::from_bech32(&self.account_id).map(|(_, account_id)| account_id)
+        }
+        .map_err(InvalidPowRequest::AccountId)?;
         Ok(account_id)
     }
 }
@@ -139,8 +147,23 @@ impl PoW {
         challenge: &str,
         nonce: u64,
         account_id: AccountId,
+        _api_key: Option<String>,
     ) -> Result<(), InvalidRequest> {
         let challenge = Challenge::decode(challenge, self.secret)?;
+
+        // Check if the last timestamp for the account id is within the rate limit time
+        let prev_timestamp = self
+            .challenge_cache
+            .account_id_timestamps
+            .lock()
+            .expect("PoW account id timestamps map lock poisoned")
+            .insert(account_id.to_hex(), timestamp);
+        let is_rate_limited = prev_timestamp.is_some_and(|prev_timestamp| {
+            (timestamp - prev_timestamp) > ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS
+        });
+        if is_rate_limited {
+            return Err(InvalidRequest::RateLimited);
+        }
 
         // Check timestamp validity
         if challenge.is_expired(timestamp) {
@@ -185,6 +208,8 @@ impl PoW {
 struct ChallengeCache {
     /// Once a challenge is added, it cannot be submitted again.
     challenges: Arc<Mutex<HashSet<Challenge>>>,
+    /// A map of account IDs to timestamps of their last challenge submission.
+    account_id_timestamps: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl ChallengeCache {
@@ -268,12 +293,17 @@ mod tests {
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
         let result =
-            pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce, account_id);
+            pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce, account_id, None);
         assert!(result.is_ok());
 
         // Try to use the same challenge again with different nonce- should fail
-        let result =
-            pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce + 1, account_id);
+        let result = pow.submit_challenge(
+            challenge.timestamp,
+            &challenge.encode(),
+            nonce + 1,
+            account_id,
+            None,
+        );
         assert!(result.is_err());
     }
 

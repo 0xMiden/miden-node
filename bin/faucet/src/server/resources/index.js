@@ -100,7 +100,9 @@ document.addEventListener('DOMContentLoaded', function () {
         // Get the PoW challenge from the new /pow endpoint
         let powResponse;
         try {
-            powResponse = await fetch(window.location.href + 'pow', {
+            powResponse = await fetch(window.location.href + 'pow?' + new URLSearchParams({
+                account_id: accountAddress
+            }), {
                 method: "GET"
             });
         } catch (error) {
@@ -131,7 +133,6 @@ document.addEventListener('DOMContentLoaded', function () {
             challenge: powData.challenge,
             nonce: nonce
         };
-
 
         const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams(params));
 

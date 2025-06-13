@@ -73,6 +73,8 @@ pub enum InvalidRequest {
     ExpiredServerTimestamp(u64, u64),
     #[error("challenge already used")]
     ChallengeAlreadyUsed,
+    #[error("account ID is rate limited")]
+    RateLimited,
 }
 
 pub enum GetTokenError {
@@ -178,7 +180,7 @@ impl RawMintRequest {
         let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;
         let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
 
-        server.submit_challenge(&challenge_str, nonce, account_id)?;
+        server.submit_challenge(&challenge_str, nonce, account_id, self.api_key)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

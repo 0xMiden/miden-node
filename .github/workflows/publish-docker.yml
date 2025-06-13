@@ -1,4 +1,4 @@
-name: Publish Node and Faucet Debian Packages
+name: Publish Node and Faucet Docker Images
 
 on:
   release:

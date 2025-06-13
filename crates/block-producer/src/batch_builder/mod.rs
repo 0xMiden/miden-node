@@ -7,7 +7,7 @@ use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL,
     batch::{BatchId, ProposedBatch, ProvenBatch},
 };
-use miden_delegated_prover_client::proving_service::batch_prover::RemoteBatchProver;
+use miden_proving_service_client::proving_service::batch_prover::RemoteBatchProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use rand::Rng;
 use tokio::{task::JoinSet, time};
@@ -48,10 +48,10 @@ pub struct BatchBuilder {
 }
 
 impl BatchBuilder {
-    /// Creates a new [`BatchBuilder`] with the given delegated batch prover URL and maximum concurrent batch
+    /// Creates a new [`BatchBuilder`] with the given remote batch prover URL and maximum concurrent batch
     /// building workers.
     ///
-    /// If no delegated batch prover URL is provided, a local batch prover is used instead.
+    /// If no remote batch prover URL is provided, a local batch prover is used instead.
     pub fn new(
         store: StoreClient,
         num_workers: NonZeroUsize,

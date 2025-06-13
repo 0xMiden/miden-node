@@ -86,7 +86,7 @@ impl Service for ProxyStatusPingoraService {
     async fn start_service(
         &mut self,
         #[cfg(unix)] _fds: Option<ListenFds>,
-        mut shutdown: watch::Receiver<bool>,
+        shutdown: watch::Receiver<bool>,
         _listeners_per_fd: usize,
     ) {
         info!("Starting gRPC status service on port {}", self.port);
@@ -107,25 +107,33 @@ impl Service for ProxyStatusPingoraService {
         // Start the status updater task
         let updater = ProxyStatusUpdater::new(self.load_balancer.clone(), self.status_tx.clone());
         let cache_updater_shutdown = shutdown.clone();
-        tokio::spawn(async move {
+        let updater_task = async move {
             updater.start(cache_updater_shutdown).await;
-        });
+        };
 
         // Build the tonic server with self as the gRPC API implementation
         let status_server = ProxyStatusApiServer::new(self.clone());
+        let mut server_shutdown = shutdown.clone();
         let server = Server::builder().add_service(status_server).serve_with_incoming_shutdown(
             TcpListenerStream::new(listener),
             async move {
-                let _ = shutdown.changed().await;
+                let _ = server_shutdown.changed().await;
                 info!("gRPC status service received shutdown signal");
             },
         );
 
-        // Run the server
-        if let Err(e) = server.await {
-            error!(err=?e, "gRPC status service failed");
-        } else {
-            info!("gRPC status service stopped gracefully");
+        // Run both the server and updater concurrently, if either fails, the whole service stops
+        tokio::select! {
+            result = server => {
+                if let Err(e) = result {
+                    error!(err=?e, "gRPC status service failed");
+                } else {
+                    info!("gRPC status service stopped gracefully");
+                }
+            }
+            _ = updater_task => {
+                error!("Status updater task ended unexpectedly");
+            }
         }
     }
 

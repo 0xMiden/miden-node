@@ -50,7 +50,7 @@ miden-node-store             = { path = "crates/store", version = "0.10" }
 miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.10" }
 miden-objects                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-delegated-prover-client = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-proving-service-client = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-testing                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-tx                     = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 miden-tx-batch-prover        = { branch = "next", git = "https://github.com/0xMiden/miden-base" }

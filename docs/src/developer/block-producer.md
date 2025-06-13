@@ -1,7 +1,7 @@
 # Block Producer Component
 
 The block-producer is responsible for ordering transactions into batches, and batches into blocks, and creating the
-proofs for these. Proving is usually outsourced to a delegated prover but can be done locally if throughput isn't
+proofs for these. Proving is usually outsourced to a remote prover but can be done locally if throughput isn't
 essential, e.g. for test purposes on a local node.
 
 It hosts a single gRPC endpoint to which the RPC component can forward new transactions.

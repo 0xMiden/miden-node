@@ -29,7 +29,7 @@ tokio                  = { features = ["macros", "net", "rt-multi-thread"], work
 tokio-stream           = { features = ["net"], workspace = true }
 tonic                  = { workspace = true }
 tonic-reflection       = { workspace = true }
-tonic-web              = { version = "0.12" }
+tonic-web              = { version = "0.13" }
 tower                  = { workspace = true }
 tower-http             = { features = ["trace"], workspace = true }
 tracing                = { workspace = true }

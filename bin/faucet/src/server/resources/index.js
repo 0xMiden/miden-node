@@ -152,7 +152,7 @@ document.addEventListener('DOMContentLoaded', function () {
             evtSource.close();
 
             const data = JSON.parse(event.data);
-            showError('Failed to receive tokens. ' + data.message);
+            showError('Failed to receive tokens: ' + data.message);
             setLoadingState(false);
         });
 

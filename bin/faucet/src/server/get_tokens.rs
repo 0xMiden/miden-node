@@ -73,7 +73,7 @@ pub enum InvalidRequest {
     ExpiredServerTimestamp(u64, u64),
     #[error("challenge already used")]
     ChallengeAlreadyUsed,
-    #[error("account ID is rate limited")]
+    #[error("account is rate limited")]
     RateLimited,
 }
 

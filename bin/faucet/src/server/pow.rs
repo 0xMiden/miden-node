@@ -31,7 +31,7 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 
 /// The time window in seconds for rate limiting per account ID.
 /// Must be less than [`CHALLENGE_LIFETIME_SECONDS`] to effectively rate limit.
-const ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS: u64 = 2;
+const ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS: u64 = 5;
 
 // POW REQUEST VALIDATION
 // ================================================================================================
@@ -159,7 +159,7 @@ impl PoW {
             .expect("PoW account id timestamps map lock poisoned")
             .insert(account_id.to_hex(), timestamp);
         let is_rate_limited = prev_timestamp.is_some_and(|prev_timestamp| {
-            (timestamp - prev_timestamp) > ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS
+            (timestamp - prev_timestamp) < ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS
         });
         if is_rate_limited {
             return Err(InvalidRequest::RateLimited);

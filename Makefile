@@ -81,6 +81,7 @@ check: ## Check all targets and features for errors without code generation
 build: ## Builds all crates and re-builds ptotobuf bindings for proto crates
 	${BUILD_PROTO} cargo build --locked --workspace --exclude miden-proving-service # miden-tx async feature on.
 	${BUILD_PROTO} cargo build --locked -p miden-proving-service  # miden-tx async feature off
+	${BUILD_PROTO} cargo build --locked -p miden-proving-service-client --target wasm32-unknown-unknown --no-default-features  # no-std compatible build
 
 # --- installing ----------------------------------------------------------------------------------
 
@@ -120,3 +121,21 @@ docker-run-node: ## Runs the Miden node as a Docker container
 			   -p 57291:57291 \
                -v miden-db:/db \
                -d miden-node-image
+
+.PHONY: docker-build-faucet
+docker-build-faucet: ## Builds the Miden faucet using Docker
+	@CREATED=$$(date) && \
+	VERSION=$$(cat bin/faucet/Cargo.toml | grep -m 1 '^version' | cut -d '"' -f 2) && \
+	COMMIT=$$(git rev-parse HEAD) && \
+	docker build --build-arg CREATED="$$CREATED" \
+        		 --build-arg VERSION="$$VERSION" \
+          		 --build-arg COMMIT="$$COMMIT" \
+                 -f bin/faucet/Dockerfile \
+                 -t miden-faucet-image .
+
+.PHONY: docker-run-faucet
+docker-run-faucet: ## Runs the Miden faucet as a Docker container
+	docker volume create miden-db
+	docker run --name miden-faucet \
+			   -p 8080:8080 \
+               -d miden-faucet-image

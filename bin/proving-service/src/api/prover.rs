@@ -229,6 +229,7 @@ mod test {
     use std::time::Duration;
 
     use miden_lib::transaction::TransactionKernel;
+    use miden_node_utils::cors::cors_for_grpc_web_layer;
     use miden_objects::{
         asset::{Asset, FungibleAsset},
         note::NoteType,
@@ -242,9 +243,10 @@ mod test {
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
     use tonic::Request;
+    use tonic_web::GrpcWebLayer;
 
     use crate::{
-        api::{ProverRpcApi, prover::ProofType},
+        api::{ProofType, ProverRpcApi},
         generated::{self, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
     };
 
@@ -261,7 +263,9 @@ mod test {
         tokio::spawn(async move {
             tonic::transport::Server::builder()
                 .accept_http1(true)
-                .add_service(tonic_web::enable(api_service))
+                .layer(cors_for_grpc_web_layer())
+                .layer(GrpcWebLayer::new())
+                .add_service(api_service)
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();

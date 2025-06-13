@@ -1,6 +1,6 @@
 use pingora::{prelude::sleep, server::ShutdownWatch, services::background::BackgroundService};
 use tonic::async_trait;
-use tracing::debug_span;
+use tracing::{debug_span, error};
 
 use super::LoadBalancerState;
 
@@ -34,7 +34,17 @@ impl BackgroundService for LoadBalancerState {
                     let mut workers = self.workers.write().await;
 
                     for worker in workers.iter_mut() {
-                        worker.check_status(self.supported_proof_type).await;
+                        let status_result = worker.check_status(self.supported_proof_type).await;
+
+                        if let Err(ref reason) = status_result {
+                            error!(
+                                err = %reason,
+                                worker.address = worker.address(),
+                                "Worker failed health check"
+                            );
+                        }
+
+                        worker.update_status(status_result);
                     }
                 }
                 // Sleep for the defined interval before the next health check

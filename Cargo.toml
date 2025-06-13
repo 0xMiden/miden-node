@@ -51,19 +51,20 @@ miden-node-rpc               = { path = "crates/rpc", version = "0.10" }
 miden-node-store             = { path = "crates/store", version = "0.10" }
 miden-node-test-macro        = { path = "crates/test-macro" }
 miden-node-utils             = { path = "crates/utils", version = "0.10" }
-miden-objects                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-objects                = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
 miden-proving-service-client = { path = "crates/proving-service-client", version = "0.10" }
 miden-testing                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx                     = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx                     = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
 miden-tx-batch-prover        = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }
 thiserror                    = { default-features = false, version = "2.0" }
 tokio                        = { features = ["rt-multi-thread"], version = "1.45" }
 tokio-stream                 = { version = "0.1" }
-tonic                        = { version = "0.12" }
+tonic                        = { version = "0.13" }
+tonic-reflection             = { version = "0.13" }
 tower                        = { version = "0.5" }
-tower-http                   = { features = ["trace"], version = "0.6" }
+tower-http                   = { features = ["cors", "trace"], version = "0.6" }
 tracing                      = { version = "0.1" }
 tracing-subscriber           = { features = ["env-filter", "fmt", "json"], version = "0.3" }
 url                          = { features = ["serde"], version = "2.5" }

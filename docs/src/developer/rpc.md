@@ -10,7 +10,7 @@ component), reducing the load in this critical component.
 
 ## RPC Versioning
 
-The RPC server enforces version requirements against connecting clients that povide the HTTP ACCEPT header. When this header is provided, its corresponding value must follow this format: `application/vnd.miden.v0.9.0+grpc`.
+The RPC server enforces version requirements against connecting clients that povide the HTTP ACCEPT header. When this header is provided, its corresponding value must follow this format: `application/vnd.miden.0.9.0+grpc`.
 
 If there is a mismatch in version, clients will encounter an error while executing gRPC requests against the RPC server with the following details:
 

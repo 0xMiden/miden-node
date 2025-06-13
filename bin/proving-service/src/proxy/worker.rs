@@ -153,16 +153,16 @@ impl Worker {
         }
     }
 
-    /// Checks the current status of the worker and marks the worker as healthy or unhealthy based
-    /// on the status.
+    /// Checks the current status of the worker and returns the result without updating worker
+    /// state.
     ///
-    /// If the worker is unhealthy, it will be marked as unavailable thus preventing requests from
-    /// being sent to it. If a previously unhealthy worker becomes healthy, it will be marked as
-    /// available and the proxy will start sending incoming requests to it.
+    /// Returns `Ok(())` if the worker is healthy and compatible, or `Err(reason)` if there's an
+    /// issue. The caller should use `update_status` to apply the result to the worker's health
+    /// status.
     #[allow(clippy::too_many_lines)]
-    pub async fn check_status(&mut self, supported_proof_type: ProofType) {
+    pub async fn check_status(&mut self, supported_proof_type: ProofType) -> Result<(), String> {
         if !self.should_do_health_check() {
-            return;
+            return Ok(());
         }
 
         // If we don't have a status client, try to recreate it
@@ -172,69 +172,26 @@ impl Worker {
                     info!("Successfully recreated status client for worker {}", self.address());
                 },
                 Err(err) => {
-                    let failed_attempts = self.num_failures();
-                    self.set_health_status(WorkerHealthStatus::Unhealthy {
-                        num_failed_attempts: failed_attempts + 1,
-                        first_fail_timestamp: match &self.health_status {
-                            WorkerHealthStatus::Unhealthy { first_fail_timestamp, .. } => {
-                                *first_fail_timestamp
-                            },
-                            _ => Instant::now(),
-                        },
-                        reason: format!("Failed to recreate status client: {err}"),
-                    });
-                    return;
+                    return Err(format!("Failed to recreate status client: {err}"));
                 },
             }
         }
-
-        let failed_attempts = self.num_failures();
 
         let worker_status =
             match self.status_client.as_mut().unwrap().status(StatusRequest {}).await {
                 Ok(response) => response.into_inner(),
                 Err(e) => {
                     error!("Failed to check worker status ({}): {}", self.address(), e);
-                    self.set_health_status(WorkerHealthStatus::Unhealthy {
-                        num_failed_attempts: failed_attempts + 1,
-                        first_fail_timestamp: match &self.health_status {
-                            WorkerHealthStatus::Unhealthy { first_fail_timestamp, .. } => {
-                                *first_fail_timestamp
-                            },
-                            _ => Instant::now(),
-                        },
-                        reason: e.message().to_string(),
-                    });
-                    return;
+                    return Err(e.message().to_string());
                 },
             };
 
         if worker_status.version.is_empty() {
-            self.set_health_status(WorkerHealthStatus::Unhealthy {
-                num_failed_attempts: failed_attempts + 1,
-                first_fail_timestamp: match &self.health_status {
-                    WorkerHealthStatus::Unhealthy { first_fail_timestamp, .. } => {
-                        *first_fail_timestamp
-                    },
-                    _ => Instant::now(),
-                },
-                reason: "Worker version is empty".to_string(),
-            });
-            return;
+            return Err("Worker version is empty".to_string());
         }
 
         if !is_valid_version(&WORKER_VERSION_REQUIREMENT, &worker_status.version).unwrap_or(false) {
-            self.set_health_status(WorkerHealthStatus::Unhealthy {
-                num_failed_attempts: failed_attempts + 1,
-                first_fail_timestamp: match &self.health_status {
-                    WorkerHealthStatus::Unhealthy { first_fail_timestamp, .. } => {
-                        *first_fail_timestamp
-                    },
-                    _ => Instant::now(),
-                },
-                reason: format!("Worker version is invalid ({})", worker_status.version),
-            });
-            return;
+            return Err(format!("Worker version is invalid ({})", worker_status.version));
         }
 
         self.version = worker_status.version;
@@ -248,35 +205,40 @@ impl Worker {
                         self.address(),
                         e
                     );
-                    self.set_health_status(WorkerHealthStatus::Unhealthy {
-                        num_failed_attempts: failed_attempts + 1,
-                        first_fail_timestamp: match &self.health_status {
-                            WorkerHealthStatus::Unhealthy { first_fail_timestamp, .. } => {
-                                *first_fail_timestamp
-                            },
-                            _ => Instant::now(),
-                        },
-                        reason: e.to_string(),
-                    });
-                    return;
+                    return Err(e.to_string());
                 },
             };
 
         if supported_proof_type != worker_supported_proof_type {
-            self.set_health_status(WorkerHealthStatus::Unhealthy {
-                num_failed_attempts: failed_attempts + 1,
-                first_fail_timestamp: match &self.health_status {
-                    WorkerHealthStatus::Unhealthy { first_fail_timestamp, .. } => {
-                        *first_fail_timestamp
-                    },
-                    _ => Instant::now(),
-                },
-                reason: format!("Unsupported prover type: {worker_supported_proof_type}"),
-            });
-            return;
+            return Err(format!("Unsupported proof type: {supported_proof_type}"));
         }
 
-        self.set_health_status(WorkerHealthStatus::Healthy);
+        Ok(())
+    }
+
+    /// Updates the worker's health status based on the result from `check_status`.
+    ///
+    /// If the result is `Ok(())`, the worker is marked as healthy.
+    /// If the result is `Err(reason)`, the worker is marked as unhealthy with the failure reason.
+    pub fn update_status(&mut self, check_result: Result<(), String>) {
+        match check_result {
+            Ok(()) => {
+                self.set_health_status(WorkerHealthStatus::Healthy);
+            },
+            Err(reason) => {
+                let failed_attempts = self.num_failures();
+                self.set_health_status(WorkerHealthStatus::Unhealthy {
+                    num_failed_attempts: failed_attempts + 1,
+                    first_fail_timestamp: match &self.health_status {
+                        WorkerHealthStatus::Unhealthy { first_fail_timestamp, .. } => {
+                            *first_fail_timestamp
+                        },
+                        _ => Instant::now(),
+                    },
+                    reason,
+                });
+            },
+        }
     }
 
     /// Sets the worker availability.

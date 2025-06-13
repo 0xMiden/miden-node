@@ -2556,6 +2556,7 @@ dependencies = [
  "clap 4.5.40",
  "miden-block-prover",
  "miden-lib",
+ "miden-node-proto-build",
  "miden-node-utils",
  "miden-objects",
  "miden-testing",

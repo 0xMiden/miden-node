@@ -1,5 +1,5 @@
 use miden_objects::transaction::{ExecutedTransaction, TransactionWitness};
-use miden_delegated_prover_client::proving_service::tx_prover::RemoteTransactionProver;
+use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{LocalTransactionProver, TransactionProver};
 use url::Url;
 

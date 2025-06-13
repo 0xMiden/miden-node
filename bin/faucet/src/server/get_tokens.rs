@@ -170,7 +170,7 @@ impl RawMintRequest {
 
         // Check the API key, if provided
         if let Some(api_key) = &self.api_key {
-            if !server.api_keys.contains(&ApiKey::new(Some(api_key.clone()))) {
+            if !server.api_keys.contains(&ApiKey::decode(Some(api_key.clone()))?) {
                 return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
             }
         }
@@ -218,21 +218,15 @@ pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let key_active_requests = server
-        .active_requests_per_key
-        .lock()
-        .unwrap()
-        .get(&ApiKey::new(request.api_key.clone()))
-        .unwrap()
-        .clone();
+    let api_key = ApiKey::decode(request.api_key.clone()).unwrap(); // TODO: this error should return invalid request
+    let key_active_requests =
+        server.active_requests_per_key.lock().unwrap().get(&api_key).unwrap().clone();
 
     // Track this as an active request for the entire duration
     let _active_guard = ActiveRequestGuard::new(key_active_requests.clone());
 
     let current_active_requests = key_active_requests.load(Ordering::Relaxed);
-    server
-        .pow
-        .adjust_difficulty(current_active_requests, ApiKey::new(request.api_key.clone()));
+    server.pow.adjust_difficulty(current_active_requests, api_key);
 
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);

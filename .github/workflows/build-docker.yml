@@ -5,7 +5,7 @@ on:
     branches: [main, next]
   pull_request:
     types: [opened, reopened, synchronize]
-    
+
 permissions:
   contents: read
 
@@ -15,12 +15,20 @@ jobs:
       matrix:
         component: [node, faucet]
     runs-on: ubuntu-latest
+    name: Build ${{ matrix.component }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          cache-binary: true
 
-      - name: Build Docker
-        run: make docker-build-${{ matrix.component }}
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          push: false
+          file: ./bin/${{ matrix.component }}/Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

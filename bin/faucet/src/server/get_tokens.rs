@@ -219,8 +219,13 @@ pub async fn get_tokens(
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let api_key = ApiKey::decode(request.api_key.clone()).unwrap(); // TODO: this error should return invalid request
-    let key_active_requests =
-        server.active_requests_per_key.lock().unwrap().get(&api_key).unwrap().clone();
+    let key_active_requests = server
+        .active_requests_per_key
+        .lock()
+        .unwrap()
+        .entry(api_key.clone())
+        .or_insert(Arc::new(AtomicUsize::new(0)))
+        .clone();
 
     // Track this as an active request for the entire duration
     let _active_guard = ActiveRequestGuard::new(key_active_requests.clone());

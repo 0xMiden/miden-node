@@ -142,12 +142,19 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
 
+            let api_keys = config
+                .api_keys
+                .iter()
+                .map(|k| ApiKey::decode(Some(k.clone())))
+                .collect::<Result<Vec<_>, _>>()
+                .context("failed to decode API keys")?;
+
             let server = Server::new(
                 faucet.faucet_id(),
                 config.asset_amount_options.clone(),
                 tx_requests,
                 &config.pow_secret,
-                BTreeSet::from_iter(config.api_keys),
+                BTreeSet::from_iter(api_keys),
             );
 
             // Capture in a variable to avoid moving into two branches
@@ -225,8 +232,9 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             let config_file_path = current_dir.join(config_path);
 
-            let api_keys =
-                (0..*generated_api_keys_count).map(|_| ApiKey::generate()).collect::<Vec<_>>();
+            let api_keys = (0..*generated_api_keys_count)
+                .map(|_| ApiKey::generate().encode())
+                .collect::<Vec<_>>();
 
             let mut config = FaucetConfig {
                 faucet_account_path: faucet_account_path.into(),

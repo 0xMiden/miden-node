@@ -67,7 +67,10 @@ impl ApiKey {
     /// Decodes the API key from a base64 string. This is used to decode the API key from the
     /// request.
     pub fn decode(api_key_str: Option<String>) -> Result<Self, InvalidRequest> {
-        let api_key_str = api_key_str.unwrap_or_default();
+        let Some(api_key_str) = api_key_str else {
+            return Ok(Self([0; 32]));
+        };
+        let api_key_str = api_key_str.trim_start_matches(API_KEY_PREFIX).to_string();
         let bytes = BASE64_STANDARD
             .decode(api_key_str.as_bytes())
             .map_err(|_| InvalidRequest::InvalidApiKey(api_key_str.clone()))?;
@@ -79,10 +82,8 @@ impl ApiKey {
 // #[test]
 // fn test_api_key_generation() {
 //     let api_key = ApiKey::generate();
-//     assert!(api_key.0.as_ref().unwrap().starts_with(API_KEY_PREFIX));
-//     let decoded = BASE64_STANDARD
-//         .decode(&api_key.0.unwrap().as_bytes()[API_KEY_PREFIX.len()..])
-//         .unwrap();
+//     assert!(api_key.0.starts_with(API_KEY_PREFIX));
+//     let decoded = BASE64_STANDARD.decode(&api_key.0[API_KEY_PREFIX.len()..]).unwrap();
 //     assert_eq!(decoded.len(), 32);
 // }
 

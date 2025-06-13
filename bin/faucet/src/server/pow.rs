@@ -1,9 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicUsize, Ordering},
-    },
+    sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -12,10 +9,13 @@ use axum::{
     extract::{Query, State},
     response::IntoResponse,
 };
+use base64::{Engine, prelude::BASE64_STANDARD};
 use http::StatusCode;
 use miden_node_utils::ErrorReport;
 use miden_objects::{AccountIdError, account::AccountId};
-use serde::Deserialize;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha20Rng;
+use serde::{Deserialize, Serialize};
 use tokio::time::{Duration, interval};
 
 use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
@@ -33,6 +33,54 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 /// Must be less than [`CHALLENGE_LIFETIME_SECONDS`] to effectively rate limit.
 const ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS: u64 = 5;
 
+// API KEY
+// ================================================================================================
+// TODO: move to a separate file
+pub const API_KEY_PREFIX: &str = "miden_faucet_";
+
+/// The API key is a base64 encoded string with the prefix `miden_faucet_`.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
+pub struct ApiKey(Option<String>);
+
+impl ApiKey {
+    pub fn new(api_key: Option<String>) -> Self {
+        Self(api_key)
+    }
+
+    /// Generates a random API key for the faucet.
+    pub fn generate_api_key() -> Self {
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let mut api_key = [0u8; 32];
+        rng.fill(&mut api_key);
+        Self(Some(format!("{API_KEY_PREFIX}{}", BASE64_STANDARD.encode(api_key))))
+    }
+}
+
+impl From<[u8; 32]> for ApiKey {
+    fn from(bytes: [u8; 32]) -> Self {
+        Self(Some(format!("{API_KEY_PREFIX}{}", BASE64_STANDARD.encode(bytes))))
+    }
+}
+
+impl From<ApiKey> for [u8; 32] {
+    fn from(api_key: ApiKey) -> Self {
+        let bytes = BASE64_STANDARD
+            .decode(api_key.0.clone().unwrap_or_default().as_bytes())
+            .unwrap();
+        bytes.try_into().unwrap()
+    }
+}
+
+#[test]
+fn test_api_key_generation() {
+    let api_key = ApiKey::generate_api_key();
+    assert!(api_key.0.as_ref().unwrap().starts_with(API_KEY_PREFIX));
+    let decoded = BASE64_STANDARD
+        .decode(&api_key.0.unwrap().as_bytes()[API_KEY_PREFIX.len()..])
+        .unwrap();
+    assert_eq!(decoded.len(), 32);
+}
+
 // POW REQUEST VALIDATION
 // ================================================================================================
 
@@ -40,17 +88,26 @@ const ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS: u64 = 5;
 #[derive(Deserialize)]
 pub struct RawPowRequest {
     pub account_id: String,
+    pub api_key: Option<String>,
+}
+
+pub struct PowRequest {
+    pub account_id: AccountId,
+    pub api_key: ApiKey,
 }
 
 impl RawPowRequest {
-    pub fn validate(self) -> Result<AccountId, InvalidPowRequest> {
+    pub fn validate(self) -> Result<PowRequest, InvalidPowRequest> {
         let account_id = if self.account_id.starts_with("0x") {
             AccountId::from_hex(&self.account_id)
         } else {
             AccountId::from_bech32(&self.account_id).map(|(_, account_id)| account_id)
         }
         .map_err(InvalidPowRequest::AccountId)?;
-        Ok(account_id)
+        Ok(PowRequest {
+            account_id,
+            api_key: ApiKey::new(self.api_key),
+        })
     }
 }
 
@@ -73,8 +130,8 @@ pub async fn get_pow(
     State(pow): State<PoW>,
     Query(params): Query<RawPowRequest>,
 ) -> Result<impl IntoResponse, InvalidPowRequest> {
-    let account_id = params.validate()?;
-    let challenge = pow.build_challenge(account_id);
+    let request = params.validate()?;
+    let challenge = pow.build_challenge(request);
     Ok(Json(challenge))
 }
 
@@ -84,7 +141,7 @@ pub async fn get_pow(
 #[derive(Clone)]
 pub(crate) struct PoW {
     secret: [u8; 32],
-    difficulty: Arc<AtomicUsize>,
+    difficulty_per_key: Arc<Mutex<HashMap<ApiKey, usize>>>,
     challenge_cache: ChallengeCache,
 }
 
@@ -101,21 +158,26 @@ impl PoW {
 
         Self {
             secret,
-            difficulty: Arc::new(AtomicUsize::new(1)),
+            difficulty_per_key: Arc::new(Mutex::new(HashMap::new())),
             challenge_cache,
         }
     }
 
     /// Generates a new challenge.
-    pub fn build_challenge(&self, account_id: AccountId) -> Challenge {
+    pub fn build_challenge(&self, request: PowRequest) -> Challenge {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
 
-        let difficulty = self.difficulty.load(Ordering::Relaxed);
+        let difficulty = *self
+            .difficulty_per_key
+            .lock()
+            .expect("PoW difficulty per key map lock poisoned")
+            .entry(request.api_key.clone())
+            .or_insert(1);
 
-        Challenge::new(difficulty, timestamp, self.secret, account_id)
+        Challenge::new(difficulty, timestamp, self.secret, request.account_id, request.api_key)
     }
 
     /// Adjust the difficulty of the `PoW`.
@@ -123,10 +185,13 @@ impl PoW {
     /// The difficulty is adjusted based on the number of active requests.
     /// The difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY` active
     /// requests. The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
-    pub fn adjust_difficulty(&self, active_requests: usize) {
+    pub fn adjust_difficulty(&self, active_requests: usize, api_key: ApiKey) {
         let new_difficulty =
             (active_requests / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY);
-        self.difficulty.store(new_difficulty, Ordering::Relaxed);
+        self.difficulty_per_key
+            .lock()
+            .expect("PoW difficulty per key map lock poisoned")
+            .insert(api_key, new_difficulty);
     }
 
     /// Submits a challenge.
@@ -147,7 +212,7 @@ impl PoW {
         challenge: &str,
         nonce: u64,
         account_id: AccountId,
-        _api_key: Option<String>,
+        api_key: &ApiKey,
     ) -> Result<(), InvalidRequest> {
         let challenge = Challenge::decode(challenge, self.secret)?;
 
@@ -170,13 +235,11 @@ impl PoW {
             return Err(InvalidRequest::ExpiredServerTimestamp(challenge.timestamp, timestamp));
         }
 
-        // Validate the account ID
-        if !challenge.validate_account_id(account_id) {
-            return Err(InvalidRequest::InvalidPoW);
-        }
-
-        // Validate the proof of work
-        if !challenge.validate_pow(nonce) {
+        // Validate the challenge
+        if !challenge.validate_account_id(account_id)
+            || !challenge.validate_api_key(api_key)
+            || !challenge.validate_pow(nonce)
+        {
             return Err(InvalidRequest::InvalidPoW);
         }
 
@@ -270,7 +333,8 @@ mod tests {
             .as_secs();
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
 
-        let challenge = Challenge::new(difficulty, timestamp, secret, account_id);
+        let challenge =
+            Challenge::new(difficulty, timestamp, secret, account_id, ApiKey::new(None));
 
         let encoded = challenge.encode();
         let decoded = Challenge::decode(&encoded, secret).unwrap();
@@ -285,15 +349,17 @@ mod tests {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
 
-        // Set difficulty to 1 for faster testing
-        pow.difficulty.store(1, Ordering::Relaxed);
-
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let challenge = pow.build_challenge(account_id);
+        let challenge = pow.build_challenge(PowRequest { account_id, api_key: ApiKey::new(None) });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
-        let result =
-            pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce, account_id, None);
+        let result = pow.submit_challenge(
+            challenge.timestamp,
+            &challenge.encode(),
+            nonce,
+            account_id,
+            &ApiKey::new(None),
+        );
         assert!(result.is_ok());
 
         // Try to use the same challenge again with different nonce- should fail
@@ -302,7 +368,7 @@ mod tests {
             &challenge.encode(),
             nonce + 1,
             account_id,
-            None,
+            &ApiKey::new(None),
         );
         assert!(result.is_err());
     }
@@ -313,13 +379,19 @@ mod tests {
         let pow = PoW::new(secret);
 
         // With 0 active requests, difficulty should be clamped to 1
-        pow.adjust_difficulty(0);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
+        pow.adjust_difficulty(0, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            1
+        );
 
         // With requests less than ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY,
         // difficulty should still be 1
-        pow.adjust_difficulty(40);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
+        pow.adjust_difficulty(40, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            1
+        );
     }
 
     #[tokio::test]
@@ -328,12 +400,18 @@ mod tests {
         let pow = PoW::new(secret);
 
         // With very high number of active requests, difficulty should be clamped to MAX_DIFFICULTY
-        pow.adjust_difficulty(2000);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), MAX_DIFFICULTY);
+        pow.adjust_difficulty(2000, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            MAX_DIFFICULTY
+        );
 
         // Test with an extremely high number
-        pow.adjust_difficulty(100_000);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), MAX_DIFFICULTY);
+        pow.adjust_difficulty(100_000, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            MAX_DIFFICULTY
+        );
     }
 
     #[tokio::test]
@@ -345,24 +423,39 @@ mod tests {
         // = 41
 
         // 41 active requests should give difficulty 1
-        pow.adjust_difficulty(41);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 1);
+        pow.adjust_difficulty(41, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            1
+        );
 
         // 82 active requests should give difficulty 2 (82 / 41 = 2)
-        pow.adjust_difficulty(82);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 2);
+        pow.adjust_difficulty(82, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            2
+        );
 
         // 123 active requests should give difficulty 3 (123 / 41 = 3)
-        pow.adjust_difficulty(123);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 3);
+        pow.adjust_difficulty(123, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            3
+        );
 
         // 205 active requests should give difficulty 5 (205 / 41 = 5)
-        pow.adjust_difficulty(205);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 5);
+        pow.adjust_difficulty(205, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            5
+        );
 
         // 984 active requests should give difficulty 24 (984 / 41 = 24)
-        pow.adjust_difficulty(984);
-        assert_eq!(pow.difficulty.load(Ordering::Relaxed), 24);
+        pow.adjust_difficulty(984, ApiKey::new(None));
+        assert_eq!(
+            pow.difficulty_per_key.lock().unwrap().get(&ApiKey::new(None)).unwrap().clone(),
+            24
+        );
     }
 
     #[test]
@@ -386,12 +479,12 @@ mod tests {
 
         // Valid timestamp (current time)
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let challenge = Challenge::new(1, current_time, secret, account_id);
+        let challenge = Challenge::new(1, current_time, secret, account_id, ApiKey::new(None));
         assert!(!challenge.is_expired(current_time));
 
         // Expired timestamp (too old)
         let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
-        let challenge = Challenge::new(1, old_timestamp, secret, account_id);
+        let challenge = Challenge::new(1, old_timestamp, secret, account_id, ApiKey::new(None));
         assert!(challenge.is_expired(current_time));
     }
 }

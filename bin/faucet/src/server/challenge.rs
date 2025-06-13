@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
 
 use super::get_tokens::InvalidRequest;
+use crate::server::ApiKey;
 
 /// The lifetime of a challenge.
 ///
@@ -17,6 +18,7 @@ pub struct Challenge {
     pub(crate) timestamp: u64,
     pub(crate) account_id: [u8; AccountId::SERIALIZED_SIZE],
     pub(crate) signature: [u8; 32],
+    pub(crate) api_key: ApiKey,
 }
 
 impl Serialize for Challenge {
@@ -36,7 +38,13 @@ impl Serialize for Challenge {
 impl Challenge {
     /// Creates a new challenge with the given parameters.
     /// The signature is computed internally using the provided secret.
-    pub fn new(difficulty: usize, timestamp: u64, secret: [u8; 32], account_id: AccountId) -> Self {
+    pub fn new(
+        difficulty: usize,
+        timestamp: u64,
+        secret: [u8; 32],
+        account_id: AccountId,
+        api_key: ApiKey,
+    ) -> Self {
         let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
         let signature = Self::compute_signature(secret, difficulty, timestamp, &account_id_bytes);
         Self {
@@ -44,6 +52,7 @@ impl Challenge {
             timestamp,
             signature,
             account_id: account_id_bytes,
+            api_key,
         }
     }
 
@@ -53,12 +62,14 @@ impl Challenge {
         timestamp: u64,
         account_id: [u8; AccountId::SERIALIZED_SIZE],
         signature: [u8; 32],
+        api_key: ApiKey,
     ) -> Self {
         Self {
             difficulty,
             timestamp,
             account_id,
             signature,
+            api_key,
         }
     }
 
@@ -66,19 +77,21 @@ impl Challenge {
     /// in the context of the specified secret.
     pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidRequest> {
         // Parse the hex-encoded challenge string
-        let bytes: [u8; 63] =
+        let bytes: [u8; 95] =
             hex_to_bytes(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
 
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let account_id: [u8; AccountId::SERIALIZED_SIZE] = bytes[16..31].try_into().unwrap();
         let signature: [u8; 32] = bytes[31..63].try_into().unwrap();
+        let api_key_bytes: [u8; 32] = bytes[63..95].try_into().unwrap();
+        let api_key: ApiKey = ApiKey::from(api_key_bytes);
 
         // Verify the signature
         let expected_signature =
             Self::compute_signature(secret, difficulty, timestamp, &account_id);
         if signature == expected_signature {
-            Ok(Self::from_parts(difficulty, timestamp, account_id, signature))
+            Ok(Self::from_parts(difficulty, timestamp, account_id, signature, api_key))
         } else {
             Err(InvalidRequest::ServerSignaturesDoNotMatch)
         }
@@ -91,6 +104,8 @@ impl Challenge {
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         bytes.extend_from_slice(&self.account_id);
         bytes.extend_from_slice(&self.signature);
+        let api_key_bytes: [u8; 32] = self.api_key.clone().into();
+        bytes.extend_from_slice(&api_key_bytes);
         bytes.to_hex_with_prefix()
     }
 
@@ -111,6 +126,11 @@ impl Challenge {
     pub fn validate_account_id(&self, account_id: AccountId) -> bool {
         let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
         self.account_id == account_id_bytes
+    }
+
+    /// Checks that the requested api key matches the one in the challenge.
+    pub fn validate_api_key(&self, api_key: &ApiKey) -> bool {
+        self.api_key == *api_key
     }
 
     /// Checks if the challenge timestamp is expired.
@@ -142,7 +162,7 @@ mod tests {
     fn test_challenge_serialization() {
         let secret = [1u8; 32];
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let challenge = Challenge::new(2, 1_234_567_890, secret, account_id);
+        let challenge = Challenge::new(2, 1_234_567_890, secret, account_id, ApiKey::new(None));
 
         // Test that it serializes to the expected JSON format
         let json = serde_json::to_string(&challenge).unwrap();

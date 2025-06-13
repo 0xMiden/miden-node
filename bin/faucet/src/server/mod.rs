@@ -1,8 +1,8 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     convert::Infallible,
     net::SocketAddr,
-    sync::{Arc, atomic::AtomicUsize},
+    sync::{Arc, Mutex, atomic::AtomicUsize},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -47,6 +47,7 @@ mod challenge;
 mod frontend;
 mod get_tokens;
 mod pow;
+pub use pow::ApiKey;
 
 // FAUCET STATE
 // ================================================================================================
@@ -59,8 +60,9 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow: PoW,
-    api_keys: BTreeSet<String>,
-    active_requests: Arc<AtomicUsize>,
+    api_keys: BTreeSet<ApiKey>,
+    active_requests_per_key: Arc<Mutex<HashMap<ApiKey, Arc<AtomicUsize>>>>, /* TODO: use wrapper
+                                                                             * struct? */
 }
 
 impl Server {
@@ -69,7 +71,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_secret: &str,
-        api_keys: BTreeSet<String>,
+        api_keys: BTreeSet<ApiKey>,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
         let metadata = Metadata {
@@ -90,7 +92,7 @@ impl Server {
             mint_state,
             metadata,
             pow,
-            active_requests: Arc::new(AtomicUsize::new(0)),
+            active_requests_per_key: Arc::new(Mutex::new(HashMap::new())),
             api_keys,
         }
     }
@@ -252,7 +254,8 @@ impl Server {
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
-        self.pow.submit_challenge(timestamp, challenge, nonce, account_id, api_key)
+        self.pow
+            .submit_challenge(timestamp, challenge, nonce, account_id, &ApiKey::new(api_key))
     }
 }
 

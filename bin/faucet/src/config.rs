@@ -7,7 +7,7 @@ use miden_node_utils::config::{DEFAULT_FAUCET_SERVER_PORT, DEFAULT_NODE_RPC_PORT
 use serde::{Deserialize, Serialize};
 use url::Url;
 
-use crate::types::AssetOptions;
+use crate::{server::ApiKey, types::AssetOptions};
 
 // Faucet config
 // ================================================================================================
@@ -37,7 +37,7 @@ pub struct FaucetConfig {
     /// The secret to be used by the server to generate the `PoW` seed
     pub pow_secret: String,
     /// List of API keys
-    pub api_keys: Vec<String>,
+    pub api_keys: Vec<ApiKey>,
 }
 
 impl Display for FaucetConfig {

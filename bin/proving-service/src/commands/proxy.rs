@@ -117,7 +117,7 @@ impl StartProxy {
 
         // Add gRPC status service
         let status_service =
-            ProxyStatusPingoraService::new(worker_lb, self.proxy_config.status_port);
+            ProxyStatusPingoraService::new(worker_lb, self.proxy_config.status_port).await;
         info!(port = %self.proxy_config.status_port, "gRPC status service starting");
 
         server.add_service(health_check_service);

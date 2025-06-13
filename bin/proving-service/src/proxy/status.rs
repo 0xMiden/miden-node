@@ -42,13 +42,26 @@ pub struct ProxyStatusPingoraService {
     /// The status receiver.
     ///
     /// This is used to receive the status updates from the updater.
-    status_rx: Option<watch::Receiver<ProxyStatusResponse>>,
+    status_rx: watch::Receiver<ProxyStatusResponse>,
+    /// The status transmitter.
+    ///
+    /// This is used to send the status updates to the receiver.
+    status_tx: watch::Sender<ProxyStatusResponse>,
 }
 
 impl ProxyStatusPingoraService {
     /// Creates a new [`ProxyStatusPingoraService`].
-    pub fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
-        Self { load_balancer, port, status_rx: None }
+    pub async fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
+        // Generate initial status
+        let initial_status = generate_status(&load_balancer).await;
+        let (status_tx, status_rx) = watch::channel(initial_status);
+
+        Self {
+            load_balancer,
+            port,
+            status_rx,
+            status_tx,
+        }
     }
 }
 
@@ -60,7 +73,7 @@ impl ProxyStatusApi for ProxyStatusPingoraService {
         _request: Request<ProxyStatusRequest>,
     ) -> Result<Response<ProxyStatusResponse>, Status> {
         // Get the latest status, or wait for it if it hasn't been set yet
-        let status = self.status_rx.as_ref().expect("Status not initialized").borrow().clone();
+        let status = self.status_rx.borrow().clone();
         Ok(Response::new(status))
     }
 }
@@ -91,13 +104,8 @@ impl Service for ProxyStatusPingoraService {
             },
         };
 
-        // Generate initial status
-        let initial_status = generate_status(&self.load_balancer).await;
-        let (status_tx, status_rx) = watch::channel(initial_status);
-        self.status_rx = Some(status_rx);
-
         // Start the status updater task
-        let updater = ProxyStatusUpdater::new(self.load_balancer.clone(), status_tx);
+        let updater = ProxyStatusUpdater::new(self.load_balancer.clone(), self.status_tx.clone());
         let cache_updater_shutdown = shutdown.clone();
         tokio::spawn(async move {
             updater.start(cache_updater_shutdown).await;

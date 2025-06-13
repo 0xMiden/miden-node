@@ -33,10 +33,14 @@ pub struct ProxyStatusResponse {
 #[repr(i32)]
 pub enum WorkerHealthStatus {
     /// The worker's health status is unknown.
+    /// This value is used when the proxy is not able to determine the health status of the worker.
+    /// It is only a temporary state and the proxy will eventually determine the health status of the worker.
     Unknown = 0,
     /// The worker is healthy.
+    /// This value is used when the worker is able to successfully process requests.
     Healthy = 1,
     /// The worker is unhealthy.
+    /// This value is used when the worker is not receiving requests or is not able to successfully process requests.
     Unhealthy = 2,
 }
 impl WorkerHealthStatus {

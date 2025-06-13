@@ -6,7 +6,17 @@
 
 - Added support for gRPC server side reflection to all components (#949).
 - Added support for TLS to `miden-proving-service-client` (#968).
+
+### Changes
+
+- Separated the store API into three separate services (#932).
+- Added a faucet Dockerfile (#933).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
 - Exposed `miden-prover-service` as a library (#956).
+
+### Fixes
+
+- Faucet considers decimals when minting token amounts (#962).
 
 ## v0.9.2 (2025-06-12)
 
@@ -15,18 +25,6 @@
 ## v0.9.1 (2025-06-10)
 
 - Refresh Cargo.lock file (#944).
-
-## v0.9.0 (2025-05-30)
-
-### Changes
-
-- Separated the store API into three separate services (#932).
-- Added a faucet Dockerfile (#933).
-- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
-
-### Fixes
-
-- Faucet considers decimals when minting token amounts (#962).
 
 ## v0.9.0 (2025-05-30)
 

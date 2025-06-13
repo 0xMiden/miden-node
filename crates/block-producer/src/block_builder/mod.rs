@@ -53,9 +53,9 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
-    /// Creates a new [`BlockBuilder`] with the given [`StoreClient`] and optional block prover URL.
+    /// Creates a new [`BlockBuilder`] with the given [`StoreClient`] and optional remote block prover URL.
     ///
-    /// If the block prover URL is not set, the block builder will use the local block prover.
+    /// If the remote block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
         ntx_builder: Option<NtxClient>,

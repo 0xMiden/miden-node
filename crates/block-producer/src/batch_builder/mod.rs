@@ -48,10 +48,10 @@ pub struct BatchBuilder {
 }
 
 impl BatchBuilder {
-    /// Creates a new [`BatchBuilder`] with the given batch prover URL and maximum concurrent batch
+    /// Creates a new [`BatchBuilder`] with the given remote batch prover URL and maximum concurrent batch
     /// building workers.
     ///
-    /// If no batch prover URL is provided, a local batch prover is used instead.
+    /// If no remote batch prover URL is provided, a local batch prover is used instead.
     pub fn new(
         store: StoreClient,
         num_workers: NonZeroUsize,

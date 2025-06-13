@@ -28,7 +28,7 @@ pub enum BlockProducerError {
     #[error("task {task} had a transport error")]
     TonicTransportError {
         task: &'static str,
-        source: tonic::transport::Error,
+        source: anyhow::Error,
     },
 }
 

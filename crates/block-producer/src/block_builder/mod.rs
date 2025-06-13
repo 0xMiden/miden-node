@@ -304,7 +304,6 @@ impl BlockBuilder {
                 ntb_client
                     .clone()
                     .submit_network_notes(
-                        // TODO: using default here until there is a good reason not to
                         TransactionId::new(
                             Digest::default(),
                             Digest::default(),
@@ -356,11 +355,16 @@ struct SelectedBlock {
     batches: Vec<ProvenBatch>,
 }
 
-impl SelectedBlock {
+impl TelemetryInjectorExt for SelectedBlock {
     fn inject_telemetry(&self) {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
         span.set_attribute("block.batches.count", self.batches.len() as u32);
+        let tx_count = self
+            .batches
+            .iter()
+            .fold(0, |acc, batch| acc + batch.transactions().as_slice().len());
+        span.set_attribute("block.transactions.count", tx_count);
     }
 }
 
@@ -371,7 +375,7 @@ struct BlockBatchesAndInputs {
     inputs: BlockInputs,
 }
 
-impl BlockBatchesAndInputs {
+impl TelemetryInjectorExt for BlockBatchesAndInputs {
     fn inject_telemetry(&self) {
         let span = Span::current();
 
@@ -473,10 +477,7 @@ impl BlockProver {
     }
 
     #[instrument(target = COMPONENT, skip_all, err)]
-    pub async fn prove(
-        &self,
-        proposed_block: ProposedBlock,
-    ) -> Result<ProvenBlock, BuildBlockError> {
+    async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
         match self {
             Self::Local(prover) => {
                 prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)

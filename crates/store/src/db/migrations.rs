@@ -23,7 +23,7 @@ fn up(s: &'static str) -> M<'static> {
 const DB_MIGRATION_HASH_FIELD: &str = "db-migration-hash";
 const DB_SCHEMA_VERSION_FIELD: &str = "db-schema-version";
 
-#[instrument(target = COMPONENT, skip_all, err)]
+#[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
     let version_before = MIGRATIONS.current_version(conn)?;
 

@@ -11,6 +11,9 @@ permissions:
 
 jobs:
   docker-build:
+    strategy:
+      matrix:
+        component: [node, faucet]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -20,4 +23,4 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker
-        run: make docker-build-node
+        run: make docker-build-${{ matrix.component }}

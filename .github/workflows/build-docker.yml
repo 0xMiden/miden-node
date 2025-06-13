@@ -24,5 +24,10 @@ jobs:
         with:
           cache-binary: true
 
-      - name: Build Docker
-        run: make docker-build-${{ matrix.component }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          push: false
+          file: ./bin/${{ matrix.component }}/Dockerfile
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -27,7 +27,6 @@ fn main() -> miette::Result<()> {
         .compile_fds_with_config(prost_build::Config::new(), worker_status_descriptor)
         .into_diagnostic()?;
 
-
     let proving_service_descriptor = proving_service_api_descriptor();
 
     // Single tonic build call for both descriptor sets

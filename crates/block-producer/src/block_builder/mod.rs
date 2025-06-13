@@ -12,7 +12,7 @@ use miden_objects::{
     note::{Note, NoteExecutionMode, NoteHeader},
     transaction::{OutputNote, TransactionHeader, TransactionId},
 };
-use miden_delegated_prover_client::proving_service::block_prover::RemoteBlockProver;
+use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -53,9 +53,9 @@ pub struct BlockBuilder {
 }
 
 impl BlockBuilder {
-    /// Creates a new [`BlockBuilder`] with the given [`StoreClient`] and optional delegated block prover URL.
+    /// Creates a new [`BlockBuilder`] with the given [`StoreClient`] and optional remote block prover URL.
     ///
-    /// If the delegated block prover URL is not set, the block builder will use the local block prover.
+    /// If the remote block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
         ntx_builder: Option<NtxClient>,

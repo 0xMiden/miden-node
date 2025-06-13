@@ -15,6 +15,7 @@ jobs:
       matrix:
         component: [node, faucet]
     runs-on: ubuntu-latest
+    name: Build ${{ matrix.component }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

@@ -23,12 +23,12 @@ permissions:
 
 jobs:
   publish:
-    name: Publish ${{ inputs.version }} Docker
+    runs-on:
+      labels: "ubuntu-latest"
     strategy:
       matrix:
         component: [node, faucet]
-    runs-on:
-      labels: "ubuntu-latest"
+    name: Publish ${{ matrix.component }} ${{ inputs.version }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@main

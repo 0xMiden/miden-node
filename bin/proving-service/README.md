@@ -204,13 +204,13 @@ The status service provides the following method:
 
 The gRPC response includes the following information:
 - `version`: The version of the proxy
-- `supported_proof_type`: The type of proof that the proxy supports (TRANSACTION, BATCH, or BLOCK)
+- `supported_proof_type`: The type of proof that the proxy supports (`TRANSACTION`, `BATCH`, or `BLOCK`)
 - `workers`: A list of workers with their status information
 
 Each worker status includes:
 - `address`: The worker's network address
 - `version`: The worker's version
-- `status`: The worker's health status (UNKNOWN, HEALTHY, or UNHEALTHY)
+- `status`: The worker's health status (`UNKNOWN`, `HEALTHY`, or `UNHEALTHY`)
 
 #### Example Usage
 

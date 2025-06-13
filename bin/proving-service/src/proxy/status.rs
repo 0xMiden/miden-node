@@ -198,14 +198,7 @@ impl From<&RustWorkerHealthStatus> for WorkerHealthStatus {
 /// Generates a new status from the load balancer and returns it as a [`ProxyStatusResponse`].
 async fn generate_status(load_balancer: &LoadBalancerState) -> ProxyStatusResponse {
     let workers = load_balancer.workers.read().await;
-    let worker_statuses: Vec<WorkerStatus> = workers
-        .iter()
-        .map(|w| WorkerStatus {
-            address: w.address(),
-            version: w.version().to_string(),
-            status: WorkerHealthStatus::from(w.health_status()).into(),
-        })
-        .collect();
+    let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
 
     let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
 

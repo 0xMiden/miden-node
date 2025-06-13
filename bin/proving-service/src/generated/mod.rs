@@ -16,7 +16,11 @@ pub mod proxy_status;
 
 pub use proving_service::*;
 
-use crate::commands::worker::ProverType;
+use crate::{
+    commands::worker::ProverType,
+    generated::proxy_status::{WorkerHealthStatus, WorkerStatus},
+    proxy::worker::Worker,
+};
 
 // CONVERSIONS
 // ================================================================================================
@@ -87,6 +91,16 @@ impl TryFrom<i32> for ProverType {
             1 => Ok(ProverType::Batch),
             2 => Ok(ProverType::Block),
             _ => Err(format!("unknown ProverType value: {value}")),
+        }
+    }
+}
+
+impl From<&Worker> for WorkerStatus {
+    fn from(worker: &Worker) -> Self {
+        Self {
+            address: worker.address(),
+            version: worker.version().to_string(),
+            status: WorkerHealthStatus::from(worker.health_status()).into(),
         }
     }
 }

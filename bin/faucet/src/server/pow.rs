@@ -48,7 +48,7 @@ impl ApiKey {
     }
 
     /// Generates a random API key for the faucet.
-    pub fn generate_api_key() -> Self {
+    pub fn generate() -> Self {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let mut api_key = [0u8; 32];
         rng.fill(&mut api_key);
@@ -73,7 +73,7 @@ impl From<ApiKey> for [u8; 32] {
 
 #[test]
 fn test_api_key_generation() {
-    let api_key = ApiKey::generate_api_key();
+    let api_key = ApiKey::generate();
     assert!(api_key.0.as_ref().unwrap().starts_with(API_KEY_PREFIX));
     let decoded = BASE64_STANDARD
         .decode(&api_key.0.unwrap().as_bytes()[API_KEY_PREFIX.len()..])

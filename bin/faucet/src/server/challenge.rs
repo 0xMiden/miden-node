@@ -46,7 +46,14 @@ impl Challenge {
         api_key: ApiKey,
     ) -> Self {
         let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
-        let signature = Self::compute_signature(secret, difficulty, timestamp, &account_id_bytes);
+        let api_key_bytes: [u8; 32] = api_key.clone().into();
+        let signature = Self::compute_signature(
+            secret,
+            difficulty,
+            timestamp,
+            &account_id_bytes,
+            &api_key_bytes,
+        );
         Self {
             difficulty,
             timestamp,
@@ -83,13 +90,13 @@ impl Challenge {
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let account_id: [u8; AccountId::SERIALIZED_SIZE] = bytes[16..31].try_into().unwrap();
-        let signature: [u8; 32] = bytes[31..63].try_into().unwrap();
-        let api_key_bytes: [u8; 32] = bytes[63..95].try_into().unwrap();
+        let api_key_bytes: [u8; 32] = bytes[31..63].try_into().unwrap();
         let api_key: ApiKey = ApiKey::from(api_key_bytes);
+        let signature: [u8; 32] = bytes[63..95].try_into().unwrap();
 
         // Verify the signature
         let expected_signature =
-            Self::compute_signature(secret, difficulty, timestamp, &account_id);
+            Self::compute_signature(secret, difficulty, timestamp, &account_id, &api_key_bytes);
         if signature == expected_signature {
             Ok(Self::from_parts(difficulty, timestamp, account_id, signature, api_key))
         } else {
@@ -103,9 +110,9 @@ impl Challenge {
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         bytes.extend_from_slice(&self.account_id);
-        bytes.extend_from_slice(&self.signature);
         let api_key_bytes: [u8; 32] = self.api_key.clone().into();
         bytes.extend_from_slice(&api_key_bytes);
+        bytes.extend_from_slice(&self.signature);
         bytes.to_hex_with_prefix()
     }
 
@@ -144,12 +151,14 @@ impl Challenge {
         difficulty: usize,
         timestamp: u64,
         account_id: &[u8],
+        api_key: &[u8],
     ) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         hasher.update(secret);
         hasher.update(difficulty.to_le_bytes());
         hasher.update(timestamp.to_le_bytes());
         hasher.update(account_id);
+        hasher.update(api_key);
         hasher.finalize().into()
     }
 }

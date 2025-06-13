@@ -225,9 +225,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             let config_file_path = current_dir.join(config_path);
 
-            let api_keys = (0..*generated_api_keys_count)
-                .map(|_| ApiKey::generate_api_key())
-                .collect::<Vec<_>>();
+            let api_keys =
+                (0..*generated_api_keys_count).map(|_| ApiKey::generate()).collect::<Vec<_>>();
 
             let mut config = FaucetConfig {
                 faucet_account_path: faucet_account_path.into(),

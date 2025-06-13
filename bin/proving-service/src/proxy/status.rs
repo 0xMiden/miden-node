@@ -20,98 +20,56 @@ use crate::{
     proxy::LoadBalancerState,
 };
 
-/// Update cache every 5 seconds
-const CACHE_UPDATE_INTERVAL_SECS: u64 = 5;
-
-/// Cached proxy status response
-type CachedStatus = ProxyStatusResponse;
+/// Update status every 5 seconds
+const STATUS_UPDATE_INTERVAL_SECS: u64 = 5;
 
 // PROXY STATUS SERVICE
 // ================================================================================================
 
-/// gRPC service that implements Pingora's Service trait
-pub struct ProxyStatusService {
+/// The gRPC service that implements Pingora's Service trait and the gRPC API.
+///
+/// The service is responsible for serving the gRPC status API for the proxy.
+///
+/// Implements the [`Service`] trait and the [`ProxyStatusApi`] gRPC API.
+#[derive(Clone)]
+pub struct ProxyStatusPingoraService {
+    /// The load balancer state.
+    ///
+    /// This is used to generate the status response.
     load_balancer: Arc<LoadBalancerState>,
+    /// The port to serve the gRPC status API on.
     port: u16,
-    status_tx: watch::Sender<CachedStatus>,
-    update_interval: Duration,
+    /// The status receiver.
+    ///
+    /// This is used to receive the status updates from the updater.
+    status_rx: Option<watch::Receiver<ProxyStatusResponse>>,
 }
 
-/// Internal gRPC service implementation
-pub struct ProxyStatusGrpcService {
-    status_rx: watch::Receiver<CachedStatus>,
-}
-
-impl ProxyStatusService {
-    pub async fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
-        // Create initial status
-        let initial_status = generate_status(&load_balancer).await;
-
-        let (status_tx, _) = watch::channel(initial_status);
-        let update_interval = Duration::from_secs(CACHE_UPDATE_INTERVAL_SECS);
-
-        Self {
-            load_balancer,
-            port,
-            status_tx,
-            update_interval,
-        }
-    }
-}
-
-/// Generates a new status and stores it in the cache.
-async fn generate_and_store_status(
-    load_balancer: &LoadBalancerState,
-    status_tx: &watch::Sender<CachedStatus>,
-) {
-    let status = generate_status(load_balancer).await;
-
-    // This will notify all receivers of the new status
-    let _ = status_tx.send(status);
-}
-
-/// Generates a new status from the load balancer.
-async fn generate_status(load_balancer: &LoadBalancerState) -> ProxyStatusResponse {
-    let workers = load_balancer.workers.read().await;
-    let worker_statuses: Vec<WorkerStatus> = workers
-        .iter()
-        .map(|w| WorkerStatus {
-            address: w.address(),
-            version: w.version().to_string(),
-            status: WorkerHealthStatus::from(w.health_status()) as i32,
-        })
-        .collect();
-
-    let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
-
-    ProxyStatusResponse {
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        supported_proof_type: supported_proof_type as i32,
-        workers: worker_statuses,
-    }
-}
-
-/// gRPC service that implements Pingora's Service trait
-impl ProxyStatusGrpcService {
-    fn new(status_rx: watch::Receiver<CachedStatus>) -> Self {
-        Self { status_rx }
+impl ProxyStatusPingoraService {
+    /// Creates a new [`ProxyStatusPingoraService`].
+    pub fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
+        Self { load_balancer, port, status_rx: None }
     }
 }
 
 #[async_trait]
-impl ProxyStatusApi for ProxyStatusGrpcService {
+impl ProxyStatusApi for ProxyStatusPingoraService {
+    /// Returns the current status of the proxy.
     async fn status(
         &self,
         _request: Request<ProxyStatusRequest>,
     ) -> Result<Response<ProxyStatusResponse>, Status> {
         // Get the latest status, or wait for it if it hasn't been set yet
-        let status = self.status_rx.borrow().clone();
+        let status = self.status_rx.as_ref().expect("Status not initialized").borrow().clone();
         Ok(Response::new(status))
     }
 }
 
+/// The [`Service`] trait implementation for the proxy status service.
+///
+/// This is used to start the service and handle the shutdown signal.
 #[async_trait]
-impl Service for ProxyStatusService {
+impl Service for ProxyStatusPingoraService {
     async fn start_service(
         &mut self,
         #[cfg(unix)] _fds: Option<ListenFds>,
@@ -134,36 +92,19 @@ impl Service for ProxyStatusService {
         };
 
         // Generate initial status
-        generate_and_store_status(&self.load_balancer, &self.status_tx).await;
-        info!("Initial status populated for gRPC status service");
+        let initial_status = generate_status(&self.load_balancer).await;
+        let (status_tx, status_rx) = watch::channel(initial_status);
+        self.status_rx = Some(status_rx);
 
         // Start the status updater task
-        let load_balancer = self.load_balancer.clone();
-        let status_tx = self.status_tx.clone();
-        let update_interval = self.update_interval;
-        let mut cache_updater_shutdown = shutdown.clone();
-
+        let updater = ProxyStatusUpdater::new(self.load_balancer.clone(), status_tx);
+        let cache_updater_shutdown = shutdown.clone();
         tokio::spawn(async move {
-            let mut update_timer = interval(update_interval);
-
-            loop {
-                tokio::select! {
-                    _ = update_timer.tick() => {
-                        generate_and_store_status(&load_balancer, &status_tx).await;
-                    }
-                    _ = cache_updater_shutdown.changed() => {
-                        info!("Status updater received shutdown signal");
-                        break;
-                    }
-                }
-            }
+            updater.start(cache_updater_shutdown).await;
         });
 
-        // Create the gRPC service implementation with a new receiver
-        let grpc_service = ProxyStatusGrpcService::new(self.status_tx.subscribe());
-        let status_server = ProxyStatusApiServer::new(grpc_service);
-
-        // Build the tonic server
+        // Build the tonic server with self as the gRPC API implementation
+        let status_server = ProxyStatusApiServer::new(self.clone());
         let server = Server::builder().add_service(status_server).serve_with_incoming_shutdown(
             TcpListenerStream::new(listener),
             async move {
@@ -189,6 +130,61 @@ impl Service for ProxyStatusService {
     }
 }
 
+// PROXY STATUS UPDATER
+// ================================================================================================
+
+/// The updater for the proxy status.
+///
+/// This is responsible for periodically updating the status of the proxy.
+pub struct ProxyStatusUpdater {
+    /// The load balancer state.
+    ///
+    /// This is used to generate the status response.
+    load_balancer: Arc<LoadBalancerState>,
+    /// The status transmitter.
+    ///
+    /// This is used to send the status updates to the proxy status service.
+    status_tx: watch::Sender<ProxyStatusResponse>,
+    /// The interval at which to update the status.
+    update_interval: Duration,
+}
+
+impl ProxyStatusUpdater {
+    /// Creates a new [`ProxyStatusUpdater`].
+    pub fn new(
+        load_balancer: Arc<LoadBalancerState>,
+        status_tx: watch::Sender<ProxyStatusResponse>,
+    ) -> Self {
+        Self {
+            load_balancer,
+            status_tx,
+            update_interval: Duration::from_secs(STATUS_UPDATE_INTERVAL_SECS),
+        }
+    }
+
+    /// Starts the status updater.
+    ///
+    /// This is responsible for periodically updating the status of the proxy.
+    pub async fn start(&self, mut shutdown: watch::Receiver<bool>) {
+        let mut update_timer = interval(self.update_interval);
+        loop {
+            tokio::select! {
+                _ = update_timer.tick() => {
+                    let new_status = generate_status(&self.load_balancer).await;
+                    let _ = self.status_tx.send(new_status);
+                }
+                _ = shutdown.changed() => {
+                    info!("Status updater received shutdown signal");
+                    break;
+                }
+            }
+        }
+    }
+}
+
+// UTILS
+// ================================================================================================
+
 impl From<&RustWorkerHealthStatus> for WorkerHealthStatus {
     fn from(status: &RustWorkerHealthStatus) -> Self {
         match status {
@@ -196,5 +192,26 @@ impl From<&RustWorkerHealthStatus> for WorkerHealthStatus {
             RustWorkerHealthStatus::Unhealthy { .. } => WorkerHealthStatus::Unhealthy,
             RustWorkerHealthStatus::Unknown => WorkerHealthStatus::Unknown,
         }
+    }
+}
+
+/// Generates a new status from the load balancer and returns it as a [`ProxyStatusResponse`].
+async fn generate_status(load_balancer: &LoadBalancerState) -> ProxyStatusResponse {
+    let workers = load_balancer.workers.read().await;
+    let worker_statuses: Vec<WorkerStatus> = workers
+        .iter()
+        .map(|w| WorkerStatus {
+            address: w.address(),
+            version: w.version().to_string(),
+            status: WorkerHealthStatus::from(w.health_status()).into(),
+        })
+        .collect();
+
+    let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
+
+    ProxyStatusResponse {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        supported_proof_type: supported_proof_type.into(),
+        workers: worker_statuses,
     }
 }

@@ -13,7 +13,7 @@ use crate::{
     commands::PROXY_HOST,
     error::ProvingServiceError,
     proxy::{
-        LoadBalancer, LoadBalancerState, status::ProxyStatusService,
+        LoadBalancer, LoadBalancerState, status::ProxyStatusPingoraService,
         update_workers::LoadBalancerUpdateService,
     },
     utils::{MIDEN_PROVING_SERVICE, check_port_availability},
@@ -115,15 +115,10 @@ impl StartProxy {
             info!("Metrics are not enabled");
         }
 
-        // Add status service
-        let status_service = ProxyStatusService::new(worker_lb);
-        let mut status_service = Service::new("status".to_string(), status_service);
-        status_service
-            .add_tcp(format!("{}:{}", PROXY_HOST, self.proxy_config.status_port).as_str());
-        info!(
-            "Status service listening on {}:{}/status",
-            PROXY_HOST, self.proxy_config.status_port
-        );
+        // Add gRPC status service
+        let status_service =
+            ProxyStatusPingoraService::new(worker_lb, self.proxy_config.status_port).await;
+        info!(port = %self.proxy_config.status_port, "gRPC status service starting");
 
         server.add_service(health_check_service);
         server.add_service(update_workers_service);

@@ -127,132 +127,145 @@ async fn main() -> anyhow::Result<()> {
 async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     match &cli.command {
         // Note: open-telemetry is handled in main.
-        Command::Start { config, open_telemetry: _ } => {
-            let config: FaucetConfig =
-                load_config(config).context("failed to load configuration file")?;
-
-            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
-                .context("failed to create RPC client")?;
-            let account_file = AccountFile::read(&config.faucet_account_path)
-                .context("failed to load faucet account from file")?;
-
-            let faucet =
-                Faucet::load(account_file, &mut rpc_client, config.remote_tx_prover_url).await?;
-
-            // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
-            let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
-
-            let api_keys = config
-                .api_keys
-                .iter()
-                .map(|k| ApiKey::decode(Some(k.clone())))
-                .collect::<Result<Vec<_>, _>>()
-                .context("failed to decode API keys")?;
-
-            let server = Server::new(
-                faucet.faucet_id(),
-                config.asset_amount_options.clone(),
-                tx_requests,
-                &config.pow_secret,
-                BTreeSet::from_iter(api_keys),
-            );
-
-            // Capture in a variable to avoid moving into two branches
-            let config_endpoint = config.endpoint;
-
-            // Use select to concurrently:
-            // - Run and wait for the faucet (on current thread)
-            // - Run and wait for server (in a spawned task)
-            let faucet_future = faucet.run(rpc_client, rx_requests);
-            let server_future = async {
-                let server_handle = tokio::spawn(async move {
-                    server.serve(config_endpoint).await.context("server failed")
-                });
-                server_handle.await.context("failed to join server task")?
-            };
-
-            tokio::select! {
-                server_result = server_future => {
-                    // If server completes first, return its result
-                    server_result.context("server failed")
-                },
-                faucet_result = faucet_future => {
-                    // Faucet completed, return its result
-                    faucet_result.context("faucet failed")
-                }
-            }?;
-        },
-
+        Command::Start { config, open_telemetry: _ } => start(config).await,
         Command::CreateFaucetAccount {
             output_path,
             token_symbol,
             decimals,
             max_supply,
-        } => {
-            println!("Generating new faucet account. This may take a few minutes...");
-
-            let current_dir =
-                std::env::current_dir().context("failed to open current directory")?;
-
-            let mut rng = ChaCha20Rng::from_seed(rand::random());
-
-            let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-
-            let (account, account_seed) = create_basic_fungible_faucet(
-                rng.random(),
-                TokenSymbol::try_from(token_symbol.as_str())
-                    .context("failed to parse token symbol")?,
-                *decimals,
-                Felt::try_from(*max_supply)
-                    .expect("max supply value is greater than or equal to the field modulus"),
-                AccountStorageMode::Public,
-                AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
-            )
-            .context("failed to create basic fungible faucet account")?;
-
-            let account_data =
-                AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
-
-            let output_path = current_dir.join(output_path);
-            account_data.write(&output_path).with_context(|| {
-                format!("failed to write account data to file: {}", output_path.display())
-            })?;
-
-            println!("Faucet account file successfully created at: {}", output_path.display());
-        },
-
+        } => create_faucet_account(output_path, token_symbol, *decimals, *max_supply),
         Command::Init {
             config_path,
             faucet_account_path,
             generated_api_keys_count,
             node_url,
-        } => {
-            let current_dir =
-                std::env::current_dir().context("failed to open current directory")?;
-
-            let config_file_path = current_dir.join(config_path);
-
-            let api_keys = (0..*generated_api_keys_count)
-                .map(|_| ApiKey::generate().encode())
-                .collect::<Vec<_>>();
-
-            let mut config = FaucetConfig {
-                faucet_account_path: faucet_account_path.into(),
-                api_keys,
-                ..FaucetConfig::default()
-            };
-            if let Some(url) = node_url {
-                config.node_url = Url::parse(url).context("failed to parse node URL")?;
-            }
-            let config_as_toml_string =
-                toml::to_string(&config).context("failed to serialize default config")?;
-
-            std::fs::write(&config_file_path, config_as_toml_string)
-                .context("error writing config to file")?;
-
-            println!("Config file successfully created at: {}", config_file_path.display());
-        },
+        } => init(config_path, faucet_account_path, *generated_api_keys_count, node_url.as_deref()),
     }
+}
+
+async fn start(config_path: &PathBuf) -> anyhow::Result<()> {
+    let config: FaucetConfig =
+        load_config(config_path).context("failed to load configuration file")?;
+
+    let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
+        .context("failed to create RPC client")?;
+    let account_file = AccountFile::read(&config.faucet_account_path)
+        .context("failed to load faucet account from file")?;
+
+    let faucet = Faucet::load(account_file, &mut rpc_client, config.remote_tx_prover_url).await?;
+
+    // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
+    let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
+
+    let api_keys = config
+        .api_keys
+        .iter()
+        .map(|k| ApiKey::decode(Some(k.clone())))
+        .collect::<Result<Vec<_>, _>>()
+        .context("failed to decode API keys")?;
+
+    let server = Server::new(
+        faucet.faucet_id(),
+        config.asset_amount_options.clone(),
+        tx_requests,
+        &config.pow_secret,
+        BTreeSet::from_iter(api_keys),
+    );
+
+    // Capture in a variable to avoid moving into two branches
+    let config_endpoint = config.endpoint;
+
+    // Use select to concurrently:
+    // - Run and wait for the faucet (on current thread)
+    // - Run and wait for server (in a spawned task)
+    let faucet_future = faucet.run(rpc_client, rx_requests);
+    let server_future = async {
+        let server_handle =
+            tokio::spawn(
+                async move { server.serve(config_endpoint).await.context("server failed") },
+            );
+        server_handle.await.context("failed to join server task")?
+    };
+
+    tokio::select! {
+        server_result = server_future => {
+            // If server completes first, return its result
+            server_result.context("server failed")
+        },
+        faucet_result = faucet_future => {
+            // Faucet completed, return its result
+            faucet_result.context("faucet failed")
+        }
+    }
+}
+
+fn create_faucet_account(
+    output_path: &PathBuf,
+    token_symbol: &str,
+    decimals: u8,
+    max_supply: u64,
+) -> anyhow::Result<()> {
+    println!("Generating new faucet account. This may take a few minutes...");
+
+    let current_dir = std::env::current_dir().context("failed to open current directory")?;
+
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
+
+    let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+
+    let (account, account_seed) = create_basic_fungible_faucet(
+        rng.random(),
+        TokenSymbol::try_from(token_symbol).context("failed to parse token symbol")?,
+        decimals,
+        Felt::try_from(max_supply)
+            .expect("max supply value is greater than or equal to the field modulus"),
+        AccountStorageMode::Public,
+        AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
+    )
+    .context("failed to create basic fungible faucet account")?;
+
+    let account_data =
+        AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
+
+    let output_path = current_dir.join(output_path);
+    account_data.write(&output_path).with_context(|| {
+        format!("failed to write account data to file: {}", output_path.display())
+    })?;
+
+    println!("Faucet account file successfully created at: {}", output_path.display());
+
+    Ok(())
+}
+
+fn init(
+    config_path: &str,
+    faucet_account_path: &str,
+    generated_api_keys_count: u8,
+    node_url: Option<&str>,
+) -> anyhow::Result<()> {
+    let current_dir = std::env::current_dir().context("failed to open current directory")?;
+
+    let config_file_path = current_dir.join(config_path);
+
+    let api_keys = (0..generated_api_keys_count)
+        .map(|_| ApiKey::generate().encode())
+        .collect::<Vec<_>>();
+
+    let mut config = FaucetConfig {
+        faucet_account_path: faucet_account_path.into(),
+        api_keys,
+        ..FaucetConfig::default()
+    };
+    if let Some(url) = node_url {
+        config.node_url = Url::parse(url).context("failed to parse node URL")?;
+    }
+    let config_as_toml_string =
+        toml::to_string(&config).context("failed to serialize default config")?;
+
+    std::fs::write(&config_file_path, config_as_toml_string)
+        .context("error writing config to file")?;
+
+    println!("Config file successfully created at: {}", config_file_path.display());
 
     Ok(())
 }

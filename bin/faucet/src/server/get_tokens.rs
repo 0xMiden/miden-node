@@ -10,7 +10,7 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{
-        Sse,
+        IntoResponse, Response, Sse,
         sse::{Event, KeepAlive},
     },
 };
@@ -115,21 +115,16 @@ impl GetTokenError {
             },
         }
     }
+}
 
-    /// Convert the error into an SSE event and trigger a trace log.
-    fn into_event(self) -> Event {
+impl IntoResponse for GetTokenError {
+    fn into_response(self) -> Response {
         // TODO: This is a hacky way of doing error logging, but
         // its one of the last times we have the error before
         // it becomes opaque. Should replace this by something
         // better
         self.trace();
-        Event::default().event("get-tokens-error").data(
-            serde_json::json!({
-                "message": self.user_facing_error(),
-                "status": self.status_code().to_string(),
-            })
-            .to_string(),
-        )
+        (self.status_code(), self.user_facing_error()).into_response()
     }
 }
 
@@ -217,12 +212,13 @@ impl Drop for ActiveRequestGuard {
 pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    let api_key = ApiKey::decode(request.api_key.clone()).unwrap(); // TODO: this error should return invalid request
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GetTokenError> {
+    let api_key = ApiKey::decode(request.api_key.clone()).map_err(GetTokenError::InvalidRequest)?;
+
     let key_active_requests = server
         .active_requests_per_key
         .lock()
-        .unwrap()
+        .expect("active requests per key lock should be released")
         .entry(api_key.clone())
         .or_insert(Arc::new(AtomicUsize::new(0)))
         .clone();
@@ -236,7 +232,7 @@ pub async fn get_tokens(
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
-    let mint_error = request
+    request
         .validate(&server)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
@@ -253,15 +249,10 @@ pub async fn get_tokens(
                     TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
                     TrySendError::Closed(_) => GetTokenError::FaucetClosed,
                 })
-        })
-        .err();
-
-    if let Some(error) = mint_error {
-        tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
-    }
+        })?;
 
     let stream = ReceiverStream::new(rx_result);
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 #[cfg(test)]

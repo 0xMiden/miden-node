@@ -62,8 +62,7 @@ pub struct Server {
     metadata: &'static Metadata,
     pow: PoW,
     api_keys: BTreeSet<ApiKey>,
-    active_requests_per_key: Arc<Mutex<HashMap<ApiKey, Arc<AtomicUsize>>>>, /* TODO: use wrapper
-                                                                             * struct? */
+    active_requests_per_key: Arc<Mutex<HashMap<ApiKey, Arc<AtomicUsize>>>>,
 }
 
 impl Server {

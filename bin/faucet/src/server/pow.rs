@@ -31,7 +31,7 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 
 /// The time window in seconds for rate limiting per account ID.
 /// Must be less than [`CHALLENGE_LIFETIME_SECONDS`] to effectively rate limit.
-const ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS: u64 = 5;
+const ACCOUNT_ID_RATE_LIMIT_WINDOW: u64 = 5;
 
 // POW REQUEST VALIDATION
 // ================================================================================================
@@ -176,7 +176,7 @@ impl PoW {
             .expect("PoW account id timestamps map lock poisoned")
             .insert(account_id.to_hex(), timestamp);
         let is_rate_limited = prev_timestamp.is_some_and(|prev_timestamp| {
-            (timestamp - prev_timestamp) < ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS
+            (timestamp - prev_timestamp) < ACCOUNT_ID_RATE_LIMIT_WINDOW
         });
         if is_rate_limited {
             return Err(InvalidRequest::RateLimited);
@@ -421,5 +421,54 @@ mod tests {
         let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
         let challenge = Challenge::new(1, old_timestamp, secret, account_id, ApiKey::generate());
         assert!(challenge.is_expired(current_time));
+    }
+
+    #[tokio::test]
+    async fn difficulty_is_adjusted_per_key() {
+        let secret = create_test_secret();
+        let pow = PoW::new(secret);
+        let api_key_1 = ApiKey::generate();
+        let api_key_2 = ApiKey::generate();
+
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, api_key_1.clone());
+        pow.adjust_difficulty(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY * 2, api_key_2.clone());
+
+        assert_eq!(pow.difficulty_per_key.lock().unwrap().get(&api_key_1).unwrap().clone(), 1);
+        assert_eq!(pow.difficulty_per_key.lock().unwrap().get(&api_key_2).unwrap().clone(), 2);
+    }
+
+    #[tokio::test]
+    async fn account_id_is_rate_limited() {
+        let secret = create_test_secret();
+        let pow = PoW::new(secret);
+        let api_key = ApiKey::generate();
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+
+        // Solve first challenge
+        let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
+        let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
+
+        let result = pow.submit_challenge(
+            challenge.timestamp,
+            &challenge.encode(),
+            nonce,
+            account_id,
+            &api_key,
+        );
+        assert!(result.is_ok());
+
+        // Try to solve second challenge but should fail because of rate limiting
+        let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
+        let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
+
+        let result = pow.submit_challenge(
+            challenge.timestamp,
+            &challenge.encode(),
+            nonce,
+            account_id,
+            &api_key,
+        );
+        assert!(result.is_err());
+        assert!(matches!(result.err(), Some(InvalidRequest::RateLimited)));
     }
 }

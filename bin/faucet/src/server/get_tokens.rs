@@ -10,7 +10,7 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{
-        Sse,
+        IntoResponse, Response, Sse,
         sse::{Event, KeepAlive},
     },
 };
@@ -25,6 +25,7 @@ use super::Server;
 use crate::{
     COMPONENT,
     faucet::MintRequest,
+    server::ApiKey,
     types::{AssetOptions, NoteType},
 };
 
@@ -73,6 +74,8 @@ pub enum InvalidRequest {
     ExpiredServerTimestamp(u64, u64),
     #[error("challenge already used")]
     ChallengeAlreadyUsed,
+    #[error("account is rate limited")]
+    RateLimited,
 }
 
 pub enum GetTokenError {
@@ -112,21 +115,16 @@ impl GetTokenError {
             },
         }
     }
+}
 
-    /// Convert the error into an SSE event and trigger a trace log.
-    fn into_event(self) -> Event {
+impl IntoResponse for GetTokenError {
+    fn into_response(self) -> Response {
         // TODO: This is a hacky way of doing error logging, but
         // its one of the last times we have the error before
         // it becomes opaque. Should replace this by something
         // better
         self.trace();
-        Event::default().event("get-tokens-error").data(
-            serde_json::json!({
-                "message": self.user_facing_error(),
-                "status": self.status_code().to_string(),
-            })
-            .to_string(),
-        )
+        (self.status_code(), self.user_facing_error()).into_response()
     }
 }
 
@@ -167,18 +165,16 @@ impl RawMintRequest {
 
         // Check the API key, if provided
         if let Some(api_key) = &self.api_key {
-            if server.api_keys.contains(api_key) {
-                // If the API key is valid, we skip the PoW check
-                return Ok(MintRequest { account_id, note_type, asset_amount });
+            if !server.api_keys.contains(&ApiKey::decode(Some(api_key.clone()))?) {
+                return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
             }
-            return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
         }
 
         // Validate Challenge and nonce
         let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;
         let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
 
-        server.submit_challenge(&challenge_str, nonce)?;
+        server.submit_challenge(&challenge_str, nonce, account_id, self.api_key)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
@@ -193,9 +189,9 @@ struct ActiveRequestGuard {
 }
 
 impl ActiveRequestGuard {
-    fn new(active_count: &Arc<AtomicUsize>) -> Self {
+    fn new(active_count: Arc<AtomicUsize>) -> Self {
         active_count.fetch_add(1, Ordering::Relaxed);
-        Self { active_count: active_count.clone() }
+        Self { active_count }
     }
 }
 
@@ -216,17 +212,27 @@ impl Drop for ActiveRequestGuard {
 pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
-) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    // Track this as an active request for the entire duration
-    let _active_guard = ActiveRequestGuard::new(&server.active_requests);
+) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GetTokenError> {
+    let api_key = ApiKey::decode(request.api_key.clone()).map_err(GetTokenError::InvalidRequest)?;
 
-    let current_active_requests = server.active_requests.load(Ordering::Relaxed);
-    server.pow.adjust_difficulty(current_active_requests);
+    let key_active_requests = server
+        .active_requests_per_key
+        .lock()
+        .expect("active requests per key lock should be released")
+        .entry(api_key.clone())
+        .or_insert(Arc::new(AtomicUsize::new(0)))
+        .clone();
+
+    // Track this as an active request for the entire duration
+    let _active_guard = ActiveRequestGuard::new(key_active_requests.clone());
+
+    let current_active_requests = key_active_requests.load(Ordering::Relaxed);
+    server.pow.adjust_difficulty(current_active_requests, api_key);
 
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
-    let mint_error = request
+    request
         .validate(&server)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
@@ -243,15 +249,10 @@ pub async fn get_tokens(
                     TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
                     TrySendError::Closed(_) => GetTokenError::FaucetClosed,
                 })
-        })
-        .err();
-
-    if let Some(error) = mint_error {
-        tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
-    }
+        })?;
 
     let stream = ReceiverStream::new(rx_result);
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 #[cfg(test)]
@@ -269,7 +270,7 @@ mod tests {
 
         assert_eq!(active_count.load(Ordering::Relaxed), 0);
 
-        let _guard = ActiveRequestGuard::new(&active_count);
+        let _guard = ActiveRequestGuard::new(active_count.clone());
         assert_eq!(active_count.load(Ordering::Relaxed), 1);
     }
 
@@ -278,7 +279,7 @@ mod tests {
         let active_count = Arc::new(AtomicUsize::new(0));
 
         {
-            let _guard = ActiveRequestGuard::new(&active_count);
+            let _guard = ActiveRequestGuard::new(active_count.clone());
             assert_eq!(active_count.load(Ordering::Relaxed), 1);
         } // Guard dropped here
 
@@ -289,13 +290,13 @@ mod tests {
     fn test_multiple_active_request_guards() {
         let active_count = Arc::new(AtomicUsize::new(0));
 
-        let guard1 = ActiveRequestGuard::new(&active_count);
+        let guard1 = ActiveRequestGuard::new(active_count.clone());
         assert_eq!(active_count.load(Ordering::Relaxed), 1);
 
-        let guard2 = ActiveRequestGuard::new(&active_count);
+        let guard2 = ActiveRequestGuard::new(active_count.clone());
         assert_eq!(active_count.load(Ordering::Relaxed), 2);
 
-        let guard3 = ActiveRequestGuard::new(&active_count);
+        let guard3 = ActiveRequestGuard::new(active_count.clone());
         assert_eq!(active_count.load(Ordering::Relaxed), 3);
 
         drop(guard2);
@@ -314,7 +315,7 @@ mod tests {
 
         // Simulate validation error - active guard created
         {
-            let _active_guard = ActiveRequestGuard::new(&active_count);
+            let _active_guard = ActiveRequestGuard::new(active_count.clone());
             assert_eq!(active_count.load(Ordering::Relaxed), 1);
 
             // Validation fails, request doesn't proceed
@@ -325,7 +326,7 @@ mod tests {
 
         // Simulate queue full error - active guard created
         {
-            let _active_guard = ActiveRequestGuard::new(&active_count);
+            let _active_guard = ActiveRequestGuard::new(active_count.clone());
             assert_eq!(active_count.load(Ordering::Relaxed), 1);
 
             // Queue is full, request doesn't proceed

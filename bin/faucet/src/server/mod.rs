@@ -43,11 +43,12 @@ use crate::{
     types::AssetOptions,
 };
 
+mod api_key;
 mod challenge;
 mod frontend;
 mod get_tokens;
 mod pow;
-pub use pow::ApiKey;
+pub use api_key::ApiKey;
 
 // FAUCET STATE
 // ================================================================================================

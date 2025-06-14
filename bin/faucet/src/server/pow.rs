@@ -9,17 +9,17 @@ use axum::{
     extract::{Query, State},
     response::IntoResponse,
 };
-use base64::{Engine, prelude::BASE64_STANDARD};
 use http::StatusCode;
 use miden_node_utils::ErrorReport;
 use miden_objects::{AccountIdError, account::AccountId};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use tokio::time::{Duration, interval};
 
 use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
-use crate::{REQUESTS_QUEUE_SIZE, server::get_tokens::InvalidRequest};
+use crate::{
+    REQUESTS_QUEUE_SIZE,
+    server::{ApiKey, get_tokens::InvalidRequest},
+};
 
 /// The maximum difficulty of the `PoW`.
 ///
@@ -32,60 +32,6 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 /// The time window in seconds for rate limiting per account ID.
 /// Must be less than [`CHALLENGE_LIFETIME_SECONDS`] to effectively rate limit.
 const ACCOUNT_ID_RATE_LIMIT_TIME_SECONDS: u64 = 5;
-
-// API KEY
-// ================================================================================================
-// TODO: move to a separate file
-pub const API_KEY_PREFIX: &str = "miden_faucet_";
-
-/// The API key is a base64 encoded string with the prefix `miden_faucet_`.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
-pub struct ApiKey([u8; 32]);
-
-impl ApiKey {
-    /// Generates a random API key for the faucet.
-    pub fn generate() -> Self {
-        let mut rng = ChaCha20Rng::from_seed(rand::random());
-        let mut api_key = [0u8; 32];
-        rng.fill(&mut api_key);
-        Self(api_key)
-    }
-
-    pub fn new(api_key: [u8; 32]) -> Self {
-        Self(api_key)
-    }
-
-    /// Encodes the API key into a base64 string.
-    pub fn encode(&self) -> String {
-        format!("{API_KEY_PREFIX}{}", BASE64_STANDARD.encode(self.0))
-    }
-
-    pub fn inner(&self) -> [u8; 32] {
-        self.0
-    }
-
-    /// Decodes the API key from a base64 string. This is used to decode the API key from the
-    /// request.
-    pub fn decode(api_key_str: Option<String>) -> Result<Self, InvalidRequest> {
-        let Some(api_key_str) = api_key_str else {
-            return Ok(Self([0; 32]));
-        };
-        let api_key_str = api_key_str.trim_start_matches(API_KEY_PREFIX).to_string();
-        let bytes = BASE64_STANDARD
-            .decode(api_key_str.as_bytes())
-            .map_err(|_| InvalidRequest::InvalidApiKey(api_key_str.clone()))?;
-
-        Ok(Self(bytes.try_into().map_err(|_| InvalidRequest::InvalidApiKey(api_key_str))?))
-    }
-}
-
-// #[test]
-// fn test_api_key_generation() {
-//     let api_key = ApiKey::generate();
-//     assert!(api_key.0.starts_with(API_KEY_PREFIX));
-//     let decoded = BASE64_STANDARD.decode(&api_key.0[API_KEY_PREFIX.len()..]).unwrap();
-//     assert_eq!(decoded.len(), 32);
-// }
 
 // POW REQUEST VALIDATION
 // ================================================================================================

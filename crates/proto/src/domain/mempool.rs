@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use miden_objects::{block::BlockHeader, note::Nullifier, transaction::TransactionId};
 
 use super::note::NetworkNote;
@@ -10,10 +12,10 @@ pub enum MempoolEvent {
         network_notes: Vec<NetworkNote>,
     },
     BlockCommitted {
-        block_header: BlockHeader,
+        header: BlockHeader,
         txs: Vec<TransactionId>,
     },
-    TransactionsReverted(Vec<TransactionId>),
+    TransactionsReverted(BTreeSet<TransactionId>),
 }
 
 impl From<MempoolEvent> for crate::generated::block_producer::MempoolEvent {

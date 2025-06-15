@@ -109,12 +109,14 @@ impl BlockProducer {
             self.batch_prover_url,
             self.batch_interval,
         );
+        let mempool_event_broadcaster = tokio::sync::broadcast::Sender::new(100);
         let mempool = Mempool::shared(
             chain_tip,
             BatchBudget::default(),
             BlockBudget::default(),
             SERVER_MEMPOOL_STATE_RETENTION,
             SERVER_MEMPOOL_EXPIRATION_SLACK,
+            mempool_event_broadcaster,
         );
 
         // Spawn rpc server and batch and block provers.
@@ -188,8 +190,6 @@ struct BlockProducerRpcServer {
     mempool: Mutex<SharedMempool>,
 
     store: StoreClient,
-
-    mempool_events: tokio::sync::broadcast::Receiver<MempoolEvent>,
 }
 
 #[tonic::async_trait]
@@ -221,20 +221,21 @@ impl api_server::Api for BlockProducerRpcServer {
         }))
     }
 
-    // type MempoolEventsStream = tokio::sync::broadcast::Receiver<MempoolEvent>;
     type MempoolEventsStream = MempoolEventsStream;
+
     async fn mempool_events(
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<Self::MempoolEventsStream>, tonic::Status> {
-        Ok(tonic::Response::new(MempoolEventsStream {
-            inner: self.mempool_events.resubscribe().into(),
-        }))
+        let subscription = self.mempool.lock().await.lock().await.subscribe();
+        let subscription = BroadcastStream::new(subscription);
+
+        Ok(tonic::Response::new(MempoolEventsStream { inner: subscription }))
     }
 }
 
 struct MempoolEventsStream {
-    inner: tokio_stream::wrappers::BroadcastStream<MempoolEvent>,
+    inner: BroadcastStream<MempoolEvent>,
 }
 
 impl tokio_stream::Stream for MempoolEventsStream {
@@ -271,14 +272,7 @@ impl tokio_stream::Stream for MempoolEventsStream {
 
 impl BlockProducerRpcServer {
     pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
-        // TODO: wire up the mempool to emit these events.
-        let (_tx, rx) = tokio::sync::broadcast::channel(100);
-
-        Self {
-            mempool: Mutex::new(mempool),
-            store,
-            mempool_events: rx,
-        }
+        Self { mempool: Mutex::new(mempool), store }
     }
 
     async fn serve(self, listener: TcpListener) -> anyhow::Result<()> {

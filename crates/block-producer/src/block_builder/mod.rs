@@ -230,7 +230,7 @@ impl BlockBuilder {
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        mempool.lock().await.commit_block();
+        mempool.lock().await.commit_block(built_block.header().clone());
 
         Ok(())
     }

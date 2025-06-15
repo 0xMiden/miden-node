@@ -23,7 +23,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ secerts.AWS_REGION }}
+          aws-region: ${{ secrets.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE }}
           role-session-name: GithubActionsSession
 
@@ -31,9 +31,9 @@ jobs:
         id: cache-key
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "cache_key=pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
+            echo "cache_key=miden-${{ matrix.component }}-pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
           else
-            echo "cache_key=main" >> $GITHUB_OUTPUT
+            echo "cache_key=miden-${{ matrix.component }}-main" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up Docker Buildx
@@ -46,5 +46,5 @@ jobs:
         with:
           push: false
           file: ./bin/${{ matrix.component }}/Dockerfile
-          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-node-${{ steps.cache-key.outputs.cache_key }}
-          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-node-${{ steps.cache-key.outputs.cache_key }},mode=max
+          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},${{ steps.cache-key.outputs.cache_key }}
+          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},${{ steps.cache-key.outputs.cache_key }},mode=max

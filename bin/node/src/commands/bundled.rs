@@ -222,7 +222,6 @@ impl BundledCommand {
                 BlockProducer {
                     block_producer_address,
                     store_address,
-                    ntx_builder_address: should_start_ntb.then_some(ntx_builder_address),
                     batch_prover_url,
                     block_prover_url,
                     batch_interval,

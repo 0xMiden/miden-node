@@ -1,24 +1,25 @@
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, Result};
+use futures::StreamExt;
 use miden_node_proto::{
+    domain::mempool::MempoolEvent,
     generated::{
-        block_producer::api_server,
+        block_producer::{MempoolEvent as ProtoMempoolEvent, api_server},
         requests::SubmitProvenTransactionRequest,
         responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
     },
-    ntx_builder,
 };
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
+    tracing::grpc::block_producer_trace_fn,
 };
-use miden_objects::{
-    note::Nullifier, transaction::ProvenTransaction, utils::serde::Deserializable,
-};
+use miden_objects::{transaction::ProvenTransaction, utils::serde::Deserializable};
 use tokio::{net::TcpListener, sync::Mutex};
-use tokio_stream::wrappers::TcpListenerStream;
+use tokio_stream::wrappers::{
+    BroadcastStream, TcpListenerStream, errors::BroadcastStreamRecvError,
+};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
@@ -28,7 +29,7 @@ use crate::{
     COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION,
     SERVER_NUM_BATCH_BUILDERS,
     batch_builder::BatchBuilder,
-    block_builder::{BlockBuilder, NtxClient},
+    block_builder::BlockBuilder,
     domain::transaction::AuthenticatedTransaction,
     errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
     mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
@@ -46,8 +47,6 @@ pub struct BlockProducer {
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_address: SocketAddr,
-    /// The address of the network transaction builder.
-    pub ntx_builder_address: Option<SocketAddr>,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -100,18 +99,10 @@ impl BlockProducer {
             .await
             .context("failed to bind to block producer address")?;
 
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
-
         info!(target: COMPONENT, "Server initialized");
 
-        let block_builder = BlockBuilder::new(
-            store.clone(),
-            ntx_builder,
-            self.block_prover_url,
-            self.block_interval,
-        );
+        let block_builder =
+            BlockBuilder::new(store.clone(), self.block_prover_url, self.block_interval);
         let batch_builder = BatchBuilder::new(
             store.clone(),
             SERVER_NUM_BATCH_BUILDERS,
@@ -153,14 +144,8 @@ impl BlockProducer {
             })
             .id();
 
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
-
         let rpc_id = tasks
-            .spawn(async move {
-                BlockProducerRpcServer::new(mempool, store, ntx_builder).serve(listener).await
-            })
+            .spawn(async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await })
             .id();
 
         let task_ids = HashMap::from([
@@ -204,7 +189,7 @@ struct BlockProducerRpcServer {
 
     store: StoreClient,
 
-    ntx_builder: Option<NtxClient>,
+    mempool_events: tokio::sync::broadcast::Receiver<MempoolEvent>,
 }
 
 #[tonic::async_trait]
@@ -235,14 +220,64 @@ impl api_server::Api for BlockProducerRpcServer {
             status: "connected".to_string(),
         }))
     }
+
+    // type MempoolEventsStream = tokio::sync::broadcast::Receiver<MempoolEvent>;
+    type MempoolEventsStream = MempoolEventsStream;
+    async fn mempool_events(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> Result<tonic::Response<Self::MempoolEventsStream>, tonic::Status> {
+        Ok(tonic::Response::new(MempoolEventsStream {
+            inner: self.mempool_events.resubscribe().into(),
+        }))
+    }
+}
+
+struct MempoolEventsStream {
+    inner: tokio_stream::wrappers::BroadcastStream<MempoolEvent>,
+}
+
+impl tokio_stream::Stream for MempoolEventsStream {
+    type Item = Result<ProtoMempoolEvent, tonic::Status>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        use std::task::Poll;
+
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(Some(Ok(event))) => {
+                let event = ProtoMempoolEvent::from(event);
+                Poll::Ready(Some(Ok(event)))
+            },
+            Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(lag)))) => {
+                tracing::warn!(
+                    missed_events = lag,
+                    "mempool event broadcast stream lagged, closing"
+                );
+
+                let err = tonic::Status::data_loss("Stream missed events, cancelling");
+                let (_tx, rx) = tokio::sync::broadcast::channel(1);
+                self.inner = BroadcastStream::new(rx);
+
+                Poll::Ready(Some(Err(err)))
+            },
+            Poll::Ready(None) => Poll::Ready(None),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 impl BlockProducerRpcServer {
-    pub fn new(mempool: SharedMempool, store: StoreClient, ntx_client: Option<NtxClient>) -> Self {
+    pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
+        // TODO: wire up the mempool to emit these events.
+        let (_tx, rx) = tokio::sync::broadcast::channel(100);
+
         Self {
             mempool: Mutex::new(mempool),
             store,
-            ntx_builder: ntx_client,
+            mempool_events: rx,
         }
     }
 
@@ -295,30 +330,11 @@ impl BlockProducerRpcServer {
         let inputs = self.store.get_tx_inputs(&tx).await.map_err(VerifyTxError::from)?;
 
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
-        let tx_id = tx.id();
-        let tx_nullifiers: Vec<Nullifier> = tx.nullifiers().collect();
-
         let tx = AuthenticatedTransaction::new(tx, inputs)?;
 
-        // Launch a task for updating the mempool, and send the update to the network transaction
-        // builder
-        let submit_tx_response =
-            self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-                SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
-            });
-
-        if let Some(mut ntb_client) = self.ntx_builder.clone() {
-            if let Err(err) =
-                ntb_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await
-            {
-                error!(
-                    target: COMPONENT,
-                    message = %err,
-                    "error submitting network notes updates to ntx builder"
-                );
-            }
-        }
-        submit_tx_response
+        self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
+            SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
+        })
     }
 }
 
@@ -363,19 +379,11 @@ mod test {
                 .expect("Failed to get block-producer address")
         };
 
-        let ntx_builder_addr = {
-            let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("failed to bind the ntx builder address");
-            ntx_builder_address.local_addr().expect("failed to get ntx builder address")
-        };
-
         // start the block producer
         task::spawn(async move {
             BlockProducer {
                 block_producer_address: block_producer_addr,
                 store_address: store_addr,
-                ntx_builder_address: Some(ntx_builder_addr),
                 batch_prover_url: None,
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),

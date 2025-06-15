@@ -23,7 +23,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ secerts.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_ROLE }}
           role-session-name: GithubActionsSession
 

@@ -47,5 +47,5 @@ jobs:
         with:
           push: false
           file: ./bin/${{ matrix.component }}/Dockerfile
-          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},${{ steps.cache-key.outputs.cache_key }}
-          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},${{ steps.cache-key.outputs.cache_key }},mode=max
+          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=${{ steps.cache-key.outputs.cache_key }}
+          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=${{ steps.cache-key.outputs.cache_key }},mode=max

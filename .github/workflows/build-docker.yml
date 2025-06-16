@@ -33,10 +33,16 @@ jobs:
         with:
           cache-binary: true
 
+      - name: Set cache parameters
+        if: github.event.pull_request.head.repo.fork == false
+        run: |
+          echo "CACHE_FROM=type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}" >> $GITHUB_ENV
+          echo "CACHE_TO=type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}" >> $GITHUB_ENV
+
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           push: false
           file: ./bin/${{ matrix.component }}/Dockerfile
-          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}
-          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}
+          cache-from: ${{ env.CACHE_FROM || '' }}
+          cache-to: ${{ env.CACHE_TO || '' }}

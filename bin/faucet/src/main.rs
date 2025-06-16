@@ -93,7 +93,7 @@ pub enum Command {
         #[arg(long = "pow-secret", env = ENV_POW_SECRET)]
         pow_secret: Option<String>,
 
-        /// List of API keys.
+        /// Comma-separated list of API keys.
         #[arg(long = "api-keys", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
         api_keys: Vec<String>,
 
@@ -119,8 +119,9 @@ pub enum Command {
 
     /// Generate API keys that can be used by the faucet.
     ///
-    /// Prints out the specified number of API keys to stdout.
-    /// T
+    /// Prints out the specified number of API keys to stdout as a comma-separated list.
+    /// This list can be supplied to the faucet via the `--api-keys` flag or `MIDEN_FAUCET_API_KEYS`
+    /// env var of the start command.
     CreateApiKeys {
         #[arg()]
         key_count: u8,
@@ -253,10 +254,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         },
 
         Command::CreateApiKeys { key_count } => {
-            (0..key_count).for_each(|_| {
-                let key = generate_api_key();
-                println!("{key}");
-            });
+            let keys = (0..key_count).map(|_| generate_api_key()).collect::<Vec<_>>().join(",");
+            println!("{keys}");
         },
     }
 

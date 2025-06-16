@@ -5,13 +5,6 @@ COPY . .
 
 RUN cargo install --path bin/faucet --locked
 
-# Connect to the node using `host.docker.internal`. This assumes that the node is running on the 
-# same host machine.
-RUN miden-faucet init \
-    --faucet-account-path faucet.mac \
-    --config-path miden-faucet.toml \
-    --node-url http://host.docker.internal:57291
-
 RUN miden-faucet create-faucet-account \
     --output-path faucet.mac \
     --token-symbol MIDEN \

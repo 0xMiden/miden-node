@@ -54,7 +54,7 @@ miden-objects                = { branch = "next", default-features = false, git 
 miden-remote-prover          = { path = "crates/remote-prover", version = "0.10" }
 miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.10" }
 miden-testing                = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx                     = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx                     = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
 miden-tx-batch-prover        = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 prost                        = { version = "0.13" }
 rand                         = { version = "0.9" }

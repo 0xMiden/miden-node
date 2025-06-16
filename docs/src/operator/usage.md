@@ -14,7 +14,7 @@ The first step in starting a new Miden network is to initialize the genesis bloc
 
 ```sh
 # Create a folder to store the node's data.
-mkdir data 
+mkdir data
 
 # Create a folder to store the genesis block's account secrets and data.
 #
@@ -29,9 +29,9 @@ mkdir accounts
 # The genesis block currently contains a single public faucet account. The
 # secret for this account is stored in the `<accounts-directory/account.mac>`
 # file. This file is not used by the node and should instead by used wherever
-# you intend to operate this faucet account. 
+# you intend to operate this faucet account.
 #
-# For example, you could operate a public faucet using our faucet reference 
+# For example, you could operate a public faucet using our faucet reference
 # implementation whose operation is described in a later section.
 miden-node bundled bootstrap \
   --data-directory data \
@@ -64,22 +64,23 @@ miden-faucet create-faucet-account \
   --max-supply 5000
 ```
 
-Create a configuration file for the faucet.  
-
+Export the relevant env vars or source a pre-prepared `.env` file:
 ```sh
-# This generates `miden-faucet.toml` which is used to configure the faucet.
-#
-# You can inspect and modify this if you want to make changes
-# e.g. to the website url.
-miden-faucet init \
-  --config-path miden-faucet.toml \
-  --faucet-account-path accounts/account.mac 
+export MIDEN_FAUCET_ENDPOINT=http://0.0.0.0:8080
+export MIDEN_FAUCET_NODE_URL=http://127.0.0.1:57291
+export MIDEN_FAUCET_TIMEOUT_MS=5000
+export MIDEN_FAUCET_ACCOUNT_PATH="accounts/faucet.mac"
+export MIDEN_FAUCET_ASSET_AMOUNTS=""
+export MIDEN_FAUCET_REMOTE_TX_PROVER_URL=""
+export MIDEN_FAUCET_POW_SECRET=""
+export MIDEN_FAUCET_API_KEYS=""
+export MIDEN_FAUCET_ENABLE_OTEL=false
 ```
 
 Run the faucet:
 
 ```sh
-miden-faucet --config miden-faucet.toml
+miden-faucet
 ```
 
 ## Systemd

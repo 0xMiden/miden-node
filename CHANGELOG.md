@@ -2,6 +2,11 @@
 
 ## v0.10.0 (TBD)
 
+### Changes
+
+- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
+- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
+
 ### Enhancements
 
 - Added support for gRPC server side reflection to all components (#949).

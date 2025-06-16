@@ -32,6 +32,8 @@ impl ApiClient {
         // Setup connection channel.
         let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
             .context("Failed to parse node URL")?
+            .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
+            .context("Failed to enable TLS")?
             .timeout(timeout);
         let channel = endpoint.connect().await?;
 
@@ -58,6 +60,8 @@ impl ApiClient {
     ) -> anyhow::Result<ApiClient> {
         let endpoint = tonic::transport::Endpoint::try_from(url.to_string())
             .context("Failed to parse node URL")?
+            .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
+            .context("Failed to enable TLS")?
             .timeout(timeout);
 
         let channel = endpoint.connect_lazy();

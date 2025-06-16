@@ -77,7 +77,7 @@ pub enum Command {
         timeout_ms: u64,
 
         /// Path to the faucet account file.
-        #[arg(long = "timeout-ms", default_value = DEFAULT_FAUCET_ACCOUNT_PATH, env = ENV_ACCOUNT_PATH)]
+        #[arg(long = "account", default_value = DEFAULT_FAUCET_ACCOUNT_PATH, env = ENV_ACCOUNT_PATH)]
         faucet_account_path: PathBuf,
 
         /// Possible options on the amount of asset that should be dispersed on each faucet

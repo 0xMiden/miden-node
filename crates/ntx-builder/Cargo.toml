@@ -21,9 +21,9 @@ lru                          = { version = "0.14" }
 miden-lib                    = { workspace = true }
 miden-node-proto             = { workspace = true }
 miden-node-utils             = { workspace = true }
-miden-objects                = { workspace = true }
+miden-objects                = { default-features = true, workspace = true }
 miden-remote-prover-client = { features = ["tx-prover"], workspace = true }
-miden-tx                     = { workspace = true }
+miden-tx                     = { default-features = true, workspace = true }
 rand                         = { features = ["thread_rng"], workspace = true }
 thiserror                    = { workspace = true }
 tokio                        = { features = ["full"], workspace = true }

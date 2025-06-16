@@ -10,8 +10,9 @@
 ### Enhancements
 
 - Added support for gRPC server side reflection to all components (#949).
-- Added support for TLS to `miden-proving-service-client` (#968).
 - Compressed faucet background image (#985).
+- Added support for TLS to miden-proving-service-client (#968).
+- Added support for TLS to faucet's connection to node RPC (#976).
 
 ## v0.9.2 (2025-06-12)
 

@@ -459,7 +459,7 @@ mod test {
                         endpoint: endpoint_clone,
                         node_url: stub_node_url,
                         timeout_ms: 5000,
-                        asset_amounts: vec![],
+                        asset_amounts: vec![100, 500, 1000],
                         api_keys: vec![],
                         pow_secret: None,
                         faucet_account_path: faucet_account_path.clone(),

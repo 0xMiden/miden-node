@@ -59,28 +59,17 @@ Create a faucet account for the faucet app to use - or skip this step if you alr
 ```sh
 mkdir accounts
 miden-faucet create-faucet-account \
-  --token-symbol MY_TOKEN \
+  --token-symbol BTC \
   --decimals 12 \
   --max-supply 5000
-```
-
-Export the relevant env vars or source a pre-prepared `.env` file:
-```sh
-export MIDEN_FAUCET_ENDPOINT=http://0.0.0.0:8080
-export MIDEN_FAUCET_NODE_URL=http://127.0.0.1:57291
-export MIDEN_FAUCET_TIMEOUT_MS=5000
-export MIDEN_FAUCET_ACCOUNT_PATH="accounts/faucet.mac"
-export MIDEN_FAUCET_ASSET_AMOUNTS=""
-export MIDEN_FAUCET_REMOTE_TX_PROVER_URL=""
-export MIDEN_FAUCET_POW_SECRET=""
-export MIDEN_FAUCET_API_KEYS=""
-export MIDEN_FAUCET_ENABLE_OTEL=false
 ```
 
 Run the faucet:
 
 ```sh
-miden-faucet
+miden-faucet start \
+--endpoint http://127.0.0.1:8080 \
+--node-url https://rpc.testnet.miden.io
 ```
 
 ## Systemd

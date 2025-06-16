@@ -1,4 +1,3 @@
-mod config;
 mod faucet;
 mod rpc_client;
 mod server;
@@ -29,8 +28,6 @@ use tokio::sync::mpsc;
 use types::AssetOptions;
 use url::Url;
 
-use crate::config::DEFAULT_FAUCET_ACCOUNT_PATH;
-
 // CONSTANTS
 // =================================================================================================
 
@@ -46,8 +43,9 @@ const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 pub const REQUESTS_QUEUE_SIZE: usize = 1000;
 const API_KEY_PREFIX: &str = "miden_faucet_";
+const DEFAULT_FAUCET_ACCOUNT_PATH: &str = "accounts/faucet.mac";
 
-// TODO: we should probably parse this from the config file
+// TODO: Make these configurable.
 const NETWORK_ID: NetworkId = NetworkId::Testnet;
 const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
@@ -305,7 +303,7 @@ mod test {
     use url::Url;
 
     use crate::{
-        API_KEY_PREFIX, Cli, config::DEFAULT_FAUCET_ACCOUNT_PATH, run_faucet_command,
+        API_KEY_PREFIX, Cli, DEFAULT_FAUCET_ACCOUNT_PATH, run_faucet_command,
         stub_rpc_api::serve_stub,
     };
 

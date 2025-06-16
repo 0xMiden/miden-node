@@ -80,7 +80,8 @@ pub enum Command {
         #[arg(long = "timeout-ms", default_value = DEFAULT_FAUCET_ACCOUNT_PATH, env = ENV_ACCOUNT_PATH)]
         faucet_account_path: PathBuf,
 
-        /// Possible options on the amount of asset that should be dispersed on each faucet request.
+        /// Possible options on the amount of asset that should be dispersed on each faucet
+        /// request.
         #[arg(long = "asset-amounts", env = ENV_ASSET_AMOUNTS, num_args = 1.., value_delimiter = ',')]
         asset_amounts: Vec<u64>,
 

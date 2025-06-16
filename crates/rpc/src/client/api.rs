@@ -38,7 +38,7 @@ impl ApiClient {
         let channel = endpoint.connect().await?;
 
         // Set up the accept metadata interceptor.
-        let version = version.unwrap_or(env!("CARGO_PKG_VERSION"));
+        let version = "0.9.0";
         let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
 
         // Return the connected client.
@@ -67,7 +67,7 @@ impl ApiClient {
         let channel = endpoint.connect_lazy();
 
         // Set up the accept metadata interceptor.
-        let version = version.unwrap_or(env!("CARGO_PKG_VERSION"));
+        let version = "0.9.0";
         let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
 
         Ok(ApiClient(ProtoClient::with_interceptor(channel, interceptor)))

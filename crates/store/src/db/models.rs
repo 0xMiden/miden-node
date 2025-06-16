@@ -757,17 +757,21 @@ pub mod queries {
                 },
             };
 
+            let val = (
+                schema::accounts::account_id.eq(account_id.to_bytes()),
+                schema::accounts::network_account_id_prefix
+                    .eq(network_account_id_prefix.map(|prefix| prefix as i64)),
+                schema::accounts::account_commitment.eq(update.final_state_commitment().to_bytes()),
+                schema::accounts::block_num.eq(block_num.as_u32() as i64),
+                schema::accounts::details
+                    .eq(full_account.as_ref().map(|account| account.to_bytes())),
+            );
             let inserted = diesel::insert_into(schema::accounts::table)
-                .values(&[(
-                    schema::accounts::account_id.eq(account_id.to_bytes()),
-                    schema::accounts::network_account_id_prefix
-                        .eq(network_account_id_prefix.map(|prefix| prefix as i64)),
-                    schema::accounts::account_commitment
-                        .eq(update.final_state_commitment().to_bytes()),
-                    schema::accounts::block_num.eq(block_num.as_u32() as i64),
-                    schema::accounts::details
-                        .eq(full_account.as_ref().map(|account| account.to_bytes())),
-                )])
+                .values(&val)
+                // TODO do the update on conflict
+                // .on_conflict(schema::accounts::account_id)
+                // .do_update()
+                // .set(&val)
                 .execute(conn)?;
 
             debug_assert_eq!(inserted, 1);

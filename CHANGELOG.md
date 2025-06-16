@@ -4,8 +4,8 @@
 
 ### Changes
 
-- Replace faucet TOML configuration file with flags and env vars (#976).
-- Replace faucet Init command with CreateApiKeys command (#976).
+- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
+- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
 
 ### Enhancements
 

@@ -903,7 +903,7 @@ pub fn select_notes_by_id(
     let note_ids: Vec<Value> = note_ids.iter().map(|id| id.to_bytes().into()).collect();
 
     let mut stmt = transaction.prepare_cached(&format!(
-        "SELECT {} 
+        "SELECT {}
         FROM notes
         LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE note_id IN rarray(?1)",
@@ -997,7 +997,7 @@ pub fn unconsumed_network_notes(
     // `NoteRecord::from_row` call.
     let mut stmt = transaction.prepare_cached(&format!(
         "
-        SELECT {}, rowid 
+        SELECT {}, rowid
         FROM notes
         LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
@@ -1276,7 +1276,8 @@ pub fn get_note_sync(
 ///
 /// # Returns
 ///
-/// The number of affected rows in the DB.
+/// The number of affected rows
+/// in the DB.
 pub fn apply_block(
     transaction: &Transaction,
     block_header: &BlockHeader,

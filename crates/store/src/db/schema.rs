@@ -4,7 +4,7 @@ diesel::table! {
     account_deltas (account_id, block_num) {
         account_id -> Binary,
         block_num -> BigInt,
-        nonce -> Integer,
+        nonce -> Integer, // TODO it's a `Felt`, so why is this not a `BigInt`?
     }
 }
 
@@ -22,7 +22,7 @@ diesel::table! {
         account_id -> Binary,
         block_num -> BigInt,
         vault_key -> Binary,
-        is_remove -> Integer,
+        is_remove -> Integer, // TODO why is this not a bool?
     }
 }
 

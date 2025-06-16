@@ -247,6 +247,12 @@ pub enum StateSyncError {
     FailedToBuildMmrDelta(#[from] MmrError),
 }
 
+impl From<diesel::result::Error> for StateSyncError {
+    fn from(value: diesel::result::Error) -> Self {
+        Self::DatabaseError(DatabaseError::from(value))
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum NoteSyncError {
     #[error("database error")]
@@ -255,6 +261,12 @@ pub enum NoteSyncError {
     EmptyBlockHeadersTable,
     #[error("error retrieving the merkle proof for the block")]
     MmrError(#[from] MmrError),
+}
+
+impl From<diesel::result::Error> for NoteSyncError {
+    fn from(value: diesel::result::Error) -> Self {
+        Self::DatabaseError(DatabaseError::from(value))
+    }
 }
 
 #[derive(Error, Debug)]

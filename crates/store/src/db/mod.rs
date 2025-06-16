@@ -44,7 +44,7 @@ use crate::{
     db::{
         migrations::apply_migrations,
         models::{
-            AccountInfoRawRow, AccountSummaryRaw, NoteRecordRaw, NoteSyncRecordRawRow,
+            AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteSyncRecordRawRow,
             TransactionSummaryRaw, serialize_vec, vec_raw_try_into,
         },
         pool_manager::{Pool, SqlitePoolManager},
@@ -292,13 +292,12 @@ impl Db {
         R: Send + 'static,
         M: Send + ToString,
         E: From<DatabaseError>,
+        E: From<diesel::result::Error>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        self.diesel
-            .get()
-            .await
-            .map_err(DatabaseError::from)?
-            .interact(query)
+        let conn = self.diesel.get().await.map_err(DatabaseError::from)?;
+
+        conn.interact(|conn| <_ as diesel::Connection>::transaction::<R, E, Q>(conn, query))
             .await
             .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
     }
@@ -452,10 +451,9 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
         self.query("Get account details", move |conn| {
-            let val =
-                QueryDsl::select(schema::accounts::table, models::AccountInfoRawRow::as_select())
-                    .find(id.to_bytes())
-                    .first::<models::AccountInfoRawRow>(conn)?;
+            let val = QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select())
+                .find(id.to_bytes())
+                .first::<models::AccountRaw>(conn)?;
             val.try_into()
         })
         .await
@@ -469,7 +467,7 @@ impl Db {
     ) -> Result<Option<AccountInfo>> {
         self.query("Get account by id prefix", move |conn| {
             let maybe_info = QueryDsl::filter(
-                QueryDsl::select(schema::accounts::table, AccountInfoRawRow::as_select()),
+                QueryDsl::select(schema::accounts::table, AccountRaw::as_select()),
                 schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))),
             )
             .first(conn)
@@ -489,7 +487,7 @@ impl Db {
             let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
 
             let accounts_raw = QueryDsl::filter(
-                QueryDsl::select(schema::accounts::table, models::AccountInfoRawRow::as_select()),
+                QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()),
                 schema::accounts::account_id.eq_any(account_ids),
             )
             .load(conn)?;

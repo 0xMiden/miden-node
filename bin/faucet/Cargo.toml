@@ -37,7 +37,6 @@ sha3                         = { version = "0.10" }
 thiserror                    = { workspace = true }
 tokio                        = { features = ["fs"], workspace = true }
 tokio-stream                 = { features = ["net"], workspace = true }
-toml                         = { version = "0.8" }
 tonic                        = { features = ["tls-native-roots"], workspace = true }
 tower                        = { workspace = true }
 tower-http                   = { features = ["cors", "set-header", "trace"], workspace = true }

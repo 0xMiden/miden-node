@@ -91,7 +91,7 @@ pub enum Command {
 
         /// The secret to be used by the server to generate the `PoW` seed.
         #[arg(long = "pow-secret", env = ENV_POW_SECRET)]
-        pow_secret: String,
+        pow_secret: Option<String>,
 
         /// List of API keys.
         #[arg(long = "api-keys", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
@@ -170,8 +170,10 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         } => {
             let mut rpc_client = RpcClient::connect_lazy(&node_url, timeout_ms)
                 .context("failed to create RPC client")?;
-            let account_file = AccountFile::read(&faucet_account_path)
-                .context("failed to load faucet account from file")?;
+            let account_file = AccountFile::read(&faucet_account_path).context(format!(
+                "failed to load faucet account from file ({})",
+                faucet_account_path.display()
+            ))?;
 
             let faucet = Faucet::load(account_file, &mut rpc_client, remote_tx_prover_url).await?;
 
@@ -184,7 +186,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 faucet.faucet_id(),
                 asset_options,
                 tx_requests,
-                &pow_secret,
+                pow_secret.unwrap_or_default().as_str(),
                 BTreeSet::from_iter(api_keys),
             );
 
@@ -460,7 +462,7 @@ mod test {
                         timeout_ms: 5000,
                         asset_amounts: vec![],
                         api_keys: vec![],
-                        pow_secret: String::new(),
+                        pow_secret: None,
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

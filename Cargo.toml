@@ -2,10 +2,12 @@
 members = [
   "bin/faucet",
   "bin/node",
+  "bin/proving-service",
   "bin/stress-test",
   "crates/block-producer",
   "crates/ntx-builder",
   "crates/proto",
+  "crates/proving-service-client",
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
@@ -21,7 +23,7 @@ resolver = "2"
 authors      = ["Miden contributors"]
 edition      = "2024"
 exclude      = [".github/"]
-homepage     = "https://polygon.technology/polygon-miden"
+homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/miden-node"
@@ -61,9 +63,10 @@ rand                         = { version = "0.9" }
 thiserror                    = { default-features = false, version = "2.0" }
 tokio                        = { features = ["rt-multi-thread"], version = "1.45" }
 tokio-stream                 = { version = "0.1" }
-tonic                        = { version = "0.12" }
+tonic                        = { version = "0.13" }
+tonic-reflection             = { version = "0.13" }
 tower                        = { version = "0.5" }
-tower-http                   = { features = ["trace"], version = "0.6" }
+tower-http                   = { features = ["cors", "trace"], version = "0.6" }
 tracing                      = { version = "0.1" }
 tracing-subscriber           = { features = ["env-filter", "fmt", "json"], version = "0.3" }
 url                          = { features = ["serde"], version = "2.5" }

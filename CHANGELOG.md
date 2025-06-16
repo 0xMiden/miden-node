@@ -2,6 +2,31 @@
 
 ## v0.10.0 (TBD)
 
+### Enhancements
+
+- Added support for gRPC server side reflection to all components (#949).
+- Added support for TLS to `miden-proving-service-client` (#968).
+
+## v0.9.2 (2025-06-12)
+
+- Refresh Cargo.lock file.
+
+## v0.9.1 (2025-06-10)
+
+- Refresh Cargo.lock file (#944).
+
+## v0.9.0 (2025-05-30)
+
+### Changes
+
+- Separated the store API into three separate services (#932).
+- Added a faucet Dockerfile (#933).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
+
+### Fixes
+
+- Faucet considers decimals when minting token amounts (#962).
+
 ## v0.9.0 (2025-05-30)
 
 ### Enhancements
@@ -12,6 +37,7 @@
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
+- Add miden-proving-service and miden-proving-service-client crates (#926).
 
 ### Changes
 

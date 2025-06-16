@@ -303,10 +303,7 @@ mod test {
     use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
 
-    use crate::{
-        API_KEY_PREFIX, Cli, DEFAULT_FAUCET_ACCOUNT_PATH, run_faucet_command,
-        stub_rpc_api::serve_stub,
-    };
+    use crate::{API_KEY_PREFIX, Cli, run_faucet_command, stub_rpc_api::serve_stub};
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
     /// to test the faucet website. It then loads the website and checks that all the requests
@@ -464,7 +461,7 @@ mod test {
                         asset_amounts: vec![],
                         api_keys: vec![],
                         pow_secret: String::new(),
-                        faucet_account_path: DEFAULT_FAUCET_ACCOUNT_PATH.into(),
+                        faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,
                     },

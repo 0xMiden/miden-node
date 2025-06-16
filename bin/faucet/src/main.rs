@@ -82,7 +82,7 @@ pub enum Command {
 
         /// Possible options on the amount of asset that should be dispersed on each faucet
         /// request.
-        #[arg(long = "asset-amounts", env = ENV_ASSET_AMOUNTS, num_args = 1.., value_delimiter = ',')]
+        #[arg(long = "asset-amounts", env = ENV_ASSET_AMOUNTS, num_args = 1.., value_delimiter = ',', default_value = "100,500,1000")]
         asset_amounts: Vec<u64>,
 
         /// Endpoint of the remote transaction prover in the format `<protocol>://<host>[:<port>]`.

@@ -46,8 +46,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_ROLE }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE }}
           role-session-name: GithubActionsSession
 
       - name: Set up Docker Buildx
@@ -63,5 +63,5 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           file: ./bin/${{ matrix.component }}/Dockerfile
           tags: ${{ env.registry }}/0xmiden/miden-${{ matrix.component }}:${{ env.version }}
-          cache-from: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}
-          cache-to: type=s3,region=${{ vars.AWS_REGION }},bucket=${{ vars.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }},mode=max
+          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}
+          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }},mode=max

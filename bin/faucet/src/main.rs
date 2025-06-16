@@ -43,7 +43,7 @@ const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 pub const REQUESTS_QUEUE_SIZE: usize = 1000;
 const API_KEY_PREFIX: &str = "miden_faucet_";
-const DEFAULT_FAUCET_ACCOUNT_PATH: &str = "accounts/faucet.mac";
+const DEFAULT_FAUCET_ACCOUNT_PATH: &str = "faucet.mac";
 
 // TODO: Make these configurable.
 const NETWORK_ID: NetworkId = NetworkId::Testnet;

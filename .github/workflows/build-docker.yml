@@ -28,15 +28,6 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE }}
           role-session-name: GithubActionsSession
 
-      - name: Set cache key
-        id: cache-key
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "cache_key=miden-${{ matrix.component }}-pr-${{ github.event.number }}" >> $GITHUB_OUTPUT
-          else
-            echo "cache_key=miden-${{ matrix.component }}-main" >> $GITHUB_OUTPUT
-          fi
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
@@ -47,5 +38,5 @@ jobs:
         with:
           push: false
           file: ./bin/${{ matrix.component }}/Dockerfile
-          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=${{ steps.cache-key.outputs.cache_key }}
-          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=${{ steps.cache-key.outputs.cache_key }},mode=max
+          cache-from: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}
+          cache-to: type=s3,region=${{ secrets.AWS_REGION }},bucket=${{ secrets.AWS_CACHE_BUCKET }},name=miden-${{ matrix.component }}

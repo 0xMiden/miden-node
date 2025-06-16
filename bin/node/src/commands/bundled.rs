@@ -189,11 +189,6 @@ impl BundledCommand {
             .context("Failed to bind to block-producer gRPC endpoint")?
             .local_addr()
             .context("Failed to retrieve the block-producer's gRPC address")?;
-        let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to network transaction builder gRPC endpoint")?
-            .local_addr()
-            .context("Failed to retrieve the network transaction builder's gRPC address")?;
 
         let mut join_set = JoinSet::new();
         // Start store. The store endpoint is available after loading completes.
@@ -265,7 +260,6 @@ impl BundledCommand {
             let id = join_set
                 .spawn(async move {
                     NetworkTransactionBuilder {
-                        ntx_builder_address,
                         store_url,
                         block_producer_address,
                         tx_prover_url,

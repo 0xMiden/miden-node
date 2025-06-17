@@ -43,7 +43,10 @@ const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 pub const REQUESTS_QUEUE_SIZE: usize = 1000;
 const API_KEY_PREFIX: &str = "miden_faucet_";
-const DEFAULT_FAUCET_ACCOUNT_PATH: &str = "faucet.mac";
+
+/// The default filepath for the faucet account. Should correspond to the default output filepath
+/// used by the bundled node bootstrap command.
+const DEFAULT_FAUCET_ACCOUNT_PATH: &str = "account.mac";
 
 // TODO: Make these configurable.
 const NETWORK_ID: NetworkId = NetworkId::Testnet;
@@ -107,7 +110,7 @@ pub enum Command {
 
     /// Create a new public faucet account and save to the specified file.
     CreateFaucetAccount {
-        #[arg(short, long, value_name = "FILE", default_value = DEFAULT_FAUCET_ACCOUNT_PATH)]
+        #[arg(short, long, value_name = "FILE")]
         output_path: PathBuf,
         #[arg(short, long)]
         token_symbol: String,

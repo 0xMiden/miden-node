@@ -16,12 +16,6 @@ The first step in starting a new Miden network is to initialize the genesis bloc
 # Create a folder to store the node's data.
 mkdir data
 
-# Create a folder to store the genesis block's account secrets and data.
-#
-# These can be used to access the accounts afterwards.
-# Without these the accounts would be inaccessible.
-mkdir accounts
-
 # Bootstrap the node.
 #
 # This creates the node's database and initializes it with the genesis data.
@@ -35,7 +29,7 @@ mkdir accounts
 # implementation whose operation is described in a later section.
 miden-node bundled bootstrap \
   --data-directory data \
-  --accounts-directory accounts
+  --accounts-directory .
 ```
 
 ## Operation
@@ -56,20 +50,23 @@ existing one e.g. one created as part of the genesis block.
 
 Create a faucet account for the faucet app to use - or skip this step if you already have an account file.
 
+Note that we specify a distinct account filename (`faucet.mac`) to avoid collision with the account file that the node bootstrap command generates.
+
 ```sh
-mkdir accounts
 miden-faucet create-faucet-account \
   --token-symbol BTC \
   --decimals 12 \
-  --max-supply 5000
+  --max-supply 5000 \
+  --output-path faucet.mac
 ```
 
 Run the faucet:
 
 ```sh
 miden-faucet start \
---endpoint http://127.0.0.1:8080 \
---node-url https://rpc.testnet.miden.io
+  --endpoint http://127.0.0.1:8080 \
+  --node-url http://127.0.0.1:57291 \
+  --account faucet.mac
 ```
 
 ## Systemd

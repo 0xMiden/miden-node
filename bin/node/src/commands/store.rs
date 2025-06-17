@@ -25,6 +25,9 @@ use super::{
 };
 use crate::system_monitor::SystemMonitor;
 
+/// The default filepath for the genesis account.
+const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
+
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
     /// Bootstraps the blockchain database with the genesis block.
@@ -128,7 +131,7 @@ impl StoreCommand {
         //
         // Without this the accounts would be inaccessible by the user.
         // This is not used directly by the node, but rather by the owner / operator of the node.
-        let filepath = accounts_directory.join("account.mac");
+        let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
         File::create_new(&filepath)
             .and_then(|mut file| file.write_all(&account_file.to_bytes()))
             .with_context(|| {

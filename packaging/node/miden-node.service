@@ -7,12 +7,9 @@ WantedBy=multi-user.target
 
 [Service]
 Type=exec
+EnvironmentFile=/lib/systemd/system/miden-node.env
 ExecStart=/usr/bin/miden-node bundled start
 WorkingDirectory=/opt/miden-node
-Environment="RUST_LOG=info"
-# Use the working directory as the data directory.
-Environment="MIDEN_NODE_DATA_DIRECTORY=./"
-Environment="MIDEN_NODE_RPC_URL=http://0.0.0.0:57291"
 User=miden-node
 RestartSec=5
 Restart=always

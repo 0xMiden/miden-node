@@ -6,6 +6,8 @@
 
 - [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
 - [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
+- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
+- [BREAKING] Remove default value for account output filepath for faucet create-faucet-account command (#976).
 
 ### Enhancements
 

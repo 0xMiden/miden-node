@@ -31,8 +31,8 @@ pub async fn get_index_css() -> Css<&'static str> {
 
 pub async fn get_background() -> Response {
     (
-        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/webp"))],
-        include_bytes!("resources/background.webp"),
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/png"))],
+        include_bytes!("resources/background.png"),
     )
         .into_response()
 }

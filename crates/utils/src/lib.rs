@@ -1,4 +1,5 @@
 pub mod config;
+pub mod cors;
 pub mod crypto;
 pub mod formatting;
 pub mod grpc;

@@ -1,6 +1,4 @@
-use diesel::{
-    Connection, RunQueryDsl, SqliteConnection,
-};
+use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_objects::{
     account::{Account, AccountDelta, AccountId},
@@ -20,13 +18,13 @@ pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u32 {
 
 /// Checks if a table exists in the database.
 pub fn table_exists(conn: &mut SqliteConnection, table_name: &str) -> Result<bool, DatabaseError> {
-    Ok(conn.transaction(|conn| {
+    conn.transaction(|conn| {
         let count =
             diesel::sql_query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $1")
                 .bind::<diesel::sql_types::Text, &str>(table_name)
                 .execute(conn)?;
         Ok::<bool, DatabaseError>(count > 0)
-    })?)
+    })
 }
 
 /// Converts a slice of length `N` to an array, returns `None` if invariant

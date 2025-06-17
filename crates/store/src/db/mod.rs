@@ -28,9 +28,7 @@ use miden_objects::{
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
-    note::{
-        NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier,
-    },
+    note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier},
     transaction::TransactionId,
 };
 use tokio::sync::oneshot;

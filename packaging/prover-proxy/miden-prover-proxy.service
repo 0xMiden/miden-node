@@ -7,6 +7,7 @@ WantedBy=multi-user.target
 
 [Service]
 Type=exec
+Environment="OTEL_SERVICE_NAME=miden-prover-proxy"
 EnvironmentFile=/lib/systemd/system/miden-prover-proxy.env
 ExecStart=/usr/bin/miden-proving-service start-proxy
 WorkingDirectory=/opt/miden-prover-proxy

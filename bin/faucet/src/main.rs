@@ -44,10 +44,6 @@ const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 pub const REQUESTS_QUEUE_SIZE: usize = 1000;
 const API_KEY_PREFIX: &str = "miden_faucet_";
 
-/// The default filepath for the faucet account. Should correspond to the default output filepath
-/// used by the bundled node bootstrap command.
-const DEFAULT_FAUCET_ACCOUNT_PATH: &str = "account.mac";
-
 // TODO: Make these configurable.
 const NETWORK_ID: NetworkId = NetworkId::Testnet;
 const EXPLORER_URL: &str = "https://testnet.midenscan.com";
@@ -68,55 +64,54 @@ pub enum Command {
     /// Start the faucet server
     Start {
         /// Endpoint of the faucet in the format `<ip>:<port>`.
-        #[arg(long = "endpoint", env = ENV_ENDPOINT)]
+        #[arg(long = "endpoint", value_name = "URL", env = ENV_ENDPOINT)]
         endpoint: Url,
 
         /// Node RPC gRPC endpoint in the format `http://<host>[:<port>]`.
-        #[arg(long = "node-url", env = ENV_NODE_URL)]
+        #[arg(long = "node-url", value_name = "URL", env = ENV_NODE_URL)]
         node_url: Url,
 
         /// Timeout for RPC requests in milliseconds.
-        #[arg(long = "timeout-ms", default_value_t = 5000, env = ENV_TIMEOUT)]
+        #[arg(long = "timeout", value_name = "MILLISECONDS", default_value_t = 5000, env = ENV_TIMEOUT)]
         timeout_ms: u64,
 
         /// Path to the faucet account file.
-        #[arg(long = "account", default_value = DEFAULT_FAUCET_ACCOUNT_PATH, env = ENV_ACCOUNT_PATH)]
+        #[arg(long = "account", value_name = "FILE", env = ENV_ACCOUNT_PATH)]
         faucet_account_path: PathBuf,
 
-        /// Comma-separated list of possible options on the amount of asset that should be
-        /// dispersed on each faucet request.
-        #[arg(long = "asset-amounts", env = ENV_ASSET_AMOUNTS, num_args = 1.., value_delimiter = ',', default_value = "100,500,1000")]
+        /// Comma-separated list of amounts of asset that should be dispersed on each faucet request.
+        #[arg(long = "asset-amounts", value_name = "U64", env = ENV_ASSET_AMOUNTS, num_args = 1.., value_delimiter = ',', default_value = "100,500,1000")]
         asset_amounts: Vec<u64>,
 
         /// Endpoint of the remote transaction prover in the format `<protocol>://<host>[:<port>]`.
-        #[arg(long = "remote-tx-prover-url", env = ENV_REMOTE_TX_PROVER_URL)]
+        #[arg(long = "remote-tx-prover-url", value_name = "URL", env = ENV_REMOTE_TX_PROVER_URL)]
         remote_tx_prover_url: Option<Url>,
 
         /// The secret to be used by the server to generate the `PoW` seed.
-        #[arg(long = "pow-secret", env = ENV_POW_SECRET)]
+        #[arg(long = "pow-secret", value_name = "STRING", env = ENV_POW_SECRET)]
         pow_secret: Option<String>,
 
         /// Comma-separated list of API keys.
-        #[arg(long = "api-keys", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
+        #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
         api_keys: Vec<String>,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
         /// This can be further configured using environment variables as defined in the official
         /// OpenTelemetry documentation. See our operator manual for further details.
-        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL)]
+        #[arg(long = "enable-otel", value_name = "BOOL", default_value_t = false, env = ENV_ENABLE_OTEL)]
         open_telemetry: bool,
     },
 
     /// Create a new public faucet account and save to the specified file.
     CreateFaucetAccount {
         #[arg(short, long, value_name = "FILE")]
-        output_path: PathBuf,
-        #[arg(short, long)]
+        output: PathBuf,
+        #[arg(short, long, value_name = "STRING")]
         token_symbol: String,
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "U8")]
         decimals: u8,
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "U64")]
         max_supply: u64,
     },
 
@@ -127,7 +122,7 @@ pub enum Command {
     /// env var of the start command.
     CreateApiKeys {
         #[arg()]
-        key_count: u8,
+        count: u8,
     },
 }
 
@@ -219,7 +214,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         },
 
         Command::CreateFaucetAccount {
-            output_path,
+            output: output_path,
             token_symbol,
             decimals,
             max_supply,
@@ -256,7 +251,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             println!("Faucet account file successfully created at: {}", output_path.display());
         },
 
-        Command::CreateApiKeys { key_count } => {
+        Command::CreateApiKeys { count: key_count } => {
             let keys = (0..key_count).map(|_| generate_api_key()).collect::<Vec<_>>().join(",");
             println!("{keys}");
         },
@@ -436,7 +431,7 @@ mod test {
         // Create faucet account
         run_faucet_command(Cli {
             command: crate::Command::CreateFaucetAccount {
-                output_path: faucet_account_path.clone(),
+                output: faucet_account_path.clone(),
                 token_symbol: "TEST".to_string(),
                 decimals: 6,
                 max_supply: 1_000_000_000_000,

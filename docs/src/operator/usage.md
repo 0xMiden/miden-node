@@ -55,9 +55,9 @@ Note that we specify a distinct account filename (`faucet.mac`) to avoid collisi
 ```sh
 miden-faucet create-faucet-account \
   --token-symbol BTC \
-  --decimals 12 \
-  --max-supply 5000 \
-  --output-path faucet.mac
+  --decimals 8 \
+  --max-supply 2100000000000000 \
+  --output faucet.mac
 ```
 
 Run the faucet:

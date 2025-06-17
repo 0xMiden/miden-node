@@ -6,7 +6,7 @@ COPY . .
 RUN cargo install --path bin/faucet --locked
 
 RUN miden-faucet create-faucet-account \
-    --output-path faucet.mac \
+    --output faucet.mac \
     --token-symbol MIDEN \
     --decimals 6 \
     --max-supply 100000000000000000

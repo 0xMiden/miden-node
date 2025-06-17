@@ -5,6 +5,7 @@ use alloc::{
 };
 use core::time::Duration;
 
+#[cfg(feature = "attestation")]
 use lunal_attestation::verify::verify_attestation;
 use miden_objects::{
     transaction::{ProvenTransaction, TransactionWitness},
@@ -112,6 +113,7 @@ impl TransactionProver for RemoteTransactionProver {
             TransactionProverError::other_with_source("failed to prove transaction", err)
         })?;
 
+        #[cfg(feature = "attestation")]
         // Extract the attestation report from metadata
         if let Some(attestation_value) = response.metadata().get("Attestation-Report") {
             // Verify the attestation

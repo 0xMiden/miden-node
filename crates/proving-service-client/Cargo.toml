@@ -19,6 +19,7 @@ block-prover = ["dep:miden-objects", "dep:tokio"]
 default      = ["std"]
 std          = ["miden-objects/std", "miden-tx/std"]
 tx-prover    = ["dep:miden-objects", "dep:tokio", "miden-tx/async"]
+attestation = ["dep:lunal-attestation"]
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom             = { features = ["wasm_js"], version = "0.3" }
@@ -33,7 +34,7 @@ tonic = { default-features = false, features = [
   "tls-native-roots",
   "transport",
 ], version = "0.12" }
-lunal-attestation = { git = "https://github.com/lunal-dot-dev/attestation-rs.git" }
+lunal-attestation = { git = "https://github.com/lunal-dot-dev/attestation-rs.git", optional = true }
 tonic-web = { optional = true, version = "0.12" }
 
 [lints]

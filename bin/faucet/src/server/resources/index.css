@@ -16,7 +16,7 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
-    background-image: url(./background.png);
+    background-image: url(./background.webp);
     background-repeat: no-repeat;
     background-size: cover;
 }

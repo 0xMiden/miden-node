@@ -154,7 +154,7 @@ impl Server {
                 .route("/", get(frontend::get_index_html))
                 .route("/index.js", get(frontend::get_index_js))
                 .route("/index.css", get(frontend::get_index_css))
-                .route("/background.png", get(frontend::get_background))
+                .route("/background.webp", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
                 .route("/pow", get(|State(pow): State<PoW>| async move {

@@ -1,10 +1,57 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use miden_node_proto::domain::note::NetworkNote;
+use miden_node_proto::domain::{mempool::MempoolEvent, note::NetworkNote};
 use miden_objects::{
+    Word,
+    account::{Account, AccountId},
+    block::{BlockHeader, BlockNumber},
     note::{NoteId, NoteTag, Nullifier},
-    transaction::TransactionId,
+    transaction::{PartialBlockchain, TransactionId},
 };
+use miden_tx::{DataStore, DataStoreError, MastForestStore};
+
+use crate::builder::store::StoreClient;
+
+pub struct State;
+
+impl State {
+    /// Synchronizes the local committed state with that in the store.
+    pub async fn sync_committed(&mut self, _store: &StoreClient) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    pub fn update(&mut self, _event: MempoolEvent) {
+        todo!()
+    }
+
+    pub fn chain_tip(&self) -> BlockNumber {
+        todo!()
+    }
+
+    pub fn arbitrary_unconsumed_note(&self) -> Option<&NetworkNote> {
+        todo!()
+    }
+}
+
+impl MastForestStore for State {
+    fn get(
+        &self,
+        _procedure_hash: &miden_objects::Digest,
+    ) -> Option<std::sync::Arc<miden_objects::MastForest>> {
+        todo!()
+    }
+}
+
+#[async_trait::async_trait(?Send)]
+impl DataStore for State {
+    async fn get_transaction_inputs(
+        &self,
+        _account_id: AccountId,
+        _ref_blocks: BTreeSet<BlockNumber>,
+    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
+        todo!();
+    }
+}
 
 /// Max number of notes taken for executing a single network transaction
 const MAX_BATCH: usize = 50;

@@ -1,5 +1,5 @@
 mod builder;
-mod state;
+pub(crate) mod state;
 
 pub use builder::NetworkTransactionBuilder;
 

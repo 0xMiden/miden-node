@@ -79,7 +79,7 @@ pub enum Command {
         #[arg(long = "account", value_name = "FILE", env = ENV_ACCOUNT_PATH)]
         faucet_account_path: PathBuf,
 
-        /// Comma-separated list of amounts of asset that should be dispersed on each faucet request.
+        /// Comma-separated list of amounts of asset that should be dispersed on each request.
         #[arg(long = "asset-amounts", value_name = "U64", env = ENV_ASSET_AMOUNTS, num_args = 1.., value_delimiter = ',', default_value = "100,500,1000")]
         asset_amounts: Vec<u64>,
 

@@ -1,18 +1,11 @@
 use std::sync::LazyLock;
 
+use diesel::SqliteConnection;
 use miden_objects::crypto::hash::blake::{Blake3_160, Blake3Digest};
-use rusqlite_migration::{M, Migrations, SchemaVersion};
-use tracing::{debug, error, info, instrument};
+use rusqlite_migration::{M, Migrations};
+use tracing::instrument;
 
-use crate::{
-    COMPONENT,
-    db::{
-        connection::Connection,
-        settings::Settings,
-        sql::utils::{from_be_to_u32, schema_version},
-    },
-    errors::DatabaseError,
-};
+use crate::COMPONENT;
 
 type Hash = Blake3Digest<20>;
 
@@ -28,75 +21,78 @@ const DB_MIGRATION_HASH_FIELD: &str = "db-migration-hash";
 const DB_SCHEMA_VERSION_FIELD: &str = "db-schema-version";
 
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
-    let version_before = MIGRATIONS.current_version(conn)?;
+pub fn apply_migrations(conn: &mut SqliteConnection) -> super::Result<()> {
+    // XXX TODO FIXME
 
-    info!(target: COMPONENT, %version_before, "Running database migrations");
+    // let version_before = MIGRATIONS.current_version(conn)?;
 
-    if let SchemaVersion::Inside(ver) = version_before {
-        if !Settings::exists(conn)? {
-            error!(target: COMPONENT, "No settings table in the database");
-            return Err(DatabaseError::UnsupportedDatabaseVersion);
-        }
+    // info!(target: COMPONENT, %version_before, "Running database migrations");
 
-        let last_schema_version = Settings::get_value::<Vec<u8>>(conn, DB_SCHEMA_VERSION_FIELD)?
-            .and_then(|bytes| from_be_to_u32(&bytes[..]))
-            .ok_or_else(|| {
-                error!(target: COMPONENT, "No schema version in the settings table");
-                DatabaseError::UnsupportedDatabaseVersion
-            })?;
-        let current_schema_version = schema_version(conn)?;
+    // if let SchemaVersion::Inside(ver) = version_before {
+    //     if !Settings::exists(conn)? {
+    //         error!(target: COMPONENT, "No settings table in the database");
+    //         return Err(DatabaseError::UnsupportedDatabaseVersion);
+    //     }
 
-        if last_schema_version != current_schema_version {
-            error!(target: COMPONENT, last_schema_version, current_schema_version, "Schema version mismatch");
-            return Err(DatabaseError::UnsupportedDatabaseVersion);
-        }
+    //     let last_schema_version = Settings::get_value::<Vec<u8>>(conn, DB_SCHEMA_VERSION_FIELD)?
+    //         .and_then(|bytes| from_be_to_u32(&bytes[..]))
+    //         .ok_or_else(|| {
+    //             error!(target: COMPONENT, "No schema version in the settings table");
+    //             DatabaseError::UnsupportedDatabaseVersion
+    //         })?;
+    //     let current_schema_version = schema_version(conn)?;
 
-        let expected_hash = &*MIGRATION_HASHES[ver.get() - 1];
-        let actual_hash = Settings::get_value::<Vec<u8>>(conn, DB_MIGRATION_HASH_FIELD)?
-            .ok_or(DatabaseError::UnsupportedDatabaseVersion)?;
+    //     if last_schema_version != current_schema_version {
+    //         error!(target: COMPONENT, last_schema_version, current_schema_version, "Schema
+    // version mismatch");         return Err(DatabaseError::UnsupportedDatabaseVersion);
+    //     }
 
-        if actual_hash != expected_hash {
-            error!(
-                target: COMPONENT,
-                expected_hash = hex::encode(expected_hash),
-                actual_hash = hex::encode(&*actual_hash),
-                "Migration hashes mismatch",
-            );
-            return Err(DatabaseError::UnsupportedDatabaseVersion);
-        }
-    }
+    //     let expected_hash = &*MIGRATION_HASHES[ver.get() - 1];
+    //     let actual_hash = Settings::get_value::<Vec<u8>>(conn, DB_MIGRATION_HASH_FIELD)?
+    //         .ok_or(DatabaseError::UnsupportedDatabaseVersion)?;
 
-    MIGRATIONS.to_latest(conn).map_err(DatabaseError::MigrationError)?;
+    //     if actual_hash != expected_hash {
+    //         error!(
+    //             target: COMPONENT,
+    //             expected_hash = hex::encode(expected_hash),
+    //             actual_hash = hex::encode(&*actual_hash),
+    //             "Migration hashes mismatch",
+    //         );
+    //         return Err(DatabaseError::UnsupportedDatabaseVersion);
+    //     }
+    // }
 
-    let version_after = MIGRATIONS.current_version(conn)?;
+    // MIGRATIONS.to_latest(conn).map_err(DatabaseError::MigrationError)?;
 
-    if version_before != version_after {
-        let new_hash_bytes = &*MIGRATION_HASHES[MIGRATION_HASHES.len() - 1];
-        let new_hash = hex::encode(new_hash_bytes);
-        debug!(target: COMPONENT, new_hash, "Updating migration hash in settings table");
-        Settings::set_value(conn, DB_MIGRATION_HASH_FIELD, &new_hash_bytes)?;
-    }
+    // let version_after = MIGRATIONS.current_version(conn)?;
 
-    info!(target: COMPONENT, "Starting database optimization");
+    // if version_before != version_after {
+    //     let new_hash_bytes = &*MIGRATION_HASHES[MIGRATION_HASHES.len() - 1];
+    //     let new_hash = hex::encode(new_hash_bytes);
+    //     debug!(target: COMPONENT, new_hash, "Updating migration hash in settings table");
+    //     Settings::set_value(conn, DB_MIGRATION_HASH_FIELD, &new_hash_bytes)?;
+    // }
 
-    // Run full database optimization. This will run indexes analysis for the query planner.
-    // This will also increase the `schema_version` value.
-    //
-    // We should run full database optimization in following cases:
-    // 1. Once schema was changed, especially new indexes were created.
-    // 2. After restarting of the node, on first connection established.
-    //
-    // More info: https://www.sqlite.org/pragma.html#pragma_optimize
-    conn.pragma_update(None, "optimize", "0x10002")?;
+    // info!(target: COMPONENT, "Starting database optimization");
 
-    info!(target: COMPONENT, "Finished database optimization");
+    // // Run full database optimization. This will run indexes analysis for the query planner.
+    // // This will also increase the `schema_version` value.
+    // //
+    // // We should run full database optimization in following cases:
+    // // 1. Once schema was changed, especially new indexes were created.
+    // // 2. After restarting of the node, on first connection established.
+    // //
+    // // More info: https://www.sqlite.org/pragma.html#pragma_optimize
+    // conn.pragma_update(None, "optimize", "0x10002")?;
 
-    let new_schema_version = schema_version(conn)?;
-    debug!(target: COMPONENT, new_schema_version, "Updating schema version in settings table");
-    Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD, &new_schema_version.to_be_bytes().to_vec())?;
+    // info!(target: COMPONENT, "Finished database optimization");
 
-    info!(target: COMPONENT, %version_after, "Finished database migrations");
+    // let new_schema_version = schema_version(conn)?;
+    // debug!(target: COMPONENT, new_schema_version, "Updating schema version in settings table");
+    // Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD,
+    // &new_schema_version.to_be_bytes().to_vec())?;
+
+    // info!(target: COMPONENT, %version_after, "Finished database migrations");
 
     Ok(())
 }

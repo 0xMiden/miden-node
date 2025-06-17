@@ -249,6 +249,82 @@ pub struct NoteDetailsRaw {
     pub serial_num: Option<Vec<u8>>,
 }
 
+#[derive(diesel::QueryableByName, Debug)]
+#[diesel(table_name = notes)] // Link to the notes table
+pub struct NoteRecordRawNoResolve {
+    pub block_num: i64,
+    pub batch_index: i32,
+    pub note_index: i32,
+    pub note_id: Vec<u8>,
+    pub note_type: i32,
+    pub sender: Vec<u8>,
+    pub tag: i32,
+    pub execution_mode: i32,
+    pub aux: i64,
+    pub execution_hint: i64,
+    pub merkle_path: Vec<u8>,
+    pub consumed: i32, // Diesel maps bool to INTEGER (0 for false, 1 for true)
+    pub nullifier: Option<Vec<u8>>,
+    pub assets: Option<Vec<u8>>,
+    pub inputs: Option<Vec<u8>>,
+    pub script_root: Option<Vec<u8>>,
+    pub serial_num: Option<Vec<u8>>,
+    // Add the rowid field here, implicit in SQLite! It causes all kinds of havoc
+    // pub rowid: i64,
+}
+
+impl TryInto<NoteRecord> for NoteRecordRawNoResolve {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<NoteRecord, Self::Error> {
+        let NoteRecordRawNoResolve {
+            block_num,
+            batch_index,
+            note_index,
+            note_id,
+            note_type,
+            sender,
+            tag,
+            execution_mode,
+            aux,
+            execution_hint,
+            merkle_path,
+            consumed,
+            nullifier,
+            assets,
+            inputs,
+            script_root,
+            serial_num,
+            // rowid,
+        } = self;
+
+        let index = BlockNoteIndexRaw { batch_index, note_index };
+        let metadata = NoteMetadataRaw {
+            note_type,
+            sender,
+            tag,
+            execution_hint,
+            aux,
+        };
+        let details = NoteDetailsRaw { assets, inputs, serial_num };
+
+        let metadata = metadata.try_into()?;
+        let block_num = raw_sql_to_block_number(block_num);
+        let note_id = RpoDigest::read_from_bytes(&note_id[..])?;
+        let details = None; // TODO check against origin NoteRecord::from_raw
+
+        let merkle_path = MerklePath::read_from_bytes(&merkle_path[..])?;
+        let note_index = index.try_into()?;
+        Ok(NoteRecord {
+            block_num,
+            note_index,
+            note_id,
+            metadata,
+            details,
+            merkle_path,
+        })
+    }
+}
+
 // Note: One cannot use `#[diesel(embed)]` to structure
 // this, it will yield a significant amount of errors
 // when used with join and debugging is painful to put it
@@ -383,16 +459,27 @@ pub mod queries {
     };
 
     use diesel::{
-        NullableExpressionMethods, OptionalExtension, SqliteConnection,
+        JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection, alias,
         query_dsl::methods::SelectDsl,
     };
     use miden_lib::utils::{Deserializable, Serializable};
     use miden_node_proto::domain::account::NetworkAccountPrefix;
     use miden_objects::{
-        account::{Account, AccountDelta, NonFungibleDeltaAction, delta::AccountUpdateDetails},
+        Word,
+        account::{
+            Account, AccountDelta, AccountStorageDelta, AccountVaultDelta, FungibleAssetDelta,
+            NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
+            delta::AccountUpdateDetails,
+        },
+        asset::NonFungibleAsset,
         block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex},
-        crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
-        note::{NoteId, NoteInclusionProof, Nullifier},
+        crypto::{
+            hash::rpo::RpoDigest,
+            merkle::MerklePath,
+        },
+        note::{
+            NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier,
+        },
         transaction::OrderedTransactionHeaders,
     };
 
@@ -402,8 +489,10 @@ pub mod queries {
         serialize_vec,
     };
     use crate::db::{
-        NoteRecord, NoteSyncUpdate,
-        models::{deserialize_raw_vec, vec_raw_try_into},
+        NoteRecord, NoteSyncUpdate, Page,
+        models::{
+            NoteRecordRawNoResolve, deserialize_raw_vec, vec_raw_try_into,
+        },
         schema,
         sql::utils::get_nullifier_prefix,
     };
@@ -550,6 +639,7 @@ pub mod queries {
         Ok(account)
     }
 
+    #[allow(clippy::too_many_lines)]
     fn insert_account_delta(
         conn: &mut SqliteConnection,
         account_id: AccountId,
@@ -678,6 +768,8 @@ pub mod queries {
         }
 
         for (&asset, action) in delta.vault().non_fungible().iter() {
+            // TODO consider moving this out into a `TryFrom<u8/bool>` and `Into<u8/bool>`
+            // respectively.
             let is_remove = match action {
                 NonFungibleDeltaAction::Add => 0,
                 NonFungibleDeltaAction::Remove => 1,
@@ -901,5 +993,343 @@ pub mod queries {
         count += insert_transactions(conn, block_header.block_num(), transactions)?;
         count += insert_nullifiers_for_block(conn, nullifiers, block_header.block_num())?;
         Ok(count)
+    }
+
+    pub fn unconsumed_network_notes(
+        conn: &mut SqliteConnection,
+        mut page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+        assert_eq!(
+            NoteExecutionMode::Network as u8,
+            0,
+            "Hardcoded execution value must match query"
+        );
+
+        let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
+        let rowid_sel_ge =
+            diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ? ")
+                .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
+
+        type RawLoadedTuple = (
+            i64,             // block_num
+            i32,             // batch_index
+            i32,             // note_index
+            Vec<u8>,         // note_id
+            i32,             // note_type
+            Vec<u8>,         // sender
+            i32,             // tag
+            i32,             // execution_mode
+            i64,             // aux
+            i64,             // execution_hint
+            Vec<u8>,         // merkle_path
+            i32,             // consumed
+            Option<Vec<u8>>, // nullifier
+            Option<Vec<u8>>, // assets
+            Option<Vec<u8>>, // inputs
+            Option<Vec<u8>>, // script_root
+            Option<Vec<u8>>, // serial_num
+            i64,             // rowid (from sql::<BigInt>("notes.rowid"))
+        );
+
+        fn hack(tuple: RawLoadedTuple) -> (NoteRecordRawNoResolve, i64) {
+            (
+                NoteRecordRawNoResolve {
+                    block_num: tuple.0,
+                    batch_index: tuple.1,
+                    note_index: tuple.2,
+                    note_id: tuple.3,
+                    note_type: tuple.4,
+                    sender: tuple.5,
+                    tag: tuple.6,
+                    execution_mode: tuple.7,
+                    aux: tuple.8,
+                    execution_hint: tuple.9,
+                    merkle_path: tuple.10,
+                    consumed: tuple.11,
+                    nullifier: tuple.12,
+                    assets: tuple.13,
+                    inputs: tuple.14,
+                    script_root: tuple.15,
+                    serial_num: tuple.16,
+                },
+                tuple.17,
+            )
+        }
+
+        // let paged = |conn: &mut SqliteConnection, offset: u64, limit: u64, dest: &mut
+        // Vec<NoteRecord>| {
+        let raw =
+            SelectDsl::select(
+                schema::notes::table.left_join(schema::note_scripts::table.on(
+                    schema::notes::script_root.eq(schema::note_scripts::script_root.nullable()),
+                )),
+                (
+                    schema::notes::block_num,
+                    schema::notes::batch_index,
+                    schema::notes::note_index,
+                    schema::notes::note_id,
+                    schema::notes::note_type,
+                    schema::notes::sender,
+                    schema::notes::tag,
+                    schema::notes::execution_mode,
+                    schema::notes::aux,
+                    schema::notes::execution_hint,
+                    schema::notes::merkle_path,
+                    schema::notes::consumed,
+                    schema::notes::nullifier,
+                    schema::notes::assets,
+                    schema::notes::inputs,
+                    schema::notes::script_root,
+                    schema::notes::serial_num,
+                    rowid_sel.clone(),
+                ),
+            )
+            .filter(
+                schema::notes::execution_mode
+                    .eq(0 as i32)
+                    .and(schema::notes::consumed.eq(false as u8 as i32))
+                    .and(rowid_sel_ge),
+            )
+            .order(rowid_sel.asc())
+            .limit(page.size.get() as i64)
+            .load::<RawLoadedTuple>(conn)?;
+
+        // dest.extend(iter.map(|| todo!()))?;
+
+        let mut notes = Vec::with_capacity(page.size.into());
+        let mut iter = raw.into_iter();
+        while let Some(raw_item) = iter.next() {
+            let (raw_item, row) = hack(raw_item);
+            page.token = None;
+            if notes.len() == page.size.get() {
+                page.token = Some(row as u64);
+                break;
+            }
+            notes.push(TryInto::<NoteRecord>::try_into(raw_item)?);
+        }
+
+        Ok((notes, page))
+    }
+
+    pub fn select_account_delta(
+        conn: &mut SqliteConnection,
+        account_id: AccountId,
+        block_start: BlockNumber,
+        block_end: BlockNumber,
+    ) -> Result<Option<AccountDelta>, DatabaseError> {
+        let start_block_num = block_start.as_u32();
+        let end_block_num = block_end.as_u32();
+
+        let select_nonce_stmt = |conn: &mut SqliteConnection,
+                                 account_id: &AccountId,
+                                 start_block_num: &BlockNumber,
+                                 end_block_num: &BlockNumber| {
+            let desired_account_id = account_id.to_bytes();
+            let start_block_num = start_block_num.as_u32() as i64;
+            let end_block_num = end_block_num.as_u32() as i64;
+
+            let res =
+                SelectDsl::select(schema::account_deltas::table, schema::account_deltas::nonce)
+                    .filter(
+                        schema::account_deltas::account_id
+                            .eq(desired_account_id)
+                            .and(schema::account_deltas::block_num.gt(start_block_num))
+                            .and(schema::account_deltas::block_num.le(end_block_num)),
+                    )
+                    .order(schema::account_deltas::block_num.desc())
+                    .limit(1)
+                    .get_result::<i32>(conn)
+                    .optional()?;
+            Ok::<Option<u64>, DatabaseError>(res.map(|nonce| nonce as u64)) // FIXME what type is nonce supposed to be
+        };
+
+        let select_slot_updates_stmt =
+            |conn: &mut SqliteConnection,
+             account_id_val: &AccountId,
+             start_block_num: &BlockNumber,
+             end_block_num: &BlockNumber| {
+                let desired_account_id = account_id_val.to_bytes();
+                let start_block_num = start_block_num.as_u32() as i64;
+                let end_block_num = end_block_num.as_u32() as i64;
+
+                use schema::account_storage_slot_updates::dsl::*;
+
+                // Alias the table for the inner and outer query
+                let (a, b) = alias!(
+                    schema::account_storage_slot_updates as a,
+                    schema::account_storage_slot_updates as b
+                );
+
+                // Construct the NOT EXISTS subquery
+                let subquery =
+                    b // the raw SQL uses SELECT 1, but diesel cannot represent that
+                    .filter(b.field(account_id).eq(&desired_account_id))
+                .filter(a.field(slot).eq(b.field(slot))) // Correlated subquery: a.slot = b.slot
+                .filter(a.field(block_num).lt(b.field(block_num))) // a.block_num < b.block_num
+                .filter(b.field(block_num).le(end_block_num));
+
+                // Construct the main query
+                let results: Vec<(i32, Vec<u8>)> = SelectDsl::select(a, (a.field(slot), a.field(value)))
+
+                    .filter(a.field(account_id).eq(&desired_account_id))
+                    .filter(a.field(block_num).gt(start_block_num))
+                    .filter(a.field(block_num).le(end_block_num))
+                    .filter(diesel::dsl::not(diesel::dsl::exists(subquery))) // Apply the NOT EXISTS condition
+                    .load(conn)?;
+                Ok::<_, DatabaseError>(results)
+            };
+
+        let select_storage_map_updates_stmt = |conn: &mut SqliteConnection,
+                                               account_id_val: &AccountId,
+                                               start_block_num: &BlockNumber,
+                                               end_block_num: &BlockNumber|
+         -> Result<
+            Vec<(i32, Vec<u8>, Vec<u8>)>,
+            DatabaseError,
+        > {
+            let desired_account_id = account_id_val.to_bytes();
+            let start_block_num = start_block_num.as_u32() as i64;
+            let end_block_num = end_block_num.as_u32() as i64;
+
+            use schema::account_storage_map_updates::dsl::*;
+
+            // Alias the table for the inner and outer query
+            let (a, b) = alias!(
+                schema::account_storage_map_updates as a,
+                schema::account_storage_map_updates as b
+            );
+
+            // Construct the NOT EXISTS subquery
+            let subquery = //diesel::dsl::select(1_i32.as_sql::<diesel::sql_types::Integer>())
+                b // diesel cannot represent a lack of from query
+                .filter(b.field(account_id).eq(&desired_account_id))
+                .filter(a.field(slot).eq(b.field(slot))) // Correlated subquery: a.slot = b.slot
+                .filter(a.field(block_num).lt(b.field(block_num))) // a.block_num < b.block_num
+                .filter(b.field(block_num).le(end_block_num));
+
+            // Construct the main query
+            let res: Vec<(i32, Vec<u8>, Vec<u8>)> = SelectDsl::select(a, (a.field(slot), a.field(key), a.field(value)))
+                    .filter(a.field(account_id).eq(&desired_account_id))
+                    .filter(a.field(block_num).gt(start_block_num))
+                    .filter(a.field(block_num).le(end_block_num))
+                    .filter(diesel::dsl::not(diesel::dsl::exists(subquery))) // Apply the NOT EXISTS condition
+                    .load(conn)?;
+            Ok(res)
+        };
+
+        let select_fungible_asset_deltas_stmt =
+            |conn: &mut SqliteConnection,
+             account_id: &AccountId,
+             start_block_num: &BlockNumber,
+             end_block_num: &BlockNumber|
+             -> Result<Vec<(Vec<u8>, Option<i64>)>, DatabaseError> {
+                let desired_account_id = account_id.to_bytes();
+                let start_block_num = start_block_num.as_u32() as i64;
+                let end_block_num = end_block_num.as_u32() as i64;
+
+                Ok(SelectDsl::select(
+                    schema::account_fungible_asset_deltas::table
+                        .filter(
+                            schema::account_fungible_asset_deltas::account_id
+                                .eq(desired_account_id)
+                                .and(
+                                    schema::account_fungible_asset_deltas::block_num
+                                        .gt(start_block_num),
+                                )
+                                .and(
+                                    schema::account_fungible_asset_deltas::block_num
+                                        .le(end_block_num),
+                                ),
+                        )
+                        .group_by(schema::account_fungible_asset_deltas::faucet_id),
+                    (
+                        schema::account_fungible_asset_deltas::faucet_id,
+                        diesel::dsl::sum(schema::account_fungible_asset_deltas::delta),
+                    ),
+                )
+                .load(conn)?)
+            };
+
+        let select_non_fungible_asset_updates_stmt = |conn: &mut SqliteConnection,
+                                                      account_id: &AccountId,
+                                                      start_block_num: &BlockNumber,
+                                                      end_block_num: &BlockNumber|
+         -> Result<
+            Vec<(i64, Vec<u8>, i32)>,
+            DatabaseError,
+        > {
+            let desired_account_id = account_id.to_bytes();
+            let start_block_num = start_block_num.as_u32() as i64;
+            let end_block_num = end_block_num.as_u32() as i64;
+
+            Ok(SelectDsl::select(
+                schema::account_non_fungible_asset_updates::table,
+                (
+                    schema::account_non_fungible_asset_updates::block_num,
+                    schema::account_non_fungible_asset_updates::vault_key,
+                    schema::account_non_fungible_asset_updates::is_remove,
+                ),
+            )
+            .filter(
+                schema::account_non_fungible_asset_updates::account_id
+                    .eq(desired_account_id)
+                    .and(schema::account_non_fungible_asset_updates::block_num.gt(start_block_num))
+                    .and(schema::account_non_fungible_asset_updates::block_num.le(end_block_num)),
+            )
+            .order(schema::account_non_fungible_asset_updates::block_num.asc())
+            .get_results(conn)?)
+        };
+
+        let Some(nonce) = select_nonce_stmt(conn, &account_id, &block_start, &block_end)? else {
+            return Ok(None);
+        };
+        let nonce = nonce.try_into().map_err(DatabaseError::InvalidFelt)?;
+
+        let rows: Vec<(i32, Vec<u8>)> = // XXX double check types
+            select_slot_updates_stmt(conn, &account_id, &block_start, &block_end)?;
+        let storage_scalars =
+            Result::<BTreeMap<u8, Word>, _>::from_iter(rows.iter().map(|(slot, value)| {
+                let felt = Word::read_from_bytes(value)?;
+                Ok::<_, DatabaseError>((*slot as u8, felt))
+            }))?;
+
+        let rows = select_storage_map_updates_stmt(conn, &account_id, &block_start, &block_end)?;
+        // (slot, StorageDeltaMap)
+        let mut storage_maps = BTreeMap::<u8, StorageMapDelta>::new();
+        for (slot, key, value) in rows {
+            let key = miden_objects::Digest::read_from_bytes(&key)?;
+            let value = Word::read_from_bytes(&value)?;
+            storage_maps.entry(slot as u8).or_default().insert(key, value); // FIXME cross check
+        }
+
+        let mut fungible = BTreeMap::<AccountId, i64>::new();
+        let rows = select_fungible_asset_deltas_stmt(conn, &account_id, &block_start, &block_end)?;
+        for (faucet_id, value) in rows {
+            let faucet_id = AccountId::read_from_bytes(&faucet_id)?;
+            fungible.insert(faucet_id, value.unwrap()); // FIXME XXX deal with failability
+        }
+
+        let mut non_fungible_delta = NonFungibleAssetDelta::default();
+        let rows =
+            select_non_fungible_asset_updates_stmt(conn, &account_id, &block_start, &block_end)?;
+        for (_, vault_key_asset, action) in rows {
+            let asset = NonFungibleAsset::read_from_bytes(&vault_key_asset)
+                .map_err(|err| DatabaseError::DataCorrupted(err.to_string()))?;
+
+            match action {
+                0 => non_fungible_delta.add(asset)?,
+                1 => non_fungible_delta.remove(asset)?,
+                _ => {
+                    return Err(DatabaseError::DataCorrupted(format!(
+                        "Invalid non-fungible asset delta action: {action}"
+                    )));
+                },
+            }
+        }
+
+        let storage = AccountStorageDelta::new(storage_scalars, storage_maps)?;
+        let vault = AccountVaultDelta::new(FungibleAssetDelta::new(fungible)?, non_fungible_delta);
+
+        Ok(Some(AccountDelta::new(storage, vault, Some(nonce))?))
     }
 }

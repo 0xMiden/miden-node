@@ -51,6 +51,8 @@ pub enum DatabaseError {
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error(transparent)]
     Diesel(#[from] diesel::result::Error),
+    #[error("Sqlite FFI boundary NUL termination error (not much you can do, file an issue)")]
+    DieselSqliteFfi(#[from] std::ffi::NulError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------

@@ -1,3 +1,6 @@
+use diesel::{
+    Connection, RunQueryDsl, SqliteConnection,
+};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_objects::{
     account::{Account, AccountDelta, AccountId},
@@ -6,15 +9,9 @@ use miden_objects::{
     note::Nullifier,
     utils::Deserializable,
 };
-use rusqlite::{
-    OptionalExtension, params,
-    types::{Value, ValueRef},
-};
+use rusqlite::types::{Value, ValueRef};
 
-use crate::{
-    db::{connection::Connection, transaction::Transaction},
-    errors::DatabaseError,
-};
+use crate::errors::DatabaseError;
 
 /// Returns the high 16 bits of the provided nullifier.
 pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u32 {
@@ -22,18 +19,18 @@ pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u32 {
 }
 
 /// Checks if a table exists in the database.
-pub fn table_exists(transaction: &Transaction, table_name: &str) -> rusqlite::Result<bool> {
-    Ok(transaction
-        .query_row(
-            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $1",
-            params![table_name],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some())
+pub fn table_exists(conn: &mut SqliteConnection, table_name: &str) -> Result<bool, DatabaseError> {
+    Ok(conn.transaction(|conn| {
+        let count =
+            diesel::sql_query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $1")
+                .bind::<diesel::sql_types::Text, &str>(table_name)
+                .execute(conn)?;
+        Ok::<bool, DatabaseError>(count > 0)
+    })?)
 }
 
-/// Converts a slice of length `N` to an array, returns `None` if invariant isn't upheld.
+/// Converts a slice of length `N` to an array, returns `None` if invariant
+/// isn'crates/store/src/db/mod.rs upheld.
 pub fn slice_to_array<const N: usize>(bytes: &[u8]) -> Option<[u8; N]> {
     if bytes.len() != N {
         return None;
@@ -48,12 +45,20 @@ pub fn from_be_to_u32(bytes: &[u8]) -> Option<u32> {
     slice_to_array::<4>(bytes).map(u32::from_be_bytes)
 }
 
+#[derive(diesel::QueryableByName, Debug)]
+#[diesel(table_name = diesel::table)]
+pub struct PragmaSchemaVersion {
+    #[diesel(sql_type = diesel::sql_types::Integer)]
+    pub schema_version: i32,
+}
+
 /// Returns the schema version of the database.
-pub fn schema_version(connection: &mut Connection) -> rusqlite::Result<u32> {
-    let schema_version: u32 =
-        connection
-            .transaction()?
-            .query_row("SELECT * FROM pragma_schema_version", [], |row| row.get(0))?;
+pub fn schema_version(conn: &mut SqliteConnection) -> Result<u32, DatabaseError> {
+    let schema_version = conn.transaction(|conn| {
+        let res = diesel::sql_query("SELECT schema_version FROM pragma_schema_version")
+            .get_result::<PragmaSchemaVersion>(conn)?;
+        Ok::<_, DatabaseError>(res.schema_version as u32)
+    })?;
     Ok(schema_version)
 }
 

@@ -15,9 +15,9 @@ use std::{
 
 use anyhow::Context;
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
+    BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
     OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper, SqliteConnection,
-    query_dsl::methods::SelectDsl,
+    connection::SimpleConnection, query_dsl::methods::SelectDsl,
 };
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
@@ -25,17 +25,14 @@ use miden_node_proto::{
     generated::note as proto,
 };
 use miden_objects::{
-    Word,
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
     note::{
-        NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
-        NoteRecipient, NoteScript, Nullifier,
+        NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier,
     },
     transaction::TransactionId,
 };
-use sql::utils::{column_value_as_u64, read_block_number};
 use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
 
@@ -47,7 +44,6 @@ use crate::{
             AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteSyncRecordRawRow,
             TransactionSummaryRaw, serialize_vec, vec_raw_try_into,
         },
-        pool_manager::{Pool, SqlitePoolManager},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
     genesis::GenesisBlock,
@@ -81,7 +77,6 @@ pub(crate) mod schema;
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
-    pool: Pool,
     diesel: deadpool_diesel::sqlite::Pool,
 }
 
@@ -106,88 +101,6 @@ pub struct NoteRecord {
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
     pub merkle_path: MerklePath,
-}
-
-impl NoteRecord {
-    /// Columns from the `notes` table ordered to match [`Self::from_row`].
-    const SELECT_COLUMNS: &'static str = "
-            block_num,
-            batch_index,
-            note_index,
-            note_id,
-            note_type,
-            sender,
-            tag,
-            aux,
-            execution_hint,
-            merkle_path,
-            assets,
-            inputs,
-            script,
-            serial_num
-    ";
-
-    /// Parses a row from the `notes` table. The sql selection must use [`Self::SELECT_COLUMNS`] to
-    /// ensure ordering is correct.
-    fn from_row(row: &rusqlite::Row<'_>) -> Result<Self> {
-        let block_num = read_block_number(row, 0)?;
-        let batch_idx = row.get(1)?;
-        let note_idx_in_batch = row.get(2)?;
-        // SAFETY: We can assume the batch and note indices stored in the DB are valid so this
-        // should never panic.
-        let note_index = BlockNoteIndex::new(batch_idx, note_idx_in_batch)
-            .expect("batch and note index from DB should be valid");
-        let note_id = row.get_ref(3)?.as_blob()?;
-        let note_id = RpoDigest::read_from_bytes(note_id)?;
-        let note_type = row.get::<_, u8>(4)?.try_into()?;
-        let sender = AccountId::read_from_bytes(row.get_ref(5)?.as_blob()?)?;
-        let tag: u32 = row.get(6)?;
-        let aux: u64 = row.get(7)?;
-        let aux = aux.try_into().map_err(DatabaseError::InvalidFelt)?;
-        let execution_hint = column_value_as_u64(row, 8)?;
-        let merkle_path_data = row.get_ref(9)?.as_blob()?;
-        let merkle_path = MerklePath::read_from_bytes(merkle_path_data)?;
-
-        let assets = row.get_ref(10)?.as_blob_or_null()?;
-        let inputs = row.get_ref(11)?.as_blob_or_null()?;
-        let script = row.get_ref(12)?.as_blob_or_null()?;
-        let serial_num = row.get_ref(13)?.as_blob_or_null()?;
-
-        debug_assert!(
-            (assets.is_some() && inputs.is_some() && script.is_some() && serial_num.is_some())
-                || (assets.is_none()
-                    && inputs.is_none()
-                    && script.is_none()
-                    && serial_num.is_none()),
-            "assets, inputs, script, serial_num must be either all present or all absent"
-        );
-        let details = if let (Some(assets), Some(inputs), Some(script), Some(serial_num)) =
-            (assets, inputs, script, serial_num)
-        {
-            Some(NoteDetails::new(
-                NoteAssets::read_from_bytes(assets)?,
-                NoteRecipient::new(
-                    Word::read_from_bytes(serial_num)?,
-                    NoteScript::from_bytes(script)?,
-                    NoteInputs::read_from_bytes(inputs)?,
-                ),
-            ))
-        } else {
-            None
-        };
-
-        let metadata =
-            NoteMetadata::new(sender, note_type, tag.into(), execution_hint.try_into()?, aux)?;
-
-        Ok(NoteRecord {
-            block_num,
-            note_index,
-            note_id,
-            metadata,
-            details,
-            merkle_path,
-        })
-    }
 }
 
 impl From<NoteRecord> for proto::Note {
@@ -264,29 +177,31 @@ impl Db {
         // This will create the file if it does not exist, but will also happily open it if already
         // exists. In the latter case we will error out when attempting to insert the genesis
         // block so this isn't such a problem.
-        let mut conn = connection::Connection::open(database_filepath)
-            .context("failed to open a database connection")?;
+        let mut conn: SqliteConnection =
+            diesel::sqlite::SqliteConnection::establish(database_filepath.to_str().unwrap()) // TODO FIXME avoid unwrap
+                .context("failed to open a database connection")?;
 
         // Run migrations.
         apply_migrations(&mut conn).context("failed to apply database migrations")?;
 
         // Insert genesis block data.
-        let db_tx = conn.transaction().context("failed to create database transaction")?;
         let genesis = genesis.inner();
-        sql::apply_block(
-            &db_tx,
-            genesis.header(),
-            &[],
-            &[],
-            genesis.updated_accounts(),
-            genesis.transactions(),
-        )
+        conn.transaction(move |conn| {
+            models::queries::apply_block(
+                conn,
+                genesis.header(),
+                &[],
+                &[],
+                genesis.updated_accounts(),
+                genesis.transactions(),
+            )
+        })
         .context("failed to insert genesis block")?;
-        db_tx.commit().context("failed to commit database transaction")
+        Ok(())
     }
 
-    /// Avoid repeated boilerplate
-    pub(crate) async fn query<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
+    /// Avoid repeated boilerplate, frame the query in a transaction
+    pub(crate) async fn framed<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
         Q: Send + FnOnce(&mut SqliteConnection) -> std::result::Result<R, E> + 'static,
         R: Send + 'static,
@@ -305,8 +220,11 @@ impl Db {
     /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
-        let sqlite_pool_manager = SqlitePoolManager::new(database_filepath.clone());
-        let pool = Pool::builder(sqlite_pool_manager).build()?;
+        let manager = deadpool_diesel::sqlite::Manager::new(
+            database_filepath.to_str().unwrap().to_owned(),
+            deadpool_diesel::sqlite::Runtime::Tokio1,
+        );
+        let diesel = deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
 
         info!(
             target: COMPONENT,
@@ -314,26 +232,17 @@ impl Db {
             "Connected to the database"
         );
 
-        let conn = pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
+        let me = Db { diesel };
+        me.framed("migration", apply_migrations).await?;
 
-        conn.interact(apply_migrations)
-            .await
-            .map_err(|err| DatabaseError::interact("Migration", &err))??;
-
-        // TODO rationalize magic numbers, and make them constant
-        let manager = deadpool_diesel::sqlite::Manager::new(
-            database_filepath.to_str().unwrap().to_owned(),
-            deadpool_diesel::sqlite::Runtime::Tokio1,
-        );
-        let diesel = deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
-
-        Ok(Db { pool, diesel })
+        // TODO rationalize magic numbers, and make them
+        Ok(me)
     }
 
     /// Loads all the nullifiers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
-        self.query("all nullifiers", move |conn| {
+        self.framed("all nullifiers", move |conn| {
             let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
             Result::<Vec<_>, _>::from_iter(
                 nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
@@ -352,7 +261,7 @@ impl Db {
     ) -> Result<Vec<NullifierInfo>> {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
-        self.query("nullifieres by prefix", move |conn| {
+        self.framed("nullifieres by prefix", move |conn| {
             let prefixes =
                 nullifier_prefixes.into_iter().map(|prefix| i32::try_from(prefix).unwrap()); // TODO XXX ensure these type conversions are sane
             let nullifiers_raw =
@@ -374,7 +283,7 @@ impl Db {
         &self,
         block_number: Option<BlockNumber>,
     ) -> Result<Option<BlockHeader>> {
-        self.query("block headers by block number", move |conn| {
+        self.framed("block headers by block number", move |conn| {
             let sel = SelectDsl::select(
                 schema::block_headers::table,
                 models::BlockHeaderRawRow::as_select(),
@@ -399,7 +308,7 @@ impl Db {
         &self,
         blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
-        self.query("block headers from given block numbers", |conn| {
+        self.framed("block headers from given block numbers", |conn| {
             let blocks = Vec::from_iter(blocks.map(|block_num| i64::from(block_num.as_u32())));
             let raw = QueryDsl::filter(
                 schema::block_headers::table,
@@ -414,7 +323,7 @@ impl Db {
     /// Loads all the block headers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_block_headers(&self) -> Result<Vec<BlockHeader>> {
-        self.query("all block headers", |conn| {
+        self.framed("all block headers", |conn| {
             let raw = QueryDsl::select(
                 schema::block_headers::table,
                 models::BlockHeaderRawRow::as_select(),
@@ -428,7 +337,7 @@ impl Db {
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
-        self.query("read all account commitments", move |conn| {
+        self.framed("read all account commitments", move |conn| {
             let raw = SelectDsl::select(
                 schema::accounts::table,
                 (schema::accounts::account_id, schema::accounts::account_commitment),
@@ -450,7 +359,7 @@ impl Db {
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.query("Get account details", move |conn| {
+        self.framed("Get account details", move |conn| {
             let val = QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select())
                 .find(id.to_bytes())
                 .first::<models::AccountRaw>(conn)?;
@@ -465,7 +374,7 @@ impl Db {
         &self,
         id_prefix: u32,
     ) -> Result<Option<AccountInfo>> {
-        self.query("Get account by id prefix", move |conn| {
+        self.framed("Get account by id prefix", move |conn| {
             let maybe_info = QueryDsl::filter(
                 QueryDsl::select(schema::accounts::table, AccountRaw::as_select()),
                 schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))),
@@ -483,7 +392,7 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<Vec<AccountInfo>> {
-        self.query("Select account by id set", move |conn| {
+        self.framed("Select account by id set", move |conn| {
             let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
 
             let accounts_raw = QueryDsl::filter(
@@ -503,7 +412,7 @@ impl Db {
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
-        let state = self.query::<_,StateSyncError, _,_>("state sync", move |conn| {
+        let state = self.framed::<_,StateSyncError, _,_>("state sync", move |conn| {
 
             let desired_senders = serialize_vec(account_ids.iter());
             let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes()) ));
@@ -602,7 +511,7 @@ impl Db {
         block_num: BlockNumber,
         note_tags: Vec<u32>,
     ) -> Result<NoteSyncUpdate, NoteSyncError> {
-        self.query("notes sync task", move |conn| {
+        self.framed("notes sync task", move |conn| {
             let update = models::queries::select_notes_since_block_by_tag_and_sender(
                 conn,
                 block_num,
@@ -623,7 +532,7 @@ impl Db {
     /// Loads all the Note's matching a certain NoteId from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
-        self.query("note by id", move |conn| {
+        self.framed("note by id", move |conn| {
             let note_ids = serialize_vec(&note_ids);
             let cols = (
                 schema::notes::block_num,
@@ -666,19 +575,10 @@ impl Db {
         &self,
         note_ids: BTreeSet<NoteId>,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_note_inclusion_proofs(&transaction, note_ids)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!(
-                    "Select block note inclusion proofs task failed: {err}"
-                ))
-            })?
+        self.framed("block note inclusion proofs", move |conn| {
+            models::queries::select_note_inclusion_proofs(conn, &note_ids)
+        })
+        .await
     }
 
     /// Loads all note IDs matching a certain NoteId from the database.
@@ -702,36 +602,27 @@ impl Db {
         block: ProvenBlock,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
     ) -> Result<()> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| -> Result<()> {
-                // TODO: This span is logged in a root span, we should connect it to the parent one.
-                let _span = info_span!(target: COMPONENT, "write_block_to_db").entered();
+        self.framed("apply block", move |conn| -> Result<()> {
+            // TODO: This span is logged in a root span, we should connect it to the parent one.
+            let _span = info_span!(target: COMPONENT, "write_block_to_db").entered();
 
-                let transaction = conn.transaction()?;
-                sql::apply_block(
-                    &transaction,
-                    block.header(),
-                    &notes,
-                    block.created_nullifiers(),
-                    block.updated_accounts(),
-                    block.transactions(),
-                )?;
+            models::queries::apply_block(
+                conn,
+                block.header(),
+                &notes,
+                block.created_nullifiers(),
+                block.updated_accounts(),
+                block.transactions(),
+            )?;
 
-                let _ = allow_acquire.send(());
-                acquire_done.blocking_recv()?;
+            // XXX FIXME TODO free floating mutex MUST NOT exist, it doesn't bind it properly to the
+            // data locked!
+            let _ = allow_acquire.send(());
+            acquire_done.blocking_recv()?;
 
-                transaction.commit()?;
-
-                Ok(())
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Apply block task failed: {err}"))
-            })??;
-
-        Ok(())
+            Ok(())
+        })
+        .await
     }
 
     /// Merges all account deltas from the DB for given account ID and block range.
@@ -745,33 +636,22 @@ impl Db {
         from_block: BlockNumber,
         to_block: BlockNumber,
     ) -> Result<Option<AccountDelta>> {
-        self.pool
-            .get()
-            .await
-            .map_err(DatabaseError::MissingDbConnection)?
-            .interact(move |conn| {
-                let transaction = conn.transaction()?;
-                sql::select_account_delta(&transaction, account_id, from_block, to_block)
-            })
-            .await
-            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
+        self.framed("select account state data", move |conn| {
+            models::queries::select_account_delta(conn, account_id, from_block, to_block)
+        })
+        .await
     }
 
     /// Runs database optimization.
     #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
     pub async fn optimize(&self) -> Result<(), DatabaseError> {
-        self.pool
-            .get()
-            .await?
-            .interact(move |conn| -> Result<()> {
-                conn.execute("PRAGMA optimize;", ())
-                    .map(|_| ())
-                    .map_err(DatabaseError::SqliteError)
-            })
-            .await
-            .map_err(|err| {
-                DatabaseError::InteractError(format!("Database optimization task failed: {err}"))
-            })?
+        self.framed("db optimization", |conn| {
+            diesel::sql_query("PRAGMA optimize")
+                .execute(conn)
+                .map_err(DatabaseError::Diesel)
+        })
+        .await?;
+        Ok(())
     }
 
     /// Loads the network notes that have not been consumed yet, using pagination to limit the
@@ -780,12 +660,9 @@ impl Db {
         &self,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
-        self.pool
-            .get()
-            .await
-            .map_err(DatabaseError::MissingDbConnection)?
-            .interact(move |conn| sql::unconsumed_network_notes(&conn.transaction()?, page))
-            .await
-            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
+        self.framed("unconsumed network notes", move |conn| {
+            models::queries::unconsumed_network_notes(conn, page)
+        })
+        .await
     }
 }

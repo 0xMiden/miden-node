@@ -890,35 +890,6 @@ pub fn select_notes_since_block_by_tag_and_sender(
     Ok(res)
 }
 
-/// Select Note's matching the `NoteId` using the given [Connection].
-///
-/// # Returns
-///
-/// - Empty vector if no matching `note`.
-/// - Otherwise, notes which `note_id` matches the `NoteId` as bytes.
-pub fn select_notes_by_id(
-    transaction: &Transaction,
-    note_ids: &[NoteId],
-) -> Result<Vec<NoteRecord>> {
-    let note_ids: Vec<Value> = note_ids.iter().map(|id| id.to_bytes().into()).collect();
-
-    let mut stmt = transaction.prepare_cached(&format!(
-        "SELECT {}
-        FROM notes
-        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-        WHERE note_id IN rarray(?1)",
-        NoteRecord::SELECT_COLUMNS
-    ))?;
-    let mut rows = stmt.query(params![Rc::new(note_ids)])?;
-
-    let mut notes = Vec::new();
-    while let Some(row) = rows.next()? {
-        notes.push(NoteRecord::from_row(row)?);
-    }
-
-    Ok(notes)
-}
-
 /// Select note inclusion proofs matching the `NoteId`, using the given [Connection].
 ///
 /// # Returns
@@ -1005,7 +976,7 @@ pub fn unconsumed_network_notes(
         ORDER BY rowid
         LIMIT ?
         ",
-        NoteRecord::SELECT_COLUMNS
+        "dummy"
     ))?;
 
     // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
@@ -1019,7 +990,7 @@ pub fn unconsumed_network_notes(
             page.token = Some(row.get::<_, u64>(14)?);
             break;
         }
-        notes.push(NoteRecord::from_row(row)?);
+        notes.push(todo!());
     }
 
     Ok((notes, page))

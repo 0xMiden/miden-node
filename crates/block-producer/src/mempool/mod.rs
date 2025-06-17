@@ -270,7 +270,16 @@ impl Mempool {
                 _ => None,
             })
             .collect();
-        let event = MempoolEvent::TransactionAdded { id, nullifiers, network_notes };
+        let account_delta = transaction
+            .account_id()
+            .is_network()
+            .then(|| transaction.account_update().details().clone());
+        let event = MempoolEvent::TransactionAdded {
+            id,
+            nullifiers,
+            network_notes,
+            account_delta,
+        };
 
         self.expirations.insert(id, transaction.expires_at());
 

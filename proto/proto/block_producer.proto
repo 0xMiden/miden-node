@@ -39,6 +39,11 @@ message TransactionAdded {
     repeated digest.Digest nullifiers = 2;
     // Network notes created by the transaction.
     repeated note.NetworkNote network_notes = 3;
+    // Changes to a network account, if any.
+    //
+    // The account delta is encoded using [winter_utils::Serializable] implementation
+    // for [miden_objects::account::delta::AccountDelta].
+    optional bytes network_account_delta = 4;
 }
 
 // A block was committed.

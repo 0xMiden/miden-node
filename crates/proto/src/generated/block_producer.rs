@@ -28,6 +28,12 @@ pub struct TransactionAdded {
     /// Network notes created by the transaction.
     #[prost(message, repeated, tag = "3")]
     pub network_notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
+    /// Changes to a network account, if any.
+    ///
+    /// The account delta is encoded using \[winter_utils::Serializable\] implementation
+    /// for \[miden_objects::account::delta::AccountDelta\].
+    #[prost(bytes = "vec", optional, tag = "4")]
+    pub network_account_delta: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// A block was committed.
 #[derive(Clone, PartialEq, ::prost::Message)]

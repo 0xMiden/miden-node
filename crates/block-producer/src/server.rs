@@ -5,7 +5,9 @@ use futures::StreamExt;
 use miden_node_proto::{
     domain::mempool::MempoolEvent,
     generated::{
-        block_producer::{MempoolEvent as ProtoMempoolEvent, api_server},
+        block_producer::{
+            MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest, api_server,
+        },
         requests::SubmitProvenTransactionRequest,
         responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
     },
@@ -15,11 +17,11 @@ use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
     tracing::grpc::block_producer_trace_fn,
 };
-use miden_objects::{transaction::ProvenTransaction, utils::serde::Deserializable};
-use tokio::{net::TcpListener, sync::Mutex};
-use tokio_stream::wrappers::{
-    BroadcastStream, TcpListenerStream, errors::BroadcastStreamRecvError,
+use miden_objects::{
+    block::BlockNumber, transaction::ProvenTransaction, utils::serde::Deserializable,
 };
+use tokio::{net::TcpListener, sync::Mutex};
+use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
@@ -109,14 +111,12 @@ impl BlockProducer {
             self.batch_prover_url,
             self.batch_interval,
         );
-        let mempool_event_broadcaster = tokio::sync::broadcast::Sender::new(100);
         let mempool = Mempool::shared(
             chain_tip,
             BatchBudget::default(),
             BlockBudget::default(),
             SERVER_MEMPOOL_STATE_RETENTION,
             SERVER_MEMPOOL_EXPIRATION_SLACK,
-            mempool_event_broadcaster,
         );
 
         // Spawn rpc server and batch and block provers.
@@ -221,52 +221,46 @@ impl api_server::Api for BlockProducerRpcServer {
         }))
     }
 
-    type MempoolEventsStream = MempoolEventsStream;
+    type MempoolSubscriptionStream = MempoolEventSubscription;
 
-    async fn mempool_events(
+    async fn mempool_subscription(
         &self,
-        _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<Self::MempoolEventsStream>, tonic::Status> {
-        let subscription = self.mempool.lock().await.lock().await.subscribe();
-        let subscription = BroadcastStream::new(subscription);
+        request: tonic::Request<MempoolSubscriptionRequest>,
+    ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
+        let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
 
-        Ok(tonic::Response::new(MempoolEventsStream { inner: subscription }))
+        let subscription =
+            self.mempool
+                .lock()
+                .await
+                .lock()
+                .await
+                .subscribe(chain_tip)
+                .map_err(|mempool_tip| {
+                    tonic::Status::invalid_argument(format!(
+                        "Mempool's chain tip {mempool_tip} does not match request's {chain_tip}"
+                    ))
+                })?;
+        let subscription = ReceiverStream::new(subscription);
+
+        Ok(tonic::Response::new(MempoolEventSubscription { inner: subscription }))
     }
 }
 
-struct MempoolEventsStream {
-    inner: BroadcastStream<MempoolEvent>,
+struct MempoolEventSubscription {
+    inner: ReceiverStream<MempoolEvent>,
 }
 
-impl tokio_stream::Stream for MempoolEventsStream {
+impl tokio_stream::Stream for MempoolEventSubscription {
     type Item = Result<ProtoMempoolEvent, tonic::Status>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<Self::Item>> {
-        use std::task::Poll;
-
-        match self.inner.poll_next_unpin(cx) {
-            Poll::Ready(Some(Ok(event))) => {
-                let event = ProtoMempoolEvent::from(event);
-                Poll::Ready(Some(Ok(event)))
-            },
-            Poll::Ready(Some(Err(BroadcastStreamRecvError::Lagged(lag)))) => {
-                tracing::warn!(
-                    missed_events = lag,
-                    "mempool event broadcast stream lagged, closing"
-                );
-
-                let err = tonic::Status::data_loss("Stream missed events, cancelling");
-                let (_tx, rx) = tokio::sync::broadcast::channel(1);
-                self.inner = BroadcastStream::new(rx);
-
-                Poll::Ready(Some(Err(err)))
-            },
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
-        }
+        self.inner
+            .poll_next_unpin(cx)
+            .map(|x| x.map(ProtoMempoolEvent::from).map(Result::Ok))
     }
 }
 

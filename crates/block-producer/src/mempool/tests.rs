@@ -7,14 +7,12 @@ use crate::test_utils::{MockProvenTxBuilder, batch::TransactionBatchConstructor}
 
 impl Mempool {
     fn for_tests() -> Self {
-        let (tx, _rx) = tokio::sync::broadcast::channel(1);
         Self::new(
             BlockNumber::GENESIS,
             BatchBudget::default(),
             BlockBudget::default(),
             5,
             u32::default(),
-            tx,
         )
     }
 }

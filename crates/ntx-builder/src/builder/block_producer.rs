@@ -3,10 +3,13 @@ use std::net::SocketAddr;
 use futures::{StreamExt, TryStream, TryStreamExt};
 use miden_node_proto::{
     domain::mempool::MempoolEvent,
-    generated::{block_producer::api_client::ApiClient, requests::SubmitProvenTransactionRequest},
+    generated::{
+        block_producer::{MempoolSubscriptionRequest, api_client::ApiClient},
+        requests::SubmitProvenTransactionRequest,
+    },
 };
 use miden_node_utils::{FlattenResult, tracing::grpc::OtelInterceptor};
-use miden_objects::transaction::ProvenTransaction;
+use miden_objects::{block::BlockNumber, transaction::ProvenTransaction};
 use miden_tx::utils::Serializable;
 use tonic::{Status, service::interceptor::InterceptedService, transport::Channel};
 use tracing::{info, instrument};
@@ -50,8 +53,10 @@ impl BlockProducerClient {
 
     pub async fn subscribe_to_mempool(
         &self,
+        chain_tip: BlockNumber,
     ) -> Result<impl TryStream<Ok = MempoolEvent, Error = Status>, Status> {
-        let stream = self.inner.clone().mempool_events(()).await?;
+        let request = MempoolSubscriptionRequest { chain_tip: chain_tip.as_u32() };
+        let stream = self.inner.clone().mempool_subscription(request).await?;
 
         let stream = stream
             .into_inner()

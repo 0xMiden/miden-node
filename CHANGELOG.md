@@ -6,6 +6,7 @@
 
 - Added support for gRPC server side reflection to all components (#949).
 - Added support for TLS to `miden-proving-service-client` (#968).
+- Improved faucet UX by waiting for valid explorer link (#986).
 
 ## v0.9.2 (2025-06-12)
 

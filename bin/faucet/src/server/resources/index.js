@@ -183,8 +183,27 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 importCommand.style.display = 'none';
             }
-            txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
-            txLink.textContent = data.transaction_id;
+            const transactionId = data.transaction_id;
+            txLink.href = data.explorer_url + '/tx/' + transactionId;
+            txLink.textContent = "waiting for explorer...";
+
+            // Poll the transaction link until it's reachable
+            const pollTransaction = async () => {
+                try {
+                    const response = await fetch(txLink.href);
+                    if (response.data) {
+                        txLink.textContent = transactionId + " ↗";
+                    } else {
+                        // If not reachable yet, try again after 1 seconds
+                        setTimeout(pollTransaction, 1000);
+                    }
+                } catch (error) {
+                    // If fetch fails, try again after 1 seconds
+                    setTimeout(pollTransaction, 1000);
+                }
+            };
+
+            pollTransaction();
         });
     }
 

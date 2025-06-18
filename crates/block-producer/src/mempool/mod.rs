@@ -3,14 +3,16 @@ use std::{collections::BTreeSet, sync::Arc};
 use batch_graph::BatchGraph;
 use graph::GraphError;
 use inflight_state::InflightState;
+use miden_node_proto::domain::{mempool::MempoolEvent, note::NetworkNote};
 use miden_objects::{
     MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH,
     batch::{BatchId, ProvenBatch},
-    block::BlockNumber,
-    transaction::TransactionId,
+    block::{BlockHeader, BlockNumber},
+    note::NoteExecutionMode,
+    transaction::{OutputNote, TransactionId},
 };
-use tokio::sync::{Mutex, MutexGuard};
-use tracing::instrument;
+use tokio::sync::{Mutex, MutexGuard, mpsc};
+use tracing::{instrument, warn};
 use transaction_expiration::TransactionExpirations;
 use transaction_graph::TransactionGraph;
 
@@ -137,7 +139,7 @@ impl SharedMempool {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Mempool {
     /// The latest inflight state of each account.
     ///
@@ -165,6 +167,35 @@ pub struct Mempool {
 
     block_budget: BlockBudget,
     batch_budget: BatchBudget,
+
+    event_subscriber: Option<mpsc::Sender<MempoolEvent>>,
+}
+
+// We have to implement this manually since the event's channel does not implement PartialEq.
+impl PartialEq for Mempool {
+    fn eq(&self, other: &Self) -> bool {
+        // We use this deconstructive pattern to ensure we adapt this whenever fields are changed.
+        let Self {
+            state,
+            transactions,
+            expirations,
+            batches,
+            chain_tip,
+            block_in_progress,
+            block_budget,
+            batch_budget,
+            event_subscriber: _,
+        } = self;
+
+        state == &other.state
+            && transactions == &other.transactions
+            && expirations == &other.expirations
+            && batches == &other.batches
+            && chain_tip == &other.chain_tip
+            && block_in_progress == &other.block_in_progress
+            && block_budget == &other.block_budget
+            && batch_budget == &other.batch_budget
+    }
 }
 
 impl Mempool {
@@ -201,6 +232,7 @@ impl Mempool {
             transactions: TransactionGraph::default(),
             batches: BatchGraph::default(),
             expirations: TransactionExpirations::default(),
+            event_subscriber: None,
         }
     }
 
@@ -221,11 +253,38 @@ impl Mempool {
         // Add transaction to inflight state.
         let parents = self.state.add_transaction(&transaction)?;
 
-        self.expirations.insert(transaction.id(), transaction.expires_at());
+        // Clone data required for the event.
+        let id = transaction.id();
+        let nullifiers = transaction.nullifiers().collect();
+        let network_notes = transaction
+            .output_notes()
+            .filter_map(|note| match note {
+                OutputNote::Full(inner)
+                    if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
+                {
+                    NetworkNote::try_from(inner.clone()).ok()
+                },
+                _ => None,
+            })
+            .collect();
+        let account_delta = transaction
+            .account_id()
+            .is_network()
+            .then(|| transaction.account_update().details().clone());
+        let event = MempoolEvent::TransactionAdded {
+            id,
+            nullifiers,
+            network_notes,
+            account_delta,
+        };
+
+        self.expirations.insert(id, transaction.expires_at());
 
         self.transactions
             .insert(transaction, parents)
             .expect("Transaction should insert after passing inflight state");
+
+        self.send_event(event);
 
         Ok(self.chain_tip)
     }
@@ -318,7 +377,7 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self) -> BTreeSet<TransactionId> {
+    pub fn commit_block(&mut self, header: BlockHeader) {
         // Remove committed batches and transactions from graphs.
         let batches = self.block_in_progress.take().expect("No block in progress to commit");
         let transactions =
@@ -331,11 +390,13 @@ impl Mempool {
         self.expirations.remove(transactions.iter());
 
         // Inform inflight state about committed data.
-        self.state.commit_block(transactions);
+        self.state.commit_block(transactions.clone());
         self.chain_tip = self.chain_tip.child();
 
+        self.send_event(MempoolEvent::BlockCommitted { header, txs: transactions });
+
         // Revert expired transactions and their descendents.
-        self.revert_expired_transactions()
+        self.revert_expired_transactions();
     }
 
     /// Notify the pool that construction of the in flight block failed.
@@ -351,7 +412,7 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.rollback_block", skip_all)]
-    pub fn rollback_block(&mut self) -> BTreeSet<TransactionId> {
+    pub fn rollback_block(&mut self) {
         let batches = self.block_in_progress.take().expect("No block in progress to be failed");
 
         // Revert all transactions. This is the nuclear (but simplest) solution.
@@ -371,13 +432,13 @@ impl Mempool {
             .copied()
             .collect();
         self.revert_transactions(txs)
-            .expect("transactions from a block must be part of the mempool")
+            .expect("transactions from a block must be part of the mempool");
     }
 
     /// Gets all transactions that expire at the new chain tip and reverts them (and their
     /// descendants) from the mempool. Returns the set of transactions that were purged.
     #[instrument(target = COMPONENT, name = "mempool.revert_expired_transactions", skip_all)]
-    fn revert_expired_transactions(&mut self) -> BTreeSet<TransactionId> {
+    fn revert_expired_transactions(&mut self) {
         let expired = self.expirations.get(self.chain_tip);
 
         self.revert_transactions(expired.iter().copied().collect())
@@ -392,12 +453,6 @@ impl Mempool {
     /// Transactions that were in reverted batches but that are disjoint from the reverted
     /// transactions (i.e. not descendents) are requeued and _not_ reverted.
     ///
-    /// # Returns
-    ///
-    /// A set of the IDs of every transaction that ended up being reverted.
-    /// This includes both the transactions explicitly passed in `txs` and any of their
-    /// descendents that were also removed from the mempool.
-    ///
     /// # Errors
     ///
     /// Returns an error if any transaction was not in the transaction graph i.e. if the transaction
@@ -406,7 +461,7 @@ impl Mempool {
     fn revert_transactions(
         &mut self,
         txs: Vec<TransactionId>,
-    ) -> Result<BTreeSet<TransactionId>, GraphError<TransactionId>> {
+    ) -> Result<(), GraphError<TransactionId>> {
         tracing::Span::current().record("transactions.expired.ids", tracing::field::debug(&txs));
 
         // Revert all transactions and their descendents, and their associated batches.
@@ -428,6 +483,43 @@ impl Mempool {
         self.expirations.remove(reverted.iter());
         self.state.revert_transactions(reverted.clone());
 
-        Ok(reverted)
+        self.send_event(MempoolEvent::TransactionsReverted(reverted));
+
+        Ok(())
+    }
+
+    /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.
+    ///
+    /// Only emits events which occurred after the current committed block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided chain_tip does not match the mempool's chain tip. This prevents desync between the caller's view of the world and the mempool's event stream.
+    pub fn subscribe(
+        &mut self,
+        chain_tip: BlockNumber,
+    ) -> Result<mpsc::Receiver<MempoolEvent>, BlockNumber> {
+        if self.chain_tip != chain_tip {
+            return Err(self.chain_tip);
+        }
+
+        let (tx, rx) = mpsc::channel(1024);
+
+        // TODO: Send all inflight events. This will require additional tracking.
+        self.event_subscriber.replace(tx);
+
+        Ok(rx)
+    }
+
+    /// Sends the [`MempoolEvent`] to the event subscriber if there is one.
+    ///
+    /// If this fails, the subscription is cancelled.
+    fn send_event(&mut self, event: MempoolEvent) {
+        if let Some(subscription) = &mut self.event_subscriber {
+            if let Err(error) = subscription.try_send(event) {
+                warn!(%error, "mempool subscription failed, cancelling subscription");
+                self.event_subscriber = None;
+            }
+        }
     }
 }

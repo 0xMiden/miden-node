@@ -1,6 +1,5 @@
 pub mod domain;
 pub mod errors;
-pub mod ntx_builder;
 
 #[rustfmt::skip]
 pub mod generated;

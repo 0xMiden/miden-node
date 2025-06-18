@@ -1,14 +1,11 @@
 use std::{collections::BTreeSet, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
+use crate::state::PendingNotes;
 use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
 use futures::TryFutureExt;
-use miden_node_proto::{
-    domain::{account::NetworkAccountError, note::NetworkNote},
-    generated::ntx_builder::api_server,
-};
-use miden_node_proto_build::ntx_builder_api_descriptor;
+use miden_node_proto::domain::{account::NetworkAccountError, note::NetworkNote};
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     AccountError, TransactionInputError,
@@ -23,18 +20,14 @@ use miden_tx::{
     TransactionProverError,
 };
 use prover::NtbTransactionProver;
-use server::{NtxBuilderApi, PendingNotes};
 use store::{StoreClient, StoreError};
 use thiserror::Error;
 use tokio::{
-    net::TcpListener,
     runtime::Builder as RtBuilder,
     sync::Mutex,
     task::{JoinHandle, spawn_blocking},
     time,
 };
-use tokio_stream::wrappers::TcpListenerStream;
-use tower_http::trace::TraceLayer;
 use tracing::{Instrument, Span, debug, error, info, info_span, instrument, warn};
 use url::Url;
 
@@ -43,7 +36,6 @@ use crate::COMPONENT;
 mod block_producer;
 mod data_store;
 mod prover;
-mod server;
 mod store;
 
 type SharedPendingNotes = Arc<Mutex<PendingNotes>>;
@@ -78,8 +70,6 @@ impl NetworkTransactionRequest {
 /// The service maintains a list of unconsumed notes and periodically executes and proves
 /// transactions that consume them (reaching out to the store to retrieve state as necessary).
 pub struct NetworkTransactionBuilder {
-    /// The address for the network transaction builder gRPC server.
-    pub ntx_builder_address: SocketAddr,
     /// Address of the store gRPC server.
     pub store_url: Url,
     /// Address of the block producer gRPC server.
@@ -114,29 +104,11 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(&self.store_url);
         let unconsumed = store.get_unconsumed_network_notes().await?;
         let notes_queue = Arc::new(Mutex::new(PendingNotes::new(unconsumed)));
-        let reflection_service = tonic_reflection::server::Builder::configure()
-            .register_file_descriptor_set(ntx_builder_api_descriptor())
-            .build_v1()
-            .context("failed to build reflection service")?;
-
-        let listener = TcpListener::bind(self.ntx_builder_address).await?;
-        let server = tonic::transport::Server::builder()
-            .accept_http1(true)
-            .layer(TraceLayer::new_for_grpc())
-            .add_service(api_server::ApiServer::new(NtxBuilderApi::new(notes_queue.clone())))
-            .add_service(reflection_service)
-            .serve_with_incoming(TcpListenerStream::new(listener));
-        tokio::pin!(server);
 
         let mut ticker = self.spawn_ticker(notes_queue.clone());
 
         loop {
             tokio::select! {
-                // gRPC server ended, shut down ticker and bubble error up
-                result = &mut server => {
-                    ticker.abort();
-                    return result.context("gRPC server stopped");
-                }
                 // ticker ended or panicked, respawn it; RPC server keeps running
                 outcome = &mut ticker => {
                     match outcome {

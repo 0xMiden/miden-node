@@ -1,4 +1,6 @@
 mod builder;
+mod state;
+
 pub use builder::NetworkTransactionBuilder;
 
 // CONSTANTS

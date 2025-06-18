@@ -53,7 +53,7 @@ impl ProxyStatusPingoraService {
     /// Creates a new [`ProxyStatusPingoraService`].
     pub async fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
         // Generate initial status
-        let initial_status = generate_status(&load_balancer).await;
+        let initial_status = build_status(&load_balancer).await;
         let (status_tx, status_rx) = watch::channel(initial_status);
 
         Self {
@@ -186,7 +186,7 @@ impl ProxyStatusUpdater {
         loop {
             tokio::select! {
                 _ = update_timer.tick() => {
-                    let new_status = generate_status(&self.load_balancer).await;
+                    let new_status = build_status(&self.load_balancer).await;
                     let _ = self.status_tx.send(new_status);
                 }
                 _ = shutdown.changed() => {
@@ -211,8 +211,8 @@ impl From<&RustWorkerHealthStatus> for WorkerHealthStatus {
     }
 }
 
-/// Generates a new status from the load balancer and returns it as a [`ProxyStatusResponse`].
-async fn generate_status(load_balancer: &LoadBalancerState) -> ProxyStatusResponse {
+/// Build a new status from the load balancer and returns it as a [`ProxyStatusResponse`].
+async fn build_status(load_balancer: &LoadBalancerState) -> ProxyStatusResponse {
     let workers = load_balancer.workers.read().await;
     let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
 

@@ -13,14 +13,12 @@ BUILD_PROTO=BUILD_PROTO=1
 
 .PHONY: clippy
 clippy: ## Runs Clippy with configs
-	cargo clippy --locked --all-targets --all-features --workspace --exclude miden-proving-service -- -D warnings # miden-tx async feature on.
-	cargo clippy --locked --all-targets --all-features -p miden-proving-service -- -D warnings # miden-tx async feature off.
+	cargo clippy --locked --all-targets --all-features --workspace
 
 
 .PHONY: fix
 fix: ## Runs Fix with configs
-	cargo fix --allow-staged --allow-dirty --all-targets --all-features --workspace --exclude miden-proving-service # miden-tx async feature on.
-	cargo fix --allow-staged --allow-dirty --all-targets --all-features -p miden-proving-service # miden-tx async feature off.
+	cargo fix --allow-staged --allow-dirty --all-targets --all-features --workspace
 
 
 .PHONY: format
@@ -65,22 +63,19 @@ book: ## Builds the book & serves documentation site
 
 .PHONY: test
 test:  ## Runs all tests
-	cargo nextest run --all-features --workspace --exclude miden-proving-service # miden-tx async feature on.
-	cargo nextest run --all-features -p miden-proving-service # miden-tx async feature off.
+	cargo nextest run --all-features --workspace
 
 # --- checking ------------------------------------------------------------------------------------
 
 .PHONY: check
 check: ## Check all targets and features for errors without code generation
-	${BUILD_PROTO} cargo check --all-features --all-targets --locked --workspace --exclude miden-proving-service # miden-tx async feature on.
-	${BUILD_PROTO} cargo check --all-features --all-targets --locked -p miden-proving-service  # miden-tx async feature off
+	${BUILD_PROTO} cargo check --all-features --all-targets --locked --workspace
 
 # --- building ------------------------------------------------------------------------------------
 
 .PHONY: build
 build: ## Builds all crates and re-builds ptotobuf bindings for proto crates
-	${BUILD_PROTO} cargo build --locked --workspace --exclude miden-proving-service # miden-tx async feature on.
-	${BUILD_PROTO} cargo build --locked -p miden-proving-service  # miden-tx async feature off
+	${BUILD_PROTO} cargo build --locked --workspace
 	${BUILD_PROTO} cargo build --locked -p miden-proving-service-client --target wasm32-unknown-unknown --no-default-features  # no-std compatible build
 
 # --- installing ----------------------------------------------------------------------------------

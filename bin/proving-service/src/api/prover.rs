@@ -61,7 +61,7 @@ impl ProverRpcApi {
         fields(id = tracing::field::Empty),
         err
     )]
-    pub fn prove_tx(
+    pub async fn prove_tx(
         &self,
         transaction_witness: TransactionWitness,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
@@ -73,6 +73,7 @@ impl ProverRpcApi {
             .try_lock()
             .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
             .prove(transaction_witness)
+            .await
             .map_err(internal_error)?;
 
         // Record the transaction_id in the current tracing span
@@ -161,7 +162,7 @@ impl ProverApi for ProverRpcApi {
         match request.get_ref().proof_type() {
             ProofType::Transaction => {
                 let tx_witness = request.into_inner().try_into().map_err(invalid_argument)?;
-                self.prove_tx(tx_witness)
+                self.prove_tx(tx_witness).await
             },
             ProofType::Batch => {
                 let proposed_batch = request.into_inner().try_into().map_err(invalid_argument)?;

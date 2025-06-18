@@ -241,10 +241,8 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
         self.framed("all nullifiers", move |conn| {
-            let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
-            Result::<Vec<_>, _>::from_iter(
-                nullifiers_raw.into_iter().map(std::convert::TryInto::try_into),
-            )
+            let nullifiers = queries::load_all_nullifiers(conn)?;
+            Ok(nullifiers)
         })
         .await
     }
@@ -373,13 +371,7 @@ impl Db {
         id_prefix: u32,
     ) -> Result<Option<AccountInfo>> {
         self.framed("Get account by id prefix", move |conn| {
-            let maybe_info = QueryDsl::filter(
-                QueryDsl::select(schema::accounts::table, AccountRaw::as_select()),
-                schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))),
-            )
-            .first(conn)
-            .optional()?;
-            maybe_info.map(std::convert::TryInto::try_into).transpose()
+            queries::get_account_by_id_prefix(conn, id_prefix)
         })
         .await
     }
@@ -390,17 +382,24 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<Vec<AccountInfo>> {
-        self.framed("Select account by id set", move |conn| {
-            let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
-
-            let accounts_raw = QueryDsl::filter(
-                QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()),
-                schema::accounts::account_id.eq_any(account_ids),
-            )
-            .load(conn)?;
-            vec_raw_try_into(accounts_raw)
+        self.framed("Select account by id set", |conn| {
+            queries::select_accounts_by_id(conn, account_ids)
         })
         .await
+    }
+
+    pub fn select_accounts_by_id(
+        conn: &mut SqliteConnection,
+        account_ids: Vec<AccountId>,
+    ) -> Result<Vec<AccountInfo>, DatabaseError> {
+        let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
+
+        let accounts_raw = QueryDsl::filter(
+            QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()),
+            schema::accounts::account_id.eq_any(account_ids),
+        )
+        .load(conn)?;
+        vec_raw_try_into(accounts_raw).map_err(DatabaseError::from)
     }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]

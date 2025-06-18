@@ -28,8 +28,10 @@ use super::{
     QueryDsl, RunQueryDsl, SelectableHelper, serialize_vec,
 };
 use crate::db::{
-    NoteRecord, NoteSyncUpdate, Page,
-    models::{NoteRecordRawNoResolve, deserialize_raw_vec, vec_raw_try_into},
+    NoteRecord, NoteSyncUpdate, NullifierInfo, Page,
+    models::{
+        AccountRaw, NoteRecordRaw, NoteRecordRawNoResolve, deserialize_raw_vec, vec_raw_try_into,
+    },
     schema,
     sql::utils::get_nullifier_prefix,
 };
@@ -476,6 +478,52 @@ pub fn insert_transactions(
         })))
         .execute(conn)?;
     Ok(count)
+}
+
+pub fn select_notes_by_id_query(
+    conn: &mut SqliteConnection,
+    note_ids: Vec<NoteId>,
+) -> Result<Vec<NoteRecord>, DatabaseError> {
+    let note_ids = serialize_vec(&note_ids);
+    let cols = (
+        schema::notes::block_num,
+        schema::notes::batch_index,
+        schema::notes::note_index,
+        schema::notes::note_id,
+        // metadata
+        schema::notes::note_type,
+        schema::notes::sender,
+        schema::notes::tag,
+        schema::notes::aux,
+        schema::notes::execution_hint,
+        // details
+        schema::notes::assets,
+        schema::notes::inputs,
+        schema::notes::serial_num,
+        // // merkle
+        schema::notes::merkle_path,
+        schema::note_scripts::script.nullable(),
+    );
+
+    let q = schema::notes::table
+        .left_join(
+            schema::note_scripts::table
+                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+        )
+        .filter(schema::notes::note_id.eq_any(&note_ids));
+    let raw: Vec<_> = SelectDsl::select(
+        q, cols, // NoteRecordRaw::as_select()
+    )
+    .load::<NoteRecordRaw>(conn)?;
+    let records = vec_raw_try_into::<NoteRecord, _>(raw)?;
+    Ok(records)
+}
+
+pub fn load_all_nullifiers(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<NullifierInfo>, DatabaseError> {
+    let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
+    vec_raw_try_into(nullifiers_raw)
 }
 
 pub fn insert_nullifiers_for_block(

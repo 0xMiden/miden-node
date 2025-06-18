@@ -1,6 +1,9 @@
-use miden_objects::account::AccountId;
+use miden_objects::{
+    account::AccountId,
+    utils::{Deserializable, Serializable},
+};
 use miden_tx::utils::{ToHex, hex_to_bytes};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
 
 use super::get_tokens::InvalidRequest;
@@ -12,11 +15,11 @@ use crate::server::ApiKey;
 pub(crate) const CHALLENGE_LIFETIME_SECONDS: u64 = 30;
 
 /// A challenge for proof-of-work validation.
-#[derive(Debug, Clone, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Challenge {
     pub(crate) difficulty: usize,
     pub(crate) timestamp: u64,
-    pub(crate) account_id: [u8; AccountId::SERIALIZED_SIZE],
+    pub(crate) account_id: AccountId,
     pub(crate) api_key: ApiKey,
     pub(crate) signature: [u8; 32],
 }
@@ -45,20 +48,14 @@ impl Challenge {
         account_id: AccountId,
         api_key: ApiKey,
     ) -> Self {
-        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
-        let signature = Self::compute_signature(
-            secret,
-            difficulty,
-            timestamp,
-            &account_id_bytes,
-            &api_key.inner(),
-        );
+        let signature =
+            Self::compute_signature(secret, difficulty, timestamp, account_id, &api_key.inner());
         Self {
             difficulty,
             timestamp,
-            signature,
-            account_id: account_id_bytes,
+            account_id,
             api_key,
+            signature,
         }
     }
 
@@ -66,7 +63,7 @@ impl Challenge {
     pub fn from_parts(
         difficulty: usize,
         timestamp: u64,
-        account_id: [u8; AccountId::SERIALIZED_SIZE],
+        account_id: AccountId,
         api_key: ApiKey,
         signature: [u8; 32],
     ) -> Self {
@@ -88,21 +85,16 @@ impl Challenge {
 
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-        let account_id: [u8; AccountId::SERIALIZED_SIZE] = bytes[16..31].try_into().unwrap();
+        let account_id = AccountId::read_from_bytes(&bytes[16..31]).unwrap();
         let api_key_bytes: [u8; 32] = bytes[31..63].try_into().unwrap();
+        let api_key = ApiKey::new(api_key_bytes);
         let signature: [u8; 32] = bytes[63..95].try_into().unwrap();
 
         // Verify the signature
         let expected_signature =
-            Self::compute_signature(secret, difficulty, timestamp, &account_id, &api_key_bytes);
+            Self::compute_signature(secret, difficulty, timestamp, account_id, &api_key_bytes);
         if signature == expected_signature {
-            Ok(Self::from_parts(
-                difficulty,
-                timestamp,
-                account_id,
-                ApiKey::new(api_key_bytes),
-                signature,
-            ))
+            Ok(Self::from_parts(difficulty, timestamp, account_id, api_key, signature))
         } else {
             Err(InvalidRequest::ServerSignaturesDoNotMatch)
         }
@@ -113,7 +105,7 @@ impl Challenge {
         let mut bytes = Vec::with_capacity(63);
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
-        bytes.extend_from_slice(&self.account_id);
+        bytes.extend_from_slice(&self.account_id.to_bytes());
         bytes.extend_from_slice(&self.api_key.inner());
         bytes.extend_from_slice(&self.signature);
         bytes.to_hex_with_prefix()
@@ -142,14 +134,15 @@ impl Challenge {
         secret: [u8; 32],
         difficulty: usize,
         timestamp: u64,
-        account_id: &[u8],
+        account_id: AccountId,
         api_key: &[u8],
     ) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         hasher.update(secret);
         hasher.update(difficulty.to_le_bytes());
         hasher.update(timestamp.to_le_bytes());
-        hasher.update(account_id);
+        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
+        hasher.update(account_id_bytes);
         hasher.update(api_key);
         hasher.finalize().into()
     }

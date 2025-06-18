@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -126,8 +126,7 @@ impl PoW {
         }
 
         // Validate the challenge
-        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
-        let valid_account_id = account_id_bytes == challenge.account_id;
+        let valid_account_id = account_id == challenge.account_id;
         let valid_api_key = *api_key == challenge.api_key;
         let valid_nonce = challenge.validate_pow(nonce);
         if !(valid_account_id && valid_api_key && valid_nonce) {
@@ -161,7 +160,7 @@ impl PoW {
 #[derive(Clone, Default)]
 struct ChallengeCache {
     /// Once a challenge is added, it cannot be submitted again.
-    challenges: Arc<Mutex<HashSet<Challenge>>>,
+    challenges: Arc<Mutex<BTreeSet<Challenge>>>,
     /// A map of account IDs to timestamps of their last challenge submission.
     account_id_timestamps: Arc<Mutex<HashMap<String, u64>>>,
 }

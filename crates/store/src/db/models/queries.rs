@@ -8,7 +8,7 @@ use diesel::{
     query_dsl::methods::SelectDsl,
 };
 use miden_lib::utils::{Deserializable, Serializable};
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
 use miden_objects::{
     Word,
     account::{
@@ -36,7 +36,7 @@ use crate::db::{
     sql::utils::get_nullifier_prefix,
 };
 
-pub fn select_notes_since_block_by_tag_and_sender(
+pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
     block_number: BlockNumber,
     account_ids: &[AccountId],
@@ -83,7 +83,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
     })
 }
 
-pub fn select_block_header_by_block_num(
+pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
     maybe_block_number: Option<BlockNumber>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
@@ -101,7 +101,7 @@ pub fn select_block_header_by_block_num(
     row.map(std::convert::TryInto::try_into).transpose()
 }
 
-pub fn select_note_inclusion_proofs(
+pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
     note_ids: &BTreeSet<NoteId>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
@@ -136,7 +136,7 @@ pub fn select_note_inclusion_proofs(
     ))
 }
 
-pub fn insert_block_header(
+pub(crate) fn insert_block_header(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,
 ) -> Result<usize, DatabaseError> {
@@ -150,7 +150,7 @@ pub fn insert_block_header(
 }
 
 /// Deserializes account and applies account delta.
-pub fn apply_delta(
+pub(crate) fn apply_delta(
     _account_id: AccountId, // TODO error handline shifted _outside_
     mut account: Account,
     delta: &AccountDelta,
@@ -161,7 +161,7 @@ pub fn apply_delta(
     // let account = account.map(Account::read_from_bytes).transpose()?;
 
     // let Some(mut account) = account else {
-    //     return Err(DatabaseError::AccountNotPublic(account_id));
+    //     return Err(DatabaseError::AccountNotpub(crate)lic(account_id));
     // };
 
     account.apply_delta(delta)?;
@@ -178,7 +178,7 @@ pub fn apply_delta(
 }
 
 #[allow(clippy::too_many_lines)]
-fn insert_account_delta(
+pub(crate) fn insert_account_delta(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_number: BlockNumber,
@@ -326,7 +326,7 @@ fn insert_account_delta(
 // there are a bunch of closures with detailed type annotations, which lengthens the function
 // TODO some _might_ be extractable, they _should_ be context independent
 #[allow(clippy::too_many_lines)]
-pub fn upsert_accounts(
+pub(crate) fn upsert_accounts(
     conn: &mut SqliteConnection,
     accounts: &[BlockAccountUpdate],
     block_num: BlockNumber,
@@ -412,7 +412,7 @@ pub fn upsert_accounts(
     Ok(count)
 }
 
-pub fn insert_scripts<'a>(
+pub(crate) fn insert_scripts<'a>(
     conn: &mut SqliteConnection,
     notes: impl IntoIterator<Item = &'a NoteRecord>,
 ) -> Result<usize, DatabaseError> {
@@ -429,7 +429,7 @@ pub fn insert_scripts<'a>(
     Ok(count)
 }
 
-pub fn insert_notes(
+pub(crate) fn insert_notes(
     conn: &mut SqliteConnection,
     notes: &[(NoteRecord, Option<Nullifier>)],
 ) -> Result<usize, DatabaseError> {
@@ -462,7 +462,7 @@ pub fn insert_notes(
     Ok(count)
 }
 
-pub fn insert_transactions(
+pub(crate) fn insert_transactions(
     conn: &mut SqliteConnection,
     block_num: BlockNumber,
     transactions: &OrderedTransactionHeaders,
@@ -480,7 +480,7 @@ pub fn insert_transactions(
     Ok(count)
 }
 
-pub fn select_notes_by_id_query(
+pub(crate) fn select_notes_by_id_query(
     conn: &mut SqliteConnection,
     note_ids: Vec<NoteId>,
 ) -> Result<Vec<NoteRecord>, DatabaseError> {
@@ -519,14 +519,14 @@ pub fn select_notes_by_id_query(
     Ok(records)
 }
 
-pub fn load_all_nullifiers(
+pub(crate) fn load_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }
 
-pub fn insert_nullifiers_for_block(
+pub(crate) fn insert_nullifiers_for_block(
     conn: &mut SqliteConnection,
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
@@ -554,7 +554,7 @@ pub fn insert_nullifiers_for_block(
     Ok(count)
 }
 
-pub fn apply_block(
+pub(crate) fn apply_block(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,
     notes: &[(NoteRecord, Option<Nullifier>)],
@@ -573,7 +573,64 @@ pub fn apply_block(
     Ok(count)
 }
 
-pub fn unconsumed_network_notes(
+pub(crate) fn load_nullifiers_by_prefix(
+    conn: &mut SqliteConnection,
+    nullifier_prefixes: Vec<u32>,
+    block_num: BlockNumber,
+) -> Result<Vec<NullifierInfo>, DatabaseError> {
+    let prefixes = nullifier_prefixes.into_iter().map(|prefix| i32::try_from(prefix).unwrap()); // TODO XXX ensure these type conversions are sane
+    let nullifiers_raw =
+        SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
+            .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
+            .filter(schema::nullifiers::block_num.ge(i64::from(block_num.as_u32())))
+            .order(schema::nullifiers::block_num.asc())
+            .load::<models::NullifierRawRow>(conn)?;
+    vec_raw_try_into(nullifiers_raw)
+}
+
+pub(crate) fn get_account_by_id_prefix(
+    conn: &mut SqliteConnection,
+    id_prefix: u32,
+) -> Result<Option<AccountInfo>, DatabaseError> {
+    let maybe_info = QueryDsl::filter(
+        QueryDsl::select(schema::accounts::table, AccountRaw::as_select()),
+        schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))),
+    )
+    .first::<AccountRaw>(conn)
+    .optional()
+    .map_err(DatabaseError::Diesel)?;
+
+    maybe_info.map(std::convert::TryInto::try_into).transpose()
+}
+
+pub(crate) fn read_all_account_commitments(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<(AccountId, RpoDigest)>, DatabaseError> {
+    let raw = SelectDsl::select(
+        schema::accounts::table,
+        (schema::accounts::account_id, schema::accounts::account_commitment),
+    )
+    .order_by(schema::accounts::block_num.asc())
+    .load::<(Vec<u8>, Vec<u8>)>(conn)?;
+
+    Result::<Vec<_>, DatabaseError>::from_iter(raw.into_iter().map(
+        |(ref account, ref commitment)| {
+            Ok((AccountId::read_from_bytes(account)?, RpoDigest::read_from_bytes(commitment)?))
+        },
+    ))
+}
+
+pub(crate) fn get_account_details(
+    conn: &mut SqliteConnection,
+    id: AccountId,
+) -> Result<AccountInfo, DatabaseError> {
+    let val = QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select())
+        .find(id.to_bytes())
+        .first::<models::AccountRaw>(conn)?;
+    val.try_into()
+}
+
+pub(crate) fn unconsumed_network_notes(
     conn: &mut SqliteConnection,
     mut page: Page,
 ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
@@ -688,7 +745,21 @@ pub fn unconsumed_network_notes(
     Ok((notes, page))
 }
 
-pub fn select_account_delta(
+pub(crate) fn select_accounts_by_id(
+    conn: &mut SqliteConnection,
+    account_ids: Vec<AccountId>,
+) -> Result<Vec<AccountInfo>, DatabaseError> {
+    let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
+
+    let accounts_raw = QueryDsl::filter(
+        QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()),
+        schema::accounts::account_id.eq_any(account_ids),
+    )
+    .load(conn)?;
+    vec_raw_try_into(accounts_raw).map_err(DatabaseError::from)
+}
+
+pub(crate) fn select_account_delta(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_start: BlockNumber,
@@ -749,7 +820,7 @@ pub fn select_account_delta(
     Ok(Some(AccountDelta::new(storage, vault, Some(nonce))?))
 }
 
-fn select_nonce_stmt(
+pub(crate) fn select_nonce_stmt(
     conn: &mut SqliteConnection,
     account_id: &AccountId,
     start_block_num: &BlockNumber,
@@ -773,7 +844,7 @@ fn select_nonce_stmt(
     Ok(res.map(|nonce| nonce as u64))
 }
 
-fn select_slot_updates_stmt(
+pub(crate) fn select_slot_updates_stmt(
     conn: &mut SqliteConnection,
     account_id_val: &AccountId,
     start_block_num: &BlockNumber,
@@ -808,7 +879,7 @@ fn select_slot_updates_stmt(
     Ok(results)
 }
 
-fn select_storage_map_updates_stmt(
+pub(crate) fn select_storage_map_updates_stmt(
     conn: &mut SqliteConnection,
     account_id_val: &AccountId,
     start_block_num: &BlockNumber,
@@ -843,7 +914,7 @@ fn select_storage_map_updates_stmt(
     Ok(res)
 }
 
-fn select_fungible_asset_deltas_stmt(
+pub(crate) fn select_fungible_asset_deltas_stmt(
     conn: &mut SqliteConnection,
     account_id: &AccountId,
     start_block_num: &BlockNumber,
@@ -870,7 +941,7 @@ fn select_fungible_asset_deltas_stmt(
     .load(conn)?)
 }
 
-fn select_non_fungible_asset_updates_stmt(
+pub(crate) fn select_non_fungible_asset_updates_stmt(
     conn: &mut SqliteConnection,
     account_id: &AccountId,
     start_block_num: &BlockNumber,

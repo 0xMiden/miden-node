@@ -263,7 +263,7 @@ impl TryInto<NoteRecord> for NoteRecordRawNoResolve {
             execution_hint,
             aux,
         };
-        let details = NoteDetailsRaw { assets, inputs, serial_num };
+        // let details = NoteDetailsRaw { assets, inputs, serial_num };
 
         let metadata = metadata.try_into()?;
         let block_num = raw_sql_to_block_number(block_num);

@@ -25,25 +25,23 @@ use miden_node_proto::{
     generated::note as proto,
 };
 use miden_objects::{
-    account::{AccountDelta, AccountId},
-    block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
-    note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier},
+    account::AccountId,
+    block::{BlockHeader, BlockNoteIndex, BlockNumber},
+    crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
+    note::{NoteDetails, NoteMetadata, Nullifier},
     transaction::TransactionId,
 };
-use tokio::sync::oneshot;
-use tracing::{info, info_span, instrument};
+use tracing::{info, instrument};
 
 use crate::{
     COMPONENT,
     db::{
         migrations::apply_migrations,
         models::{
-            AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteSyncRecordRawRow,
-            TransactionSummaryRaw, queries, serialize_vec, vec_raw_try_into,
+            queries, vec_raw_try_into,
         },
     },
-    errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
+    errors::{DatabaseError, DatabaseSetupError},
     genesis::GenesisBlock,
 };
 
@@ -59,7 +57,6 @@ mod query_plan;
 mod settings;
 #[cfg(test)]
 mod tests;
-mod transaction;
 
 pub(crate) mod models;
 /// [diesel](https://diesel.rs) generated schema
@@ -258,15 +255,7 @@ impl Db {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.framed("nullifieres by prefix", move |conn| {
-            let prefixes =
-                nullifier_prefixes.into_iter().map(|prefix| i32::try_from(prefix).unwrap()); // TODO XXX ensure these type conversions are sane
-            let nullifiers_raw =
-                SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
-                    .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
-                    .filter(schema::nullifiers::block_num.ge(i64::from(block_num.as_u32())))
-                    .order(schema::nullifiers::block_num.asc())
-                    .load::<models::NullifierRawRow>(conn)?;
-            vec_raw_try_into(nullifiers_raw)
+            queries::load_nullifiers_by_prefix(conn, nullifier_prefixes, block_num)
         })
         .await
     }
@@ -333,35 +322,15 @@ impl Db {
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
-        self.framed("read all account commitments", move |conn| {
-            let raw = SelectDsl::select(
-                schema::accounts::table,
-                (schema::accounts::account_id, schema::accounts::account_commitment),
-            )
-            .order_by(schema::accounts::block_num.asc())
-            .load::<(Vec<u8>, Vec<u8>)>(conn)?;
-
-            std::result::Result::<Vec<_>, _>::from_iter(raw.into_iter().map(
-                |(raw_account, raw_commitment)| {
-                    let account = AccountId::read_from_bytes(raw_account.as_ref())?;
-                    let commitment = RpoDigest::read_from_bytes(raw_commitment.as_ref())?;
-                    Ok((account, commitment))
-                },
-            ))
-        })
-        .await
+        self.framed("read all account commitments", queries::read_all_account_commitments)
+            .await
     }
 
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.framed("Get account details", move |conn| {
-            let val = QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select())
-                .find(id.to_bytes())
-                .first::<models::AccountRaw>(conn)?;
-            val.try_into()
-        })
-        .await
+        self.framed("Get account details", move |conn| queries::get_account_details(conn, id))
+            .await
     }
 
     /// Loads public account details from the DB based on the account ID's prefix.
@@ -387,120 +356,103 @@ impl Db {
         })
         .await
     }
+    {{REWRITTEN_CODE}}
+        #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+        pub async fn get_state_sync(
+            &self,
+            block_number: BlockNumber,
+            account_ids: Vec<AccountId>,
+            note_tags: Vec<u32>,
+        ) -> Result<StateSyncUpdate, StateSyncError> {
+            let state = self.framed::<_,StateSyncError, _,_>("state sync", move |conn| {
+                let desired_senders = serialize_vec(account_ids.iter());
+                let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes()) ));
 
-    pub fn select_accounts_by_id(
-        conn: &mut SqliteConnection,
-        account_ids: Vec<AccountId>,
-    ) -> Result<Vec<AccountInfo>, DatabaseError> {
-        let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
-
-        let accounts_raw = QueryDsl::filter(
-            QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()),
-            schema::accounts::account_id.eq_any(account_ids),
-        )
-        .load(conn)?;
-        vec_raw_try_into(accounts_raw).map_err(DatabaseError::from)
-    }
-
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn get_state_sync(
-        &self,
-        block_number: BlockNumber,
-        account_ids: Vec<AccountId>,
-        note_tags: Vec<u32>,
-    ) -> Result<StateSyncUpdate, StateSyncError> {
-        let state = self.framed::<_,StateSyncError, _,_>("state sync", move |conn| {
-
-            let desired_senders = serialize_vec(account_ids.iter());
-            let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes()) ));
-
-            // select notes since block by tag and sender
-            let desired_block_num: i64 = SelectDsl::select(schema::notes::table, schema::notes::block_num)
-            .filter(
-                schema::notes::tag.eq_any(&desired_note_tags[..])
-                .or(schema::notes::sender.eq_any(&desired_senders[..]))
-            )
-            .order_by(schema::notes::block_num.asc())
-            .limit(1)
-            .get_result(conn)
-            .optional()
-            .map_err(DatabaseError::from)?.unwrap(); // XXX what makes sure it's not None?
-
-            let notes =
-                SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
-                // find the next block which contains at least one note with a matching tag or sender
-                .filter(schema::notes::block_num.eq(
-                    desired_block_num
-                ))
-                // filter the block's notes and return only the ones matching the requested tags or senders
-                .filter(
-                    schema::notes::tag
-                    .eq_any(&desired_note_tags)
-                    .or(
-                        schema::notes::sender
-                        .eq_any(&desired_senders)
+                // select notes since block by tag and sender
+                let desired_block_num: i64 = SelectDsl::select(schema::notes::table, schema::notes::block_num)
+                    .filter(
+                        schema::notes::tag.eq_any(&desired_note_tags[..])
+                            .or(schema::notes::sender.eq_any(&desired_senders[..]))
                     )
-                )
-                .load::<NoteSyncRecordRawRow>(conn)
-                .map_err(DatabaseError::from)?;
+                    .order_by(schema::notes::block_num.asc())
+                    .limit(1)
+                    .get_result(conn)
+                    .optional()
+                    .map_err(DatabaseError::from)?.unwrap(); // XXX what makes sure it's not None?
 
-            // select block header by block num
-            let maybe_note_block_num = notes.first().map(|note| note.block_num);
-            let block_header: BlockHeader = {
-                let sel = SelectDsl::select(
-                    schema::block_headers::table,
-                    models::BlockHeaderRawRow::as_select(),
-                );
-                let row = if let Some(block_number) = maybe_note_block_num {
-                    sel.find(block_number) // TODO
-                        .first::<models::BlockHeaderRawRow>(conn)
-                        .optional()
-                    // invariant: only one block exists with the given block header, so the length is
-                    // always zero or one
-                } else {
-                    sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
-                }.map_err(DatabaseError::from)?;
-                row.map(std::convert::TryInto::try_into).transpose()
-            }?.ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
+                let notes =
+                    SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
+                        // find the next block which contains at least one note with a matching tag or sender
+                        .filter(schema::notes::block_num.eq(
+                            desired_block_num
+                        ))
+                        // filter the block's notes and return only the ones matching the requested tags or senders
+                        .filter(
+                            schema::notes::tag
+                                .eq_any(&desired_note_tags)
+                                .or(
+                                    schema::notes::sender
+                                    .eq_any(&desired_senders)
+                                )
+                        )
+                        .load::<NoteSyncRecordRawRow>(conn)
+                        .map_err(DatabaseError::from)?;
 
-            // select accounts by block range
-            let account_ids = serialize_vec(account_ids.iter());
-            let block_start: i64 = block_number.as_u32().into();
-            let block_end: i64 = block_header.block_num().as_u32().into();
-            let account_updates = SelectDsl::select(
-                schema::accounts::table
-                , AccountSummaryRaw::as_select())
-                // (schema::accounts::account_id, schema::accounts::account_commitment, schema::accounts::block_num))
-                .filter(schema::accounts::block_num.gt(block_start))
-                .filter(schema::accounts::block_num.le(block_end))
-                .filter(schema::accounts::account_id.eq_any(&account_ids))
-                .order(schema::accounts::block_num.asc())
-                .load::<AccountSummaryRaw>(conn)
-                .map_err(DatabaseError::from)?;
-            let account_updates = vec_raw_try_into::<AccountSummary,AccountSummaryRaw>(account_updates)?;
+                // select block header by block num
+                let maybe_note_block_num = notes.first().map(|note| note.block_num);
+                let block_header: BlockHeader = {
+                    let sel = SelectDsl::select(
+                        schema::block_headers::table,
+                        models::BlockHeaderRawRow::as_select(),
+                    );
+                    let row = if let Some(block_number) = maybe_note_block_num {
+                        sel.find(block_number) // TODO
+                            .first::<models::BlockHeaderRawRow>(conn)
+                            .optional()
+                        // invariant: only one block exists with the given block header, so the length is
+                        // always zero or one
+                    } else {
+                        sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
+                    }.map_err(DatabaseError::from)?;
+                    row.map(std::convert::TryInto::try_into).transpose()
+                }?.ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
-            // select transactions by accounts and block range
-            let transactions =
-                SelectDsl::select(schema::transactions::table,
-                    (schema::transactions::account_id, schema::transactions::block_num, schema::transactions::transaction_id)
-                )
-                .filter(schema::transactions::block_num.gt(block_start))
-                .filter(schema::transactions::block_num.le(block_end))
-                .filter(schema::transactions::account_id.eq_any(&account_ids))
-                .order(schema::transactions::transaction_id.asc())
-                .load::<TransactionSummaryRaw>(conn)
-                .map_err(DatabaseError::from)?;
+                // select accounts by block range
+                let account_ids = serialize_vec(account_ids.iter());
+                let block_start: i64 = block_number.as_u32().into();
+                let block_end: i64 = block_header.block_num().as_u32().into();
+                let account_updates = SelectDsl::select(
+                    schema::accounts::table
+                    , AccountSummaryRaw::as_select())
+                        // (schema::accounts::account_id, schema::accounts::account_commitment, schema::accounts::block_num))
+                        .filter(schema::accounts::block_num.gt(block_start))
+                        .filter(schema::accounts::block_num.le(block_end))
+                        .filter(schema::accounts::account_id.eq_any(&account_ids))
+                        .order(schema::accounts::block_num.asc())
+                        .load::<AccountSummaryRaw>(conn)
+                        .map_err(DatabaseError::from)?;
+                let account_updates = vec_raw_try_into::<AccountSummary,AccountSummaryRaw>(account_updates)?;
 
-            Ok(StateSyncUpdate {
-                notes: vec_raw_try_into(notes)?,
-                block_header,
-                account_updates,
-                transactions: vec_raw_try_into(transactions)?,
-            })
-        })
-        .await?;
-        Ok(state)
-    }
+                // select transactions by accounts and block range
+                let transactions =
+                    SelectDsl::select(schema::transactions::table,
+                        (schema::transactions::account_id, schema::transactions::block_num, schema::transactions::transaction_id)
+                    )
+                    .filter(schema::transactions::block_num.gt(block_start))
+                    .filter(schema::transactions::block_num.le(block_end))
+                    .filter(schema::transactions::account_id.eq_any(&account_ids))
+                    .order(schema::transactions::transaction_id.asc())
+                    .load::<TransactionSummaryRaw>(conn)
+                    .map_err(DatabaseError::from)?;
+                Ok(StateSyncUpdate {
+                    notes: vec_raw_try_into(notes)?,
+                    block_header,
+                    account_updates,
+                    transactions: vec_raw_try_into(transactions)?,
+                })
+            });
+            state
+        }
 
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_note_sync(
@@ -530,38 +482,7 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
         self.framed("note by id", move |conn| {
-            let note_ids = serialize_vec(&note_ids);
-            let cols = (
-                schema::notes::block_num,
-                schema::notes::batch_index,
-                schema::notes::note_index,
-                schema::notes::note_id,
-                // // metadata
-                schema::notes::note_type,
-                schema::notes::sender,
-                schema::notes::tag,
-                schema::notes::aux,
-                schema::notes::execution_hint,
-                // details
-                schema::notes::assets,
-                schema::notes::inputs,
-                schema::notes::serial_num,
-                // // merkle
-                schema::notes::merkle_path,
-                schema::note_scripts::script.nullable(),
-            );
-
-            let q = schema::notes::table
-                .left_join(schema::note_scripts::table.on(
-                    schema::notes::script_root.eq(schema::note_scripts::script_root.nullable()),
-                ))
-                .filter(schema::notes::note_id.eq_any(&note_ids));
-            let raw: Vec<_> = SelectDsl::select(
-                q, cols, // NoteRecordRaw::as_select()
-            )
-            .load::<NoteRecordRaw>(conn)?;
-            let records = vec_raw_try_into::<NoteRecord, _>(raw)?;
-            Ok(records)
+            models::queries::select_notes_by_id_query(conn, note_ids)
         })
         .await
     }

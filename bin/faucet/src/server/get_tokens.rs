@@ -165,16 +165,20 @@ impl RawMintRequest {
 
         // Check the API key, if provided
         if let Some(api_key) = &self.api_key {
-            if !server.api_keys.contains(&ApiKey::decode(Some(api_key.clone()))?) {
-                return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
-            }
+            server
+                .active_requests_per_key
+                .lock()
+                .expect("active requests per key lock should be released")
+                .get(&ApiKey::decode(api_key)?)
+                .ok_or(InvalidRequest::InvalidApiKey(api_key.clone()))?
+                .fetch_add(1, Ordering::Relaxed);
         }
 
         // Validate Challenge and nonce
         let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;
         let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
 
-        server.submit_challenge(&challenge_str, nonce, account_id, self.api_key)?;
+        server.submit_challenge(&challenge_str, nonce, account_id, self.api_key.as_deref())?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
@@ -213,14 +217,21 @@ pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GetTokenError> {
-    let api_key = ApiKey::decode(request.api_key.clone()).map_err(GetTokenError::InvalidRequest)?;
-
+    let api_key = request
+        .api_key
+        .as_deref()
+        .map(ApiKey::decode)
+        .transpose()
+        .map_err(GetTokenError::InvalidRequest)?
+        .unwrap_or_default();
     let key_active_requests = server
         .active_requests_per_key
         .lock()
         .expect("active requests per key lock should be released")
-        .entry(api_key.clone())
-        .or_insert(Arc::new(AtomicUsize::new(0)))
+        .get(&api_key)
+        .ok_or(GetTokenError::InvalidRequest(InvalidRequest::InvalidApiKey(
+            request.api_key.clone().unwrap_or_default(),
+        )))?
         .clone();
 
     // Track this as an active request for the entire duration

@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::HashMap,
     convert::Infallible,
     net::SocketAddr,
     sync::{Arc, Mutex, atomic::AtomicUsize},
@@ -62,7 +62,6 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow: PoW,
-    api_keys: BTreeSet<ApiKey>,
     active_requests_per_key: Arc<Mutex<HashMap<ApiKey, Arc<AtomicUsize>>>>,
 }
 
@@ -72,7 +71,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_secret: &str,
-        api_keys: BTreeSet<ApiKey>,
+        api_keys: &[ApiKey],
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
         let metadata = Metadata {
@@ -88,13 +87,17 @@ impl Server {
         let secret_bytes: [u8; 32] = hasher.finalize().into();
 
         let pow = PoW::new(secret_bytes);
+        let active_requests_per_key = api_keys
+            .iter()
+            .chain(std::iter::once(&ApiKey::default()))
+            .map(|key| (key.clone(), Arc::new(AtomicUsize::new(0))))
+            .collect::<HashMap<_, _>>();
 
         Server {
             mint_state,
             metadata,
             pow,
-            active_requests_per_key: Arc::new(Mutex::new(HashMap::new())),
-            api_keys,
+            active_requests_per_key: Arc::new(Mutex::new(active_requests_per_key)),
         }
     }
 
@@ -249,7 +252,7 @@ impl Server {
         challenge: &str,
         nonce: u64,
         account_id: AccountId,
-        api_key: Option<String>,
+        api_key: Option<&str>,
     ) -> Result<(), InvalidRequest> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -260,7 +263,7 @@ impl Server {
             challenge,
             nonce,
             account_id,
-            &ApiKey::decode(api_key)?,
+            &api_key.map(ApiKey::decode).transpose()?.unwrap_or_default(),
         )
     }
 }

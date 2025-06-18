@@ -7,7 +7,7 @@ mod types;
 #[cfg(test)]
 mod stub_rpc_api;
 
-use std::{collections::BTreeSet, path::PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -124,7 +124,10 @@ async fn main() -> anyhow::Result<()> {
     run_faucet_command(cli).await
 }
 
-#[allow(clippy::too_many_lines)] // This will be shorter once config file is removed
+#[allow(
+    clippy::too_many_lines,
+    reason = "This will be shorter once config file is removed"
+)]
 async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     match &cli.command {
         // Note: open-telemetry is handled in main.
@@ -146,7 +149,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             let api_keys = config
                 .api_keys
                 .iter()
-                .map(|k| ApiKey::decode(Some(k.clone())))
+                .map(|k| ApiKey::decode(k))
                 .collect::<Result<Vec<_>, _>>()
                 .context("failed to decode API keys")?;
 
@@ -155,7 +158,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 config.asset_amount_options.clone(),
                 tx_requests,
                 &config.pow_secret,
-                BTreeSet::from_iter(api_keys),
+                &api_keys,
             );
 
             // Capture in a variable to avoid moving into two branches

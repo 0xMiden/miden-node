@@ -46,7 +46,12 @@ impl RawPowRequest {
             AccountId::from_bech32(&self.account_id).map(|(_, account_id)| account_id)
         }
         .map_err(InvalidPowRequest::InvalidAccountId)?;
-        let api_key = ApiKey::decode(self.api_key).map_err(|_| InvalidPowRequest::InvalidApiKey)?;
+        let api_key = self
+            .api_key
+            .map(|api_key| ApiKey::decode(&api_key))
+            .transpose()
+            .map_err(|_| InvalidPowRequest::InvalidApiKey)?
+            .unwrap_or_default();
         Ok(PowRequest { account_id, api_key })
     }
 }

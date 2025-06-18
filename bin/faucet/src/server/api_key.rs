@@ -38,12 +38,8 @@ impl ApiKey {
         self.0
     }
 
-    /// Decodes the API key from a string option. If the string is `None`, returns a default API
-    /// key.
-    pub fn decode(api_key_str: Option<String>) -> Result<Self, InvalidRequest> {
-        let Some(api_key_str) = api_key_str else {
-            return Ok(Self::default());
-        };
+    /// Decodes the API key from a string.
+    pub fn decode(api_key_str: &str) -> Result<Self, InvalidRequest> {
         let api_key_str = api_key_str.trim_start_matches(API_KEY_PREFIX).to_string();
         let bytes = BASE64_STANDARD
             .decode(api_key_str.as_bytes())
@@ -66,7 +62,7 @@ mod tests {
         let encoded_key = api_key.encode();
         assert!(encoded_key.starts_with(API_KEY_PREFIX));
 
-        let decoded_key = ApiKey::decode(Some(encoded_key)).unwrap();
+        let decoded_key = ApiKey::decode(&encoded_key).unwrap();
         assert_eq!(decoded_key.inner().len(), 32);
         assert_eq!(decoded_key.inner(), api_key.inner());
     }

@@ -4,7 +4,7 @@
 
 ### Enhancements
 
-- Add miden-proving-service and miden-proving-service-client crates (#926).
+- Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
 - Added support for gRPC server side reflection to all components (#949).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 - Added support for TLS to `miden-proving-service-client` (#968).

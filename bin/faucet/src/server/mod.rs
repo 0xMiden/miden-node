@@ -2,7 +2,7 @@ use std::{
     collections::HashMap,
     convert::Infallible,
     net::SocketAddr,
-    sync::{Arc, Mutex, atomic::AtomicUsize},
+    sync::{Arc, Mutex},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -62,7 +62,7 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow: PoW,
-    active_requests_per_key: Arc<Mutex<HashMap<ApiKey, Arc<AtomicUsize>>>>,
+    active_requests_per_key: Arc<Mutex<HashMap<ApiKey, usize>>>,
 }
 
 impl Server {
@@ -90,7 +90,7 @@ impl Server {
         let active_requests_per_key = api_keys
             .iter()
             .chain(std::iter::once(&ApiKey::default()))
-            .map(|key| (key.clone(), Arc::new(AtomicUsize::new(0))))
+            .map(|key| (key.clone(), 0))
             .collect::<HashMap<_, _>>();
 
         Server {

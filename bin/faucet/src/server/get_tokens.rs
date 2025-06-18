@@ -1,10 +1,4 @@
-use std::{
-    convert::Infallible,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::convert::Infallible;
 
 use axum::{
     extract::{Query, State},
@@ -196,27 +190,6 @@ impl RawMintRequest {
     }
 }
 
-/// Guard that automatically tracks the lifecycle of an active request.
-///
-/// An "active request" represents any request currently being handled by the system,
-/// whether it's being validated, queued, or processed.
-struct ActiveRequestGuard {
-    active_count: Arc<AtomicUsize>,
-}
-
-impl ActiveRequestGuard {
-    fn new(active_count: Arc<AtomicUsize>) -> Self {
-        active_count.fetch_add(1, Ordering::Relaxed);
-        Self { active_count }
-    }
-}
-
-impl Drop for ActiveRequestGuard {
-    fn drop(&mut self) {
-        self.active_count.fetch_sub(1, Ordering::Relaxed);
-    }
-}
-
 #[instrument(
     parent = None, target = COMPONENT, name = "faucet.server.get_tokens", skip_all,
     fields(
@@ -238,21 +211,22 @@ pub async fn get_tokens(
         .transpose()
         .map_err(GetTokenError::InvalidRequest)?
         .unwrap_or_default();
+
+    // Get the number of active requests for the API key and increment it.
     let key_active_requests = server
         .active_requests_per_key
         .lock()
         .expect("active requests per key lock should be released")
-        .get(&api_key)
+        .get_mut(&api_key)
+        .map(|count| {
+            *count += 1;
+            *count
+        })
         .ok_or(GetTokenError::InvalidRequest(InvalidRequest::InvalidApiKey(
             request.api_key.clone().unwrap_or_default(),
-        )))?
-        .clone();
+        )))?;
 
-    // Track this as an active request for the entire duration
-    let _active_guard = ActiveRequestGuard::new(key_active_requests.clone());
-
-    let current_active_requests = key_active_requests.load(Ordering::Relaxed);
-    server.pow.adjust_difficulty(current_active_requests, api_key);
+    server.pow.adjust_difficulty(key_active_requests, api_key.clone());
 
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
@@ -278,91 +252,19 @@ pub async fn get_tokens(
         .err();
 
     if let Some(error) = mint_error {
+        // SAFETY: the channel is not closed because we just created it.
         tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
     }
 
+    // Decrement the number of active requests for the API key.
+    server
+        .active_requests_per_key
+        .lock()
+        .expect("active requests per key lock should be released")
+        .get_mut(&api_key)
+        .map(|count| *count -= 1)
+        .expect("api key should be in the map");
+
     let stream = ReceiverStream::new(rx_result);
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    use super::*;
-
-    #[test]
-    fn test_active_request_guard_increments_on_creation() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-
-        let _guard = ActiveRequestGuard::new(active_count.clone());
-        assert_eq!(active_count.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn test_active_request_guard_decrements_on_drop() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        {
-            let _guard = ActiveRequestGuard::new(active_count.clone());
-            assert_eq!(active_count.load(Ordering::Relaxed), 1);
-        } // Guard dropped here
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn test_multiple_active_request_guards() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        let guard1 = ActiveRequestGuard::new(active_count.clone());
-        assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-        let guard2 = ActiveRequestGuard::new(active_count.clone());
-        assert_eq!(active_count.load(Ordering::Relaxed), 2);
-
-        let guard3 = ActiveRequestGuard::new(active_count.clone());
-        assert_eq!(active_count.load(Ordering::Relaxed), 3);
-
-        drop(guard2);
-        assert_eq!(active_count.load(Ordering::Relaxed), 2);
-
-        drop(guard1);
-        assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-        drop(guard3);
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn test_active_request_guard_behavior_on_error_scenarios() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        // Simulate validation error - active guard created
-        {
-            let _active_guard = ActiveRequestGuard::new(active_count.clone());
-            assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-            // Validation fails, request doesn't proceed
-            // Guard will be dropped when going out of scope
-        }
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-
-        // Simulate queue full error - active guard created
-        {
-            let _active_guard = ActiveRequestGuard::new(active_count.clone());
-            assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-            // Queue is full, request doesn't proceed
-            // Guard will be dropped when going out of scope
-        }
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-    }
 }

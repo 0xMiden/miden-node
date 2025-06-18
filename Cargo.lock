@@ -2562,10 +2562,6 @@ dependencies = [
  "miden-tx",
  "miden-tx-batch-prover",
  "miette",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
  "pingora",
  "pingora-core",
  "pingora-limits",
@@ -2587,8 +2583,6 @@ dependencies = [
  "tonic-health",
  "tonic-web",
  "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "uuid",
 ]
 
@@ -3072,19 +3066,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "opentelemetry-http"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50f6639e842a97dbea8886e3439710ae463120091e2e064518ba8e716e6ac36d"
-dependencies = [
- "async-trait",
- "bytes",
- "http 1.3.1",
- "opentelemetry",
- "reqwest",
-]
-
-[[package]]
 name = "opentelemetry-otlp"
 version = "0.30.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3092,15 +3073,12 @@ checksum = "dbee664a43e07615731afc539ca60c6d9f1a9425e25ca09c57bc36c87c55852b"
 dependencies = [
  "http 1.3.1",
  "opentelemetry",
- "opentelemetry-http",
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",
- "reqwest",
  "thiserror 2.0.12",
  "tokio",
  "tonic",
- "tracing",
 ]
 
 [[package]]
@@ -3114,12 +3092,6 @@ dependencies = [
  "prost",
  "tonic",
 ]
-
-[[package]]
-name = "opentelemetry-semantic-conventions"
-version = "0.30.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83d059a296a47436748557a353c5e6c5705b9470ef6c95cfc52c21a8814ddac2"
 
 [[package]]
 name = "opentelemetry_sdk"
@@ -4009,9 +3981,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "encoding_rs",
- "futures-channel",
  "futures-core",
- "futures-util",
  "h2",
  "http 1.3.1",
  "http-body",

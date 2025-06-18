@@ -177,14 +177,14 @@ impl RawMintRequest {
 
         let api_key = self.api_key.as_deref().map(ApiKey::decode).transpose()?.unwrap_or_default();
 
-        // Update the active requests counter for the API key
+        // Check if the API key is valid
         server
             .active_requests_per_key
             .lock()
             .expect("active requests per key lock should be released")
-            .get(&api_key)
-            .ok_or(InvalidRequest::InvalidApiKey(self.api_key.unwrap_or_default()))?
-            .fetch_add(1, Ordering::Relaxed);
+            .contains_key(&api_key)
+            .then_some(())
+            .ok_or(InvalidRequest::InvalidApiKey(self.api_key.unwrap_or_default()))?;
 
         // Validate Challenge and nonce
         let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;

@@ -20,9 +20,6 @@ use crate::{
     proxy::LoadBalancerState,
 };
 
-/// Update status every 5 seconds
-const STATUS_UPDATE_INTERVAL_SECS: u64 = 5;
-
 // PROXY STATUS SERVICE
 // ================================================================================================
 
@@ -47,11 +44,17 @@ pub struct ProxyStatusPingoraService {
     ///
     /// This is used to send the status updates to the receiver.
     status_tx: watch::Sender<ProxyStatusResponse>,
+    /// The status update interval.
+    status_update_interval: Duration,
 }
 
 impl ProxyStatusPingoraService {
     /// Creates a new [`ProxyStatusPingoraService`].
-    pub async fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
+    pub async fn new(
+        load_balancer: Arc<LoadBalancerState>,
+        port: u16,
+        status_update_interval: Duration,
+    ) -> Self {
         let version = env!("CARGO_PKG_VERSION").to_string();
         let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
         let supported_proof_type: i32 = supported_proof_type.into();
@@ -75,6 +78,7 @@ impl ProxyStatusPingoraService {
             port,
             status_rx,
             status_tx,
+            status_update_interval,
         }
     }
 }
@@ -119,7 +123,11 @@ impl Service for ProxyStatusPingoraService {
         };
 
         // Start the status updater task
-        let updater = ProxyStatusUpdater::new(self.load_balancer.clone(), self.status_tx.clone());
+        let updater = ProxyStatusUpdater::new(
+            self.load_balancer.clone(),
+            self.status_tx.clone(),
+            self.status_update_interval,
+        );
         let cache_updater_shutdown = shutdown.clone();
         let updater_task = async move {
             updater.start(cache_updater_shutdown).await;
@@ -188,6 +196,7 @@ impl ProxyStatusUpdater {
     pub fn new(
         load_balancer: Arc<LoadBalancerState>,
         status_tx: watch::Sender<ProxyStatusResponse>,
+        update_interval: Duration,
     ) -> Self {
         let version = env!("CARGO_PKG_VERSION").to_string();
         let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
@@ -196,7 +205,7 @@ impl ProxyStatusUpdater {
         Self {
             load_balancer,
             status_tx,
-            update_interval: Duration::from_secs(STATUS_UPDATE_INTERVAL_SECS),
+            update_interval,
             version,
             supported_proof_type,
         }

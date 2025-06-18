@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use clap::Parser;
 use pingora::{
     apps::HttpServerOptions,
@@ -116,8 +118,12 @@ impl StartProxy {
         }
 
         // Add gRPC status service
-        let status_service =
-            ProxyStatusPingoraService::new(worker_lb, self.proxy_config.status_port).await;
+        let status_service = ProxyStatusPingoraService::new(
+            worker_lb,
+            self.proxy_config.status_port,
+            Duration::from_secs(self.proxy_config.status_update_interval_secs),
+        )
+        .await;
         info!(port = %self.proxy_config.status_port, "gRPC status service starting");
 
         server.add_service(health_check_service);

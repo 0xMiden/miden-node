@@ -525,7 +525,7 @@ impl P2IdNotes {
 
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, sync::Mutex};
+    use std::{str::FromStr, sync::Mutex, time::Duration};
 
     use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
     use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
@@ -537,6 +537,7 @@ mod tests {
     };
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
+    use tokio::time::{Instant, sleep};
     use url::Url;
 
     use super::*;
@@ -572,6 +573,13 @@ mod tests {
 
         // Start the stub node
         tokio::spawn(async move { serve_stub(&stub_node_url).await.unwrap() });
+
+        // Wait for the stub node to serve requests
+        let start = Instant::now();
+        while rpc_client.get_genesis_header().await.is_err() {
+            sleep(Duration::from_millis(100)).await;
+            assert!(start.elapsed() < Duration::from_secs(60), "stub node took too long to start");
+        }
 
         // Create the faucet
         let faucet = {

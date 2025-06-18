@@ -12,7 +12,7 @@
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
 - [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
-- Exposed `miden-prover-service` as a library (#956).
+- Exposed `miden-proving-service` as a library (#956).
 
 ### Fixes
 

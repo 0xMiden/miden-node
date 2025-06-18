@@ -14,15 +14,12 @@ use crate::generated::{self, ProvingRequest, ProvingResponse, api_server::Api as
 
 pub const MIDEN_PROVING_SERVICE: &str = "miden-proving-service";
 
-/// Specifies the type of proving supported.
+/// Specifies the type of proof supported by the proving service.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub enum ProofType {
-    /// Transaction proving
     #[default]
     Transaction,
-    /// Batch proving
     Batch,
-    /// Block proving
     Block,
 }
 

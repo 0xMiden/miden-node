@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -112,7 +112,7 @@ impl PoW {
             .account_id_timestamps
             .lock()
             .expect("PoW account id timestamps map lock poisoned")
-            .insert(account_id.to_hex(), timestamp);
+            .insert(account_id, timestamp);
         let is_rate_limited = prev_timestamp.is_some_and(|prev_timestamp| {
             (timestamp - prev_timestamp) < ACCOUNT_ID_RATE_LIMIT_WINDOW
         });
@@ -162,7 +162,7 @@ struct ChallengeCache {
     /// Once a challenge is added, it cannot be submitted again.
     challenges: Arc<Mutex<BTreeSet<Challenge>>>,
     /// A map of account IDs to timestamps of their last challenge submission.
-    account_id_timestamps: Arc<Mutex<HashMap<String, u64>>>,
+    account_id_timestamps: Arc<Mutex<BTreeMap<AccountId, u64>>>,
 }
 
 impl ChallengeCache {

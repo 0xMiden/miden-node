@@ -76,8 +76,10 @@ document.addEventListener('DOMContentLoaded', function () {
         publicButton.disabled = isLoading;
         loading.style.display = isLoading ? 'flex' : 'none';
         status.textContent = "";
-        info.style.visibility = isLoading ? 'hidden' : 'visible';
-        importCommand.style.visibility = isLoading ? 'hidden' : 'visible';
+        if (isLoading) {
+            info.style.visibility = 'hidden';
+            importCommand.style.visibility = 'hidden';
+        }
     }
 
     async function handleButtonClick(isPrivateNote) {
@@ -111,7 +113,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (!powResponse.ok) {
-            showError('Please try again soon.');
+            const message = await powResponse.text();
+            showError(message);
+            setLoadingState(false);
             return;
         }
         setLoadingState(true);
@@ -141,7 +145,8 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         evtSource.onerror = function (_) {
-            // Either rate limit exceeded or invalid account id. The error event does not contain the reason.
+            // Rate limit exceeded. We can discard account invalid since it was validated in the
+            // PoW request and we are not using API keys.
             evtSource.close();
             setLoadingState(false);
             showError('Please try again soon.');
@@ -186,6 +191,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
             txLink.textContent = data.transaction_id;
+            info.style.visibility = 'visible';
+            importCommand.style.visibility = 'visible';
         });
     }
 

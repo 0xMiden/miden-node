@@ -115,14 +115,26 @@ impl GetTokenError {
             },
         }
     }
-}
 
-impl IntoResponse for GetTokenError {
-    fn into_response(self) -> Response {
+    /// Convert the error into an SSE event and trigger a trace log.
+    fn into_event(self) -> Event {
         // TODO: This is a hacky way of doing error logging, but
         // its one of the last times we have the error before
         // it becomes opaque. Should replace this by something
         // better
+        self.trace();
+        Event::default().event("get-tokens-error").data(
+            serde_json::json!({
+                "message": self.user_facing_error(),
+                "status": self.status_code().to_string(),
+            })
+            .to_string(),
+        )
+    }
+}
+
+impl IntoResponse for GetTokenError {
+    fn into_response(self) -> Response {
         self.trace();
         (self.status_code(), self.user_facing_error()).into_response()
     }
@@ -217,6 +229,8 @@ pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GetTokenError> {
+    // If the API key is invalid, return an error immediately. Any other errors are sent to the
+    // client via SSE.
     let api_key = request
         .api_key
         .as_deref()
@@ -243,7 +257,7 @@ pub async fn get_tokens(
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
-    request
+    let mint_error = request
         .validate(&server)
         .map_err(GetTokenError::InvalidRequest)
         .and_then(|request| {
@@ -260,7 +274,12 @@ pub async fn get_tokens(
                     TrySendError::Full(_) => GetTokenError::FaucetOverloaded,
                     TrySendError::Closed(_) => GetTokenError::FaucetClosed,
                 })
-        })?;
+        })
+        .err();
+
+    if let Some(error) = mint_error {
+        tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
+    }
 
     let stream = ReceiverStream::new(rx_result);
     Ok(Sse::new(stream).keep_alive(KeepAlive::default()))

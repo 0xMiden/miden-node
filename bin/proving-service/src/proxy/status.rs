@@ -52,8 +52,22 @@ pub struct ProxyStatusPingoraService {
 impl ProxyStatusPingoraService {
     /// Creates a new [`ProxyStatusPingoraService`].
     pub async fn new(load_balancer: Arc<LoadBalancerState>, port: u16) -> Self {
-        // Generate initial status
-        let initial_status = build_status(&load_balancer).await;
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
+        let supported_proof_type: i32 = supported_proof_type.into();
+
+        let initial_status = {
+            // Build initial status inline in a scope to release the borrow
+            let workers = load_balancer.workers.read().await;
+            let worker_statuses: Vec<WorkerStatus> =
+                workers.iter().map(WorkerStatus::from).collect();
+            ProxyStatusResponse {
+                version: version.clone(),
+                supported_proof_type,
+                workers: worker_statuses,
+            }
+        };
+
         let (status_tx, status_rx) = watch::channel(initial_status);
 
         Self {
@@ -163,6 +177,10 @@ pub struct ProxyStatusUpdater {
     status_tx: watch::Sender<ProxyStatusResponse>,
     /// The interval at which to update the status.
     update_interval: Duration,
+    /// The version of the proxy service.
+    version: String,
+    /// The supported proof type.
+    supported_proof_type: i32,
 }
 
 impl ProxyStatusUpdater {
@@ -171,10 +189,16 @@ impl ProxyStatusUpdater {
         load_balancer: Arc<LoadBalancerState>,
         status_tx: watch::Sender<ProxyStatusResponse>,
     ) -> Self {
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
+        let supported_proof_type: i32 = supported_proof_type.into();
+
         Self {
             load_balancer,
             status_tx,
             update_interval: Duration::from_secs(STATUS_UPDATE_INTERVAL_SECS),
+            version,
+            supported_proof_type,
         }
     }
 
@@ -186,7 +210,7 @@ impl ProxyStatusUpdater {
         loop {
             tokio::select! {
                 _ = update_timer.tick() => {
-                    let new_status = build_status(&self.load_balancer).await;
+                    let new_status = self.build_status().await;
                     let _ = self.status_tx.send(new_status);
                 }
                 _ = shutdown.changed() => {
@@ -194,6 +218,18 @@ impl ProxyStatusUpdater {
                     break;
                 }
             }
+        }
+    }
+
+    /// Build a new status from the load balancer and returns it as a [`ProxyStatusResponse`].
+    async fn build_status(&self) -> ProxyStatusResponse {
+        let workers = self.load_balancer.workers.read().await;
+        let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
+
+        ProxyStatusResponse {
+            version: self.version.clone(),
+            supported_proof_type: self.supported_proof_type,
+            workers: worker_statuses,
         }
     }
 }
@@ -208,19 +244,5 @@ impl From<&RustWorkerHealthStatus> for WorkerHealthStatus {
             RustWorkerHealthStatus::Unhealthy { .. } => WorkerHealthStatus::Unhealthy,
             RustWorkerHealthStatus::Unknown => WorkerHealthStatus::Unknown,
         }
-    }
-}
-
-/// Build a new status from the load balancer and returns it as a [`ProxyStatusResponse`].
-async fn build_status(load_balancer: &LoadBalancerState) -> ProxyStatusResponse {
-    let workers = load_balancer.workers.read().await;
-    let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
-
-    let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
-
-    ProxyStatusResponse {
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        supported_proof_type: supported_proof_type.into(),
-        workers: worker_statuses,
     }
 }

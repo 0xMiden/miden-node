@@ -252,19 +252,13 @@ impl Server {
         challenge: &str,
         nonce: u64,
         account_id: AccountId,
-        api_key: Option<&str>,
+        api_key: &ApiKey,
     ) -> Result<(), InvalidRequest> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
-        self.pow.submit_challenge(
-            timestamp,
-            challenge,
-            nonce,
-            account_id,
-            &api_key.map(ApiKey::decode).transpose()?.unwrap_or_default(),
-        )
+        self.pow.submit_challenge(timestamp, challenge, nonce, account_id, api_key)
     }
 }
 

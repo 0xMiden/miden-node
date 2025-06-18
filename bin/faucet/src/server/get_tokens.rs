@@ -163,22 +163,22 @@ impl RawMintRequest {
             .validate(self.asset_amount)
             .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
 
-        // Check the API key, if provided
-        if let Some(api_key) = &self.api_key {
-            server
-                .active_requests_per_key
-                .lock()
-                .expect("active requests per key lock should be released")
-                .get(&ApiKey::decode(api_key)?)
-                .ok_or(InvalidRequest::InvalidApiKey(api_key.clone()))?
-                .fetch_add(1, Ordering::Relaxed);
-        }
+        let api_key = self.api_key.as_deref().map(ApiKey::decode).transpose()?.unwrap_or_default();
+
+        // Update the active requests counter for the API key
+        server
+            .active_requests_per_key
+            .lock()
+            .expect("active requests per key lock should be released")
+            .get(&api_key)
+            .ok_or(InvalidRequest::InvalidApiKey(self.api_key.unwrap_or_default()))?
+            .fetch_add(1, Ordering::Relaxed);
 
         // Validate Challenge and nonce
         let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;
         let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
 
-        server.submit_challenge(&challenge_str, nonce, account_id, self.api_key.as_deref())?;
+        server.submit_challenge(&challenge_str, nonce, account_id, &api_key)?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }

@@ -1,5 +1,3 @@
-use super::*;
-
 use miden_lib::utils::Deserializable;
 use miden_node_proto::{self as proto, domain::account::AccountSummary};
 use miden_objects::{
@@ -13,6 +11,8 @@ use miden_objects::{
     },
     transaction::TransactionId,
 };
+
+use super::*;
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = accounts)]
@@ -207,7 +207,7 @@ pub struct NoteDetailsRaw {
     pub serial_num: Option<Vec<u8>>,
 }
 
-#[derive(diesel::QueryableByName, Debug)]
+#[derive(diesel::Queryable, diesel::QueryableByName, diesel::Selectable, Debug)]
 #[diesel(table_name = notes)] // Link to the notes table
 pub struct NoteRecordRawNoResolve {
     pub block_num: i64,

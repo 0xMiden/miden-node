@@ -5,7 +5,7 @@ use diesel::{
 use miden_lib::utils::Deserializable;
 
 use crate::{
-    db::{schema, sql::utils::table_exists},
+    db::{models::table_exists, schema},
     errors::DatabaseError,
 };
 

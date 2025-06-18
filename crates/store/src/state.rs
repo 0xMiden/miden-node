@@ -42,7 +42,7 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     blocks::BlockStore,
-    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate},
+    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate, models::Page},
     errors::{
         ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError,
         GetBlockInputsError, GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError,

@@ -32,11 +32,16 @@ use miden_objects::{
 use rand::Rng;
 
 use super::{AccountInfo, NoteRecord, NullifierInfo, sql};
-use crate::db::{TransactionSummary, migrations::apply_migrations, models::queries, queries::Page};
+use crate::db::{
+    TransactionSummary,
+    migrations::apply_migrations,
+    models::{queries, utils},
+    queries::Page,
+};
 
 fn create_db() -> SqliteConnection {
-    let mut conn = SqliteConnection::establish(":memory:");
-    apply_migrations(&mut conn).unwrap();
+    let conn = SqliteConnection::establish(":memory:").expect("In memory sqlite always works");
+    apply_migrations(&mut conn).expect("Migrations always work on an empty database");
     conn
 }
 
@@ -56,7 +61,6 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
     );
 
     conn.transaction(|conn| queries::insert_block_header(conn, &block_header))
-        .unwarp()
         .unwrap();
 }
 
@@ -452,7 +456,7 @@ fn sql_select_accounts() {
     let mut conn = create_db();
     let conn = &mut conn;
     let block_num = 1.into();
-    create_block(&mut conn, block_num);
+    create_block(conn, block_num);
 
     // test querying empty table
     let accounts = queries::select_all_accounts(conn).unwrap();
@@ -497,7 +501,7 @@ fn sql_select_accounts() {
 fn sql_public_account_details() {
     let mut conn = create_db();
     let conn = &mut conn;
-    create_block(&mut conn, 1.into());
+    create_block(conn, 1.into());
 
     let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let non_fungible_faucet_id =
@@ -540,7 +544,7 @@ fn sql_public_account_details() {
     let account_read = accounts_in_db.pop().unwrap().details.unwrap();
     assert_eq!(account_read, account);
 
-    create_block(&mut conn, 2.into());
+    create_block(conn, 2.into());
 
     let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 2.into()).unwrap();
 
@@ -589,7 +593,7 @@ fn sql_public_account_details() {
     let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 2.into()).unwrap();
     assert_eq!(read_delta.as_ref(), Some(&delta2));
 
-    create_block(&mut conn, 3.into());
+    create_block(conn, 3.into());
 
     let storage_delta3 = AccountStorageDelta::from_iters([5], [], []);
 
@@ -635,12 +639,11 @@ fn sql_public_account_details() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn select_nullifiers_by_prefix() {
-    const PREFIX_LEN: u32 = 16;
     let mut conn = create_db();
     let conn = &mut conn; // test empty table
     let block_number0 = 0.into();
     let nullifiers =
-        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0).unwrap();
+        queries::select_nullifiers_by_prefix(conn, &[], block_number0).unwrap();
     assert!(nullifiers.is_empty());
 
     // test single item
@@ -652,8 +655,7 @@ fn select_nullifiers_by_prefix() {
 
     let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
-        PREFIX_LEN,
-        &[queries::utils::get_nullifier_prefix(&nullifier1)],
+        &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
     )
     .unwrap();
@@ -679,7 +681,7 @@ fn select_nullifiers_by_prefix() {
     let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
-        &[queries::utils::get_nullifier_prefix(&nullifier1)],
+        &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
     )
     .unwrap();
@@ -693,7 +695,7 @@ fn select_nullifiers_by_prefix() {
     let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
-        &[queries::utils::get_nullifier_prefix(&nullifier2)],
+        &[utils::get_nullifier_prefix(&nullifier2)],
         block_number0,
     )
     .unwrap();
@@ -710,8 +712,8 @@ fn select_nullifiers_by_prefix() {
         conn,
         PREFIX_LEN,
         &[
-            queries::utils::get_nullifier_prefix(&nullifier1),
-            queries::utils::get_nullifier_prefix(&nullifier2),
+            utils::get_nullifier_prefix(&nullifier1),
+            utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number0,
     )
@@ -734,7 +736,7 @@ fn select_nullifiers_by_prefix() {
     let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
-        &[queries::utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
+        &[utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
         block_number0,
     )
     .unwrap();
@@ -746,8 +748,8 @@ fn select_nullifiers_by_prefix() {
         conn,
         PREFIX_LEN,
         &[
-            queries::utils::get_nullifier_prefix(&nullifier1),
-            queries::utils::get_nullifier_prefix(&nullifier2),
+            utils::get_nullifier_prefix(&nullifier1),
+            utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number2,
     )
@@ -906,11 +908,19 @@ fn notes() {
 
     // test empty table
     let res =
-        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[], 0.into()).unwrap();
+        queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
+            .unwrap()
+            .notes;
     assert!(res.is_empty());
 
-    let res = queries::select_notes_since_block_by_tag_and_sender(conn, &[1, 2, 3], &[], 0.into())
-        .unwrap();
+    let res = queries::select_notes_since_block_by_tag_and_sender(
+        conn,
+        BlockNumber::from(0),
+        &[1, 2, 3],
+        &[],
+    )
+    .unwrap()
+    .notes;
     assert!(res.is_empty());
 
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
@@ -951,11 +961,12 @@ fn notes() {
 
     // test empty tags
     let res =
-        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[], 0.into()).unwrap();
+        queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
+            .unwrap();
     assert!(res.is_empty());
 
     // test no updates
-    let res = queries::select_notes_since_block_by_tag_and_sender(conn, &[tag], &[], block_num_1)
+    let res = queries::select_notes_since_block_by_tag_and_sender(conn, block_num_1, &[], &[tag])
         .unwrap();
     assert!(res.is_empty());
 
@@ -991,14 +1002,13 @@ fn notes() {
         &[],
         block_num_1.parent().unwrap(),
     )
-    .unwrap();
+    .unwrap().notes;
     assert_eq!(res, vec![note.clone().into()]);
 
     // only the second note is returned
     let res = queries::select_notes_since_block_by_tag_and_sender(conn, &[tag], &[], block_num_1)
-        .unwrap();
+        .unwrap().notes;
     assert_eq!(res, vec![note2.clone().into()]);
-
     // test query notes by id
     let notes = vec![note.clone(), note2];
     let note_ids: Vec<RpoDigest> = notes.clone().iter().map(|note| note.note_id).collect();

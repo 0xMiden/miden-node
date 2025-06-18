@@ -712,7 +712,6 @@ pub fn select_nullifiers_by_prefix(
 /// # Returns
 ///
 /// A vector with notes, or an error.
-#[cfg(test)]
 pub fn select_all_notes(transaction: &Transaction) -> Result<Vec<NoteRecord>> {
     let mut stmt = transaction.prepare_cached(&format!(
         "SELECT {}

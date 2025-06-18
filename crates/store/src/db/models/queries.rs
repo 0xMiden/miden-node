@@ -8,7 +8,7 @@ use diesel::{
     query_dsl::methods::SelectDsl,
 };
 use miden_lib::utils::{Deserializable, Serializable};
-use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
+use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_objects::{
     Word,
     account::{
@@ -27,13 +27,16 @@ use super::{
     super::models, BoolExpressionMethods, DatabaseError, ExpressionMethods, NoteSyncRecordRawRow,
     QueryDsl, RunQueryDsl, SelectableHelper, serialize_vec,
 };
-use crate::db::{
-    NoteRecord, NoteSyncUpdate, NullifierInfo, Page,
-    models::{
-        AccountRaw, NoteRecordRaw, NoteRecordRawNoResolve, deserialize_raw_vec, vec_raw_try_into,
+use crate::{
+    db::{
+        NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
+        models::{
+            AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteRecordRawNoResolve,
+            TransactionSummaryRaw, deserialize_raw_vec, get_nullifier_prefix, vec_raw_try_into,
+        },
+        schema,
     },
-    schema,
-    sql::utils::get_nullifier_prefix,
+    errors::StateSyncError,
 };
 
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
@@ -480,11 +483,11 @@ pub(crate) fn insert_transactions(
     Ok(count)
 }
 
-pub(crate) fn select_notes_by_id_query(
+pub(crate) fn select_notes_by_id(
     conn: &mut SqliteConnection,
-    note_ids: Vec<NoteId>,
+    note_ids: &[NoteId],
 ) -> Result<Vec<NoteRecord>, DatabaseError> {
-    let note_ids = serialize_vec(&note_ids);
+    let note_ids = serialize_vec(note_ids);
     let cols = (
         schema::notes::block_num,
         schema::notes::batch_index,
@@ -519,11 +522,22 @@ pub(crate) fn select_notes_by_id_query(
     Ok(records)
 }
 
-pub(crate) fn load_all_nullifiers(
+pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
+}
+
+pub(crate) fn select_all_notes(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<NoteRecord>, DatabaseError> {
+    let notes_raw = SelectDsl::select(
+        schema::notes::table,
+        <models::NoteRecordRawNoResolve as diesel::SelectableHelper<_>>::as_select(),
+    )
+    .load::<models::NoteRecordRawNoResolve>(conn)?;
+    vec_raw_try_into(notes_raw)
 }
 
 pub(crate) fn insert_nullifiers_for_block(
@@ -573,7 +587,7 @@ pub(crate) fn apply_block(
     Ok(count)
 }
 
-pub(crate) fn load_nullifiers_by_prefix(
+pub(crate) fn select_nullifiers_by_prefix_q(
     conn: &mut SqliteConnection,
     nullifier_prefixes: Vec<u32>,
     block_num: BlockNumber,
@@ -598,9 +612,12 @@ pub(crate) fn get_account_by_id_prefix(
     )
     .first::<AccountRaw>(conn)
     .optional()
-    .map_err(DatabaseError::Diesel)?;
+    .map_err(|e| DatabaseError::Diesel(e))?;
 
-    maybe_info.map(std::convert::TryInto::try_into).transpose()
+    let result: Result<Option<AccountInfo>, DatabaseError> =
+        maybe_info.map(std::convert::TryInto::<AccountInfo>::try_into).transpose();
+
+    result
 }
 
 pub(crate) fn read_all_account_commitments(
@@ -743,6 +760,15 @@ pub(crate) fn unconsumed_network_notes(
     }
 
     Ok((notes, page))
+}
+
+#[cfg(test)]
+pub(crate) fn select_all_accounts(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<AccountInfo>, DatabaseError> {
+    let accounts_raw =
+        QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()).load(conn)?;
+    vec_raw_try_into(accounts_raw).map_err(DatabaseError::from)
 }
 
 pub(crate) fn select_accounts_by_id(
@@ -967,4 +993,145 @@ pub(crate) fn select_non_fungible_asset_updates_stmt(
     )
     .order(schema::account_non_fungible_asset_updates::block_num.asc())
     .get_results(conn)?)
+}
+
+pub fn select_all_block_headers(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<BlockHeader>, DatabaseError> {
+    let raw_block_headers =
+        QueryDsl::select(schema::block_headers::table, models::BlockHeaderRawRow::as_select())
+            .load::<models::BlockHeaderRawRow>(conn)?;
+    vec_raw_try_into(raw_block_headers)
+}
+
+pub(crate) fn get_state_sync(
+    conn: &mut SqliteConnection,
+    block_number: BlockNumber,
+    account_ids: Vec<AccountId>,
+    note_tags: Vec<u32>,
+) -> Result<StateSyncUpdate, StateSyncError> {
+    let desired_senders = serialize_vec(account_ids.iter());
+    let desired_note_tags =
+        Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes())));
+
+    // select notes since block by tag and sender
+    let desired_block_num = get_desired_block_num(conn, &desired_note_tags, &desired_senders)?;
+
+    let notes = load_notes_by_tag_and_sender(
+        conn,
+        desired_block_num,
+        &desired_note_tags,
+        &desired_senders,
+    )?;
+
+    // select block header by block num
+    let maybe_note_block_num = notes.first().map(|note| note.block_num);
+    let block_header: BlockHeader = get_block_header_by_block_num(conn, maybe_note_block_num)?
+        .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
+
+    // select accounts by block range
+    let account_ids = serialize_vec(account_ids.iter());
+    let block_start: i64 = block_number.as_u32().into();
+    let block_end: i64 = block_header.block_num().as_u32().into();
+    let account_updates =
+        select_accounts_by_block_range(conn, &account_ids, block_start, block_end)?;
+
+    // select transactions by accounts and block range
+    let transactions =
+        load_transactions_by_accounts_and_block_range(conn, &account_ids, block_start, block_end)?;
+    Ok(StateSyncUpdate {
+        notes: vec_raw_try_into(notes)?,
+        block_header,
+        account_updates,
+        transactions: vec_raw_try_into(transactions)?,
+    })
+}
+
+fn get_desired_block_num(
+    conn: &mut SqliteConnection,
+    desired_note_tags: &[i32],
+    desired_senders: &[Vec<u8>],
+) -> Result<i64, StateSyncError> {
+    SelectDsl::select(schema::notes::table, schema::notes::block_num)
+        .filter(
+            schema::notes::tag
+                .eq_any(desired_note_tags)
+                .or(schema::notes::sender.eq_any(desired_senders)),
+        )
+        .order_by(schema::notes::block_num.asc())
+        .limit(1)
+        .get_result(conn)
+        .optional()
+        .map_err(DatabaseError::from)?
+        .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)
+}
+
+fn load_notes_by_tag_and_sender(
+    conn: &mut SqliteConnection,
+    desired_block_num: i64,
+    desired_note_tags: &[i32],
+    desired_senders: &[Vec<u8>],
+) -> Result<Vec<NoteSyncRecordRawRow>, StateSyncError> {
+    Ok(SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
+        .filter(schema::notes::block_num.eq(desired_block_num))
+        .filter(
+            schema::notes::tag
+                .eq_any(desired_note_tags)
+                .or(schema::notes::sender.eq_any(desired_senders)),
+        )
+        .load::<NoteSyncRecordRawRow>(conn)
+        .map_err(DatabaseError::from)?)
+}
+
+fn get_block_header_by_block_num(
+    conn: &mut SqliteConnection,
+    maybe_note_block_num: Option<i64>,
+) -> Result<Option<BlockHeader>, DatabaseError> {
+    let sel =
+        SelectDsl::select(schema::block_headers::table, models::BlockHeaderRawRow::as_select());
+    let row = if let Some(block_number) = maybe_note_block_num {
+        sel.find(block_number).first::<models::BlockHeaderRawRow>(conn).optional()
+    } else {
+        sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
+    }
+    .map_err(DatabaseError::from)?;
+    row.map(std::convert::TryInto::try_into).transpose()
+}
+
+pub fn select_accounts_by_block_range(
+    conn: &mut SqliteConnection,
+    account_ids: &[Vec<u8>],
+    block_start: i64,
+    block_end: i64,
+) -> Result<Vec<AccountSummary>, DatabaseError> {
+    let raw: Vec<AccountSummaryRaw> =
+        SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
+            .filter(schema::accounts::block_num.gt(block_start))
+            .filter(schema::accounts::block_num.le(block_end))
+            .filter(schema::accounts::account_id.eq_any(account_ids))
+            .order(schema::accounts::block_num.asc())
+            .load::<AccountSummaryRaw>(conn)?;
+    Ok(vec_raw_try_into(raw).unwrap())
+}
+
+pub fn load_transactions_by_accounts_and_block_range(
+    conn: &mut SqliteConnection,
+    account_ids: &[Vec<u8>],
+    block_start: i64,
+    block_end: i64,
+) -> Result<Vec<TransactionSummaryRaw>, DatabaseError> {
+    SelectDsl::select(
+        schema::transactions::table,
+        (
+            schema::transactions::account_id,
+            schema::transactions::block_num,
+            schema::transactions::transaction_id,
+        ),
+    )
+    .filter(schema::transactions::block_num.gt(block_start))
+    .filter(schema::transactions::block_num.le(block_end))
+    .filter(schema::transactions::account_id.eq_any(account_ids))
+    .order(schema::transactions::transaction_id.asc())
+    .load::<TransactionSummaryRaw>(conn)
+    .map_err(DatabaseError::from)
 }

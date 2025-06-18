@@ -45,7 +45,7 @@ use miden_objects::{
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
-use crate::{COMPONENT, db::Page, state::State};
+use crate::{COMPONENT, db::models::Page, state::State};
 
 // STORE API
 // ================================================================================================

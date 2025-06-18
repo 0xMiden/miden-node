@@ -18,6 +18,8 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_lossless)]
 
+use std::num::NonZeroUsize;
+
 use diesel::{prelude::*, sqlite::Sqlite};
 
 use crate::{
@@ -38,7 +40,14 @@ use crate::{
 
 pub mod queries;
 mod types;
-mod utils;
+pub(crate) mod utils;
 
 pub use types::*;
 pub(crate) use utils::*;
+
+/// The page token and size to query from the DB.
+#[derive(Debug, Copy, Clone)]
+pub struct Page {
+    pub token: Option<u64>,
+    pub size: NonZeroUsize,
+}

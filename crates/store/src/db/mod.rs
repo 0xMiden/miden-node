@@ -17,7 +17,7 @@ use anyhow::Context;
 use diesel::{
     BoolExpressionMethods, Connection, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
     OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper, SqliteConnection,
-    connection::SimpleConnection, query_dsl::methods::SelectDsl,
+    query_dsl::methods::SelectDsl,
 };
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
@@ -53,7 +53,7 @@ mod sql;
 pub use sql::Page;
 
 mod connection;
-mod pool_manager;
+
 #[cfg(test)]
 mod query_plan;
 mod settings;

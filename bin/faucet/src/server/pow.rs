@@ -126,10 +126,11 @@ impl PoW {
         }
 
         // Validate the challenge
-        if !challenge.validate_account_id(account_id)
-            || !challenge.validate_api_key(api_key)
-            || !challenge.validate_pow(nonce)
-        {
+        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
+        let valid_account_id = account_id_bytes == challenge.account_id;
+        let valid_api_key = *api_key == challenge.api_key;
+        let valid_nonce = challenge.validate_pow(nonce);
+        if !(valid_account_id && valid_api_key && valid_nonce) {
             return Err(InvalidRequest::InvalidPoW);
         }
 

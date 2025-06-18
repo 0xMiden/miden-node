@@ -132,17 +132,6 @@ impl Challenge {
         leading_zeros >= self.difficulty
     }
 
-    /// Checks that the requested account ID matches the one in the challenge.
-    pub fn validate_account_id(&self, account_id: AccountId) -> bool {
-        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
-        self.account_id == account_id_bytes
-    }
-
-    /// Checks that the requested api key matches the one in the challenge.
-    pub fn validate_api_key(&self, api_key: &ApiKey) -> bool {
-        self.api_key == *api_key
-    }
-
     /// Checks if the challenge timestamp is expired.
     pub fn is_expired(&self, current_time: u64) -> bool {
         (current_time - self.timestamp) > CHALLENGE_LIFETIME_SECONDS

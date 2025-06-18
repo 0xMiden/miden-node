@@ -31,7 +31,13 @@ use url::Url;
 // CONSTANTS
 // =================================================================================================
 
+pub const REQUESTS_QUEUE_SIZE: usize = 1000;
+const API_KEY_PREFIX: &str = "miden_faucet_";
 const COMPONENT: &str = "miden-faucet";
+// TODO: Make these configurable.
+const NETWORK_ID: NetworkId = NetworkId::Testnet;
+const EXPLORER_URL: &str = "https://testnet.midenscan.com";
+
 const ENV_ENDPOINT: &str = "MIDEN_FAUCET_ENDPOINT";
 const ENV_NODE_URL: &str = "MIDEN_FAUCET_NODE_URL";
 const ENV_TIMEOUT: &str = "MIDEN_FAUCET_TIMEOUT_MS";
@@ -41,12 +47,6 @@ const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
-pub const REQUESTS_QUEUE_SIZE: usize = 1000;
-const API_KEY_PREFIX: &str = "miden_faucet_";
-
-// TODO: Make these configurable.
-const NETWORK_ID: NetworkId = NetworkId::Testnet;
-const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 // COMMANDS
 // ================================================================================================

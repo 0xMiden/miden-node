@@ -35,7 +35,7 @@ tonic = { default-features = false, features = [
   "transport",
 ], version = "0.13" }
 tonic-web = { optional = true, version = "0.13" }
-lunal-attestation = { git = "https://github.com/lunal-dot-dev/attestation-rs.git", optional = true }
+lunal-attestation = { git = "https://github.com/lunal-dot-dev/attestation-rs.git", branch = "main", optional = true }
 
 [lints]
 workspace = true

@@ -233,12 +233,13 @@ fn insert_account_delta(
         Ok(count)
     };
 
-    let insert_fungible_asset_delta_stmt = |conn2: &mut SqliteConnection,
-                                            account_id: AccountId,
-                                            block_num: BlockNumber,
-                                            faucet_id: Vec<u8>,
-                                            delta: u32|
-     -> Result<usize, DatabaseError> {
+    fn insert_fungible_asset_delta_stmt(
+        conn2: &mut SqliteConnection,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        faucet_id: Vec<u8>,
+        delta: u32,
+    ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_fungible_asset_deltas::table)
             .values(&[(
                 schema::account_fungible_asset_deltas::account_id.eq(account_id.to_bytes()),
@@ -248,7 +249,7 @@ fn insert_account_delta(
             )])
             .execute(conn2)?;
         Ok(count)
-    };
+    }
 
     let insert_non_fungible_asset_update_stmt = |conn2: &mut SqliteConnection,
                                                  account_id: AccountId,
@@ -626,8 +627,7 @@ pub fn unconsumed_network_notes(
     // dest.extend(iter.map(|| todo!()))?;
 
     let mut notes = Vec::with_capacity(page.size.into());
-    let mut iter = raw.into_iter();
-    for raw_item in iter {
+    for raw_item in raw {
         let (raw_item, row) = hack(raw_item);
         page.token = None;
         if notes.len() == page.size.get() {
@@ -646,9 +646,6 @@ pub fn select_account_delta(
     block_start: BlockNumber,
     block_end: BlockNumber,
 ) -> Result<Option<AccountDelta>, DatabaseError> {
-    let start_block_num = block_start.as_u32();
-    let end_block_num = block_end.as_u32();
-
     let select_nonce_stmt = |conn: &mut SqliteConnection,
                              account_id: &AccountId,
                              start_block_num: &BlockNumber,

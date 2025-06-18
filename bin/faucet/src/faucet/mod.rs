@@ -578,7 +578,7 @@ mod tests {
         let start = Instant::now();
         while rpc_client.get_genesis_header().await.is_err() {
             sleep(Duration::from_millis(100)).await;
-            assert!(start.elapsed() < Duration::from_secs(60), "stub node took too long to start");
+            assert!(start.elapsed() < Duration::from_secs(5), "stub node took too long to start");
         }
 
         // Create the faucet

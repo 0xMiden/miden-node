@@ -40,7 +40,7 @@ use crate::{
         migrations::apply_migrations,
         models::{
             AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteSyncRecordRawRow,
-            TransactionSummaryRaw, serialize_vec, vec_raw_try_into,
+            TransactionSummaryRaw, queries, serialize_vec, vec_raw_try_into,
         },
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},

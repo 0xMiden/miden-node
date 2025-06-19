@@ -8,8 +8,6 @@ use crate::{
     COMPONENT, commands::PROXY_HOST, error::ProvingServiceError, proxy::metrics::QUEUE_DROP_COUNT,
 };
 
-pub const MIDEN_PROVING_SERVICE: &str = "miden-proving-service";
-
 const RESOURCE_EXHAUSTED_CODE: u16 = 8;
 
 /// Create a 503 response for a full queue

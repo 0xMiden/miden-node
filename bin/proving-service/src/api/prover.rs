@@ -1,4 +1,3 @@
-use std::time::Instant;
 
 use miden_block_prover::LocalBlockProver;
 use miden_objects::{
@@ -15,7 +14,6 @@ use crate::{
     COMPONENT,
     commands::worker::ProverType,
     generated::{ProofType, ProvingRequest, ProvingResponse, api_server::Api as ProverApi},
-    utils::MIDEN_PROVING_SERVICE,
 };
 
 /// The prover for the proving service.
@@ -60,8 +58,8 @@ impl ProverRpcApi {
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_tx",
+        target = COMPONENT,
+        name = "proving_service.prove_tx",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -71,7 +69,6 @@ impl ProverRpcApi {
         &self,
         transaction_witness: TransactionWitness,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
-        let start_time = Instant::now();
         let Prover::Transaction(prover) = &self.prover else {
             return Err(Status::unimplemented("Transaction prover is not enabled"));
         };
@@ -84,23 +81,15 @@ impl ProverRpcApi {
 
         // Record the transaction_id in the current tracing span
         let transaction_id = proof.id();
-        let duration = start_time.elapsed();
         tracing::Span::current().record("id", tracing::field::display(&transaction_id));
-
-        info!(target: COMPONENT,
-            proof_type = "transaction",
-            id = %transaction_id,
-            duration_ms = %duration.as_millis(),
-            "Proof generated successfully"
-        );
 
         Ok(Response::new(ProvingResponse { payload: proof.to_bytes() }))
     }
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_batch",
+        target = COMPONENT,
+        name = "proving_service.prove_batch",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -110,7 +99,6 @@ impl ProverRpcApi {
         &self,
         proposed_batch: ProposedBatch,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
-        let start_time = Instant::now();
         let Prover::Batch(prover) = &self.prover else {
             return Err(Status::unimplemented("Batch prover is not enabled"));
         };
@@ -123,23 +111,15 @@ impl ProverRpcApi {
 
         // Record the batch_id in the current tracing span
         let batch_id = proven_batch.id();
-        let duration = start_time.elapsed();
         tracing::Span::current().record("id", tracing::field::display(&batch_id));
-
-        info!(target: COMPONENT,
-            proof_type = "batch",
-            id = %batch_id,
-            duration_ms = %duration.as_millis(),
-            "Proof generated successfully"
-        );
 
         Ok(Response::new(ProvingResponse { payload: proven_batch.to_bytes() }))
     }
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_block",
+        target = COMPONENT,
+        name = "proving_service.prove_block",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -149,7 +129,6 @@ impl ProverRpcApi {
         &self,
         proposed_block: ProposedBlock,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
-        let start_time = Instant::now();
         let Prover::Block(prover) = &self.prover else {
             return Err(Status::unimplemented("Block prover is not enabled"));
         };
@@ -162,16 +141,8 @@ impl ProverRpcApi {
 
         // Record the commitment of the block in the current tracing span
         let block_id = proven_block.commitment();
-        let duration = start_time.elapsed();
 
         tracing::Span::current().record("id", tracing::field::display(&block_id));
-
-        info!(target: COMPONENT,
-            proof_type = "block",
-            id = %block_id,
-            duration_ms = %duration.as_millis(),
-            "Proof generated successfully"
-        );
 
         Ok(Response::new(ProvingResponse { payload: proven_block.to_bytes() }))
     }
@@ -180,8 +151,8 @@ impl ProverRpcApi {
 #[async_trait::async_trait]
 impl ProverApi for ProverRpcApi {
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove",
+        target = COMPONENT,
+        name = "proving_service.prove",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),

@@ -68,7 +68,7 @@ impl LoadBalancerState {
     /// # Errors
     /// Returns an error if:
     /// - The worker cannot be created.
-    #[tracing::instrument(name = "proxy.new_load_balancer", skip(initial_workers))]
+    #[tracing::instrument(target = COMPONENT, name = "proxy.new_load_balancer", skip(initial_workers))]
     pub(crate) async fn new(
         initial_workers: Vec<String>,
         config: &ProxyConfig,

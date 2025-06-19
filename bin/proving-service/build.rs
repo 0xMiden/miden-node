@@ -35,7 +35,7 @@ fn main() -> miette::Result<()> {
 fn build_tonic_from_descriptor(descriptor: FileDescriptorSet) -> miette::Result<()> {
     tonic_build::configure()
         .out_dir(GENERATED_OUT_DIR)
-        .build_server(true) // this setting generates only the client side of the rpc api
+        .build_server(true)
         .build_transport(true)
         .compile_fds_with_config(prost_build::Config::new(), descriptor)
         .into_diagnostic()

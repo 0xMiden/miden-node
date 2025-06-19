@@ -6,7 +6,6 @@ members = [
   "bin/stress-test",
   "crates/block-producer",
   "crates/ntx-builder",
-  "crates/ntx-builder",
   "crates/proto",
   "crates/proving-service-client",
   "crates/rpc",

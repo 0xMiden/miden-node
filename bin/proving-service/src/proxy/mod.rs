@@ -26,6 +26,7 @@ use uuid::Uuid;
 use worker::Worker;
 
 use crate::{
+    COMPONENT,
     commands::{
         ProxyConfig,
         update_workers::{Action, UpdateWorkers},
@@ -33,7 +34,7 @@ use crate::{
     },
     error::ProvingServiceError,
     utils::{
-        MIDEN_PROVING_SERVICE, create_queue_full_response, create_response_with_error_message,
+        create_queue_full_response, create_response_with_error_message,
         create_too_many_requests_response,
     },
 };
@@ -67,7 +68,7 @@ impl LoadBalancerState {
     /// # Errors
     /// Returns an error if:
     /// - The worker cannot be created.
-    #[tracing::instrument(name = "proxy.new_load_balancer", skip(initial_workers))]
+    #[tracing::instrument(target = COMPONENT, name = "proxy.new_load_balancer", skip(initial_workers))]
     pub(crate) async fn new(
         initial_workers: Vec<String>,
         config: &ProxyConfig,
@@ -286,7 +287,7 @@ impl RequestContext {
             tries: 0,
             request_id,
             worker: None,
-            parent_span: info_span!(target: MIDEN_PROVING_SERVICE, "proxy.new_request", request_id = request_id.to_string()),
+            parent_span: info_span!(target: COMPONENT, "proxy.new_request", request_id = request_id.to_string()),
             created_at: Instant::now(),
         }
     }

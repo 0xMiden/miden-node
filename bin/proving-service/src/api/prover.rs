@@ -7,12 +7,12 @@ use miden_tx::{LocalTransactionProver, TransactionProver};
 use miden_tx_batch_prover::LocalBatchProver;
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{
+    COMPONENT,
     commands::worker::ProverType,
     generated::{ProofType, ProvingRequest, ProvingResponse, api_server::Api as ProverApi},
-    utils::MIDEN_PROVING_SERVICE,
 };
 
 /// The prover for the proving service.
@@ -29,12 +29,15 @@ impl Prover {
     fn new(prover_type: ProverType) -> Self {
         match prover_type {
             ProverType::Transaction => {
+                info!(target: COMPONENT, prover_type = ?prover_type, "Transaction prover initialized");
                 Self::Transaction(Mutex::new(LocalTransactionProver::default()))
             },
             ProverType::Batch => {
+                info!(target: COMPONENT, prover_type = ?prover_type, security_level = MIN_PROOF_SECURITY_LEVEL, "Batch prover initialized");
                 Self::Batch(Mutex::new(LocalBatchProver::new(MIN_PROOF_SECURITY_LEVEL)))
             },
             ProverType::Block => {
+                info!(target: COMPONENT, prover_type = ?prover_type, security_level = MIN_PROOF_SECURITY_LEVEL, "Block prover initialized");
                 Self::Block(Mutex::new(LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL)))
             },
         }
@@ -54,8 +57,8 @@ impl ProverRpcApi {
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_tx",
+        target = COMPONENT,
+        name = "proving_service.prove_tx",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -84,8 +87,8 @@ impl ProverRpcApi {
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_batch",
+        target = COMPONENT,
+        name = "proving_service.prove_batch",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -114,8 +117,8 @@ impl ProverRpcApi {
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_block",
+        target = COMPONENT,
+        name = "proving_service.prove_block",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -147,8 +150,8 @@ impl ProverRpcApi {
 #[async_trait::async_trait]
 impl ProverApi for ProverRpcApi {
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove",
+        target = COMPONENT,
+        name = "proving_service.prove",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),

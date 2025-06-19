@@ -11,6 +11,7 @@ use tracing::{error, info};
 
 use super::metrics::WORKER_UNHEALTHY;
 use crate::{
+    COMPONENT,
     commands::worker::ProverType,
     error::ProvingServiceError,
     generated::status::{StatusRequest, status_api_client::StatusApiClient},
@@ -160,6 +161,7 @@ impl Worker {
     /// issue. The caller should use `update_status` to apply the result to the worker's health
     /// status.
     #[allow(clippy::too_many_lines)]
+    #[tracing::instrument(target = COMPONENT, name = "worker.check_status")]
     pub async fn check_status(&mut self, supported_prover_type: ProverType) -> Result<(), String> {
         if !self.should_do_health_check() {
             return Ok(());
@@ -220,6 +222,7 @@ impl Worker {
     ///
     /// If the result is `Ok(())`, the worker is marked as healthy.
     /// If the result is `Err(reason)`, the worker is marked as unhealthy with the failure reason.
+    #[tracing::instrument(target = COMPONENT, name = "worker.update_status")]
     pub fn update_status(&mut self, check_result: Result<(), String>) {
         match check_result {
             Ok(()) => {

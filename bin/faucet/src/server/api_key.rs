@@ -3,7 +3,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::server::get_tokens::InvalidRequest;
+use crate::server::get_tokens::InvalidMintRequest;
 
 // API KEY
 // ================================================================================================
@@ -23,9 +23,9 @@ impl ApiKey {
         Self(api_key)
     }
 
-    /// Creates a new API key from a byte array.
-    pub fn new(api_key: [u8; 32]) -> Self {
-        Self(api_key)
+    /// Creates an API key from a byte array.
+    pub fn new(bytes: [u8; 32]) -> Self {
+        Self(bytes)
     }
 
     /// Encodes the API key into a base64 string, prefixed with `API_KEY_PREFIX`.
@@ -39,14 +39,14 @@ impl ApiKey {
     }
 
     /// Decodes the API key from a string.
-    pub fn decode(api_key_str: &str) -> Result<Self, InvalidRequest> {
+    pub fn decode(api_key_str: &str) -> Result<Self, InvalidMintRequest> {
         let api_key_str = api_key_str.trim_start_matches(API_KEY_PREFIX).to_string();
         let bytes = BASE64_STANDARD
             .decode(api_key_str.as_bytes())
-            .map_err(|_| InvalidRequest::InvalidApiKey(api_key_str.clone()))?;
+            .map_err(|_| InvalidMintRequest::InvalidApiKey(api_key_str.clone()))?;
 
         let api_key =
-            Self::new(bytes.try_into().map_err(|_| InvalidRequest::InvalidApiKey(api_key_str))?);
+            Self(bytes.try_into().map_err(|_| InvalidMintRequest::InvalidApiKey(api_key_str))?);
         Ok(api_key)
     }
 }

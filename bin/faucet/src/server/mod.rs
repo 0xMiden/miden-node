@@ -1,8 +1,8 @@
 use std::{
-    collections::HashMap,
+    collections::HashSet,
     convert::Infallible,
     net::SocketAddr,
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -39,7 +39,7 @@ use url::Url;
 use crate::{
     COMPONENT,
     faucet::{FaucetId, MintRequest},
-    server::{get_pow::get_pow, get_tokens::InvalidRequest},
+    server::{get_pow::get_pow, get_tokens::InvalidMintRequest},
     types::AssetOptions,
 };
 
@@ -62,7 +62,7 @@ pub struct Server {
     mint_state: GetTokensState,
     metadata: &'static Metadata,
     pow: PoW,
-    active_requests_per_key: Arc<Mutex<HashMap<ApiKey, usize>>>,
+    api_keys: HashSet<ApiKey>,
 }
 
 impl Server {
@@ -87,17 +87,12 @@ impl Server {
         let secret_bytes: [u8; 32] = hasher.finalize().into();
 
         let pow = PoW::new(secret_bytes);
-        let active_requests_per_key = api_keys
-            .iter()
-            .chain(std::iter::once(&ApiKey::default()))
-            .map(|key| (key.clone(), 0))
-            .collect::<HashMap<_, _>>();
 
         Server {
             mint_state,
             metadata,
             pow,
-            active_requests_per_key: Arc::new(Mutex::new(active_requests_per_key)),
+            api_keys: api_keys.iter().cloned().collect::<HashSet<_>>(),
         }
     }
 
@@ -252,8 +247,8 @@ impl Server {
         challenge: &str,
         nonce: u64,
         account_id: AccountId,
-        api_key: &ApiKey,
-    ) -> Result<(), InvalidRequest> {
+        api_key: ApiKey,
+    ) -> Result<(), InvalidMintRequest> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")

@@ -17,7 +17,7 @@ pub async fn get_pow(
     Query(params): Query<RawPowRequest>,
 ) -> Result<impl IntoResponse, InvalidPowRequest> {
     let request = params.validate()?;
-    let challenge = pow.build_challenge(request);
+    let challenge = pow.build_challenge(request)?;
     Ok(Json(challenge))
 }
 
@@ -45,12 +45,15 @@ impl RawPowRequest {
             AccountId::from_bech32(&self.account_id).map(|(_, account_id)| account_id)
         }
         .map_err(InvalidPowRequest::InvalidAccount)?;
+
         let api_key = self
             .api_key
-            .map(|api_key| ApiKey::decode(&api_key))
+            .as_deref()
+            .map(ApiKey::decode)
             .transpose()
             .map_err(|_| InvalidPowRequest::InvalidApiKey)?
             .unwrap_or_default();
+
         Ok(PowRequest { account_id, api_key })
     }
 }
@@ -61,6 +64,8 @@ pub enum InvalidPowRequest {
     InvalidAccount(#[source] AccountIdError),
     #[error("API key failed to parse")]
     InvalidApiKey,
+    #[error("account is rate limited")]
+    RateLimited,
 }
 
 impl InvalidPowRequest {
@@ -69,6 +74,7 @@ impl InvalidPowRequest {
         match self {
             Self::InvalidAccount(_) => "Invalid Account address".to_owned(),
             Self::InvalidApiKey => "Invalid API key".to_owned(),
+            Self::RateLimited => "Account is rate limited".to_owned(),
         }
     }
 }

@@ -51,7 +51,7 @@ pub struct RawMintRequest {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum InvalidRequest {
+pub enum InvalidMintRequest {
     #[error("account ID failed to parse")]
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
@@ -73,7 +73,7 @@ pub enum InvalidRequest {
 }
 
 pub enum GetTokenError {
-    InvalidRequest(InvalidRequest),
+    InvalidRequest(InvalidMintRequest),
     FaucetOverloaded,
     FaucetClosed,
 }
@@ -149,7 +149,7 @@ impl RawMintRequest {
     ///   - the challenge timestamp is expired
     ///   - the challenge has already been used
     #[instrument(level = "debug", target = COMPONENT, name = "faucet.server.validate", skip_all)]
-    fn validate(self, server: &Server) -> Result<MintRequest, InvalidRequest> {
+    fn validate(self, server: &Server) -> Result<MintRequest, InvalidMintRequest> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -161,30 +161,27 @@ impl RawMintRequest {
         } else {
             AccountId::from_bech32(&self.account_id).map(|(_, account_id)| account_id)
         }
-        .map_err(InvalidRequest::AccountId)?;
+        .map_err(InvalidMintRequest::AccountId)?;
 
         let asset_amount = server
             .mint_state
             .asset_options
             .validate(self.asset_amount)
-            .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
+            .ok_or(InvalidMintRequest::AssetAmount(self.asset_amount))?;
 
-        let api_key = self.api_key.as_deref().map(ApiKey::decode).transpose()?.unwrap_or_default();
-
-        // Check if the API key is valid
-        server
-            .active_requests_per_key
-            .lock()
-            .expect("active requests per key lock should be released")
-            .contains_key(&api_key)
-            .then_some(())
-            .ok_or(InvalidRequest::InvalidApiKey(self.api_key.unwrap_or_default()))?;
+        // Check the API key, if provided
+        let api_key = self.api_key.as_deref().map(ApiKey::decode).transpose()?;
+        if let Some(api_key) = &api_key {
+            if !server.api_keys.contains(api_key) {
+                return Err(InvalidMintRequest::InvalidApiKey(api_key.encode()));
+            }
+        }
 
         // Validate Challenge and nonce
-        let challenge_str = self.challenge.ok_or(InvalidRequest::MissingPowParameters)?;
-        let nonce = self.nonce.ok_or(InvalidRequest::MissingPowParameters)?;
+        let challenge_str = self.challenge.ok_or(InvalidMintRequest::MissingPowParameters)?;
+        let nonce = self.nonce.ok_or(InvalidMintRequest::MissingPowParameters)?;
 
-        server.submit_challenge(&challenge_str, nonce, account_id, &api_key)?;
+        server.submit_challenge(&challenge_str, nonce, account_id, api_key.unwrap_or_default())?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
     }
@@ -201,33 +198,7 @@ impl RawMintRequest {
 pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
-) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, GetTokenError> {
-    // If the API key is invalid, return an error immediately. Any other errors are sent to the
-    // client via SSE.
-    let api_key = request
-        .api_key
-        .as_deref()
-        .map(ApiKey::decode)
-        .transpose()
-        .map_err(GetTokenError::InvalidRequest)?
-        .unwrap_or_default();
-
-    // Get the number of active requests for the API key and increment it.
-    let key_active_requests = server
-        .active_requests_per_key
-        .lock()
-        .expect("active requests per key lock should be released")
-        .get_mut(&api_key)
-        .map(|count| {
-            *count += 1;
-            *count
-        })
-        .ok_or(GetTokenError::InvalidRequest(InvalidRequest::InvalidApiKey(
-            request.api_key.clone().unwrap_or_default(),
-        )))?;
-
-    server.pow.adjust_difficulty(key_active_requests, api_key.clone());
-
+) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
@@ -256,15 +227,6 @@ pub async fn get_tokens(
         tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
     }
 
-    // Decrement the number of active requests for the API key.
-    server
-        .active_requests_per_key
-        .lock()
-        .expect("active requests per key lock should be released")
-        .get_mut(&api_key)
-        .map(|count| *count -= 1)
-        .expect("api key should be in the map");
-
     let stream = ReceiverStream::new(rx_result);
-    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
+    Sse::new(stream).keep_alive(KeepAlive::default())
 }

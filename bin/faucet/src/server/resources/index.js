@@ -145,8 +145,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         evtSource.onerror = function (_) {
-            // Rate limit exceeded. We can discard account invalid since it was validated in the
-            // PoW request and we are not using API keys.
+            // Either rate limit exceeded or invalid account id. The error event does not contain the reason. 
             evtSource.close();
             setLoadingState(false);
             showError('Please try again soon.');

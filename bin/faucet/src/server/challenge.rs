@@ -6,7 +6,7 @@ use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
 
-use super::get_tokens::InvalidRequest;
+use super::get_tokens::InvalidMintRequest;
 use crate::server::ApiKey;
 
 /// The lifetime of a challenge.
@@ -78,10 +78,10 @@ impl Challenge {
 
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
     /// in the context of the specified secret.
-    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidRequest> {
+    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidMintRequest> {
         // Parse the hex-encoded challenge string
         let bytes: [u8; 95] =
-            hex_to_bytes(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
+            hex_to_bytes(value).map_err(|_| InvalidMintRequest::MissingPowParameters)?;
 
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
@@ -96,7 +96,7 @@ impl Challenge {
         if signature == expected_signature {
             Ok(Self::from_parts(difficulty, timestamp, account_id, api_key, signature))
         } else {
-            Err(InvalidRequest::ServerSignaturesDoNotMatch)
+            Err(InvalidMintRequest::ServerSignaturesDoNotMatch)
         }
     }
 
@@ -150,6 +150,8 @@ impl Challenge {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
     use super::*;
 
     #[test]
@@ -176,14 +178,22 @@ mod tests {
     }
 
     #[test]
-    fn challenge_encode_and_decode_with_secret() {
-        let secret = [1u8; 32];
+    fn test_challenge_encode_decode() {
+        let mut secret = [0u8; 32];
+        secret[..12].copy_from_slice(b"miden-faucet");
+        let difficulty = 3;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current timestamp should be greater than unix epoch")
+            .as_secs();
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let challenge = Challenge::new(2, 1_234_567_890, secret, account_id, ApiKey::generate());
+        let api_key = ApiKey::generate();
+
+        let challenge = Challenge::new(difficulty, timestamp, secret, account_id, api_key);
 
         let encoded = challenge.encode();
         let decoded = Challenge::decode(&encoded, secret).unwrap();
 
-        assert_eq!(decoded, challenge);
+        assert_eq!(challenge, decoded);
     }
 }

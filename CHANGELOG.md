@@ -9,7 +9,7 @@
 
 ### Changes
 
-- Added PoW to faucet API Keys (#974).
+- [BREAKING] Added PoW to faucet API Keys (#974).
 
 ## v0.9.2 (2025-06-12)
 

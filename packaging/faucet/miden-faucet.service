@@ -7,7 +7,7 @@ WantedBy=multi-user.target
 
 [Service]
 Type=exec
-Environment="RUST_LOG=info"
+Environment="OTEL_SERVICE_NAME=miden-faucet"
 ExecStart=/usr/bin/miden-faucet start --config /etc/opt/miden-faucet/miden-faucet.toml
 WorkingDirectory=/opt/miden-faucet
 User=miden-faucet

@@ -12,8 +12,8 @@ use tracing::{error, info};
 
 use super::LoadBalancerState;
 use crate::{
-    commands::update_workers::UpdateWorkers,
-    utils::{MIDEN_PROVING_SERVICE, create_response_with_error_message},
+    commands::update_workers::UpdateWorkers, proxy::create_response_with_error_message,
+    utils::MIDEN_PROVING_SERVICE,
 };
 
 /// The Load Balancer Updater Service.

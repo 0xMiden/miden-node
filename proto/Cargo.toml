@@ -21,7 +21,7 @@ workspace = true
 
 [dependencies]
 protox      = { version = "0.8" }
-tonic-build = { version = "0.12" }
+tonic-build = { version = "0.13" }
 
 [build-dependencies]
 anyhow = { workspace = true }

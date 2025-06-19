@@ -53,10 +53,11 @@ miden-node-utils = { features = ["vergen"], workspace = true }
 fantoccini                = { version = "0.21" }
 miden-node-block-producer = { features = ["testing"], workspace = true }
 miden-objects             = { features = ["testing"], workspace = true }
+miden-testing             = { features = ["async"], workspace = true }
 serde_json                = { version = "1.0" }
 tokio                     = { features = ["process"], workspace = true }
 tokio-stream              = { features = ["net"], workspace = true }
-tonic-web                 = { version = "0.12" }
+tonic-web                 = { version = "0.13" }
 
 # Required to avoid false positives in cargo-machete
 # This is due to the `winter-maybe-async` crate not working standalone.

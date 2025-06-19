@@ -34,8 +34,8 @@ pub struct FaucetConfig {
     /// Optional: Endpoint of the remote transaction prover in the format
     /// `<protocol>://<host>[:<port>]`
     pub remote_tx_prover_url: Option<Url>,
-    /// The salt to be used by the server to generate the `PoW` seed
-    pub pow_salt: String,
+    /// The secret to be used by the server to generate the `PoW` seed
+    pub pow_secret: String,
     /// List of API keys
     pub api_keys: Vec<String>,
 }
@@ -43,8 +43,8 @@ pub struct FaucetConfig {
 impl Display for FaucetConfig {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{{ endpoint: \"{}\", node_url: \"{}\", timeout_ms: \"{}\", asset_amount_options: {:?}, faucet_account_path: \"{}\", remote_tx_prover_url: \"{:?}\", pow_salt: \"{}\", api_keys: {:?} }}",
-            self.endpoint, self.node_url, self.timeout_ms, self.asset_amount_options, self.faucet_account_path.display(), self.remote_tx_prover_url, self.pow_salt, self.api_keys
+            "{{ endpoint: \"{}\", node_url: \"{}\", timeout_ms: \"{}\", asset_amount_options: {:?}, faucet_account_path: \"{}\", remote_tx_prover_url: \"{:?}\", pow_secret: \"{}\", api_keys: {:?} }}",
+            self.endpoint, self.node_url, self.timeout_ms, self.asset_amount_options, self.faucet_account_path.display(), self.remote_tx_prover_url, self.pow_secret, self.api_keys
         ))
     }
 }
@@ -61,7 +61,7 @@ impl Default for FaucetConfig {
             asset_amount_options: AssetOptions::new(vec![100, 500, 1_000]).unwrap(),
             faucet_account_path: DEFAULT_FAUCET_ACCOUNT_PATH.into(),
             remote_tx_prover_url: None,
-            pow_salt: rand::random::<[u8; 32]>().into_iter().map(|b| b as char).collect(),
+            pow_secret: rand::random::<[u8; 32]>().into_iter().map(|b| b as char).collect(),
             api_keys: Vec::new(),
         }
     }

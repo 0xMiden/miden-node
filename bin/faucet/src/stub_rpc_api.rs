@@ -1,7 +1,6 @@
 use anyhow::Context;
 use miden_node_proto::generated::{
     block::BlockHeader,
-    digest::Digest,
     requests::{
         CheckNullifiersByPrefixRequest, CheckNullifiersRequest, GetAccountDetailsRequest,
         GetAccountProofsRequest, GetAccountStateDeltaRequest, GetBlockByNumberRequest,
@@ -16,9 +15,12 @@ use miden_node_proto::generated::{
     },
     rpc::api_server,
 };
+use miden_node_utils::cors::cors_for_grpc_web_layer;
+use miden_testing::MockChain;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
+use tonic_web::GrpcWebLayer;
 use url::Url;
 
 #[derive(Clone)]
@@ -44,46 +46,12 @@ impl api_server::Api for StubRpcApi {
         &self,
         _request: Request<GetBlockHeaderByNumberRequest>,
     ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
-        // Values are taken from the default genesis block as at v0.8
+        let mock_chain = MockChain::new();
+
+        let block_header = BlockHeader::from(mock_chain.latest_block_header()).into();
+
         Ok(Response::new(GetBlockHeaderByNumberResponse {
-            block_header: Some(BlockHeader {
-                version: 1,
-                prev_block_commitment: Some(Digest { d0: 0, d1: 0, d2: 0, d3: 0 }),
-                block_num: 0,
-                chain_commitment: Some(Digest {
-                    d0: 0x9729_9D39_2DA8_DC69,
-                    d1: 0x0674_44AF_6294_0719,
-                    d2: 0x7B97_0BC7_07A0_F7D6,
-                    d3: 0xE423_8D7C_78F3_9D8B,
-                }),
-                account_root: Some(Digest {
-                    d0: 0xD4A0_CFF6_578C_123E,
-                    d1: 0xF11A_1794_8930_B14A,
-                    d2: 0xD128_DD2A_4213_B53C,
-                    d3: 0x2DF8_FE54_F23F_6B91,
-                }),
-                nullifier_root: Some(Digest {
-                    d0: 0xD4A0_CFF6_578C_123E,
-                    d1: 0xF11A_1794_8930_B14A,
-                    d2: 0xD128_DD2A_4213_B53C,
-                    d3: 0x2DF8_FE54_F23F_6B91,
-                }),
-                note_root: Some(Digest {
-                    d0: 0x93CE_DDC8_A187_24FE,
-                    d1: 0x4E32_9917_2E91_30ED,
-                    d2: 0x8022_9E0E_1808_C860,
-                    d3: 0x13F4_7934_7EB7_FD78,
-                }),
-                tx_commitment: Some(Digest { d0: 0, d1: 0, d2: 0, d3: 0 }),
-                tx_kernel_commitment: Some(Digest {
-                    d0: 0x7426_1CC3_545B_4661,
-                    d1: 0x8978_5ED8_28C9_B7AB,
-                    d2: 0xC0C3_C134_0497_D9F3,
-                    d3: 0x8D5E_9B8C_2A2E_A43B,
-                }),
-                proof_commitment: Some(Digest { d0: 0, d1: 0, d2: 0, d3: 0 }),
-                timestamp: 1_746_737_038,
-            }),
+            block_header,
             mmr_path: None,
             chain_length: None,
         }))
@@ -163,7 +131,9 @@ pub async fn serve_stub(endpoint: &Url) -> anyhow::Result<()> {
 
     tonic::transport::Server::builder()
         .accept_http1(true)
-        .add_service(tonic_web::enable(api_service)) // tonic_web::enable is needed to support grpc-web calls
+        .layer(cors_for_grpc_web_layer())
+        .layer(GrpcWebLayer::new())
+        .add_service(api_service)
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await
         .context("failed to serve stub RPC API")

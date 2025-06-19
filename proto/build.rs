@@ -7,11 +7,15 @@ const RPC_PROTO: &str = "rpc.proto";
 const STORE_PROTO: &str = "store.proto";
 const BLOCK_PRODUCER_PROTO: &str = "block_producer.proto";
 const NTX_BUILDER_PROTO: &str = "ntx_builder.proto";
+const WORKER_STATUS_PROTO: &str = "worker_status.proto";
+const PROVING_SERVICE_PROTO: &str = "proving_service.proto";
 
 const RPC_DESCRIPTOR: &str = "rpc_file_descriptor.bin";
 const STORE_DESCRIPTOR: &str = "store_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const NTX_BUILDER_DESCRIPTOR: &str = "ntx_builder_file_descriptor.bin";
+const WORKER_STATUS_DESCRIPTOR: &str = "worker_status_file_descriptor.bin";
+const PROVING_SERVICE_DESCRIPTOR: &str = "proving_service_file_descriptor.bin";
 
 /// Generates Rust protobuf bindings from .proto files.
 ///
@@ -31,6 +35,16 @@ fn main() -> anyhow::Result<()> {
     let rpc_path = PathBuf::from(&out).join(RPC_DESCRIPTOR);
     fs::write(&rpc_path, rpc_file_descriptor.encode_to_vec())
         .context("writing rpc file descriptor")?;
+
+    let worker_status_file_descriptor = protox::compile([WORKER_STATUS_PROTO], includes)?;
+    let worker_status_path = PathBuf::from(&out).join(WORKER_STATUS_DESCRIPTOR);
+    fs::write(&worker_status_path, worker_status_file_descriptor.encode_to_vec())
+        .context("writing worker status file descriptor")?;
+
+    let proving_service_file_descriptor = protox::compile([PROVING_SERVICE_PROTO], includes)?;
+    let proving_service_path = PathBuf::from(&out).join(PROVING_SERVICE_DESCRIPTOR);
+    fs::write(&proving_service_path, proving_service_file_descriptor.encode_to_vec())
+        .context("writing proving service file descriptor")?;
 
     let store_file_descriptor = protox::compile([STORE_PROTO], includes)?;
     let store_path = PathBuf::from(&out).join(STORE_DESCRIPTOR);

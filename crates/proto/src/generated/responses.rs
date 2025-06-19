@@ -220,11 +220,13 @@ pub struct GetBlockByNumberResponse {
     #[prost(bytes = "vec", optional, tag = "1")]
     pub block: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
-/// TODO: comments
+/// Current blockchain data based on the requested block number.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetCurrentBlockchainDataResponse {
+    /// Commitments that represent the current state according to the MMR.
     #[prost(message, repeated, tag = "1")]
     pub current_peaks: ::prost::alloc::vec::Vec<super::digest::Digest>,
+    /// Current block header.
     #[prost(message, optional, tag = "2")]
     pub current_block_header: ::core::option::Option<super::block::BlockHeader>,
 }

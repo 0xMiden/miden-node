@@ -211,9 +211,11 @@ message GetBlockByNumberResponse {
     optional bytes block = 1;
 }
 
-// TODO: comments
+// Current blockchain data based on the requested block number.
 message GetCurrentBlockchainDataResponse {
+    // Commitments that represent the current state according to the MMR.
     repeated digest.Digest current_peaks = 1;
+    // Current block header.
     optional block.BlockHeader current_block_header = 2;
 }
 

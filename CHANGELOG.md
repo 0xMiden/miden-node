@@ -8,6 +8,10 @@
 - Added support for TLS to `miden-proving-service-client` (#968).
 - Compressed faucet background image (#985).
 
+### Changes
+
+- [BREAKING] Added PoW to faucet API Keys (#974).
+
 ## v0.9.2 (2025-06-12)
 
 - Refresh Cargo.lock file.

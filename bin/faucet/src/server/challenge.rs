@@ -102,7 +102,7 @@ impl Challenge {
 
     /// Encodes the challenge into a hex string.
     pub fn encode(&self) -> String {
-        let mut bytes = Vec::with_capacity(63);
+        let mut bytes = Vec::with_capacity(95);
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         bytes.extend_from_slice(&self.account_id.to_bytes());

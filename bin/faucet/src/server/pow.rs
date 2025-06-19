@@ -59,8 +59,7 @@ impl PoW {
     /// Generates a new challenge with the difficulty for the given API key. If the API key is not
     /// found, the difficulty is defaulted to 1.
     pub fn build_challenge(&self, request: PowRequest) -> Result<Challenge, InvalidPowRequest> {
-        // Check if the account has submitted a challenge that is still on the cache.
-        if self.is_rate_limited(request.account_id) {
+        if self.challenge_cache.has_challenge_for_account(request.account_id) {
             return Err(InvalidPowRequest::RateLimited);
         }
 
@@ -103,7 +102,7 @@ impl PoW {
     /// Submits a challenge.
     ///
     /// The challenge is validated and added to the cache. Also, the difficulty is adjusted based
-    /// on the number of challenges submitted.
+    /// on the number of active challenges.
     ///
     /// # Errors
     /// Returns an error if:
@@ -137,7 +136,7 @@ impl PoW {
             return Err(InvalidMintRequest::InvalidPoW);
         }
 
-        // Check if the cache has a challenge for the account.
+        // Check if account has recently submitted a challenge.
         if self.challenge_cache.has_challenge_for_account(account_id) {
             return Err(InvalidMintRequest::RateLimited);
         }
@@ -152,13 +151,6 @@ impl PoW {
         self.adjust_difficulty(num_challenges, api_key);
 
         Ok(())
-    }
-
-    /// Checks if the account is rate limited.
-    ///
-    /// The account is rate limited if it has already submitted a challenge.
-    pub fn is_rate_limited(&self, account_id: AccountId) -> bool {
-        self.challenge_cache.has_challenge_for_account(account_id)
     }
 }
 
@@ -416,20 +408,9 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        // Try to solve second challenge but should fail because of rate limiting
-        let challenge = pow
-            .build_challenge(PowRequest { account_id, api_key: api_key.clone() })
-            .unwrap();
-        let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
-
-        let result = pow.submit_challenge(
-            challenge.timestamp,
-            &challenge.encode(),
-            nonce,
-            account_id,
-            api_key,
-        );
+        // Try to request a second challenge but should fail because of rate limiting
+        let result = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         assert!(result.is_err());
-        assert!(matches!(result.err(), Some(InvalidMintRequest::RateLimited)));
+        assert!(matches!(result.err(), Some(InvalidPowRequest::RateLimited)));
     }
 }

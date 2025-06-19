@@ -39,6 +39,11 @@ pub(crate) struct ProxyConfig {
     /// Port of the proxy.
     #[arg(long, default_value = "8082", env = "MPS_PORT")]
     pub(crate) port: u16,
+    /// Status update interval in seconds.
+    ///
+    /// How often the proxy status service updates its status information.
+    #[arg(long, default_value = "10", env = "MPS_STATUS_UPDATE_INTERVAL_SECS")]
+    pub(crate) status_update_interval_secs: u64,
     /// Maximum time in seconds allowed for a request to complete. Once exceeded, the request is
     /// aborted.
     #[arg(long, default_value = "100", env = "MPS_TIMEOUT_SECS")]

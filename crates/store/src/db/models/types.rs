@@ -12,7 +12,11 @@ use miden_objects::{
     transaction::TransactionId,
 };
 
-use super::*;
+use super::{
+    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
+    Selectable, Sqlite, accounts, block_headers, notes, nullifiers, raw_sql_to_block_number,
+    transactions,
+};
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = accounts)]
@@ -248,10 +252,10 @@ impl TryInto<NoteRecord> for NoteRecordRawNoResolve {
             merkle_path,
             consumed: _,
             nullifier: _,
-            assets,
-            inputs,
+            assets: _,
+            inputs: _,
             script_root: _,
-            serial_num,
+            serial_num: _,
             // rowid,
         } = self;
 

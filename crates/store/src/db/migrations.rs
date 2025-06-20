@@ -10,21 +10,36 @@ use tracing::instrument;
 
 use crate::COMPONENT;
 
-type Hash = Blake3Digest<20>;
+// type Hash = Blake3Digest<20>;
 
-const MIGRATION_SCRIPTS: [&str; 1] = [include_str!("migrations/001-init.sql")];
-static MIGRATION_HASHES: LazyLock<Vec<Hash>> = LazyLock::new(compute_migration_hashes);
-static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(prepare_migrations);
+// const MIGRATION_SCRIPTS: [&str; 1] = [include_str!("migrations/001-init.sql")];
+// static MIGRATION_HASHES: LazyLock<Vec<Hash>> = LazyLock::new(compute_migration_hashes);
+// static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(prepare_migrations);
 
-fn up(s: &'static str) -> M<'static> {
-    M::up(s).foreign_key_check()
-}
+// fn up(s: &'static str) -> M<'static> {
+//     M::up(s).foreign_key_check()
+// }
 
-const DB_MIGRATION_HASH_FIELD: &str = "db-migration-hash";
-const DB_SCHEMA_VERSION_FIELD: &str = "db-schema-version";
+// const DB_MIGRATION_HASH_FIELD: &str = "db-migration-hash";
+// const DB_SCHEMA_VERSION_FIELD: &str = "db-schema-version";
+
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+// TODO ensure recompilation on migration addition!
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/db/migrations");
 
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn apply_migrations(_conn: &mut SqliteConnection) -> super::Result<()> {
+pub fn apply_migrations(
+    conn: &mut SqliteConnection,
+) -> std::result::Result<(), crate::errors::DatabaseError> {
+    let Err(e) = conn.run_pending_migrations(MIGRATIONS) else {
+        return Ok(());
+    };
+    // something went wrong, MIGRATIONS contains
+    conn.revert_last_migration(MIGRATIONS)
+        .expect("Duality is maintained by the developer");
+
+    Ok(())
+
     // XXX TODO FIXME
 
     // let version_before = MIGRATIONS.current_version(conn)?;
@@ -94,39 +109,34 @@ pub fn apply_migrations(_conn: &mut SqliteConnection) -> super::Result<()> {
     // debug!(target: COMPONENT, new_schema_version, "Updating schema version in settings table");
     // Settings::set_value(conn, DB_SCHEMA_VERSION_FIELD,
     // &new_schema_version.to_be_bytes().to_vec())?;
-
-    // info!(target: COMPONENT, %version_after, "Finished database migrations");
-
-    Ok(())
 }
+// fn prepare_migrations() -> Migrations<'static> {
+//     Migrations::new(MIGRATION_SCRIPTS.map(up).to_vec())
+// }
 
-fn prepare_migrations() -> Migrations<'static> {
-    Migrations::new(MIGRATION_SCRIPTS.map(up).to_vec())
-}
+// fn compute_migration_hashes() -> Vec<Hash> {
+//     let mut accumulator = Hash::default();
+//     MIGRATION_SCRIPTS
+//         .iter()
+//         .map(|sql| {
+//             let script_hash = Blake3_160::hash(preprocess_sql(sql).as_bytes());
+//             accumulator = Blake3_160::merge(&[accumulator, script_hash]);
+//             accumulator
+//         })
+//         .collect()
+// }
 
-fn compute_migration_hashes() -> Vec<Hash> {
-    let mut accumulator = Hash::default();
-    MIGRATION_SCRIPTS
-        .iter()
-        .map(|sql| {
-            let script_hash = Blake3_160::hash(preprocess_sql(sql).as_bytes());
-            accumulator = Blake3_160::merge(&[accumulator, script_hash]);
-            accumulator
-        })
-        .collect()
-}
+// fn preprocess_sql(sql: &str) -> String {
+//     // TODO: We can also remove all comments here (need to analyze the SQL script in order to remove
+//     //       comments in string literals).
+//     remove_spaces(sql)
+// }
 
-fn preprocess_sql(sql: &str) -> String {
-    // TODO: We can also remove all comments here (need to analyze the SQL script in order to remove
-    //       comments in string literals).
-    remove_spaces(sql)
-}
+// fn remove_spaces(str: &str) -> String {
+//     str.chars().filter(|chr| !chr.is_whitespace()).collect()
+// }
 
-fn remove_spaces(str: &str) -> String {
-    str.chars().filter(|chr| !chr.is_whitespace()).collect()
-}
-
-#[test]
-fn migrations_validate() {
-    assert_eq!(MIGRATIONS.validate(), Ok(()));
-}
+// #[test]
+// fn migrations_validate() {
+//     assert_eq!(MIGRATIONS.validate(), Ok(()));
+// }

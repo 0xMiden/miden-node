@@ -72,6 +72,12 @@ pub struct NullifierInfo {
     pub block_num: BlockNumber,
 }
 
+impl PartialEq<(Nullifier, BlockNumber)> for NullifierInfo {
+    fn eq(&self, (nullifier, block_num): &(Nullifier, BlockNumber)) -> bool {
+        &self.nullifier == nullifier && &self.block_num == block_num
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct TransactionSummary {
     pub account_id: AccountId,
@@ -246,7 +252,12 @@ impl Db {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.framed("nullifieres by prefix", move |conn| {
-            queries::select_nullifiers_by_prefix_q(conn, nullifier_prefixes, block_num)
+            queries::select_nullifiers_by_prefix_q(
+                conn,
+                prefix_len as u8,
+                &nullifier_prefixes,
+                block_num,
+            )
         })
         .await
     }

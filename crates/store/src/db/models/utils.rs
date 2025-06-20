@@ -90,10 +90,3 @@ pub fn schema_version(conn: &mut SqliteConnection) -> Result<u32, DatabaseError>
     })?;
     Ok(schema_version)
 }
-
-/// Auxiliary macro which substitutes `$src` token by `$dst` expression.
-macro_rules! subst {
-    ($src:tt, $dst:expr_2021) => {
-        $dst
-    };
-}

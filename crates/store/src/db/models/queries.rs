@@ -330,24 +330,26 @@ pub(crate) fn insert_account_delta(
 
 // there are a bunch of closures with detailed type annotations, which lengthens the function
 // TODO some _might_ be extractable, they _should_ be context independent
+//
+/// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
 #[allow(clippy::too_many_lines)]
 pub(crate) fn upsert_accounts(
     conn: &mut SqliteConnection,
     accounts: &[BlockAccountUpdate],
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
-    let select_details_stmt = |conn2: &mut SqliteConnection,
-                               account_id: AccountId|
-     -> Result<Vec<Account>, DatabaseError> {
+    fn select_details_stmt(
+        conn: &mut SqliteConnection,
+        account_id: AccountId,
+    ) -> Result<Vec<Account>, DatabaseError> {
         let account_id = account_id.to_bytes();
         let account_details_serialized =
             SelectDsl::select(schema::accounts::table, schema::accounts::details.assume_not_null())
                 .filter(schema::accounts::account_id.eq(account_id))
-                .filter(schema::accounts::details.is_not_null())
-                .get_results::<Vec<u8>>(conn2)?;
+                .get_results::<Vec<u8>>(conn)?;
         let accounts = deserialize_raw_vec::<_, Account>(account_details_serialized)?;
         Ok(accounts)
-    };
+    }
 
     let mut count = 0;
     for update in accounts {
@@ -397,12 +399,13 @@ pub(crate) fn upsert_accounts(
             schema::accounts::block_num.eq(block_num.as_u32() as i64),
             schema::accounts::details.eq(full_account.as_ref().map(|account| account.to_bytes())),
         );
+        let v = val.clone();
         let inserted = diesel::insert_into(schema::accounts::table)
-                .values(&val)
+                .values(&v)
                 // TODO do the update on conflict
-                // .on_conflict(schema::accounts::account_id)
-                // .do_update()
-                // .set(&val)
+                .on_conflict(schema::accounts::account_id)
+                .do_update()
+                .set(val)
                 .execute(conn)?;
 
         debug_assert_eq!(inserted, 1);
@@ -421,14 +424,15 @@ pub(crate) fn insert_scripts<'a>(
     conn: &mut SqliteConnection,
     notes: impl IntoIterator<Item = &'a NoteRecord>,
 ) -> Result<usize, DatabaseError> {
-    let count = diesel::insert_into(schema::note_scripts::table)
-        .values(Vec::from_iter(notes.into_iter().filter_map(|note| {
-            let note_details = note.details.as_ref()?;
-            Some((
-                schema::note_scripts::script_root.eq(note_details.script().root().to_bytes()),
-                schema::note_scripts::script.eq(note_details.script().to_bytes()),
-            ))
-        })))
+    let values = Vec::from_iter(notes.into_iter().filter_map(|note| {
+        let note_details = note.details.as_ref()?;
+        Some((
+            schema::note_scripts::script_root.eq(note_details.script().root().to_bytes()),
+            schema::note_scripts::script.eq(note_details.script().to_bytes()),
+        ))
+    }));
+    let count = diesel::insert_or_ignore_into(schema::note_scripts::table)
+        .values(values)
         .execute(conn)?;
 
     Ok(count)
@@ -524,22 +528,47 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
+pub(crate) fn select_all_notes(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<NoteRecord>, DatabaseError> {
+    let cols = (
+        schema::notes::block_num,
+        schema::notes::batch_index,
+        schema::notes::note_index,
+        schema::notes::note_id,
+        // metadata
+        schema::notes::note_type,
+        schema::notes::sender,
+        schema::notes::tag,
+        schema::notes::aux,
+        schema::notes::execution_hint,
+        // details
+        schema::notes::assets,
+        schema::notes::inputs,
+        schema::notes::serial_num,
+        // // merkle
+        schema::notes::merkle_path,
+        schema::note_scripts::script.nullable(),
+    );
+
+    let q = schema::notes::table.left_join(
+        schema::note_scripts::table
+            .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+    );
+    let raw: Vec<_> = SelectDsl::select(
+        q, cols, // NoteRecordRaw::as_select()
+    )
+    .order(schema::notes::block_num.asc())
+    .load::<NoteRecordRaw>(conn)?;
+    let records = vec_raw_try_into::<NoteRecord, _>(raw)?;
+    Ok(records)
+}
+
 pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
-}
-
-pub(crate) fn select_all_notes(
-    conn: &mut SqliteConnection,
-) -> Result<Vec<NoteRecord>, DatabaseError> {
-    let notes_raw = SelectDsl::select(
-        schema::notes::table,
-        <models::NoteRecordRawNoResolve as diesel::SelectableHelper<_>>::as_select(),
-    )
-    .load::<models::NoteRecordRawNoResolve>(conn)?;
-    vec_raw_try_into(notes_raw)
 }
 
 pub(crate) fn insert_nullifiers_for_block(

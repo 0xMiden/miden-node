@@ -109,8 +109,8 @@ pub struct NoteMetadataRaw {
     note_type: i32,
     sender: Vec<u8>, // AccountId
     tag: i32,
-    execution_hint: i64,
     aux: i64,
+    execution_hint: i64,
 }
 
 #[allow(clippy::cast_sign_loss)]
@@ -304,8 +304,8 @@ pub struct NoteRecordRaw {
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
     pub tag: i32,
-    pub execution_hint: i64,
     pub aux: i64,
+    pub execution_hint: i64,
     // #[diesel(embed)]
     // pub metadata: NoteMetadataRaw,
     pub assets: Option<Vec<u8>>,

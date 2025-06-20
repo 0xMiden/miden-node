@@ -14,13 +14,7 @@ The first step in starting a new Miden network is to initialize the genesis bloc
 
 ```sh
 # Create a folder to store the node's data.
-mkdir data 
-
-# Create a folder to store the genesis block's account secrets and data.
-#
-# These can be used to access the accounts afterwards.
-# Without these the accounts would be inaccessible.
-mkdir accounts
+mkdir data
 
 # Bootstrap the node.
 #
@@ -29,13 +23,13 @@ mkdir accounts
 # The genesis block currently contains a single public faucet account. The
 # secret for this account is stored in the `<accounts-directory/account.mac>`
 # file. This file is not used by the node and should instead by used wherever
-# you intend to operate this faucet account. 
+# you intend to operate this faucet account.
 #
-# For example, you could operate a public faucet using our faucet reference 
+# For example, you could operate a public faucet using our faucet reference
 # implementation whose operation is described in a later section.
 miden-node bundled bootstrap \
   --data-directory data \
-  --accounts-directory accounts
+  --accounts-directory .
 ```
 
 ## Operation
@@ -56,30 +50,23 @@ existing one e.g. one created as part of the genesis block.
 
 Create a faucet account for the faucet app to use - or skip this step if you already have an account file.
 
+Note that we specify a distinct account filename (`faucet.mac`) to avoid collision with the account file that the node bootstrap command generates.
+
 ```sh
-mkdir accounts
 miden-faucet create-faucet-account \
-  --token-symbol MY_TOKEN \
-  --decimals 12 \
-  --max-supply 5000
-```
-
-Create a configuration file for the faucet.  
-
-```sh
-# This generates `miden-faucet.toml` which is used to configure the faucet.
-#
-# You can inspect and modify this if you want to make changes
-# e.g. to the website url.
-miden-faucet init \
-  --config-path miden-faucet.toml \
-  --faucet-account-path accounts/account.mac 
+  --token-symbol BTC \
+  --decimals 8 \
+  --max-supply 2100000000000000 \
+  --output faucet.mac
 ```
 
 Run the faucet:
 
 ```sh
-miden-faucet --config miden-faucet.toml
+miden-faucet start \
+  --endpoint http://127.0.0.1:8080 \
+  --node-url http://127.0.0.1:57291 \
+  --account faucet.mac
 ```
 
 ## Systemd
@@ -113,3 +100,5 @@ source profile.env && miden-node <...>
 ```
 
 This works well on Linux and MacOS, but Windows requires some additional scripting unfortunately.
+
+See the `.env` files in each of the binary crates' [directories](https://github.com/0xMiden/miden-node/tree/next/bin) for a list of all available environment variables.

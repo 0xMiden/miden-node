@@ -375,16 +375,15 @@ impl Db {
         note_tags: Vec<u32>,
     ) -> Result<NoteSyncUpdate, NoteSyncError> {
         self.framed("notes sync task", move |conn| {
-            let update = models::queries::select_notes_since_block_by_tag_and_sender(
+            let notes = models::queries::select_notes_since_block_by_tag_and_sender(
                 conn,
                 block_num,
                 &[],
                 &note_tags,
             )?;
-            let notes = update.notes;
             let block_header = models::queries::select_block_header_by_block_num(
                 conn,
-                notes.first().map(|note| note.block_num),
+                notes.first().map(|note| note.block_num.clone()),
             )?
             .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
             Ok(NoteSyncUpdate { notes, block_header })

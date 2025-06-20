@@ -137,7 +137,7 @@ pub struct BlockNoteIndexRaw {
 impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockNoteIndex, Self::Error> {
-        Ok(BlockNoteIndex::new(self.batch_index as usize, self.batch_index as usize)
+        Ok(BlockNoteIndex::new(self.batch_index as usize, self.note_index as usize)
             .expect("XXX TODO"))
     }
 }

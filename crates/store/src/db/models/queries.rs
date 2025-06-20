@@ -29,7 +29,8 @@ use super::{
 };
 use crate::{
     db::{
-        NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate, TransactionSummary,
+        NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
+        TransactionSummary,
         models::{
             AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteRecordRawNoResolve,
             TransactionSummaryRaw, deserialize_raw_vec, get_nullifier_prefix, vec_raw_try_into,
@@ -44,24 +45,28 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
     block_number: BlockNumber,
     account_ids: &[AccountId],
     note_tags: &[u32],
-) -> Result<NoteSyncUpdate, DatabaseError> {
+) -> Result<Vec<NoteSyncRecord>, DatabaseError> {
     let desired_note_tags =
         Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes())));
     let desired_senders = serialize_vec(account_ids.iter());
 
+    let desired_block_num = block_number.as_u32() as i64;
+
     // select notes since block by tag and sender
-    let desired_block_num: i64 = SelectDsl::select(schema::notes::table, schema::notes::block_num)
-        .filter(
-            schema::notes::tag
-                .eq_any(&desired_note_tags[..])
-                .or(schema::notes::sender.eq_any(&desired_senders[..])),
-        )
-        .order_by(schema::notes::block_num.asc())
-        .limit(1)
-        .get_result(conn)
-        .optional()?
-        .unwrap(); // TODO FIXME
-    let block_header = select_block_header_by_block_num(conn, Some(block_number))?.unwrap(); // TODO FIXME
+    let Some(desired_block_num): Option<i64> =
+        SelectDsl::select(schema::notes::table, schema::notes::block_num)
+            .filter(
+                schema::notes::tag
+                    .eq_any(&desired_note_tags[..])
+                    .or(schema::notes::sender.eq_any(&desired_senders[..])),
+            )
+            .filter(schema::notes::block_num.gt(desired_block_num))
+            .order_by(schema::notes::block_num.asc())
+            .first(conn)
+            .optional()?
+    else {
+        return Ok(Vec::new());
+    };
 
     let notes = SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
             // find the next block which contains at least one note with a matching tag or sender
@@ -80,10 +85,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
             .load::<NoteSyncRecordRawRow>(conn)
             .map_err(DatabaseError::from)?;
 
-    Ok(NoteSyncUpdate {
-        notes: vec_raw_try_into(notes)?,
-        block_header,
-    })
+    Ok(vec_raw_try_into(notes)?)
 }
 
 pub(crate) fn select_block_header_by_block_num(

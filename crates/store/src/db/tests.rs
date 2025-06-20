@@ -922,8 +922,8 @@ fn notes() {
     // test empty table
     let res =
         queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
-            .unwrap()
-            .notes;
+            .unwrap();
+
     assert!(res.is_empty());
 
     let res = queries::select_notes_since_block_by_tag_and_sender(
@@ -932,8 +932,7 @@ fn notes() {
         &[],
         &[1, 2, 3],
     )
-    .unwrap()
-    .notes;
+    .unwrap();
     assert!(res.is_empty());
 
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
@@ -976,12 +975,12 @@ fn notes() {
     let res =
         queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
             .unwrap();
-    assert!(res.notes.is_empty());
+    assert!(res.is_empty());
 
     // test no updates
     let res = queries::select_notes_since_block_by_tag_and_sender(conn, block_num_1, &[], &[tag])
         .unwrap();
-    assert!(res.notes.is_empty());
+    assert!(res.is_empty());
 
     // test match
     let res = queries::select_notes_since_block_by_tag_and_sender(
@@ -991,7 +990,7 @@ fn notes() {
         &[tag],
     )
     .unwrap();
-    assert_eq!(res.notes, vec![note.clone().into()]);
+    assert_eq!(res, vec![note.clone().into()]);
 
     let block_num_2 = note.block_num + 1;
     create_block(conn, block_num_2);
@@ -1015,18 +1014,16 @@ fn notes() {
         &[],
         &[tag],
     )
-    .unwrap()
-    .notes;
+    .unwrap();
     assert_eq!(res, vec![note.clone().into()]);
 
     // only the second note is returned
     let res = queries::select_notes_since_block_by_tag_and_sender(conn, block_num_1, &[], &[tag])
-        .unwrap()
-        .notes;
+        .unwrap();
     assert_eq!(res, vec![note2.clone().into()]);
     // test query notes by id
     let notes = vec![note.clone(), note2];
-    let note_ids: Vec<RpoDigest> = notes.clone().iter().map(|note| note.note_id).collect();
+    let note_ids: Vec<RpoDigest> = notes.iter().map(|note| note.note_id.clone()).collect();
     let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
 
     let res = queries::select_notes_by_id(conn, &note_ids).unwrap();

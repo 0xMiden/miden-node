@@ -264,8 +264,8 @@ impl TryInto<NoteRecord> for NoteRecordRawNoResolve {
             note_type,
             sender,
             tag,
-            execution_hint,
             aux,
+            execution_hint,
         };
         // let details = NoteDetailsRaw { assets, inputs, serial_num };
 
@@ -350,8 +350,8 @@ impl TryInto<NoteRecord> for NoteRecordRaw {
             note_type,
             sender,
             tag,
-            execution_hint,
             aux,
+            execution_hint,
         };
         let details = NoteDetailsRaw { assets, inputs, serial_num };
 

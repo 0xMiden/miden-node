@@ -1023,7 +1023,7 @@ fn notes() {
     assert_eq!(res, vec![note2.clone().into()]);
     // test query notes by id
     let notes = vec![note.clone(), note2];
-    let note_ids: Vec<RpoDigest> = notes.iter().map(|note| note.note_id.clone()).collect();
+    let note_ids: Vec<RpoDigest> = notes.iter().map(|note| note.note_id).collect();
     let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
 
     let res = queries::select_notes_by_id(conn, &note_ids).unwrap();

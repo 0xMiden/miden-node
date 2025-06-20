@@ -29,7 +29,7 @@ use super::{
 };
 use crate::{
     db::{
-        NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
+        NoteRecord, NoteSyncRecord, NullifierInfo, Page, StateSyncUpdate,
         TransactionSummary,
         models::{
             AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteRecordRawNoResolve,
@@ -85,7 +85,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
             .load::<NoteSyncRecordRawRow>(conn)
             .map_err(DatabaseError::from)?;
 
-    Ok(vec_raw_try_into(notes)?)
+    vec_raw_try_into(notes)
 }
 
 pub(crate) fn select_block_header_by_block_num(

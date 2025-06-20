@@ -383,7 +383,7 @@ impl Db {
             )?;
             let block_header = models::queries::select_block_header_by_block_num(
                 conn,
-                notes.first().map(|note| note.block_num.clone()),
+                notes.first().map(|note| note.block_num),
             )?
             .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
             Ok(NoteSyncUpdate { notes, block_header })

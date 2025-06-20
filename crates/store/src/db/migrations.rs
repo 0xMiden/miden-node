@@ -1,11 +1,8 @@
 // XXX TODO remove once migrations are moved to diesel
 #![allow(dead_code)]
 
-use std::sync::LazyLock;
 
 use diesel::SqliteConnection;
-use miden_objects::crypto::hash::blake::{Blake3_160, Blake3Digest};
-use rusqlite_migration::{M, Migrations};
 use tracing::instrument;
 
 use crate::COMPONENT;

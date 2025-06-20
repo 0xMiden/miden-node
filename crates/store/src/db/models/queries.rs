@@ -692,7 +692,7 @@ pub(crate) fn unconsumed_network_notes(
 
     let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
     let rowid_sel_ge =
-        diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ? ")
+        diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
             .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
 
     type RawLoadedTuple = (
@@ -776,11 +776,12 @@ pub(crate) fn unconsumed_network_notes(
             .and(rowid_sel_ge),
     )
     .order(rowid_sel.asc())
-    .limit(page.size.get() as i64)
+    .limit(page.size.get() as i64 + 1)
     .load::<RawLoadedTuple>(conn)?;
 
     // dest.extend(iter.map(|| todo!()))?;
 
+    // FIXME this is broken
     let mut notes = Vec::with_capacity(page.size.into());
     for raw_item in raw {
         let (raw_item, row) = hack(raw_item);

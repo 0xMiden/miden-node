@@ -41,6 +41,8 @@ use crate::{
     errors::DatabaseError,
 };
 
+use pretty_assertions::assert_eq;
+
 fn create_db() -> SqliteConnection {
     let mut conn = SqliteConnection::establish(":memory:").expect("In memory sqlite always works");
     apply_migrations(&mut conn).expect("Migrations always work on an empty database");

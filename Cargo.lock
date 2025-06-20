@@ -2256,6 +2256,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
+ "pretty_assertions",
  "rand 0.9.1",
  "regex",
  "rusqlite",

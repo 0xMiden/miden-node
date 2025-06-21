@@ -60,6 +60,7 @@ pub fn table_exists(conn: &mut SqliteConnection, table_name: &str) -> Result<boo
 
 /// Converts a slice of length `N` to an array, returns `None` if invariant
 /// isn'crates/store/src/db/mod.rs upheld.
+#[allow(dead_code)]
 pub fn slice_to_array<const N: usize>(bytes: &[u8]) -> Option<[u8; N]> {
     if bytes.len() != N {
         return None;
@@ -69,6 +70,7 @@ pub fn slice_to_array<const N: usize>(bytes: &[u8]) -> Option<[u8; N]> {
     Some(arr)
 }
 
+#[allow(dead_code)]
 #[inline]
 pub fn from_be_to_u32(bytes: &[u8]) -> Option<u32> {
     slice_to_array::<4>(bytes).map(u32::from_be_bytes)
@@ -82,6 +84,7 @@ pub struct PragmaSchemaVersion {
 }
 
 /// Returns the schema version of the database.
+#[allow(dead_code)]
 pub fn schema_version(conn: &mut SqliteConnection) -> Result<u32, DatabaseError> {
     let schema_version = conn.transaction(|conn| {
         let res = diesel::sql_query("SELECT schema_version FROM pragma_schema_version")

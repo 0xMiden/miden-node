@@ -25,15 +25,13 @@ use miden_objects::{
 
 use super::{
     super::models, BoolExpressionMethods, DatabaseError, ExpressionMethods, NoteSyncRecordRawRow,
-    QueryDsl, RunQueryDsl, SelectableHelper, serialize_vec,
+    QueryDsl, RunQueryDsl, SelectableHelper,
 };
 use crate::{
     db::{
         NoteRecord, NoteSyncRecord, NullifierInfo, Page, StateSyncUpdate, TransactionSummary,
-        models::{
-            AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteRecordRaw2, TransactionSummaryRaw,
-            deserialize_raw_vec, get_nullifier_prefix, vec_raw_try_into,
-        },
+        models::*,
+        models::{AccountRaw, AccountSummaryRaw, NoteRecordRaw, TransactionSummaryRaw},
         schema,
     },
     errors::StateSyncError,
@@ -188,11 +186,12 @@ pub(crate) fn insert_account_delta(
     block_number: BlockNumber,
     delta: &AccountDelta,
 ) -> Result<(), DatabaseError> {
-    let insert_acc_delta_stmt = |conn2: &mut SqliteConnection,
-                                 account_id: AccountId,
-                                 block_num: BlockNumber,
-                                 nonce: u32|
-     -> Result<usize, DatabaseError> {
+    fn insert_acc_delta_stmt(
+        conn2: &mut SqliteConnection,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        nonce: u32,
+    ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_deltas::table)
             .values(&[(
                 schema::account_deltas::account_id.eq(account_id.to_bytes()),
@@ -257,12 +256,13 @@ pub(crate) fn insert_account_delta(
         Ok(count)
     }
 
-    let insert_non_fungible_asset_update_stmt = |conn2: &mut SqliteConnection,
-                                                 account_id: AccountId,
-                                                 block_num: BlockNumber,
-                                                 vault_key: Vec<u8>,
-                                                 is_remove: i32|
-     -> Result<usize, DatabaseError> {
+    pub(crate) fn insert_non_fungible_asset_update_stmt(
+        conn2: &mut SqliteConnection,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        vault_key: Vec<u8>,
+        is_remove: i32,
+    ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_non_fungible_asset_updates::table)
             .values(&[(
                 schema::account_non_fungible_asset_updates::account_id.eq(account_id.to_bytes()),
@@ -527,6 +527,7 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
+#[cfg(test)]
 pub(crate) fn select_all_notes(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NoteRecord>, DatabaseError> {
@@ -679,6 +680,7 @@ pub(crate) fn get_account_details(
     val.try_into()
 }
 
+// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget statements
 pub(crate) fn unconsumed_network_notes(
     conn: &mut SqliteConnection,
     mut page: Page,
@@ -736,8 +738,6 @@ pub(crate) fn unconsumed_network_notes(
         )
     }
 
-    // let paged = |conn: &mut SqliteConnection, offset: u64, limit: u64, dest: &mut
-    // Vec<NoteRecord>| {
     let raw = SelectDsl::select(
         schema::notes::table.left_join(
             schema::note_scripts::table
@@ -748,15 +748,17 @@ pub(crate) fn unconsumed_network_notes(
             schema::notes::batch_index,
             schema::notes::note_index,
             schema::notes::note_id,
+            // metadata
             schema::notes::note_type,
             schema::notes::sender,
             schema::notes::tag,
             schema::notes::aux,
             schema::notes::execution_hint,
             schema::notes::merkle_path,
+            // details
             schema::notes::assets,
             schema::notes::inputs,
-            schema::note_scripts::script,
+            schema::note_scripts::script.nullable(),
             schema::notes::serial_num,
             rowid_sel.clone(),
         ),
@@ -889,6 +891,7 @@ pub(crate) fn select_nonce_stmt(
     Ok(res.map(|nonce| nonce as u64))
 }
 
+// Attention: A more complex query, utilizing aliases for nested queries
 pub(crate) fn select_slot_updates_stmt(
     conn: &mut SqliteConnection,
     account_id_val: &AccountId,

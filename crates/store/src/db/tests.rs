@@ -29,6 +29,7 @@ use miden_objects::{
     },
     transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId},
 };
+use pretty_assertions::assert_eq;
 use rand::Rng;
 
 use super::{AccountInfo, NoteRecord, NullifierInfo};
@@ -40,8 +41,6 @@ use crate::{
     },
     errors::DatabaseError,
 };
-
-use pretty_assertions::assert_eq;
 
 fn create_db() -> SqliteConnection {
     let mut conn = SqliteConnection::establish(":memory:").expect("In memory sqlite always works");

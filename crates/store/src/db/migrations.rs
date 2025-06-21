@@ -1,12 +1,7 @@
 // XXX TODO remove once migrations are moved to diesel
 #![allow(dead_code)]
 
-
 use diesel::SqliteConnection;
-use tracing::instrument;
-
-use crate::COMPONENT;
-
 // type Hash = Blake3Digest<20>;
 
 // const MIGRATION_SCRIPTS: [&str; 1] = [include_str!("migrations/001-init.sql")];
@@ -19,8 +14,10 @@ use crate::COMPONENT;
 
 // const DB_MIGRATION_HASH_FIELD: &str = "db-migration-hash";
 // const DB_SCHEMA_VERSION_FIELD: &str = "db-schema-version";
-
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
+use tracing::instrument;
+
+use crate::COMPONENT;
 // TODO ensure recompilation on migration addition!
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/db/migrations");
 
@@ -34,7 +31,7 @@ pub fn apply_migrations(
     let Err(e) = conn.run_pending_migrations(MIGRATIONS) else {
         return Ok(());
     };
-    eprintln!("Failed to apply migrations!");
+    eprintln!("Failed to apply migration: {e:?}");
     // something went wrong, MIGRATIONS contains
     conn.revert_last_migration(MIGRATIONS)
         .expect("Duality is maintained by the developer");
@@ -128,8 +125,8 @@ pub fn apply_migrations(
 // }
 
 // fn preprocess_sql(sql: &str) -> String {
-//     // TODO: We can also remove all comments here (need to analyze the SQL script in order to remove
-//     //       comments in string literals).
+//     // TODO: We can also remove all comments here (need to analyze the SQL script in order to
+// remove     //       comments in string literals).
 //     remove_spaces(sql)
 // }
 

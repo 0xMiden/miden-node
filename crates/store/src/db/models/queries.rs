@@ -30,8 +30,7 @@ use super::{
 use crate::{
     db::{
         NoteRecord, NoteSyncRecord, NullifierInfo, Page, StateSyncUpdate, TransactionSummary,
-        models::*,
-        models::{AccountRaw, AccountSummaryRaw, NoteRecordRaw, TransactionSummaryRaw},
+        models::{AccountRaw, AccountSummaryRaw, NoteRecordRaw, TransactionSummaryRaw, *},
         schema,
     },
     errors::StateSyncError,
@@ -200,7 +199,7 @@ pub(crate) fn insert_account_delta(
             )])
             .execute(conn2)?;
         Ok(count)
-    };
+    }
 
     let insert_slot_update_stmt = |conn2: &mut SqliteConnection,
                                    account_id: AccountId,
@@ -219,13 +218,14 @@ pub(crate) fn insert_account_delta(
         Ok(count)
     };
 
-    let insert_storage_map_update_stmt = |conn2: &mut SqliteConnection,
-                                          account_id: AccountId,
-                                          block_num: BlockNumber,
-                                          slot: u32,
-                                          key: Vec<u8>,
-                                          value: Vec<u8>|
-     -> Result<usize, DatabaseError> {
+    fn insert_storage_map_update_stmt(
+        conn2: &mut SqliteConnection,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        slot: u32,
+        key: Vec<u8>,
+        value: Vec<u8>,
+    ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_storage_map_updates::table)
             .values(&[(
                 schema::account_storage_map_updates::account_id.eq(account_id.to_bytes()),
@@ -236,7 +236,7 @@ pub(crate) fn insert_account_delta(
             )])
             .execute(conn2)?;
         Ok(count)
-    };
+    }
 
     fn insert_fungible_asset_delta_stmt(
         conn2: &mut SqliteConnection,
@@ -272,7 +272,7 @@ pub(crate) fn insert_account_delta(
             )])
             .execute(conn2)?;
         Ok(count)
-    };
+    }
 
     insert_acc_delta_stmt(
         conn,
@@ -680,7 +680,8 @@ pub(crate) fn get_account_details(
     val.try_into()
 }
 
-// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget statements
+// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+// statements
 pub(crate) fn unconsumed_network_notes(
     conn: &mut SqliteConnection,
     mut page: Page,

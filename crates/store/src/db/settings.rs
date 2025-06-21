@@ -1,3 +1,6 @@
+// TODO figure out if we want to retain the settings
+#![allow(dead_code)]
+
 use diesel::{
     ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SqliteConnection,
     query_dsl::methods::SelectDsl,

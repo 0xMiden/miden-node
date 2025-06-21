@@ -48,6 +48,7 @@ pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u32 {
 }
 
 /// Checks if a table exists in the database.
+#[allow(dead_code)]
 pub fn table_exists(conn: &mut SqliteConnection, table_name: &str) -> Result<bool, DatabaseError> {
     conn.transaction(|conn| {
         let count =

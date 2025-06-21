@@ -213,7 +213,7 @@ pub struct NoteDetailsRaw {
 
 #[derive(diesel::Queryable, diesel::QueryableByName, diesel::Selectable, Debug)]
 #[diesel(table_name = notes)] // Link to the notes table
-pub struct NoteRecordRawNoResolve {
+pub struct NoteRecordRaw2 {
     pub block_num: i64,
     pub batch_index: i32,
     pub note_index: i32,
@@ -235,10 +235,10 @@ pub struct NoteRecordRawNoResolve {
     // pub rowid: i64,
 }
 
-impl TryInto<NoteRecord> for NoteRecordRawNoResolve {
+impl TryInto<NoteRecord> for NoteRecordRaw2 {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteRecord, Self::Error> {
-        let NoteRecordRawNoResolve {
+        let NoteRecordRaw2 {
             block_num,
             batch_index,
             note_index,

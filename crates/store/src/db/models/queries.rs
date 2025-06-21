@@ -29,11 +29,10 @@ use super::{
 };
 use crate::{
     db::{
-        NoteRecord, NoteSyncRecord, NullifierInfo, Page, StateSyncUpdate,
-        TransactionSummary,
+        NoteRecord, NoteSyncRecord, NullifierInfo, Page, StateSyncUpdate, TransactionSummary,
         models::{
-            AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteRecordRawNoResolve,
-            TransactionSummaryRaw, deserialize_raw_vec, get_nullifier_prefix, vec_raw_try_into,
+            AccountRaw, AccountSummaryRaw, NoteRecordRaw, NoteRecordRaw2, TransactionSummaryRaw,
+            deserialize_raw_vec, get_nullifier_prefix, vec_raw_try_into,
         },
         schema,
     },
@@ -703,22 +702,21 @@ pub(crate) fn unconsumed_network_notes(
         i32,             // note_type
         Vec<u8>,         // sender
         i32,             // tag
-        i32,             // execution_mode
         i64,             // aux
         i64,             // execution_hint
         Vec<u8>,         // merkle_path
-        i32,             // consumed
-        Option<Vec<u8>>, // nullifier
         Option<Vec<u8>>, // assets
         Option<Vec<u8>>, // inputs
-        Option<Vec<u8>>, // script_root
+        Option<Vec<u8>>, // script
         Option<Vec<u8>>, // serial_num
         i64,             // rowid (from sql::<BigInt>("notes.rowid"))
     );
 
-    fn hack(tuple: RawLoadedTuple) -> (NoteRecordRawNoResolve, i64) {
+    fn split_into_raw_note_record_and_implicit_row_id(
+        tuple: RawLoadedTuple,
+    ) -> (NoteRecordRaw, i64) {
         (
-            NoteRecordRawNoResolve {
+            NoteRecordRaw {
                 block_num: tuple.0,
                 batch_index: tuple.1,
                 note_index: tuple.2,
@@ -726,18 +724,15 @@ pub(crate) fn unconsumed_network_notes(
                 note_type: tuple.4,
                 sender: tuple.5,
                 tag: tuple.6,
-                execution_mode: tuple.7,
-                aux: tuple.8,
-                execution_hint: tuple.9,
-                merkle_path: tuple.10,
-                consumed: tuple.11,
-                nullifier: tuple.12,
-                assets: tuple.13,
-                inputs: tuple.14,
-                script_root: tuple.15,
-                serial_num: tuple.16,
+                aux: tuple.7,
+                execution_hint: tuple.8,
+                merkle_path: tuple.9,
+                assets: tuple.10,
+                inputs: tuple.11,
+                script: tuple.12,
+                serial_num: tuple.13,
             },
-            tuple.17,
+            tuple.14,
         )
     }
 
@@ -756,35 +751,26 @@ pub(crate) fn unconsumed_network_notes(
             schema::notes::note_type,
             schema::notes::sender,
             schema::notes::tag,
-            schema::notes::execution_mode,
             schema::notes::aux,
             schema::notes::execution_hint,
             schema::notes::merkle_path,
-            schema::notes::consumed,
-            schema::notes::nullifier,
             schema::notes::assets,
             schema::notes::inputs,
-            schema::notes::script_root,
+            schema::note_scripts::script,
             schema::notes::serial_num,
             rowid_sel.clone(),
         ),
     )
-    .filter(
-        schema::notes::execution_mode
-            .eq(0_i32)
-            .and(schema::notes::consumed.eq(false as u8 as i32))
-            .and(rowid_sel_ge),
-    )
+    .filter(schema::notes::execution_mode.eq(0_i32))
+    .filter(schema::notes::consumed.eq(false as u8 as i32))
+    .filter(rowid_sel_ge)
     .order(rowid_sel.asc())
     .limit(page.size.get() as i64 + 1)
     .load::<RawLoadedTuple>(conn)?;
 
-    // dest.extend(iter.map(|| todo!()))?;
-
-    // FIXME this is broken
     let mut notes = Vec::with_capacity(page.size.into());
     for raw_item in raw {
-        let (raw_item, row) = hack(raw_item);
+        let (raw_item, row) = split_into_raw_note_record_and_implicit_row_id(raw_item);
         page.token = None;
         if notes.len() == page.size.get() {
             page.token = Some(row as u64);

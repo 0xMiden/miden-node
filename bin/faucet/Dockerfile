@@ -1,7 +1,7 @@
 FROM rust:1.87-slim-bullseye AS builder
 
 WORKDIR /app
-COPY . .
+COPY ./bin/faucet ./bin/faucet
 
 RUN cargo install --path bin/faucet --locked
 

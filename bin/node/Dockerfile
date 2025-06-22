@@ -6,6 +6,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+COPY ./Cargo.toml .
+COPY ./Cargo.lock .
 COPY ./bin/node ./bin/node
 
 RUN cargo install --path bin/node --locked

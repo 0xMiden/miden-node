@@ -41,6 +41,7 @@ make test
 Note that we do _not_ accept low-effort contributions or AI generated code. For typos and documentation errors please
 rather open an issue.
 
+
 ## License
 
 This project is [MIT licensed](./LICENSE).

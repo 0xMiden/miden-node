@@ -9,6 +9,7 @@ WORKDIR /app
 COPY ./Cargo.toml .
 COPY ./Cargo.lock .
 COPY ./bin/node ./bin/node
+COPY ./crates ./crates
 
 RUN cargo install --path bin/node --locked
 RUN rm -rf data accounts && mkdir data accounts

@@ -4,6 +4,7 @@ WORKDIR /app
 COPY ./Cargo.toml .
 COPY ./Cargo.lock .
 COPY ./bin/faucet ./bin/faucet
+COPY ./crates ./crates
 
 RUN cargo install --path bin/faucet --locked
 

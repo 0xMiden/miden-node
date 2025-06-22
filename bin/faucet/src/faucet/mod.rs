@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, rc::Rc, sync::Arc};
+use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::{Context, anyhow};
 use miden_lib::{
@@ -162,7 +162,7 @@ pub struct Faucet {
     // Previous faucet account states used to perform rollbacks if a desync is detected.
     prior_state: VecDeque<Account>,
     tx_prover: Arc<FaucetProver>,
-    tx_executor: Rc<TransactionExecutor>,
+    authenticator: BasicAuthenticator<StdRng>,
     account_interface: AccountInterface,
     decimals: u8,
 }
@@ -231,31 +231,28 @@ impl Faucet {
             genesis_chain_mmr,
         ));
 
-        let public_key = match &account_file.auth_secret_key {
-            AuthSecretKey::RpoFalcon512(secret) => secret.public_key(),
-        };
-
-        let authenticator = Arc::new(BasicAuthenticator::<StdRng>::new(&[(
-            public_key.into(),
-            account_file.auth_secret_key,
-        )]));
+        let keypairs = account_file
+            .auth_secret_keys
+            .into_iter()
+            .map(|key| match key {
+                AuthSecretKey::RpoFalcon512(ref falcon) => (falcon.public_key().into(), key),
+            })
+            .collect::<Vec<_>>();
+        let authenticator = BasicAuthenticator::<StdRng>::new(&keypairs);
 
         let tx_prover = match remote_tx_prover_url {
             Some(url) => Arc::new(FaucetProver::remote(url)),
             None => Arc::new(FaucetProver::local()),
         };
 
-        let tx_executor =
-            Rc::new(TransactionExecutor::new(data_store.clone(), Some(authenticator.clone())));
-
         Ok(Self {
             data_store,
             id,
             prior_state: VecDeque::new(),
             tx_prover,
-            tx_executor,
             account_interface,
             decimals: faucet.decimals(),
+            authenticator,
         })
     }
 
@@ -437,7 +434,9 @@ impl Faucet {
         &self,
         tx_args: TransactionArgs,
     ) -> MintResult<ExecutedTransaction> {
-        self.tx_executor
+        let executor =
+            TransactionExecutor::new(self.data_store.as_ref(), Some(&self.authenticator));
+        executor
             .execute_transaction(
                 self.id.inner(),
                 BlockNumber::GENESIS,
@@ -586,8 +585,11 @@ mod tests {
                 AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
             )
             .unwrap();
-            let account_file =
-                AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
+            let account_file = AccountFile::new(
+                account,
+                Some(account_seed),
+                vec![AuthSecretKey::RpoFalcon512(secret)],
+            );
 
             Faucet::load(account_file, &mut rpc_client, None).await.unwrap()
         };

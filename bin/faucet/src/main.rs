@@ -202,8 +202,11 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             )
             .context("failed to create basic fungible faucet account")?;
 
-            let account_data =
-                AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
+            let account_data = AccountFile::new(
+                account,
+                Some(account_seed),
+                vec![AuthSecretKey::RpoFalcon512(secret)],
+            );
 
             let output_path = current_dir.join(output_path);
             account_data.write(&output_path).with_context(|| {

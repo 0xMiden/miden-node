@@ -5,6 +5,7 @@ COPY ./Cargo.toml .
 COPY ./Cargo.lock .
 COPY ./bin ./bin
 COPY ./crates ./crates
+COPY ./proto ./proto
 
 RUN cargo install --path bin/faucet --locked
 

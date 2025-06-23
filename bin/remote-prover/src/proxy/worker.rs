@@ -25,14 +25,14 @@ const MAX_BACKOFF_EXPONENT: usize = 9;
 /// The version of the proxy.
 ///
 /// This is the version of the proxy that is used to check the version of the worker.
-const MPS_PROXY_VERSION: &str = env!("CARGO_PKG_VERSION");
+const MRP_PROXY_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The version requirement for the worker.
 ///
 /// This is the version requirement for the worker that is used to check the version of the worker.
 static WORKER_VERSION_REQUIREMENT: LazyLock<VersionReq> = LazyLock::new(|| {
     let current =
-        Version::parse(MPS_PROXY_VERSION).expect("Proxy version should be valid at this point");
+        Version::parse(MRP_PROXY_VERSION).expect("Proxy version should be valid at this point");
     VersionReq::parse(&format!("~{}.{}", current.major, current.minor))
         .expect("Version should be valid at this point")
 });

@@ -59,13 +59,13 @@ impl std::str::FromStr for ProverType {
 #[derive(Debug, Parser)]
 pub struct StartWorker {
     /// Use localhost (127.0.0.1) instead of 0.0.0.0
-    #[arg(long, env = "MPS_WORKER_LOCALHOST")]
+    #[arg(long, env = "MRP_WORKER_LOCALHOST")]
     localhost: bool,
     /// The port of the worker
-    #[arg(long, default_value = "50051", env = "MPS_WORKER_PORT")]
+    #[arg(long, default_value = "50051", env = "MRP_WORKER_PORT")]
     port: u16,
     /// The type of prover that the worker will be handling
-    #[arg(long, env = "MPS_WORKER_PROVER_TYPE")]
+    #[arg(long, env = "MRP_WORKER_PROVER_TYPE")]
     prover_type: ProverType,
 }
 

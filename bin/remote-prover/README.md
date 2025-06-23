@@ -88,15 +88,15 @@ The worker can be configured using the following environment variables:
 
 | Variable                  | Description                     | Default       |
 |---------------------------|---------------------------------|---------------|
-| `MPS_WORKER_LOCALHOST`    | Use localhost (127.0.0.1)       | `false`       |
-| `MPS_WORKER_PORT`         | The port number for the worker  | `50051`       |
-| `MPS_WORKER_PROVER_TYPE`  | The supported prover type       | `transaction` |
+| `MRP_WORKER_LOCALHOST`    | Use localhost (127.0.0.1)       | `false`       |
+| `MRP_WORKER_PORT`         | The port number for the worker  | `50051`       |
+| `MRP_WORKER_PROVER_TYPE`  | The supported prover type       | `transaction` |
 
 For example:
 ```bash
-export MPS_WORKER_LOCALHOST="true"
-export MPS_WORKER_PORT="8082"
-export MPS_WORKER_PROVER_TYPE="block"
+export MRP_WORKER_LOCALHOST="true"
+export MRP_WORKER_PORT="8082"
+export MRP_WORKER_PROVER_TYPE="block"
 miden-remote-prover start-worker
 ```
 
@@ -114,10 +114,10 @@ For example:
 miden-remote-prover start-proxy --prover-type transaction --workers 0.0.0.0:8084,0.0.0.0:8085
 ```
 
-This command will start the proxy using the workers passed as arguments. The workers should be in the format `host:port`. Another way to specify the workers is by using the `MPS_PROXY_WORKERS_LIST` environment variable, which can be set to a comma-separated list of worker addresses. For example:
+This command will start the proxy using the workers passed as arguments. The workers should be in the format `host:port`. Another way to specify the workers is by using the `MRP_PROXY_WORKERS_LIST` environment variable, which can be set to a comma-separated list of worker addresses. For example:
 
 ```bash
-export MPS_PROXY_WORKERS_LIST="0.0.0.0:8084,0.0.0.0:8085"
+export MRP_PROXY_WORKERS_LIST="0.0.0.0:8084,0.0.0.0:8085"
 ```
 
 If no workers are passed, the proxy will start without any workers and will not be able to handle any requests until one is added through the `miden-remote-prover add-worker` command.
@@ -140,7 +140,7 @@ You can customize the proxy service by setting environment variables. Possible c
 
 An example `.env` file is provided in the crate's root directory. To use the variables from a file in any Unix-like operating system, you can run `source <your-file>`.
 
-At the moment, when a worker added to the proxy stops working and can not connect to it for a request, the connection is marked as retriable meaning that the proxy will try reaching another worker. The number of retries is configurable via the `MPS_MAX_RETRIES_PER_REQUEST` environmental variable.
+At the moment, when a worker added to the proxy stops working and can not connect to it for a request, the connection is marked as retriable meaning that the proxy will try reaching another worker. The number of retries is configurable via the `MRP_MAX_RETRIES_PER_REQUEST` environmental variable.
 
 ## Updating workers on a running proxy
 
@@ -159,18 +159,18 @@ miden-remote-prover add-workers --control-port 8083 0.0.0.0:8085,200.58.70.4:500
 miden-remote-prover remove-workers --control-port 8083 158.12.12.3:8080,122.122.6.6:50051
 ```
 
-These commands can receive the list of workers to update as a comma-separated list of addresses through the `MPS_PROXY_WORKERS_LIST` environment variable, or as command-line arguments:
+These commands can receive the list of workers to update as a comma-separated list of addresses through the `MRP_PROXY_WORKERS_LIST` environment variable, or as command-line arguments:
 
 ```bash
-export MPS_PROXY_WORKERS_LIST="0.0.0.0:8085,200.58.70.4:50051"
+export MRP_PROXY_WORKERS_LIST="0.0.0.0:8085,200.58.70.4:50051"
 miden-remote-prover add-workers --control-port 8083
 miden-remote-prover remove-workers --control-port 8083
 ```
 
-The `--control-port` flag is required to specify the port where the proxy is listening for updates. The workers are passed as arguments in the format `host:port`. The port can be specified via the `MPS_CONTROL_PORT` environment variable. For example:
+The `--control-port` flag is required to specify the port where the proxy is listening for updates. The workers are passed as arguments in the format `host:port`. The port can be specified via the `MRP_CONTROL_PORT` environment variable. For example:
 
 ```bash
-export MPS_CONTROL_PORT="8083"
+export MRP_CONTROL_PORT="8083"
 miden-remote-prover add-workers 0.0.0.0:8085
 ```
 
@@ -225,7 +225,7 @@ Example response:
 }
 ```
 
-The status port can be configured using the `MPS_STATUS_PORT` environment variable or the `--status-port` command-line argument when starting the proxy.
+The status port can be configured using the `MRP_STATUS_PORT` environment variable or the `--status-port` command-line argument when starting the proxy.
 
 ## Logging and Tracing
 
@@ -262,10 +262,10 @@ To enable Prometheus metrics, simply specify a port on which to expose the metri
 Set the following environment variable:
 
 ```bash
-export MPS_METRICS_PORT=6192  # Set to enable metrics on port 6192
+export MRP_METRICS_PORT=6192  # Set to enable metrics on port 6192
 ```
 
-To disable metrics, simply don't set the MPS_METRICS_PORT environment variable.
+To disable metrics, simply don't set the MRP_METRICS_PORT environment variable.
 
 #### Using Command-Line Arguments
 

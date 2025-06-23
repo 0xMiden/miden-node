@@ -12,8 +12,7 @@ use tracing::{error, info};
 
 use super::LoadBalancerState;
 use crate::{
-    commands::update_workers::UpdateWorkers,
-    utils::{MIDEN_PROVING_SERVICE, create_response_with_error_message},
+    COMPONENT, commands::update_workers::UpdateWorkers, utils::create_response_with_error_message,
 };
 
 /// The Load Balancer Updater Service.
@@ -60,7 +59,7 @@ impl HttpServerApp for LoadBalancerUpdateService {
     /// - If the query parameters cannot be parsed.
     /// - If the workers cannot be updated.
     /// - If the response cannot be created.
-    #[tracing::instrument(target = MIDEN_PROVING_SERVICE, name = "lb_updater_service:process_new_http", skip(http))]
+    #[tracing::instrument(target = COMPONENT, name = "lb_updater_service.process_new_http", skip(http))]
     async fn process_new_http(
         self: &Arc<Self>,
         mut http: ServerSession,

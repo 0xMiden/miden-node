@@ -1,17 +1,13 @@
-pub mod api;
-pub mod commands;
-pub mod error;
-mod generated;
-pub mod proxy;
-mod utils;
-use commands::Cli;
-use utils::setup_tracing;
+use miden_node_utils::logging::{OpenTelemetry, setup_tracing};
+use miden_proving_service::{COMPONENT, commands::Cli};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
     use clap::Parser;
 
-    setup_tracing()?;
+    setup_tracing(OpenTelemetry::Enabled).map_err(|e| e.to_string())?;
+    info!(target: COMPONENT, "Tracing initialized");
 
     // read command-line args
     let cli = Cli::parse();
@@ -38,17 +34,16 @@ mod test {
         },
         transaction::{ProvenTransaction, TransactionScript, TransactionWitness},
     };
+    use miden_proving_service::{
+        api::ProverRpcApi,
+        commands::worker::ProverType,
+        generated::{ProofType, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
+    };
     use miden_testing::{Auth, MockChain};
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
     use tonic::Request;
     use tonic_web::GrpcWebLayer;
-
-    use crate::{
-        api::ProverRpcApi,
-        commands::worker::ProverType,
-        generated::{ProofType, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
-    };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_prove_transaction() {

@@ -5,10 +5,11 @@ use pingora::{server::ListenFds, services::Service};
 use tokio::{net::TcpListener, sync::watch, time::interval};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status, transport::Server};
-use tracing::{error, info};
+use tracing::{error, info, instrument};
 
 use super::worker::WorkerHealthStatus as RustWorkerHealthStatus;
 use crate::{
+    COMPONENT,
     commands::PROXY_HOST,
     generated::{
         proving_service::ProofType,
@@ -28,7 +29,7 @@ use crate::{
 /// The service is responsible for serving the gRPC status API for the proxy.
 ///
 /// Implements the [`Service`] trait and the [`ProxyStatusApi`] gRPC API.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ProxyStatusPingoraService {
     /// The load balancer state.
     ///
@@ -86,6 +87,7 @@ impl ProxyStatusPingoraService {
 #[async_trait]
 impl ProxyStatusApi for ProxyStatusPingoraService {
     /// Returns the current status of the proxy.
+    #[instrument(target = COMPONENT, name = "proxy.status", skip(_request))]
     async fn status(
         &self,
         _request: Request<ProxyStatusRequest>,

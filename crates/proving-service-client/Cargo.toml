@@ -47,8 +47,9 @@ thiserror     = { version = "2.0" }
 tokio         = { default-features = false, features = ["sync"], optional = true, version = "1.44" }
 
 [build-dependencies]
-miette      = { features = ["fancy"], version = "7.5" }
-prost       = { default-features = false, features = ["derive"], version = "0.13" }
-prost-build = { version = "0.13" }
-protox      = { version = "0.8" }
-tonic-build = { version = "0.13" }
+miden-node-proto-build = { workspace = true }
+miette                 = { features = ["fancy"], version = "7.5" }
+prost                  = { default-features = false, features = ["derive"], version = "0.13" }
+prost-build            = { version = "0.13" }
+protox                 = { version = "0.8" }
+tonic-build            = { version = "0.13" }

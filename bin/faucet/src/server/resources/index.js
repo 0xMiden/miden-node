@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Search for a nonce that satisfies the proof of work
         status.textContent = "Solving Proof of Work...";
 
-        const nonce = await findValidNonce(powData.challenge, powData.difficulty);
+        const nonce = await findValidNonce(powData.challenge, powData.target);
 
         // Build query parameters for the request using new challenge format
         const params = {
@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         evtSource.onerror = function (_) {
-            // Either rate limit exceeded or invalid account id. The error event does not contain the reason. 
+            // Either rate limit exceeded or invalid account id. The error event does not contain the reason.
             evtSource.close();
             setLoadingState(false);
             showError('Please try again soon.');
@@ -188,29 +188,29 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 importCommand.style.display = 'none';
             }
-            txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
+
             txLink.textContent = data.transaction_id;
             info.style.visibility = 'visible';
             importCommand.style.visibility = 'visible';
+            // If the explorer URL is available, set the link.
+            if (data.explorer_url) {
+                txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
+            }
         });
     }
 
     // Function to find a valid nonce for proof of work using the new challenge format
-    async function findValidNonce(challenge, difficulty) {
+    async function findValidNonce(challenge, target) {
         // Check again if SHA3 is available
         if (typeof sha3_256 === 'undefined') {
             console.error("SHA3 library not properly loaded. SHA3 object:", sha3_256);
             throw new Error('SHA3 library not properly loaded. Please refresh the page.');
         }
 
-        // Parse difficulty (number of required leading zero BYTES, each byte = 2 hex digits)
-        const requiredZeros = parseInt(difficulty);
-        const requiredPattern = '00'.repeat(requiredZeros); // Each zero byte = "00" in hex
-
         let nonce = 0;
-        let validNonceFound = false;
+        let targetNum = BigInt(target);
 
-        while (!validNonceFound) {
+        while (true) {
             // Generate a random nonce
             nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
 
@@ -226,12 +226,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 const nonceByteArray = new Uint8Array(nonceBytes);
                 hash.update(nonceByteArray);
 
-                // Get the hex digest
-                let digest = hash.hex().toString();
+                // Interpret the hex digest as a number
+                let digest = BigInt("0x" + hash.hex());
 
-                // Check if the hash starts with the required number of zeros
-                if (digest.startsWith(requiredPattern)) {
-                    validNonceFound = true;
+                // Check if the hash is less than the target
+                if (digest < targetNum) {
                     return nonce;
                 }
             } catch (error) {

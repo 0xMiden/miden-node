@@ -2,23 +2,33 @@
 
 ## v0.10.0 (TBD)
 
+### Enhancements
+
+- Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
+- Added support for gRPC server side reflection to all components (#949).
+- Compressed faucet background image (#985).
+- Added support for TLS to `miden-proving-service-client` (#968).
+- Added support for TLS to faucet's connection to node RPC (#976).
+- Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
+- [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
+- Added configurable network id for the faucet (#1016).
+
 ### Changes
 
+- Separated the store API into three separate services (#932).
+- Added a faucet Dockerfile (#933).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
 - [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
 - [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
+- Exposed `miden-proving-service` as a library (#956).
+- [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
+- Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
 
-### Enhancements
+### Fixes
 
-- Added support for gRPC server side reflection to all components (#949).
-- Compressed faucet background image (#985).
-- Added support for TLS to miden-proving-service-client (#968).
-- Added support for TLS to faucet's connection to node RPC (#976).
-
-### Changes
-
-- [BREAKING] Added PoW to faucet API Keys (#974).
+- Faucet considers decimals when minting token amounts (#962).
 
 ## v0.9.2 (2025-06-12)
 
@@ -30,18 +40,6 @@
 
 ## v0.9.0 (2025-05-30)
 
-### Changes
-
-- Separated the store API into three separate services (#932).
-- Added a faucet Dockerfile (#933).
-- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
-
-### Fixes
-
-- Faucet considers decimals when minting token amounts (#962).
-
-## v0.9.0 (2025-05-30)
-
 ### Enhancements
 
 - Enabled running RPC component in `read-only` mode (#802).
@@ -50,7 +48,6 @@
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
-- Add miden-proving-service and miden-proving-service-client crates (#926).
 
 ### Changes
 

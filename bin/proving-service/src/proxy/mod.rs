@@ -11,6 +11,7 @@ use metrics::{
     REQUEST_FAILURE_COUNT, REQUEST_LATENCY, REQUEST_RETRIES, WORKER_BUSY, WORKER_COUNT,
     WORKER_REQUEST_COUNT,
 };
+use miden_proving_service::{COMPONENT, api::ProofType, error::ProvingServiceError};
 use pingora::{
     http::ResponseHeader,
     prelude::*,
@@ -26,13 +27,10 @@ use uuid::Uuid;
 use worker::Worker;
 
 use crate::{
-    COMPONENT,
     commands::{
         ProxyConfig,
         update_workers::{Action, UpdateWorkers},
-        worker::ProverType,
     },
-    error::ProvingServiceError,
     utils::{
         create_queue_full_response, create_response_with_error_message,
         create_too_many_requests_response,
@@ -43,7 +41,7 @@ mod health_check;
 pub mod metrics;
 pub(crate) mod status;
 pub(crate) mod update_workers;
-mod worker;
+pub(crate) mod worker;
 
 // LOAD BALANCER STATE
 // ================================================================================================
@@ -52,14 +50,14 @@ mod worker;
 #[derive(Debug)]
 pub struct LoadBalancerState {
     workers: Arc<RwLock<Vec<Worker>>>,
-    timeout_secs: Duration,
-    connection_timeout_secs: Duration,
+    timeout: Duration,
+    connection_timeout: Duration,
     max_queue_items: usize,
     max_retries_per_request: usize,
     max_req_per_sec: isize,
     available_workers_polling_interval: Duration,
     health_check_interval: Duration,
-    supported_prover_type: ProverType,
+    supported_proof_type: ProofType,
 }
 
 impl LoadBalancerState {
@@ -75,8 +73,8 @@ impl LoadBalancerState {
     ) -> core::result::Result<Self, ProvingServiceError> {
         let mut workers: Vec<Worker> = Vec::with_capacity(initial_workers.len());
 
-        let connection_timeout = Duration::from_secs(config.connection_timeout_secs);
-        let total_timeout = Duration::from_secs(config.timeout_secs);
+        let connection_timeout = config.connection_timeout;
+        let total_timeout = config.timeout;
 
         for worker_addr in initial_workers {
             match Worker::new(worker_addr, connection_timeout, total_timeout).await {
@@ -96,16 +94,14 @@ impl LoadBalancerState {
 
         Ok(Self {
             workers: Arc::new(RwLock::new(workers)),
-            timeout_secs: total_timeout,
-            connection_timeout_secs: connection_timeout,
+            timeout: total_timeout,
+            connection_timeout,
             max_queue_items: config.max_queue_items,
             max_retries_per_request: config.max_retries_per_request,
             max_req_per_sec: config.max_req_per_sec,
-            available_workers_polling_interval: Duration::from_millis(
-                config.available_workers_polling_interval_ms,
-            ),
-            health_check_interval: Duration::from_secs(config.health_check_interval_secs),
-            supported_prover_type: config.prover_type,
+            available_workers_polling_interval: config.available_workers_polling_interval,
+            health_check_interval: config.health_check_interval,
+            supported_proof_type: config.proof_type,
         })
     }
 
@@ -163,9 +159,8 @@ impl LoadBalancerState {
         let mut native_workers = Vec::new();
 
         for worker_addr in update_workers.workers {
-            native_workers.push(
-                Worker::new(worker_addr, self.connection_timeout_secs, self.timeout_secs).await?,
-            );
+            native_workers
+                .push(Worker::new(worker_addr, self.connection_timeout, self.timeout).await?);
         }
 
         match update_workers.action {
@@ -443,11 +438,11 @@ impl ProxyHttp for LoadBalancer {
             http_peer.get_mut_peer_options().ok_or(Error::new(ErrorType::InternalError))?;
 
         // Timeout settings
-        peer_opts.total_connection_timeout = Some(self.0.timeout_secs);
-        peer_opts.connection_timeout = Some(self.0.connection_timeout_secs);
-        peer_opts.read_timeout = Some(self.0.timeout_secs);
-        peer_opts.write_timeout = Some(self.0.timeout_secs);
-        peer_opts.idle_timeout = Some(self.0.timeout_secs);
+        peer_opts.total_connection_timeout = Some(self.0.timeout);
+        peer_opts.connection_timeout = Some(self.0.connection_timeout);
+        peer_opts.read_timeout = Some(self.0.timeout);
+        peer_opts.write_timeout = Some(self.0.timeout);
+        peer_opts.idle_timeout = Some(self.0.timeout);
 
         // Enable HTTP/2
         peer_opts.alpn = ALPN::H2;

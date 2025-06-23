@@ -27,6 +27,7 @@ async-trait           = { version = "0.1" }
 axum                  = { version = "0.8" }
 bytes                 = { version = "1.0" }
 clap                  = { features = ["derive", "env"], version = "4.5" }
+humantime             = { workspace = true }
 miden-block-prover    = { workspace = true }
 miden-lib             = { workspace = true }
 miden-node-utils      = { workspace = true }
@@ -42,7 +43,6 @@ prost                 = { default-features = false, features = ["derive"], versi
 reqwest               = { version = "0.12" }
 semver                = { version = "1.0" }
 serde                 = { features = ["derive"], version = "1.0" }
-serde_json            = { version = "1.0" }
 serde_qs              = { version = "0.15" }
 thiserror             = { workspace = true }
 tokio                 = { features = ["full"], version = "1.44" }

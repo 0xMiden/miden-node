@@ -3,10 +3,11 @@ mod rpc_client;
 mod server;
 mod types;
 
+mod network;
 #[cfg(test)]
 mod stub_rpc_api;
 
-use std::path::PathBuf;
+use std::{num::NonZeroUsize, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -15,7 +16,7 @@ use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion};
 use miden_objects::{
     Felt,
-    account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
+    account::{AccountFile, AccountStorageMode, AuthSecretKey},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -27,26 +28,27 @@ use tokio::sync::mpsc;
 use types::AssetOptions;
 use url::Url;
 
-use crate::server::ApiKey;
+use crate::{network::FaucetNetwork, server::ApiKey};
 
 // CONSTANTS
 // =================================================================================================
 
 pub const REQUESTS_QUEUE_SIZE: usize = 1000;
 const COMPONENT: &str = "miden-faucet";
-// TODO: Make these configurable.
-const NETWORK_ID: NetworkId = NetworkId::Testnet;
-const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 const ENV_ENDPOINT: &str = "MIDEN_FAUCET_ENDPOINT";
 const ENV_NODE_URL: &str = "MIDEN_FAUCET_NODE_URL";
-const ENV_TIMEOUT: &str = "MIDEN_FAUCET_TIMEOUT_MS";
+const ENV_TIMEOUT: &str = "MIDEN_FAUCET_TIMEOUT";
 const ENV_ACCOUNT_PATH: &str = "MIDEN_FAUCET_ACCOUNT_PATH";
 const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
+const ENV_POW_REQUESTS_PER_DIFFICULTY_LEVEL: &str =
+    "MIDEN_FAUCET_POW_REQUESTS_PER_DIFFICULTY_LEVEL";
+const ENV_POW_INITIAL_TARGET_SHIFT: &str = "MIDEN_FAUCET_POW_INITIAL_TARGET_SHIFT";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
+const ENV_NETWORK: &str = "MIDEN_FAUCET_NETWORK";
 
 // COMMANDS
 // ================================================================================================
@@ -67,13 +69,18 @@ pub enum Command {
         #[arg(long = "endpoint", value_name = "URL", env = ENV_ENDPOINT)]
         endpoint: Url,
 
+        /// Network configuration to use. Options are `devnet`, `testnet`, `localhost` or a custom
+        /// network. It is used to show the correct addresses and explorer URL in the UI.
+        #[arg(long = "network", value_name = "NETWORK", default_value = "localhost", env = ENV_NETWORK)]
+        network: FaucetNetwork,
+
         /// Node RPC gRPC endpoint in the format `http://<host>[:<port>]`.
         #[arg(long = "node-url", value_name = "URL", env = ENV_NODE_URL)]
         node_url: Url,
 
-        /// Timeout for RPC requests in milliseconds.
-        #[arg(long = "timeout", value_name = "MILLISECONDS", default_value_t = 5000, env = ENV_TIMEOUT)]
-        timeout_ms: u64,
+        /// Timeout for RPC requests.
+        #[arg(long = "timeout", value_name = "DURATION", default_value = "5s", env = ENV_TIMEOUT, value_parser = humantime::parse_duration)]
+        timeout: Duration,
 
         /// Path to the faucet account file.
         #[arg(long = "account", value_name = "FILE", env = ENV_ACCOUNT_PATH)]
@@ -90,6 +97,18 @@ pub enum Command {
         /// The secret to be used by the server to generate the `PoW` seed.
         #[arg(long = "pow-secret", value_name = "STRING", env = ENV_POW_SECRET)]
         pow_secret: Option<String>,
+
+        /// The number of simultaneous active requests needed to increase the `PoW` challenges
+        /// difficulty by 1.
+        #[arg(long = "pow-requests-per-difficulty-level", value_name = "NON_ZERO_USIZE", env = ENV_POW_REQUESTS_PER_DIFFICULTY_LEVEL, default_value = "8")]
+        pow_requests_per_difficulty_level: NonZeroUsize,
+
+        /// The initial target shift for the `PoW` challenges. This sets the base difficulty for
+        /// all challenges. It must be between 0 and 32. A bigger shift means higher
+        /// difficulty.
+        #[arg(value_parser = clap::value_parser!(u8).range(0..=32))]
+        #[arg(long = "pow-initial-target-shift", value_name = "U8", env = ENV_POW_INITIAL_TARGET_SHIFT, default_value = "12")]
+        pow_initial_target_shift: u8,
 
         /// Comma-separated list of API keys.
         #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
@@ -153,32 +172,38 @@ async fn main() -> anyhow::Result<()> {
     run_faucet_command(cli).await
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "This will be shorter once config file is removed"
-)]
+#[allow(clippy::too_many_lines)]
 async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         // Note: open-telemetry is handled in main.
         Command::Start {
             endpoint,
+            network,
             node_url,
-            timeout_ms,
+            timeout,
             faucet_account_path,
             remote_tx_prover_url,
             asset_amounts,
             pow_secret,
+            pow_requests_per_difficulty_level,
+            pow_initial_target_shift,
             api_keys,
             open_telemetry: _,
         } => {
-            let mut rpc_client = RpcClient::connect_lazy(&node_url, timeout_ms)
+            let mut rpc_client = RpcClient::connect_lazy(&node_url, timeout.as_millis() as u64)
                 .context("failed to create RPC client")?;
             let account_file = AccountFile::read(&faucet_account_path).context(format!(
                 "failed to load faucet account from file ({})",
                 faucet_account_path.display()
             ))?;
 
-            let faucet = Faucet::load(account_file, &mut rpc_client, remote_tx_prover_url).await?;
+            let faucet = Faucet::load(
+                network.to_network_id()?,
+                account_file,
+                &mut rpc_client,
+                remote_tx_prover_url,
+            )
+            .await?;
 
             // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
@@ -195,6 +220,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 asset_options,
                 tx_requests,
                 pow_secret.unwrap_or_default().as_str(),
+                pow_requests_per_difficulty_level,
+                pow_initial_target_shift,
                 &api_keys,
             );
 
@@ -297,6 +324,7 @@ fn long_version() -> LongVersion {
 mod test {
     use std::{
         env::temp_dir,
+        num::NonZeroUsize,
         process::Stdio,
         str::FromStr,
         time::{Duration, Instant},
@@ -308,7 +336,7 @@ mod test {
     use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
 
-    use crate::{Cli, run_faucet_command, stub_rpc_api::serve_stub};
+    use crate::{Cli, FaucetNetwork, run_faucet_command, stub_rpc_api::serve_stub};
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
     /// to test the faucet website. It then loads the website and checks that all the requests
@@ -461,11 +489,14 @@ mod test {
                 run_faucet_command(Cli {
                     command: crate::Command::Start {
                         endpoint: endpoint_clone,
+                        network: FaucetNetwork::Testnet,
                         node_url: stub_node_url,
-                        timeout_ms: 5000,
+                        timeout: Duration::from_millis(5000),
                         asset_amounts: vec![100, 500, 1000],
                         api_keys: vec![],
                         pow_secret: None,
+                        pow_requests_per_difficulty_level: NonZeroUsize::new(1).unwrap(),
+                        pow_initial_target_shift: 0,
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

@@ -2,7 +2,7 @@ use base64::{Engine, prelude::BASE64_STANDARD};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::server::get_tokens::InvalidMintRequest;
+use crate::server::get_tokens::MintRequestError;
 
 // API KEY
 // ================================================================================================
@@ -10,6 +10,9 @@ use crate::server::get_tokens::InvalidMintRequest;
 const API_KEY_PREFIX: &str = "miden_faucet_";
 
 /// The API key is a random 32-byte array.
+///
+/// It can be encoded as a string using the `encode` method and decoded back to bytes using the
+/// `decode` method.
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub struct ApiKey([u8; 32]);
 
@@ -37,14 +40,18 @@ impl ApiKey {
     }
 
     /// Decodes the API key from a string.
-    pub fn decode(api_key_str: &str) -> Result<Self, InvalidMintRequest> {
-        let api_key_str = api_key_str.trim_start_matches(API_KEY_PREFIX).to_string();
+    pub fn decode(api_key_str: &str) -> Result<Self, MintRequestError> {
+        let api_key_str = if api_key_str.starts_with(API_KEY_PREFIX) {
+            api_key_str.trim_start_matches(API_KEY_PREFIX).to_string()
+        } else {
+            return Err(MintRequestError::InvalidApiKey(api_key_str.to_string()));
+        };
         let bytes = BASE64_STANDARD
             .decode(api_key_str.as_bytes())
-            .map_err(|_| InvalidMintRequest::InvalidApiKey(api_key_str.clone()))?;
+            .map_err(|_| MintRequestError::InvalidApiKey(api_key_str.clone()))?;
 
         let api_key =
-            Self(bytes.try_into().map_err(|_| InvalidMintRequest::InvalidApiKey(api_key_str))?);
+            Self(bytes.try_into().map_err(|_| MintRequestError::InvalidApiKey(api_key_str))?);
         Ok(api_key)
     }
 }

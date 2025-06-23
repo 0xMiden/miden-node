@@ -51,7 +51,7 @@ pub struct RawMintRequest {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum InvalidMintRequest {
+pub enum MintRequestError {
     #[error("account ID failed to parse")]
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
@@ -73,7 +73,7 @@ pub enum InvalidMintRequest {
 }
 
 pub enum GetTokenError {
-    InvalidRequest(InvalidMintRequest),
+    InvalidRequest(MintRequestError),
     FaucetOverloaded,
     FaucetClosed,
 }
@@ -149,7 +149,7 @@ impl RawMintRequest {
     ///   - the challenge timestamp is expired
     ///   - the challenge has already been used
     #[instrument(level = "debug", target = COMPONENT, name = "faucet.server.validate", skip_all)]
-    fn validate(self, server: &Server) -> Result<MintRequest, InvalidMintRequest> {
+    fn validate(self, server: &Server) -> Result<MintRequest, MintRequestError> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -161,25 +161,25 @@ impl RawMintRequest {
         } else {
             AccountId::from_bech32(&self.account_id).map(|(_, account_id)| account_id)
         }
-        .map_err(InvalidMintRequest::AccountId)?;
+        .map_err(MintRequestError::AccountId)?;
 
         let asset_amount = server
             .mint_state
             .asset_options
             .validate(self.asset_amount)
-            .ok_or(InvalidMintRequest::AssetAmount(self.asset_amount))?;
+            .ok_or(MintRequestError::AssetAmount(self.asset_amount))?;
 
         // Check the API key, if provided
         let api_key = self.api_key.as_deref().map(ApiKey::decode).transpose()?;
         if let Some(api_key) = &api_key {
             if !server.api_keys.contains(api_key) {
-                return Err(InvalidMintRequest::InvalidApiKey(api_key.encode()));
+                return Err(MintRequestError::InvalidApiKey(api_key.encode()));
             }
         }
 
         // Validate Challenge and nonce
-        let challenge_str = self.challenge.ok_or(InvalidMintRequest::MissingPowParameters)?;
-        let nonce = self.nonce.ok_or(InvalidMintRequest::MissingPowParameters)?;
+        let challenge_str = self.challenge.ok_or(MintRequestError::MissingPowParameters)?;
+        let nonce = self.nonce.ok_or(MintRequestError::MissingPowParameters)?;
 
         server.submit_challenge(&challenge_str, nonce, account_id, &api_key.unwrap_or_default())?;
 

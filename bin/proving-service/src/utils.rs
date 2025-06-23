@@ -1,12 +1,11 @@
 use std::net::TcpListener;
 
+use miden_proving_service::{COMPONENT, error::ProvingServiceError};
 use pingora::{Error, ErrorType, http::ResponseHeader, protocols::http::ServerSession};
 use pingora_proxy::Session;
 use tracing::debug;
 
-use crate::{
-    COMPONENT, commands::PROXY_HOST, error::ProvingServiceError, proxy::metrics::QUEUE_DROP_COUNT,
-};
+use crate::{commands::PROXY_HOST, proxy::metrics::QUEUE_DROP_COUNT};
 
 const RESOURCE_EXHAUSTED_CODE: u16 = 8;
 

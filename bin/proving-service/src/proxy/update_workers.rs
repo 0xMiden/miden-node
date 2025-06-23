@@ -1,6 +1,7 @@
 use core::fmt;
 use std::sync::Arc;
 
+use miden_proving_service::COMPONENT;
 use pingora::{
     apps::{HttpServerApp, HttpServerOptions},
     http::ResponseHeader,
@@ -11,9 +12,7 @@ use tonic::async_trait;
 use tracing::{error, info};
 
 use super::LoadBalancerState;
-use crate::{
-    COMPONENT, commands::update_workers::UpdateWorkers, utils::create_response_with_error_message,
-};
+use crate::{commands::update_workers::UpdateWorkers, utils::create_response_with_error_message};
 
 /// The Load Balancer Updater Service.
 ///

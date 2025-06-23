@@ -8,10 +8,9 @@ pub fn rpc_api_descriptor() -> FileDescriptorSet {
         .expect("bytes should be a valid file descriptor created by build.rs")
 }
 
-/// Returns the Protobuf file descriptor for the proving service API.
-pub fn proving_service_api_descriptor() -> FileDescriptorSet {
-    let bytes =
-        include_bytes!(concat!(env!("OUT_DIR"), "/", "proving_service_file_descriptor.bin"));
+/// Returns the Protobuf file descriptor for the remote prover API.
+pub fn remote_prover_api_descriptor() -> FileDescriptorSet {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", "remote_prover_file_descriptor.bin"));
     FileDescriptorSet::decode(&bytes[..])
         .expect("bytes should be a valid file descriptor created by build.rs")
 }

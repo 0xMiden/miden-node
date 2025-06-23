@@ -7,7 +7,7 @@ use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL,
     batch::{BatchId, ProposedBatch, ProvenBatch},
 };
-use miden_proving_service_client::proving_service::batch_prover::RemoteBatchProver;
+use miden_remote_prover_client::remote_prover::batch_prover::RemoteBatchProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use rand::Rng;
 use tokio::{task::JoinSet, time};

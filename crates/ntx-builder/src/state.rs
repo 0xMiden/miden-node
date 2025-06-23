@@ -19,6 +19,8 @@ pub struct State {
     latest_header: BlockHeader,
     inflight: BTreeMap<TransactionId, InflightTx>,
     accounts: BTreeMap<AccountId, AccountState>,
+    notes: BTreeMap<Nullifier, NetworkNote>,
+    nullifiers: BTreeSet<Nullifier>,
 }
 
 impl State {
@@ -27,6 +29,8 @@ impl State {
             latest_header: genesis,
             inflight: Default::default(),
             accounts: Default::default(),
+            notes: Default::default(),
+            nullifiers: Default::default(),
         }
     }
 
@@ -44,6 +48,8 @@ impl State {
                 account_delta,
             } => {
                 // TODO: AccountUpdateDetails is the wrong type to use.
+                //
+                // TODO: Update AccountState
                 let account_id = account_delta.map(|delta| match delta {
                     AccountUpdateDetails::Private => unreachable!("Should never occur"),
                     AccountUpdateDetails::New(account) => account.id(),
@@ -56,10 +62,14 @@ impl State {
                     id,
                     InflightTx {
                         account_delta: account_id,
-                        nullifiers,
-                        notes: network_notes.iter().map(NetworkNote::id).collect(),
+                        nullifiers: nullifiers.clone(),
+                        notes: network_notes.iter().map(NetworkNote::nullifier).collect(),
                     },
                 );
+
+                self.notes
+                    .extend(network_notes.into_iter().map(|note| (note.nullifier(), note)));
+                self.nullifiers.extend(nullifiers);
             },
             MempoolEvent::BlockCommitted { header, txs } => {
                 assert!(header.prev_block_commitment() == self.latest_header.commitment());
@@ -77,6 +87,11 @@ impl State {
                             .expect("account with delta should be tracked")
                             .commit_one();
                     };
+
+                    for nullifier in tx.nullifiers {
+                        self.notes.remove(&nullifier);
+                        self.nullifiers.remove(&nullifier);
+                    }
                 }
             },
             MempoolEvent::TransactionsReverted(txs) => {
@@ -94,6 +109,14 @@ impl State {
 
                         if let Some(account) = account {
                             self.accounts.insert(account_id, account);
+                        }
+
+                        for nullifier in tx.nullifiers {
+                            self.nullifiers.remove(&nullifier);
+                        }
+
+                        for note in tx.notes {
+                            self.notes.remove(&note);
                         }
                     };
                 }
@@ -113,7 +136,7 @@ impl State {
 struct InflightTx {
     account_delta: Option<AccountId>,
     nullifiers: Vec<Nullifier>,
-    notes: Vec<NoteId>,
+    notes: Vec<Nullifier>,
 }
 
 struct AccountState {

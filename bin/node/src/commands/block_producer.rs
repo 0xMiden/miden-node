@@ -5,9 +5,9 @@ use tokio::time::Duration;
 use url::Url;
 
 use super::{
-    DEFAULT_BATCH_INTERVAL_MS, DEFAULT_BLOCK_INTERVAL_MS, DEFAULT_MONITOR_INTERVAL_MS,
-    ENV_BATCH_PROVER_URL, ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL,
-    ENV_NTX_BUILDER_URL, ENV_STORE_URL, parse_duration_ms,
+    DEFAULT_BATCH_INTERVAL, DEFAULT_BLOCK_INTERVAL, DEFAULT_MONITOR_INTERVAL, ENV_BATCH_PROVER_URL,
+    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_NTX_BUILDER_URL,
+    ENV_STORE_URL,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -44,30 +44,30 @@ pub enum BlockProducerCommand {
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL)]
         open_telemetry: bool,
 
-        /// Interval at which to produce blocks in milliseconds.
+        /// Interval at which to produce blocks.
         #[arg(
             long = "block.interval",
-            default_value = DEFAULT_BLOCK_INTERVAL_MS,
-            value_parser = parse_duration_ms,
-            value_name = "MILLISECONDS"
+            default_value = DEFAULT_BLOCK_INTERVAL,
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
         )]
         block_interval: Duration,
 
-        /// Interval at which to procude batches in milliseconds.
+        /// Interval at which to produce batches.
         #[arg(
             long = "batch.interval",
-            default_value = DEFAULT_BATCH_INTERVAL_MS,
-            value_parser = parse_duration_ms,
-            value_name = "MILLISECONDS"
+            default_value = DEFAULT_BATCH_INTERVAL,
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
         )]
         batch_interval: Duration,
 
-        /// Interval at which to monitor the system in milliseconds.
+        /// Interval at which to monitor the system.
         #[arg(
             long = "monitor.interval",
-            default_value = DEFAULT_MONITOR_INTERVAL_MS,
-            value_parser = parse_duration_ms,
-            value_name = "MILLISECONDS"
+            default_value = DEFAULT_MONITOR_INTERVAL,
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
         )]
         monitor_interval: Duration,
     },

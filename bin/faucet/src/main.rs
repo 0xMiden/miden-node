@@ -6,7 +6,7 @@ mod types;
 #[cfg(test)]
 mod stub_rpc_api;
 
-use std::{collections::BTreeSet, path::PathBuf};
+use std::{collections::BTreeSet, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use base64::{Engine, prelude::BASE64_STANDARD};
@@ -40,7 +40,7 @@ const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 const ENV_ENDPOINT: &str = "MIDEN_FAUCET_ENDPOINT";
 const ENV_NODE_URL: &str = "MIDEN_FAUCET_NODE_URL";
-const ENV_TIMEOUT: &str = "MIDEN_FAUCET_TIMEOUT_MS";
+const ENV_TIMEOUT: &str = "MIDEN_FAUCET_TIMEOUT";
 const ENV_ACCOUNT_PATH: &str = "MIDEN_FAUCET_ACCOUNT_PATH";
 const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
@@ -71,9 +71,9 @@ pub enum Command {
         #[arg(long = "node-url", value_name = "URL", env = ENV_NODE_URL)]
         node_url: Url,
 
-        /// Timeout for RPC requests in milliseconds.
-        #[arg(long = "timeout", value_name = "MILLISECONDS", default_value_t = 5000, env = ENV_TIMEOUT)]
-        timeout_ms: u64,
+        /// Timeout for RPC requests.
+        #[arg(long = "timeout", value_name = "DURATION", default_value = "5s", env = ENV_TIMEOUT, value_parser = humantime::parse_duration)]
+        timeout: Duration,
 
         /// Path to the faucet account file.
         #[arg(long = "account", value_name = "FILE", env = ENV_ACCOUNT_PATH)]
@@ -159,7 +159,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         Command::Start {
             endpoint,
             node_url,
-            timeout_ms,
+            timeout,
             faucet_account_path,
             remote_tx_prover_url,
             asset_amounts,
@@ -167,7 +167,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             api_keys,
             open_telemetry: _,
         } => {
-            let mut rpc_client = RpcClient::connect_lazy(&node_url, timeout_ms)
+            let mut rpc_client = RpcClient::connect_lazy(&node_url, timeout.as_millis() as u64)
                 .context("failed to create RPC client")?;
             let account_file = AccountFile::read(&faucet_account_path).context(format!(
                 "failed to load faucet account from file ({})",
@@ -459,7 +459,7 @@ mod test {
                     command: crate::Command::Start {
                         endpoint: endpoint_clone,
                         node_url: stub_node_url,
-                        timeout_ms: 5000,
+                        timeout: Duration::from_millis(5000),
                         asset_amounts: vec![100, 500, 1000],
                         api_keys: vec![],
                         pow_secret: None,

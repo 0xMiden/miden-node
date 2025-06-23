@@ -7,7 +7,7 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status, transport::Server};
 use tracing::{error, info, instrument};
 
-use super::worker::WorkerHealthStatus as RustWorkerHealthStatus;
+use super::worker::WorkerHealthStatus as NativeWorkerHealthStatus;
 use crate::{
     COMPONENT,
     commands::PROXY_HOST,
@@ -248,12 +248,12 @@ impl ProxyStatusUpdater {
 // UTILS
 // ================================================================================================
 
-impl From<&RustWorkerHealthStatus> for WorkerHealthStatus {
-    fn from(status: &RustWorkerHealthStatus) -> Self {
+impl From<&NativeWorkerHealthStatus> for WorkerHealthStatus {
+    fn from(status: &NativeWorkerHealthStatus) -> Self {
         match status {
-            RustWorkerHealthStatus::Healthy => WorkerHealthStatus::Healthy,
-            RustWorkerHealthStatus::Unhealthy { .. } => WorkerHealthStatus::Unhealthy,
-            RustWorkerHealthStatus::Unknown => WorkerHealthStatus::Unknown,
+            NativeWorkerHealthStatus::Healthy => WorkerHealthStatus::Healthy,
+            NativeWorkerHealthStatus::Unhealthy { .. } => WorkerHealthStatus::Unhealthy,
+            NativeWorkerHealthStatus::Unknown => WorkerHealthStatus::Unknown,
         }
     }
 }

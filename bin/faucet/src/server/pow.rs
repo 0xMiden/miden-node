@@ -88,7 +88,6 @@ impl PoW {
             .lock()
             .expect("challenge cache lock should not be poisoned")
             .num_challenges_for_api_key(api_key);
-        dbg!(&num_challenges);
         (num_challenges / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY)
     }
 
@@ -147,6 +146,8 @@ impl PoW {
             .expect("challenge cache lock should not be poisoned")
             .insert_challenge(challenge)
         {
+            // Note: this should never happen, since the user cannot request a new challenge while
+            // the previous one is still on the cache.
             return Err(InvalidMintRequest::ChallengeAlreadyUsed);
         }
 
@@ -198,7 +199,6 @@ impl ChallengeCache {
 
     /// Returns the number of challenges submitted for the given API key.
     pub fn num_challenges_for_api_key(&self, key: &ApiKey) -> usize {
-        dbg!(&self.challenges_per_key);
         self.challenges_per_key.get(key).copied().unwrap_or(0)
     }
 
@@ -270,11 +270,21 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
 
-        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let account_id = 0_u128.try_into().unwrap();
         let challenge = pow
             .build_challenge(PowRequest { account_id, api_key: api_key.clone() })
             .unwrap();
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
+
+        // Submit challenge with wrong nonce- should fail
+        let result = pow.submit_challenge(
+            challenge.timestamp,
+            &challenge.encode(),
+            nonce + 1,
+            account_id,
+            &api_key,
+        );
+        assert!(result.is_err());
 
         let result = pow.submit_challenge(
             challenge.timestamp,
@@ -285,11 +295,12 @@ mod tests {
         );
         assert!(result.is_ok());
 
-        // Try to use the same challenge again with different nonce- should fail
+        // Try to use the same challenge again with another account should fail
+        let account_id = 1_u128.try_into().unwrap();
         let result = pow.submit_challenge(
             challenge.timestamp,
             &challenge.encode(),
-            nonce + 1,
+            nonce,
             account_id,
             &api_key,
         );
@@ -358,14 +369,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn difficulty_is_adjusted_based_on_number_of_challenges() {
+    async fn submit_challenge_and_check_difficulty() {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
 
-        // Submit challenge
         let challenge = pow
             .build_challenge(PowRequest { account_id, api_key: api_key.clone() })
             .unwrap();

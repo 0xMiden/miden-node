@@ -247,7 +247,7 @@ impl Server {
         challenge: &str,
         nonce: u64,
         account_id: AccountId,
-        api_key: ApiKey,
+        api_key: &ApiKey,
     ) -> Result<(), InvalidMintRequest> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)

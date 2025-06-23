@@ -16,9 +16,22 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
+    position: relative;
+    overflow: hidden;
+}
+
+body::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
     background-image: url(./background.png);
-    background-repeat: no-repeat;
-    background-size: cover;
+    background-repeat: repeat;
+    background-size: 96px;
+    transform: rotate(-9.5deg);
+    z-index: -1;
 }
 
 #error-message {

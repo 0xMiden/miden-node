@@ -1,9 +1,8 @@
-use std::{collections::BTreeSet, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
-use crate::state::{PendingNotes, State};
+use crate::state::State;
 use anyhow::Context;
 use block_producer::BlockProducerClient;
-use data_store::NtxBuilderDataStore;
 use futures::{TryFutureExt, TryStream, TryStreamExt};
 use miden_node_proto::domain::{
     account::NetworkAccountError, mempool::MempoolEvent, note::NetworkNote,
@@ -14,11 +13,11 @@ use miden_objects::{
     account::AccountId,
     assembly::DefaultSourceManager,
     block::BlockNumber,
-    note::{Note, NoteId, NoteTag},
-    transaction::{ExecutedTransaction, InputNote, InputNotes, TransactionArgs, TransactionId},
+    note::Note,
+    transaction::{ExecutedTransaction, InputNote, InputNotes, TransactionArgs, },
 };
 use miden_tx::{
-    DataStore, NoteAccountExecution, NoteConsumptionChecker, TransactionExecutor,
+    NoteAccountExecution, NoteConsumptionChecker, TransactionExecutor,
     TransactionExecutorError, TransactionProverError,
 };
 use prover::NtbTransactionProver;
@@ -26,11 +25,10 @@ use store::{StoreClient, StoreError};
 use thiserror::Error;
 use tokio::{
     runtime::Builder as RtBuilder,
-    sync::Mutex,
-    task::{JoinHandle, spawn_blocking},
+    task::spawn_blocking,
     time,
 };
-use tracing::{Instrument, Span, debug, error, info, info_span, instrument, warn};
+use tracing::{Instrument, Span, error, info, instrument, warn};
 use url::Url;
 
 use crate::COMPONENT;
@@ -39,8 +37,6 @@ mod block_producer;
 mod data_store;
 mod prover;
 pub(crate) mod store;
-
-type SharedPendingNotes = Arc<Mutex<PendingNotes>>;
 
 // NETWORK TRANSACTION REQUEST
 // ================================================================================================
@@ -101,33 +97,44 @@ impl NetworkTransactionBuilder {
         }
     }
 
-    // #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.serve_once", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.serve_once", skip_all, err)]
     pub async fn serve_once(&self) -> anyhow::Result<()> {
         let store = StoreClient::new(&self.store_url);
         let block_prod = BlockProducerClient::new(self.block_producer_address);
         let tx_prover = NtbTransactionProver::from(self.tx_prover_url.clone());
-
-        let (mut state, mut stream) = Self::init(&store, &block_prod)
-            .await
-            .context("failed to initialize the ntx builder")?;
-
         let mut interval = tokio::time::interval(self.ticker_interval);
-        loop {
-            tokio::select! {
-                _tick = interval.tick() => match Self::build_network_tx(&state, &tx_prover, &block_prod).await {
-                    Ok(_) => todo!(),
-                    Err(_) => todo!(),
-                },
-                mempool_event = stream.try_next() => {
-                    match mempool_event {
-                        Ok(Some(event)) => state.update(event),
-                        Ok(None) => anyhow::bail!("mempool event stream ended"),
-                        Err(err) => return Err(err).context("mempool event stream encountered an error"),
-                    }
-                },
+
+        // This extra runtime is required to work-around miden-base objects not being Send/Sync due to dyn Trait object usage.
+        spawn_blocking(move || {
+            let rt = RtBuilder::new_current_thread()
+                .enable_all()
+                .build()
+                .context("failed to build runtime")?;
+
+            rt.block_on(async move {
+                
+            let (mut state, mut stream) = Self::init(&store, &block_prod)
+                .await
+                .context("failed to initialize the ntx builder")?;
+
+            loop {
+                tokio::select! {
+                    _tick = interval.tick() => match Self::build_network_tx(&state, &tx_prover, &block_prod).await {
+                        Ok(_) => todo!(),
+                        Err(_) => todo!(),
+                    },
+                    mempool_event = stream.try_next() => {
+                        match mempool_event {
+                            Ok(Some(event)) => state.update(event),
+                            Ok(None) => anyhow::bail!("mempool event stream ended"),
+                            Err(err) => return Err(err).context("mempool event stream encountered an error"),
+                        }
+                    },
+                }
             }
-        }
-    }
+        })
+    }).await.context("joining ntx builder runtime")?
+}
 
     async fn init(
         store: &StoreClient,
@@ -204,39 +211,8 @@ impl NetworkTransactionBuilder {
     ///
     /// If this function errors, the notes are effectively discarded because [`Self::rollback_tx()`]
     /// is not called.
-    async fn select_next_tx(state: &State) -> Option<NetworkTransactionRequest> {
+    async fn select_next_tx(_state: &State) -> Option<NetworkTransactionRequest> {
         todo!()
-        // let Some((tag, notes)) = api_state.lock().await.take_next_notes_by_tag() else {
-        //     return Ok(None);
-        // };
-
-        // let span = info_span!("ntx_builder.select_next_batch");
-        // span.set_attribute("ntx.tag", tag.as_u32());
-
-        // let block_num = Self::prepare_blockchain_data(data_store).await?;
-        // let account_id = Self::get_account_for_ntx(data_store, tag).await?;
-
-        // match account_id {
-        //     Some(id) => Ok(Some(NetworkTransactionRequest::new(id, block_num, notes))),
-        //     // No network account found for note tag, discard (notes are not requeued)
-        //     None => Ok(None),
-        // }
-    }
-
-    /// Gets the account from the cache or from the store if it's not found in the cache.
-    #[instrument(target = COMPONENT, name = "ntx_builder.get_account_for_batch", skip_all, err)]
-    async fn get_account_for_ntx(
-        data_store: &Arc<NtxBuilderDataStore>,
-        tag: NoteTag,
-    ) -> Result<Option<AccountId>, NtxBuilderError> {
-        let account = data_store.get_cached_acc_or_fetch_by_tag(tag).await?;
-
-        let Some(account) = account else {
-            warn!(target: COMPONENT, "Network account details for tag {tag} not found in the store");
-            return Ok(None);
-        };
-
-        Ok(Some(account.id()))
     }
 
     /// Filters the [`NetworkTransactionRequest`]'s notes by making one consumption check against
@@ -256,12 +232,12 @@ impl NetworkTransactionBuilder {
                 .collect(),
         )?;
 
-        // TODO: ensure that the incoming data store in the executor already has these inserted.
-        // This could be done in State whenever a new note arrives, or we could
-        // build a custom type with (State, TxMastForest) which impls DataStore instead.
-        // for note in input_notes.iter() {
-        //     data_store.insert_note_script_mast(note.note().script());
-        // }
+        // // TODO: ensure that the incoming data store in the executor already has these inserted.
+        // // This could be done in State whenever a new note arrives, or we could
+        // // build a custom type with (State, TxMastForest) which impls DataStore instead.
+        // // for note in input_notes.iter() {
+        // //     data_store.insert_note_script_mast(note.note().script());
+        // // }
 
         let executor = TransactionExecutor::new(state, None);
         let checker = NoteConsumptionChecker::new(&executor);
@@ -345,24 +321,9 @@ impl NetworkTransactionBuilder {
         block_prod: &BlockProducerClient,
         executed_tx: ExecutedTransaction,
     ) -> Result<ExecutedTransaction, NtxBuilderError> {
-        tx_prover.prove_and_submit(block_prod, &executed_tx).await?;
+        tx_prover.prove_and_submit(block_prod, executed_tx.clone()).await?;
 
         Ok(executed_tx)
-    }
-
-    /// Rolls back the transaction. This should be executed if the execution stage of the pipeline
-    /// failed. Specifically, this involves requeuing notes and evicting the account from the
-    /// cache.
-    #[instrument(target = COMPONENT, name = "ntx_builder.rollback_tx", skip_all)]
-    async fn rollback_tx(
-        tx_request: NetworkTransactionRequest,
-        api_state: &SharedPendingNotes,
-        data_store: &Arc<NtxBuilderDataStore>,
-    ) {
-        // Roll back any state changes and re-queue notes if needed
-        data_store.evict_account(tx_request.account_id);
-
-        api_state.lock().await.queue_unconsumed_notes(tx_request.notes_to_execute);
     }
 }
 

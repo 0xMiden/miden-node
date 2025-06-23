@@ -6,7 +6,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY . .
+COPY ./Cargo.toml .
+COPY ./Cargo.lock .
+COPY ./bin ./bin
+COPY ./crates ./crates
+COPY ./proto ./proto
 
 RUN cargo install --path bin/node --locked
 RUN rm -rf data accounts && mkdir data accounts

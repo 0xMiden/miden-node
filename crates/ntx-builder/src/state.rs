@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::{
+    collections::{BTreeMap, BTreeSet, VecDeque},
+    slice::Iter,
+};
 
 use miden_node_proto::domain::{mempool::MempoolEvent, note::NetworkNote};
 use miden_objects::{
@@ -28,7 +31,7 @@ impl State {
         todo!()
     }
 
-    pub fn arbitrary_unconsumed_note(&self) -> Option<&NetworkNote> {
+    pub fn account_with_unconsumed_notes(&self) -> Option<(&Account, Iter<&NetworkNote>)> {
         todo!()
     }
 }

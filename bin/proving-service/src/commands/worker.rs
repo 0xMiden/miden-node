@@ -7,7 +7,7 @@ use tonic_health::server::health_reporter;
 use tonic_web::GrpcWebLayer;
 use tracing::{info, instrument};
 
-use crate::{api::RpcListener, generated::api_server::ApiServer, utils::MIDEN_PROVING_SERVICE};
+use crate::{COMPONENT, api::RpcListener, generated::api_server::ApiServer};
 
 /// Specifies the type of proving task a worker can handle.
 #[derive(Debug, Clone, Copy, Default, ValueEnum, PartialEq, Serialize, Deserialize)]
@@ -79,7 +79,7 @@ impl StartWorker {
     /// The worker includes a health reporter that will mark the service as serving, following the
     /// [gRPC health checking protocol](
     /// https://github.com/grpc/grpc-proto/blob/master/grpc/health/v1/health.proto).
-    #[instrument(target = MIDEN_PROVING_SERVICE, name = "worker:execute")]
+    #[instrument(target = COMPONENT, name = "worker.execute")]
     pub async fn execute(&self) -> Result<(), String> {
         let host = if self.localhost { "127.0.0.1" } else { "0.0.0.0" };
         let worker_addr = format!("{}:{}", host, self.port);
@@ -88,9 +88,13 @@ impl StartWorker {
             self.prover_type,
         );
 
-        info!(
-            "Server listening on {}",
-            rpc.listener.local_addr().map_err(|err| err.to_string())?
+        let server_addr = rpc.listener.local_addr().map_err(|err| err.to_string())?;
+        info!(target: COMPONENT,
+            endpoint = %server_addr,
+            prover_type = ?self.prover_type,
+            host = %host,
+            port = %self.port,
+            "Worker server initialized and listening"
         );
 
         // Create a health reporter

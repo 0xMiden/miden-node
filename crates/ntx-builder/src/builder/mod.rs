@@ -35,7 +35,6 @@ use url::Url;
 use crate::COMPONENT;
 
 mod block_producer;
-mod data_store;
 mod prover;
 pub(crate) mod store;
 

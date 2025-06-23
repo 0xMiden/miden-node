@@ -2,13 +2,6 @@
 
 ## v0.10.0 (TBD)
 
-### Changes
-
-- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
-- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
-- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
-- [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
-
 ### Enhancements
 
 - Added support for gRPC server side reflection to all components (#949).
@@ -21,6 +14,10 @@
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
 - [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
+- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
+- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
+- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
+- [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
 
 ### Fixes

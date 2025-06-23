@@ -13,6 +13,8 @@ use miden_objects::{
 
 use crate::errors::GenesisError;
 
+mod config;
+
 // GENESIS STATE
 // ================================================================================================
 

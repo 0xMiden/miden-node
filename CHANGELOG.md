@@ -2,10 +2,19 @@
 
 ## v0.10.0 (TBD)
 
+### Changes
+
+- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
+- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
+- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
+- [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
+
 ### Enhancements
 
 - Added support for gRPC server side reflection to all components (#949).
-- Added support for TLS to `miden-proving-service-client` (#968).
+- Compressed faucet background image (#985).
+- Added support for TLS to miden-proving-service-client (#968).
+- Added support for TLS to faucet's connection to node RPC (#976).
 
 ### Changes
 

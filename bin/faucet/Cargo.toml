@@ -37,7 +37,6 @@ sha3                         = { version = "0.10" }
 thiserror                    = { workspace = true }
 tokio                        = { features = ["fs"], workspace = true }
 tokio-stream                 = { features = ["net"], workspace = true }
-toml                         = { version = "0.8" }
 tonic                        = { features = ["tls-native-roots"], workspace = true }
 tower                        = { workspace = true }
 tower-http                   = { features = ["cors", "set-header", "trace"], workspace = true }
@@ -57,7 +56,7 @@ miden-testing             = { features = ["async"], workspace = true }
 serde_json                = { version = "1.0" }
 tokio                     = { features = ["process"], workspace = true }
 tokio-stream              = { features = ["net"], workspace = true }
-tonic-web                 = { version = "0.12" }
+tonic-web                 = { version = "0.13" }
 
 # Required to avoid false positives in cargo-machete
 # This is due to the `winter-maybe-async` crate not working standalone.

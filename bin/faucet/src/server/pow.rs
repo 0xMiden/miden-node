@@ -88,6 +88,7 @@ impl PoW {
             .lock()
             .expect("challenge cache lock should not be poisoned")
             .num_challenges_for_api_key(api_key);
+        dbg!(&num_challenges);
         (num_challenges / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY)
     }
 
@@ -181,7 +182,10 @@ impl ChallengeCache {
 
         let is_new = self.challenges.insert(challenge);
         if is_new {
-            self.challenges_per_key.entry(api_key).and_modify(|c| *c += 1).or_insert(1);
+            self.challenges_per_key
+                .entry(api_key)
+                .and_modify(|c| *c = c.saturating_add(1))
+                .or_insert(1);
             self.account_ids.insert(account_id);
         }
         is_new
@@ -194,6 +198,7 @@ impl ChallengeCache {
 
     /// Returns the number of challenges submitted for the given API key.
     pub fn num_challenges_for_api_key(&self, key: &ApiKey) -> usize {
+        dbg!(&self.challenges_per_key);
         self.challenges_per_key.get(key).copied().unwrap_or(0)
     }
 
@@ -208,15 +213,15 @@ impl ChallengeCache {
             .as_secs();
 
         self.challenges.retain(|challenge| {
-            let expired = (current_time - challenge.timestamp) <= CHALLENGE_LIFETIME_SECONDS;
+            let expired = (current_time - challenge.timestamp) >= CHALLENGE_LIFETIME_SECONDS;
             if expired {
                 self.challenges_per_key
                     .entry(challenge.api_key.clone())
-                    .and_modify(|c| *c -= 1)
+                    .and_modify(|c| *c = c.saturating_sub(1))
                     .or_insert(0);
                 self.account_ids.remove(&challenge.account_id);
             }
-            expired
+            !expired
         });
     }
 
@@ -350,5 +355,25 @@ mod tests {
         let result = pow.build_challenge(PowRequest { account_id, api_key });
         assert!(result.is_err());
         assert!(matches!(result.err(), Some(InvalidPowRequest::RateLimited)));
+    }
+
+    #[tokio::test]
+    async fn difficulty_is_adjusted_based_on_number_of_challenges() {
+        let secret = create_test_secret();
+        let pow = PoW::new(secret);
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+
+        // Submit challenge
+        let challenge = pow
+            .build_challenge(PowRequest { account_id, api_key: api_key.clone() })
+            .unwrap();
+        let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
+        pow.submit_challenge(challenge.timestamp, &challenge.encode(), nonce, account_id, &api_key)
+            .unwrap();
+
+        assert_eq!(pow.challenge_cache.lock().unwrap().num_challenges_for_api_key(&api_key), 1);
+        assert_eq!(pow.get_difficulty(&api_key), 1);
     }
 }

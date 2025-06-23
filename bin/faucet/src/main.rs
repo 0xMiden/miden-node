@@ -1,4 +1,3 @@
-mod config;
 mod faucet;
 mod rpc_client;
 mod server;
@@ -13,9 +12,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use faucet::Faucet;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
-use miden_node_utils::{
-    config::load_config, crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion,
-};
+use miden_node_utils::{crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion};
 use miden_objects::{
     Felt,
     account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
@@ -27,25 +24,29 @@ use rand_chacha::ChaCha20Rng;
 use rpc_client::RpcClient;
 use server::Server;
 use tokio::sync::mpsc;
+use types::AssetOptions;
 use url::Url;
 
-use crate::{
-    config::{DEFAULT_FAUCET_ACCOUNT_PATH, FaucetConfig},
-    server::ApiKey,
-};
+use crate::server::ApiKey;
 
 // CONSTANTS
 // =================================================================================================
 
-const COMPONENT: &str = "miden-faucet";
-const FAUCET_CONFIG_FILE_PATH: &str = "miden-faucet.toml";
-const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 pub const REQUESTS_QUEUE_SIZE: usize = 1000;
-const DEFAULT_API_KEYS_COUNT: &str = "1";
-
-// TODO: we should probably parse this from the config file
+const COMPONENT: &str = "miden-faucet";
+// TODO: Make these configurable.
 const NETWORK_ID: NetworkId = NetworkId::Testnet;
 const EXPLORER_URL: &str = "https://testnet.midenscan.com";
+
+const ENV_ENDPOINT: &str = "MIDEN_FAUCET_ENDPOINT";
+const ENV_NODE_URL: &str = "MIDEN_FAUCET_NODE_URL";
+const ENV_TIMEOUT: &str = "MIDEN_FAUCET_TIMEOUT_MS";
+const ENV_ACCOUNT_PATH: &str = "MIDEN_FAUCET_ACCOUNT_PATH";
+const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
+const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
+const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
+const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
+const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 
 // COMMANDS
 // ================================================================================================
@@ -57,50 +58,78 @@ pub struct Cli {
     pub command: Command,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 pub enum Command {
     /// Start the faucet server
     Start {
-        #[arg(short, long, value_name = "FILE", default_value = FAUCET_CONFIG_FILE_PATH)]
-        config: PathBuf,
+        /// Endpoint of the faucet in the format `<ip>:<port>`.
+        #[arg(long = "endpoint", value_name = "URL", env = ENV_ENDPOINT)]
+        endpoint: Url,
+
+        /// Node RPC gRPC endpoint in the format `http://<host>[:<port>]`.
+        #[arg(long = "node-url", value_name = "URL", env = ENV_NODE_URL)]
+        node_url: Url,
+
+        /// Timeout for RPC requests in milliseconds.
+        #[arg(long = "timeout", value_name = "MILLISECONDS", default_value_t = 5000, env = ENV_TIMEOUT)]
+        timeout_ms: u64,
+
+        /// Path to the faucet account file.
+        #[arg(long = "account", value_name = "FILE", env = ENV_ACCOUNT_PATH)]
+        faucet_account_path: PathBuf,
+
+        /// Comma-separated list of amounts of asset that should be dispersed on each request.
+        #[arg(long = "asset-amounts", value_name = "U64", env = ENV_ASSET_AMOUNTS, num_args = 1.., value_delimiter = ',', default_value = "100,500,1000")]
+        asset_amounts: Vec<u64>,
+
+        /// Endpoint of the remote transaction prover in the format `<protocol>://<host>[:<port>]`.
+        #[arg(long = "remote-tx-prover-url", value_name = "URL", env = ENV_REMOTE_TX_PROVER_URL)]
+        remote_tx_prover_url: Option<Url>,
+
+        /// The secret to be used by the server to generate the `PoW` seed.
+        #[arg(long = "pow-secret", value_name = "STRING", env = ENV_POW_SECRET)]
+        pow_secret: Option<String>,
+
+        /// Comma-separated list of API keys.
+        #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
+        api_keys: Vec<String>,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
         /// This can be further configured using environment variables as defined in the official
         /// OpenTelemetry documentation. See our operator manual for further details.
-        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL)]
+        #[arg(long = "enable-otel", value_name = "BOOL", default_value_t = false, env = ENV_ENABLE_OTEL)]
         open_telemetry: bool,
     },
 
-    /// Create a new public faucet account and save to the specified file
+    /// Create a new public faucet account and save to the specified file.
     CreateFaucetAccount {
-        #[arg(short, long, value_name = "FILE", default_value = DEFAULT_FAUCET_ACCOUNT_PATH)]
-        output_path: PathBuf,
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "FILE")]
+        output: PathBuf,
+        #[arg(short, long, value_name = "STRING")]
         token_symbol: String,
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "U8")]
         decimals: u8,
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "U64")]
         max_supply: u64,
     },
 
-    /// Generate default configuration file for the faucet
-    Init {
-        #[arg(short, long, default_value = FAUCET_CONFIG_FILE_PATH)]
-        config_path: String,
-        #[arg(short, long, default_value = DEFAULT_FAUCET_ACCOUNT_PATH)]
-        faucet_account_path: String,
-        #[arg(short, long, default_value = DEFAULT_API_KEYS_COUNT)]
-        generated_api_keys_count: u8,
-        #[arg(short, long)]
-        node_url: Option<String>,
+    /// Generate API keys that can be used by the faucet.
+    ///
+    /// Prints out the specified number of API keys to stdout as a comma-separated list.
+    /// This list can be supplied to the faucet via the `--api-keys` flag or `MIDEN_FAUCET_API_KEYS`
+    /// env var of the start command.
+    CreateApiKeys {
+        #[arg()]
+        count: u8,
     },
 }
 
 impl Command {
     fn open_telemetry(&self) -> OpenTelemetry {
         if match *self {
-            Command::Start { config: _, open_telemetry } => open_telemetry,
+            Command::Start { open_telemetry, .. } => open_telemetry,
             _ => false,
         } {
             OpenTelemetry::Enabled
@@ -129,49 +158,55 @@ async fn main() -> anyhow::Result<()> {
     reason = "This will be shorter once config file is removed"
 )]
 async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
-    match &cli.command {
+    match cli.command {
         // Note: open-telemetry is handled in main.
-        Command::Start { config, open_telemetry: _ } => {
-            let config: FaucetConfig =
-                load_config(config).context("failed to load configuration file")?;
-
-            let mut rpc_client = RpcClient::connect_lazy(&config.node_url, config.timeout_ms)
+        Command::Start {
+            endpoint,
+            node_url,
+            timeout_ms,
+            faucet_account_path,
+            remote_tx_prover_url,
+            asset_amounts,
+            pow_secret,
+            api_keys,
+            open_telemetry: _,
+        } => {
+            let mut rpc_client = RpcClient::connect_lazy(&node_url, timeout_ms)
                 .context("failed to create RPC client")?;
-            let account_file = AccountFile::read(&config.faucet_account_path)
-                .context("failed to load faucet account from file")?;
+            let account_file = AccountFile::read(&faucet_account_path).context(format!(
+                "failed to load faucet account from file ({})",
+                faucet_account_path.display()
+            ))?;
 
-            let faucet =
-                Faucet::load(account_file, &mut rpc_client, config.remote_tx_prover_url).await?;
+            let faucet = Faucet::load(account_file, &mut rpc_client, remote_tx_prover_url).await?;
 
             // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
 
-            let api_keys = config
-                .api_keys
+            let api_keys = api_keys
                 .iter()
                 .map(|k| ApiKey::decode(k))
                 .collect::<Result<Vec<_>, _>>()
                 .context("failed to decode API keys")?;
-
+            let asset_options = AssetOptions::new(asset_amounts)
+                .map_err(|e| anyhow::anyhow!("failed to create asset options: {}", e))?;
             let server = Server::new(
                 faucet.faucet_id(),
-                config.asset_amount_options.clone(),
+                asset_options,
                 tx_requests,
-                &config.pow_secret,
+                pow_secret.unwrap_or_default().as_str(),
                 &api_keys,
             );
-
-            // Capture in a variable to avoid moving into two branches
-            let config_endpoint = config.endpoint;
 
             // Use select to concurrently:
             // - Run and wait for the faucet (on current thread)
             // - Run and wait for server (in a spawned task)
             let faucet_future = faucet.run(rpc_client, rx_requests);
             let server_future = async {
-                let server_handle = tokio::spawn(async move {
-                    server.serve(config_endpoint).await.context("server failed")
-                });
+                let server_handle =
+                    tokio::spawn(
+                        async move { server.serve(endpoint).await.context("server failed") },
+                    );
                 server_handle.await.context("failed to join server task")?
             };
 
@@ -188,7 +223,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         },
 
         Command::CreateFaucetAccount {
-            output_path,
+            output: output_path,
             token_symbol,
             decimals,
             max_supply,
@@ -206,16 +241,19 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 rng.random(),
                 TokenSymbol::try_from(token_symbol.as_str())
                     .context("failed to parse token symbol")?,
-                *decimals,
-                Felt::try_from(*max_supply)
+                decimals,
+                Felt::try_from(max_supply)
                     .expect("max supply value is greater than or equal to the field modulus"),
                 AccountStorageMode::Public,
                 AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
             )
             .context("failed to create basic fungible faucet account")?;
 
-            let account_data =
-                AccountFile::new(account, Some(account_seed), AuthSecretKey::RpoFalcon512(secret));
+            let account_data = AccountFile::new(
+                account,
+                Some(account_seed),
+                vec![AuthSecretKey::RpoFalcon512(secret)],
+            );
 
             let output_path = current_dir.join(output_path);
             account_data.write(&output_path).with_context(|| {
@@ -225,37 +263,13 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             println!("Faucet account file successfully created at: {}", output_path.display());
         },
 
-        Command::Init {
-            config_path,
-            faucet_account_path,
-            generated_api_keys_count,
-            node_url,
-        } => {
-            let current_dir =
-                std::env::current_dir().context("failed to open current directory")?;
-
-            let config_file_path = current_dir.join(config_path);
-
+        Command::CreateApiKeys { count: key_count } => {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
-            let api_keys = (0..*generated_api_keys_count)
+            let keys = (0..key_count)
                 .map(|_| ApiKey::generate(&mut rng).encode())
-                .collect::<Vec<_>>();
-
-            let mut config = FaucetConfig {
-                faucet_account_path: faucet_account_path.into(),
-                api_keys,
-                ..FaucetConfig::default()
-            };
-            if let Some(url) = node_url {
-                config.node_url = Url::parse(url).context("failed to parse node URL")?;
-            }
-            let config_as_toml_string =
-                toml::to_string(&config).context("failed to serialize default config")?;
-
-            std::fs::write(&config_file_path, config_as_toml_string)
-                .context("error writing config to file")?;
-
-            println!("Config file successfully created at: {}", config_file_path.display());
+                .collect::<Vec<_>>()
+                .join(",");
+            println!("{keys}");
         },
     }
 
@@ -294,7 +308,7 @@ mod test {
     use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
 
-    use crate::{Cli, config::FaucetConfig, run_faucet_command, stub_rpc_api::serve_stub};
+    use crate::{Cli, run_faucet_command, stub_rpc_api::serve_stub};
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
     /// to test the faucet website. It then loads the website and checks that all the requests
@@ -418,22 +432,12 @@ mod test {
             async move { serve_stub(&stub_node_url).await.unwrap() }
         });
 
-        let config_path = temp_dir().join("faucet.toml");
-        let faucet_account_path = temp_dir().join("account.mac");
-
-        // Create config
-        let config = FaucetConfig {
-            node_url: stub_node_url,
-            faucet_account_path: faucet_account_path.clone(),
-            ..FaucetConfig::default()
-        };
-        let config_as_toml_string = toml::to_string(&config).unwrap();
-        std::fs::write(&config_path, config_as_toml_string).unwrap();
+        let faucet_account_path = temp_dir().join("faucet.mac");
 
         // Create faucet account
         run_faucet_command(Cli {
             command: crate::Command::CreateFaucetAccount {
-                output_path: faucet_account_path.clone(),
+                output: faucet_account_path.clone(),
                 token_symbol: "TEST".to_string(),
                 decimals: 6,
                 max_supply: 1_000_000_000_000,
@@ -444,6 +448,7 @@ mod test {
 
         // Start the faucet connected to the stub
         // Use std::thread to launch faucet - avoids Send requirements
+        let endpoint_clone = Url::parse("http://localhost:8080").unwrap();
         std::thread::spawn(move || {
             // Create a new runtime for this thread
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -455,7 +460,14 @@ mod test {
             rt.block_on(async {
                 run_faucet_command(Cli {
                     command: crate::Command::Start {
-                        config: config_path,
+                        endpoint: endpoint_clone,
+                        node_url: stub_node_url,
+                        timeout_ms: 5000,
+                        asset_amounts: vec![100, 500, 1000],
+                        api_keys: vec![],
+                        pow_secret: None,
+                        faucet_account_path: faucet_account_path.clone(),
+                        remote_tx_prover_url: None,
                         open_telemetry: false,
                     },
                 })
@@ -465,7 +477,8 @@ mod test {
         });
 
         // Wait for faucet to be up
-        let addr = config.endpoint.to_socket().unwrap();
+        let endpoint = Url::parse("http://localhost:8080").unwrap();
+        let addr = endpoint.to_socket().unwrap();
         let start = Instant::now();
         let timeout = Duration::from_secs(10);
         loop {
@@ -478,7 +491,7 @@ mod test {
             }
         }
 
-        config.endpoint
+        endpoint
     }
 
     async fn start_fantoccini_client() -> fantoccini::Client {

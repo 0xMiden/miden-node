@@ -1,17 +1,13 @@
-pub mod api;
-pub mod commands;
-pub mod error;
-mod generated;
-pub mod proxy;
-mod utils;
-use commands::Cli;
-use utils::setup_tracing;
+use miden_node_utils::logging::{OpenTelemetry, setup_tracing};
+use miden_proving_service::{COMPONENT, commands::Cli};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<(), String> {
     use clap::Parser;
 
-    setup_tracing()?;
+    setup_tracing(OpenTelemetry::Enabled).map_err(|e| e.to_string())?;
+    info!(target: COMPONENT, "Tracing initialized");
 
     // read command-line args
     let cli = Cli::parse();
@@ -28,6 +24,7 @@ mod test {
     use std::time::Duration;
 
     use miden_lib::transaction::TransactionKernel;
+    use miden_node_utils::cors::cors_for_grpc_web_layer;
     use miden_objects::{
         asset::{Asset, FungibleAsset},
         note::NoteType,
@@ -37,16 +34,16 @@ mod test {
         },
         transaction::{ProvenTransaction, TransactionScript, TransactionWitness},
     };
-    use miden_testing::{Auth, MockChain};
-    use miden_tx::utils::Serializable;
-    use tokio::net::TcpListener;
-    use tonic::Request;
-
-    use crate::{
+    use miden_proving_service::{
         api::ProverRpcApi,
         commands::worker::ProverType,
         generated::{ProofType, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
     };
+    use miden_testing::{Auth, MockChain};
+    use miden_tx::utils::Serializable;
+    use tokio::net::TcpListener;
+    use tonic::Request;
+    use tonic_web::GrpcWebLayer;
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_prove_transaction() {
@@ -61,7 +58,9 @@ mod test {
         tokio::spawn(async move {
             tonic::transport::Server::builder()
                 .accept_http1(true)
-                .add_service(tonic_web::enable(api_service))
+                .layer(cors_for_grpc_web_layer())
+                .layer(GrpcWebLayer::new())
+                .add_service(api_service)
                 .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
                 .await
                 .unwrap();

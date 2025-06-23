@@ -1,19 +1,16 @@
 FROM rust:1.87-slim-bullseye AS builder
 
 WORKDIR /app
-COPY . .
+COPY ./Cargo.toml .
+COPY ./Cargo.lock .
+COPY ./bin ./bin
+COPY ./crates ./crates
+COPY ./proto ./proto
 
 RUN cargo install --path bin/faucet --locked
 
-# Connect to the node using `host.docker.internal`. This assumes that the node is running on the 
-# same host machine.
-RUN miden-faucet init \
-    --faucet-account-path faucet.mac \
-    --config-path miden-faucet.toml \
-    --node-url http://host.docker.internal:57291
-
 RUN miden-faucet create-faucet-account \
-    --output-path faucet.mac \
+    --output faucet.mac \
     --token-symbol MIDEN \
     --decimals 6 \
     --max-supply 100000000000000000

@@ -15,10 +15,12 @@ use miden_node_proto::generated::{
     },
     rpc::api_server,
 };
+use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_testing::MockChain;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status};
+use tonic_web::GrpcWebLayer;
 use url::Url;
 
 #[derive(Clone)]
@@ -129,7 +131,9 @@ pub async fn serve_stub(endpoint: &Url) -> anyhow::Result<()> {
 
     tonic::transport::Server::builder()
         .accept_http1(true)
-        .add_service(tonic_web::enable(api_service)) // tonic_web::enable is needed to support grpc-web calls
+        .layer(cors_for_grpc_web_layer())
+        .layer(GrpcWebLayer::new())
+        .add_service(api_service)
         .serve_with_incoming(TcpListenerStream::new(listener))
         .await
         .context("failed to serve stub RPC API")

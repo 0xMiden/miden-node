@@ -7,14 +7,15 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status, transport::Server};
 use tracing::{error, info, instrument};
 
-use super::worker::WorkerHealthStatus as NativeWorkerHealthStatus;
+use super::worker::WorkerHealthStatus;
 use crate::{
     COMPONENT,
     commands::PROXY_HOST,
     generated::{
         proving_service::ProofType,
         proxy_status::{
-            ProxyStatusRequest, ProxyStatusResponse, WorkerHealthStatus, WorkerStatus,
+            ProxyStatusRequest, ProxyStatusResponse,
+            WorkerHealthStatus as GeneratedWorkerHealthStatus, WorkerStatus,
             proxy_status_api_server::{ProxyStatusApi, ProxyStatusApiServer},
         },
     },
@@ -248,12 +249,12 @@ impl ProxyStatusUpdater {
 // UTILS
 // ================================================================================================
 
-impl From<&NativeWorkerHealthStatus> for WorkerHealthStatus {
-    fn from(status: &NativeWorkerHealthStatus) -> Self {
+impl From<&WorkerHealthStatus> for GeneratedWorkerHealthStatus {
+    fn from(status: &WorkerHealthStatus) -> Self {
         match status {
-            NativeWorkerHealthStatus::Healthy => WorkerHealthStatus::Healthy,
-            NativeWorkerHealthStatus::Unhealthy { .. } => WorkerHealthStatus::Unhealthy,
-            NativeWorkerHealthStatus::Unknown => WorkerHealthStatus::Unknown,
+            WorkerHealthStatus::Healthy => GeneratedWorkerHealthStatus::Healthy,
+            WorkerHealthStatus::Unhealthy { .. } => GeneratedWorkerHealthStatus::Unhealthy,
+            WorkerHealthStatus::Unknown => GeneratedWorkerHealthStatus::Unknown,
         }
     }
 }

@@ -2587,7 +2587,6 @@ dependencies = [
  "reqwest",
  "semver 1.0.26",
  "serde",
- "serde_json",
  "serde_qs",
  "thiserror 2.0.12",
  "tokio",

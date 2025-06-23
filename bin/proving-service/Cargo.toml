@@ -23,50 +23,46 @@ default    = ["concurrent"]
 workspace = true
 
 [dependencies]
-async-trait                        = { version = "0.1" }
-axum                               = { version = "0.8" }
-bytes                              = { version = "1.0" }
-clap                               = { features = ["derive", "env"], version = "4.5" }
-miden-block-prover                 = { workspace = true }
-miden-lib                          = { workspace = true }
-miden-node-utils                   = { workspace = true }
-miden-objects                      = { features = ["std"], workspace = true }
-miden-tx                           = { features = ["std"], workspace = true }
-miden-tx-batch-prover              = { features = ["std"], workspace = true }
-opentelemetry                      = { features = ["metrics", "trace"], version = "0.30" }
-opentelemetry-otlp                 = { features = ["grpc-tonic"], version = "0.30" }
-opentelemetry-semantic-conventions = { version = "0.30" }
-opentelemetry_sdk                  = { features = ["metrics", "rt-tokio"], version = "0.30" }
-pingora                            = { features = ["lb"], version = "0.5" }
-pingora-core                       = { version = "0.5" }
-pingora-limits                     = { version = "0.5" }
-pingora-proxy                      = { version = "0.5" }
-prometheus                         = { version = "0.14" }
-prost                              = { default-features = false, features = ["derive"], version = "0.13" }
-reqwest                            = { version = "0.12" }
-semver                             = { version = "1.0" }
-serde                              = { features = ["derive"], version = "1.0" }
-serde_json                         = { version = "1.0" }
-serde_qs                           = { version = "0.15" }
-thiserror                          = { workspace = true }
-tokio                              = { features = ["full"], version = "1.44" }
-tokio-stream                       = { features = ["net"], version = "0.1" }
-tonic                              = { default-features = false, features = ["codegen", "prost", "router", "transport"], version = "0.13" }
-tonic-health                       = { version = "0.13" }
-tonic-web                          = { version = "0.13" }
-tracing                            = { version = "0.1" }
-tracing-opentelemetry              = { version = "0.31" }
-tracing-subscriber                 = { features = ["env-filter", "fmt", "json"], version = "0.3" }
-uuid                               = { features = ["v4"], version = "1.16" }
+async-trait           = { version = "0.1" }
+axum                  = { version = "0.8" }
+bytes                 = { version = "1.0" }
+clap                  = { features = ["derive", "env"], version = "4.5" }
+miden-block-prover    = { workspace = true }
+miden-lib             = { workspace = true }
+miden-node-utils      = { workspace = true }
+miden-objects         = { features = ["std"], workspace = true }
+miden-tx              = { features = ["std"], workspace = true }
+miden-tx-batch-prover = { features = ["std"], workspace = true }
+pingora               = { features = ["lb"], version = "0.5" }
+pingora-core          = { version = "0.5" }
+pingora-limits        = { version = "0.5" }
+pingora-proxy         = { version = "0.5" }
+prometheus            = { version = "0.14" }
+prost                 = { default-features = false, features = ["derive"], version = "0.13" }
+reqwest               = { version = "0.12" }
+semver                = { version = "1.0" }
+serde                 = { features = ["derive"], version = "1.0" }
+serde_json            = { version = "1.0" }
+serde_qs              = { version = "0.15" }
+thiserror             = { workspace = true }
+tokio                 = { features = ["full"], version = "1.44" }
+tokio-stream          = { features = ["net"], version = "0.1" }
+tonic                 = { default-features = false, features = ["codegen", "prost", "router", "transport"], version = "0.13" }
+tonic-health          = { version = "0.13" }
+tonic-web             = { version = "0.13" }
+tracing               = { version = "0.1" }
+uuid                  = { features = ["v4"], version = "1.16" }
 
 [dev-dependencies]
 miden-lib     = { features = ["testing"], workspace = true }
 miden-objects = { features = ["testing"], workspace = true }
 miden-testing = { workspace = true }
 miden-tx      = { features = ["testing"], workspace = true }
+
 [build-dependencies]
-miette      = { features = ["fancy"], version = "7.5" }
-prost       = { default-features = false, features = ["derive"], version = "0.13" }
-prost-build = { version = "0.13" }
-protox      = { version = "0.8" }
-tonic-build = { version = "0.13" }
+miden-node-proto-build = { features = ["internal"], workspace = true }
+miette                 = { features = ["fancy"], version = "7.5" }
+prost                  = { default-features = false, features = ["derive"], version = "0.13" }
+prost-build            = { version = "0.13" }
+protox                 = { version = "0.8" }
+tonic-build            = { version = "0.13" }

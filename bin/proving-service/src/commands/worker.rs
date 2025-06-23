@@ -1,6 +1,7 @@
 use clap::Parser;
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_proving_service::{
+    COMPONENT,
     api::{ProofType, RpcListener},
     generated::api_server::ApiServer,
 };
@@ -9,8 +10,6 @@ use tokio_stream::wrappers::TcpListenerStream;
 use tonic_health::server::health_reporter;
 use tonic_web::GrpcWebLayer;
 use tracing::{info, instrument};
-
-use crate::utils::MIDEN_PROVING_SERVICE;
 
 /// Starts a worker.
 #[derive(Debug, Parser)]
@@ -36,7 +35,7 @@ impl StartWorker {
     /// The worker includes a health reporter that will mark the service as serving, following the
     /// [gRPC health checking protocol](
     /// https://github.com/grpc/grpc-proto/blob/master/grpc/health/v1/health.proto).
-    #[instrument(target = MIDEN_PROVING_SERVICE, name = "worker:execute")]
+    #[instrument(target = COMPONENT, name = "worker.execute")]
     pub async fn execute(&self) -> Result<(), String> {
         let host = if self.localhost { "127.0.0.1" } else { "0.0.0.0" };
         let worker_addr = format!("{}:{}", host, self.port);
@@ -45,9 +44,13 @@ impl StartWorker {
             self.proof_type,
         );
 
-        info!(
-            "Server listening on {}",
-            rpc.listener.local_addr().map_err(|err| err.to_string())?
+        let server_addr = rpc.listener.local_addr().map_err(|err| err.to_string())?;
+        info!(target: COMPONENT,
+            endpoint = %server_addr,
+            proof_type = ?self.proof_type,
+            host = %host,
+            port = %self.port,
+            "Worker server initialized and listening"
         );
 
         // Create a health reporter

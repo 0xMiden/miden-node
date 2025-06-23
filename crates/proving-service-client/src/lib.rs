@@ -19,9 +19,6 @@ use thiserror::Error;
 
 pub mod proving_service;
 
-/// Protobuf definition for the Miden proving service
-pub const PROVING_SERVICE_PROTO: &str = include_str!("../proto/proving_service.proto");
-
 /// ERRORS
 /// ===============================================================================================
 

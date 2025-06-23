@@ -1,11 +1,9 @@
 use clap::Parser;
-use miden_proving_service::api::ProofType;
+use miden_proving_service::{COMPONENT, api::ProofType};
 use proxy::StartProxy;
 use tracing::instrument;
 use update_workers::{AddWorkers, RemoveWorkers, UpdateWorkers};
 use worker::StartWorker;
-
-use crate::utils::MIDEN_PROVING_SERVICE;
 
 pub mod proxy;
 pub mod update_workers;
@@ -111,7 +109,7 @@ pub enum Command {
 
 /// CLI entry point
 impl Cli {
-    #[instrument(target = MIDEN_PROVING_SERVICE, name = "cli:execute", skip_all, ret(level = "info"), err)]
+    #[instrument(target = COMPONENT, name = "cli.execute", skip_all, ret(level = "info"), err)]
     pub async fn execute(&self) -> Result<(), String> {
         match &self.action {
             // For the `StartWorker` command, we need to create a new runtime and run the worker

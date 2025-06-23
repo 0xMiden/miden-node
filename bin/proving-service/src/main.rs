@@ -1,4 +1,8 @@
-use crate::{commands::Cli, utils::setup_tracing};
+use miden_node_utils::logging::{OpenTelemetry, setup_tracing};
+use miden_proving_service::COMPONENT;
+use tracing::info;
+
+use crate::commands::Cli;
 
 pub(crate) mod commands;
 pub(crate) mod proxy;
@@ -8,7 +12,8 @@ pub(crate) mod utils;
 async fn main() -> Result<(), String> {
     use clap::Parser;
 
-    setup_tracing()?;
+    setup_tracing(OpenTelemetry::Enabled).map_err(|e| e.to_string())?;
+    info!(target: COMPONENT, "Tracing initialized");
 
     // read command-line args
     let cli = Cli::parse();

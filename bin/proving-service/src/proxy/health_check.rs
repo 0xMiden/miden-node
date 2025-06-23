@@ -1,3 +1,4 @@
+use miden_proving_service::COMPONENT;
 use pingora::{prelude::sleep, server::ShutdownWatch, services::background::BackgroundService};
 use tonic::async_trait;
 use tracing::{debug_span, error};
@@ -28,7 +29,7 @@ impl BackgroundService for LoadBalancerState {
         Box::pin(async move {
             loop {
                 // Create a new spawn to perform the health check
-                let span = debug_span!("proxy.health_check");
+                let span = debug_span!(target: COMPONENT, "proxy.health_check");
                 let _guard = span.enter();
                 {
                     let mut workers = self.workers.write().await;

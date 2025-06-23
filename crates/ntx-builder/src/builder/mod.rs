@@ -170,7 +170,7 @@ impl NetworkTransactionBuilder {
                 info!(target: COMPONENT, "Spawned NTB ticker (ticks every {} ms)", &ticker_interval.as_millis());
                 let store = StoreClient::new(&store_url);
                 let data_store = Arc::new(NtxBuilderDataStore::new(store).await?);
-                let tx_executor = TransactionExecutor::new(data_store.clone(), None);
+                let tx_executor = TransactionExecutor::new(data_store.as_ref(), None);
                 let tx_prover = NtbTransactionProver::from(prover_addr);
                 let block_prod = BlockProducerClient::new(block_addr);
 
@@ -223,7 +223,7 @@ impl NetworkTransactionBuilder {
     ///   logged and the transaction gets rolled back.
     async fn build_network_tx(
         api_state: &SharedPendingNotes,
-        tx_executor: &TransactionExecutor,
+        tx_executor: &TransactionExecutor<'_, '_>,
         data_store: &Arc<NtxBuilderDataStore>,
         tx_prover: &NtbTransactionProver,
         block_prod: &BlockProducerClient,
@@ -327,7 +327,7 @@ impl NetworkTransactionBuilder {
     #[instrument(target = COMPONENT, name = "ntx_builder.filter_consumable_notes", skip_all, err)]
     async fn filter_consumable_notes(
         data_store: &Arc<NtxBuilderDataStore>,
-        tx_executor: &TransactionExecutor,
+        tx_executor: &TransactionExecutor<'_, '_>,
         tx_request: &NetworkTransactionRequest,
     ) -> Result<NetworkTransactionRequest, NtxBuilderError> {
         let input_notes = InputNotes::new(
@@ -391,7 +391,7 @@ impl NetworkTransactionBuilder {
     /// Executes the transaction with the account described by the request.
     #[instrument(target = COMPONENT, name = "ntx_builder.execute_transaction", skip_all, err)]
     async fn execute_transaction(
-        tx_executor: &TransactionExecutor,
+        tx_executor: &TransactionExecutor<'_, '_>,
         tx_request: NetworkTransactionRequest,
     ) -> Result<ExecutedTransaction, NtxBuilderError> {
         let input_notes = InputNotes::new(

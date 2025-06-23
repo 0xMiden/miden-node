@@ -8,11 +8,12 @@ use miden_tx_batch_prover::LocalBatchProver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
-use tracing::instrument;
+use tracing::{info, instrument};
 
-use crate::generated::{self, ProvingRequest, ProvingResponse, api_server::Api as ProverApi};
-
-pub const MIDEN_PROVING_SERVICE: &str = "miden-proving-service";
+use crate::{
+    COMPONENT,
+    generated::{self, ProvingRequest, ProvingResponse, api_server::Api as ProverApi},
+};
 
 /// Specifies the type of proof supported by the proving service.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -60,12 +61,15 @@ impl Prover {
     fn new(proof_type: ProofType) -> Self {
         match proof_type {
             ProofType::Transaction => {
+                info!(target: COMPONENT, proof_type = ?proof_type, "Transaction prover initialized");
                 Self::Transaction(Mutex::new(LocalTransactionProver::default()))
             },
             ProofType::Batch => {
+                info!(target: COMPONENT, proof_type = ?proof_type, security_level = MIN_PROOF_SECURITY_LEVEL, "Batch prover initialized");
                 Self::Batch(Mutex::new(LocalBatchProver::new(MIN_PROOF_SECURITY_LEVEL)))
             },
             ProofType::Block => {
+                info!(target: COMPONENT, proof_type = ?proof_type, security_level = MIN_PROOF_SECURITY_LEVEL, "Block prover initialized");
                 Self::Block(Mutex::new(LocalBlockProver::new(MIN_PROOF_SECURITY_LEVEL)))
             },
         }
@@ -85,8 +89,8 @@ impl ProverRpcApi {
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_tx",
+        target = COMPONENT,
+        name = "proving_service.prove_tx",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -115,8 +119,8 @@ impl ProverRpcApi {
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_batch",
+        target = COMPONENT,
+        name = "proving_service.prove_batch",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -145,8 +149,8 @@ impl ProverRpcApi {
 
     #[allow(clippy::result_large_err)]
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove_block",
+        target = COMPONENT,
+        name = "proving_service.prove_block",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -178,8 +182,8 @@ impl ProverRpcApi {
 #[async_trait::async_trait]
 impl ProverApi for ProverRpcApi {
     #[instrument(
-        target = MIDEN_PROVING_SERVICE,
-        name = "proving_service:prove",
+        target = COMPONENT,
+        name = "proving_service.prove",
         skip_all,
         ret(level = "debug"),
         fields(id = tracing::field::Empty),
@@ -243,8 +247,8 @@ mod test {
     use tonic_web::GrpcWebLayer;
 
     use crate::{
-        api::{ProofType, ProverRpcApi},
-        generated::{self, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
+        api::ProverRpcApi,
+        generated::{ProofType, ProvingRequest, api_client::ApiClient, api_server::ApiServer},
     };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -254,7 +258,7 @@ mod test {
 
         let proof_type = ProofType::Transaction;
 
-        let api_service = ApiServer::new(ProverRpcApi::new(proof_type));
+        let api_service = ApiServer::new(ProverRpcApi::new(proof_type.into()));
 
         // Spawn the server as a background task
         tokio::spawn(async move {
@@ -307,12 +311,12 @@ mod test {
         let transaction_witness = TransactionWitness::from(executed_transaction);
 
         let request_1 = Request::new(ProvingRequest {
-            proof_type: generated::ProofType::Transaction.into(),
+            proof_type: ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });
 
         let request_2 = Request::new(ProvingRequest {
-            proof_type: generated::ProofType::Transaction.into(),
+            proof_type: ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });
 

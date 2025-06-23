@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use miden_proving_service::api::ProofType;
+use miden_proving_service::{COMPONENT, api::ProofType};
 use pingora::{
     apps::HttpServerApp,
     http::ResponseHeader,
@@ -10,7 +10,7 @@ use pingora::{
 };
 use serde::Serialize;
 use tonic::async_trait;
-use tracing::error;
+use tracing::{error, instrument};
 
 use super::worker::WorkerHealthStatus;
 use crate::proxy::LoadBalancerState;
@@ -32,6 +32,7 @@ pub struct ProxyStatus {
 }
 
 /// Service that handles status requests
+#[derive(Debug)]
 pub struct ProxyStatusService {
     load_balancer: Arc<LoadBalancerState>,
 }
@@ -41,6 +42,7 @@ impl ProxyStatusService {
         Self { load_balancer }
     }
 
+    #[instrument(target = COMPONENT, name = "proxy.handle_request", skip(session))]
     async fn handle_request(&self, session: &mut ServerSession) -> Result<()> {
         let workers = self.load_balancer.workers.read().await;
         let worker_statuses: Vec<WorkerStatus> = workers

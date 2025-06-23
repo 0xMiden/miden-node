@@ -28,6 +28,7 @@ use tokio::{
     task::spawn_blocking,
     time,
 };
+use tonic::IntoRequest;
 use tracing::{Instrument, Span, error, info, instrument, warn};
 use url::Url;
 
@@ -140,7 +141,7 @@ impl NetworkTransactionBuilder {
         store: &StoreClient,
         block_prod: &BlockProducerClient,
     ) -> anyhow::Result<(State, impl TryStream<Ok = MempoolEvent, Error = tonic::Status>)> {
-        let mut state = State;
+        let mut state = State::new(todo!());
         loop {
             state.sync_committed(&store).await.context("failed to sync state with store")?;
             let chain_tip = state.chain_tip();

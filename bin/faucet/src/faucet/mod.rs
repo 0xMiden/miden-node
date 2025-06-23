@@ -231,14 +231,17 @@ impl Faucet {
             genesis_chain_mmr,
         ));
 
-        let keypairs = account_file
-            .auth_secret_keys
-            .into_iter()
-            .map(|key| match key {
-                AuthSecretKey::RpoFalcon512(ref falcon) => (falcon.public_key().into(), key),
-            })
-            .collect::<Vec<_>>();
-        let authenticator = BasicAuthenticator::<StdRng>::new(&keypairs);
+        // We expect exactly one secret key. Anything else implies a bug elsewhere.
+        let [keypair] = account_file.auth_secret_keys.as_slice() else {
+            anyhow::bail!(
+                "Account file must contain exactly 1 authentication key, but found {}",
+                account_file.auth_secret_keys.len()
+            );
+        };
+        let keypair = match keypair {
+            AuthSecretKey::RpoFalcon512(falcon) => (falcon.public_key().into(), keypair.clone()),
+        };
+        let authenticator = BasicAuthenticator::<StdRng>::new(&[keypair]);
 
         let tx_prover = match remote_tx_prover_url {
             Some(url) => Arc::new(FaucetProver::remote(url)),

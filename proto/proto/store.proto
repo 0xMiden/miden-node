@@ -8,10 +8,8 @@ import "requests.proto";
 import "responses.proto";
 import "google/protobuf/empty.proto";
 
-service Api {
-    // Applies changes of a new block to the DB and in-memory data structures.
-    rpc ApplyBlock(requests.ApplyBlockRequest) returns (responses.ApplyBlockResponse) {}
-
+// Store API for the RPC component
+service Rpc {
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(requests.CheckNullifiersRequest) returns (responses.CheckNullifiersResponse) {}
 
@@ -22,9 +20,6 @@ service Api {
 
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(requests.GetAccountDetailsRequest) returns (responses.GetAccountDetailsResponse) {}
-
-    // Returns the latest state of a network account with the specified account prefix.
-    rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetNetworkAccountDetailsByPrefixResponse) {}
 
     // Returns the latest state proofs of the specified accounts.
     rpc GetAccountProofs(requests.GetAccountProofsRequest) returns (responses.GetAccountProofsResponse) {}
@@ -40,21 +35,8 @@ service Api {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
 
-    // Returns data required to prove the next block.
-    rpc GetBlockInputs(requests.GetBlockInputsRequest) returns (responses.GetBlockInputsResponse) {}
-
-    // Returns the inputs for a transaction batch.
-    rpc GetBatchInputs(requests.GetBatchInputsRequest) returns (responses.GetBatchInputsResponse) {}
-
     // Returns a list of notes matching the provided note IDs.
     rpc GetNotesById(requests.GetNotesByIdRequest) returns (responses.GetNotesByIdResponse) {}
-
-    // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this 
-    // header for executing network transactions. 
-    rpc GetCurrentBlockchainData(requests.GetCurrentBlockchainDataRequest) returns (responses.GetCurrentBlockchainDataResponse) {}
-
-    // Returns data required to validate a new transaction.
-    rpc GetTransactionInputs(requests.GetTransactionInputsRequest) returns (responses.GetTransactionInputsResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -84,9 +66,42 @@ service Api {
     // additional filtering of that data on its side.
     rpc SyncState(requests.SyncStateRequest) returns (responses.SyncStateResponse) {}
 
+    // Returns the status info.
+    rpc Status(google.protobuf.Empty) returns (responses.StoreStatusResponse) {}
+}
+
+// Store API for the BlockProducer component
+service BlockProducer {
+    // Applies changes of a new block to the DB and in-memory data structures.
+    rpc ApplyBlock(requests.ApplyBlockRequest) returns (responses.ApplyBlockResponse) {}
+
+    // Retrieves block header by given block number. Optionally, it also returns the MMR path
+    // and current chain length to authenticate the block's inclusion.
+    rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
+
+    // Returns data required to prove the next block.
+    rpc GetBlockInputs(requests.GetBlockInputsRequest) returns (responses.GetBlockInputsResponse) {}
+
+    // Returns the inputs for a transaction batch.
+    rpc GetBatchInputs(requests.GetBatchInputsRequest) returns (responses.GetBatchInputsResponse) {}
+
+    // Returns data required to validate a new transaction.
+    rpc GetTransactionInputs(requests.GetTransactionInputsRequest) returns (responses.GetTransactionInputsResponse) {}
+}
+
+// Store API for the network transaction builder component
+service NtxBuilder {
+    // Retrieves block header by given block number. Optionally, it also returns the MMR path
+    // and current chain length to authenticate the block's inclusion.
+    rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
+
     // Returns the list of unconsumed network notes and the next page number to query.
     rpc GetUnconsumedNetworkNotes(requests.GetUnconsumedNetworkNotesRequest) returns (responses.GetUnconsumedNetworkNotesResponse) {}
 
-    // Returns the status info.
-    rpc Status(google.protobuf.Empty) returns (responses.StoreStatusResponse) {}
+    // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this 
+    // header for executing network transactions. 
+    rpc GetCurrentBlockchainData(requests.GetCurrentBlockchainDataRequest) returns (responses.GetCurrentBlockchainDataResponse) {}
+
+    // Returns the latest state of a network account with the specified account prefix.
+    rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetNetworkAccountDetailsByPrefixResponse) {}
 }

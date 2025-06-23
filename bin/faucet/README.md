@@ -15,14 +15,14 @@ make docker-run-node
 make install-faucet
 ```
 
-3. [Optional] Create faucet account (skip this step if you want to use an account from the genesis). This will generate authentication keypair and generate and write public faucet account data with its keypair into the file specified in `output-path`: 
+3. [Optional] Create faucet account (skip this step if you want to use an account from the genesis). This will generate authentication keypair and generate and write public faucet account data with its keypair into the file specified in `output-path`:
 
 ```bash
 miden-faucet create-faucet-account \
   --output-path <path to faucet.mac> \
-  --token-symbol POL \
-  --decimals 9 \
-  --max-supply 1000000000
+  --token-symbol MIDEN \
+  --decimals 6 \
+  --max-supply 100000000000000000
 ```
 > [!TIP]
 > This account will not be created on chain yet, creation on chain will happen on the first minting transaction.

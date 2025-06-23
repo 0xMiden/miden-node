@@ -5,7 +5,7 @@ use base64::{Engine, engine::general_purpose};
 use miden_objects::{
     account::AccountId,
     block::BlockNumber,
-    note::{Note, NoteDetails, NoteExecutionMode, NoteFile, NoteTag, NoteType},
+    note::{Note, NoteDetails, NoteFile, NoteTag, NoteType},
     transaction::TransactionId,
     utils::Serializable,
 };
@@ -84,14 +84,14 @@ impl MintUpdate<'_> {
                 let account_id =
                     AccountId::try_from([note.inputs().values()[1], note.inputs().values()[0]])
                         .unwrap();
-                let note_tag = NoteTag::from_account_id(account_id, NoteExecutionMode::Local).ok();
+                let note_tag = NoteTag::from_account_id(account_id);
 
                 // If the note is private, encode the note bytes as a base64 string
                 let bytes = if note.metadata().note_type() == NoteType::Private {
                     NoteFile::NoteDetails {
                         details: note_details,
                         after_block_num: block_height,
-                        tag: note_tag,
+                        tag: Some(note_tag),
                     }
                     .to_bytes()
                 } else {

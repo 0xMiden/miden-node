@@ -11,7 +11,7 @@ use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
-    account::{AccountFile, AccountIdAnchor, AuthSecretKey},
+    account::{AccountFile, AuthSecretKey},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -24,6 +24,9 @@ use super::{
     parse_duration_ms,
 };
 use crate::system_monitor::SystemMonitor;
+
+/// The default filepath for the genesis account.
+const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
 
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
@@ -56,7 +59,7 @@ pub enum StoreCommand {
         ///
         /// This can be further configured using environment variables as defined in the official
         /// OpenTelemetry documentation. See our operator manual for further details.
-        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "bool")]
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         open_telemetry: bool,
 
         /// Interval at which to monitor the system in milliseconds.
@@ -128,7 +131,7 @@ impl StoreCommand {
         //
         // Without this the accounts would be inaccessible by the user.
         // This is not used directly by the node, but rather by the owner / operator of the node.
-        let filepath = accounts_directory.join("account.mac");
+        let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
         File::create_new(&filepath)
             .and_then(|mut file| file.write_all(&account_file.to_bytes()))
             .with_context(|| {
@@ -151,12 +154,18 @@ impl StoreCommand {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
 
+        // Calculate the max supply of the token.
+        let decimals = 6u8;
+        let base_unit = 10u64.pow(u32::from(decimals));
+        let max_supply = 100_000_000_000u64 * base_unit;
+        let max_supply = Felt::try_from(max_supply).expect("max supply is less than field modulus");
+
+        // Create the faucet.
         let (mut account, account_seed) = create_basic_fungible_faucet(
             rng.random(),
-            AccountIdAnchor::PRE_GENESIS,
-            TokenSymbol::try_from("POL").expect("POL should be a valid token symbol"),
-            12,
-            Felt::from(1_000_000u32),
+            TokenSymbol::try_from("MIDEN").expect("MIDEN is a valid token symbol"),
+            decimals,
+            max_supply,
             miden_objects::account::AccountStorageMode::Public,
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;
@@ -174,7 +183,17 @@ impl StoreCommand {
         Ok(AccountFile::new(
             account,
             Some(account_seed),
-            AuthSecretKey::RpoFalcon512(secret),
+            vec![AuthSecretKey::RpoFalcon512(secret)],
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StoreCommand;
+
+    #[test]
+    fn generate_genesis_account_no_panic() {
+        let _account = StoreCommand::generate_genesis_account().unwrap();
     }
 }

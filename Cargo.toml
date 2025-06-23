@@ -2,11 +2,12 @@
 members = [
   "bin/faucet",
   "bin/node",
+  "bin/proving-service",
   "bin/stress-test",
   "crates/block-producer",
   "crates/ntx-builder",
-  "crates/ntx-builder",
   "crates/proto",
+  "crates/proving-service-client",
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
@@ -20,48 +21,59 @@ resolver = "2"
 authors      = ["Miden contributors"]
 edition      = "2024"
 exclude      = [".github/"]
-homepage     = "https://polygon.technology/polygon-miden"
+homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/miden-node"
 rust-version = "1.87"
-version      = "0.9.0"
+version      = "0.10.0"
 
 # Optimise the cryptography for faster tests involving account creation.
 [profile.test.package.miden-crypto]
 opt-level = 2
 
 [workspace.dependencies]
-anyhow                       = { version = "1.0" }
-assert_matches               = { version = "1.5" }
-async-trait                  = { version = "0.1" }
-futures                      = { version = "0.3" }
-http                         = { version = "1.3" }
-itertools                    = { version = "0.14" }
-miden-air                    = { version = "0.14" }
-miden-lib                    = { version = "0.9" }
-miden-node-block-producer    = { path = "crates/block-producer", version = "0.9" }
-miden-node-ntx-builder       = { path = "crates/ntx-builder", version = "0.9" }
-miden-node-proto             = { path = "crates/proto", version = "0.9" }
-miden-node-proto-build       = { path = "proto", version = "0.9" }
-miden-node-rpc               = { path = "crates/rpc", version = "0.9" }
-miden-node-store             = { path = "crates/store", version = "0.9" }
+# Workspace crates.
+miden-node-block-producer    = { path = "crates/block-producer", version = "0.10" }
+miden-node-ntx-builder       = { path = "crates/ntx-builder", version = "0.10" }
+miden-node-proto             = { path = "crates/proto", version = "0.10" }
+miden-node-proto-build       = { path = "proto", version = "0.10" }
+miden-node-rpc               = { path = "crates/rpc", version = "0.10" }
+miden-node-store             = { path = "crates/store", version = "0.10" }
 miden-node-test-macro        = { path = "crates/test-macro" }
-miden-node-utils             = { path = "crates/utils", version = "0.9" }
-miden-objects                = { version = "0.9" }
-miden-proving-service-client = { version = "0.9" }
-miden-tx                     = { version = "0.9" }
-prost                        = { version = "0.13" }
-rand                         = { version = "0.9" }
-thiserror                    = { default-features = false, version = "2.0" }
-tokio                        = { features = ["rt-multi-thread"], version = "1.45" }
-tokio-stream                 = { version = "0.1" }
-tonic                        = { version = "0.12" }
-tower                        = { version = "0.5" }
-tower-http                   = { features = ["trace"], version = "0.6" }
-tracing                      = { version = "0.1" }
-tracing-subscriber           = { features = ["env-filter", "fmt", "json"], version = "0.3" }
-url                          = { features = ["serde"], version = "2.5" }
+miden-node-utils             = { path = "crates/utils", version = "0.10" }
+miden-proving-service-client = { path = "crates/proving-service-client", version = "0.10" }
+
+# miden-base aka protocol dependencies. These should be updated in sync.
+miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+
+# Other miden dependencies. These should align with those expected by miden-base.
+miden-air = { version = "0.15" }
+
+# External dependencies
+anyhow             = { version = "1.0" }
+assert_matches     = { version = "1.5" }
+async-trait        = { version = "0.1" }
+futures            = { version = "0.3" }
+http               = { version = "1.3" }
+itertools          = { version = "0.14" }
+prost              = { version = "0.13" }
+rand               = { version = "0.9" }
+thiserror          = { default-features = false, version = "2.0" }
+tokio              = { features = ["rt-multi-thread"], version = "1.45" }
+tokio-stream       = { version = "0.1" }
+tonic              = { version = "0.13" }
+tonic-reflection   = { version = "0.13" }
+tower              = { version = "0.5" }
+tower-http         = { features = ["cors", "trace"], version = "0.6" }
+tracing            = { version = "0.1" }
+tracing-subscriber = { features = ["env-filter", "fmt", "json"], version = "0.3" }
+url                = { features = ["serde"], version = "2.5" }
 
 # Lints are set to warn for development, which are promoted to errors in CI.
 [workspace.lints.clippy]

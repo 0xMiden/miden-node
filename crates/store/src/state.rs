@@ -143,6 +143,7 @@ impl State {
     /// - the in-memory structures are updated, including the latest block pointer and the lock is
     ///   released.
     // TODO: This span is logged in a root span, we should connect it to the parent span.
+    #[allow(clippy::too_many_lines)]
     #[instrument(target = COMPONENT, skip_all, err)]
     pub async fn apply_block(&self, block: ProvenBlock) -> Result<(), ApplyBlockError> {
         let _lock = self.writer.try_lock().map_err(|_| ApplyBlockError::ConcurrentWrite)?;
@@ -362,7 +363,7 @@ impl State {
     ///
     /// If [None] is given as the value of `block_num`, the data for the latest [BlockHeader] is
     /// returned.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_block_header(
         &self,
         block_num: Option<BlockNumber>,
@@ -398,7 +399,7 @@ impl State {
     /// tree.
     ///
     /// Note: these proofs are invalidated once the nullifier tree is modified, i.e. on a new block.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"))]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret)]
     pub async fn check_nullifiers(&self, nullifiers: &[Nullifier]) -> Vec<SmtProof> {
         let inner = self.inner.read().await;
         nullifiers
@@ -579,7 +580,7 @@ impl State {
     ///   block range.
     /// - `note_tags`: The tags the client is interested in, result is restricted to the first block
     ///   with any matches tags.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_state(
         &self,
         block_num: BlockNumber,
@@ -629,7 +630,7 @@ impl State {
     /// - `block_num`: The last block *known* by the client, updates start from the next block.
     /// - `note_tags`: The tags the client is interested in, resulting notes are restricted to the
     ///   first block containing a matching note.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_notes(
         &self,
         block_num: BlockNumber,
@@ -968,7 +969,7 @@ impl State {
 // UTILITIES
 // ================================================================================================
 
-#[instrument(target = COMPONENT, skip_all)]
+#[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitializationError> {
     let nullifiers = db.select_all_nullifiers().await?;
     let len = nullifiers.len();
@@ -987,7 +988,7 @@ async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitiali
     Ok(nullifier_tree)
 }
 
-#[instrument(target = COMPONENT, skip_all)]
+#[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     let block_commitments: Vec<RpoDigest> = db
         .select_all_block_headers()
@@ -999,7 +1000,7 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     Ok(block_commitments.into())
 }
 
-#[instrument(target = COMPONENT, skip_all)]
+#[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 

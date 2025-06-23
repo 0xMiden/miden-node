@@ -49,6 +49,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function showError(message) {
         errorMessage.textContent = message;
         errorMessage.style.visibility = 'visible';
+        info.style.visibility = 'hidden';
     }
 
     function hideError() {
@@ -84,10 +85,9 @@ document.addEventListener('DOMContentLoaded', function () {
         hideError();
 
         if (!validateAccountAddress(accountAddress)) {
+            setLoadingState(false);
             return;
         }
-
-        setLoadingState(true);
 
         // Check if SHA3 library is loaded
         if (typeof sha3_256 === 'undefined') {
@@ -97,10 +97,22 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // Get the pow seed, difficulty, and server signature
-        const powResponse = await fetch(window.location.href + 'pow', {
-            method: "GET"
-        });
+        // Get the PoW challenge from the new /pow endpoint
+        let powResponse;
+        try {
+            powResponse = await fetch(window.location.href + 'pow', {
+                method: "GET"
+            });
+        } catch (error) {
+            showError('Connection failed.');
+            return;
+        }
+
+        if (!powResponse.ok) {
+            showError('Please try again soon.');
+            return;
+        }
+        setLoadingState(true);
 
         status.textContent = "Received Proof of Work challenge";
 
@@ -109,18 +121,15 @@ document.addEventListener('DOMContentLoaded', function () {
         // Search for a nonce that satisfies the proof of work
         status.textContent = "Solving Proof of Work...";
 
-        const nonce = await findValidNonce(powData.seed, powData.difficulty);
+        const nonce = await findValidNonce(powData.challenge, powData.difficulty);
 
-        // Build query parameters for the request
+        // Build query parameters for the request using new challenge format
         const params = {
             account_id: accountAddress,
             is_private_note: isPrivateNote,
             asset_amount: parseInt(assetSelect.value),
-            pow_seed: powData.seed,
-            pow_solution: nonce,
-            pow_difficulty: powData.difficulty,
-            server_signature: powData.server_signature,
-            server_timestamp: powData.timestamp
+            challenge: powData.challenge,
+            nonce: nonce
         };
 
 
@@ -133,8 +142,8 @@ document.addEventListener('DOMContentLoaded', function () {
         evtSource.onerror = function (_) {
             // Either rate limit exceeded or invalid account id. The error event does not contain the reason.
             evtSource.close();
-            showError('Please try again soon.');
             setLoadingState(false);
+            showError('Please try again soon.');
         };
 
         evtSource.addEventListener("get-tokens-error", function (event) {
@@ -171,23 +180,25 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const blob = new Blob([byteArray], { type: 'application/octet-stream' });
                 downloadBlob(blob, 'note.mno');
+            } else {
+                importCommand.style.display = 'none';
             }
             txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
             txLink.textContent = data.transaction_id;
         });
     }
 
-    // Function to find a valid nonce for proof of work
-    async function findValidNonce(seed, difficulty) {
+    // Function to find a valid nonce for proof of work using the new challenge format
+    async function findValidNonce(challenge, difficulty) {
         // Check again if SHA3 is available
         if (typeof sha3_256 === 'undefined') {
             console.error("SHA3 library not properly loaded. SHA3 object:", sha3_256);
             throw new Error('SHA3 library not properly loaded. Please refresh the page.');
         }
 
-        // Parse difficulty (number of required trailing zeros)
+        // Parse difficulty (number of required leading zero BYTES, each byte = 2 hex digits)
         const requiredZeros = parseInt(difficulty);
-        const requiredPattern = '0'.repeat(requiredZeros);
+        const requiredPattern = '00'.repeat(requiredZeros); // Each zero byte = "00" in hex
 
         let nonce = 0;
         let validNonceFound = false;
@@ -197,16 +208,22 @@ document.addEventListener('DOMContentLoaded', function () {
             nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
 
             try {
-                // Compute hash using SHA3
+                // Compute hash using SHA3 with the challenge and nonce
                 let hash = sha3_256.create();
-                hash.update(seed);
-                hash.update(nonce.toString());
-                // Trim leading 0x
+                hash.update(challenge);  // Use the hex-encoded challenge string directly
+
+                // Convert nonce to 8-byte little-endian format to match backend
+                const nonceBytes = new ArrayBuffer(8);
+                const nonceView = new DataView(nonceBytes);
+                nonceView.setBigUint64(0, BigInt(nonce), true); // true = little-endian
+                const nonceByteArray = new Uint8Array(nonceBytes);
+                hash.update(nonceByteArray);
+
+                // Get the hex digest
                 let digest = hash.hex().toString();
 
                 // Check if the hash starts with the required number of zeros
                 if (digest.startsWith(requiredPattern)) {
-                    console.log("Found valid nonce! Nonce:", nonce, "Hash:", digest);
                     validNonceFound = true;
                     return nonce;
                 }

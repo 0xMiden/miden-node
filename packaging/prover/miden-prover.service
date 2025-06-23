@@ -1,0 +1,16 @@
+[Unit]
+Description=Miden delegated prover
+Wants=network-online.target
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=exec
+Environment="OTEL_SERVICE_NAME=miden-prover"
+EnvironmentFile=/lib/systemd/system/miden-prover.env
+ExecStart=/usr/bin/miden-proving-service start-worker
+WorkingDirectory=/opt/miden-prover
+User=miden-prover
+RestartSec=5
+Restart=always

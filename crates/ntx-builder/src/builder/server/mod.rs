@@ -33,7 +33,7 @@ impl NtxBuilderApi {
 
 #[tonic::async_trait]
 impl Api for NtxBuilderApi {
-    #[instrument(target = COMPONENT, name = "ntx_builder.submit_network_notes", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.submit_network_notes", skip_all, err)]
     async fn submit_network_notes(
         &self,
         request: Request<SubmitNetworkNotesRequest>,
@@ -50,7 +50,7 @@ impl Api for NtxBuilderApi {
         Ok(Response::new(()))
     }
 
-    #[instrument(target = COMPONENT, name = "ntx_builder.update_network_notes", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.update_network_notes", skip_all, err)]
     async fn update_network_notes(
         &self,
         request: Request<UpdateNetworkNotesRequest>,
@@ -80,7 +80,7 @@ impl Api for NtxBuilderApi {
         Ok(Response::new(()))
     }
 
-    #[instrument(target = COMPONENT, name = "ntx_builder.update_transaction_status", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.update_transaction_status", skip_all, err)]
     async fn update_transaction_status(
         &self,
         request: Request<UpdateTransactionStatusRequest>,

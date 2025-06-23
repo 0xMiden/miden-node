@@ -1,10 +1,41 @@
 # Changelog
 
-## Unreleased (TBD)
+## v0.10.0 (TBD)
 
 ### Changes
 
+- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
+- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
+- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
+- [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
+
+### Enhancements
+
+- Added support for gRPC server side reflection to all components (#949).
+- Compressed faucet background image (#985).
+- Added support for TLS to miden-proving-service-client (#968).
+- Added support for TLS to faucet's connection to node RPC (#976).
 - Added configurable rate limiter settings for the faucet (#905).
+
+## v0.9.2 (2025-06-12)
+
+- Refresh Cargo.lock file.
+
+## v0.9.1 (2025-06-10)
+
+- Refresh Cargo.lock file (#944).
+
+## v0.9.0 (2025-05-30)
+
+### Changes
+
+- Separated the store API into three separate services (#932).
+- Added a faucet Dockerfile (#933).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
+
+### Fixes
+
+- Faucet considers decimals when minting token amounts (#962).
 
 ## v0.9.0 (2025-05-30)
 
@@ -16,6 +47,7 @@
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
+- Add miden-proving-service and miden-proving-service-client crates (#926).
 
 ### Changes
 

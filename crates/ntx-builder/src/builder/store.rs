@@ -6,7 +6,7 @@ use miden_node_proto::{
             GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
             GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
         },
-        store::api_client as store_client,
+        store::ntx_builder_client as store_client,
     },
     try_convert,
 };
@@ -28,7 +28,7 @@ use crate::COMPONENT;
 // STORE CLIENT
 // ================================================================================================
 
-type InnerClient = store_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+type InnerClient = store_client::NtxBuilderClient<InterceptedService<Channel, OtelInterceptor>>;
 
 /// Interface to the store's gRPC API.
 ///
@@ -44,13 +44,14 @@ impl StoreClient {
         let channel = tonic::transport::Endpoint::try_from(store_url.to_string())
             .expect("valid gRPC endpoint URL")
             .connect_lazy();
-        let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+        let store = store_client::NtxBuilderClient::with_interceptor(channel, OtelInterceptor);
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 
         Self { inner: store }
     }
 
     /// Returns the latest block's header from the store.
+    #[allow(dead_code)]
     #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
     pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
@@ -137,7 +138,7 @@ impl StoreClient {
         &self,
         note_tag: NoteTag,
     ) -> Result<Option<Account>, StoreError> {
-        let tag_inner = note_tag.inner();
+        let tag_inner = note_tag.as_u32();
         let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
 
         let store_response = self

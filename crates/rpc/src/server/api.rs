@@ -17,7 +17,7 @@ use miden_node_proto::{
             SyncNoteResponse, SyncStateResponse,
         },
         rpc::api_server,
-        store::api_client as store_client,
+        store::rpc_client as store_client,
     },
     try_convert,
 };
@@ -40,7 +40,7 @@ use crate::COMPONENT;
 // RPC SERVICE
 // ================================================================================================
 
-type StoreClient = store_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+type StoreClient = store_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
 type BlockProducerClient =
     block_producer_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 
@@ -58,7 +58,7 @@ impl RpcService {
             let store_url = format!("http://{store_address}");
             // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
             let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-            let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            let store = store_client::RpcClient::with_interceptor(channel, OtelInterceptor);
             info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
             store
         };
@@ -85,6 +85,7 @@ impl RpcService {
 #[tonic::async_trait]
 impl api_server::Api for RpcService {
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.check_nullifiers",
         skip_all,
@@ -108,6 +109,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.check_nullifiers_by_prefix",
         skip_all,
@@ -124,6 +126,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_header_by_number",
         skip_all,
@@ -140,6 +143,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_state",
         skip_all,
@@ -156,6 +160,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_notes",
         skip_all,
@@ -172,6 +177,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_notes_by_id",
         skip_all,
@@ -193,7 +199,7 @@ impl api_server::Api for RpcService {
         self.store.clone().get_notes_by_id(request).await
     }
 
-    #[instrument(target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
     async fn submit_proven_transaction(
         &self,
         request: Request<SubmitProvenTransactionRequest>,
@@ -231,6 +237,7 @@ impl api_server::Api for RpcService {
 
     /// Returns details for public (public) account by id.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_details",
         skip_all,
@@ -256,6 +263,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_by_number",
         skip_all,
@@ -274,6 +282,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_state_delta",
         skip_all,
@@ -292,6 +301,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_proofs",
         skip_all,
@@ -323,6 +333,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.status",
         skip_all,

@@ -3,13 +3,13 @@ use std::{
     convert::Infallible,
     net::SocketAddr,
     sync::{Arc, atomic::AtomicUsize},
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
 use axum::{
-    Router,
-    extract::{FromRef, Query},
+    Json, Router,
+    extract::{FromRef, Query, State},
     response::sse::Event,
     routing::get,
 };
@@ -20,6 +20,7 @@ use miden_node_utils::grpc::UrlExt;
 use miden_objects::account::AccountId;
 use miden_tx::utils::Serializable;
 use pow::PoW;
+use sha3::{Digest, Sha3_256};
 use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
 use tower_governor::{
@@ -39,9 +40,11 @@ use crate::{
     COMPONENT,
     config::RateLimiterConfig,
     faucet::{FaucetId, MintRequest},
+    server::get_tokens::InvalidRequest,
     types::AssetOptions,
 };
 
+mod challenge;
 mod frontend;
 mod get_tokens;
 mod pow;
@@ -66,7 +69,7 @@ impl Server {
         faucet_id: FaucetId,
         asset_options: AssetOptions,
         request_sender: RequestSender,
-        pow_salt: String,
+        pow_secret: &str,
         api_keys: BTreeSet<String>,
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
@@ -77,19 +80,12 @@ impl Server {
         // SAFETY: Leaking is okay because we want it to live as long as the application.
         let metadata = Box::leak(Box::new(metadata));
 
-        let challenge_cache = pow::ChallengeCache::default();
+        // Hash the string secret to [u8; 32] for PoW
+        let mut hasher = Sha3_256::new();
+        hasher.update(pow_secret.as_bytes());
+        let secret_bytes: [u8; 32] = hasher.finalize().into();
 
-        // Start the cleanup task
-        let cleanup_state = challenge_cache.clone();
-        tokio::spawn(async move {
-            cleanup_state.run_cleanup().await;
-        });
-
-        let pow = PoW {
-            salt: pow_salt,
-            difficulty: Arc::new(AtomicUsize::new(1)), // Initialize difficulty to 1
-            challenge_cache,
-        };
+        let pow = PoW::new(secret_bytes);
 
         Server {
             mint_state,
@@ -156,7 +152,9 @@ impl Server {
                 .route("/background.png", get(frontend::get_background))
                 .route("/favicon.ico", get(frontend::get_favicon))
                 .route("/get_metadata", get(frontend::get_metadata))
-                .route("/pow", get(pow::get_pow_seed))
+                .route("/pow", get(|State(pow): State<PoW>| async move {
+                    Json(pow.build_challenge())
+                }))
                 // TODO: This feels rather ugly, and would be nice to move but I can't figure out the types.
                 .route(
                     "/get_tokens",
@@ -227,6 +225,30 @@ impl Server {
             .await
             .map_err(Into::into)
     }
+
+    /// Submits a challenge to the `PoW` instance.
+    ///
+    /// The challenge is validated and added to the cache.
+    ///
+    /// # Errors
+    /// Returns an error if:
+    /// * The challenge is expired.
+    /// * The challenge is invalid.
+    /// * The challenge was already used.
+    ///
+    /// # Panics
+    /// Panics if the current timestamp is before the UNIX epoch.
+    pub(crate) fn submit_challenge(
+        &self,
+        challenge: &str,
+        nonce: u64,
+    ) -> Result<(), InvalidRequest> {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current timestamp should be greater than unix epoch")
+            .as_secs();
+        self.pow.submit_challenge(timestamp, challenge, nonce)
+    }
 }
 
 impl FromRef<Server> for &'static Metadata {
@@ -238,6 +260,13 @@ impl FromRef<Server> for &'static Metadata {
 impl FromRef<Server> for GetTokensState {
     fn from_ref(input: &Server) -> Self {
         input.mint_state.clone()
+    }
+}
+
+impl FromRef<Server> for PoW {
+    fn from_ref(input: &Server) -> Self {
+        // Clone is cheap: only copies a 32-byte array and increments Arc reference counters.
+        input.pow.clone()
     }
 }
 
@@ -292,15 +321,11 @@ impl KeyExtractor for ApiKeyExtractor {
             // The naive approach would be to use an empty string as the extracted key for this case
             // but by doing this then all non-api key requests will be grouped together and the
             // limit will be reached almost instantly. To avoid this, we want to return a "unique"
-            // extracted key for each request. By concatenating the account id and the server
-            // timestamp we get a somewhat unique key each time so this rate limiter won't affect
+            // extracted key for each request. By concatenating the account id and the challenge
+            // we get a somewhat unique key each time so this rate limiter won't affect
             // requests without an api key.
             Ok(params.account_id.clone()
-                + &params
-                    .server_timestamp
-                    .as_ref()
-                    .ok_or(GovernorError::UnableToExtractKey)?
-                    .to_string())
+                + &params.challenge.as_ref().ok_or(GovernorError::UnableToExtractKey)?.to_string())
         }
     }
 }

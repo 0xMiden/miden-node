@@ -46,7 +46,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
         Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes())));
     let desired_senders = serialize_vec(account_ids.iter());
 
-    let desired_block_num = block_number.as_u32() as i64;
+    let desired_block_num = block_number_to_raw_sql(&block_number);
 
     // select notes since block by tag and sender
     let Some(desired_block_num): Option<i64> =
@@ -125,7 +125,7 @@ pub(crate) fn select_note_inclusion_proofs(
     Result::<BTreeMap<_, _>, _>::from_iter(raw_notes.iter().map(
         |(block_num, note_id, batch_index, note_index, merkle_path)| {
             let note_id = NoteId::read_from_bytes(&note_id[..])?;
-            let block_num = BlockNumber::from(*block_num as u32);
+            let block_num = raw_sql_to_block_number(*block_num);
             let node_index_in_block =
                 BlockNoteIndex::new(*batch_index as usize, *note_index as usize)
                     .expect("batch and note index from DB should be valid")
@@ -186,37 +186,39 @@ pub(crate) fn insert_account_delta(
     delta: &AccountDelta,
 ) -> Result<(), DatabaseError> {
     fn insert_acc_delta_stmt(
-        conn2: &mut SqliteConnection,
+        conn: &mut SqliteConnection,
         account_id: AccountId,
         block_num: BlockNumber,
-        nonce: u32,
+        nonce: u64,
     ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_deltas::table)
             .values(&[(
                 schema::account_deltas::account_id.eq(account_id.to_bytes()),
-                schema::account_deltas::block_num.eq(block_num.as_u32() as i64),
-                schema::account_deltas::nonce.eq(nonce as i32),
+                schema::account_deltas::block_num.eq(block_number_to_raw_sql(&block_num)),
+                schema::account_deltas::nonce.eq(dbg!(nonce) as i64),
             )])
-            .execute(conn2)?;
+            .execute(conn)?;
         Ok(count)
     }
 
-    let insert_slot_update_stmt = |conn2: &mut SqliteConnection,
-                                   account_id: AccountId,
-                                   block_num: BlockNumber,
-                                   slot: u8,
-                                   value: Vec<u8>|
-     -> Result<usize, DatabaseError> {
+    fn insert_slot_update_stmt(
+        conn2: &mut SqliteConnection,
+        account_id: AccountId,
+        block_num: BlockNumber,
+        slot: u8,
+        value: Vec<u8>,
+    ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_storage_slot_updates::table)
             .values(&[(
                 schema::account_storage_slot_updates::account_id.eq(account_id.to_bytes()),
-                schema::account_storage_slot_updates::block_num.eq(block_num.as_u32() as i64),
+                schema::account_storage_slot_updates::block_num
+                    .eq(block_number_to_raw_sql(&block_num)),
                 schema::account_storage_slot_updates::slot.eq(slot as i32),
                 schema::account_storage_slot_updates::value.eq(value),
             )])
             .execute(conn2)?;
         Ok(count)
-    };
+    }
 
     fn insert_storage_map_update_stmt(
         conn2: &mut SqliteConnection,
@@ -229,7 +231,8 @@ pub(crate) fn insert_account_delta(
         let count = diesel::insert_into(schema::account_storage_map_updates::table)
             .values(&[(
                 schema::account_storage_map_updates::account_id.eq(account_id.to_bytes()),
-                schema::account_storage_map_updates::block_num.eq(block_num.as_u32() as i64),
+                schema::account_storage_map_updates::block_num
+                    .eq(block_number_to_raw_sql(&block_num)),
                 schema::account_storage_map_updates::slot.eq(slot as i32),
                 schema::account_storage_map_updates::key.eq(key),
                 schema::account_storage_map_updates::value.eq(value),
@@ -248,7 +251,8 @@ pub(crate) fn insert_account_delta(
         let count = diesel::insert_into(schema::account_fungible_asset_deltas::table)
             .values(&[(
                 schema::account_fungible_asset_deltas::account_id.eq(account_id.to_bytes()),
-                schema::account_fungible_asset_deltas::block_num.eq(block_num.as_u32() as i64),
+                schema::account_fungible_asset_deltas::block_num
+                    .eq(block_number_to_raw_sql(&block_num)),
                 schema::account_fungible_asset_deltas::faucet_id.eq(faucet_id),
                 schema::account_fungible_asset_deltas::delta.eq(delta as i32),
             )])
@@ -266,7 +270,8 @@ pub(crate) fn insert_account_delta(
         let count = diesel::insert_into(schema::account_non_fungible_asset_updates::table)
             .values(&[(
                 schema::account_non_fungible_asset_updates::account_id.eq(account_id.to_bytes()),
-                schema::account_non_fungible_asset_updates::block_num.eq(block_num.as_u32() as i64),
+                schema::account_non_fungible_asset_updates::block_num
+                    .eq(block_number_to_raw_sql(&block_num)),
                 schema::account_non_fungible_asset_updates::vault_key.eq(vault_key),
                 schema::account_non_fungible_asset_updates::is_remove.eq(is_remove),
             )])
@@ -278,7 +283,12 @@ pub(crate) fn insert_account_delta(
         conn,
         account_id,
         block_number,
-        delta.nonce().map(|x| x.inner() as u32).unwrap_or_default(),
+        dbg!(
+            delta
+                .nonce()
+                .map(|felt: miden_objects::Felt| -> u64 {  dbg!(felt).into() }) // TODO verify this is the right representation!
+                .unwrap_or_default()
+        ),
     )?;
 
     for (&slot, value) in delta.storage().values() {
@@ -327,9 +337,6 @@ pub(crate) fn insert_account_delta(
     Ok(())
 }
 
-// there are a bunch of closures with detailed type annotations, which lengthens the function
-// TODO some _might_ be extractable, they _should_ be context independent
-//
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
 #[allow(clippy::too_many_lines)]
 pub(crate) fn upsert_accounts(
@@ -395,17 +402,16 @@ pub(crate) fn upsert_accounts(
             schema::accounts::network_account_id_prefix
                 .eq(network_account_id_prefix.map(|prefix| prefix as i64)),
             schema::accounts::account_commitment.eq(update.final_state_commitment().to_bytes()),
-            schema::accounts::block_num.eq(block_num.as_u32() as i64),
+            schema::accounts::block_num.eq(block_number_to_raw_sql(&block_num)),
             schema::accounts::details.eq(full_account.as_ref().map(|account| account.to_bytes())),
         );
         let v = val.clone();
         let inserted = diesel::insert_into(schema::accounts::table)
-                .values(&v)
-                // TODO do the update on conflict
-                .on_conflict(schema::accounts::account_id)
-                .do_update()
-                .set(val)
-                .execute(conn)?;
+            .values(&v)
+            .on_conflict(schema::accounts::account_id)
+            .do_update()
+            .set(val)
+            .execute(conn)?;
 
         debug_assert_eq!(inserted, 1);
 
@@ -444,7 +450,7 @@ pub(crate) fn insert_notes(
     let count = diesel::insert_into(schema::notes::table)
         .values(Vec::from_iter(notes.iter().map(|(note, nullifier)| {
             (
-                schema::notes::block_num.eq(note.block_num.as_u32() as i64),
+                schema::notes::block_num.eq(block_number_to_raw_sql(&note.block_num)),
                 schema::notes::batch_index.eq(note.note_index.batch_idx() as i32),
                 schema::notes::note_index.eq(note.note_index.note_idx_in_batch() as i32),
                 schema::notes::note_id.eq(note.note_id.to_bytes()),
@@ -481,7 +487,7 @@ pub(crate) fn insert_transactions(
             (
                 schema::transactions::transaction_id.eq(tx.id().to_bytes()),
                 schema::transactions::account_id.eq(tx.account_id().to_bytes()),
-                schema::transactions::block_num.eq(block_num.as_u32() as i64),
+                schema::transactions::block_num.eq(block_number_to_raw_sql(&block_num)),
             )
         })))
         .execute(conn)?;
@@ -590,7 +596,7 @@ pub(crate) fn insert_nullifiers_for_block(
                 (
                     schema::nullifiers::nullifier.eq(bytes),
                     schema::nullifiers::nullifier_prefix.eq(get_nullifier_prefix(nullifier) as i32),
-                    schema::nullifiers::block_num.eq(block_num.as_u32() as i64),
+                    schema::nullifiers::block_num.eq(block_number_to_raw_sql(&block_num)),
                 )
             },
         )))
@@ -629,7 +635,7 @@ pub(crate) fn select_nullifiers_by_prefix_q(
     let nullifiers_raw =
         SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
             .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
-            .filter(schema::nullifiers::block_num.ge(i64::from(block_num.as_u32())))
+            .filter(schema::nullifiers::block_num.ge(block_number_to_raw_sql(&block_num)))
             .order(schema::nullifiers::block_num.asc())
             .load::<models::NullifierRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
@@ -875,21 +881,22 @@ pub(crate) fn select_nonce_stmt(
     end_block_num: &BlockNumber,
 ) -> Result<Option<u64>, DatabaseError> {
     let desired_account_id = account_id.to_bytes();
-    let start_block_num = start_block_num.as_u32() as i64;
-    let end_block_num = end_block_num.as_u32() as i64;
+    let start_block_num = block_number_to_raw_sql(&start_block_num);
+    let end_block_num = block_number_to_raw_sql(&end_block_num);
 
-    let res = SelectDsl::select(schema::account_deltas::table, schema::account_deltas::nonce)
-        .filter(
-            schema::account_deltas::account_id
-                .eq(desired_account_id)
-                .and(schema::account_deltas::block_num.gt(start_block_num))
-                .and(schema::account_deltas::block_num.le(end_block_num)),
-        )
-        .order(schema::account_deltas::block_num.desc())
-        .limit(1)
-        .get_result::<i32>(conn)
-        .optional()?;
-    Ok(res.map(|nonce| nonce as u64))
+    let maybe_nonce =
+        SelectDsl::select(schema::account_deltas::table, schema::account_deltas::nonce)
+            .filter(
+                schema::account_deltas::account_id
+                    .eq(desired_account_id)
+                    .and(schema::account_deltas::block_num.gt(start_block_num))
+                    .and(schema::account_deltas::block_num.le(end_block_num)),
+            )
+            .order(schema::account_deltas::block_num.desc())
+            .limit(1)
+            .get_result::<i64>(conn)
+            .optional()?;
+    Ok(maybe_nonce.map(|nonce| nonce as u64))
 }
 
 // Attention: A more complex query, utilizing aliases for nested queries
@@ -900,8 +907,8 @@ pub(crate) fn select_slot_updates_stmt(
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(i32, Vec<u8>)>, DatabaseError> {
     let desired_account_id = account_id_val.to_bytes();
-    let start_block_num = start_block_num.as_u32() as i64;
-    let end_block_num = end_block_num.as_u32() as i64;
+    let start_block_num = block_number_to_raw_sql(&start_block_num);
+    let end_block_num = block_number_to_raw_sql(&end_block_num);
 
     use schema::account_storage_slot_updates::dsl::{account_id, block_num, slot, value};
 
@@ -937,8 +944,8 @@ pub(crate) fn select_storage_map_updates_stmt(
     use schema::account_storage_map_updates::dsl::{account_id, block_num, key, slot, value};
 
     let desired_account_id = account_id_val.to_bytes();
-    let start_block_num = start_block_num.as_u32() as i64;
-    let end_block_num = end_block_num.as_u32() as i64;
+    let start_block_num = block_number_to_raw_sql(&start_block_num);
+    let end_block_num = block_number_to_raw_sql(&end_block_num);
 
     // Alias the table for the inner and outer query
     let (a, b) = alias!(
@@ -970,8 +977,8 @@ pub(crate) fn select_fungible_asset_deltas_stmt(
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(Vec<u8>, Option<i64>)>, DatabaseError> {
     let desired_account_id = account_id.to_bytes();
-    let start_block_num = start_block_num.as_u32() as i64;
-    let end_block_num = end_block_num.as_u32() as i64;
+    let start_block_num = block_number_to_raw_sql(&start_block_num);
+    let end_block_num = block_number_to_raw_sql(&end_block_num);
 
     Ok(SelectDsl::select(
         schema::account_fungible_asset_deltas::table
@@ -997,8 +1004,8 @@ pub(crate) fn select_non_fungible_asset_updates_stmt(
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(i64, Vec<u8>, i32)>, DatabaseError> {
     let desired_account_id = account_id.to_bytes();
-    let start_block_num = start_block_num.as_u32() as i64;
-    let end_block_num = end_block_num.as_u32() as i64;
+    let start_block_num = block_number_to_raw_sql(&start_block_num);
+    let end_block_num = block_number_to_raw_sql(&end_block_num);
 
     Ok(SelectDsl::select(
         schema::account_non_fungible_asset_updates::table,
@@ -1034,6 +1041,7 @@ pub(crate) fn get_state_sync(
     note_tags: Vec<u32>,
 ) -> Result<StateSyncUpdate, StateSyncError> {
     let desired_senders = serialize_vec(account_ids.iter());
+    // TODO introduce a helper for this conversion
     let desired_note_tags =
         Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes())));
 

@@ -34,9 +34,19 @@ pub(crate) fn serialize_vec<'a, D: Serializable + 'a>(
 /// suffice well beyond all our lifetimes.
 pub(crate) fn raw_sql_to_block_number(raw: impl Into<i64>) -> BlockNumber {
     let raw = raw.into();
+    debug_assert!(raw <= u32::MAX as i64);
     #[allow(clippy::cast_sign_loss)]
     BlockNumber::from(raw as u32)
 }
+
+/// Convert the in-memory type `BlockNumber` into the database type `BigInt`
+///
+/// Attention: We use `u32` as actual in-memory representation, since this will
+/// suffice well beyond all our lifetimes.
+pub(crate) fn block_number_to_raw_sql(block_num: &BlockNumber) -> i64 {
+    block_num.as_u32() as i64
+}
+
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_objects::note::Nullifier;
 

@@ -4,7 +4,7 @@ diesel::table! {
     account_deltas (account_id, block_num) {
         account_id -> Binary,
         block_num -> BigInt,
-        nonce -> Integer, // TODO it's a `Felt`, so why is this not a `BigInt`?
+        nonce -> BigInt,
     }
 }
 

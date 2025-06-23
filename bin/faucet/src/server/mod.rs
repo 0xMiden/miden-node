@@ -9,24 +9,20 @@ use std::{
 use anyhow::Context;
 use axum::{
     Json, Router,
-    extract::{FromRef, Query, State},
+    extract::{FromRef, State},
     response::sse::Event,
     routing::get,
 };
 use frontend::Metadata;
-use get_tokens::{GetTokensState, RawMintRequest, get_tokens};
-use http::{HeaderValue, Request, StatusCode};
+use get_tokens::{GetTokensState, get_tokens};
+use http::{HeaderValue, Request};
 use miden_node_utils::grpc::UrlExt;
-use miden_objects::account::AccountId;
-use miden_tx::utils::Serializable;
 use pow::PoW;
 use sha3::{Digest, Sha3_256};
 use tokio::{net::TcpListener, sync::mpsc};
 use tower::ServiceBuilder;
 use tower_governor::{
-    GovernorError, GovernorLayer,
-    governor::GovernorConfigBuilder,
-    key_extractor::{KeyExtractor, SmartIpKeyExtractor},
+    GovernorLayer, governor::GovernorConfigBuilder, key_extractor::SmartIpKeyExtractor,
 };
 use tower_http::{
     cors::CorsLayer,
@@ -38,9 +34,11 @@ use url::Url;
 
 use crate::{
     COMPONENT,
-    config::RateLimiterConfig,
     faucet::{FaucetId, MintRequest},
-    server::get_tokens::InvalidRequest,
+    server::{
+        get_tokens::InvalidRequest,
+        rate_limiter::{AccountKeyExtractor, ApiKeyExtractor, RateLimiterConfig},
+    },
     types::AssetOptions,
 };
 
@@ -48,6 +46,7 @@ mod challenge;
 mod frontend;
 mod get_tokens;
 mod pow;
+pub mod rate_limiter;
 
 // FAUCET STATE
 // ================================================================================================
@@ -103,8 +102,8 @@ impl Server {
         // Rate limits by IP. We do additional per account rate limiting in the get_tokens method.
         // SAFETY: No non-zero elements, so we are okay.
         let ip_rate_limiter = GovernorConfigBuilder::default()
-            .const_burst_size(rate_limiter.ip_rate_limit_burst_size)
-            .const_per_second(rate_limiter.ip_rate_limit_per_second)
+            .const_burst_size(rate_limiter.ip_burst_size)
+            .const_per_second(rate_limiter.ip_per_second)
             // The default extractor uses the peer address which is incorrect
             // if used behind a proxy.
             .key_extractor(SmartIpKeyExtractor)
@@ -113,8 +112,8 @@ impl Server {
         let ip_rate_limiter = Arc::new(ip_rate_limiter);
 
         let account_rate_limiter = GovernorConfigBuilder::default()
-            .const_burst_size(rate_limiter.account_rate_limit_burst_size)
-            .const_per_second(rate_limiter.account_rate_limit_per_second)
+            .const_burst_size(rate_limiter.account_burst_size)
+            .const_per_second(rate_limiter.account_per_second)
             // The default extractor uses the peer address which is incorrect
             // if used behind a proxy.
             .key_extractor(AccountKeyExtractor)
@@ -123,8 +122,8 @@ impl Server {
         let account_rate_limiter = Arc::new(account_rate_limiter);
 
         let api_key_rate_limiter = GovernorConfigBuilder::default()
-            .const_burst_size(rate_limiter.api_key_rate_limit_burst_size)
-            .const_per_second(rate_limiter.api_key_rate_limit_per_second)
+            .const_burst_size(rate_limiter.api_key_burst_size)
+            .const_per_second(rate_limiter.api_key_per_second)
             .key_extractor(ApiKeyExtractor)
             .finish()
             .unwrap();
@@ -267,65 +266,5 @@ impl FromRef<Server> for PoW {
     fn from_ref(input: &Server) -> Self {
         // Clone is cheap: only copies a 32-byte array and increments Arc reference counters.
         input.pow.clone()
-    }
-}
-
-#[derive(Clone)]
-struct AccountKeyExtractor;
-
-// Required so we can impl Hash.
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct RequestAccountId(AccountId);
-
-impl std::hash::Hash for RequestAccountId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.to_bytes().hash(state);
-    }
-}
-
-impl KeyExtractor for AccountKeyExtractor {
-    type Key = RequestAccountId;
-
-    fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, GovernorError> {
-        let params = Query::<RawMintRequest>::try_from_uri(req.uri())
-            .map_err(|_| GovernorError::UnableToExtractKey)?;
-
-        if params.account_id.starts_with("0x") {
-            AccountId::from_hex(&params.account_id)
-        } else {
-            AccountId::from_bech32(&params.account_id).map(|(_, account_id)| account_id)
-        }
-        .map(RequestAccountId)
-        .map_err(|_| GovernorError::Other {
-            code: StatusCode::BAD_REQUEST,
-            msg: Some("Invalid account id".to_string()),
-            headers: None,
-        })
-    }
-}
-
-#[derive(Clone)]
-struct ApiKeyExtractor;
-
-impl KeyExtractor for ApiKeyExtractor {
-    type Key = String;
-
-    fn extract<T>(&self, req: &Request<T>) -> Result<Self::Key, GovernorError> {
-        let params = Query::<RawMintRequest>::try_from_uri(req.uri())
-            .map_err(|_| GovernorError::UnableToExtractKey)?;
-
-        if let Some(api_key) = params.api_key.as_ref() {
-            // Requests with the same api key are rate limited together.
-            Ok(api_key.to_string())
-        } else {
-            // The naive approach would be to use an empty string as the extracted key for this case
-            // but by doing this then all non-api key requests will be grouped together and the
-            // limit will be reached almost instantly. To avoid this, we want to return a "unique"
-            // extracted key for each request. By concatenating the account id and the challenge
-            // we get a somewhat unique key each time so this rate limiter won't affect
-            // requests without an api key.
-            Ok(params.account_id.clone()
-                + &params.challenge.as_ref().ok_or(GovernorError::UnableToExtractKey)?.to_string())
-        }
     }
 }

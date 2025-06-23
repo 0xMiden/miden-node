@@ -1177,6 +1177,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-err"
+version = "2.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88a41f105fe1d5b6b34b2055e3dc59bb79b46b48b2040b9e6c7b4b5de097aa41"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2427,8 +2436,10 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "chrono",
  "deadpool",
  "deadpool-sync",
+ "fs-err",
  "hex",
  "miden-lib",
  "miden-node-proto",
@@ -2440,10 +2451,12 @@ dependencies = [
  "regex",
  "rusqlite",
  "rusqlite_migration",
+ "serde",
  "termtree",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
+ "toml",
  "tonic",
  "tonic-reflection",
  "tower-http",

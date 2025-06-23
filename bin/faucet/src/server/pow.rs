@@ -101,7 +101,8 @@ impl PoW {
     /// * The challenge is expired.
     /// * The challenge is invalid.
     /// * The challenge was already used.
-    /// * The account has already submitted a challenge.
+    /// * The account has already submitted a challenge recently (within the last
+    ///   [`CHALLENGE_LIFETIME_SECONDS`] seconds).
     ///
     /// # Panics
     /// Panics if the challenge cache lock is poisoned.
@@ -242,6 +243,9 @@ impl ChallengeCache {
 
 #[cfg(test)]
 mod tests {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+
     use super::*;
 
     fn create_test_secret() -> [u8; 32] {
@@ -258,7 +262,8 @@ mod tests {
     async fn test_pow_validation() {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
-        let api_key = ApiKey::generate();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
 
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let challenge = pow
@@ -305,7 +310,8 @@ mod tests {
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let api_key = ApiKey::generate();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
 
         // Valid timestamp (current time)
         let challenge = Challenge::new(1, current_time, secret, account_id, api_key.clone());
@@ -321,7 +327,8 @@ mod tests {
     async fn account_id_is_rate_limited() {
         let secret = create_test_secret();
         let pow = PoW::new(secret);
-        let api_key = ApiKey::generate();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
 
         // Solve first challenge

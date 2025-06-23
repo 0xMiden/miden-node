@@ -152,13 +152,18 @@ impl Challenge {
 mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+
     use super::*;
 
     #[test]
     fn challenge_serialize_and_deserialize_json() {
         let secret = [1u8; 32];
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let challenge = Challenge::new(2, 1_234_567_890, secret, account_id, ApiKey::generate());
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
+        let challenge = Challenge::new(2, 1_234_567_890, secret, account_id, api_key);
 
         // Test that it serializes to the expected JSON format
         let json = serde_json::to_string(&challenge).unwrap();
@@ -187,7 +192,8 @@ mod tests {
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let api_key = ApiKey::generate();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
 
         let challenge = Challenge::new(difficulty, timestamp, secret, account_id, api_key);
 

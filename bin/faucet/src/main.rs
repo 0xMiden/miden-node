@@ -236,8 +236,9 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
 
             let config_file_path = current_dir.join(config_path);
 
+            let mut rng = ChaCha20Rng::from_seed(rand::random());
             let api_keys = (0..*generated_api_keys_count)
-                .map(|_| ApiKey::generate().encode())
+                .map(|_| ApiKey::generate(&mut rng).encode())
                 .collect::<Vec<_>>();
 
             let mut config = FaucetConfig {

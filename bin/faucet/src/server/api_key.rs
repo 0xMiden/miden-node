@@ -1,6 +1,5 @@
 use base64::{Engine, prelude::BASE64_STANDARD};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 
 use crate::server::get_tokens::InvalidMintRequest;
@@ -16,8 +15,7 @@ pub struct ApiKey([u8; 32]);
 
 impl ApiKey {
     /// Generates a random API key.
-    pub fn generate() -> Self {
-        let mut rng = ChaCha20Rng::from_seed(rand::random());
+    pub fn generate(rng: &mut impl Rng) -> Self {
         let mut api_key = [0u8; 32];
         rng.fill(&mut api_key);
         Self(api_key)
@@ -53,11 +51,15 @@ impl ApiKey {
 
 #[cfg(test)]
 mod tests {
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+
     use crate::server::{ApiKey, api_key::API_KEY_PREFIX};
 
     #[test]
     fn api_key_encode_and_decode() {
-        let api_key = ApiKey::generate();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
 
         let encoded_key = api_key.encode();
         assert!(encoded_key.starts_with(API_KEY_PREFIX));

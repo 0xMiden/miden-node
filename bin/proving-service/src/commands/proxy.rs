@@ -61,9 +61,9 @@ impl StartProxy {
         let mut conf = ServerConf::new().ok_or(ProvingServiceError::PingoraConfigFailed(
             "Failed to create server conf".to_string(),
         ))?;
-        conf.grace_period_seconds = Some(self.proxy_config.grace_period_seconds);
+        conf.grace_period_seconds = Some(self.proxy_config.grace_period.as_secs());
         conf.graceful_shutdown_timeout_seconds =
-            Some(self.proxy_config.graceful_shutdown_timeout_seconds);
+            Some(self.proxy_config.graceful_shutdown_timeout.as_secs());
 
         let mut server = Server::new_with_opt_and_conf(Some(Opt::default()), conf);
 

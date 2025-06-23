@@ -12,7 +12,7 @@ use tracing::{info, instrument};
 
 use crate::{
     COMPONENT,
-    generated::{self, ProvingRequest, ProvingResponse, api_server::Api as ProverApi},
+    generated::{self as proto, ProvingRequest, ProvingResponse, api_server::Api as ProverApi},
 };
 
 /// Specifies the type of proof supported by the proving service.
@@ -194,15 +194,15 @@ impl ProverApi for ProverRpcApi {
         request: Request<ProvingRequest>,
     ) -> Result<Response<ProvingResponse>, tonic::Status> {
         match request.get_ref().proof_type() {
-            generated::ProofType::Transaction => {
+            proto::ProofType::Transaction => {
                 let tx_witness = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_tx(tx_witness)
             },
-            generated::ProofType::Batch => {
+            proto::ProofType::Batch => {
                 let proposed_batch = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_batch(proposed_batch)
             },
-            generated::ProofType::Block => {
+            proto::ProofType::Block => {
                 let proposed_block = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_block(proposed_block)
             },

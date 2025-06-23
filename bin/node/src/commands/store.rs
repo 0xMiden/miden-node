@@ -19,7 +19,10 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use url::Url;
 
-use super::{DEFAULT_MONITOR_INTERVAL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL};
+use super::{
+    DEFAULT_MONITOR_INTERVAL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL,
+    duration_to_human_readable_string,
+};
 use crate::system_monitor::SystemMonitor;
 
 /// The default filepath for the genesis account.
@@ -62,7 +65,7 @@ pub enum StoreCommand {
         /// Interval at which to monitor the system.
         #[arg(
             long = "monitor.interval",
-            default_value = DEFAULT_MONITOR_INTERVAL,
+            default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]

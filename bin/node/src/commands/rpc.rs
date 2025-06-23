@@ -7,6 +7,7 @@ use url::Url;
 
 use super::{
     DEFAULT_MONITOR_INTERVAL, ENV_BLOCK_PRODUCER_URL, ENV_ENABLE_OTEL, ENV_RPC_URL, ENV_STORE_URL,
+    duration_to_human_readable_string,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -37,7 +38,7 @@ pub enum RpcCommand {
         /// Interval at which to monitor the system.
         #[arg(
             long = "monitor.interval",
-            default_value = DEFAULT_MONITOR_INTERVAL,
+            default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]

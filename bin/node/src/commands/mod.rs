@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 pub mod block_producer;
 pub mod bundled;
 pub mod rpc;
@@ -13,7 +15,12 @@ const ENV_STORE_URL: &str = "MIDEN_NODE_STORE_URL";
 const ENV_DATA_DIRECTORY: &str = "MIDEN_NODE_DATA_DIRECTORY";
 const ENV_ENABLE_OTEL: &str = "MIDEN_NODE_ENABLE_OTEL";
 
-const DEFAULT_BLOCK_INTERVAL: &str = "5s";
-const DEFAULT_BATCH_INTERVAL: &str = "2s";
-const DEFAULT_MONITOR_INTERVAL: &str = "10s";
-const DEFAULT_NTX_TICKER_INTERVAL: &str = "200ms";
+const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(5);
+const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(2);
+const DEFAULT_MONITOR_INTERVAL: Duration = Duration::from_secs(10);
+const DEFAULT_NTX_TICKER_INTERVAL: Duration = Duration::from_millis(200);
+
+// Formats a Duration into a human-readable string for display in clap help text.
+fn duration_to_human_readable_string(duration: Duration) -> String {
+    humantime::format_duration(duration).to_string()
+}

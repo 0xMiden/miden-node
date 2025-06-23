@@ -7,7 +7,7 @@ use url::Url;
 use super::{
     DEFAULT_BATCH_INTERVAL, DEFAULT_BLOCK_INTERVAL, DEFAULT_MONITOR_INTERVAL, ENV_BATCH_PROVER_URL,
     ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_NTX_BUILDER_URL,
-    ENV_STORE_URL,
+    ENV_STORE_URL, duration_to_human_readable_string,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -47,7 +47,7 @@ pub enum BlockProducerCommand {
         /// Interval at which to produce blocks.
         #[arg(
             long = "block.interval",
-            default_value = DEFAULT_BLOCK_INTERVAL,
+            default_value = &duration_to_human_readable_string(DEFAULT_BLOCK_INTERVAL),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]
@@ -56,7 +56,7 @@ pub enum BlockProducerCommand {
         /// Interval at which to produce batches.
         #[arg(
             long = "batch.interval",
-            default_value = DEFAULT_BATCH_INTERVAL,
+            default_value = &duration_to_human_readable_string(DEFAULT_BATCH_INTERVAL),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]
@@ -65,7 +65,7 @@ pub enum BlockProducerCommand {
         /// Interval at which to monitor the system.
         #[arg(
             long = "monitor.interval",
-            default_value = DEFAULT_MONITOR_INTERVAL,
+            default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]

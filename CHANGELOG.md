@@ -15,6 +15,7 @@
 - Compressed faucet background image (#985).
 - Added support for TLS to miden-proving-service-client (#968).
 - Added support for TLS to faucet's connection to node RPC (#976).
+- Improved CLI help text by replacing integer-based duration arguments with human-readable duration strings (e.g., `--timeout 5s` instead of `--timeout 5000`).
 
 ## v0.9.2 (2025-06-12)
 

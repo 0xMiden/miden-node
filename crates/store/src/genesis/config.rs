@@ -1,13 +1,26 @@
+#![allow(dead_code)]
+#![allow(clippy::from_iter_instead_of_collect)]
 //! Describe a subset of the genesis manifest in easily human readable format
 
 use std::{collections::HashMap, path::Path};
 
-use miden_lib::utils::{self, Deserializable, ReadAdapter};
-use miden_objects::{
-    AccountError, AssetError,
-    account::{AccountComponent, AccountId, AccountIdAnchor, AccountStorageMode, AccountType},
-    asset::{Asset, FungibleAsset},
+use miden_lib::{
+    AuthScheme,
+    account::{faucets::create_basic_fungible_faucet, wallets::create_basic_wallet},
+    utils::{self, Deserializable, ReadAdapter},
 };
+use miden_node_utils::crypto::get_rpo_random_coin;
+use miden_objects::{
+    AccountError, AssetError, Felt, FieldElement, StarkField, TokenSymbolError,
+    account::{
+        AccountDelta, AccountId, AccountIdAnchor, AccountStorageDelta, AccountStorageMode,
+        AccountType, AccountVaultDelta,
+    },
+    asset::{Asset, FungibleAsset, TokenSymbol},
+    crypto::dsa::rpo_falcon512::SecretKey,
+};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha20Rng;
 
 use crate::GenesisState;
 
@@ -19,7 +32,7 @@ pub enum AccountRepr {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WalletRepr {
-    mutable: bool,
+    can_be_updated: bool,
     #[serde(default)]
     storage_mode: StorageMode,
     assets: Vec<AssetEntry>,
@@ -56,12 +69,12 @@ pub enum StorageMode {
     Private,
 }
 
-impl Into<AccountStorageMode> for StorageMode {
-    fn into(self) -> AccountStorageMode {
-        match self {
-            Self::Network => AccountStorageMode::Network,
-            Self::Private => AccountStorageMode::Private,
-            Self::Public => AccountStorageMode::Public,
+impl From<StorageMode> for AccountStorageMode {
+    fn from(mode: StorageMode) -> AccountStorageMode {
+        match mode {
+            StorageMode::Network => AccountStorageMode::Network,
+            StorageMode::Private => AccountStorageMode::Private,
+            StorageMode::Public => AccountStorageMode::Public,
         }
     }
 }
@@ -85,8 +98,14 @@ pub enum Error {
     Account(#[from] AccountError),
     #[error("Asset translation from config to state failed")]
     Asset(#[from] AssetError),
-    #[error("You defined an asset that has no faucet producing it")]
+    #[error("Applying assets to account failed")]
+    AccountDelta(#[from] miden_objects::AccountDeltaError),
+    #[error("You defined an asset {symbol} that has no faucet producing it")]
     MissingFaucetDefinition { symbol: String },
+    #[error(transparent)]
+    TokenSymbol(#[from] TokenSymbolError),
+    #[error("The provided max supply {max_supply} exceeds the field modulus {modulus}")]
+    MaxSupplyExceedsFieldModulus { max_supply: u64, modulus: u64 },
 }
 
 ///
@@ -106,14 +125,20 @@ impl GenesisConfig {
     }
 
     /// Convert the in memory representation into the new genesis state
-    pub fn into_state(&self) -> Result<GenesisState, Error> {
+    ///
+    /// Notice: Generates keys and returns the secret keys, hence this is not sane to be used
+    /// for production environments. There, you want to generate the keys externally.
+    pub fn into_state(self) -> Result<GenesisState, Error> {
         let version = self.version;
         let timestamp = self.timestamp;
-        let repr_accounts = &self.account;
-        let repr_faucets = &self.faucet;
+        let repr_accounts = self.account;
+        let repr_faucets = self.faucet;
         let mut accounts = Vec::new();
-        // TODO make the symbol a type
+        // TODO use `TokenSymbol` the symbol a type
         let mut faucets = HashMap::<String, AccountId>::new();
+
+        // TODO
+        let _keys = HashMap::<Felt, SecretKey>::new();
 
         fn load_serialized_lib_from_path<T: Deserializable>(path: &Path) -> Result<T, Error> {
             let path = fs_err::canonicalize(path).map_err(Error::LibraryReference)?;
@@ -123,6 +148,7 @@ impl GenesisConfig {
             Ok(lib)
         }
 
+        let anchor = AccountIdAnchor::PRE_GENESIS;
         // first setup all the faucets
         for FaucetRepr {
             symbol,
@@ -132,54 +158,70 @@ impl GenesisConfig {
             fungible,
         } in repr_faucets
         {
-            let storage_slots = Vec::new(); // FIXME
-            let code = load_serialized_lib_from_path(Path::new("somewhere"))?; // FIXME
-            let anchor = AccountIdAnchor::PRE_GENESIS;
-            let component = AccountComponent::new(code, storage_slots)?;
-            let account_type = if *fungible {
+            let mut rng = ChaCha20Rng::from_seed(rand::random());
+            let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let auth = AuthScheme::RpoFalcon512 { pub_key: secret.public_key() };
+            let init_seed: [u8; 32] = rng.random();
+
+            let token_symbol = TokenSymbol::new(&symbol)?;
+            let max_supply = Felt::try_from(max_supply).map_err(|_| {
+                Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS }
+            })?;
+            let account_type = if fungible {
                 AccountType::FungibleFaucet
             } else {
-                AccountType::NonFungibleFaucet
+                todo!("We don't support non fungible ones just yet")
+                // AccountType::NonFungibleFaucet
             };
-            // FIXME the seed _MUST_ be cryptographically secure
-            let faucet_account = miden_objects::account::Account::builder([0u8; 32])
-                .with_component(component)
-                .anchor(anchor)
-                .account_type(account_type)
-                .storage_mode(storage_mode.clone().into())
-                .build_existing()?;
-            faucets.insert(symbol.clone(), faucet_account.id());
-            accounts.push(faucet_account)
+            let account_storage_mode = storage_mode.into();
+            let (faucet_account, _seed) = create_basic_fungible_faucet(
+                init_seed,
+                anchor,
+                token_symbol,
+                decimals,
+                max_supply,
+                account_storage_mode,
+                auth,
+            )?;
+            faucets.insert(symbol, faucet_account.id());
+
+            accounts.push(faucet_account);
         }
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
-        for WalletRepr { mutable, storage_mode, assets } in repr_accounts {
+        for WalletRepr { can_be_updated, storage_mode, assets } in repr_accounts {
+            let mut rng = ChaCha20Rng::from_seed(rand::random());
+            let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let auth = AuthScheme::RpoFalcon512 { pub_key: secret.public_key() };
+            let init_seed: [u8; 32] = rng.random();
+
             let assets = Result::<Vec<_>, Error>::from_iter(assets.into_iter().map(
-                |AssetEntry { amount, symbol }: &AssetEntry| {
+                |AssetEntry { amount, symbol }: AssetEntry| {
+                    let _ = TokenSymbol::new(&symbol)?;
                     let faucet_id = faucets
-                        .get(symbol)
+                        .get(&symbol)
                         .ok_or_else(|| Error::MissingFaucetDefinition { symbol: symbol.clone() })?;
                     // FIXME TODO add non funcgible assets
-                    Ok(Asset::Fungible(FungibleAsset::new(faucet_id.clone(), *amount)?))
+                    Ok(Asset::Fungible(FungibleAsset::new(*faucet_id, amount)?))
                 },
             ))?;
-            let storage_slots = Vec::new(); // FIXME
-            let code = load_serialized_lib_from_path(Path::new("somewhere"))?; // FIXME
-            let anchor = AccountIdAnchor::PRE_GENESIS;
-            let component = AccountComponent::new(code, storage_slots)?;
-            let account_type = if *mutable {
+            let account_type = if can_be_updated {
                 AccountType::RegularAccountUpdatableCode
             } else {
                 AccountType::RegularAccountImmutableCode
             };
-            // FIXME the seed _MUST_ be cryptographically secure
-            let account = miden_objects::account::Account::builder([0u8; 32])
-                .with_component(component)
-                .anchor(anchor)
-                .account_type(account_type)
-                .storage_mode(Into::into(*storage_mode))
-                .with_assets(assets)
-                .build_existing()?;
+            let account_storage_mode = storage_mode.into();
+            let (mut account, _seed) =
+                create_basic_wallet(init_seed, anchor, auth, account_type, account_storage_mode)?;
+            // by convention, 1 is the nonce for a shared account, which genesis by definition
+            // is, so all the accounts there should have nonce 1
+            let delta = AccountDelta::new(
+                AccountStorageDelta::default(),
+                AccountVaultDelta::from_iters(assets, None),
+                Some(Felt::ONE),
+            )?;
+            account.apply_delta(&delta)?;
+
             accounts.push(account);
         }
         Ok(GenesisState { accounts, version, timestamp })

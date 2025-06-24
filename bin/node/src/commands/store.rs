@@ -19,10 +19,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use url::Url;
 
-use super::{
-    DEFAULT_MONITOR_INTERVAL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL,
-    duration_to_human_readable_string,
-};
+use super::{ENV_DATA_DIRECTORY, ENV_STORE_URL, TelemetryConfig};
 use crate::system_monitor::SystemMonitor;
 
 /// The default filepath for the genesis account.
@@ -55,21 +52,8 @@ pub enum StoreCommand {
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
 
-        /// Enables the exporting of traces for OpenTelemetry.
-        ///
-        /// This can be further configured using environment variables as defined in the official
-        /// OpenTelemetry documentation. See our operator manual for further details.
-        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
-        open_telemetry: bool,
-
-        /// Interval at which to monitor the system.
-        #[arg(
-            long = "monitor.interval",
-            default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
-            value_parser = humantime::parse_duration,
-            value_name = "DURATION"
-        )]
-        monitor_interval: Duration,
+        #[command(flatten)]
+        telemetry: TelemetryConfig,
     },
 }
 
@@ -80,19 +64,15 @@ impl StoreCommand {
             StoreCommand::Bootstrap { data_directory, accounts_directory } => {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
-            // Note: open-telemetry is handled in main.
-            StoreCommand::Start {
-                url,
-                data_directory,
-                open_telemetry: _,
-                monitor_interval,
-            } => Self::start(url, data_directory, monitor_interval).await,
+            StoreCommand::Start { url, data_directory, telemetry } => {
+                Self::start(url, data_directory, telemetry.monitor_interval).await
+            },
         }
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        if let Self::Start { open_telemetry, .. } = self {
-            *open_telemetry
+        if let Self::Start { telemetry, .. } = self {
+            telemetry.open_telemetry
         } else {
             false
         }

@@ -50,7 +50,7 @@ impl TryFrom<NoteTag> for NetworkAccountPrefix {
     type Error = NetworkAccountError;
 
     fn try_from(tag: NoteTag) -> Result<Self, Self::Error> {
-        if !tag.is_single_target() {
+        if tag.execution_mode() != ExecutionMode::Network && !tag.is_single_target() {
             return Err(NetworkAccountError::InvalidExecutionMode(tag));
         }
 

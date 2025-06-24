@@ -83,6 +83,7 @@ impl Challenge {
         let bytes: [u8; 95] =
             hex_to_bytes(value).map_err(|_| InvalidMintRequest::MissingPowParameters)?;
 
+        // SAFETY: Length of 95 is enforced above.
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let account_id = AccountId::read_from_bytes(&bytes[16..31]).unwrap();

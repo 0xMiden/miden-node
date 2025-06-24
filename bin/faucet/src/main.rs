@@ -153,10 +153,6 @@ async fn main() -> anyhow::Result<()> {
     run_faucet_command(cli).await
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "This will be shorter once config file is removed"
-)]
 async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
     match cli.command {
         // Note: open-telemetry is handled in main.

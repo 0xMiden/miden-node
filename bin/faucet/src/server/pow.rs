@@ -47,8 +47,7 @@ impl PoW {
         Self { secret, challenge_cache }
     }
 
-    /// Generates a new challenge with the difficulty for the given API key. If the API key is not
-    /// found, the difficulty is defaulted to 1.
+    /// Generates a new challenge.
     pub fn build_challenge(&self, request: PowRequest) -> Challenge {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -60,9 +59,10 @@ impl PoW {
     }
 
     /// Returns the difficulty for the given API key.
-    /// The difficulty is adjusted based on the number of active requests.
-    /// The difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY` active
-    /// requests. The difficulty is clamped between 1 and `MAX_DIFFICULTY`.
+    ///
+    /// The difficulty is adjusted based on the number of active requests per API key. The
+    /// difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY` active
+    /// requests, and it is clamped between 1 and `MAX_DIFFICULTY`.
     pub fn get_difficulty(&self, api_key: &ApiKey) -> usize {
         let num_challenges = self
             .challenge_cache
@@ -74,8 +74,7 @@ impl PoW {
 
     /// Submits a challenge.
     ///
-    /// The challenge is validated and added to the cache. Also, the difficulty is adjusted based
-    /// on the number of active challenges.
+    /// The challenge is validated and added to the cache.
     ///
     /// # Errors
     /// Returns an error if:
@@ -171,8 +170,6 @@ impl ChallengeCache {
             return false;
         }
 
-        // insert the challenge and update the number of challenges submitted for the account and
-        // the API key
         issuers.push((account_id, api_key.clone()));
         self.challenges_per_key
             .entry(api_key)
@@ -195,7 +192,8 @@ impl ChallengeCache {
         self.challenges_per_key.get(key).copied().unwrap_or(0)
     }
 
-    /// Cleanup expired challenges.
+    /// Cleanup expired challenges and update the number of challenges submitted per API key and
+    /// account id.
     ///
     /// Challenges are expired if they are older than [`CHALLENGE_LIFETIME_SECONDS`] seconds.
     fn cleanup_expired_challenges(&mut self, current_time: u64) {

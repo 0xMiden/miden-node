@@ -37,7 +37,7 @@ use crate::{
     COMPONENT,
     db::{
         migrations::apply_migrations,
-        models::{Page, queries, vec_raw_try_into},
+        models::{Page, queries},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
     genesis::GenesisBlock,
@@ -252,7 +252,7 @@ impl Db {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.framed("nullifieres by prefix", move |conn| {
-            queries::select_nullifiers_by_prefix_q(
+            queries::select_nullifiers_by_prefix(
                 conn,
                 prefix_len as u8,
                 &nullifier_prefixes,
@@ -273,11 +273,11 @@ impl Db {
         self.framed("block headers by block number", move |conn| {
             let sel = SelectDsl::select(
                 schema::block_headers::table,
-                models::BlockHeaderRawRow::as_select(),
+                models::BlockHeaderRaw::as_select(),
             );
             let row = if let Some(block_number) = block_number {
                 sel.find(i64::from(block_number.as_u32()))
-                    .first::<models::BlockHeaderRawRow>(conn)
+                    .first::<models::BlockHeaderRaw>(conn)
                     .optional()
                 // invariant: only one block exists with the given block header, so the length is
                 // always zero or one
@@ -295,14 +295,9 @@ impl Db {
         &self,
         blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
-        self.framed("block headers from given block numbers", |conn| {
-            let blocks = Vec::from_iter(blocks.map(|block_num| i64::from(block_num.as_u32())));
-            let raw = QueryDsl::filter(
-                schema::block_headers::table,
-                schema::block_headers::block_num.eq_any(&blocks[..]),
-            )
-            .load::<models::BlockHeaderRawRow>(conn)?;
-            vec_raw_try_into(raw)
+        self.framed("block headers from given block numbers", move |conn| {
+            let raw = queries::select_block_headers(conn, blocks)?;
+            Ok(raw)
         })
         .await
     }
@@ -320,14 +315,14 @@ impl Db {
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
-        self.framed("read all account commitments", queries::read_all_account_commitments)
+        self.framed("read all account commitments", queries::select_all_account_commitments)
             .await
     }
 
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.framed("Get account details", move |conn| queries::get_account_details(conn, id))
+        self.framed("Get account details", move |conn| queries::select_account(conn, id))
             .await
     }
 
@@ -338,7 +333,7 @@ impl Db {
         id_prefix: u32,
     ) -> Result<Option<AccountInfo>> {
         self.framed("Get account by id prefix", move |conn| {
-            queries::get_account_by_id_prefix(conn, id_prefix)
+            queries::select_account_by_id_prefix(conn, id_prefix)
         })
         .await
     }
@@ -375,18 +370,7 @@ impl Db {
         note_tags: Vec<u32>,
     ) -> Result<NoteSyncUpdate, NoteSyncError> {
         self.framed("notes sync task", move |conn| {
-            let notes = models::queries::select_notes_since_block_by_tag_and_sender(
-                conn,
-                block_num,
-                &[],
-                &note_tags,
-            )?;
-            let block_header = models::queries::select_block_header_by_block_num(
-                conn,
-                notes.first().map(|note| note.block_num),
-            )?
-            .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
-            Ok(NoteSyncUpdate { notes, block_header })
+            queries::get_note_sync(conn, block_num, note_tags.as_slice())
         })
         .await
     }
@@ -395,7 +379,7 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
         self.framed("note by id", move |conn| {
-            models::queries::select_notes_by_id(conn, note_ids.as_slice())
+            queries::select_notes_by_id(conn, note_ids.as_slice())
         })
         .await
     }
@@ -446,8 +430,8 @@ impl Db {
                 block.transactions(),
             )?;
 
-            // XXX FIXME TODO free floating mutex MUST NOT exist, it doesn't bind it properly to the
-            // data locked!
+            // XXX FIXME TODO free floating mutex MUST NOT exist
+            // it doesn't bind it properly to the data locked!
             let _ = allow_acquire.send(());
             acquire_done.blocking_recv()?;
 

@@ -650,7 +650,7 @@ fn select_nullifiers_by_prefix_works() {
     let conn = &mut conn; // test empty table
     let block_number0 = 0.into();
     let nullifiers =
-        queries::select_nullifiers_by_prefix_q(conn, PREFIX_LEN, &[], block_number0).unwrap();
+        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0).unwrap();
     assert!(nullifiers.is_empty());
 
     // test single item
@@ -660,7 +660,7 @@ fn select_nullifiers_by_prefix_works() {
 
     queries::insert_nullifiers_for_block(conn, &[nullifier1], block_number1).unwrap();
 
-    let nullifiers = queries::select_nullifiers_by_prefix_q(
+    let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
@@ -686,7 +686,7 @@ fn select_nullifiers_by_prefix_works() {
     assert_eq!(nullifiers, vec![(nullifier1, block_number1), (nullifier2, block_number2)]);
 
     // only the nullifiers matching the prefix are included
-    let nullifiers = queries::select_nullifiers_by_prefix_q(
+    let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
@@ -700,7 +700,7 @@ fn select_nullifiers_by_prefix_works() {
             block_num: block_number1
         }]
     );
-    let nullifiers = queries::select_nullifiers_by_prefix_q(
+    let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier2)],
@@ -716,7 +716,7 @@ fn select_nullifiers_by_prefix_works() {
     );
 
     // All matching nullifiers are included
-    let nullifiers = queries::select_nullifiers_by_prefix_q(
+    let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[
@@ -741,7 +741,7 @@ fn select_nullifiers_by_prefix_works() {
     );
 
     // If a non-matching prefix is provided, no nullifiers are returned
-    let nullifiers = queries::select_nullifiers_by_prefix_q(
+    let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
@@ -752,7 +752,7 @@ fn select_nullifiers_by_prefix_works() {
 
     // If a block number is provided, only matching nullifiers created at or after that block are
     // returned
-    let nullifiers = queries::select_nullifiers_by_prefix_q(
+    let nullifiers = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[

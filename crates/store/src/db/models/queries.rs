@@ -29,13 +29,26 @@ use super::{
 };
 use crate::{
     db::{
-        NoteRecord, NoteSyncRecord, NullifierInfo, Page, StateSyncUpdate, TransactionSummary,
+        NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
+        TransactionSummary,
         models::{AccountRaw, AccountSummaryRaw, NoteRecordRaw, TransactionSummaryRaw, *},
         schema,
     },
-    errors::StateSyncError,
+    errors::{NoteSyncError, StateSyncError},
 };
 
+/// Select notes matching the tags and account IDs search criteria using the given [Connection].
+///
+/// # Returns
+///
+/// All matching notes from the first block greater than `block_num` containing a matching note.
+/// A note is considered a match if it has any of the given tags, or if its sender is one of the
+/// given account IDs. If no matching notes are found at all, then an empty vector is returned.
+///
+/// # Note
+///
+/// This method returns notes from a single block. To fetch all notes up to the chain tip,
+/// multiple requests are necessary.
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
     block_number: BlockNumber,
@@ -84,28 +97,53 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
     vec_raw_try_into(notes)
 }
 
+/// Select a [`BlockHeader`] from the DB by its `block_num` using the given [Connection].
+///
+/// # Returns
+///
+/// When `block_number` is [None], the latest block header is returned. Otherwise, the block with
+/// the given block height is returned.
 pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
     maybe_block_number: Option<BlockNumber>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
-    let sel =
-        SelectDsl::select(schema::block_headers::table, models::BlockHeaderRawRow::as_select());
+    let sel = SelectDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select());
     let row = if let Some(block_number) = maybe_block_number {
+        // SELECT block_header FROM block_headers WHERE block_num = ?1
         sel.find(i64::from(block_number.as_u32()))
-            .first::<models::BlockHeaderRawRow>(conn)
+            .first::<models::BlockHeaderRaw>(conn)
             .optional()?
         // invariant: only one block exists with the given block header, so the length is
         // always zero or one
     } else {
+        // SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1
         sel.order(schema::block_headers::block_header.desc()).first(conn).optional()?
     };
     row.map(std::convert::TryInto::try_into).transpose()
 }
 
+/// Select note inclusion proofs matching the `NoteId`, using the given [Connection].
+///
+/// # Returns
+///
+/// - Empty map if no matching `note`.
+/// - Otherwise, note inclusion proofs, which `note_id` matches the `NoteId` as bytes.
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
     note_ids: &BTreeSet<NoteId>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
+    // SELECT
+    //     block_num,
+    //     note_id,
+    //     batch_index,
+    //     note_index,
+    //     merkle_path
+    // FROM
+    //     notes
+    // WHERE
+    //     note_id IN rarray(?1)
+    // ORDER BY
+    //     block_num ASC
     let noted_ids_serialized = serialize_vec(note_ids.iter());
 
     let raw_notes = SelectDsl::select(
@@ -137,6 +175,16 @@ pub(crate) fn select_note_inclusion_proofs(
     ))
 }
 
+/// Insert a [`BlockHeader`] to the DB using the given [Transaction].
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction
 pub(crate) fn insert_block_header(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,
@@ -425,24 +473,16 @@ pub(crate) fn upsert_accounts(
     Ok(count)
 }
 
-pub(crate) fn insert_scripts<'a>(
-    conn: &mut SqliteConnection,
-    notes: impl IntoIterator<Item = &'a NoteRecord>,
-) -> Result<usize, DatabaseError> {
-    let values = Vec::from_iter(notes.into_iter().filter_map(|note| {
-        let note_details = note.details.as_ref()?;
-        Some((
-            schema::note_scripts::script_root.eq(note_details.script().root().to_bytes()),
-            schema::note_scripts::script.eq(note_details.script().to_bytes()),
-        ))
-    }));
-    let count = diesel::insert_or_ignore_into(schema::note_scripts::table)
-        .values(values)
-        .execute(conn)?;
-
-    Ok(count)
-}
-
+/// Insert notes to the DB using the given [Transaction]. Public notes should also have a nullifier.
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
 pub(crate) fn insert_notes(
     conn: &mut SqliteConnection,
     notes: &[(NoteRecord, Option<Nullifier>)],
@@ -476,6 +516,45 @@ pub(crate) fn insert_notes(
     Ok(count)
 }
 
+/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts holded by the
+/// notes passed as parameter. If the script root already exists in the DB, it will be ignored.
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
+pub(crate) fn insert_scripts<'a>(
+    conn: &mut SqliteConnection,
+    notes: impl IntoIterator<Item = &'a NoteRecord>,
+) -> Result<usize, DatabaseError> {
+    let values = Vec::from_iter(notes.into_iter().filter_map(|note| {
+        let note_details = note.details.as_ref()?;
+        Some((
+            schema::note_scripts::script_root.eq(note_details.script().root().to_bytes()),
+            schema::note_scripts::script.eq(note_details.script().to_bytes()),
+        ))
+    }));
+    let count = diesel::insert_or_ignore_into(schema::note_scripts::table)
+        .values(values)
+        .execute(conn)?;
+
+    Ok(count)
+}
+
+/// Insert transactions to the DB using the given [Transaction].
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
 pub(crate) fn insert_transactions(
     conn: &mut SqliteConnection,
     block_num: BlockNumber,
@@ -533,10 +612,20 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
+/// Select all notes from the DB using the given [Connection].
+///
+///
+/// # Returns
+///
+/// A vector with notes, or an error.
 #[cfg(test)]
 pub(crate) fn select_all_notes(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NoteRecord>, DatabaseError> {
+    // SELECT {cols}
+    // FROM notes
+    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+    // ORDER BY block_num ASC
     let cols = (
         schema::notes::block_num,
         schema::notes::batch_index,
@@ -552,7 +641,7 @@ pub(crate) fn select_all_notes(
         schema::notes::assets,
         schema::notes::inputs,
         schema::notes::serial_num,
-        // // merkle
+        // merkle
         schema::notes::merkle_path,
         schema::note_scripts::script.nullable(),
     );
@@ -562,7 +651,7 @@ pub(crate) fn select_all_notes(
             .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
     );
     let raw: Vec<_> = SelectDsl::select(
-        q, cols, // NoteRecordRaw::as_select()
+        q, cols, // does not work: NoteRecordRaw::as_select()
     )
     .order(schema::notes::block_num.asc())
     .load::<NoteRecordRaw>(conn)?;
@@ -570,18 +659,36 @@ pub(crate) fn select_all_notes(
     Ok(records)
 }
 
+/// Select all nullifiers from the DB
+///
+/// # Returns
+///
+/// A vector with nullifiers and the block height at which they were created, or an error.
 pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
+    // SELECT nullifier, block_num FROM nullifiers ORDER BY block_num ASC
     let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }
 
+/// Commit nullifiers to the DB using the given [Transaction]. This inserts the nullifiers into the
+/// nullifiers table, and marks the note as consumed (if it was public).
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
 pub(crate) fn insert_nullifiers_for_block(
     conn: &mut SqliteConnection,
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
+    // UPDATE notes SET consumed = TRUE WHERE nullifier IN rarray(?1)
     let serialized_nullifiers =
         Vec::<Vec<u8>>::from_iter(nullifiers.iter().map(Nullifier::to_bytes));
 
@@ -624,13 +731,34 @@ pub(crate) fn apply_block(
     Ok(count)
 }
 
-pub(crate) fn select_nullifiers_by_prefix_q(
+/// Returns nullifiers filtered by prefix and block creation height.
+///
+/// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits
+/// of the nullifier of interest to the client. This hides the details of the specific
+/// nullifier being requested. Currently the only supported prefix length is 16 bits.
+///
+/// # Returns
+///
+/// A vector of [`NullifierInfo`] with the nullifiers and the block height at which they were
+pub(crate) fn select_nullifiers_by_prefix(
     conn: &mut SqliteConnection,
-    _prefix_len: u8,
+    prefix_len: u8,
     nullifier_prefixes: &[u32],
     block_num: BlockNumber,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
-    // TODO XXX ensure these type conversions are sane
+    assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
+    // SELECT
+    //     nullifier,
+    //     block_num
+    // FROM
+    //     nullifiers
+    // WHERE
+    //     nullifier_prefix IN rarray(?1) AND
+    //     block_num >= ?2
+    // ORDER BY
+    //     block_num ASC
+
+    // An `i32` is sufficient to hold unsigned 16bits
     let prefixes = nullifier_prefixes.iter().map(|prefix| i32::try_from(*prefix).unwrap());
     let nullifiers_raw =
         SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
@@ -641,17 +769,61 @@ pub(crate) fn select_nullifiers_by_prefix_q(
     vec_raw_try_into(nullifiers_raw)
 }
 
-pub(crate) fn get_account_by_id_prefix(
+/// Select the latest account details by account id from the DB using the given [Connection].
+///
+/// # Returns
+///
+/// The latest account details, or an error.
+pub(crate) fn select_account(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+) -> Result<AccountInfo, DatabaseError> {
+    // SELECT
+    //     account_id,
+    //     account_commitment,
+    //     block_num,
+    //     details
+    // FROM
+    //     accounts
+    // WHERE
+    //     account_id = ?1;
+    //
+    let info = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
+        .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+        .get_result::<models::AccountRaw>(conn)
+        .optional()?
+        .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    let info = info.try_into()?;
+    Ok(info)
+}
+
+// TODO: Handle account prefix collision in a more robust way
+/// Select the latest account details by account ID prefix from the DB using the given [Connection]
+/// This method is meant to be used by the network transaction builder. Because network notes get
+/// matched through accounts through the account's 30-bit prefix, it is possible that multiple
+/// accounts match against a single prefix. In this scenario, the first account is returned.
+///
+/// # Returns
+///
+/// The latest account details, `None` if the account was not found, or an error.
+pub(crate) fn select_account_by_id_prefix(
     conn: &mut SqliteConnection,
     id_prefix: u32,
 ) -> Result<Option<AccountInfo>, DatabaseError> {
-    let maybe_info = QueryDsl::filter(
-        QueryDsl::select(schema::accounts::table, AccountRaw::as_select()),
-        schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))),
-    )
-    .first::<AccountRaw>(conn)
-    .optional()
-    .map_err(DatabaseError::Diesel)?;
+    // SELECT
+    //     account_id,
+    //     account_commitment,
+    //     block_num,
+    //     details
+    // FROM
+    //     accounts
+    // WHERE
+    //     network_account_id_prefix = ?1;
+    let maybe_info = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
+        .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
+        .first::<AccountRaw>(conn)
+        .optional()
+        .map_err(DatabaseError::Diesel)?;
 
     let result: Result<Option<AccountInfo>, DatabaseError> =
         maybe_info.map(std::convert::TryInto::<AccountInfo>::try_into).transpose();
@@ -659,9 +831,15 @@ pub(crate) fn get_account_by_id_prefix(
     result
 }
 
-pub(crate) fn read_all_account_commitments(
+/// Select all account commitments from the DB using the given [Connection].
+///
+/// # Returns
+///
+/// The vector with the account id and corresponding commitment, or an error.
+pub(crate) fn select_all_account_commitments(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<(AccountId, RpoDigest)>, DatabaseError> {
+    // SELECT account_id, account_commitment FROM accounts ORDER BY block_num ASC
     let raw = SelectDsl::select(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
@@ -676,16 +854,13 @@ pub(crate) fn read_all_account_commitments(
     ))
 }
 
-pub(crate) fn get_account_details(
-    conn: &mut SqliteConnection,
-    id: AccountId,
-) -> Result<AccountInfo, DatabaseError> {
-    let val = QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select())
-        .find(id.to_bytes())
-        .first::<models::AccountRaw>(conn)?;
-    val.try_into()
-}
-
+/// Returns a paginated batch of network notes that have not yet been consumed.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+//
 // Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
 // statements
 pub(crate) fn unconsumed_network_notes(
@@ -703,6 +878,13 @@ pub(crate) fn unconsumed_network_notes(
         diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
             .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
 
+    // SELECT {}, rowid
+    // FROM notes
+    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+    // WHERE
+    //     execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+    // ORDER BY rowid
+    // LIMIT ?
     type RawLoadedTuple = (
         i64,             // block_num
         i32,             // batch_index
@@ -791,10 +973,24 @@ pub(crate) fn unconsumed_network_notes(
     Ok((notes, page))
 }
 
+/// Select all accounts from the DB using the given [Connection].
+///
+/// # Returns
+///
+/// A vector with accounts, or an error.
 #[cfg(test)]
 pub(crate) fn select_all_accounts(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<AccountInfo>, DatabaseError> {
+    // SELECT
+    //     account_id,
+    //     account_commitment,
+    //     block_num,
+    //     details
+    // FROM
+    //     accounts
+    // ORDER BY
+    //     block_num ASC;
     let accounts_raw =
         QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()).load(conn)?;
     vec_raw_try_into(accounts_raw)
@@ -814,6 +1010,16 @@ pub(crate) fn select_accounts_by_id(
     vec_raw_try_into(accounts_raw)
 }
 
+/// Selects and merges account deltas by account id and block range from the DB using the given
+/// [Connection].
+///
+/// # Note:
+///
+/// `block_start` is exclusive and `block_end` is inclusive.
+///
+/// # Returns
+///
+/// The resulting account delta, or an error.
 pub(crate) fn select_account_delta(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -880,6 +1086,15 @@ pub(crate) fn select_nonce_stmt(
     start_block_num: &BlockNumber,
     end_block_num: &BlockNumber,
 ) -> Result<Option<u64>, DatabaseError> {
+    // SELECT
+    //     nonce
+    // FROM
+    //     account_deltas
+    // WHERE
+    //     account_id = ?1 AND block_num > ?2 AND block_num <= ?3
+    // ORDER BY
+    //     block_num DESC
+    // LIMIT 1
     let desired_account_id = account_id.to_bytes();
     let start_block_num = block_number_to_raw_sql(&start_block_num);
     let end_block_num = block_number_to_raw_sql(&end_block_num);
@@ -906,6 +1121,23 @@ pub(crate) fn select_slot_updates_stmt(
     start_block_num: &BlockNumber,
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(i32, Vec<u8>)>, DatabaseError> {
+    // SELECT
+    //     slot, value
+    // FROM
+    //     account_storage_slot_updates AS a
+    // WHERE
+    //     account_id = ?1 AND
+    //     block_num > ?2 AND
+    //     block_num <= ?3 AND
+    //     NOT EXISTS(
+    //         SELECT 1
+    //         FROM account_storage_slot_updates AS b
+    //         WHERE
+    //             b.account_id = ?1 AND
+    //             a.slot = b.slot AND
+    //             a.block_num < b.block_num AND
+    //             b.block_num <= ?3
+    //     )
     let desired_account_id = account_id_val.to_bytes();
     let start_block_num = block_number_to_raw_sql(&start_block_num);
     let end_block_num = block_number_to_raw_sql(&end_block_num);
@@ -941,6 +1173,24 @@ pub(crate) fn select_storage_map_updates_stmt(
     start_block_num: &BlockNumber,
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(i32, Vec<u8>, Vec<u8>)>, DatabaseError> {
+    // SELECT
+    //     slot, key, value
+    // FROM
+    //     account_storage_map_updates AS a
+    // WHERE
+    //     account_id = ?1 AND
+    //     block_num > ?2 AND
+    //     block_num <= ?3 AND
+    //     NOT EXISTS(
+    //         SELECT 1
+    //         FROM account_storage_map_updates AS b
+    //         WHERE
+    //             b.account_id = ?1 AND
+    //             a.slot = b.slot AND
+    //             a.key = b.key AND
+    //             a.block_num < b.block_num AND
+    //             b.block_num <= ?3
+    //     )
     use schema::account_storage_map_updates::dsl::{account_id, block_num, key, slot, value};
 
     let desired_account_id = account_id_val.to_bytes();
@@ -976,6 +1226,16 @@ pub(crate) fn select_fungible_asset_deltas_stmt(
     start_block_num: &BlockNumber,
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(Vec<u8>, Option<i64>)>, DatabaseError> {
+    // SELECT
+    //     faucet_id, SUM(delta)
+    // FROM
+    //     account_fungible_asset_deltas
+    // WHERE
+    //     account_id = ?1 AND
+    //     block_num > ?2 AND
+    //     block_num <= ?3
+    // GROUP BY
+    //     faucet_id
     let desired_account_id = account_id.to_bytes();
     let start_block_num = block_number_to_raw_sql(&start_block_num);
     let end_block_num = block_number_to_raw_sql(&end_block_num);
@@ -1003,6 +1263,16 @@ pub(crate) fn select_non_fungible_asset_updates_stmt(
     start_block_num: &BlockNumber,
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(i64, Vec<u8>, i32)>, DatabaseError> {
+    // SELECT
+    //     block_num, vault_key, is_remove
+    // FROM
+    //     account_non_fungible_asset_updates
+    // WHERE
+    //     account_id = ?1 AND
+    //     block_num > ?2 AND
+    //     block_num <= ?3
+    // ORDER BY
+    //     block_num
     let desired_account_id = account_id.to_bytes();
     let start_block_num = block_number_to_raw_sql(&start_block_num);
     let end_block_num = block_number_to_raw_sql(&end_block_num);
@@ -1025,15 +1295,44 @@ pub(crate) fn select_non_fungible_asset_updates_stmt(
     .get_results(conn)?)
 }
 
-pub fn select_all_block_headers(
+/// Select all the given block headers from the DB using the given [Connection].
+///
+/// # Note
+///
+/// Only returns the block headers that are actually present.
+///
+/// # Returns
+///
+pub fn select_block_headers(
     conn: &mut SqliteConnection,
+    blocks: impl Iterator<Item = BlockNumber> + Send,
 ) -> Result<Vec<BlockHeader>, DatabaseError> {
+    // SELECT block_header FROM block_headers WHERE block_num IN rarray(?1)
+    let blocks = Vec::from_iter(blocks.map(|block_num| block_number_to_raw_sql(&block_num)));
     let raw_block_headers =
-        QueryDsl::select(schema::block_headers::table, models::BlockHeaderRawRow::as_select())
-            .load::<models::BlockHeaderRawRow>(conn)?;
+        QueryDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select())
+            .filter(schema::block_headers::block_num.eq_any(blocks))
+            .load::<models::BlockHeaderRaw>(conn)?;
     vec_raw_try_into(raw_block_headers)
 }
 
+/// Select all block headers from the DB using the given [Connection].
+///
+/// # Returns
+///
+/// A vector of [`BlockHeader`] or an error.
+pub fn select_all_block_headers(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<BlockHeader>, DatabaseError> {
+    // SELECT block_header FROM block_headers ORDER BY block_num ASC
+    let raw_block_headers =
+        QueryDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select())
+            .order(schema::block_headers::block_num.asc())
+            .load::<models::BlockHeaderRaw>(conn)?;
+    vec_raw_try_into(raw_block_headers)
+}
+
+/// Loads the state necessary for a state sync.
 pub(crate) fn get_state_sync(
     conn: &mut SqliteConnection,
     block_number: BlockNumber,
@@ -1061,8 +1360,8 @@ pub(crate) fn get_state_sync(
         .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
     // select accounts by block range
-    let block_start: i64 = block_number.as_u32().into();
-    let block_end: i64 = block_header.block_num().as_u32().into();
+    let block_start = block_number_to_raw_sql(&block_number);
+    let block_end = block_number_to_raw_sql(&block_header.block_num());
     let account_updates =
         select_accounts_by_block_range(conn, &account_ids, block_start, block_end)?;
 
@@ -1079,6 +1378,20 @@ pub(crate) fn get_state_sync(
         account_updates,
         transactions,
     })
+}
+
+/// Loads the data necessary for a note sync.
+pub(crate) fn get_note_sync(
+    conn: &mut SqliteConnection,
+    block_num: BlockNumber,
+    note_tags: &[u32],
+) -> Result<NoteSyncUpdate, NoteSyncError> {
+    let notes = select_notes_since_block_by_tag_and_sender(conn, block_num, &[], note_tags)?;
+
+    let block_header =
+        select_block_header_by_block_num(conn, notes.first().map(|note| note.block_num))?
+            .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
+    Ok(NoteSyncUpdate { notes, block_header })
 }
 
 fn get_desired_block_num(
@@ -1121,10 +1434,9 @@ fn get_block_header_by_block_num(
     conn: &mut SqliteConnection,
     maybe_note_block_num: Option<i64>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
-    let sel =
-        SelectDsl::select(schema::block_headers::table, models::BlockHeaderRawRow::as_select());
+    let sel = SelectDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select());
     let row = if let Some(block_number) = maybe_note_block_num {
-        sel.find(block_number).first::<models::BlockHeaderRawRow>(conn).optional()
+        sel.find(block_number).first::<models::BlockHeaderRaw>(conn).optional()
     } else {
         sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
     }
@@ -1132,12 +1444,30 @@ fn get_block_header_by_block_num(
     row.map(std::convert::TryInto::try_into).transpose()
 }
 
+/// Select [`AccountSummary`] from the DB using the given [Connection], given that the account
+/// update was done between `(block_start, block_end]`.
+///
+/// # Returns
+///
+/// The vector of [`AccountSummary`] with the matching accounts.
 pub fn select_accounts_by_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
     block_start: i64,
     block_end: i64,
 ) -> Result<Vec<AccountSummary>, DatabaseError> {
+    // SELECT
+    //     account_id,
+    //     account_commitment,
+    //     block_num
+    // FROM
+    //     accounts
+    // WHERE
+    //     block_num > ?1 AND
+    //     block_num <= ?2 AND
+    //     account_id IN rarray(?3)
+    // ORDER BY
+    //     block_num ASC
     let desired_account_ids = serialize_vec(account_ids);
     let raw: Vec<AccountSummaryRaw> =
         SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
@@ -1153,8 +1483,20 @@ pub fn select_transactions_by_accounts_and_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
     block_start: i64,
-    block_end: i64,
+    block_end: i64, // TODO migrate to BlockNumber as argument type
 ) -> Result<Vec<TransactionSummary>, DatabaseError> {
+    // SELECT
+    //     account_id,
+    //     block_num,
+    //     transaction_id
+    // FROM
+    //     transactions
+    // WHERE
+    //     block_num > ?1 AND
+    //     block_num <= ?2 AND
+    //     account_id IN rarray(?3)
+    // ORDER BY
+    //     transaction_id ASC
     let desired_account_ids = serialize_vec(account_ids);
     let raw = SelectDsl::select(
         schema::transactions::table,

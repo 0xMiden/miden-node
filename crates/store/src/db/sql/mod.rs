@@ -1,8 +1,5 @@
 //! Wrapper functions for SQL statements.
 
-// TODO XXX move either the `diesel::` queries into the functions or delete them
-#![allow(dead_code)]
-
 #[macro_use]
 pub(crate) mod utils;
 

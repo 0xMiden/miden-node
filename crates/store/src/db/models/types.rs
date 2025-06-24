@@ -69,12 +69,12 @@ impl TryInto<NullifierInfo> for NullifierRawRow {
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = block_headers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct BlockHeaderRawRow {
+pub struct BlockHeaderRaw {
     #[allow(dead_code)]
     pub block_num: i64,
     pub block_header: Vec<u8>,
 }
-impl TryInto<BlockHeader> for BlockHeaderRawRow {
+impl TryInto<BlockHeader> for BlockHeaderRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockHeader, Self::Error> {
         let block_header = BlockHeader::read_from_bytes(&self.block_header[..])?;

@@ -33,12 +33,15 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     db::{
+        manager::{WalConnManager, configure_connection_on_creation},
         migrations::apply_migrations,
         models::{Page, queries},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
     genesis::GenesisBlock,
 };
+
+mod manager;
 
 mod migrations;
 
@@ -60,7 +63,7 @@ pub(crate) mod schema;
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
-    pool: deadpool_diesel::sqlite::Pool,
+    pool: deadpool_diesel::Pool<WalConnManager, deadpool::managed::Object<WalConnManager>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -150,59 +153,6 @@ impl From<NoteRecord> for NoteSyncRecord {
         }
     }
 }
-struct CustomConnectionManager {
-    manager: deadpool_diesel::sqlite::Manager,
-}
-
-impl CustomConnectionManager {
-    fn new(database_path: &str) -> Self {
-        let manager = deadpool_diesel::sqlite::Manager::new(
-            database_path.to_owned(),
-            deadpool_diesel::sqlite::Runtime::Tokio1,
-        );
-        Self { manager }
-    }
-}
-
-// FIXME use a better error type
-impl deadpool::managed::Manager for CustomConnectionManager {
-    type Type = deadpool_sync::SyncWrapper<SqliteConnection>;
-    type Error = DatabaseError;
-
-    fn create(&self) -> impl Future<Output = Result<Self::Type, Self::Error>> {
-        async move {
-            let conn = self.manager.create().await?;
-
-            conn.interact(|conn| configure_connection_on_creation(conn))
-                .await
-                .map_err(|e| DatabaseError::interact("Connection setup", e))??;
-            Ok(conn)
-        }
-    }
-
-    fn recycle(
-        &self,
-        conn: &mut Self::Type,
-        metrics: &deadpool_diesel::Metrics,
-    ) -> impl Future<Output = deadpool::managed::RecycleResult<Self::Error>> {
-        async {
-            let val = self.manager.recycle(conn, metrics).await?;
-            Ok(val)
-        }
-    }
-}
-
-fn configure_connection_on_creation(conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
-    // Enable the WAL mode. This allows concurrent reads while the
-    // transaction is being written, this is required for proper
-    // synchronization of the servers in-memory and on-disk representations
-    // (see [State::apply_block])
-    diesel::sql_query("PRAGMA journal_mode=WAL").execute(conn)?;
-
-    // Enable foreign key checks.
-    diesel::sql_query("PRAGMA foreign_keys=ON").execute(conn)?;
-    Ok(())
-}
 
 impl Db {
     /// Creates a new database and inserts the genesis block.
@@ -222,6 +172,7 @@ impl Db {
         let mut conn: SqliteConnection =
             diesel::sqlite::SqliteConnection::establish(database_filepath.to_str().unwrap()) // TODO FIXME avoid unwrap
                 .context("failed to open a database connection")?;
+
         configure_connection_on_creation(&mut conn)?;
 
         // Run migrations.
@@ -253,7 +204,7 @@ impl Db {
         E: From<diesel::result::Error>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let conn = self.pool.get().await.map_err(DatabaseError::from)?;
+        let conn = self.pool.get().await.unwrap(); // FIXME XXX TOODO
 
         conn.interact(|conn| <_ as diesel::Connection>::transaction::<R, E, Q>(conn, query))
             .await
@@ -263,11 +214,8 @@ impl Db {
     /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
-        let manager = deadpool_diesel::sqlite::Manager::new(
-            database_filepath.to_str().unwrap().to_owned(),
-            deadpool_diesel::sqlite::Runtime::Tokio1,
-        );
-        let pool = deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
+        let manager = WalConnManager::new(database_filepath.to_str().unwrap());
+        let pool = deadpool_diesel::Pool::builder(manager).max_size(16).build()?;
 
         info!(
             target: COMPONENT,

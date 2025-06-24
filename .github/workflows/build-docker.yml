@@ -41,7 +41,7 @@ jobs:
           cache-binary: true
 
       - name: Build Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           push: false
           file: ./bin/${{ matrix.component }}/Dockerfile

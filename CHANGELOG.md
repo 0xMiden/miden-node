@@ -8,6 +8,7 @@
 - [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
+- [BREAKING] Added PoW to faucet API Keys (#974).
 
 ### Enhancements
 
@@ -19,9 +20,6 @@
 - Replaced integer-based duration args with human-readable duration strings (#998).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 
-### Changes
-
-- [BREAKING] Added PoW to faucet API Keys (#974).
 
 ## v0.9.2 (2025-06-12)
 

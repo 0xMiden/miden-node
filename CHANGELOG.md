@@ -11,11 +11,13 @@
 
 ### Enhancements
 
+- Added `miden-remote-prover` and `miden-remote-prover-client` crates (#926).
 - Added support for gRPC server side reflection to all components (#949).
 - Compressed faucet background image (#985).
 - Added support for TLS to `miden-remote-prover-client` (#968).
 - Added support for TLS to faucet's connection to node RPC (#976).
 - Replaced integer-based duration args with human-readable duration strings (#998).
+- [BREAKING] Refactor the `miden-remote-prover` proxy status service to use gRPC instead of HTTP (#953).
 
 ## v0.9.2 (2025-06-12)
 
@@ -26,6 +28,7 @@
 - Refresh Cargo.lock file (#944).
 
 ## v0.9.0 (2025-05-30)
+
 
 ### Changes
 
@@ -47,7 +50,6 @@
 - Introduced Network Transaction Builder (#840).
 - Added way of executing and proving network transactions (#841).
 - [BREAKING] Add HTTP ACCEPT header layer to RPC server to enforce semver requirements against client connections (#844).
-- Add miden-remote-prover and miden-remote-prover-client crates (#926).
 
 ### Changes
 

@@ -14,10 +14,7 @@ use std::{
 };
 
 use anyhow::Context;
-use diesel::{
-    Connection, ExpressionMethods, OptionalExtension, QueryDsl, RunQueryDsl, SelectableHelper,
-    SqliteConnection, query_dsl::methods::SelectDsl,
-};
+use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
@@ -63,7 +60,7 @@ pub(crate) mod schema;
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
-    diesel: deadpool_diesel::sqlite::Pool,
+    pool: deadpool_diesel::sqlite::Pool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -153,6 +150,59 @@ impl From<NoteRecord> for NoteSyncRecord {
         }
     }
 }
+struct CustomConnectionManager {
+    manager: deadpool_diesel::sqlite::Manager,
+}
+
+impl CustomConnectionManager {
+    fn new(database_path: &str) -> Self {
+        let manager = deadpool_diesel::sqlite::Manager::new(
+            database_path.to_owned(),
+            deadpool_diesel::sqlite::Runtime::Tokio1,
+        );
+        Self { manager }
+    }
+}
+
+// FIXME use a better error type
+impl deadpool::managed::Manager for CustomConnectionManager {
+    type Type = deadpool_sync::SyncWrapper<SqliteConnection>;
+    type Error = DatabaseError;
+
+    fn create(&self) -> impl Future<Output = Result<Self::Type, Self::Error>> {
+        async move {
+            let conn = self.manager.create().await?;
+
+            conn.interact(|conn| configure_connection_on_creation(conn))
+                .await
+                .map_err(|e| DatabaseError::interact("Connection setup", e))??;
+            Ok(conn)
+        }
+    }
+
+    fn recycle(
+        &self,
+        conn: &mut Self::Type,
+        metrics: &deadpool_diesel::Metrics,
+    ) -> impl Future<Output = deadpool::managed::RecycleResult<Self::Error>> {
+        async {
+            let val = self.manager.recycle(conn, metrics).await?;
+            Ok(val)
+        }
+    }
+}
+
+fn configure_connection_on_creation(conn: &mut SqliteConnection) -> Result<(), DatabaseError> {
+    // Enable the WAL mode. This allows concurrent reads while the
+    // transaction is being written, this is required for proper
+    // synchronization of the servers in-memory and on-disk representations
+    // (see [State::apply_block])
+    diesel::sql_query("PRAGMA journal_mode=WAL").execute(conn)?;
+
+    // Enable foreign key checks.
+    diesel::sql_query("PRAGMA foreign_keys=ON").execute(conn)?;
+    Ok(())
+}
 
 impl Db {
     /// Creates a new database and inserts the genesis block.
@@ -172,6 +222,7 @@ impl Db {
         let mut conn: SqliteConnection =
             diesel::sqlite::SqliteConnection::establish(database_filepath.to_str().unwrap()) // TODO FIXME avoid unwrap
                 .context("failed to open a database connection")?;
+        configure_connection_on_creation(&mut conn)?;
 
         // Run migrations.
         apply_migrations(&mut conn).context("failed to apply database migrations")?;
@@ -202,7 +253,7 @@ impl Db {
         E: From<diesel::result::Error>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let conn = self.diesel.get().await.map_err(DatabaseError::from)?;
+        let conn = self.pool.get().await.map_err(DatabaseError::from)?;
 
         conn.interact(|conn| <_ as diesel::Connection>::transaction::<R, E, Q>(conn, query))
             .await
@@ -216,7 +267,7 @@ impl Db {
             database_filepath.to_str().unwrap().to_owned(),
             deadpool_diesel::sqlite::Runtime::Tokio1,
         );
-        let diesel = deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
+        let pool = deadpool_diesel::sqlite::Pool::builder(manager).max_size(16).build()?;
 
         info!(
             target: COMPONENT,
@@ -224,7 +275,7 @@ impl Db {
             "Connected to the database"
         );
 
-        let me = Db { diesel };
+        let me = Db { pool };
         me.framed("migration", apply_migrations).await?;
 
         // TODO rationalize magic numbers, and make them
@@ -268,23 +319,11 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_block_header_by_block_num(
         &self,
-        block_number: Option<BlockNumber>,
+        maybe_block_number: Option<BlockNumber>,
     ) -> Result<Option<BlockHeader>> {
         self.framed("block headers by block number", move |conn| {
-            let sel = SelectDsl::select(
-                schema::block_headers::table,
-                models::BlockHeaderRaw::as_select(),
-            );
-            let row = if let Some(block_number) = block_number {
-                sel.find(i64::from(block_number.as_u32()))
-                    .first::<models::BlockHeaderRaw>(conn)
-                    .optional()
-                // invariant: only one block exists with the given block header, so the length is
-                // always zero or one
-            } else {
-                sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
-            }?;
-            row.map(std::convert::TryInto::try_into).transpose()
+            let val = queries::select_block_header_by_block_num(conn, maybe_block_number)?;
+            Ok(val)
         })
         .await
     }
@@ -433,6 +472,7 @@ impl Db {
             // XXX FIXME TODO free floating mutex MUST NOT exist
             // it doesn't bind it properly to the data locked!
             let _ = allow_acquire.send(());
+
             acquire_done.blocking_recv()?;
 
             Ok(())

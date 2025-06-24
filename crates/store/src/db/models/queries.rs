@@ -24,8 +24,8 @@ use miden_objects::{
 };
 
 use super::{
-    super::models, BoolExpressionMethods, DatabaseError, ExpressionMethods, NoteSyncRecordRawRow,
-    QueryDsl, RunQueryDsl, SelectableHelper,
+    super::models, BoolExpressionMethods, DatabaseError, NoteSyncRecordRawRow, QueryDsl,
+    RunQueryDsl, SelectableHelper,
 };
 use crate::{
     db::{
@@ -110,14 +110,17 @@ pub(crate) fn select_block_header_by_block_num(
     let sel = SelectDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select());
     let row = if let Some(block_number) = maybe_block_number {
         // SELECT block_header FROM block_headers WHERE block_num = ?1
-        sel.find(i64::from(block_number.as_u32()))
-            .first::<models::BlockHeaderRaw>(conn)
+        sel.filter(schema::block_headers::block_num.eq(block_number_to_raw_sql(&block_number)))
+            .get_result::<models::BlockHeaderRaw>(conn)
             .optional()?
         // invariant: only one block exists with the given block header, so the length is
         // always zero or one
     } else {
         // SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1
-        sel.order(schema::block_headers::block_header.desc()).first(conn).optional()?
+        sel.order(schema::block_headers::block_num.desc())
+            .limit(1)
+            .get_result(conn)
+            .optional()?
     };
     row.map(std::convert::TryInto::try_into).transpose()
 }
@@ -243,7 +246,7 @@ pub(crate) fn insert_account_delta(
             .values(&[(
                 schema::account_deltas::account_id.eq(account_id.to_bytes()),
                 schema::account_deltas::block_num.eq(block_number_to_raw_sql(&block_num)),
-                schema::account_deltas::nonce.eq(dbg!(nonce) as i64),
+                schema::account_deltas::nonce.eq(nonce as i64),
             )])
             .execute(conn)?;
         Ok(count)

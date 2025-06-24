@@ -158,7 +158,10 @@ pub enum InvalidBlockError {
     #[error("received invalid account tree root")]
     NewBlockInvalidAccountRoot,
     #[error("new block number must be 1 greater than the current block number")]
-    NewBlockInvalidBlockNum,
+    NewBlockInvalidBlockNum {
+        expected: BlockNumber,
+        submitted: BlockNumber,
+    },
     #[error("new block chain commitment is not consistent with chain MMR")]
     NewBlockInvalidChainCommitment,
     #[error("received invalid note root")]

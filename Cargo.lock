@@ -2386,6 +2386,7 @@ dependencies = [
  "miden-node-utils",
  "miden-objects",
  "rand 0.9.1",
+ "rand_chacha 0.9.0",
  "regex",
  "rusqlite",
  "rusqlite_migration",

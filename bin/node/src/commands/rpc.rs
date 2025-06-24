@@ -6,8 +6,8 @@ use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{
-    DEFAULT_MONITOR_INTERVAL_MS, ENV_BLOCK_PRODUCER_URL, ENV_ENABLE_OTEL, ENV_RPC_URL,
-    ENV_STORE_URL, parse_duration_ms,
+    DEFAULT_MONITOR_INTERVAL, ENV_BLOCK_PRODUCER_URL, ENV_ENABLE_OTEL, ENV_RPC_URL, ENV_STORE_URL,
+    duration_to_human_readable_string,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -35,12 +35,12 @@ pub enum RpcCommand {
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         open_telemetry: bool,
 
-        /// Interval at which to monitor the system in milliseconds.
+        /// Interval at which to monitor the system.
         #[arg(
             long = "monitor.interval",
-            default_value = DEFAULT_MONITOR_INTERVAL_MS,
-            value_parser = parse_duration_ms,
-            value_name = "MILLISECONDS"
+            default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
         )]
         monitor_interval: Duration,
     },

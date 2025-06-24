@@ -82,3 +82,13 @@ impl TryFrom<i32> for ProofType {
         }
     }
 }
+
+impl From<ProofType> for i32 {
+    fn from(value: ProofType) -> Self {
+        match value {
+            ProofType::Transaction => 0,
+            ProofType::Batch => 1,
+            ProofType::Block => 2,
+        }
+    }
+}

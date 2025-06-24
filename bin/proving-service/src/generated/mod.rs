@@ -5,5 +5,7 @@ pub mod proving_service;
 mod conversions;
 #[rustfmt::skip]
 pub mod status;
+#[rustfmt::skip]
+pub mod proxy_status;
 
 pub use proving_service::*;

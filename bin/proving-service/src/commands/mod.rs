@@ -38,6 +38,11 @@ pub(crate) struct ProxyConfig {
     /// Port of the proxy.
     #[arg(long, default_value = "8082", env = "MPS_PORT")]
     pub(crate) port: u16,
+    /// Status update interval in seconds.
+    ///
+    /// How often the proxy status service updates its status information.
+    #[arg(long, default_value = "10", env = "MPS_STATUS_UPDATE_INTERVAL_SECS")]
+    pub(crate) status_update_interval_secs: u64,
     /// Maximum time in seconds allowed for a request to complete. Once exceeded, the request is
     /// aborted.
     #[arg(long, default_value = "100", env = "MPS_TIMEOUT_SECS")]
@@ -59,13 +64,13 @@ pub(crate) struct ProxyConfig {
     /// statuses, as well as the supported prover type and version of the proxy.
     #[arg(long, default_value = "8084", env = "MPS_STATUS_PORT")]
     pub(crate) status_port: u16,
-    /// Grace period in seconds before starting the final step of the graceful shutdown after
+    /// Grace period before starting the final step of the graceful shutdown after
     /// signaling shutdown.
-    #[arg(long, default_value = "20", env = "MPS_GRACE_PERIOD_SECONDS")]
-    pub(crate) grace_period_seconds: u64,
-    /// Timeout in seconds of the final step for the graceful shutdown.
-    #[arg(long, default_value = "5", env = "MPS_GRACEFUL_SHUTDOWN_TIMEOUT_SECONDS")]
-    pub(crate) graceful_shutdown_timeout_seconds: u64,
+    #[arg(long, default_value = "20s", env = "MPS_GRACE_PERIOD", value_parser = humantime::parse_duration)]
+    pub(crate) grace_period: std::time::Duration,
+    /// Timeout of the final step for the graceful shutdown.
+    #[arg(long, default_value = "5s", env = "MPS_GRACEFUL_SHUTDOWN_TIMEOUT", value_parser = humantime::parse_duration)]
+    pub(crate) graceful_shutdown_timeout: std::time::Duration,
 }
 
 #[derive(Debug, Clone, clap::Parser)]

@@ -17,7 +17,7 @@ pub async fn get_pow(
     Query(params): Query<RawPowRequest>,
 ) -> Result<impl IntoResponse, InvalidPowRequest> {
     let request = params.validate()?;
-    let challenge = pow.build_challenge(request)?;
+    let challenge = pow.build_challenge(request);
     Ok(Json(challenge))
 }
 
@@ -64,8 +64,6 @@ pub enum InvalidPowRequest {
     InvalidAccount(#[source] AccountIdError),
     #[error("API key failed to parse")]
     InvalidApiKey,
-    #[error("account is rate limited")]
-    RateLimited,
 }
 
 impl InvalidPowRequest {
@@ -74,7 +72,6 @@ impl InvalidPowRequest {
         match self {
             Self::InvalidAccount(_) => "Invalid Account address".to_owned(),
             Self::InvalidApiKey => "Invalid API key".to_owned(),
-            Self::RateLimited => "Account is rate limited".to_owned(),
         }
     }
 }

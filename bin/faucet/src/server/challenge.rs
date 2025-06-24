@@ -125,12 +125,14 @@ impl Challenge {
     }
 
     /// Checks if the challenge timestamp is expired.
+    ///
+    /// Panics if the challenge timestamp is greater than the current time.
     pub fn is_expired(&self, current_time: u64) -> bool {
         (current_time - self.timestamp) > CHALLENGE_LIFETIME_SECONDS
     }
 
     /// Computes the signature for a challenge.
-    fn compute_signature(
+    pub fn compute_signature(
         secret: [u8; 32],
         difficulty: usize,
         timestamp: u64,
@@ -156,6 +158,12 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
 
     use super::*;
+
+    fn create_test_secret() -> [u8; 32] {
+        let mut secret = [0u8; 32];
+        secret[..12].copy_from_slice(b"miden-faucet");
+        secret
+    }
 
     #[test]
     fn challenge_serialize_and_deserialize_json() {
@@ -184,22 +192,36 @@ mod tests {
 
     #[test]
     fn test_challenge_encode_decode() {
-        let mut secret = [0u8; 32];
-        secret[..12].copy_from_slice(b"miden-faucet");
+        let secret = create_test_secret();
         let difficulty = 3;
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current timestamp should be greater than unix epoch")
-            .as_secs();
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
 
-        let challenge = Challenge::new(difficulty, timestamp, secret, account_id, api_key);
+        let challenge = Challenge::new(difficulty, current_time, secret, account_id, api_key);
 
         let encoded = challenge.encode();
         let decoded = Challenge::decode(&encoded, secret).unwrap();
 
         assert_eq!(challenge, decoded);
+    }
+
+    #[test]
+    fn test_timestamp_validation() {
+        let secret = create_test_secret();
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
+
+        // Valid timestamp (current time)
+        let challenge = Challenge::new(1, current_time, secret, account_id, api_key.clone());
+        assert!(!challenge.is_expired(current_time));
+
+        // Expired timestamp (too old)
+        let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
+        let challenge = Challenge::new(1, old_timestamp, secret, account_id, api_key);
+        assert!(challenge.is_expired(current_time));
     }
 }

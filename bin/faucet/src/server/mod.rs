@@ -253,7 +253,7 @@ impl Server {
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
-        self.pow.submit_challenge(timestamp, challenge, nonce, account_id, api_key)
+        self.pow.submit_challenge(account_id, api_key, challenge, nonce, timestamp)
     }
 }
 

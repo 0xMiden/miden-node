@@ -122,7 +122,11 @@ impl StoreClient {
                 .map(NetworkNote::try_from)
                 .collect::<Result<Vec<_>, _>>()?;
 
-            all_notes.extend(page);
+            // The ntx builder currently only support single target notes, so filter out the others.
+            //
+            // We unfortunately let some into our testnet database so this is the easiest place to filter.
+            all_notes
+                .extend(page.into_iter().filter(|note| note.metadata().tag().is_single_target()));
 
             match resp.next_token {
                 Some(tok) => page_token = Some(tok),

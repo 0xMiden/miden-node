@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.9.3 (2025-06-24)
+
+### Fixes
+
+- Non-single-target network notes are accepted (#1003).
+
 ## v0.9.2 (2025-06-12)
 
 - Refresh Cargo.lock file.

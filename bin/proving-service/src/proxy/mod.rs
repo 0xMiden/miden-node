@@ -43,7 +43,7 @@ mod health_check;
 pub mod metrics;
 pub(crate) mod status;
 pub(crate) mod update_workers;
-mod worker;
+pub(crate) mod worker;
 
 // LOAD BALANCER STATE
 // ================================================================================================

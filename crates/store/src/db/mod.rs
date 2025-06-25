@@ -611,7 +611,7 @@ impl Db {
                 sql::select_account_delta(&transaction, account_id, from_block, to_block)
             })
             .await
-            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
+            .map_err(|err| DatabaseError::InteractError(err.as_report()))?
     }
 
     /// Runs database optimization.
@@ -645,6 +645,6 @@ impl Db {
             .map_err(DatabaseError::MissingDbConnection)?
             .interact(move |conn| sql::unconsumed_network_notes(&conn.transaction()?, page))
             .await
-            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
+            .map_err(|err| DatabaseError::InteractError(err.as_report()))?
     }
 }

@@ -17,7 +17,7 @@ use miden_node_proto::{
     },
     generated::responses::{AccountProofsResponse, AccountStateHeader, StorageSlotMapProof},
 };
-use miden_node_utils::formatting::format_array;
+use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
     AccountError,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
@@ -340,7 +340,7 @@ impl State {
             // in-memory updates.
             db_update_task
                 .await?
-                .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.to_string()))?;
+                .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
             // Update the in-memory data structures after successful commit of the DB transaction
             inner

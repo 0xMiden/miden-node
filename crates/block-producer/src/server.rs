@@ -124,8 +124,11 @@ impl BlockProducer {
         );
         let mempool = Mempool::shared(
             chain_tip,
-            BatchBudget::default(),
-            BlockBudget::default(),
+            BatchBudget {
+                transactions: self.max_txs_per_batch,
+                ..BatchBudget::default()
+            },
+            BlockBudget { batches: self.max_batches_per_block },
             SERVER_MEMPOOL_STATE_RETENTION,
             SERVER_MEMPOOL_EXPIRATION_SLACK,
         );

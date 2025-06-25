@@ -58,6 +58,20 @@ impl BlockProducerCommand {
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
 
+        // Runtime validation for protocol constraints
+        if block_producer.max_batches_per_block >= miden_objects::MAX_BATCHES_PER_BLOCK {
+            anyhow::bail!(
+                "max-batches-per-block cannot exceed protocol limit of {}",
+                miden_objects::MAX_BATCHES_PER_BLOCK
+            );
+        }
+        if block_producer.max_txs_per_batch >= miden_objects::MAX_ACCOUNTS_PER_BATCH {
+            anyhow::bail!(
+                "max-txs-per-batch cannot exceed protocol limit of {}",
+                miden_objects::MAX_ACCOUNTS_PER_BATCH
+            );
+        }
+
         BlockProducer {
             block_producer_address,
             store_address,

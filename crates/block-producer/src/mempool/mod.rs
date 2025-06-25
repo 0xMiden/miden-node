@@ -467,7 +467,7 @@ impl Mempool {
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided chain_tip does not match the mempool's chain tip. This
+    /// Returns an error if the provided chain tip does not match the mempool's chain tip. This
     /// prevents desync between the caller's view of the world and the mempool's event stream.
     pub fn subscribe(
         &mut self,

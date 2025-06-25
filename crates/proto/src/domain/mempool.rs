@@ -10,12 +10,12 @@ use miden_objects::{
 
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
-    generated::block_producer::{MempoolEvent as ProtoMempoolEvent, mempool_event},
+    generated::block_producer::{
+        BlockCommitted as ProtoBlockCommitted, MempoolEvent as ProtoMempoolEvent,
+        TransactionAdded as ProtoTransactionAdded,
+        TransactionsReverted as ProtoTransactionsReverted, mempool_event,
+    },
 };
-
-use crate::generated::block_producer::BlockCommitted as ProtoBlockCommitted;
-use crate::generated::block_producer::TransactionAdded as ProtoTransactionAdded;
-use crate::generated::block_producer::TransactionsReverted as ProtoTransactionsReverted;
 
 #[derive(Debug, Clone)]
 pub enum MempoolEvent {

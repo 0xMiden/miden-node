@@ -1,3 +1,5 @@
+#![allow(dead_code, reason = "WIP")]
+
 use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{

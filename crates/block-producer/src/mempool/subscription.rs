@@ -50,7 +50,7 @@ impl SubscriptionProvider {
     ///
     /// # Errors
     ///
-    /// Returns an error if the provided chain_tip does not match the provider's. The error
+    /// Returns an error if the provided chain tip does not match the provider's. The error
     /// value contains the provider's chain tip.
     ///
     /// This prevents desync between the subscribers view of the world and the mempool's event

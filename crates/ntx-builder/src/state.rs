@@ -1,3 +1,6 @@
+#![allow(dead_code, reason = "WIP")]
+#![allow(clippy::unused_async, reason = "WIP")]
+
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     ops::Not,
@@ -28,10 +31,10 @@ impl State {
     pub fn new(genesis: BlockHeader) -> Self {
         Self {
             latest_header: genesis,
-            inflight: Default::default(),
-            accounts: Default::default(),
-            notes: Default::default(),
-            nullifiers: Default::default(),
+            inflight: BTreeMap::default(),
+            accounts: BTreeMap::default(),
+            notes: BTreeMap::default(),
+            nullifiers: BTreeSet::default(),
         }
     }
 
@@ -102,7 +105,7 @@ impl State {
                             .get_mut(&account_id)
                             .expect("account with delta should be tracked")
                             .commit_one();
-                    };
+                    }
 
                     for nullifier in tx.nullifiers {
                         self.notes.remove(&nullifier);
@@ -134,7 +137,7 @@ impl State {
                         for note in tx.notes {
                             self.notes.remove(&note);
                         }
-                    };
+                    }
                 }
             },
         }
@@ -162,7 +165,7 @@ struct AccountState {
 
 impl AccountState {
     fn new(state: Account) -> Self {
-        Self { state, deltas: Default::default() }
+        Self { state, deltas: VecDeque::default() }
     }
 
     fn commit_one(&mut self) {

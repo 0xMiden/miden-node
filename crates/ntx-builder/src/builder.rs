@@ -1,6 +1,7 @@
 #![allow(dead_code, reason = "WIP")]
 #![allow(unused_variables, reason = "WIP")]
 #![allow(unreachable_code, reason = "WIP")]
+#![allow(clippy::unused_async, reason = "WIP")]
 
 use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
@@ -144,12 +145,14 @@ impl NetworkTransactionBuilder {
     ) -> anyhow::Result<(State, impl TryStream<Ok = MempoolEvent, Error = tonic::Status>)> {
         let mut state = State::new(todo!());
         loop {
-            state.sync_committed(&store).await.context("failed to sync state with store")?;
+            state.sync_committed(store).await.context("failed to sync state with store")?;
             let chain_tip = state.chain_tip();
 
             match block_prod.subscribe_to_mempool(chain_tip).await {
                 Ok(stream) => return Ok((state, stream)),
-                Err(desync) if desync.code() == tonic::Code::InvalidArgument => continue,
+                Err(desync) if desync.code() == tonic::Code::InvalidArgument => {
+                    tracing::warn!("not yet in sync with mempool");
+                },
                 Err(retry) if retry.code() == tonic::Code::Unavailable => {
                     tracing::warn!(
                         err = retry.message(),
@@ -193,13 +196,13 @@ impl NetworkTransactionBuilder {
         block_prod: &BlockProducerClient,
     ) -> Result<Option<ExecutedTransaction>, NtxBuilderError> {
         // Preflight: Look for next account and blockchain data, and select notes
-        let Some(tx_request) = Self::select_next_tx(&state).await else {
+        let Some(tx_request) = Self::select_next_tx(state).await else {
             return Ok(None);
         };
 
         // Execution: Filter notes, execute, prove and submit tx
-        let tx = Self::filter_consumable_notes(&state, tx_request)
-            .and_then(|filtered_tx_req| Self::execute_transaction(&state, filtered_tx_req))
+        let tx = Self::filter_consumable_notes(state, tx_request)
+            .and_then(|filtered_tx_req| Self::execute_transaction(state, filtered_tx_req))
             .and_then(|executed_tx| Self::prove_and_submit_transaction(prover, block_prod, executed_tx))
             .inspect_ok(|tx| {
                 info!(target: COMPONENT, tx_id = %tx.id(), "Proved and submitted network transaction");

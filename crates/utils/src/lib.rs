@@ -24,7 +24,7 @@ impl<T: std::error::Error> ErrorReport for T {}
 
 /// Extends nested results types, allowing them to be flattened.
 ///
-/// Adapted from: https://stackoverflow.com/a/77543839
+/// Adapted from: <https://stackoverflow.com/a/77543839>
 pub trait FlattenResult<V, OuterError, InnerError>
 where
     InnerError: Into<OuterError>,

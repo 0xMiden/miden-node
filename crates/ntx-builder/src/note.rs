@@ -1,4 +1,4 @@
-use miden_objects::note::{Note, NoteId, Nullifier};
+use miden_objects::note::{Note, Nullifier};
 
 /// A [`Note`] that is guaranteed to be a network note.
 #[derive(Clone, Debug, PartialEq, Eq)]

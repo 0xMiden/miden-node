@@ -1,12 +1,11 @@
 use miden_objects::{
     Digest, Felt,
     note::{
-        Note, NoteDetails, NoteExecutionHint, NoteExecutionMode, NoteId, NoteInclusionProof,
-        NoteMetadata, NoteTag, NoteType, Nullifier,
+        Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
+        NoteType,
     },
     utils::{Deserializable, Serializable},
 };
-use thiserror::Error;
 
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
@@ -38,6 +37,21 @@ impl From<Note> for proto::NetworkNote {
             metadata: Some(proto::NoteMetadata::from(*note.metadata())),
             details: NoteDetails::from(note).to_bytes(),
         }
+    }
+}
+
+impl TryFrom<proto::NetworkNote> for Note {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::NetworkNote) -> Result<Self, Self::Error> {
+        let details = NoteDetails::read_from_bytes(&value.details)
+            .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
+        let (assets, recipient) = details.into_parts();
+        let metadata: NoteMetadata = value
+            .metadata
+            .ok_or_else(|| proto::NetworkNote::missing_field(stringify!(metadata)))?
+            .try_into()?;
+        Ok(Note::new(assets, metadata, recipient))
     }
 }
 

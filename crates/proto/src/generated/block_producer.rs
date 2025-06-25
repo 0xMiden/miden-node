@@ -36,7 +36,7 @@ pub struct TransactionAdded {
     /// Network notes created by the transaction.
     #[prost(message, repeated, tag = "3")]
     pub network_notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
-    /// Changes to a network account, if any.
+    /// Changes to a network account, if any. This includes creation of new network accounts.
     ///
     /// The account delta is encoded using \[winter_utils::Serializable\] implementation
     /// for \[miden_objects::account::delta::AccountDelta\].

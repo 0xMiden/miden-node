@@ -4,37 +4,34 @@
 
 use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
-use crate::{note::NetworkNote, state::State};
 use anyhow::Context;
-use crate::block_producer::BlockProducerClient;
 use futures::{TryFutureExt, TryStream, TryStreamExt};
-use miden_node_proto::domain::{
-    account::NetworkAccountError, mempool::MempoolEvent,
-};
+use miden_node_proto::domain::{account::NetworkAccountError, mempool::MempoolEvent};
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     AccountError, TransactionInputError,
     account::AccountId,
     assembly::DefaultSourceManager,
     block::BlockNumber,
-    transaction::{ExecutedTransaction, InputNote, InputNotes, TransactionArgs, },
+    transaction::{ExecutedTransaction, InputNote, InputNotes, TransactionArgs},
 };
 use miden_tx::{
-    NoteAccountExecution, NoteConsumptionChecker, TransactionExecutor,
-    TransactionExecutorError, TransactionProverError,
+    NoteAccountExecution, NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError,
+    TransactionProverError,
 };
-use crate::prover::NtbTransactionProver;
-use crate::store::{StoreClient, StoreError};
 use thiserror::Error;
-use tokio::{
-    runtime::Builder as RtBuilder,
-    task::spawn_blocking,
-    time,
-};
+use tokio::{runtime::Builder as RtBuilder, task::spawn_blocking, time};
 use tracing::{Instrument, Span, error, info, instrument, warn};
 use url::Url;
 
-use crate::COMPONENT;
+use crate::{
+    COMPONENT,
+    block_producer::BlockProducerClient,
+    note::NetworkNote,
+    prover::NtbTransactionProver,
+    state::State,
+    store::{StoreClient, StoreError},
+};
 
 // NETWORK TRANSACTION REQUEST
 // ================================================================================================
@@ -47,14 +44,12 @@ struct NetworkTransactionRequest {
 
 impl NetworkTransactionRequest {
     fn new(account_id: AccountId, notes: Vec<NetworkNote>) -> Self {
-        Self {
-            account_id,
-            notes_to_execute: notes,
-        }
+        Self { account_id, notes_to_execute: notes }
     }
 
     pub fn input_notes(&self) -> Result<InputNotes<InputNote>, TransactionInputError> {
-        let notes = self.notes_to_execute
+        let notes = self
+            .notes_to_execute
             .iter()
             .map(NetworkNote::inner)
             .cloned()
@@ -111,7 +106,8 @@ impl NetworkTransactionBuilder {
         let tx_prover = NtbTransactionProver::from(self.tx_prover_url.clone());
         let mut interval = tokio::time::interval(self.ticker_interval);
 
-        // This extra runtime is required to work-around miden-base objects not being Send/Sync due to dyn Trait object usage.
+        // This extra runtime is required to work-around miden-base objects not being Send/Sync due
+        // to dyn Trait object usage.
         spawn_blocking(move || {
             let rt = RtBuilder::new_current_thread()
                 .enable_all()
@@ -119,29 +115,28 @@ impl NetworkTransactionBuilder {
                 .context("failed to build runtime")?;
 
             rt.block_on(async move {
-                
-            let (mut state, mut stream) = Self::init(&store, &block_prod)
-                .await
-                .context("failed to initialize the ntx builder")?;
+                let (mut state, mut stream) = Self::init(&store, &block_prod)
+                    .await
+                    .context("failed to initialize the ntx builder")?;
 
-            loop {
-                tokio::select! {
-                    _tick = interval.tick() => match Self::build_network_tx(&state, &tx_prover, &block_prod).await {
-                        Ok(_) => todo!(),
-                        Err(_) => todo!(),
-                    },
-                    mempool_event = stream.try_next() => {
-                        match mempool_event {
-                            Ok(Some(event)) => state.update(event),
-                            Ok(None) => anyhow::bail!("mempool event stream ended"),
-                            Err(err) => return Err(err).context("mempool event stream encountered an error"),
-                        }
-                    },
+                loop {
+                    tokio::select! {
+                        _tick = interval.tick() => match Self::build_network_tx(&state, &tx_prover, &block_prod).await {
+                            Ok(_) => todo!(),
+                            Err(_) => todo!(),
+                        },
+                        mempool_event = stream.try_next() => {
+                            match mempool_event {
+                                Ok(Some(event)) => state.update(event),
+                                Ok(None) => anyhow::bail!("mempool event stream ended"),
+                                Err(err) => return Err(err).context("mempool event stream encountered an error"),
+                            }
+                        },
+                    }
                 }
-            }
-        })
-    }).await.context("joining ntx builder runtime")?
-}
+            })
+        }).await.context("joining ntx builder runtime")?
+    }
 
     async fn init(
         store: &StoreClient,
@@ -156,7 +151,10 @@ impl NetworkTransactionBuilder {
                 Ok(stream) => return Ok((state, stream)),
                 Err(desync) if desync.code() == tonic::Code::InvalidArgument => continue,
                 Err(retry) if retry.code() == tonic::Code::Unavailable => {
-                    tracing::warn!(err = retry.message(), "mempool event subscription unavailable, retrying");
+                    tracing::warn!(
+                        err = retry.message(),
+                        "mempool event subscription unavailable, retrying"
+                    );
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 },
                 Err(err) => return Err(err).context("failed to subscribe to mempool events"),
@@ -270,10 +268,7 @@ impl NetworkTransactionBuilder {
                     return Err(NtxBuilderError::NoteSetIsEmpty(tx_request.account_id));
                 }
 
-                Ok(NetworkTransactionRequest::new(
-                    tx_request.account_id,
-                    notes,
-                ))
+                Ok(NetworkTransactionRequest::new(tx_request.account_id, notes))
             },
             Err(err) => Err(NtxBuilderError::NoteConsumptionCheckFailed(err)),
         }

@@ -9,13 +9,12 @@ use miden_objects::{
     Word,
     account::{Account, AccountDelta, AccountId, delta::AccountUpdateDetails},
     block::{BlockHeader, BlockNumber},
-    note::{Note, Nullifier},
+    note::Nullifier,
     transaction::{PartialBlockchain, TransactionId},
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore};
 
-use crate::note::NetworkNote;
-use crate::store::StoreClient;
+use crate::{note::NetworkNote, store::StoreClient};
 
 pub struct State {
     latest_header: BlockHeader,

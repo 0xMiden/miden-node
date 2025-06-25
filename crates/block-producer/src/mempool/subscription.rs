@@ -37,8 +37,9 @@ pub(crate) struct SubscriptionProvider {
     /// These events are stored as weak pointers to the actual data to allow for efficient removal
     /// without moving the entire queue.
     ///
-    /// The queue itself is trimmed by removing non-existent pointers whenever from the front and back
-    /// whenever txs are committed or reverted. This does mean slow or long-term txs let the queue build up in size.
+    /// The queue itself is trimmed by removing non-existent pointers whenever from the front and
+    /// back whenever txs are committed or reverted. This does mean slow or long-term txs let
+    /// the queue build up in size.
     ordered_txs: VecDeque<Weak<MempoolEvent>>,
 }
 
@@ -52,7 +53,8 @@ impl SubscriptionProvider {
     /// Returns an error if the provided chain_tip does not match the provider's. The error
     /// value contains the provider's chain tip.
     ///
-    /// This prevents desync between the subscribers view of the world and the mempool's event stream.
+    /// This prevents desync between the subscribers view of the world and the mempool's event
+    /// stream.
     pub fn subscribe(
         &mut self,
         chain_tip: BlockNumber,

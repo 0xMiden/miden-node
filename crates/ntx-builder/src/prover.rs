@@ -3,8 +3,7 @@ use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionP
 use miden_tx::{LocalTransactionProver, TransactionProver};
 use url::Url;
 
-use crate::block_producer::BlockProducerClient;
-use crate::builder::NtxBuilderError;
+use crate::{block_producer::BlockProducerClient, builder::NtxBuilderError};
 
 // TRANSACTION PROVER
 // ================================================================================================

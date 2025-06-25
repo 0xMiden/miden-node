@@ -71,6 +71,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_secret: &str,
+        pow_challenge_expiration: u64,
         api_keys: &[ApiKey],
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
@@ -86,7 +87,7 @@ impl Server {
         hasher.update(pow_secret.as_bytes());
         let secret_bytes: [u8; 32] = hasher.finalize().into();
 
-        let pow = PoW::new(secret_bytes);
+        let pow = PoW::new(secret_bytes, pow_challenge_expiration);
 
         Server {
             mint_state,

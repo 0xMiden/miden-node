@@ -23,6 +23,7 @@
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
 - [BREAKING] Added PoW to faucet API Keys (#974).
+- Added a faucet cli parameter to set challenge expiration time (#1017).
 
 ### Fixes
 

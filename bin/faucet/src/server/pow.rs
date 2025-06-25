@@ -7,7 +7,7 @@ use std::{
 use miden_objects::account::AccountId;
 use tokio::time::{Duration, interval};
 
-use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
+use super::challenge::Challenge;
 use crate::{
     REQUESTS_QUEUE_SIZE,
     server::{ApiKey, get_pow::PowRequest, get_tokens::MintRequestError},
@@ -31,31 +31,36 @@ const CLEANUP_INTERVAL_SECONDS: u64 = 2;
 pub(crate) struct PoW {
     secret: [u8; 32],
     challenge_cache: Arc<Mutex<ChallengeCache>>,
+    challenge_expiration: u64,
 }
 
 impl PoW {
     /// Creates a new `PoW` instance.
-    pub fn new(secret: [u8; 32]) -> Self {
+    pub fn new(secret: [u8; 32], challenge_expiration: u64) -> Self {
         let challenge_cache = Arc::new(Mutex::new(ChallengeCache::default()));
 
         // Start the cleanup task
         let cleanup_state = challenge_cache.clone();
         tokio::spawn(async move {
-            ChallengeCache::run_cleanup(cleanup_state).await;
+            ChallengeCache::run_cleanup(cleanup_state, challenge_expiration).await;
         });
 
-        Self { secret, challenge_cache }
+        Self {
+            secret,
+            challenge_cache,
+            challenge_expiration,
+        }
     }
 
     /// Generates a new challenge.
     pub fn build_challenge(&self, request: PowRequest) -> Challenge {
-        let timestamp = SystemTime::now()
+        let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
         let difficulty = self.get_difficulty(&request.api_key);
 
-        Challenge::new(difficulty, timestamp, request.account_id, request.api_key, self.secret)
+        Challenge::new(difficulty, current_time, request.account_id, request.api_key, self.secret)
     }
 
     /// Returns the difficulty for the given API key.
@@ -81,8 +86,7 @@ impl PoW {
     /// * The challenge is expired.
     /// * The challenge is invalid.
     /// * The challenge was already used.
-    /// * The account has already submitted a challenge recently (within the last
-    ///   [`CHALLENGE_LIFETIME_SECONDS`] seconds).
+    /// * The account has already submitted a challenge recently and it's not expired yet.
     ///
     /// # Panics
     /// Panics if the challenge cache lock is poisoned.
@@ -97,7 +101,7 @@ impl PoW {
         let challenge = Challenge::decode(challenge, self.secret)?;
 
         // Check timestamp validity
-        if challenge.is_expired(current_time) {
+        if challenge.is_expired(current_time, self.challenge_expiration) {
             return Err(MintRequestError::ExpiredServerTimestamp(
                 challenge.timestamp,
                 current_time,
@@ -120,7 +124,7 @@ impl PoW {
         // Check if account has recently submitted a challenge.
         if challenge_cache.has_challenge_for_account(account_id) {
             return Err(MintRequestError::RateLimited(
-                CHALLENGE_LIFETIME_SECONDS - (current_time - challenge.timestamp)
+                self.challenge_expiration - (current_time - challenge.timestamp)
                     + CLEANUP_INTERVAL_SECONDS,
             ));
         }
@@ -196,15 +200,14 @@ impl ChallengeCache {
     /// Cleanup expired challenges and update the number of challenges submitted per API key and
     /// account id.
     ///
-    /// Challenges are expired if they are older than [`CHALLENGE_LIFETIME_SECONDS`] seconds.
-    ///
     /// # Arguments
     /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
+    /// * `challenge_expiration` - The amount of seconds during which a challenge is valid.
     ///
     /// # Panics
     /// Panics if any expired challenge has no corresponding entries on the account or API key maps.
-    fn cleanup_expired_challenges(&mut self, current_time: u64) {
-        let limit_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS;
+    fn cleanup_expired_challenges(&mut self, current_time: u64, challenge_expiration: u64) {
+        let limit_timestamp = current_time - challenge_expiration;
 
         for issuers in self.challenges.split_off(&limit_timestamp).into_values() {
             for (account_id, api_key) in issuers {
@@ -240,7 +243,7 @@ impl ChallengeCache {
     /// The cleanup task is responsible for removing expired challenges from the cache.
     /// It runs every minute and removes challenges that are no longer valid because of their
     /// timestamp.
-    pub async fn run_cleanup(cache: Arc<Mutex<Self>>) {
+    pub async fn run_cleanup(cache: Arc<Mutex<Self>>, challenge_expiration: u64) {
         let mut interval = interval(Duration::from_secs(CLEANUP_INTERVAL_SECONDS));
 
         loop {
@@ -252,7 +255,7 @@ impl ChallengeCache {
             cache
                 .lock()
                 .expect("challenge cache lock should not be poisoned")
-                .cleanup_expired_challenges(current_time);
+                .cleanup_expired_challenges(current_time, challenge_expiration);
         }
     }
 }
@@ -280,7 +283,7 @@ mod tests {
     #[tokio::test]
     async fn test_pow_validation() {
         let secret = create_test_secret();
-        let pow = PoW::new(secret);
+        let pow = PoW::new(secret, 30);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -325,7 +328,8 @@ mod tests {
     #[tokio::test]
     async fn test_timestamp_validation() {
         let secret = create_test_secret();
-        let pow = PoW::new(secret);
+        let challenge_expiration = 30;
+        let pow = PoW::new(secret, challenge_expiration);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -340,7 +344,7 @@ mod tests {
             &api_key,
             &challenge.encode(),
             nonce,
-            current_time + CHALLENGE_LIFETIME_SECONDS + 1,
+            current_time + challenge_expiration + 1,
         );
         assert!(result.is_err());
 
@@ -353,7 +357,8 @@ mod tests {
     #[tokio::test]
     async fn account_id_is_rate_limited() {
         let secret = create_test_secret();
-        let pow = PoW::new(secret);
+        let challenge_expiration = 30;
+        let pow = PoW::new(secret, challenge_expiration);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -381,7 +386,8 @@ mod tests {
     #[tokio::test]
     async fn submit_challenge_and_check_difficulty() {
         let secret = create_test_secret();
-        let pow = PoW::new(secret);
+        let challenge_expiration = 30;
+        let pow = PoW::new(secret, challenge_expiration);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -399,7 +405,8 @@ mod tests {
     #[tokio::test]
     async fn test_cleanup_expired_challenges() {
         let secret = create_test_secret();
-        let pow = PoW::new(secret);
+        let challenge_expiration = 30;
+        let pow = PoW::new(secret, challenge_expiration);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -408,13 +415,13 @@ mod tests {
         // build challenge manually with past timestamp to ensure that expires in 1 second
         let challenge = Challenge::from_parts(
             1,
-            current_time - CHALLENGE_LIFETIME_SECONDS,
+            current_time - challenge_expiration,
             account_id,
             api_key.clone(),
             Challenge::compute_signature(
                 secret,
                 1,
-                current_time - CHALLENGE_LIFETIME_SECONDS,
+                current_time - challenge_expiration,
                 account_id,
                 &api_key.inner(),
             ),

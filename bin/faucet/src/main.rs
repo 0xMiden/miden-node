@@ -45,6 +45,7 @@ const ENV_ACCOUNT_PATH: &str = "MIDEN_FAUCET_ACCOUNT_PATH";
 const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
+const ENV_POW_CHALLENGE_EXPIRATION: &str = "MIDEN_FAUCET_POW_CHALLENGE_EXPIRATION";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 
@@ -90,6 +91,12 @@ pub enum Command {
         /// The secret to be used by the server to generate the `PoW` seed.
         #[arg(long = "pow-secret", value_name = "STRING", env = ENV_POW_SECRET)]
         pow_secret: Option<String>,
+
+        /// The amount of seconds during which the `PoW` challenges are valid. Changing this will
+        /// affect the rate limiting, since it works by rejecting new submissions while the
+        /// previous submitted challenge is still valid.
+        #[arg(long = "pow-challenge-expiration", value_name = "U64", env = ENV_POW_CHALLENGE_EXPIRATION, default_value = "30")]
+        pow_challenge_expiration: u64,
 
         /// Comma-separated list of API keys.
         #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
@@ -164,6 +171,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             remote_tx_prover_url,
             asset_amounts,
             pow_secret,
+            pow_challenge_expiration,
             api_keys,
             open_telemetry: _,
         } => {
@@ -191,6 +199,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 asset_options,
                 tx_requests,
                 pow_secret.unwrap_or_default().as_str(),
+                pow_challenge_expiration,
                 &api_keys,
             );
 
@@ -462,6 +471,7 @@ mod test {
                         asset_amounts: vec![100, 500, 1000],
                         api_keys: vec![],
                         pow_secret: None,
+                        pow_challenge_expiration: 30,
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

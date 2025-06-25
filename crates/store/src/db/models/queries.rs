@@ -105,12 +105,12 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 /// the given block height is returned.
 pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
-    maybe_block_number: Option<i64>,
+    maybe_block_number: Option<BlockNumber>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
     let sel = SelectDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select());
     let row = if let Some(block_number) = maybe_block_number {
         // SELECT block_header FROM block_headers WHERE block_num = ?1
-        sel.filter(schema::block_headers::block_num.eq(block_number))
+        sel.filter(schema::block_headers::block_num.eq(block_number_to_raw_sql(&block_number)))
             .get_result::<models::BlockHeaderRaw>(conn)
             .optional()?
         // invariant: only one block exists with the given block header, so the length is
@@ -581,6 +581,11 @@ pub(crate) fn select_notes_by_id(
     note_ids: &[NoteId],
 ) -> Result<Vec<NoteRecord>, DatabaseError> {
     let note_ids = serialize_vec(note_ids);
+    // SELECT {}
+    // FROM notes
+    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+    // WHERE note_id IN rarray(?1),
+
     let cols = (
         schema::notes::block_num,
         schema::notes::batch_index,
@@ -1338,22 +1343,16 @@ pub fn select_all_block_headers(
 /// Loads the state necessary for a state sync.
 pub(crate) fn get_state_sync(
     conn: &mut SqliteConnection,
-    block_number: BlockNumber,
+    since_block_number: BlockNumber,
     account_ids: Vec<AccountId>,
     note_tags: Vec<u32>,
 ) -> Result<StateSyncUpdate, StateSyncError> {
-    let desired_senders = serialize_vec(account_ids.iter());
-    // TODO introduce a helper for this conversion
-    let desired_note_tags =
-        Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes())));
-    let desired_block_num = block_number_to_raw_sql(&block_number);
-
     // select notes since block by tag and sender
-    let notes = select_notes_by_tag_and_sender(
+    let notes = select_notes_since_block_by_tag_and_sender(
         conn,
-        desired_block_num,
-        &desired_note_tags,
-        &desired_senders,
+        since_block_number.clone(),
+        &account_ids[..],
+        &note_tags[..],
     )?;
 
     // select block header by block num
@@ -1362,7 +1361,7 @@ pub(crate) fn get_state_sync(
         .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
     // select accounts by block range
-    let block_start = block_number_to_raw_sql(&block_number);
+    let block_start = block_number_to_raw_sql(&since_block_number);
     let block_end = block_number_to_raw_sql(&block_header.block_num());
     let account_updates =
         select_accounts_by_block_range(conn, &account_ids, block_start, block_end)?;
@@ -1375,7 +1374,7 @@ pub(crate) fn get_state_sync(
         block_end,
     )?;
     Ok(StateSyncUpdate {
-        notes: vec_raw_try_into(notes)?,
+        notes,
         block_header,
         account_updates,
         transactions,
@@ -1390,29 +1389,10 @@ pub(crate) fn get_note_sync(
 ) -> Result<NoteSyncUpdate, NoteSyncError> {
     let notes = select_notes_since_block_by_tag_and_sender(conn, block_num, &[], note_tags)?;
 
-    let block_header = select_block_header_by_block_num(
-        conn,
-        notes.first().map(|note| block_number_to_raw_sql(&note.block_num)),
-    )?
-    .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
+    let block_header =
+        select_block_header_by_block_num(conn, notes.first().map(|note| note.block_num))?
+            .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
     Ok(NoteSyncUpdate { notes, block_header })
-}
-
-fn select_notes_by_tag_and_sender(
-    conn: &mut SqliteConnection,
-    desired_block_num: i64,
-    desired_note_tags: &[i32],
-    desired_senders: &[Vec<u8>],
-) -> Result<Vec<NoteSyncRecordRawRow>, StateSyncError> {
-    Ok(SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
-        .filter(schema::notes::block_num.eq(desired_block_num))
-        .filter(
-            schema::notes::tag
-                .eq_any(desired_note_tags)
-                .or(schema::notes::sender.eq_any(desired_senders)),
-        )
-        .load::<NoteSyncRecordRawRow>(conn)
-        .map_err(DatabaseError::from)?)
 }
 
 /// Select [`AccountSummary`] from the DB using the given [Connection], given that the account

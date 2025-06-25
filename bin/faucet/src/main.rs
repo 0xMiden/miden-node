@@ -29,7 +29,7 @@ use tokio::sync::mpsc;
 use types::AssetOptions;
 use url::Url;
 
-use crate::network::Network;
+use crate::network::FaucetNetwork;
 
 // CONSTANTS
 // =================================================================================================
@@ -71,7 +71,7 @@ pub enum Command {
         /// Network configuration to use. Options are `devnet`, `testnet`, `localhost` or a custom
         /// network. It is used to show the correct addresses and explorer URL in the UI.
         #[arg(long = "network", value_name = "NETWORK", default_value = "localhost", env = ENV_NETWORK)]
-        network: Network,
+        network: FaucetNetwork,
 
         /// Node RPC gRPC endpoint in the format `http://<host>[:<port>]`.
         #[arg(long = "node-url", value_name = "URL", env = ENV_NODE_URL)]
@@ -318,7 +318,7 @@ mod test {
     use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
 
-    use crate::{API_KEY_PREFIX, Cli, Network, run_faucet_command, stub_rpc_api::serve_stub};
+    use crate::{API_KEY_PREFIX, Cli, FaucetNetwork, run_faucet_command, stub_rpc_api::serve_stub};
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
     /// to test the faucet website. It then loads the website and checks that all the requests
@@ -471,7 +471,7 @@ mod test {
                 run_faucet_command(Cli {
                     command: crate::Command::Start {
                         endpoint: endpoint_clone,
-                        network: Network::Testnet,
+                        network: FaucetNetwork::Testnet,
                         node_url: stub_node_url,
                         timeout: Duration::from_millis(5000),
                         asset_amounts: vec![100, 500, 1000],

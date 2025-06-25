@@ -9,34 +9,34 @@ use serde::{Deserialize, Serialize};
 /// Represents the network where the faucet is running. It is used to show the correct bech32
 /// addresses and explorer URL in the UI.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub enum Network {
+pub enum FaucetNetwork {
     Testnet,
     Devnet,
     Localhost,
     Custom(String),
 }
 
-impl FromStr for Network {
+impl FromStr for FaucetNetwork {
     type Err = Infallible;
 
     fn from_str(s: &str) -> Result<Self, Infallible> {
         match s.to_lowercase().as_str() {
-            "devnet" => Ok(Network::Devnet),
-            "localhost" => Ok(Network::Localhost),
-            "testnet" => Ok(Network::Testnet),
-            custom => Ok(Network::Custom(custom.to_string())),
+            "devnet" => Ok(FaucetNetwork::Devnet),
+            "localhost" => Ok(FaucetNetwork::Localhost),
+            "testnet" => Ok(FaucetNetwork::Testnet),
+            custom => Ok(FaucetNetwork::Custom(custom.to_string())),
         }
     }
 }
 
-impl Network {
+impl FaucetNetwork {
     /// Converts the network configuration to a network ID.
     pub fn to_network_id(&self) -> Result<NetworkId, NetworkIdError> {
         Ok(match self {
-            Network::Testnet => NetworkId::Testnet,
-            Network::Devnet => NetworkId::Devnet,
-            Network::Localhost => NetworkId::new("mlcl")?,
-            Network::Custom(s) => NetworkId::new(s)?,
+            FaucetNetwork::Testnet => NetworkId::Testnet,
+            FaucetNetwork::Devnet => NetworkId::Devnet,
+            FaucetNetwork::Localhost => NetworkId::new("mlcl")?,
+            FaucetNetwork::Custom(s) => NetworkId::new(s)?,
         })
     }
 }

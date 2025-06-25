@@ -11,6 +11,7 @@ use std::{
 };
 
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     Digest, Word,
     account::{
@@ -423,7 +424,7 @@ pub fn select_account_delta(
     while let Some(row) = rows.next()? {
         let vault_key_data = row.get_ref(1)?.as_blob()?;
         let asset = NonFungibleAsset::read_from_bytes(vault_key_data)
-            .map_err(|err| DatabaseError::DataCorrupted(err.to_string()))?;
+            .map_err(|err| DatabaseError::DataCorrupted(err.as_report()))?;
         let action: usize = row.get(2)?;
         match action {
             0 => non_fungible_delta.add(asset)?,

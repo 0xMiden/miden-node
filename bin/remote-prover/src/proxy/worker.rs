@@ -3,6 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use anyhow::Context;
+use miden_node_utils::ErrorReport;
 use miden_remote_prover::{
     COMPONENT,
     api::ProofType,
@@ -113,7 +115,7 @@ impl Worker {
                         WorkerHealthStatus::Unhealthy {
                             num_failed_attempts: 1,
                             first_fail_timestamp: Instant::now(),
-                            reason: format!("Failed to create status client: {err}"),
+                            reason: err.as_report_context("Failed to create status client"),
                         },
                     )
                 },
@@ -176,7 +178,7 @@ impl Worker {
                     info!("Successfully recreated status client for worker {}", self.address());
                 },
                 Err(err) => {
-                    return Err(format!("Failed to recreate status client: {err}"));
+                    return Err(err.as_report_context("Failed to recreate status client"));
                 },
             }
         }
@@ -377,14 +379,13 @@ async fn create_status_client(
     Ok(WorkerStatusApiClient::new(channel))
 }
 
-/// Returns true if the version has major and minor versions match the major and minor
-/// versions of the required version. Returns false otherwise.
+/// Returns true if the version has major and minor versions match that of the required version.
+/// Returns false otherwise.
 ///
 /// # Errors
 /// Returns an error if either of the versions is malformed.
-fn is_valid_version(version_req: &VersionReq, version: &str) -> Result<bool, String> {
-    let received =
-        Version::parse(version).map_err(|err| format!("Invalid worker version: {err}"))?;
+fn is_valid_version(version_req: &VersionReq, version: &str) -> anyhow::Result<bool> {
+    let received = Version::parse(version).context("Invalid worker version: {err}")?;
 
     Ok(version_req.matches(&received))
 }

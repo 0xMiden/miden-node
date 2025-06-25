@@ -1,4 +1,5 @@
 use miden_block_prover::LocalBlockProver;
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL, batch::ProposedBatch, block::ProposedBlock,
     transaction::TransactionWitness, utils::Serializable,
@@ -213,13 +214,12 @@ impl ProverApi for ProverRpcApi {
 // UTILITIES
 // ================================================================================================
 
-/// Formats an error
-fn internal_error<E: core::fmt::Debug>(err: E) -> Status {
-    Status::internal(format!("{err:?}"))
+fn internal_error<E: ErrorReport>(err: E) -> Status {
+    Status::internal(err.as_report())
 }
 
-fn invalid_argument<E: core::fmt::Debug>(err: E) -> Status {
-    Status::invalid_argument(format!("{err:?}"))
+fn invalid_argument<E: ErrorReport>(err: E) -> Status {
+    Status::invalid_argument(err.as_report())
 }
 
 // TESTS

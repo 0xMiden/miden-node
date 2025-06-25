@@ -8,16 +8,18 @@
 - [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
+- [BREAKING] Rename `miden-proving-service` to `miden-remote-prover` (#1004).
+- [BREAKING] Rename `miden-proving-service-client` to `miden-remote-prover-client` (#1004).
 
 ### Enhancements
 
-- Added `miden-remote-prover` and `miden-remote-prover-client` crates (#926).
+- Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
 - Added support for gRPC server side reflection to all components (#949).
 - Compressed faucet background image (#985).
-- Added support for TLS to `miden-remote-prover-client` (#968).
+- Added support for TLS to `miden-proving-service-client` (#968).
 - Added support for TLS to faucet's connection to node RPC (#976).
 - Replaced integer-based duration args with human-readable duration strings (#998).
-- [BREAKING] Refactor the `miden-remote-prover` proxy status service to use gRPC instead of HTTP (#953).
+- [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 
 ## v0.9.2 (2025-06-12)
 

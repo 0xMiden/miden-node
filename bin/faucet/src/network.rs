@@ -39,12 +39,18 @@ impl Network {
             Network::Custom(s) => NetworkId::new(s)?,
         })
     }
+}
 
+/// A type wrapper for the explorer URL.
+#[derive(Serialize)]
+pub struct ExplorerUrl(&'static str);
+
+impl ExplorerUrl {
     /// Returns the explorer URL for the given network ID.
     /// Currently only testnet explorer is available.
-    pub fn explorer_url(network_id: NetworkId) -> Option<String> {
+    pub fn from_network_id(network_id: NetworkId) -> Option<Self> {
         match network_id {
-            NetworkId::Testnet => Some("https://testnet.midenscan.com".to_string()),
+            NetworkId::Testnet => Some(Self("https://testnet.midenscan.com")),
             _ => None,
         }
     }

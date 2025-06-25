@@ -11,7 +11,7 @@ use miden_objects::{
 };
 use tokio::sync::mpsc::Sender;
 
-use crate::network::Network;
+use crate::network::ExplorerUrl;
 
 pub type ResponseSender = Sender<Result<Event, Infallible>>;
 
@@ -106,7 +106,7 @@ impl MintUpdate<'_> {
                     "note_id": note_id.to_string(),
                     "account_id": account_id.to_bech32(network_id),
                     "transaction_id": tx_id.to_string(),
-                    "explorer_url": Network::explorer_url(network_id),
+                    "explorer_url": ExplorerUrl::from_network_id(network_id),
                     "data_base64": encoded_note,
                 });
 

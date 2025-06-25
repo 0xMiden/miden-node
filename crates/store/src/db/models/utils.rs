@@ -28,6 +28,13 @@ pub(crate) fn serialize_vec<'a, D: Serializable + 'a>(
     Vec::<_>::from_iter(raw.into_iter().map(<D as Serializable>::to_bytes))
 }
 
+// TODO once all integers are wrapper types, use something like
+// trait FlatAndBloat {
+//     type Raw = i64;
+//     fn to_raw_sql(self) -> Self::Raw;
+//     fn from_raw_sql(Self::Raw) -> Self;
+// }
+
 /// Convert the database type `BigInt` into a blocknumber
 ///
 /// Attention: We use `u32` as actual in-memory representation, since this will
@@ -53,8 +60,8 @@ use miden_objects::note::Nullifier;
 use crate::errors::DatabaseError;
 
 /// Returns the high 16 bits of the provided nullifier.
-pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u32 {
-    (nullifier.most_significant_felt().as_int() >> 48) as u32
+pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u16 {
+    (nullifier.most_significant_felt().as_int() >> 48) as u16
 }
 
 /// Checks if a table exists in the database.

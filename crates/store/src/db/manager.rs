@@ -1,6 +1,7 @@
 //! A minimal connection manager wrapper
 //!
 //! Only required to setup connection parameters, specifically `WAL`.
+
 use super::*;
 
 pub(crate) struct WalConnManager {
@@ -22,27 +23,22 @@ impl deadpool::managed::Manager for WalConnManager {
     type Type = deadpool_sync::SyncWrapper<SqliteConnection>;
     type Error = DatabaseError;
 
-    fn create(&self) -> impl Future<Output = Result<Self::Type, Self::Error>> {
-        async move {
-            let conn = self.manager.create().await?;
+    async fn create(&self) -> Result<Self::Type, Self::Error> {
+        let conn = self.manager.create().await?;
 
-            conn.interact(|conn| configure_connection_on_creation(conn))
-                .await
-                .map_err(|e| DatabaseError::interact("Connection setup", &e))??;
-            Ok(conn)
-        }
+        conn.interact(configure_connection_on_creation)
+            .await
+            .map_err(|e| DatabaseError::interact("Connection setup", &e))??;
+        Ok(conn)
     }
 
-    fn recycle(
+    async fn recycle(
         &self,
         conn: &mut Self::Type,
         metrics: &deadpool_diesel::Metrics,
-    ) -> impl Future<Output = deadpool::managed::RecycleResult<Self::Error>> {
-        async {
-            let val =
-                self.manager.recycle(conn, metrics).await.map_err(DatabaseError::PoolRecycle)?;
-            Ok(val)
-        }
+    ) -> deadpool::managed::RecycleResult<Self::Error> {
+        self.manager.recycle(conn, metrics).await.map_err(DatabaseError::PoolRecycle)?;
+        Ok(())
     }
 }
 

@@ -2,15 +2,16 @@
 #![allow(clippy::unused_async, reason = "WIP")]
 
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     ops::Not,
     slice::Iter,
 };
 
+use account::AccountState;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::{
     Word,
-    account::{Account, AccountDelta, AccountId, delta::AccountUpdateDetails},
+    account::{Account, AccountId, delta::AccountUpdateDetails},
     block::{BlockHeader, BlockNumber},
     note::Nullifier,
     transaction::{PartialBlockchain, TransactionId},
@@ -18,6 +19,8 @@ use miden_objects::{
 use miden_tx::{DataStore, DataStoreError, MastForestStore};
 
 use crate::{note::NetworkNote, store::StoreClient};
+
+mod account;
 
 pub struct State {
     latest_header: BlockHeader,
@@ -51,95 +54,121 @@ impl State {
                 network_notes,
                 account_delta,
             } => {
-                // TODO: AccountUpdateDetails is the wrong type to use.
-                //
-                // TODO: Update AccountState
-                let account_id = account_delta.map(|delta| match delta {
-                    AccountUpdateDetails::Private => unreachable!("Should never occur"),
-                    AccountUpdateDetails::New(account) => account.id(),
-                    AccountUpdateDetails::Delta(_account_delta) => {
-                        todo!("This is the wrong type to use here, we need an account ID")
-                    },
-                });
-
-                // Filter out non-network and non-single-target notes.
-                let mut associated_nullifiers = Vec::with_capacity(network_notes.len());
-                for note in network_notes {
-                    let id = note.id();
-                    let Some(note) = NetworkNote::new(note) else {
-                        tracing::warn!(node.id = %id, "ignoring non-network note");
-                        continue;
-                    };
-
-                    if note.is_single_target().not() {
-                        tracing::warn!(node.id = %id, "ignoring multi-target network note");
-                        continue;
-                    }
-
-                    associated_nullifiers.push(note.nullifier());
-                    self.notes.insert(note.nullifier(), note);
-                }
-
-                self.inflight.insert(
-                    id,
-                    InflightTx {
-                        account_delta: account_id,
-                        nullifiers: nullifiers.clone(),
-                        notes: associated_nullifiers,
-                    },
-                );
-                self.nullifiers.extend(nullifiers);
+                self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
             MempoolEvent::BlockCommitted { header, txs } => {
-                assert!(header.prev_block_commitment() == self.latest_header.commitment());
-
-                self.latest_header = header;
-
-                for tx in txs {
-                    let Some(tx) = self.inflight.remove(&tx) else {
-                        continue;
-                    };
-
-                    if let Some(account_id) = tx.account_delta {
-                        self.accounts
-                            .get_mut(&account_id)
-                            .expect("account with delta should be tracked")
-                            .commit_one();
-                    }
-
-                    for nullifier in tx.nullifiers {
-                        self.notes.remove(&nullifier);
-                        self.nullifiers.remove(&nullifier);
-                    }
-                }
+                self.commit_block(header, txs);
             },
             MempoolEvent::TransactionsReverted(txs) => {
-                for tx in txs {
-                    let Some(tx) = self.inflight.remove(&tx) else {
-                        continue;
-                    };
-
-                    if let Some(account_id) = tx.account_delta {
-                        let account = self
-                            .accounts
-                            .remove(&account_id)
-                            .expect("account with delta should be tracked")
-                            .revert_one();
-
-                        if let Some(account) = account {
-                            self.accounts.insert(account_id, account);
-                        }
-
-                        for nullifier in tx.nullifiers {
-                            self.nullifiers.remove(&nullifier);
-                        }
-
-                        for note in tx.notes {
-                            self.notes.remove(&note);
-                        }
-                    }
-                }
+                self.revert_transactions(txs);
             },
+        }
+    }
+
+    fn commit_block(&mut self, header: BlockHeader, txs: Vec<TransactionId>) {
+        assert!(header.prev_block_commitment() == self.latest_header.commitment());
+
+        self.latest_header = header;
+
+        for tx in txs {
+            let Some(tx) = self.inflight.remove(&tx) else {
+                continue;
+            };
+
+            if let Some(account_id) = tx.account_delta {
+                self.accounts
+                    .get_mut(&account_id)
+                    .expect("account with delta should be tracked")
+                    .commit_one();
+            }
+
+            for nullifier in tx.nullifiers {
+                self.notes.remove(&nullifier);
+                self.nullifiers.remove(&nullifier);
+            }
+        }
+    }
+
+    fn add_transaction(
+        &mut self,
+        id: TransactionId,
+        nullifiers: Vec<Nullifier>,
+        network_notes: Vec<miden_objects::note::Note>,
+        account_delta: Option<AccountUpdateDetails>,
+    ) {
+        let account_id = account_delta.and_then(|delta| match delta {
+            AccountUpdateDetails::Private => {
+                tracing::warn!("ignoring private account details");
+                None
+            },
+            AccountUpdateDetails::New(account) => {
+                let account_id = account.id();
+                let account = AccountState::new_inflight(account);
+                self.accounts
+                    .insert(account_id, account)
+                    .inspect(|_| tracing::warn!(account.id = %account_id, "replaced an already existing account state"));
+
+                Some(account_id)
+            },
+            AccountUpdateDetails::Delta(_account_delta) => {
+                todo!("Waiting on account ID to be added here in base");
+            },
+        });
+
+        // Filter out non-network and non-single-target notes.
+        let mut associated_nullifiers = Vec::with_capacity(network_notes.len());
+        for note in network_notes {
+            let id = note.id();
+            let Some(note) = NetworkNote::new(note) else {
+                tracing::warn!(node.id = %id, "ignoring non-network note");
+                continue;
+            };
+
+            if note.is_single_target().not() {
+                tracing::warn!(node.id = %id, "ignoring multi-target network note");
+                continue;
+            }
+
+            associated_nullifiers.push(note.nullifier());
+            self.notes.insert(note.nullifier(), note);
+        }
+
+        self.inflight.insert(
+            id,
+            InflightTx {
+                account_delta: account_id,
+                nullifiers: nullifiers.clone(),
+                notes: associated_nullifiers,
+            },
+        );
+        self.nullifiers.extend(nullifiers);
+    }
+
+    fn revert_transactions(&mut self, txs: BTreeSet<TransactionId>) {
+        for tx in txs {
+            let Some(tx) = self.inflight.remove(&tx) else {
+                continue;
+            };
+
+            if let Some(account_id) = tx.account_delta {
+                let account = self
+                    .accounts
+                    .remove(&account_id)
+                    .expect("account with delta should be tracked")
+                    .revert_one();
+
+                if let Some(account) = account {
+                    self.accounts.insert(account_id, account);
+                }
+
+                for nullifier in tx.nullifiers {
+                    self.nullifiers.remove(&nullifier);
+                }
+
+                for note in tx.notes {
+                    self.notes.remove(&note);
+                }
+            }
         }
     }
 
@@ -152,43 +181,19 @@ impl State {
     }
 }
 
+/// Represents the impact an inflight transaction has on the state.
+///
+/// This is used to update state once the associated transaction is committed or reverted.
 struct InflightTx {
+    /// Which network account, if any, this transaction updated.
+    ///
+    /// Note that this could include creating a network account.
     account_delta: Option<AccountId>,
+    /// Notes consumed by this transaction.
     nullifiers: Vec<Nullifier>,
+    /// Notes created by this transaction. We use nullifiers to track these
+    /// as this simplifies the state structure.
     notes: Vec<Nullifier>,
-}
-
-struct AccountState {
-    state: Account,
-    deltas: VecDeque<AccountDelta>,
-}
-
-impl AccountState {
-    fn new(state: Account) -> Self {
-        Self { state, deltas: VecDeque::default() }
-    }
-
-    fn commit_one(&mut self) {
-        let Some(to_commit) = self.deltas.pop_front() else {
-            panic!("account state should have a delta to commit");
-        };
-
-        self.state.apply_delta(&to_commit).expect("account delta should apply");
-    }
-
-    fn revert_one(mut self) -> Option<Self> {
-        self.deltas.pop_back().is_some().then_some(self)
-    }
-
-    fn current_state(&self) -> Account {
-        let mut account = self.state.clone();
-
-        for delta in &self.deltas {
-            account.apply_delta(delta).expect("account delta should apply");
-        }
-
-        account
-    }
 }
 
 impl MastForestStore for State {

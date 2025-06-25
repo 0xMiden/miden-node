@@ -67,6 +67,7 @@ impl BlockProducer {
     ///
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
+    #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
         let store = StoreClient::new(self.store_address);

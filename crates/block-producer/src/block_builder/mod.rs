@@ -9,7 +9,7 @@ use miden_objects::{
     Digest, MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
     block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::{Note, NoteExecutionMode, NoteHeader},
+    note::{Note, NoteHeader},
     transaction::{OutputNote, TransactionHeader, TransactionId},
 };
 use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
@@ -495,9 +495,8 @@ fn get_network_notes(proven_block: &ProvenBlock) -> Vec<Note> {
     proven_block
         .output_notes()
         .filter_map(|(_idx, note)| match note {
-            OutputNote::Full(inner)
-                if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
-            {
+            // is_single_target is poorly named, but this is only applicable to network notes.
+            OutputNote::Full(inner) if inner.metadata().tag().is_single_target() => {
                 Some(inner.clone())
             },
             _ => None,

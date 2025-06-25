@@ -134,9 +134,7 @@ impl TryFrom<Note> for NetworkNote {
     type Error = NetworkNoteError;
 
     fn try_from(note: Note) -> Result<Self, Self::Error> {
-        if !note.metadata().tag().is_single_target()
-            || note.metadata().tag().execution_mode() != NoteExecutionMode::Network
-        {
+        if note.metadata().tag().execution_mode() != NoteExecutionMode::Network {
             return Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()));
         }
         Ok(NetworkNote(note))

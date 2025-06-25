@@ -1935,7 +1935,7 @@ dependencies = [
 
 [[package]]
 name = "miden-faucet"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2038,7 +2038,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -2060,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-block-producer"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2094,7 +2094,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-ntx-builder"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "hex",
@@ -2138,7 +2138,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto-build"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "prost",
@@ -2148,7 +2148,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-rpc"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "futures",
@@ -2173,7 +2173,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-store"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-stress-test"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "clap",
  "futures",
@@ -2229,7 +2229,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-utils"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "figment",

@@ -26,7 +26,8 @@ use miden_objects::{
     Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
     account::{AccountId, delta::AccountUpdateDetails},
     crypto::hash::rpo::RpoDigest,
-    transaction::ProvenTransaction,
+    note::NoteExecutionMode,
+    transaction::{OutputNote, ProvenTransaction},
     utils::serde::Deserializable,
 };
 use miden_tx::TransactionVerifier;
@@ -218,6 +219,19 @@ impl api_server::Api for RpcService {
             return Err(Status::invalid_argument(
                 "Network transactions may not be submitted by users yet",
             ));
+        }
+
+        // We currently only allow single target network notes.
+        for note in tx.output_notes().iter() {
+            if let OutputNote::Full(note) = note {
+                let tag = note.metadata().tag();
+
+                if tag.execution_mode() == NoteExecutionMode::Network && !tag.is_single_target() {
+                    return Err(Status::invalid_argument(
+                        "Network notes must target a single account for now",
+                    ));
+                }
+            }
         }
 
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);

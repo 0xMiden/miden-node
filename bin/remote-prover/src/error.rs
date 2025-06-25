@@ -5,7 +5,7 @@ use thiserror::Error;
 // ================================================================================================
 
 #[derive(Debug, Error)]
-pub enum ProvingServiceError {
+pub enum RemoteProverError {
     #[error("invalid uri {1}")]
     InvalidURI(#[source] InvalidUri, String),
     #[error("failed to connect to worker {1}")]
@@ -20,8 +20,8 @@ pub enum ProvingServiceError {
     PortAlreadyInUse(#[source] std::io::Error, u16),
 }
 
-impl From<ProvingServiceError> for String {
-    fn from(err: ProvingServiceError) -> Self {
+impl From<RemoteProverError> for String {
+    fn from(err: RemoteProverError) -> Self {
         err.to_string()
     }
 }

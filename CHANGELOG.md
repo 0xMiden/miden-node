@@ -10,6 +10,8 @@
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - [BREAKING] Rename `miden-proving-service` to `miden-remote-prover` (#1004).
 - [BREAKING] Rename `miden-proving-service-client` to `miden-remote-prover-client` (#1004).
+- [BREAKING] Rename `RemoteProverError` to `RemoteProverClientError` (#1004).
+- [BREAKING] Rename `ProvingServiceError` to `RemoteProverError` (#1004).
 
 ### Enhancements
 

@@ -23,7 +23,7 @@ pub mod remote_prover;
 /// ===============================================================================================
 
 #[derive(Debug, Error)]
-pub enum RemoteProverError {
+pub enum RemoteProverClientError {
     /// Indicates that the provided gRPC server endpoint is invalid.
     #[error("invalid uri {0}")]
     InvalidEndpoint(String),
@@ -34,27 +34,28 @@ pub enum RemoteProverError {
     #[error("{error_msg}")]
     Other {
         error_msg: Box<str>,
-        // thiserror will return this when calling `Error::source` on `RemoteProverError`.
+        // thiserror will return this when calling `Error::source` on
+        // `RemoteProverClientError`.
         source: Option<Box<dyn CoreError + Send + Sync + 'static>>,
     },
 }
 
-impl From<RemoteProverError> for String {
-    fn from(err: RemoteProverError) -> Self {
+impl From<RemoteProverClientError> for String {
+    fn from(err: RemoteProverClientError) -> Self {
         err.to_string()
     }
 }
 
-impl RemoteProverError {
-    /// Creates a custom error using the [`RemoteProverError::Other`] variant from an error
-    /// message.
+impl RemoteProverClientError {
+    /// Creates a custom error using the [`RemoteProverClientError::Other`] variant from an
+    /// error message.
     pub fn other(message: impl Into<String>) -> Self {
         let message: String = message.into();
         Self::Other { error_msg: message.into(), source: None }
     }
 
-    /// Creates a custom error using the [`RemoteProverError::Other`] variant from an error
-    /// message and a source error.
+    /// Creates a custom error using the [`RemoteProverClientError::Other`] variant from an
+    /// error message and a source error.
     pub fn other_with_source(
         message: impl Into<String>,
         source: impl CoreError + Send + Sync + 'static,

@@ -32,7 +32,7 @@ use crate::{
         update_workers::{Action, UpdateWorkers},
         worker::ProverType,
     },
-    error::ProvingServiceError,
+    error::RemoteProverError,
     utils::{
         create_queue_full_response, create_response_with_error_message,
         create_too_many_requests_response,
@@ -72,7 +72,7 @@ impl LoadBalancerState {
     pub(crate) async fn new(
         initial_workers: Vec<String>,
         config: &ProxyConfig,
-    ) -> core::result::Result<Self, ProvingServiceError> {
+    ) -> core::result::Result<Self, RemoteProverError> {
         let mut workers: Vec<Worker> = Vec::with_capacity(initial_workers.len());
 
         let connection_timeout = Duration::from_secs(config.connection_timeout_secs);
@@ -156,7 +156,7 @@ impl LoadBalancerState {
     pub async fn update_workers(
         &self,
         update_workers: UpdateWorkers,
-    ) -> std::result::Result<(), ProvingServiceError> {
+    ) -> std::result::Result<(), RemoteProverError> {
         let mut workers = self.workers.write().await;
         info!("Current workers: {:?}", workers);
 

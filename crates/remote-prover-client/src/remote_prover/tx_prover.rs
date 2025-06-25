@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
 use crate::{
-    RemoteProverError,
+    RemoteProverClientError,
     remote_prover::{
         generated,
         generated::{ProofType, ProvingRequest, ProvingResponse},
@@ -54,7 +54,7 @@ impl RemoteTransactionProver {
     /// Establishes a connection to the remote transaction prover server. The connection is
     /// maintained for the lifetime of the prover. If the connection is already established, this
     /// method does nothing.
-    async fn connect(&self) -> Result<(), RemoteProverError> {
+    async fn connect(&self) -> Result<(), RemoteProverClientError> {
         let mut client = self.client.lock().await;
         if client.is_some() {
             return Ok(());
@@ -69,14 +69,14 @@ impl RemoteTransactionProver {
         #[cfg(not(target_arch = "wasm32"))]
         let new_client = {
             let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
                 .timeout(Duration::from_millis(10000));
             let channel = endpoint
                 .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
                 .connect()
                 .await
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?;
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?;
             ApiClient::new(channel)
         };
 

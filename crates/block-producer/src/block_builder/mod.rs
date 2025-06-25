@@ -482,9 +482,10 @@ impl BlockProver {
             Self::Local(prover) => {
                 prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
             },
-            Self::Remote(prover) => {
-                prover.prove(proposed_block).await.map_err(BuildBlockError::RemoteProverError)
-            },
+            Self::Remote(prover) => prover
+                .prove(proposed_block)
+                .await
+                .map_err(BuildBlockError::RemoteProverClientError),
         }
     }
 }

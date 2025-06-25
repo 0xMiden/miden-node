@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
 use crate::{
-    RemoteProverError,
+    RemoteProverClientError,
     remote_prover::generated::{ProofType, ProvingRequest, ProvingResponse},
 };
 
@@ -53,7 +53,7 @@ impl RemoteBlockProver {
     /// Establishes a connection to the remote block prover server. The connection is
     /// maintained for the lifetime of the prover. If the connection is already established, this
     /// method does nothing.
-    async fn connect(&self) -> Result<(), RemoteProverError> {
+    async fn connect(&self) -> Result<(), RemoteProverClientError> {
         let mut client = self.client.lock().await;
         if client.is_some() {
             return Ok(());
@@ -68,14 +68,14 @@ impl RemoteBlockProver {
         #[cfg(not(target_arch = "wasm32"))]
         let new_client = {
             let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
                 .timeout(Duration::from_millis(10000));
             let channel = endpoint
                 .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
                 .connect()
                 .await
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?;
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?;
             ApiClient::new(channel)
         };
 
@@ -89,7 +89,7 @@ impl RemoteBlockProver {
     pub async fn prove(
         &self,
         proposed_block: ProposedBlock,
-    ) -> Result<ProvenBlock, RemoteProverError> {
+    ) -> Result<ProvenBlock, RemoteProverClientError> {
         use miden_objects::utils::Serializable;
         self.connect().await?;
 
@@ -99,7 +99,7 @@ impl RemoteBlockProver {
             .await
             .as_ref()
             .ok_or_else(|| {
-                RemoteProverError::ConnectionFailed("client should be connected".into())
+                RemoteProverClientError::ConnectionFailed("client should be connected".into())
             })?
             .clone();
 
@@ -108,14 +108,13 @@ impl RemoteBlockProver {
 
         let request = tonic::Request::new(proposed_block.into());
 
-        let response = client
-            .prove(request)
-            .await
-            .map_err(|err| RemoteProverError::other_with_source("failed to prove block", err))?;
+        let response = client.prove(request).await.map_err(|err| {
+            RemoteProverClientError::other_with_source("failed to prove block", err)
+        })?;
 
         // Deserialize the response bytes back into a ProvenBlock.
         let proven_block = ProvenBlock::try_from(response.into_inner()).map_err(|err| {
-            RemoteProverError::other_with_source(
+            RemoteProverClientError::other_with_source(
                 "failed to deserialize received response from remote block prover",
                 err,
             )
@@ -134,9 +133,9 @@ impl RemoteBlockProver {
     fn validate_tx_headers(
         proven_block: &ProvenBlock,
         proposed_txs: &OrderedTransactionHeaders,
-    ) -> Result<(), RemoteProverError> {
+    ) -> Result<(), RemoteProverClientError> {
         if proposed_txs.as_slice().len() != proven_block.transactions().as_slice().len() {
-            return Err(RemoteProverError::other(format!(
+            return Err(RemoteProverClientError::other(format!(
                 "remote prover returned {} transaction headers but {} transactions were passed as part of the proposed block",
                 proven_block.transactions().as_slice().len(),
                 proposed_txs.as_slice().len()
@@ -149,7 +148,7 @@ impl RemoteBlockProver {
             proposed_txs.as_slice().iter().zip(proven_block.transactions().as_slice())
         {
             if proposed_header != proven_header {
-                return Err(RemoteProverError::other(format!(
+                return Err(RemoteProverClientError::other(format!(
                     "transaction header with id {} does not match header of the transaction in the proposed block",
                     proposed_header.id()
                 )));

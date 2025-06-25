@@ -5,7 +5,7 @@ use pingora_proxy::Session;
 use tracing::debug;
 
 use crate::{
-    COMPONENT, commands::PROXY_HOST, error::ProvingServiceError, proxy::metrics::QUEUE_DROP_COUNT,
+    COMPONENT, commands::PROXY_HOST, error::RemoteProverError, proxy::metrics::QUEUE_DROP_COUNT,
 };
 
 const RESOURCE_EXHAUSTED_CODE: u16 = 8;
@@ -72,13 +72,13 @@ pub async fn create_response_with_error_message(
 ///
 /// # Returns
 /// * `Ok(TcpListener)` if the port is available.
-/// * `Err(ProvingServiceError::PortAlreadyInUse)` if the port is already in use.
+/// * `Err(RemoteProverError::PortAlreadyInUse)` if the port is already in use.
 pub fn check_port_availability(
     port: u16,
     service: &str,
-) -> Result<std::net::TcpListener, ProvingServiceError> {
+) -> Result<std::net::TcpListener, RemoteProverError> {
     let addr = format!("{PROXY_HOST}:{port}");
     TcpListener::bind(&addr)
         .inspect(|_| debug!(target: COMPONENT, %service, %port, %addr, "Port is available"))
-        .map_err(|err| ProvingServiceError::PortAlreadyInUse(err, port))
+        .map_err(|err| RemoteProverError::PortAlreadyInUse(err, port))
 }

@@ -13,7 +13,7 @@ use super::metrics::WORKER_UNHEALTHY;
 use crate::{
     COMPONENT,
     commands::worker::ProverType,
-    error::ProvingServiceError,
+    error::RemoteProverError,
     generated::status::{StatusRequest, status_api_client::StatusApiClient},
 };
 
@@ -92,14 +92,14 @@ impl Worker {
     /// Creates a new worker and a gRPC status client for the given worker address.
     ///
     /// # Errors
-    /// - Returns [`ProvingServiceError::BackendCreationFailed`] if the worker address is invalid.
+    /// - Returns [`RemoteProverError::BackendCreationFailed`] if the worker address is invalid.
     pub async fn new(
         worker_addr: String,
         connection_timeout: Duration,
         total_timeout: Duration,
-    ) -> Result<Self, ProvingServiceError> {
+    ) -> Result<Self, RemoteProverError> {
         let backend =
-            Backend::new(&worker_addr).map_err(ProvingServiceError::BackendCreationFailed)?;
+            Backend::new(&worker_addr).map_err(RemoteProverError::BackendCreationFailed)?;
 
         let (status_client, health_status) =
             match create_status_client(&worker_addr, connection_timeout, total_timeout).await {
@@ -139,8 +139,8 @@ impl Worker {
     ///
     /// # Returns
     /// - `Ok(())` if the client was successfully created
-    /// - `Err(ProvingServiceError)` if the client creation failed
-    async fn recreate_status_client(&mut self) -> Result<(), ProvingServiceError> {
+    /// - `Err(RemoteProverError)` if the client creation failed
+    async fn recreate_status_client(&mut self) -> Result<(), RemoteProverError> {
         let address = self.address();
         match create_status_client(&address, self.connection_timeout, self.total_timeout).await {
             Ok(client) => {
@@ -357,20 +357,20 @@ impl PartialEq for Worker {
 /// Create a gRPC [`StatusApiClient`] for the given worker address.
 ///
 /// # Errors
-/// - [`ProvingServiceError::InvalidURI`] if the worker address is invalid.
-/// - [`ProvingServiceError::ConnectionFailed`] if the connection to the worker fails.
+/// - [`RemoteProverError::InvalidURI`] if the worker address is invalid.
+/// - [`RemoteProverError::ConnectionFailed`] if the connection to the worker fails.
 async fn create_status_client(
     address: &str,
     connection_timeout: Duration,
     total_timeout: Duration,
-) -> Result<StatusApiClient<Channel>, ProvingServiceError> {
+) -> Result<StatusApiClient<Channel>, RemoteProverError> {
     let channel = Channel::from_shared(format!("http://{address}"))
-        .map_err(|err| ProvingServiceError::InvalidURI(err, address.to_string()))?
+        .map_err(|err| RemoteProverError::InvalidURI(err, address.to_string()))?
         .connect_timeout(connection_timeout)
         .timeout(total_timeout)
         .connect()
         .await
-        .map_err(|err| ProvingServiceError::ConnectionFailed(err, address.to_string()))?;
+        .map_err(|err| RemoteProverError::ConnectionFailed(err, address.to_string()))?;
 
     Ok(StatusApiClient::new(channel))
 }

@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
 use crate::{
-    RemoteProverError,
+    RemoteProverClientError,
     remote_prover::generated::{ProofType, ProvingRequest, ProvingResponse},
 };
 
@@ -52,7 +52,7 @@ impl RemoteBatchProver {
     /// Establishes a connection to the remote batch prover server. The connection is
     /// maintained for the lifetime of the prover. If the connection is already established, this
     /// method does nothing.
-    async fn connect(&self) -> Result<(), RemoteProverError> {
+    async fn connect(&self) -> Result<(), RemoteProverClientError> {
         let mut client = self.client.lock().await;
         if client.is_some() {
             return Ok(());
@@ -67,14 +67,14 @@ impl RemoteBatchProver {
         #[cfg(not(target_arch = "wasm32"))]
         let new_client = {
             let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
                 .timeout(Duration::from_millis(10000));
             let channel = endpoint
                 .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
                 .connect()
                 .await
-                .map_err(|err| RemoteProverError::ConnectionFailed(err.into()))?;
+                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?;
             ApiClient::new(channel)
         };
 
@@ -88,7 +88,7 @@ impl RemoteBatchProver {
     pub async fn prove(
         &self,
         proposed_batch: ProposedBatch,
-    ) -> Result<ProvenBatch, RemoteProverError> {
+    ) -> Result<ProvenBatch, RemoteProverClientError> {
         use miden_objects::utils::Serializable;
         self.connect().await?;
 
@@ -98,7 +98,7 @@ impl RemoteBatchProver {
             .await
             .as_ref()
             .ok_or_else(|| {
-                RemoteProverError::ConnectionFailed("client should be connected".into())
+                RemoteProverClientError::ConnectionFailed("client should be connected".into())
             })?
             .clone();
 
@@ -107,14 +107,13 @@ impl RemoteBatchProver {
 
         let request = tonic::Request::new(proposed_batch.into());
 
-        let response = client
-            .prove(request)
-            .await
-            .map_err(|err| RemoteProverError::other_with_source("failed to prove block", err))?;
+        let response = client.prove(request).await.map_err(|err| {
+            RemoteProverClientError::other_with_source("failed to prove block", err)
+        })?;
 
         // Deserialize the response bytes back into a ProvenBatch.
         let proven_batch = ProvenBatch::try_from(response.into_inner()).map_err(|err| {
-            RemoteProverError::other_with_source(
+            RemoteProverClientError::other_with_source(
                 "failed to deserialize received response from remote prover",
                 err,
             )
@@ -137,9 +136,9 @@ impl RemoteBatchProver {
     fn validate_tx_headers(
         proven_batch: &ProvenBatch,
         proposed_txs: Vec<Arc<ProvenTransaction>>,
-    ) -> Result<(), RemoteProverError> {
+    ) -> Result<(), RemoteProverClientError> {
         if proposed_txs.len() != proven_batch.transactions().as_slice().len() {
-            return Err(RemoteProverError::other(format!(
+            return Err(RemoteProverClientError::other(format!(
                 "remote prover returned {} transaction headers but {} transactions were passed as part of the proposed batch",
                 proven_batch.transactions().as_slice().len(),
                 proposed_txs.len()
@@ -152,7 +151,7 @@ impl RemoteBatchProver {
             proposed_txs.into_iter().zip(proven_batch.transactions().as_slice())
         {
             if proven_header.account_id() != proposed_header.account_id() {
-                return Err(RemoteProverError::other(format!(
+                return Err(RemoteProverClientError::other(format!(
                     "transaction header of {} has a different account ID than the proposed transaction",
                     proposed_header.id()
                 )));
@@ -161,7 +160,7 @@ impl RemoteBatchProver {
             if proven_header.initial_state_commitment()
                 != proposed_header.account_update().initial_state_commitment()
             {
-                return Err(RemoteProverError::other(format!(
+                return Err(RemoteProverClientError::other(format!(
                     "transaction header of {} has a different initial state commitment than the proposed transaction",
                     proposed_header.id()
                 )));
@@ -170,7 +169,7 @@ impl RemoteBatchProver {
             if proven_header.final_state_commitment()
                 != proposed_header.account_update().final_state_commitment()
             {
-                return Err(RemoteProverError::other(format!(
+                return Err(RemoteProverClientError::other(format!(
                     "transaction header of {} has a different final state commitment than the proposed transaction",
                     proposed_header.id()
                 )));
@@ -179,7 +178,7 @@ impl RemoteBatchProver {
             // Check input notes
             let num_notes = proposed_header.input_notes().num_notes() as usize;
             if num_notes != proven_header.input_notes().len() {
-                return Err(RemoteProverError::other(format!(
+                return Err(RemoteProverClientError::other(format!(
                     "transaction header of {} has a different number of input notes than the proposed transaction",
                     proposed_header.id()
                 )));
@@ -191,7 +190,7 @@ impl RemoteBatchProver {
                 proposed_header.nullifiers().zip(proven_header.input_notes().iter())
             {
                 if proposed_nullifier != *header_nullifier {
-                    return Err(RemoteProverError::other(format!(
+                    return Err(RemoteProverClientError::other(format!(
                         "transaction header of {} has a different set of input notes than the proposed transaction",
                         proposed_header.id()
                     )));
@@ -200,7 +199,7 @@ impl RemoteBatchProver {
 
             // Check output notes
             if proposed_header.output_notes().num_notes() != proven_header.output_notes().len() {
-                return Err(RemoteProverError::other(format!(
+                return Err(RemoteProverClientError::other(format!(
                     "transaction header of {} has a different number of output notes than the proposed transaction",
                     proposed_header.id()
                 )));
@@ -215,7 +214,7 @@ impl RemoteBatchProver {
                 .zip(proven_header.output_notes().iter())
             {
                 if proposed_note_id != *header_note_id {
-                    return Err(RemoteProverError::other(format!(
+                    return Err(RemoteProverClientError::other(format!(
                         "transaction header of {} has a different set of input notes than the proposed transaction",
                         proposed_header.id()
                     )));

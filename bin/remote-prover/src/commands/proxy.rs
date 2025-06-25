@@ -14,7 +14,7 @@ use super::ProxyConfig;
 use crate::{
     COMPONENT,
     commands::PROXY_HOST,
-    error::ProvingServiceError,
+    error::RemoteProverError,
     proxy::{
         LoadBalancer, LoadBalancerState, status::ProxyStatusPingoraService,
         update_workers::LoadBalancerUpdateService,
@@ -60,7 +60,7 @@ impl StartProxy {
             check_port_availability(metrics_port, "Metrics")?;
         }
 
-        let mut conf = ServerConf::new().ok_or(ProvingServiceError::PingoraConfigFailed(
+        let mut conf = ServerConf::new().ok_or(RemoteProverError::PingoraConfigFailed(
             "Failed to create server conf".to_string(),
         ))?;
         conf.grace_period_seconds = Some(self.proxy_config.grace_period.as_secs());
@@ -104,7 +104,7 @@ impl StartProxy {
         );
         let logic = lb
             .app_logic_mut()
-            .ok_or(ProvingServiceError::PingoraConfigFailed("app logic not found".to_string()))?;
+            .ok_or(RemoteProverError::PingoraConfigFailed("app logic not found".to_string()))?;
         let mut http_server_options = HttpServerOptions::default();
 
         // Enable HTTP/2 for plaintext

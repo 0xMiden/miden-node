@@ -1,6 +1,6 @@
 pub mod generated;
 
-use crate::RemoteProverError;
+use crate::RemoteProverClientError;
 
 #[cfg(feature = "tx-prover")]
 pub mod tx_prover;

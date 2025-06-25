@@ -56,6 +56,10 @@ pub struct BlockProducer {
     pub batch_interval: Duration,
     /// The interval at which to produce blocks.
     pub block_interval: Duration,
+    /// The maximum number of transactions per batch.
+    pub max_txs_per_batch: usize,
+    /// The maximum number of batches per block.
+    pub max_batches_per_block: usize,
 }
 
 impl BlockProducer {
@@ -342,7 +346,7 @@ mod test {
     use tonic::transport::{Channel, Endpoint};
     use winterfell::Proof;
 
-    use crate::BlockProducer;
+    use crate::{BlockProducer, SERVER_MAX_BATCHES_PER_BLOCK, SERVER_MAX_TXS_PER_BATCH};
 
     #[tokio::test]
     async fn block_producer_startup_is_robust_to_network_failures() {
@@ -380,6 +384,8 @@ mod test {
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
+                max_txs_per_batch: SERVER_MAX_TXS_PER_BATCH,
+                max_batches_per_block: SERVER_MAX_BATCHES_PER_BLOCK,
             }
             .serve()
             .await

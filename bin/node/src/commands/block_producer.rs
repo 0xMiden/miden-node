@@ -93,3 +93,56 @@ impl BlockProducerCommand {
         *enable_otel
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use url::Url;
+
+    use super::*;
+
+    fn dummy_url() -> Url {
+        Url::parse("http://127.0.0.1:1234").unwrap()
+    }
+
+    #[tokio::test]
+    async fn rejects_too_large_max_batches_per_block() {
+        let cmd = BlockProducerCommand::Start {
+            url: dummy_url(),
+            store_url: dummy_url(),
+            ntx_builder_url: None,
+            batch_prover_url: None,
+            block_prover_url: None,
+            open_telemetry: false,
+            block_interval: std::time::Duration::from_secs(1),
+            batch_interval: std::time::Duration::from_secs(1),
+            monitor_interval: std::time::Duration::from_secs(1),
+            max_txs_per_batch: SERVER_MAX_TXS_PER_BATCH,
+            max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK,
+        };
+        let result = cmd.handle().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("max-batches-per-block"));
+    }
+
+    #[tokio::test]
+    async fn rejects_too_large_max_txs_per_batch() {
+        let cmd = BlockProducerCommand::Start {
+            url: dummy_url(),
+            store_url: dummy_url(),
+            ntx_builder_url: None,
+            batch_prover_url: None,
+            block_prover_url: None,
+            open_telemetry: false,
+            block_interval: std::time::Duration::from_secs(1),
+            batch_interval: std::time::Duration::from_secs(1),
+            monitor_interval: std::time::Duration::from_secs(1),
+            max_txs_per_batch: miden_objects::MAX_ACCOUNTS_PER_BATCH,
+            max_batches_per_block: SERVER_MAX_BATCHES_PER_BLOCK,
+        };
+        let result = cmd.handle().await;
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("max-txs-per-batch"));
+    }
+}

@@ -2,15 +2,6 @@
 
 ## v0.10.0 (TBD)
 
-### Changes
-
-- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
-- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
-- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
-- [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
-- [BREAKING] Added PoW to faucet API Keys (#974).
-- Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#974).
-
 ### Enhancements
 
 - Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
@@ -21,6 +12,22 @@
 - Replaced integer-based duration args with human-readable duration strings (#998).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 
+### Changes
+
+- Separated the store API into three separate services (#932).
+- Added a faucet Dockerfile (#933).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
+- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
+- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
+- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
+- [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
+- Exposed `miden-proving-service` as a library (#956).
+- [BREAKING] Added PoW to faucet API Keys (#974).
+- Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
+
+### Fixes
+
+- Faucet considers decimals when minting token amounts (#962).
 
 ## v0.9.2 (2025-06-12)
 
@@ -29,19 +36,6 @@
 ## v0.9.1 (2025-06-10)
 
 - Refresh Cargo.lock file (#944).
-
-## v0.9.0 (2025-05-30)
-
-
-### Changes
-
-- Separated the store API into three separate services (#932).
-- Added a faucet Dockerfile (#933).
-- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
-
-### Fixes
-
-- Faucet considers decimals when minting token amounts (#962).
 
 ## v0.9.0 (2025-05-30)
 

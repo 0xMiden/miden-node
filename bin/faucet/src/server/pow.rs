@@ -10,7 +10,7 @@ use tokio::time::{Duration, interval};
 use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
 use crate::{
     REQUESTS_QUEUE_SIZE,
-    server::{ApiKey, get_pow::PowRequest, get_tokens::InvalidMintRequest},
+    server::{ApiKey, get_pow::PowRequest, get_tokens::MintRequestError},
 };
 
 /// The maximum difficulty of the `PoW`.
@@ -55,7 +55,7 @@ impl PoW {
             .as_secs();
         let difficulty = self.get_difficulty(&request.api_key);
 
-        Challenge::new(difficulty, timestamp, self.secret, request.account_id, request.api_key)
+        Challenge::new(difficulty, timestamp, request.account_id, request.api_key, self.secret)
     }
 
     /// Returns the difficulty for the given API key.
@@ -63,7 +63,7 @@ impl PoW {
     /// The difficulty is adjusted based on the number of active requests per API key. The
     /// difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY` active
     /// requests, and it is clamped between 1 and `MAX_DIFFICULTY`.
-    pub fn get_difficulty(&self, api_key: &ApiKey) -> usize {
+    fn get_difficulty(&self, api_key: &ApiKey) -> usize {
         let num_challenges = self
             .challenge_cache
             .lock()
@@ -93,12 +93,12 @@ impl PoW {
         challenge: &str,
         nonce: u64,
         current_time: u64,
-    ) -> Result<(), InvalidMintRequest> {
+    ) -> Result<(), MintRequestError> {
         let challenge = Challenge::decode(challenge, self.secret)?;
 
         // Check timestamp validity
         if challenge.is_expired(current_time) {
-            return Err(InvalidMintRequest::ExpiredServerTimestamp(
+            return Err(MintRequestError::ExpiredServerTimestamp(
                 challenge.timestamp,
                 current_time,
             ));
@@ -109,27 +109,25 @@ impl PoW {
         let valid_api_key = *api_key == challenge.api_key;
         let valid_nonce = challenge.validate_pow(nonce);
         if !(valid_nonce && valid_account_id && valid_api_key) {
-            return Err(InvalidMintRequest::InvalidPoW);
+            return Err(MintRequestError::InvalidPoW);
         }
 
-        // Check if account has recently submitted a challenge.
-        if self
+        let mut challenge_cache = self
             .challenge_cache
             .lock()
-            .expect("challenge cache lock should not be poisoned")
-            .has_challenge_for_account(account_id)
-        {
-            return Err(InvalidMintRequest::RateLimited);
+            .expect("challenge cache lock should not be poisoned");
+
+        // Check if account has recently submitted a challenge.
+        if challenge_cache.has_challenge_for_account(account_id) {
+            return Err(MintRequestError::RateLimited(
+                CHALLENGE_LIFETIME_SECONDS - (current_time - challenge.timestamp)
+                    + CLEANUP_INTERVAL_SECONDS,
+            ));
         }
 
         // Check if the cache already contains the challenge. If not, it is inserted.
-        if !self
-            .challenge_cache
-            .lock()
-            .expect("challenge cache lock should not be poisoned")
-            .insert_challenge(&challenge)
-        {
-            return Err(InvalidMintRequest::ChallengeAlreadyUsed);
+        if !challenge_cache.insert_challenge(&challenge) {
+            return Err(MintRequestError::ChallengeAlreadyUsed);
         }
 
         Ok(())
@@ -159,7 +157,10 @@ impl ChallengeCache {
     /// Inserts a challenge into the cache, updating the number of challenges submitted for the
     /// account and the API key.
     ///
-    /// Returns true if the challenge was newly inserted.
+    /// Returns whether the value was newly inserted. That is:
+    /// * If the cache did not previously contain this challenge, `true` is returned.
+    /// * If the cache already contained this challenge, `false` is returned, and the cache is not
+    ///   modified.
     pub fn insert_challenge(&mut self, challenge: &Challenge) -> bool {
         let account_id = challenge.account_id;
         let api_key = challenge.api_key.clone();
@@ -196,41 +197,39 @@ impl ChallengeCache {
     /// account id.
     ///
     /// Challenges are expired if they are older than [`CHALLENGE_LIFETIME_SECONDS`] seconds.
+    ///
+    /// # Arguments
+    /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
+    ///
+    /// # Panics
+    /// Panics if any expired challenge has no corresponding entries on the account or API key maps.
     fn cleanup_expired_challenges(&mut self, current_time: u64) {
         let limit_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS;
 
-        let expired_challenges: Vec<u64> = self
-            .challenges
-            .range(..limit_timestamp)
-            .map(|(timestamp, _)| *timestamp)
-            .collect();
+        for issuers in self.challenges.split_off(&limit_timestamp).into_values() {
+            for (account_id, api_key) in issuers {
+                let remove_api_key = self
+                    .challenges_per_key
+                    .get_mut(&api_key)
+                    .map(|c| {
+                        *c = c.saturating_sub(1);
+                        *c == 0
+                    })
+                    .expect("challenge should have had a key entry");
+                if remove_api_key {
+                    self.challenges_per_key.remove(&api_key);
+                }
 
-        for timestamp in expired_challenges {
-            if let Some(issuers) = self.challenges.remove(&timestamp) {
-                for (account_id, api_key) in issuers {
-                    let remove_api_key = self
-                        .challenges_per_key
-                        .get_mut(&api_key)
-                        .map(|c| {
-                            *c = c.saturating_sub(1);
-                            *c == 0
-                        })
-                        .expect("challenge should have had a key entry");
-                    if remove_api_key {
-                        self.challenges_per_key.remove(&api_key);
-                    }
-
-                    let remove_account_id = self
-                        .account_ids
-                        .get_mut(&account_id)
-                        .map(|c| {
-                            *c = c.saturating_sub(1);
-                            *c == 0
-                        })
-                        .expect("challenge should have had an account entry");
-                    if remove_account_id {
-                        self.account_ids.remove(&account_id);
-                    }
+                let remove_account_id = self
+                    .account_ids
+                    .get_mut(&account_id)
+                    .map(|c| {
+                        *c = c.saturating_sub(1);
+                        *c == 0
+                    })
+                    .expect("challenge should have had an account entry");
+                if remove_account_id {
+                    self.account_ids.remove(&account_id);
                 }
             }
         }
@@ -358,12 +357,12 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
         // Solve first challenge
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let result =
             pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time);
         assert!(result.is_ok());
@@ -372,10 +371,11 @@ mod tests {
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let result =
             pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time);
         assert!(result.is_err());
-        assert!(matches!(result.err(), Some(InvalidMintRequest::RateLimited)));
+        assert!(matches!(result.err(), Some(MintRequestError::RateLimited(_))));
     }
 
     #[tokio::test]
@@ -405,7 +405,7 @@ mod tests {
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
-        // build challenge manually with past timestamp to ensure that is expired
+        // build challenge manually with past timestamp to ensure that expires in 1 second
         let challenge = Challenge::from_parts(
             1,
             current_time - CHALLENGE_LIFETIME_SECONDS,

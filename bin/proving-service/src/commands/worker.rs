@@ -1,59 +1,15 @@
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use miden_node_utils::cors::cors_for_grpc_web_layer;
-use serde::{Deserialize, Serialize};
+use miden_proving_service::{
+    COMPONENT,
+    api::{ProofType, RpcListener},
+    generated::api_server::ApiServer,
+};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_health::server::health_reporter;
 use tonic_web::GrpcWebLayer;
 use tracing::{info, instrument};
-
-use crate::{COMPONENT, api::RpcListener, generated::api_server::ApiServer};
-
-/// Specifies the type of proving task a worker can handle.
-#[derive(Debug, Clone, Copy, Default, ValueEnum, PartialEq, Serialize, Deserialize)]
-pub enum ProverType {
-    /// Transaction proving
-    #[default]
-    Transaction,
-    /// Batch proving
-    Batch,
-    /// Block proving
-    Block,
-}
-
-impl ProverType {
-    /// Returns the corresponding `ProofType` from the generated code
-    pub fn to_proof_type(&self) -> crate::generated::ProofType {
-        match self {
-            ProverType::Transaction => crate::generated::ProofType::Transaction,
-            ProverType::Batch => crate::generated::ProofType::Batch,
-            ProverType::Block => crate::generated::ProofType::Block,
-        }
-    }
-}
-
-impl std::fmt::Display for ProverType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ProverType::Transaction => write!(f, "transaction"),
-            ProverType::Batch => write!(f, "batch"),
-            ProverType::Block => write!(f, "block"),
-        }
-    }
-}
-
-impl std::str::FromStr for ProverType {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "transaction" => Ok(ProverType::Transaction),
-            "batch" => Ok(ProverType::Batch),
-            "block" => Ok(ProverType::Block),
-            _ => Err(format!("Invalid proof type: {s}")),
-        }
-    }
-}
 
 /// Starts a worker.
 #[derive(Debug, Parser)]
@@ -64,9 +20,9 @@ pub struct StartWorker {
     /// The port of the worker
     #[arg(long, default_value = "50051", env = "MPS_WORKER_PORT")]
     port: u16,
-    /// The type of prover that the worker will be handling
-    #[arg(long, env = "MPS_WORKER_PROVER_TYPE")]
-    prover_type: ProverType,
+    /// The type of proof that the worker will be handling
+    #[arg(long, env = "MPS_WORKER_PROOF_TYPE")]
+    proof_type: ProofType,
 }
 
 impl StartWorker {
@@ -85,13 +41,13 @@ impl StartWorker {
         let worker_addr = format!("{}:{}", host, self.port);
         let rpc = RpcListener::new(
             TcpListener::bind(&worker_addr).await.map_err(|err| err.to_string())?,
-            self.prover_type,
+            self.proof_type,
         );
 
         let server_addr = rpc.listener.local_addr().map_err(|err| err.to_string())?;
         info!(target: COMPONENT,
             endpoint = %server_addr,
-            prover_type = ?self.prover_type,
+            proof_type = ?self.proof_type,
             host = %host,
             port = %self.port,
             "Worker server initialized and listening"

@@ -26,7 +26,7 @@ use url::Url;
 use crate::{
     COMPONENT,
     faucet::{FaucetId, MintRequest},
-    server::{get_pow::get_pow, get_tokens::InvalidMintRequest},
+    server::{get_pow::get_pow, get_tokens::MintRequestError},
     types::AssetOptions,
 };
 
@@ -162,7 +162,7 @@ impl Server {
         nonce: u64,
         account_id: AccountId,
         api_key: &ApiKey,
-    ) -> Result<(), InvalidMintRequest> {
+    ) -> Result<(), MintRequestError> {
         let timestamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")

@@ -6,13 +6,16 @@ use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
 
-use super::get_tokens::InvalidMintRequest;
+use super::get_tokens::MintRequestError;
 use crate::server::ApiKey;
 
 /// The lifetime of a challenge.
 ///
 /// A challenge is valid if it is within `CHALLENGE_LIFETIME_SECONDS` seconds of the current time.
 pub(crate) const CHALLENGE_LIFETIME_SECONDS: u64 = 30;
+
+/// The size of the encoded challenge in bytes.
+const CHALLENGE_ENCODED_SIZE: usize = 95;
 
 /// A challenge for proof-of-work validation.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,9 +47,9 @@ impl Challenge {
     pub fn new(
         difficulty: usize,
         timestamp: u64,
-        secret: [u8; 32],
         account_id: AccountId,
         api_key: ApiKey,
+        secret: [u8; 32],
     ) -> Self {
         let signature =
             Self::compute_signature(secret, difficulty, timestamp, account_id, &api_key.inner());
@@ -78,18 +81,18 @@ impl Challenge {
 
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
     /// in the context of the specified secret.
-    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidMintRequest> {
+    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, MintRequestError> {
         // Parse the hex-encoded challenge string
-        let bytes: [u8; 95] =
-            hex_to_bytes(value).map_err(|_| InvalidMintRequest::MissingPowParameters)?;
+        let bytes: [u8; CHALLENGE_ENCODED_SIZE] =
+            hex_to_bytes(value).map_err(|_| MintRequestError::MissingPowParameters)?;
 
-        // SAFETY: Length of 95 is enforced above.
+        // SAFETY: Length of the bytes is enforced above.
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
         let account_id = AccountId::read_from_bytes(&bytes[16..31]).unwrap();
         let api_key_bytes: [u8; 32] = bytes[31..63].try_into().unwrap();
         let api_key = ApiKey::new(api_key_bytes);
-        let signature: [u8; 32] = bytes[63..95].try_into().unwrap();
+        let signature: [u8; 32] = bytes[63..CHALLENGE_ENCODED_SIZE].try_into().unwrap();
 
         // Verify the signature
         let expected_signature =
@@ -97,13 +100,13 @@ impl Challenge {
         if signature == expected_signature {
             Ok(Self::from_parts(difficulty, timestamp, account_id, api_key, signature))
         } else {
-            Err(InvalidMintRequest::ServerSignaturesDoNotMatch)
+            Err(MintRequestError::ServerSignaturesDoNotMatch)
         }
     }
 
     /// Encodes the challenge into a hex string.
     pub fn encode(&self) -> String {
-        let mut bytes = Vec::with_capacity(95);
+        let mut bytes = Vec::with_capacity(CHALLENGE_ENCODED_SIZE);
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
         bytes.extend_from_slice(&self.account_id.to_bytes());
@@ -127,9 +130,16 @@ impl Challenge {
 
     /// Checks if the challenge timestamp is expired.
     ///
+    /// # Arguments
+    /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
+    ///
+    /// # Panics
     /// Panics if the challenge timestamp is greater than the current time.
     pub fn is_expired(&self, current_time: u64) -> bool {
-        (current_time - self.timestamp) > CHALLENGE_LIFETIME_SECONDS
+        let diff = current_time
+            .checked_sub(self.timestamp)
+            .expect("challenge timestamp should be less than current time");
+        diff > CHALLENGE_LIFETIME_SECONDS
     }
 
     /// Computes the signature for a challenge.
@@ -172,7 +182,7 @@ mod tests {
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
-        let challenge = Challenge::new(2, 1_234_567_890, secret, account_id, api_key);
+        let challenge = Challenge::new(2, 1_234_567_890, account_id, api_key, secret);
 
         // Test that it serializes to the expected JSON format
         let json = serde_json::to_string(&challenge).unwrap();
@@ -200,7 +210,7 @@ mod tests {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
 
-        let challenge = Challenge::new(difficulty, current_time, secret, account_id, api_key);
+        let challenge = Challenge::new(difficulty, current_time, account_id, api_key, secret);
 
         let encoded = challenge.encode();
         let decoded = Challenge::decode(&encoded, secret).unwrap();
@@ -217,12 +227,12 @@ mod tests {
         let api_key = ApiKey::generate(&mut rng);
 
         // Valid timestamp (current time)
-        let challenge = Challenge::new(1, current_time, secret, account_id, api_key.clone());
+        let challenge = Challenge::new(1, current_time, account_id, api_key.clone(), secret);
         assert!(!challenge.is_expired(current_time));
 
         // Expired timestamp (too old)
         let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
-        let challenge = Challenge::new(1, old_timestamp, secret, account_id, api_key);
+        let challenge = Challenge::new(1, old_timestamp, account_id, api_key, secret);
         assert!(challenge.is_expired(current_time));
     }
 }

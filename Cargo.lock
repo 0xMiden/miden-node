@@ -2136,7 +2136,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#a60526a76e363d5d52faf3bdf8e3aa7f99782484"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#2daf42f0ed56d74cb45ceaca19bb82269d15839c"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2233,7 +2233,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#a60526a76e363d5d52faf3bdf8e3aa7f99782484"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#2daf42f0ed56d74cb45ceaca19bb82269d15839c"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2514,7 +2514,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#a60526a76e363d5d52faf3bdf8e3aa7f99782484"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#2daf42f0ed56d74cb45ceaca19bb82269d15839c"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2634,12 +2634,11 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#a60526a76e363d5d52faf3bdf8e3aa7f99782484"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#2daf42f0ed56d74cb45ceaca19bb82269d15839c"
 dependencies = [
  "anyhow",
  "async-trait",
  "miden-block-prover",
- "miden-crypto",
  "miden-lib",
  "miden-objects",
  "miden-processor",
@@ -2653,7 +2652,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#a60526a76e363d5d52faf3bdf8e3aa7f99782484"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#2daf42f0ed56d74cb45ceaca19bb82269d15839c"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2669,7 +2668,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#a60526a76e363d5d52faf3bdf8e3aa7f99782484"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#2daf42f0ed56d74cb45ceaca19bb82269d15839c"
 dependencies = [
  "miden-objects",
  "miden-tx",

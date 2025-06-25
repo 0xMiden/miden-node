@@ -3,7 +3,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::anyhow;
+use anyhow::Context;
 use miden_node_utils::ErrorReport;
 use miden_proving_service::{
     COMPONENT,
@@ -383,8 +383,7 @@ async fn create_status_client(
 /// # Errors
 /// Returns an error if either of the versions is malformed.
 fn is_valid_version(version_req: &VersionReq, version: &str) -> anyhow::Result<bool> {
-    let received =
-        Version::parse(version).map_err(|err| anyhow!("Invalid worker version: {err}"))?;
+    let received = Version::parse(version).context("Invalid worker version: {err}")?;
 
     Ok(version_req.matches(&received))
 }

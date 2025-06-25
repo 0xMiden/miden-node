@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
-use anyhow::anyhow;
 use miden_node_proto::{
+    errors::ConversionError,
     generated::{
         block_producer::api_client as block_producer_client,
         requests::{
@@ -194,8 +194,8 @@ impl api_server::Api for RpcService {
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().note_ids.clone();
 
-        let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err| {
-            Status::invalid_argument(anyhow!("Invalid NoteId: {err}").to_string())
+        let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err: ConversionError| {
+            Status::invalid_argument(err.as_report_context("Invalid NoteId"))
         })?;
 
         self.store.clone().get_notes_by_id(request).await

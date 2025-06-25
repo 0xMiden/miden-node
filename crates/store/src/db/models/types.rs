@@ -23,8 +23,6 @@ use super::{
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct AccountRaw {
     pub account_id: Vec<u8>,
-    #[allow(dead_code)]
-    pub network_account_id_prefix: Option<i64>,
     pub account_commitment: Vec<u8>,
     pub block_num: i64,
     pub details: Option<Vec<u8>>,

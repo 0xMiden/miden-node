@@ -35,7 +35,7 @@ use crate::{
     db::{
         manager::{WalConnManager, configure_connection_on_creation},
         migrations::apply_migrations,
-        models::{Page, queries},
+        models::{Page, block_number_to_raw_sql, queries},
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
     genesis::GenesisBlock,
@@ -270,7 +270,10 @@ impl Db {
         maybe_block_number: Option<BlockNumber>,
     ) -> Result<Option<BlockHeader>> {
         self.framed("block headers by block number", move |conn| {
-            let val = queries::select_block_header_by_block_num(conn, maybe_block_number)?;
+            let val = queries::select_block_header_by_block_num(
+                conn,
+                maybe_block_number.map(|block_num| block_number_to_raw_sql(&block_num)),
+            )?;
             Ok(val)
         })
         .await

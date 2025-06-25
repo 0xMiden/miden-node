@@ -37,7 +37,7 @@ use crate::{
     db::{
         TransactionSummary,
         migrations::apply_migrations,
-        models::{Page, queries, utils},
+        models::{Page, block_number_to_raw_sql, queries, utils},
     },
     errors::DatabaseError,
 };
@@ -809,8 +809,11 @@ fn db_block_header() {
     assert!(res.is_none());
 
     // test fetch block header by block number
-    let res =
-        queries::select_block_header_by_block_num(conn, Some(block_header.block_num())).unwrap();
+    let res = queries::select_block_header_by_block_num(
+        conn,
+        Some(block_number_to_raw_sql(&block_header.block_num())),
+    )
+    .unwrap();
     assert_eq!(res.unwrap(), block_header);
 
     // test fetch latest block header

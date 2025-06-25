@@ -105,12 +105,12 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 /// the given block height is returned.
 pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
-    maybe_block_number: Option<BlockNumber>,
+    maybe_block_number: Option<i64>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
     let sel = SelectDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select());
     let row = if let Some(block_number) = maybe_block_number {
         // SELECT block_header FROM block_headers WHERE block_num = ?1
-        sel.filter(schema::block_headers::block_num.eq(block_number_to_raw_sql(&block_number)))
+        sel.filter(schema::block_headers::block_num.eq(block_number))
             .get_result::<models::BlockHeaderRaw>(conn)
             .optional()?
         // invariant: only one block exists with the given block header, so the length is
@@ -119,7 +119,7 @@ pub(crate) fn select_block_header_by_block_num(
         // SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1
         sel.order(schema::block_headers::block_num.desc())
             .limit(1)
-            .get_result(conn)
+            .get_result::<models::BlockHeaderRaw>(conn)
             .optional()?
     };
     row.map(std::convert::TryInto::try_into).transpose()
@@ -824,7 +824,7 @@ pub(crate) fn select_account_by_id_prefix(
     //     network_account_id_prefix = ?1;
     let maybe_info = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
         .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
-        .first::<AccountRaw>(conn)
+        .get_result::<AccountRaw>(conn)
         .optional()
         .map_err(DatabaseError::Diesel)?;
 
@@ -1346,11 +1346,10 @@ pub(crate) fn get_state_sync(
     // TODO introduce a helper for this conversion
     let desired_note_tags =
         Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes())));
+    let desired_block_num = block_number_to_raw_sql(&block_number);
 
     // select notes since block by tag and sender
-    let desired_block_num = get_desired_block_num(conn, &desired_note_tags, &desired_senders)?;
-
-    let notes = load_notes_by_tag_and_sender(
+    let notes = select_notes_by_tag_and_sender(
         conn,
         desired_block_num,
         &desired_note_tags,
@@ -1359,7 +1358,7 @@ pub(crate) fn get_state_sync(
 
     // select block header by block num
     let maybe_note_block_num = notes.first().map(|note| note.block_num);
-    let block_header: BlockHeader = get_block_header_by_block_num(conn, maybe_note_block_num)?
+    let block_header: BlockHeader = select_block_header_by_block_num(conn, maybe_note_block_num)?
         .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
     // select accounts by block range
@@ -1391,32 +1390,15 @@ pub(crate) fn get_note_sync(
 ) -> Result<NoteSyncUpdate, NoteSyncError> {
     let notes = select_notes_since_block_by_tag_and_sender(conn, block_num, &[], note_tags)?;
 
-    let block_header =
-        select_block_header_by_block_num(conn, notes.first().map(|note| note.block_num))?
-            .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
+    let block_header = select_block_header_by_block_num(
+        conn,
+        notes.first().map(|note| block_number_to_raw_sql(&note.block_num)),
+    )?
+    .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
     Ok(NoteSyncUpdate { notes, block_header })
 }
 
-fn get_desired_block_num(
-    conn: &mut SqliteConnection,
-    desired_note_tags: &[i32],
-    desired_senders: &[Vec<u8>],
-) -> Result<i64, StateSyncError> {
-    SelectDsl::select(schema::notes::table, schema::notes::block_num)
-        .filter(
-            schema::notes::tag
-                .eq_any(desired_note_tags)
-                .or(schema::notes::sender.eq_any(desired_senders)),
-        )
-        .order_by(schema::notes::block_num.asc())
-        .limit(1)
-        .get_result(conn)
-        .optional()
-        .map_err(DatabaseError::from)?
-        .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)
-}
-
-fn load_notes_by_tag_and_sender(
+fn select_notes_by_tag_and_sender(
     conn: &mut SqliteConnection,
     desired_block_num: i64,
     desired_note_tags: &[i32],
@@ -1431,20 +1413,6 @@ fn load_notes_by_tag_and_sender(
         )
         .load::<NoteSyncRecordRawRow>(conn)
         .map_err(DatabaseError::from)?)
-}
-
-fn get_block_header_by_block_num(
-    conn: &mut SqliteConnection,
-    maybe_note_block_num: Option<i64>,
-) -> Result<Option<BlockHeader>, DatabaseError> {
-    let sel = SelectDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select());
-    let row = if let Some(block_number) = maybe_note_block_num {
-        sel.find(block_number).first::<models::BlockHeaderRaw>(conn).optional()
-    } else {
-        sel.order(schema::block_headers::block_header.desc()).first(conn).optional()
-    }
-    .map_err(DatabaseError::from)?;
-    row.map(std::convert::TryInto::try_into).transpose()
 }
 
 /// Select [`AccountSummary`] from the DB using the given [Connection], given that the account

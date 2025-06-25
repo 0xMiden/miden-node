@@ -9,7 +9,7 @@
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - [BREAKING] Added PoW to faucet API Keys (#974).
-- Remove faucet rate limiter by IP and API Key (#974).
+- Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#974).
 
 ### Enhancements
 

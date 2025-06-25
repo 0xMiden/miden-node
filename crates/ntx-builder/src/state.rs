@@ -1,19 +1,20 @@
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
+    ops::Not,
     slice::Iter,
 };
 
-use miden_node_proto::domain::{mempool::MempoolEvent, note::NetworkNote};
+use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::{
     Word,
     account::{Account, AccountDelta, AccountId, delta::AccountUpdateDetails},
     block::{BlockHeader, BlockNumber},
-    note::Nullifier,
+    note::{Note, Nullifier},
     transaction::{PartialBlockchain, TransactionId},
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore};
 
-use crate::builder::store::StoreClient;
+use crate::{builder::store::StoreClient, note::NetworkNote};
 
 pub struct State {
     latest_header: BlockHeader,
@@ -58,17 +59,32 @@ impl State {
                     },
                 });
 
+                // Filter out non-network and non-single-target notes.
+                let mut associated_nullifiers = Vec::with_capacity(network_notes.len());
+                for note in network_notes {
+                    let id = note.id();
+                    let Some(note) = NetworkNote::new(note) else {
+                        tracing::warn!(node.id = %id, "ignoring non-network note");
+                        continue;
+                    };
+
+                    if note.is_single_target().not() {
+                        tracing::warn!(node.id = %id, "ignoring multi-target network note");
+                        continue;
+                    }
+
+                    associated_nullifiers.push(note.nullifier());
+                    self.notes.insert(note.nullifier(), note);
+                }
+
                 self.inflight.insert(
                     id,
                     InflightTx {
                         account_delta: account_id,
                         nullifiers: nullifiers.clone(),
-                        notes: network_notes.iter().map(NetworkNote::nullifier).collect(),
+                        notes: associated_nullifiers,
                     },
                 );
-
-                self.notes
-                    .extend(network_notes.into_iter().map(|note| (note.nullifier(), note)));
                 self.nullifiers.extend(nullifiers);
             },
             MempoolEvent::BlockCommitted { header, txs } => {

@@ -4,10 +4,9 @@ use std::{
     sync::{Arc, Weak},
 };
 
-use miden_node_proto::domain::{mempool::MempoolEvent, note::NetworkNote};
+use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::{
     block::{BlockHeader, BlockNumber},
-    note::NoteExecutionMode,
     transaction::{OutputNote, TransactionId},
 };
 use tokio::sync::mpsc;
@@ -87,13 +86,10 @@ impl SubscriptionProvider {
         let network_notes = tx
             .output_notes()
             .filter_map(|note| match note {
-                OutputNote::Full(inner)
-                    if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
-                {
-                    NetworkNote::try_from(inner.clone()).ok()
-                },
+                OutputNote::Full(inner) if inner.is_network_note() => Some(inner),
                 _ => None,
             })
+            .cloned()
             .collect();
         let account_delta =
             tx.account_id().is_network().then(|| tx.account_update().details().clone());

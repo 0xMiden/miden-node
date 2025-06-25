@@ -1,7 +1,9 @@
 use std::collections::BTreeSet;
 
 use miden_objects::{
-    account::delta::AccountUpdateDetails, block::BlockHeader, note::Nullifier,
+    account::delta::AccountUpdateDetails,
+    block::BlockHeader,
+    note::{Note, Nullifier},
     transaction::TransactionId,
 };
 
@@ -9,14 +11,12 @@ use crate::{
     errors::ConversionError, generated::block_producer::MempoolEvent as ProtoMempoolEvent,
 };
 
-use super::note::NetworkNote;
-
 #[derive(Debug, Clone)]
 pub enum MempoolEvent {
     TransactionAdded {
         id: TransactionId,
         nullifiers: Vec<Nullifier>,
-        network_notes: Vec<NetworkNote>,
+        network_notes: Vec<Note>,
         // TODO: decide whether to create a new type to exclude private variant which isn't possible.
         account_delta: Option<AccountUpdateDetails>,
     },

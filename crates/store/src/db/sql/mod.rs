@@ -596,7 +596,7 @@ fn insert_account_delta(
     }
 
     for (&slot, map_delta) in delta.storage().maps() {
-        for (key, value) in map_delta.leaves() {
+        for (key, value) in map_delta.entries() {
             insert_storage_map_update_stmt.execute(params![
                 account_id.to_bytes(),
                 block_number.as_u32(),

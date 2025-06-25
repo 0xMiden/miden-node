@@ -1,10 +1,9 @@
 use miden_node_proto::{
-    domain::note::NetworkNote,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         requests::{
             GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
-            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
+            GetNetworkAccountDetailsByPrefixRequest,
         },
         store::ntx_builder_client as store_client,
     },
@@ -23,7 +22,7 @@ use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{info, instrument};
 use url::Url;
 
-use crate::COMPONENT;
+use crate::{COMPONENT, note::NetworkNote};
 
 // STORE CLIENT
 // ================================================================================================
@@ -109,28 +108,30 @@ impl StoreClient {
     /// Returns the list of unconsumed network notes.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
-        let mut all_notes = Vec::new();
-        let mut page_token: Option<u64> = None;
+        // let mut all_notes = Vec::new();
+        // let mut page_token: Option<u64> = None;
 
-        loop {
-            let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
-            let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
+        // loop {
+        //     let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
+        //     let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
-            let page: Vec<NetworkNote> = resp
-                .notes
-                .into_iter()
-                .map(NetworkNote::try_from)
-                .collect::<Result<Vec<_>, _>>()?;
+        //     let page: Vec<NetworkNote> = resp
+        //         .notes
+        //         .into_iter()
+        //         .filter_map(|note|)
+        //         .map(Note::try_from)
+        //         .collect::<Result<Vec<_>, _>>()?;
 
-            all_notes.extend(page);
+        //     all_notes.extend(page);
 
-            match resp.next_token {
-                Some(tok) => page_token = Some(tok),
-                None => break,
-            }
-        }
+        //     match resp.next_token {
+        //         Some(tok) => page_token = Some(tok),
+        //         None => break,
+        //     }
+        // }
 
-        Ok(all_notes)
+        // Ok(all_notes)
+        todo!("replacing this with streams");
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]

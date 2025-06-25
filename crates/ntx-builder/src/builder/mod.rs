@@ -1,11 +1,15 @@
+#![allow(dead_code, reason = "WIP")]
+#![allow(unused_variables, reason = "WIP")]
+#![allow(unreachable_code, reason = "WIP")]
+
 use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
-use crate::state::State;
+use crate::{note::NetworkNote, state::State};
 use anyhow::Context;
 use block_producer::BlockProducerClient;
 use futures::{TryFutureExt, TryStream, TryStreamExt};
 use miden_node_proto::domain::{
-    account::NetworkAccountError, mempool::MempoolEvent, note::NetworkNote,
+    account::NetworkAccountError, mempool::MempoolEvent,
 };
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
@@ -13,7 +17,6 @@ use miden_objects::{
     account::AccountId,
     assembly::DefaultSourceManager,
     block::BlockNumber,
-    note::Note,
     transaction::{ExecutedTransaction, InputNote, InputNotes, TransactionArgs, },
 };
 use miden_tx::{
@@ -28,7 +31,6 @@ use tokio::{
     task::spawn_blocking,
     time,
 };
-use tonic::IntoRequest;
 use tracing::{Instrument, Span, error, info, instrument, warn};
 use url::Url;
 
@@ -226,8 +228,8 @@ impl NetworkTransactionBuilder {
             tx_request
                 .notes_to_execute
                 .iter()
+                .map(NetworkNote::inner)
                 .cloned()
-                .map(Note::from)
                 .map(InputNote::unauthenticated)
                 .collect(),
         )?;
@@ -258,7 +260,8 @@ impl NetworkTransactionBuilder {
                     .filter(|n| successful_notes.contains(&n.id()))
                     .map(InputNote::note)
                     .cloned()
-                    .map(|n| NetworkNote::try_from(n).expect("conversion should work"))
+                    // SAFETY: all input notes were network notes
+                    .map(NetworkNote::unchecked)
                     .collect();
 
                 if let Some(ref err) = error {
@@ -294,8 +297,8 @@ impl NetworkTransactionBuilder {
             tx_request
                 .notes_to_execute
                 .iter()
+                .map(NetworkNote::inner)
                 .cloned()
-                .map(Note::from)
                 .map(InputNote::unauthenticated)
                 .collect(),
         )?;

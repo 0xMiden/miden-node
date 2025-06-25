@@ -6,8 +6,8 @@ use url::Url;
 
 use super::{
     DEFAULT_BATCH_INTERVAL, DEFAULT_BLOCK_INTERVAL, DEFAULT_MONITOR_INTERVAL, ENV_BATCH_PROVER_URL,
-    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_NTX_BUILDER_URL,
-    ENV_STORE_URL, duration_to_human_readable_string,
+    ENV_BLOCK_PRODUCER_URL, ENV_BLOCK_PROVER_URL, ENV_ENABLE_OTEL, ENV_STORE_URL,
+    duration_to_human_readable_string,
 };
 use crate::system_monitor::SystemMonitor;
 

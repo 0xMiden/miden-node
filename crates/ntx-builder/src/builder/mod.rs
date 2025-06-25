@@ -45,18 +45,27 @@ pub(crate) mod store;
 
 #[derive(Clone, Debug)]
 struct NetworkTransactionRequest {
-    pub account_id: AccountId,
-    pub block_ref: BlockNumber,
-    pub notes_to_execute: Vec<NetworkNote>,
+    account_id: AccountId,
+    notes_to_execute: Vec<NetworkNote>,
 }
 
 impl NetworkTransactionRequest {
-    fn new(account_id: AccountId, block_ref: BlockNumber, notes: Vec<NetworkNote>) -> Self {
+    fn new(account_id: AccountId, notes: Vec<NetworkNote>) -> Self {
         Self {
             account_id,
-            block_ref,
             notes_to_execute: notes,
         }
+    }
+
+    pub fn input_notes(&self) -> Result<InputNotes<InputNote>, TransactionInputError> {
+        let notes = self.notes_to_execute
+            .iter()
+            .map(NetworkNote::inner)
+            .cloned()
+            .map(InputNote::unauthenticated)
+            .collect();
+
+        InputNotes::new(notes)
     }
 }
 
@@ -150,6 +159,10 @@ impl NetworkTransactionBuilder {
             match block_prod.subscribe_to_mempool(chain_tip).await {
                 Ok(stream) => return Ok((state, stream)),
                 Err(desync) if desync.code() == tonic::Code::InvalidArgument => continue,
+                Err(retry) if retry.code() == tonic::Code::Unavailable => {
+                    tracing::warn!(err = retry.message(), "mempool event subscription unavailable, retrying");
+                    tokio::time::sleep(Duration::from_secs(5)).await;
+                },
                 Err(err) => return Err(err).context("failed to subscribe to mempool events"),
             }
         }
@@ -191,7 +204,7 @@ impl NetworkTransactionBuilder {
         };
 
         // Execution: Filter notes, execute, prove and submit tx
-        let tx = Self::filter_consumable_notes(&state, &tx_request)
+        let tx = Self::filter_consumable_notes(&state, tx_request)
             .and_then(|filtered_tx_req| Self::execute_transaction(&state, filtered_tx_req))
             .and_then(|executed_tx| Self::prove_and_submit_transaction(prover, block_prod, executed_tx))
             .inspect_ok(|tx| {
@@ -222,47 +235,31 @@ impl NetworkTransactionBuilder {
     #[instrument(target = COMPONENT, name = "ntx_builder.filter_consumable_notes", skip_all, err)]
     async fn filter_consumable_notes(
         state: &State,
-        tx_request: &NetworkTransactionRequest,
+        tx_request: NetworkTransactionRequest,
     ) -> Result<NetworkTransactionRequest, NtxBuilderError> {
-        let input_notes = InputNotes::new(
-            tx_request
-                .notes_to_execute
-                .iter()
-                .map(NetworkNote::inner)
-                .cloned()
-                .map(InputNote::unauthenticated)
-                .collect(),
-        )?;
-
-        // // TODO: ensure that the incoming data store in the executor already has these inserted.
-        // // This could be done in State whenever a new note arrives, or we could
-        // // build a custom type with (State, TxMastForest) which impls DataStore instead.
-        // // for note in input_notes.iter() {
-        // //     data_store.insert_note_script_mast(note.note().script());
-        // // }
-
         let executor = TransactionExecutor::new(state, None);
         let checker = NoteConsumptionChecker::new(&executor);
+        let notes = tx_request.input_notes()?;
+        // TODO: It seems a bit silly that the checker consumes the notes but returns the note IDs.
         match checker
             .check_notes_consumability(
                 tx_request.account_id,
-                tx_request.block_ref,
-                input_notes.clone(),
+                BlockNumber::GENESIS,
+                notes.clone(),
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),
             )
             .await
         {
-            Ok(NoteAccountExecution::Success) => Ok(tx_request.clone()),
+            Ok(NoteAccountExecution::Success) => Ok(tx_request),
             Ok(NoteAccountExecution::Failure { successful_notes, error, failed_note_id }) => {
-                let successful_network_notes: Vec<NetworkNote> = input_notes
-                    .iter()
-                    .filter(|n| successful_notes.contains(&n.id()))
-                    .map(InputNote::note)
-                    .cloned()
+                let notes = successful_notes
+                    .into_iter()
+                    .map(|id| notes.iter().find(|note| note.id() == id).expect("note must be part of input set"))
+                    .map(|note| note.note().clone())
                     // SAFETY: all input notes were network notes
                     .map(NetworkNote::unchecked)
-                    .collect();
+                    .collect::<Vec<_>>();
 
                 if let Some(ref err) = error {
                     Span::current()
@@ -273,14 +270,13 @@ impl NetworkTransactionBuilder {
                 Span::current()
                     .set_attribute("ntx.failed_note_id", failed_note_id.to_hex().as_str());
 
-                if successful_network_notes.is_empty() {
+                if notes.is_empty() {
                     return Err(NtxBuilderError::NoteSetIsEmpty(tx_request.account_id));
                 }
 
                 Ok(NetworkTransactionRequest::new(
                     tx_request.account_id,
-                    tx_request.block_ref,
-                    successful_network_notes,
+                    notes,
                 ))
             },
             Err(err) => Err(NtxBuilderError::NoteConsumptionCheckFailed(err)),
@@ -308,7 +304,7 @@ impl NetworkTransactionBuilder {
         executor
             .execute_transaction(
                 tx_request.account_id,
-                tx_request.block_ref,
+                BlockNumber::GENESIS,
                 input_notes,
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),

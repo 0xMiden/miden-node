@@ -47,7 +47,7 @@ const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
-const ENV_NETWORK_ID: &str = "MIDEN_FAUCET_NETWORK_ID";
+const ENV_NETWORK: &str = "MIDEN_FAUCET_NETWORK";
 
 // COMMANDS
 // ================================================================================================
@@ -70,7 +70,7 @@ pub enum Command {
 
         /// Network configuration to use. Options are `devnet`, `testnet`, `localhost` or a custom
         /// network. It is used to show the correct addresses and explorer URL in the UI.
-        #[arg(long = "network", value_name = "NETWORK", default_value = "localhost", env = ENV_NETWORK_ID)]
+        #[arg(long = "network", value_name = "NETWORK", default_value = "localhost", env = ENV_NETWORK)]
         network: Network,
 
         /// Node RPC gRPC endpoint in the format `http://<host>[:<port>]`.

@@ -24,8 +24,7 @@
 )]
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_objects::Felt;
-use miden_objects::note::NoteTag;
+use miden_objects::{Felt, note::NoteTag};
 
 #[inline(always)]
 pub(crate) fn raw_sql_to_consumed(raw: i32) -> bool {
@@ -79,11 +78,11 @@ pub(crate) fn slot_to_raw_sql(slot: u8) -> i32 {
 
 #[inline(always)]
 pub(crate) fn raw_sql_to_delta(raw: i32) -> i32 {
-    raw as i32
+    raw
 }
 #[inline(always)]
 pub(crate) fn delta_to_raw_sql(slot: i32) -> i32 {
-    slot as i32
+    slot
 }
 
 #[inline(always)]
@@ -135,7 +134,7 @@ pub(crate) fn raw_sql_to_aux(raw: i64) -> Felt {
 }
 #[inline(always)]
 pub(crate) fn aux_to_raw_sql(hint: Felt) -> i64 {
-    hint.inner() as u64 as i64
+    hint.inner() as i64
 }
 
 #[inline(always)]

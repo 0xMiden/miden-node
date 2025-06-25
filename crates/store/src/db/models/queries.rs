@@ -32,14 +32,16 @@ use crate::{
         NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
         TransactionSummary,
         models::{
-            AccountRaw, AccountSummaryRaw, NoteRecordRaw, TransactionSummaryRaw,
+            AccountRaw, AccountSummaryRaw, ExpressionMethods, NoteRecordRaw, TransactionSummaryRaw,
+            block_number_to_raw_sql,
             conv::{
                 aux_to_raw_sql, consumed_to_raw_sql, delta_to_raw_sql, execution_hint_to_raw_sql,
                 execution_mode_to_raw_sql, idx_to_raw_sql, network_account_prefix_to_raw_sql,
                 nonce_to_raw_sql, note_type_to_raw_sql, nullifier_prefix_to_raw_sql,
                 raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql, tag_to_raw_sql,
             },
-            *,
+            deserialize_raw_vec, get_nullifier_prefix, raw_sql_to_block_number, serialize_vec,
+            vec_raw_try_into,
         },
         schema,
     },
@@ -763,7 +765,7 @@ pub(crate) fn apply_block(
 pub(crate) fn select_nullifiers_by_prefix(
     conn: &mut SqliteConnection,
     prefix_len: u8,
-    nullifier_prefixes: &[u32],
+    nullifier_prefixes: &[u16],
     block_num: BlockNumber,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
@@ -778,8 +780,7 @@ pub(crate) fn select_nullifiers_by_prefix(
     // ORDER BY
     //     block_num ASC
 
-    // An `i32` is sufficient to hold unsigned 16bits
-    let prefixes = nullifier_prefixes.iter().map(|prefix| i32::try_from(*prefix).unwrap());
+    let prefixes = nullifier_prefixes.iter().map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
     let nullifiers_raw =
         SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
             .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
@@ -1141,6 +1142,8 @@ pub(crate) fn select_slot_updates_stmt(
     start_block_num: &BlockNumber,
     end_block_num: &BlockNumber,
 ) -> Result<Vec<(i32, Vec<u8>)>, DatabaseError> {
+    use schema::account_storage_slot_updates::dsl::{account_id, block_num, slot, value};
+
     // SELECT
     //     slot, value
     // FROM
@@ -1161,8 +1164,6 @@ pub(crate) fn select_slot_updates_stmt(
     let desired_account_id = account_id_val.to_bytes();
     let start_block_num = block_number_to_raw_sql(&start_block_num);
     let end_block_num = block_number_to_raw_sql(&end_block_num);
-
-    use schema::account_storage_slot_updates::dsl::{account_id, block_num, slot, value};
 
     // Alias the table for the inner and outer query
     let (a, b) = alias!(

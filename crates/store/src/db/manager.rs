@@ -2,7 +2,7 @@
 //!
 //! Only required to setup connection parameters, specifically `WAL`.
 
-use super::*;
+use super::{DatabaseError, Result, RunQueryDsl, SqliteConnection};
 
 pub(crate) struct WalConnManager {
     pub(crate) manager: deadpool_diesel::sqlite::Manager,

@@ -251,10 +251,12 @@ impl Db {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.framed("nullifieres by prefix", move |conn| {
+            let nullifier_prefixes =
+                Vec::from_iter(nullifier_prefixes.into_iter().map(|prefix| prefix as u16));
             queries::select_nullifiers_by_prefix(
                 conn,
                 prefix_len as u8,
-                &nullifier_prefixes,
+                &nullifier_prefixes[..],
                 block_num,
             )
         })

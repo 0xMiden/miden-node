@@ -55,7 +55,7 @@ impl PoW {
             .as_secs();
         let difficulty = self.get_difficulty(&request.api_key);
 
-        Challenge::new(difficulty, timestamp, self.secret, request.account_id, request.api_key)
+        Challenge::new(difficulty, timestamp, request.account_id, request.api_key, self.secret)
     }
 
     /// Returns the difficulty for the given API key.
@@ -63,7 +63,7 @@ impl PoW {
     /// The difficulty is adjusted based on the number of active requests per API key. The
     /// difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY` active
     /// requests, and it is clamped between 1 and `MAX_DIFFICULTY`.
-    pub fn get_difficulty(&self, api_key: &ApiKey) -> usize {
+    fn get_difficulty(&self, api_key: &ApiKey) -> usize {
         let num_challenges = self
             .challenge_cache
             .lock()
@@ -112,23 +112,18 @@ impl PoW {
             return Err(InvalidMintRequest::InvalidPoW);
         }
 
-        // Check if account has recently submitted a challenge.
-        if self
+        let mut challenge_cache = self
             .challenge_cache
             .lock()
-            .expect("challenge cache lock should not be poisoned")
-            .has_challenge_for_account(account_id)
-        {
+            .expect("challenge cache lock should not be poisoned");
+
+        // Check if account has recently submitted a challenge.
+        if challenge_cache.has_challenge_for_account(account_id) {
             return Err(InvalidMintRequest::RateLimited);
         }
 
         // Check if the cache already contains the challenge. If not, it is inserted.
-        if !self
-            .challenge_cache
-            .lock()
-            .expect("challenge cache lock should not be poisoned")
-            .insert_challenge(&challenge)
-        {
+        if !challenge_cache.insert_challenge(&challenge) {
             return Err(InvalidMintRequest::ChallengeAlreadyUsed);
         }
 
@@ -199,38 +194,30 @@ impl ChallengeCache {
     fn cleanup_expired_challenges(&mut self, current_time: u64) {
         let limit_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS;
 
-        let expired_challenges: Vec<u64> = self
-            .challenges
-            .range(..limit_timestamp)
-            .map(|(timestamp, _)| *timestamp)
-            .collect();
+        for issuers in self.challenges.split_off(&limit_timestamp).into_values() {
+            for (account_id, api_key) in issuers {
+                let remove_api_key = self
+                    .challenges_per_key
+                    .get_mut(&api_key)
+                    .map(|c| {
+                        *c = c.saturating_sub(1);
+                        *c == 0
+                    })
+                    .expect("challenge should have had a key entry");
+                if remove_api_key {
+                    self.challenges_per_key.remove(&api_key);
+                }
 
-        for timestamp in expired_challenges {
-            if let Some(issuers) = self.challenges.remove(&timestamp) {
-                for (account_id, api_key) in issuers {
-                    let remove_api_key = self
-                        .challenges_per_key
-                        .get_mut(&api_key)
-                        .map(|c| {
-                            *c = c.saturating_sub(1);
-                            *c == 0
-                        })
-                        .expect("challenge should have had a key entry");
-                    if remove_api_key {
-                        self.challenges_per_key.remove(&api_key);
-                    }
-
-                    let remove_account_id = self
-                        .account_ids
-                        .get_mut(&account_id)
-                        .map(|c| {
-                            *c = c.saturating_sub(1);
-                            *c == 0
-                        })
-                        .expect("challenge should have had an account entry");
-                    if remove_account_id {
-                        self.account_ids.remove(&account_id);
-                    }
+                let remove_account_id = self
+                    .account_ids
+                    .get_mut(&account_id)
+                    .map(|c| {
+                        *c = c.saturating_sub(1);
+                        *c == 0
+                    })
+                    .expect("challenge should have had an account entry");
+                if remove_account_id {
+                    self.account_ids.remove(&account_id);
                 }
             }
         }

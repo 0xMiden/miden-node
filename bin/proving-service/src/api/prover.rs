@@ -214,7 +214,6 @@ impl ProverApi for ProverRpcApi {
 // UTILITIES
 // ================================================================================================
 
-/// Formats an error
 fn internal_error<E: ErrorReport>(err: E) -> Status {
     Status::internal(err.as_report())
 }

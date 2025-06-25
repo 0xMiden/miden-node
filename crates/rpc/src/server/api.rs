@@ -217,7 +217,7 @@ impl api_server::Api for RpcService {
         let request = request.into_inner();
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
-            Status::invalid_argument(format!("Invalid transaction: {}", err.as_report()))
+            Status::invalid_argument(err.as_report_context("Invalid transaction"))
         })?;
 
         // Only allow deployment transactions for new network accounts

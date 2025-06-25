@@ -63,7 +63,7 @@ impl Api for NtxBuilderApi {
             .map(TransactionId::try_from)
             .ok_or(Status::not_found("transaction ID not found in request"))?
             .map_err(|err| {
-                Status::invalid_argument(format!("invalid transaction ID: {}", err.as_report()))
+                Status::invalid_argument(err.as_report_context("invalid transaction ID"))
             })?;
 
         let nullifiers: Vec<Nullifier> = request
@@ -73,10 +73,9 @@ impl Api for NtxBuilderApi {
             .map(|res| res.map(Nullifier::from))
             .collect::<Result<_, _>>()
             .map_err(|err| {
-                Status::invalid_argument(format!(
-                    "error when converting input nullifiers: {}",
-                    err.as_report()
-                ))
+                Status::invalid_argument(
+                    err.as_report_context("error when converting input nullifiers"),
+                )
             })?;
 
         let mut state = self.state.lock().await;

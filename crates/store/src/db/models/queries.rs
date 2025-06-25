@@ -35,9 +35,9 @@ use crate::{
             AccountRaw, AccountSummaryRaw, NoteRecordRaw, TransactionSummaryRaw,
             conv::{
                 aux_to_raw_sql, consumed_to_raw_sql, delta_to_raw_sql, execution_hint_to_raw_sql,
-                execution_mode_to_raw_sql, idx_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
-                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, slot_to_raw_sql,
-                tag_to_raw_sql,
+                execution_mode_to_raw_sql, idx_to_raw_sql, network_account_prefix_to_raw_sql,
+                nonce_to_raw_sql, note_type_to_raw_sql, nullifier_prefix_to_raw_sql,
+                raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql, tag_to_raw_sql,
             },
             *,
         },
@@ -423,7 +423,7 @@ pub(crate) fn upsert_accounts(
         // Extract the 30-bit prefix to provide easy look ups for NTB
         // Do not store prefix for accounts that are not network
         let network_account_id_prefix = if account_id.is_network() {
-            Some(NetworkAccountPrefix::try_from(account_id)?.inner())
+            Some(NetworkAccountPrefix::try_from(account_id)?)
         } else {
             None
         };
@@ -460,7 +460,8 @@ pub(crate) fn upsert_accounts(
         let val = (
             schema::accounts::account_id.eq(account_id.to_bytes()),
             schema::accounts::network_account_id_prefix
-                .eq(network_account_id_prefix.map(|prefix| prefix as i64)),
+                .eq(network_account_id_prefix
+                    .map(|prefix| network_account_prefix_to_raw_sql(prefix))),
             schema::accounts::account_commitment.eq(update.final_state_commitment().to_bytes()),
             schema::accounts::block_num.eq(block_number_to_raw_sql(&block_num)),
             schema::accounts::details.eq(full_account.as_ref().map(|account| account.to_bytes())),
@@ -1061,7 +1062,7 @@ pub(crate) fn select_account_delta(
     let storage_scalars =
         Result::<BTreeMap<u8, Word>, _>::from_iter(slot_updates.iter().map(|(slot, value)| {
             let felt = Word::read_from_bytes(value)?;
-            Ok::<_, DatabaseError>((*slot as u8, felt))
+            Ok::<_, DatabaseError>((raw_sql_to_slot(*slot), felt))
         }))?;
 
     let mut storage_maps = BTreeMap::<u8, StorageMapDelta>::new();

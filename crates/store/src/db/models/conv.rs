@@ -23,8 +23,9 @@
     reason = "Not all converters are used bidirectionally, however, keeping them is a good thing"
 )]
 
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_objects::Felt;
-use miden_objects::note::{NoteExecutionMode, NoteTag};
+use miden_objects::note::NoteTag;
 
 #[inline(always)]
 pub(crate) fn raw_sql_to_consumed(raw: i32) -> bool {
@@ -45,6 +46,15 @@ pub(crate) fn raw_sql_to_nullifier_prefix(raw: i32) -> u16 {
 #[inline(always)]
 pub(crate) fn nullifier_prefix_to_raw_sql(prefix: u16) -> i32 {
     prefix as i32
+}
+
+#[inline(always)]
+pub(crate) fn network_account_prefix_to_raw_sql(prefix: NetworkAccountPrefix) -> i64 {
+    prefix.inner() as i64
+}
+#[inline(always)]
+pub(crate) fn raw_sql_to_network_account_prefix(raw: i64) -> NetworkAccountPrefix {
+    NetworkAccountPrefix::try_from(raw as u32).unwrap()
 }
 
 #[inline(always)]

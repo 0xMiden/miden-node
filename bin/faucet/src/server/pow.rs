@@ -197,6 +197,12 @@ impl ChallengeCache {
     /// account id.
     ///
     /// Challenges are expired if they are older than [`CHALLENGE_LIFETIME_SECONDS`] seconds.
+    ///
+    /// # Arguments
+    /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
+    ///
+    /// # Panics
+    /// Panics if any expired challenge has no corresponding entries on the account or API key maps.
     fn cleanup_expired_challenges(&mut self, current_time: u64) {
         let limit_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS;
 

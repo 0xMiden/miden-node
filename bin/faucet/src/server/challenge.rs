@@ -130,6 +130,10 @@ impl Challenge {
 
     /// Checks if the challenge timestamp is expired.
     ///
+    /// # Arguments
+    /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
+    ///
+    /// # Panics
     /// Panics if the challenge timestamp is greater than the current time.
     pub fn is_expired(&self, current_time: u64) -> bool {
         let diff = current_time

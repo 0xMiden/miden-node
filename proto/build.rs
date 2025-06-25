@@ -6,14 +6,12 @@ use prost::Message;
 const RPC_PROTO: &str = "rpc.proto";
 const STORE_PROTO: &str = "store.proto";
 const BLOCK_PRODUCER_PROTO: &str = "block_producer.proto";
-const NTX_BUILDER_PROTO: &str = "ntx_builder.proto";
 const WORKER_STATUS_PROTO: &str = "worker_status.proto";
 const PROVING_SERVICE_PROTO: &str = "proving_service.proto";
 
 const RPC_DESCRIPTOR: &str = "rpc_file_descriptor.bin";
 const STORE_DESCRIPTOR: &str = "store_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
-const NTX_BUILDER_DESCRIPTOR: &str = "ntx_builder_file_descriptor.bin";
 const WORKER_STATUS_DESCRIPTOR: &str = "worker_status_file_descriptor.bin";
 const PROVING_SERVICE_DESCRIPTOR: &str = "proving_service_file_descriptor.bin";
 
@@ -55,11 +53,6 @@ fn main() -> anyhow::Result<()> {
     let block_producer_path = PathBuf::from(&out).join(BLOCK_PRODUCER_DESCRIPTOR);
     fs::write(&block_producer_path, block_producer_file_descriptor.encode_to_vec())
         .context("writing block producer file descriptor")?;
-
-    let ntx_builder_descriptor = protox::compile([NTX_BUILDER_PROTO], includes)?;
-    let block_producer_path = PathBuf::from(&out).join(NTX_BUILDER_DESCRIPTOR);
-    fs::write(&block_producer_path, ntx_builder_descriptor.encode_to_vec())
-        .context("writing ntx builder file descriptor")?;
 
     Ok(())
 }

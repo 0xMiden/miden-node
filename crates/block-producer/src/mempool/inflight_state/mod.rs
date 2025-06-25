@@ -80,7 +80,7 @@ impl Delta {
         Self {
             account: tx.account_id(),
             nullifiers: tx.nullifiers().collect(),
-            output_notes: tx.output_notes().collect(),
+            output_notes: tx.output_note_ids().collect(),
         }
     }
 }
@@ -187,7 +187,7 @@ impl InflightState {
 
         // Ensure output notes aren't already present.
         let duplicates = tx
-            .output_notes()
+            .output_note_ids()
             .filter(|note| self.output_notes.contains_key(note))
             .collect::<Vec<_>>();
         if !duplicates.is_empty() {
@@ -223,7 +223,7 @@ impl InflightState {
 
         self.nullifiers.extend(tx.nullifiers());
         self.output_notes
-            .extend(tx.output_notes().map(|note_id| (note_id, OutputNoteState::new(tx.id()))));
+            .extend(tx.output_note_ids().map(|note_id| (note_id, OutputNoteState::new(tx.id()))));
 
         // Authenticated input notes (provably) consume notes that are already committed
         // on chain. They therefore cannot form part of the inflight dependency chain.

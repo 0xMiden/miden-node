@@ -18,9 +18,9 @@ impl NtbTransactionProver {
     pub async fn prove_and_submit(
         &self,
         block_producer_client: &BlockProducerClient,
-        executed_tx: &ExecutedTransaction,
+        executed_tx: ExecutedTransaction,
     ) -> Result<(), NtxBuilderError> {
-        let tx_witness = TransactionWitness::from(executed_tx.clone());
+        let tx_witness = TransactionWitness::from(executed_tx);
 
         let proven_tx = match self {
             NtbTransactionProver::Local(prover) => prover.prove(tx_witness).await,

@@ -9,6 +9,7 @@ use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
     generated::note as proto,
 };
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     Word,
     account::{AccountDelta, AccountId},
@@ -269,7 +270,7 @@ impl Db {
         let conn = pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
 
         conn.interact(apply_migrations).await.map_err(|err| {
-            DatabaseError::InteractError(format!("Migration task failed: {err}"))
+            DatabaseError::InteractError(format!("Migration task failed: {}", err.as_report()))
         })??;
 
         Ok(Db { pool })
@@ -287,7 +288,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Select nullifiers task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Select nullifiers task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -314,7 +318,8 @@ impl Db {
             .await
             .map_err(|err| {
                 DatabaseError::InteractError(format!(
-                    "Select nullifiers by prefix task failed: {err}"
+                    "Select nullifiers by prefix task failed: {}",
+                    err.as_report()
                 ))
             })?
     }
@@ -336,7 +341,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Select block header task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Select block header task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -356,7 +364,8 @@ impl Db {
             .await
             .map_err(|err| {
                 DatabaseError::InteractError(format!(
-                    "Select many block headers task failed: {err}"
+                    "Select many block headers task failed: {}",
+                    err.as_report()
                 ))
             })?
     }
@@ -373,7 +382,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Select block headers task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Select block headers task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -390,7 +402,8 @@ impl Db {
             .await
             .map_err(|err| {
                 DatabaseError::InteractError(format!(
-                    "Select account commitments task failed: {err}"
+                    "Select account commitments task failed: {}",
+                    err.as_report()
                 ))
             })?
     }
@@ -407,7 +420,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Get account details task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Get account details task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -426,7 +442,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Get account details task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Get account details task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -445,7 +464,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Get accounts details task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Get accounts details task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -466,7 +488,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Get state sync task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Get state sync task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -486,7 +511,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Get notes sync task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Get notes sync task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -502,7 +530,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Select note by id task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Select note by id task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 
@@ -522,7 +553,8 @@ impl Db {
             .await
             .map_err(|err| {
                 DatabaseError::InteractError(format!(
-                    "Select block note inclusion proofs task failed: {err}"
+                    "Select block note inclusion proofs task failed: {}",
+                    err.as_report()
                 ))
             })?
     }
@@ -574,7 +606,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Apply block task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Apply block task failed: {}",
+                    err.as_report()
+                ))
             })??;
 
         Ok(())
@@ -616,7 +651,10 @@ impl Db {
             })
             .await
             .map_err(|err| {
-                DatabaseError::InteractError(format!("Database optimization task failed: {err}"))
+                DatabaseError::InteractError(format!(
+                    "Database optimization task failed: {}",
+                    err.as_report()
+                ))
             })?
     }
 

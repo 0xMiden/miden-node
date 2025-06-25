@@ -14,6 +14,7 @@ use miden_node_proto::{
         store::ntx_builder_server,
     },
 };
+use miden_node_utils::ErrorReport;
 use miden_objects::{block::BlockNumber, note::Note};
 use tonic::{Request, Response, Status};
 use tracing::instrument;
@@ -102,7 +103,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         // Validate that the call is for a valid network account prefix
         let prefix = NetworkAccountPrefix::try_from(request.account_id_prefix).map_err(|err| {
             Status::invalid_argument(format!(
-                "request does not contain a valid network account prefix: {err}"
+                "request does not contain a valid network account prefix: {}",
+                err.as_report()
             ))
         })?;
         let account_info: Option<AccountInfo> =
@@ -129,7 +131,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         let size =
             NonZero::try_from(request.page_size as usize).map_err(|err: TryFromIntError| {
-                invalid_argument(format!("Invalid page_size: {err}"))
+                invalid_argument(format!("Invalid page_size: {}", err.as_report()))
             })?;
         let page = Page { token: request.page_token, size };
         // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created

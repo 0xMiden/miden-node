@@ -15,6 +15,7 @@ use miden_node_proto::{
     },
     try_convert,
 };
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     block::{BlockNumber, ProvenBlock},
     crypto::hash::rpo::RpoDigest,
@@ -73,7 +74,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         debug!(target: COMPONENT, ?request);
 
         let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
-            Status::invalid_argument(format!("Block deserialization error: {err}"))
+            Status::invalid_argument(format!("Block deserialization error: {}", err.as_report()))
         })?;
 
         let block_num = block.header().block_num().as_u32();

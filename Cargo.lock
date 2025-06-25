@@ -2557,6 +2557,7 @@ dependencies = [
 name = "miden-proving-service"
 version = "0.10.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "axum",
  "bytes",

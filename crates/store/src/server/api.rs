@@ -1,5 +1,6 @@
 use std::{collections::BTreeSet, sync::Arc};
 
+use anyhow::anyhow;
 use miden_node_proto::{
     errors::ConversionError,
     generated::{
@@ -66,7 +67,7 @@ pub fn read_account_id(
 ) -> Result<AccountId, Box<Status>> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
-        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
+        .map_err(|err| invalid_argument(anyhow!("invalid account ID: {err}")).into())
 }
 
 #[allow(clippy::result_large_err)]

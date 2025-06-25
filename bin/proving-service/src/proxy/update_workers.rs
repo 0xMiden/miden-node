@@ -1,6 +1,7 @@
 use core::fmt;
 use std::sync::Arc;
 
+use miden_node_utils::ErrorReport;
 use miden_proving_service::COMPONENT;
 use pingora::{
     apps::{HttpServerApp, HttpServerOptions},
@@ -103,16 +104,17 @@ impl HttpServerApp for LoadBalancerUpdateService {
         let update_workers = match update_workers {
             Ok(workers) => workers,
             Err(err) => {
-                let error_message = format!("Failed to parse query parameters: {err}");
+                let error_message =
+                    format!("Failed to parse query parameters: {}", err.as_report());
                 error!("{}", error_message);
                 create_response_with_error_message(&mut http, error_message).await.ok();
                 return None;
             },
         };
 
-        // Update workers and handle potential errors
+        // Update workers and handle potential errors.
         if let Err(err) = self.lb_state.update_workers(update_workers).await {
-            let error_message = format!("Failed to update workers: {err}");
+            let error_message = format!("Failed to update workers: {}", err.as_report());
             error!("{}", error_message);
             create_response_with_error_message(&mut http, error_message).await.ok();
             return None;

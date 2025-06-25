@@ -62,17 +62,45 @@ use crate::{
 /// multiple requests are necessary.
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
-    block_number: BlockNumber,
+    start_block_number: BlockNumber,
     account_ids: &[AccountId],
     note_tags: &[u32],
 ) -> Result<Vec<NoteSyncRecord>, DatabaseError> {
-    let desired_note_tags =
-        Vec::from_iter(note_tags.iter().map(|tag| i32::from_be_bytes(tag.to_be_bytes())));
+    // SELECT
+    //     block_num,
+    //     batch_index,
+    //     note_index,
+    //     note_id,
+    //     note_type,
+    //     sender,
+    //     tag,
+    //     aux,
+    //     execution_hint,
+    //     merkle_path
+    // FROM
+    //     notes
+    // WHERE
+    //     -- find the next block which contains at least one note with a matching tag or sender
+    //     block_num = (
+    //         SELECT
+    //             block_num
+    //         FROM
+    //             notes
+    //         WHERE
+    //             (tag IN rarray(?1) OR sender IN rarray(?2)) AND
+    //             block_num > ?3
+    //         ORDER BY
+    //             block_num ASC
+    //     LIMIT 1) AND
+    //     -- filter the block's notes and return only the ones matching the requested tags or senders
+    //     (tag IN rarray(?1) OR sender IN rarray(?2))
+
+    let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| *tag as i32));
     let desired_senders = serialize_vec(account_ids.iter());
 
-    let desired_block_num = block_number_to_raw_sql(&block_number);
+    let start_block_num = block_number_to_raw_sql(&start_block_number);
 
-    // select notes since block by tag and sender
+    // find block_num: select notes since block by tag and sender
     let Some(desired_block_num): Option<i64> =
         SelectDsl::select(schema::notes::table, schema::notes::block_num)
             .filter(
@@ -80,9 +108,10 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
                     .eq_any(&desired_note_tags[..])
                     .or(schema::notes::sender.eq_any(&desired_senders[..])),
             )
-            .filter(schema::notes::block_num.gt(desired_block_num))
+            .filter(schema::notes::block_num.gt(start_block_num))
             .order_by(schema::notes::block_num.asc())
-            .first(conn)
+            .limit(1)
+            .get_result(conn)
             .optional()?
     else {
         return Ok(Vec::new());
@@ -102,7 +131,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
                     .eq_any(&desired_senders)
                 )
             )
-            .load::<NoteSyncRecordRawRow>(conn)
+            .get_results::<NoteSyncRecordRawRow>(conn)
             .map_err(DatabaseError::from)?;
 
     vec_raw_try_into(notes)

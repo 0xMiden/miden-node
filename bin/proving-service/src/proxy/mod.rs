@@ -11,6 +11,7 @@ use metrics::{
     REQUEST_FAILURE_COUNT, REQUEST_LATENCY, REQUEST_RETRIES, WORKER_BUSY, WORKER_COUNT,
     WORKER_REQUEST_COUNT,
 };
+use miden_proving_service::{COMPONENT, api::ProofType, error::ProvingServiceError};
 use pingora::{
     http::ResponseHeader,
     prelude::*,
@@ -26,13 +27,10 @@ use uuid::Uuid;
 use worker::Worker;
 
 use crate::{
-    COMPONENT,
     commands::{
         ProxyConfig,
         update_workers::{Action, UpdateWorkers},
-        worker::ProverType,
     },
-    error::ProvingServiceError,
     utils::{
         create_queue_full_response, create_response_with_error_message,
         create_too_many_requests_response,
@@ -59,7 +57,7 @@ pub struct LoadBalancerState {
     max_req_per_sec: isize,
     available_workers_polling_interval: Duration,
     health_check_interval: Duration,
-    supported_prover_type: ProverType,
+    supported_proof_type: ProofType,
 }
 
 impl LoadBalancerState {
@@ -105,7 +103,7 @@ impl LoadBalancerState {
                 config.available_workers_polling_interval_ms,
             ),
             health_check_interval: Duration::from_secs(config.health_check_interval_secs),
-            supported_prover_type: config.prover_type,
+            supported_proof_type: config.proof_type,
         })
     }
 

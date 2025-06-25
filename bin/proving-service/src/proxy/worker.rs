@@ -3,6 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
+use miden_proving_service::{
+    COMPONENT,
+    api::ProofType,
+    error::ProvingServiceError,
+    generated::status::{StatusRequest, status_api_client::StatusApiClient},
+};
 use pingora::lb::Backend;
 use semver::{Version, VersionReq};
 use serde::Serialize;
@@ -10,12 +16,6 @@ use tonic::transport::Channel;
 use tracing::{error, info};
 
 use super::metrics::WORKER_UNHEALTHY;
-use crate::{
-    COMPONENT,
-    commands::worker::ProverType,
-    error::ProvingServiceError,
-    generated::status::{StatusRequest, status_api_client::StatusApiClient},
-};
 
 /// The maximum exponent for the backoff.
 ///
@@ -162,7 +162,7 @@ impl Worker {
     /// status.
     #[allow(clippy::too_many_lines)]
     #[tracing::instrument(target = COMPONENT, name = "worker.check_status")]
-    pub async fn check_status(&mut self, supported_prover_type: ProverType) -> Result<(), String> {
+    pub async fn check_status(&mut self, supported_proof_type: ProofType) -> Result<(), String> {
         if !self.should_do_health_check() {
             return Ok(());
         }
@@ -199,7 +199,7 @@ impl Worker {
         self.version = worker_status.version;
 
         let worker_supported_proof_type =
-            match ProverType::try_from(worker_status.supported_proof_type) {
+            match ProofType::try_from(worker_status.supported_proof_type) {
                 Ok(proof_type) => proof_type,
                 Err(e) => {
                     error!(
@@ -211,8 +211,8 @@ impl Worker {
                 },
             };
 
-        if supported_prover_type != worker_supported_proof_type {
-            return Err(format!("Unsupported prover type: {worker_supported_proof_type}"));
+        if supported_proof_type != worker_supported_proof_type {
+            return Err(format!("Unsupported proof type: {supported_proof_type}"));
         }
 
         Ok(())

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clap::Parser;
+use miden_proving_service::{COMPONENT, error::ProvingServiceError};
 use pingora::{
     apps::HttpServerOptions,
     prelude::{Opt, background_service},
@@ -12,9 +13,7 @@ use tracing::{info, warn};
 
 use super::ProxyConfig;
 use crate::{
-    COMPONENT,
     commands::PROXY_HOST,
-    error::ProvingServiceError,
     proxy::{
         LoadBalancer, LoadBalancerState, status::ProxyStatusPingoraService,
         update_workers::LoadBalancerUpdateService,

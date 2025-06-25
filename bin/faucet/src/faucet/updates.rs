@@ -3,7 +3,7 @@ use std::convert::Infallible;
 use axum::response::sse::Event;
 use base64::{Engine, engine::general_purpose};
 use miden_objects::{
-    account::AccountId,
+    account::{AccountId, NetworkId},
     block::BlockNumber,
     note::{Note, NoteDetails, NoteFile, NoteTag, NoteType},
     transaction::TransactionId,
@@ -11,7 +11,7 @@ use miden_objects::{
 };
 use tokio::sync::mpsc::Sender;
 
-use crate::{EXPLORER_URL, NETWORK_ID};
+use crate::network::Network;
 
 pub type ResponseSender = Sender<Result<Event, Infallible>>;
 
@@ -19,12 +19,13 @@ pub type ResponseSender = Sender<Result<Event, Infallible>>;
 /// be processed.
 pub struct ClientUpdater {
     clients: Vec<ResponseSender>,
+    network_id: NetworkId,
 }
 
 impl ClientUpdater {
     /// Creates a new client updater.
-    pub fn new(clients: Vec<ResponseSender>) -> Self {
-        Self { clients }
+    pub fn new(clients: Vec<ResponseSender>, network_id: NetworkId) -> Self {
+        Self { clients, network_id }
     }
 
     /// Sends an update to all the batch clients.
@@ -49,7 +50,9 @@ impl ClientUpdater {
     ) {
         for (note, sender) in notes.iter().zip(&self.clients) {
             let _ = sender
-                .send(Ok(MintUpdate::Minted(note, block_number, tx_id).into_event()))
+                .send(Ok(
+                    MintUpdate::Minted(note, block_number, tx_id, self.network_id).into_event()
+                ))
                 .await;
         }
     }
@@ -61,7 +64,7 @@ pub enum MintUpdate<'a> {
     Executed,
     Proven,
     Submitted,
-    Minted(&'a Note, BlockNumber, TransactionId),
+    Minted(&'a Note, BlockNumber, TransactionId, NetworkId),
 }
 
 impl MintUpdate<'_> {
@@ -75,7 +78,7 @@ impl MintUpdate<'_> {
     ///   private.
     pub fn into_event(self) -> Event {
         match self {
-            MintUpdate::Minted(note, block_height, tx_id) => {
+            MintUpdate::Minted(note, block_height, tx_id, network_id) => {
                 let note_id = note.id();
                 let note_details =
                     NoteDetails::new(note.assets().clone(), note.recipient().clone());
@@ -101,9 +104,9 @@ impl MintUpdate<'_> {
 
                 let event_payload = serde_json::json!({
                     "note_id": note_id.to_string(),
-                    "account_id": account_id.to_bech32(NETWORK_ID),
+                    "account_id": account_id.to_bech32(network_id),
                     "transaction_id": tx_id.to_string(),
-                    "explorer_url": EXPLORER_URL,
+                    "explorer_url": Network::explorer_url(network_id),
                     "data_base64": encoded_note,
                 });
 

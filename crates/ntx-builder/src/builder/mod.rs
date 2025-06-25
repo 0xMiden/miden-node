@@ -6,7 +6,7 @@ use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use crate::{note::NetworkNote, state::State};
 use anyhow::Context;
-use block_producer::BlockProducerClient;
+use crate::block_producer::BlockProducerClient;
 use futures::{TryFutureExt, TryStream, TryStreamExt};
 use miden_node_proto::domain::{
     account::NetworkAccountError, mempool::MempoolEvent,
@@ -23,8 +23,8 @@ use miden_tx::{
     NoteAccountExecution, NoteConsumptionChecker, TransactionExecutor,
     TransactionExecutorError, TransactionProverError,
 };
-use prover::NtbTransactionProver;
-use store::{StoreClient, StoreError};
+use crate::prover::NtbTransactionProver;
+use crate::store::{StoreClient, StoreError};
 use thiserror::Error;
 use tokio::{
     runtime::Builder as RtBuilder,
@@ -35,10 +35,6 @@ use tracing::{Instrument, Span, error, info, instrument, warn};
 use url::Url;
 
 use crate::COMPONENT;
-
-mod block_producer;
-mod prover;
-pub(crate) mod store;
 
 // NETWORK TRANSACTION REQUEST
 // ================================================================================================

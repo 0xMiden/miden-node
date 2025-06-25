@@ -14,7 +14,8 @@ use miden_objects::{
 };
 use miden_tx::{DataStore, DataStoreError, MastForestStore};
 
-use crate::{builder::store::StoreClient, note::NetworkNote};
+use crate::note::NetworkNote;
+use crate::store::StoreClient;
 
 pub struct State {
     latest_header: BlockHeader,

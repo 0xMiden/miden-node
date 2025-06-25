@@ -368,6 +368,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Try to submit second challenge - should fail because of rate limiting
+        tokio::time::sleep(Duration::from_secs(CLEANUP_INTERVAL_SECONDS)).await;
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 

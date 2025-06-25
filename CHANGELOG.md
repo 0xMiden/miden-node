@@ -18,6 +18,7 @@
 - Added support for TLS to faucet's connection to node RPC (#976).
 - Replaced integer-based duration args with human-readable duration strings (#998).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
+- Network Transaction Builder now tracks inflight state (previously only committed state was tracked) (#977).
 
 ## v0.9.2 (2025-06-12)
 

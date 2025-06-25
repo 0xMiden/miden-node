@@ -1,6 +1,13 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use miden_remote_prover::{
+    api::ProofType,
+    generated::proxy_status::{
+        self as proto, ProxyStatusRequest, ProxyStatusResponse, WorkerStatus,
+        proxy_status_api_server::{ProxyStatusApi, ProxyStatusApiServer},
+    },
+};
 use pingora::{server::ListenFds, services::Service};
 use tokio::{net::TcpListener, sync::watch, time::interval};
 use tokio_stream::wrappers::TcpListenerStream;
@@ -11,15 +18,7 @@ use super::worker::WorkerHealthStatus;
 use crate::{
     COMPONENT,
     commands::PROXY_HOST,
-    generated::{
-        proxy_status::{
-            ProxyStatusRequest, ProxyStatusResponse,
-            WorkerHealthStatus as GeneratedWorkerHealthStatus, WorkerStatus,
-            proxy_status_api_server::{ProxyStatusApi, ProxyStatusApiServer},
-        },
-        remote_prover::ProofType,
-    },
-    proxy::LoadBalancerState,
+    proxy::{LoadBalancerState, worker::Worker},
 };
 
 // PROXY STATUS SERVICE
@@ -58,7 +57,7 @@ impl ProxyStatusPingoraService {
         status_update_interval: Duration,
     ) -> Self {
         let version = env!("CARGO_PKG_VERSION").to_string();
-        let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
+        let supported_proof_type: ProofType = load_balancer.supported_proof_type;
         let supported_proof_type: i32 = supported_proof_type.into();
 
         let initial_status = {
@@ -202,7 +201,7 @@ impl ProxyStatusUpdater {
         update_interval: Duration,
     ) -> Self {
         let version = env!("CARGO_PKG_VERSION").to_string();
-        let supported_proof_type: ProofType = load_balancer.supported_prover_type.into();
+        let supported_proof_type: ProofType = load_balancer.supported_proof_type;
         let supported_proof_type: i32 = supported_proof_type.into();
 
         Self {
@@ -249,12 +248,22 @@ impl ProxyStatusUpdater {
 // UTILS
 // ================================================================================================
 
-impl From<&WorkerHealthStatus> for GeneratedWorkerHealthStatus {
+impl From<&WorkerHealthStatus> for proto::WorkerHealthStatus {
     fn from(status: &WorkerHealthStatus) -> Self {
         match status {
-            WorkerHealthStatus::Healthy => GeneratedWorkerHealthStatus::Healthy,
-            WorkerHealthStatus::Unhealthy { .. } => GeneratedWorkerHealthStatus::Unhealthy,
-            WorkerHealthStatus::Unknown => GeneratedWorkerHealthStatus::Unknown,
+            WorkerHealthStatus::Healthy => proto::WorkerHealthStatus::Healthy,
+            WorkerHealthStatus::Unhealthy { .. } => proto::WorkerHealthStatus::Unhealthy,
+            WorkerHealthStatus::Unknown => proto::WorkerHealthStatus::Unknown,
+        }
+    }
+}
+
+impl From<&Worker> for WorkerStatus {
+    fn from(worker: &Worker) -> Self {
+        Self {
+            address: worker.address(),
+            version: worker.version().to_string(),
+            status: proto::WorkerHealthStatus::from(worker.health_status()).into(),
         }
     }
 }

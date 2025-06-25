@@ -6,12 +6,12 @@ A worker is a gRPC service that can receive transaction witnesses, proposed batc
 
 The proxy uses [Cloudflare's Pingora crate](https://crates.io/crates/pingora), which provides features to create a modular proxy. It is meant to handle multiple workers with a queue, assigning a worker to each request and retrying if the worker is not available. Further information about Pingora and its features can be found in the [official GitHub repository](https://github.com/cloudflare/pingora).
 
-
 ## Debian Installation
 
 #### Prover
 
 Install the Debian package:
+
 ```bash
 set -e
 
@@ -26,6 +26,7 @@ sudo rm prover.deb
 Edit the configuration file `/lib/systemd/system/miden-prover.service.env`
 
 Run the service:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable miden-prover
@@ -33,6 +34,7 @@ sudo systemctl start miden-prover
 ```
 
 #### Prover Proxy
+
 ```bash
 set -e
 
@@ -49,6 +51,7 @@ Edit the configuration file `/lib/systemd/system/miden-prover-proxy.service.env`
 Edit the service file to specify workers `/lib/systemd/system/miden-prover-proxy.service`
 
 Run the service:
+
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable miden-prover-proxy
@@ -76,6 +79,7 @@ miden-remote-prover start-worker --port 8082 --prover-type transaction
 This will spawn a worker using the port defined in the command option. The host will be 0.0.0.0 by default, or 127.0.0.1 if the --localhost flag is used. In case that the port is not provided, it will default to `50051`. This command will start a worker that can handle transaction and batch proving requests.
 
 The `--prover-type` flag is required and specifies which type of proof the worker will handle. The available options are:
+
 - `transaction`: For transaction proofs
 - `batch`: For batch proofs
 - `block`: For block proofs
@@ -90,13 +94,14 @@ The worker can be configured using the following environment variables:
 |---------------------------|---------------------------------|---------------|
 | `MRP_WORKER_LOCALHOST`    | Use localhost (127.0.0.1)       | `false`       |
 | `MRP_WORKER_PORT`         | The port number for the worker  | `50051`       |
-| `MRP_WORKER_PROVER_TYPE`  | The supported prover type       | `transaction` |
+| `MRP_WORKER_PROOF_TYPE`   | The supported prover type       | `transaction` |
 
 For example:
+
 ```bash
 export MRP_WORKER_LOCALHOST="true"
 export MRP_WORKER_PORT="8082"
-export MRP_WORKER_PROVER_TYPE="block"
+export MRP_WORKER_PROOF_TYPE="block"
 miden-remote-prover start-worker
 ```
 
@@ -123,6 +128,7 @@ export MRP_PROXY_WORKERS_LIST="0.0.0.0:8084,0.0.0.0:8085"
 If no workers are passed, the proxy will start without any workers and will not be able to handle any requests until one is added through the `miden-remote-prover add-worker` command.
 
 The `--prover-type` flag is required and specifies which type of proof the proxy will handle. The available options are:
+
 - `transaction`: For transaction proofs
 - `batch`: For batch proofs
 - `block`: For block proofs
@@ -130,6 +136,7 @@ The `--prover-type` flag is required and specifies which type of proof the proxy
 The proxy can only handle one type of proof at a time. When you add workers to the proxy, it will check their supported proof type. Workers that support a different proof type than the proxy will be marked as unhealthy and will not be used for proving requests.
 
 For example, if you start a proxy with `--prover-type transaction` and add these workers:
+
 - Worker 1: Transaction proofs (Healthy)
 - Worker 2: Batch proofs (Unhealthy - incompatible proof type)
 - Worker 3: Block proofs (Unhealthy - incompatible proof type)
@@ -150,6 +157,7 @@ To update the workers on a running proxy, two commands are provided: `add-worker
 miden-remote-prover add-workers --control-port <port> [worker1],[worker2],...,[workerN]
 miden-remote-prover remove-workers --control-port <port> [worker1],[worker2],...,[workerN]
 ```
+
 For example:
 
 ```bash
@@ -187,6 +195,7 @@ The proxy service uses this health check to determine if a worker is available t
 The worker service implements a custom status check that returns information about the worker's current state and supported proof type. The proxy service uses this status check to determine if a worker is available to receive requests and if it supports the required proof type. If a worker is not available or doesn't support the required proof type, it will be removed from the set of workers that the proxy can use to send requests.
 
 The status check returns:
+
 - Whether the worker is ready to process requests
 - The type of proofs the worker supports (transaction, batch, or block proofs)
 - The version of the worker
@@ -198,16 +207,19 @@ The proxy service exposes a gRPC status endpoint that provides information about
 #### gRPC Service Definition
 
 The status service provides the following method:
+
 - `Status(ProxyStatusRequest) -> ProxyStatusResponse`: Returns the current status of the proxy and all its workers
 
 #### Response Format
 
 The gRPC response includes the following information:
+
 - `version`: The version of the proxy
 - `supported_proof_type`: The type of proof that the proxy supports (`TRANSACTION`, `BATCH`, or `BLOCK`)
 - `workers`: A list of workers with their status information
 
 Each worker status includes:
+
 - `address`: The worker's network address
 - `version`: The worker's version
 - `status`: The worker's health status (`UNKNOWN`, `HEALTHY`, or `UNHEALTHY`)
@@ -222,6 +234,7 @@ grpcurl -plaintext -import-path ./proto -proto proxy_status.proto \
 ```
 
 Example response:
+
 ```json
 {
   "version": "0.8.0",
@@ -319,9 +332,9 @@ Then, to add the new Prometheus collector as a datasource for Grafana, you can [
 
 Description of this crate's feature:
 
-| Features     | Description                                                                                                 |
-| ------------ | ------------------------------------------------------------------------------------------------------------|
-| `concurrent` | Enables concurrent code to speed up runtime execution.                                                      |
+| Features     | Description                                            |
+| ------------ | ------------------------------------------------------ |
+| `concurrent` | Enables concurrent code to speed up runtime execution. |
 
 ## License
 

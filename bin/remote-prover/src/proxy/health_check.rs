@@ -1,9 +1,9 @@
+use miden_remote_prover::COMPONENT;
 use pingora::{prelude::sleep, server::ShutdownWatch, services::background::BackgroundService};
 use tonic::async_trait;
 use tracing::{debug_span, error};
 
 use super::LoadBalancerState;
-use crate::COMPONENT;
 
 /// Implement the BackgroundService trait for the LoadBalancer
 ///
@@ -35,7 +35,7 @@ impl BackgroundService for LoadBalancerState {
                     let mut workers = self.workers.write().await;
 
                     for worker in workers.iter_mut() {
-                        let status_result = worker.check_status(self.supported_prover_type).await;
+                        let status_result = worker.check_status(self.supported_proof_type).await;
 
                         if let Err(ref reason) = status_result {
                             error!(

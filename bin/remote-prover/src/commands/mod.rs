@@ -1,10 +1,9 @@
 use clap::Parser;
+use miden_remote_prover::{COMPONENT, api::ProofType};
 use proxy::StartProxy;
 use tracing::instrument;
 use update_workers::{AddWorkers, RemoveWorkers, UpdateWorkers};
-use worker::{ProverType, StartWorker};
-
-use crate::COMPONENT;
+use worker::StartWorker;
 
 pub mod proxy;
 pub mod update_workers;
@@ -53,12 +52,12 @@ pub(crate) struct ProxyConfig {
     /// Port used to add and remove workers from the proxy.
     #[arg(long, default_value = "8083", env = "MRP_CONTROL_PORT")]
     pub(crate) control_port: u16,
-    /// Supported prover type.
+    /// Supported proof type.
     ///
-    /// The type of proof the proxy will handle. Only workers that support the same prover type
+    /// The type of proof the proxy will handle. Only workers that support the same proof type
     /// will be able to connect to the proxy.
-    #[arg(long, default_value = "transaction", env = "MRP_PROVER_TYPE")]
-    pub(crate) prover_type: ProverType,
+    #[arg(long, default_value = "transaction", env = "MRP_PROOF_TYPE")]
+    pub(crate) proof_type: ProofType,
     /// Status port.
     ///
     /// Port used to get the status of the proxy. It is used to get the list of workers and their

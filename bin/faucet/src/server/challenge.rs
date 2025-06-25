@@ -6,7 +6,7 @@ use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
 
-use super::get_tokens::InvalidMintRequest;
+use super::get_tokens::MintRequestError;
 use crate::server::ApiKey;
 
 /// The lifetime of a challenge.
@@ -81,10 +81,10 @@ impl Challenge {
 
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
     /// in the context of the specified secret.
-    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidMintRequest> {
+    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, MintRequestError> {
         // Parse the hex-encoded challenge string
         let bytes: [u8; CHALLENGE_ENCODED_SIZE] =
-            hex_to_bytes(value).map_err(|_| InvalidMintRequest::MissingPowParameters)?;
+            hex_to_bytes(value).map_err(|_| MintRequestError::MissingPowParameters)?;
 
         // SAFETY: Length of the bytes is enforced above.
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
@@ -100,7 +100,7 @@ impl Challenge {
         if signature == expected_signature {
             Ok(Self::from_parts(difficulty, timestamp, account_id, api_key, signature))
         } else {
-            Err(InvalidMintRequest::ServerSignaturesDoNotMatch)
+            Err(MintRequestError::ServerSignaturesDoNotMatch)
         }
     }
 
@@ -132,7 +132,10 @@ impl Challenge {
     ///
     /// Panics if the challenge timestamp is greater than the current time.
     pub fn is_expired(&self, current_time: u64) -> bool {
-        (current_time - self.timestamp) > CHALLENGE_LIFETIME_SECONDS
+        let diff = current_time
+            .checked_sub(self.timestamp)
+            .expect("challenge timestamp should be less than current time");
+        diff > CHALLENGE_LIFETIME_SECONDS
     }
 
     /// Computes the signature for a challenge.

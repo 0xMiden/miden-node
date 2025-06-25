@@ -10,7 +10,7 @@ use tokio::time::{Duration, interval};
 use super::challenge::{CHALLENGE_LIFETIME_SECONDS, Challenge};
 use crate::{
     REQUESTS_QUEUE_SIZE,
-    server::{ApiKey, get_pow::PowRequest, get_tokens::InvalidMintRequest},
+    server::{ApiKey, get_pow::PowRequest, get_tokens::MintRequestError},
 };
 
 /// The maximum difficulty of the `PoW`.
@@ -93,12 +93,12 @@ impl PoW {
         challenge: &str,
         nonce: u64,
         current_time: u64,
-    ) -> Result<(), InvalidMintRequest> {
+    ) -> Result<(), MintRequestError> {
         let challenge = Challenge::decode(challenge, self.secret)?;
 
         // Check timestamp validity
         if challenge.is_expired(current_time) {
-            return Err(InvalidMintRequest::ExpiredServerTimestamp(
+            return Err(MintRequestError::ExpiredServerTimestamp(
                 challenge.timestamp,
                 current_time,
             ));
@@ -109,7 +109,7 @@ impl PoW {
         let valid_api_key = *api_key == challenge.api_key;
         let valid_nonce = challenge.validate_pow(nonce);
         if !(valid_nonce && valid_account_id && valid_api_key) {
-            return Err(InvalidMintRequest::InvalidPoW);
+            return Err(MintRequestError::InvalidPoW);
         }
 
         let mut challenge_cache = self
@@ -119,12 +119,15 @@ impl PoW {
 
         // Check if account has recently submitted a challenge.
         if challenge_cache.has_challenge_for_account(account_id) {
-            return Err(InvalidMintRequest::RateLimited);
+            return Err(MintRequestError::RateLimited(
+                CHALLENGE_LIFETIME_SECONDS - (current_time - challenge.timestamp)
+                    + CLEANUP_INTERVAL_SECONDS,
+            ));
         }
 
         // Check if the cache already contains the challenge. If not, it is inserted.
         if !challenge_cache.insert_challenge(&challenge) {
-            return Err(InvalidMintRequest::ChallengeAlreadyUsed);
+            return Err(MintRequestError::ChallengeAlreadyUsed);
         }
 
         Ok(())
@@ -154,7 +157,10 @@ impl ChallengeCache {
     /// Inserts a challenge into the cache, updating the number of challenges submitted for the
     /// account and the API key.
     ///
-    /// Returns true if the challenge was newly inserted.
+    /// Returns whether the value was newly inserted. That is:
+    /// * If the cache did not previously contain this challenge, `true` is returned.
+    /// * If the cache already contained this challenge, `false` is returned, and the cache is not
+    ///   modified.
     pub fn insert_challenge(&mut self, challenge: &Challenge) -> bool {
         let account_id = challenge.account_id;
         let api_key = challenge.api_key.clone();
@@ -362,7 +368,7 @@ mod tests {
         let result =
             pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time);
         assert!(result.is_err());
-        assert!(matches!(result.err(), Some(InvalidMintRequest::RateLimited)));
+        assert!(matches!(result.err(), Some(MintRequestError::RateLimited(_))));
     }
 
     #[tokio::test]

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use clap::Parser;
 use miden_proving_service::{COMPONENT, api::ProofType};
 use proxy::StartProxy;
@@ -13,16 +15,16 @@ pub(crate) const PROXY_HOST: &str = "0.0.0.0";
 
 #[derive(Debug, Parser)]
 pub(crate) struct ProxyConfig {
-    /// Interval in milliseconds at which the system polls for available workers to assign new
+    /// Interval at which the system polls for available workers to assign new
     /// tasks.
-    #[arg(long, default_value = "20", env = "MPS_AVAILABLE_WORKERS_POLLING_INTERVAL_MS")]
-    pub(crate) available_workers_polling_interval_ms: u64,
-    /// Maximum time in seconds to establish a connection.
-    #[arg(long, default_value = "10", env = "MPS_CONNECTION_TIMEOUT_SECS")]
-    pub(crate) connection_timeout_secs: u64,
-    /// Health check interval in seconds.
-    #[arg(long, default_value = "10", env = "MPS_HEALTH_CHECK_INTERVAL_SECS")]
-    pub(crate) health_check_interval_secs: u64,
+    #[arg(long, default_value = "20ms", env = "MPS_AVAILABLE_WORKERS_POLLING_INTERVAL", value_parser = humantime::parse_duration)]
+    pub(crate) available_workers_polling_interval: Duration,
+    /// Maximum time to establish a connection.
+    #[arg(long, default_value = "10s", env = "MPS_CONNECTION_TIMEOUT", value_parser = humantime::parse_duration)]
+    pub(crate) connection_timeout: Duration,
+    /// Health check interval.
+    #[arg(long, default_value = "10s", env = "MPS_HEALTH_CHECK_INTERVAL", value_parser = humantime::parse_duration)]
+    pub(crate) health_check_interval: Duration,
     /// Maximum number of items in the queue.
     #[arg(long, default_value = "10", env = "MPS_MAX_QUEUE_ITEMS")]
     pub(crate) max_queue_items: usize,
@@ -41,12 +43,12 @@ pub(crate) struct ProxyConfig {
     /// Status update interval in seconds.
     ///
     /// How often the proxy status service updates its status information.
-    #[arg(long, default_value = "10", env = "MPS_STATUS_UPDATE_INTERVAL_SECS")]
-    pub(crate) status_update_interval_secs: u64,
-    /// Maximum time in seconds allowed for a request to complete. Once exceeded, the request is
+    #[arg(long, default_value = "10s", env = "MPS_STATUS_UPDATE_INTERVAL", value_parser = humantime::parse_duration)]
+    pub(crate) status_update_interval: Duration,
+    /// Maximum time allowed for a request to complete. Once exceeded, the request is
     /// aborted.
-    #[arg(long, default_value = "100", env = "MPS_TIMEOUT_SECS")]
-    pub(crate) timeout_secs: u64,
+    #[arg(long, default_value = "100s", env = "MPS_TIMEOUT", value_parser = humantime::parse_duration)]
+    pub(crate) timeout: Duration,
     /// Control port.
     ///
     /// Port used to add and remove workers from the proxy.

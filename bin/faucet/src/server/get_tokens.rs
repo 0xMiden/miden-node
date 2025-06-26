@@ -68,8 +68,8 @@ pub enum MintRequestError {
     ExpiredServerTimestamp(u64, u64),
     #[error("challenge already used")]
     ChallengeAlreadyUsed,
-    #[error("account is rate limited, please wait {0} seconds")]
-    RateLimited(u64),
+    #[error("account is rate limited")]
+    RateLimited,
 }
 
 pub enum GetTokenError {

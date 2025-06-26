@@ -64,7 +64,7 @@ impl RpcClient {
     ///
     /// Note that this _does not_ include any uncommitted state in the mempool.
     pub async fn get_faucet_account(&mut self, id: FaucetId) -> Result<Account, RpcError> {
-        let request = GetAccountDetailsRequest { account_id: Some(id.inner().into()) };
+        let request = GetAccountDetailsRequest { account_id: Some(id.account_id.into()) };
 
         let account_info = self
             .inner

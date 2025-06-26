@@ -9,8 +9,9 @@
 - Compressed faucet background image (#985).
 - Added support for TLS to `miden-proving-service-client` (#968).
 - Added support for TLS to faucet's connection to node RPC (#976).
-- Replaced integer-based duration args with human-readable duration strings (#998).
+- Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
+- Added configurable network id for the faucet (#1016).
 
 ### Changes
 
@@ -22,7 +23,7 @@
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
-- [BREAKING] Added PoW to faucet API Keys (#974).
+- [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
 - Faucet challenge expiration time is now configurable (#1017).
 
 ### Fixes

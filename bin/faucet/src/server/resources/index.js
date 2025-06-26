@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         evtSource.onerror = function (_) {
-            // Either rate limit exceeded or invalid account id. The error event does not contain the reason. 
+            // Either rate limit exceeded or invalid account id. The error event does not contain the reason.
             evtSource.close();
             setLoadingState(false);
             showError('Please try again soon.');
@@ -188,10 +188,14 @@ document.addEventListener('DOMContentLoaded', function () {
             } else {
                 importCommand.style.display = 'none';
             }
-            txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
+
             txLink.textContent = data.transaction_id;
             info.style.visibility = 'visible';
             importCommand.style.visibility = 'visible';
+            // If the explorer URL is available, set the link.
+            if (data.explorer_url) {
+                txLink.href = data.explorer_url + '/tx/' + data.transaction_id;
+            }
         });
     }
 

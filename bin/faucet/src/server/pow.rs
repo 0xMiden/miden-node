@@ -362,7 +362,6 @@ mod tests {
         let result =
             pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time);
         assert!(result.is_err());
-        dbg!(&result);
         assert!(matches!(result.err(), Some(MintRequestError::RateLimited)));
     }
 

@@ -41,11 +41,7 @@ impl ApiKey {
 
     /// Decodes the API key from a string.
     pub fn decode(api_key_str: &str) -> Result<Self, MintRequestError> {
-        let api_key_str = if api_key_str.starts_with(API_KEY_PREFIX) {
-            api_key_str.trim_start_matches(API_KEY_PREFIX).to_string()
-        } else {
-            return Err(MintRequestError::InvalidApiKey(api_key_str.to_string()));
-        };
+        let api_key_str = api_key_str.trim_start_matches(API_KEY_PREFIX).to_string();
         let bytes = BASE64_STANDARD
             .decode(api_key_str.as_bytes())
             .map_err(|_| MintRequestError::InvalidApiKey(api_key_str.clone()))?;

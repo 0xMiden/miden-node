@@ -68,8 +68,8 @@ pub async fn seed_store(
     // Recreate the data directory (it should be empty for store bootstrapping).
     //
     // Ignore the error since it will also error if it does not exist.
-    let _ = std::fs::remove_dir_all(&data_directory);
-    std::fs::create_dir_all(&data_directory).expect("created data directory");
+    let _ = fs_err::remove_dir_all(&data_directory);
+    fs_err::create_dir_all(&data_directory).expect("created data directory");
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();

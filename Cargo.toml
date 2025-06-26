@@ -90,4 +90,5 @@ missing_panics_doc          = "allow" # TODO: fixup and enable this.
 module_name_repetitions     = "allow" # Many triggers, and is a stylistic choice.
 must_use_candidate          = "allow" # This marks many fn's which isn't helpful.
 should_panic_without_expect = "allow" # We don't care about the specific panic message.
+from_iter_instead_of_collect = "allow" # at times `FromIter` is much more readable
 # End of pedantic lints.

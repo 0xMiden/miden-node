@@ -104,4 +104,36 @@ service NtxBuilder {
 
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetNetworkAccountDetailsByPrefixResponse) {}
+
+    // Returns all network account updates that took place in some block range with the
+    // start specified by the request and the end bound determined by the server.
+    //
+    // Returns `out_of_range` error if the start block exceeds the chain tip of the server.
+    //
+    // The response also contains the end bound and therefore the user can sync by repeatedly
+    // calling this method with the start bound incremented by one from the end bound until
+    // the above error indicates they are at the end.
+    rpc GetNetworkAccountUpdates(InclusiveUnboundedRange) returns (NetworkAccountUpdates) {}
+}
+
+// Represents a block range with a start but no end.
+message InclusiveUnboundedRange {
+    fixed32 start = 1;
+}
+
+// All network account updates that took place between the request's starting block
+// and some later block chosen by the server.
+message NetworkAccountUpdates {
+    // The last block in the ra
+    fixed32 end_inclusive = 1;
+    // Complete set of network account updates in the inclusive range formed by
+    // the request's starting block and `end_inclusive`.
+    //
+    // The data is encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::account::delta::AccountUpdateDetails].
+    //
+    // Note that the type allows for `Private` but this isn't applicable to network
+    // accounts which are public by definition. Servers should avoid sending `Private`
+    // since its nonsensical, however clients should filter these out.
+    repeated bytes updates = 2;
 }

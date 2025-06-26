@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    ops::RangeInclusive,
     path::PathBuf,
 };
 
@@ -11,7 +12,7 @@ use miden_node_proto::{
 };
 use miden_objects::{
     Word,
-    account::{AccountDelta, AccountId},
+    account::{AccountDelta, AccountId, delta::AccountUpdateDetails},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
     note::{
@@ -631,6 +632,19 @@ impl Db {
             .await
             .map_err(DatabaseError::MissingDbConnection)?
             .interact(move |conn| sql::unconsumed_network_notes(&conn.transaction()?, page))
+            .await
+            .map_err(|err| DatabaseError::InteractError(err.to_string()))?
+    }
+
+    pub(crate) async fn select_network_account_updates(
+        &self,
+        range: RangeInclusive<BlockNumber>,
+    ) -> Result<Vec<AccountUpdateDetails>> {
+        self.pool
+            .get()
+            .await
+            .map_err(DatabaseError::MissingDbConnection)?
+            .interact(move |conn| sql::select_network_account_updates(&conn.transaction()?, range))
             .await
             .map_err(|err| DatabaseError::InteractError(err.to_string()))?
     }

@@ -7,6 +7,7 @@ use std::{
     borrow::Cow,
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
     num::NonZeroUsize,
+    ops::RangeInclusive,
     rc::Rc,
 };
 
@@ -212,6 +213,36 @@ pub fn select_network_account_by_prefix(
     } else {
         Ok(None)
     }
+}
+
+/// Returns all network account updates in the given range.
+pub fn select_network_account_updates(
+    transaction: &Transaction,
+    range: RangeInclusive<BlockNumber>,
+) -> Result<Vec<AccountUpdateDetails>> {
+    let mut stmt = transaction.prepare_cached(
+        "
+        SELECT
+            details
+        FROM
+            network_account_updates
+        WHERE
+            block_number BETWEEN ?1 AND ?2;
+        ",
+    )?;
+
+    let start = range.start().as_u32();
+    let end = range.end().as_u32();
+
+    let mut rows = stmt.query(params![start, end])?;
+    let mut updates = Vec::new();
+    while let Some(row) = rows.next()? {
+        let bytes: Vec<_> = row.get_unwrap(0);
+        let update = AccountUpdateDetails::read_from_bytes(&bytes)?;
+        updates.push(update);
+    }
+
+    Ok(updates)
 }
 
 /// Select the latest accounts' details filtered by IDs from the DB using the given

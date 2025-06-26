@@ -1,5 +1,6 @@
 use std::num::{NonZero, TryFromIntError};
 
+use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, NetworkAccountPrefix},
     generated::{
@@ -11,10 +12,13 @@ use miden_node_proto::{
             GetBlockHeaderByNumberResponse, GetCurrentBlockchainDataResponse,
             GetNetworkAccountDetailsByPrefixResponse, GetUnconsumedNetworkNotesResponse,
         },
-        store::ntx_builder_server,
+        store::{
+            InclusiveUnboundedRange, NetworkAccountUpdates as ProtoNetworkAccountUpdates,
+            ntx_builder_server,
+        },
     },
 };
-use miden_objects::{block::BlockNumber, note::Note};
+use miden_objects::{account::delta::AccountUpdateDetails, block::BlockNumber, note::Note};
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 
@@ -149,6 +153,28 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         Ok(Response::new(GetUnconsumedNetworkNotesResponse {
             notes: network_notes,
             next_token: next_page.token,
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.ntx_builder_server.get_network_account_updates",
+        skip_all,
+        err
+    )]
+    async fn get_network_account_updates(
+        &self,
+        request: Request<InclusiveUnboundedRange>,
+    ) -> Result<Response<ProtoNetworkAccountUpdates>, Status> {
+        let start: BlockNumber = request.into_inner().start.into();
+
+        let (end, updates) = self.state.network_account_updates(start).await?;
+        let updates = updates.iter().map(AccountUpdateDetails::to_bytes).collect();
+
+        Ok(Response::new(ProtoNetworkAccountUpdates {
+            end_inclusive: end.as_u32(),
+            updates,
         }))
     }
 }

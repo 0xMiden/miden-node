@@ -20,7 +20,7 @@ use miden_node_proto::{
 use miden_node_utils::formatting::format_array;
 use miden_objects::{
     AccountError,
-    account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
+    account::{AccountDelta, AccountHeader, AccountId, StorageSlot, delta::AccountUpdateDetails},
     block::{
         AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
         NullifierTree, NullifierWitness, ProvenBlock,
@@ -963,6 +963,32 @@ impl State {
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db.select_unconsumed_network_notes(page).await
+    }
+
+    /// Returns the complete set of network account updates in the range
+    /// formed by `start` and the return returned block number.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DatabaseError::BlockOutOfRange`] if the start block exceeds the chain tip.
+    ///
+    /// Other database related errors are also possible.
+    pub async fn network_account_updates(
+        &self,
+        start: BlockNumber,
+    ) -> Result<(BlockNumber, Vec<AccountUpdateDetails>), DatabaseError> {
+        let chain_tip = self.latest_block_num().await;
+        if start > chain_tip {
+            return Err(DatabaseError::BlockOutOfRange { requested: start, chain_tip });
+        }
+
+        // Cap the block range at 1_000 or the chain tip.
+        let stop = (start + 1_000).min(chain_tip);
+        let range = start..=stop;
+
+        let updates = self.db.select_network_account_updates(range).await?;
+
+        Ok((stop, updates))
     }
 }
 

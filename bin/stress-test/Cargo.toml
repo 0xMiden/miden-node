@@ -17,6 +17,7 @@ workspace = true
 
 [dependencies]
 clap                      = { features = ["derive"], version = "4.5" }
+fs-err                    = { version = "3" }
 futures                   = { workspace = true }
 miden-air                 = { workspace = true }
 miden-block-prover        = { features = ["testing"], workspace = true }
@@ -31,4 +32,3 @@ rayon                     = { version = "1.10" }
 tokio                     = { workspace = true }
 tonic                     = { workspace = true }
 winterfell                = { version = "0.12" }
-fs-err = { version = "3"}

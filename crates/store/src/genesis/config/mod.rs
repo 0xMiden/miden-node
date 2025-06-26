@@ -7,15 +7,19 @@ use std::collections::HashMap;
 
 use miden_lib::{
     AuthScheme,
-    account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::create_basic_wallet},
+    account::{
+        auth::RpoFalcon512,
+        faucets::{BasicFungibleFaucet, FungibleFaucetError},
+        wallets::create_basic_wallet,
+    },
     utils::{self},
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
     AccountError, AssetError, Felt, FieldElement, StarkField, TokenSymbolError,
     account::{
-        AccountBuilder, AccountDelta, AccountId, AccountIdAnchor, AccountStorageDelta,
-        AccountStorageMode, AccountType, AccountVaultDelta,
+        AccountBuilder, AccountDelta, AccountId, AccountStorageDelta, AccountStorageMode,
+        AccountType, AccountVaultDelta,
     },
     asset::{Asset, FungibleAsset, TokenSymbol},
     crypto::dsa::rpo_falcon512::SecretKey,
@@ -122,6 +126,8 @@ pub enum Error {
         value: String,
         message: String,
     },
+    #[error("Failed to create fungible faucet account")]
+    FungibleFaucet(#[from] FungibleFaucetError),
 }
 
 /// Secrets generated during the state generation
@@ -204,8 +210,7 @@ impl TestGenesisConfig {
                 });
             }
 
-            let component = BasicFungibleFaucet::new(token_symbol, decimals, max_supply)
-                .map_err(AccountError::FungibleFaucetError)?;
+            let component = BasicFungibleFaucet::new(token_symbol, decimals, max_supply)?;
 
             let account_storage_mode = storage_mode.into();
 

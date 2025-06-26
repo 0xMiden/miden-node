@@ -1,0 +1,15 @@
+timestamp = 1717344256
+version   = 1
+
+[[faucet]]
+decimals     = 12
+max_supply   = 1000000
+storage_mode = "public"
+symbol       = "MID"
+
+[[account]]
+assets       = [{ amount = 999, symbol = "MID" }]
+mutable      = false
+storage_mode = "private"
+# can_be_updated = false # default value
+# fungible = true # default value

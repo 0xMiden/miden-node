@@ -50,7 +50,11 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
                 Digest::default(),
             )
             .unwrap(),
-            new_account.not().then(|| Hasher::hash(&init_seed)).unwrap_or_default(),
+            if new_account.not() {
+                Hasher::hash(&init_seed)
+            } else {
+                Digest::default()
+            },
         )
     }
 }

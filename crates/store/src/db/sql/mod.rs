@@ -227,7 +227,7 @@ pub fn select_network_account_updates(
         FROM
             network_account_updates
         WHERE
-            block_number BETWEEN ?1 AND ?2;
+            block_num BETWEEN ?1 AND ?2;
         ",
     )?;
 
@@ -504,12 +504,24 @@ pub fn upsert_accounts(
     let mut select_details_stmt =
         transaction.prepare_cached("SELECT details FROM accounts WHERE account_id = ?1")?;
 
+    let mut insert_network_stmt = transaction
+        .prepare_cached(insert_sql!(network_account_updates { block_num, account_id, details }))?;
+
     let mut count = 0;
     for update in accounts {
         let account_id = update.account_id();
-        // Extract the 30-bit prefix to provide easy look ups for NTB
-        // Do not store prefix for accounts that are not network
+
         let network_account_id_prefix = if account_id.is_network() {
+            // Insert the network account update.
+            insert_network_stmt.insert(params![
+                block_num.as_u32(),
+                account_id.to_bytes(),
+                update.details().to_bytes()
+            ])?;
+            count += 1;
+
+            // Extract the 30-bit prefix to provide easy look ups for NTB
+            // Do not store prefix for accounts that are not network
             Some(NetworkAccountPrefix::try_from(account_id)?.inner())
         } else {
             None

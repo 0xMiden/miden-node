@@ -124,6 +124,16 @@ CREATE TABLE account_non_fungible_asset_updates (
     FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
 ) STRICT, WITHOUT ROWID;
 
+CREATE TABLE network_account_updates (
+    block_num   INTEGER NOT NULL,
+    account_id  BLOB NOT NULL,
+    details     BLOB NOT NULL,
+
+    PRIMARY KEY (account_id, block_number),
+    FOREIGN KEY (account_id) REFERENCES accounts(account_id),
+    FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
+);
+
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,
     nullifier_prefix INTEGER NOT NULL,

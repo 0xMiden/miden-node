@@ -636,15 +636,22 @@ impl Db {
             .map_err(|err| DatabaseError::InteractError(err.to_string()))?
     }
 
-    pub(crate) async fn select_network_account_updates(
+    pub(crate) async fn select_network_updates(
         &self,
         range: RangeInclusive<BlockNumber>,
-    ) -> Result<Vec<AccountUpdateDetails>> {
+    ) -> Result<(Vec<AccountUpdateDetails>, Vec<NoteRecord>, Vec<Nullifier>)> {
         self.pool
             .get()
             .await
             .map_err(DatabaseError::MissingDbConnection)?
-            .interact(move |conn| sql::select_network_account_updates(&conn.transaction()?, range))
+            .interact(move |conn| {
+                let tx = conn.transaction()?;
+                let accounts = sql::select_network_account_updates(&tx, range.clone())?;
+                let notes = sql::select_network_notes(&tx, range.clone())?;
+                let nullifiers = sql::select_network_nullifiers(&tx, range.clone())?;
+
+                Ok((accounts, notes, nullifiers))
+            })
             .await
             .map_err(|err| DatabaseError::InteractError(err.to_string()))?
     }

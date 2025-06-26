@@ -129,10 +129,10 @@ CREATE TABLE network_account_updates (
     account_id  BLOB NOT NULL,
     details     BLOB NOT NULL,
 
-    PRIMARY KEY (account_id, block_number),
+    PRIMARY KEY (account_id, block_num),
     FOREIGN KEY (account_id) REFERENCES accounts(account_id),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
-);
+) STRICT, WITHOUT ROWID;
 
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,

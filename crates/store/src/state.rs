@@ -976,7 +976,10 @@ impl State {
     pub async fn network_account_updates(
         &self,
         start: BlockNumber,
-    ) -> Result<(BlockNumber, Vec<AccountUpdateDetails>), DatabaseError> {
+    ) -> Result<
+        (BlockNumber, Vec<AccountUpdateDetails>, Vec<NoteRecord>, Vec<Nullifier>),
+        DatabaseError,
+    > {
         let chain_tip = self.latest_block_num().await;
         if start > chain_tip {
             return Err(DatabaseError::BlockOutOfRange { requested: start, chain_tip });
@@ -986,9 +989,9 @@ impl State {
         let stop = (start + 1_000).min(chain_tip);
         let range = start..=stop;
 
-        let updates = self.db.select_network_account_updates(range).await?;
+        let (accounts, notes, nullifiers) = self.db.select_network_updates(range).await?;
 
-        Ok((stop, updates))
+        Ok((stop, accounts, notes, nullifiers))
     }
 }
 

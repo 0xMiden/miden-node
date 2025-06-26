@@ -215,7 +215,7 @@ pub fn select_network_account_by_prefix(
     }
 }
 
-/// Returns all network account updates in the given range.
+/// Returns all network account updates in the given range in chronological block order.
 pub fn select_network_account_updates(
     transaction: &Transaction,
     range: RangeInclusive<BlockNumber>,
@@ -228,6 +228,8 @@ pub fn select_network_account_updates(
             network_account_updates
         WHERE
             block_num BETWEEN ?1 AND ?2;
+        ORDER BY
+            block_num ASC
         ",
     )?;
 
@@ -512,14 +514,6 @@ pub fn upsert_accounts(
         let account_id = update.account_id();
 
         let network_account_id_prefix = if account_id.is_network() {
-            // Insert the network account update.
-            insert_network_stmt.insert(params![
-                block_num.as_u32(),
-                account_id.to_bytes(),
-                update.details().to_bytes()
-            ])?;
-            count += 1;
-
             // Extract the 30-bit prefix to provide easy look ups for NTB
             // Do not store prefix for accounts that are not network
             Some(NetworkAccountPrefix::try_from(account_id)?.inner())
@@ -575,6 +569,16 @@ pub fn upsert_accounts(
         }
 
         count += inserted;
+
+        if account_id.is_network() {
+            // Insert the network account update.
+            insert_network_stmt.insert(params![
+                block_num.as_u32(),
+                account_id.to_bytes(),
+                update.details().to_bytes()
+            ])?;
+            count += 1;
+        }
     }
 
     Ok(count)
@@ -778,6 +782,43 @@ pub fn select_nullifiers_by_prefix(
         let nullifier = Nullifier::read_from_bytes(nullifier_data)?;
         let block_num = read_block_number(row, 1)?;
         result.push(NullifierInfo { nullifier, block_num });
+    }
+    Ok(result)
+}
+
+/// Select all nullifiers from the DB using the given [Connection].
+///
+/// # Returns
+///
+/// A vector with nullifiers and the block height at which they were created, or an error.
+pub fn select_network_nullifiers(
+    transaction: &Transaction,
+    range: RangeInclusive<BlockNumber>,
+) -> Result<Vec<Nullifier>> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    let mut stmt = transaction.prepare_cached(
+        "SELECT
+            nullifier
+        FROM
+            nullifiers
+        LEFT JOIN notes ON notes.nullifier = nullifiers.nullifier
+        WHERE
+            nullifiers.block_num BETWEEN ?1 AND ?2 AND
+            notes.execution_mode = 0
+     ",
+    )?;
+    let mut rows = stmt.query(params![range.start().as_u32(), range.end().as_u32()])?;
+
+    let mut result = Vec::new();
+    while let Some(row) = rows.next()? {
+        let nullifier_data = row.get_ref(0)?.as_blob()?;
+        let nullifier = Nullifier::read_from_bytes(nullifier_data)?;
+        result.push(nullifier);
     }
     Ok(result)
 }
@@ -1102,6 +1143,45 @@ pub fn unconsumed_network_notes(
     }
 
     Ok((notes, page))
+}
+
+/// Returns a paginated batch of network notes that have not yet been consumed.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+pub fn select_network_notes(
+    transaction: &Transaction,
+    range: RangeInclusive<BlockNumber>,
+) -> Result<Vec<NoteRecord>> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    let mut stmt = transaction.prepare_cached(&format!(
+        "
+        SELECT {}
+        FROM notes
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+        WHERE
+            execution_mode = 0 AND block_num BETWEEN ?1 AND ?2
+        ",
+        NoteRecord::SELECT_COLUMNS
+    ))?;
+
+    // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
+    // check if there are more notes for the next page.
+    let mut rows = stmt.query(params![range.start().as_u32(), range.end().as_u32()])?;
+
+    let mut notes = Vec::new();
+    while let Some(row) = rows.next()? {
+        notes.push(NoteRecord::from_row(row)?);
+    }
+
+    Ok(notes)
 }
 
 // BLOCK CHAIN QUERIES

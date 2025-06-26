@@ -2,13 +2,14 @@
 /// Represents a block range with a start but no end.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct InclusiveUnboundedRange {
+    /// Start of the range, inclusive.
     #[prost(fixed32, tag = "1")]
     pub start: u32,
 }
-/// All network account updates that took place between the request's starting block
+/// All network transaction related updates that took place between the request's starting block
 /// and some later block chosen by the server.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NetworkAccountUpdates {
+pub struct NetworkUpdates {
     /// The last block in the ra
     #[prost(fixed32, tag = "1")]
     pub end_inclusive: u32,
@@ -22,7 +23,17 @@ pub struct NetworkAccountUpdates {
     /// accounts which are public by definition. Servers should avoid sending `Private`
     /// since its nonsensical, however clients should filter these out.
     #[prost(bytes = "vec", repeated, tag = "2")]
-    pub updates: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    pub account_updates: ::prost::alloc::vec::Vec<::prost::alloc::vec::Vec<u8>>,
+    /// All network notes that were created in the block range.
+    ///
+    /// A note and its nullifier may be included in the same response.
+    #[prost(message, repeated, tag = "3")]
+    pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
+    /// All network note nullifiers that were produced in the block range.
+    ///
+    /// A note and its nullifier may be included in the same response.
+    #[prost(message, repeated, tag = "4")]
+    pub nullifiers: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }
 /// Generated client implementations.
 pub mod rpc_client {
@@ -861,7 +872,7 @@ pub mod ntx_builder_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Returns all network account updates that took place in some block range with the
+        /// Returns all updates related to network transactions that took place in some block range with the
         /// start specified by the request and the end bound determined by the server.
         ///
         /// Returns `out_of_range` error if the start block exceeds the chain tip of the server.
@@ -869,13 +880,10 @@ pub mod ntx_builder_client {
         /// The response also contains the end bound and therefore the user can sync by repeatedly
         /// calling this method with the start bound incremented by one from the end bound until
         /// the above error indicates they are at the end.
-        pub async fn get_network_account_updates(
+        pub async fn get_network_updates(
             &mut self,
             request: impl tonic::IntoRequest<super::InclusiveUnboundedRange>,
-        ) -> std::result::Result<
-            tonic::Response<super::NetworkAccountUpdates>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::NetworkUpdates>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -886,11 +894,11 @@ pub mod ntx_builder_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/store.NtxBuilder/GetNetworkAccountUpdates",
+                "/store.NtxBuilder/GetNetworkUpdates",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("store.NtxBuilder", "GetNetworkAccountUpdates"));
+                .insert(GrpcMethod::new("store.NtxBuilder", "GetNetworkUpdates"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -2146,7 +2154,7 @@ pub mod ntx_builder_server {
             >,
             tonic::Status,
         >;
-        /// Returns all network account updates that took place in some block range with the
+        /// Returns all updates related to network transactions that took place in some block range with the
         /// start specified by the request and the end bound determined by the server.
         ///
         /// Returns `out_of_range` error if the start block exceeds the chain tip of the server.
@@ -2154,13 +2162,10 @@ pub mod ntx_builder_server {
         /// The response also contains the end bound and therefore the user can sync by repeatedly
         /// calling this method with the start bound incremented by one from the end bound until
         /// the above error indicates they are at the end.
-        async fn get_network_account_updates(
+        async fn get_network_updates(
             &self,
             request: tonic::Request<super::InclusiveUnboundedRange>,
-        ) -> std::result::Result<
-            tonic::Response<super::NetworkAccountUpdates>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::NetworkUpdates>, tonic::Status>;
     }
     /// Store API for the network transaction builder component
     #[derive(Debug)]
@@ -2449,14 +2454,14 @@ pub mod ntx_builder_server {
                     };
                     Box::pin(fut)
                 }
-                "/store.NtxBuilder/GetNetworkAccountUpdates" => {
+                "/store.NtxBuilder/GetNetworkUpdates" => {
                     #[allow(non_camel_case_types)]
-                    struct GetNetworkAccountUpdatesSvc<T: NtxBuilder>(pub Arc<T>);
+                    struct GetNetworkUpdatesSvc<T: NtxBuilder>(pub Arc<T>);
                     impl<
                         T: NtxBuilder,
                     > tonic::server::UnaryService<super::InclusiveUnboundedRange>
-                    for GetNetworkAccountUpdatesSvc<T> {
-                        type Response = super::NetworkAccountUpdates;
+                    for GetNetworkUpdatesSvc<T> {
+                        type Response = super::NetworkUpdates;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -2467,10 +2472,7 @@ pub mod ntx_builder_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as NtxBuilder>::get_network_account_updates(
-                                        &inner,
-                                        request,
-                                    )
+                                <T as NtxBuilder>::get_network_updates(&inner, request)
                                     .await
                             };
                             Box::pin(fut)
@@ -2482,7 +2484,7 @@ pub mod ntx_builder_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetNetworkAccountUpdatesSvc(inner);
+                        let method = GetNetworkUpdatesSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

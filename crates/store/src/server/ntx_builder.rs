@@ -13,8 +13,7 @@ use miden_node_proto::{
             GetNetworkAccountDetailsByPrefixResponse, GetUnconsumedNetworkNotesResponse,
         },
         store::{
-            InclusiveUnboundedRange, NetworkAccountUpdates as ProtoNetworkAccountUpdates,
-            ntx_builder_server,
+            InclusiveUnboundedRange, NetworkUpdates as ProtoNetworkUpdates, ntx_builder_server,
         },
     },
 };
@@ -159,22 +158,34 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.ntx_builder_server.get_network_account_updates",
+        name = "store.ntx_builder_server.get_network_updates",
         skip_all,
         err
     )]
-    async fn get_network_account_updates(
+    async fn get_network_updates(
         &self,
         request: Request<InclusiveUnboundedRange>,
-    ) -> Result<Response<ProtoNetworkAccountUpdates>, Status> {
+    ) -> Result<Response<ProtoNetworkUpdates>, Status> {
         let start: BlockNumber = request.into_inner().start.into();
 
-        let (end, updates) = self.state.network_account_updates(start).await?;
-        let updates = updates.iter().map(AccountUpdateDetails::to_bytes).collect();
+        let (end, updates, notes, nullifiers) = self.state.network_account_updates(start).await?;
+        let account_updates = updates.iter().map(AccountUpdateDetails::to_bytes).collect();
 
-        Ok(Response::new(ProtoNetworkAccountUpdates {
+        let notes = notes
+            .into_iter()
+            .map(|note| {
+                // SAFETY: Network notes are filtered in the database, so they should have details;
+                // otherwise the state would be corrupted
+                let (assets, recipient) = note.details.unwrap().into_parts();
+                Note::new(assets, note.metadata, recipient).into()
+            })
+            .collect();
+
+        Ok(Response::new(ProtoNetworkUpdates {
             end_inclusive: end.as_u32(),
-            updates,
+            account_updates,
+            notes,
+            nullifiers: nullifiers.into_iter().map(Into::into).collect(),
         }))
     }
 }

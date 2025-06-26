@@ -25,6 +25,7 @@
 - Exposed `miden-proving-service` as a library (#956).
 - [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
 - Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
+- Added configurable `PoW` difficulty for the faucet (#924).
 
 ### Fixes
 

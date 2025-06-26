@@ -1,7 +1,6 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     ops::Mul,
-    sync::{Arc, Weak},
 };
 
 use miden_node_proto::domain::mempool::MempoolEvent;
@@ -17,7 +16,7 @@ use crate::domain::transaction::AuthenticatedTransaction;
 pub(crate) struct SubscriptionProvider {
     /// The latest event subscription, if any.
     ///
-    /// We only allow a single active subscription since we only have a single interested party.
+    /// The only current interested party is the network transaction builder, so one subscription is enough.
     subscription: Option<mpsc::Sender<MempoolEvent>>,
 
     /// The latest committed block number.
@@ -25,22 +24,19 @@ pub(crate) struct SubscriptionProvider {
     /// This is used to ensure synchronicity with new subscribers.
     chain_tip: BlockNumber,
 
-    /// Transaction event's which have not yet been committed or reverted.
+    /// [`MempoolEvent::TransactionAdded`] events which are still inflight i.e. have not been committed or reverted.
     ///
-    /// The `ordered_txs` field keeps track of the chronological ordering.
-    uncommitted_txs: BTreeMap<TransactionId, Arc<MempoolEvent>>,
+    /// These events need to be transmitted when a subscription is started, since the subscriber only has the committed state.
+    ///
+    /// A [`BTreeMap`] is used to maintain event ordering while allowing for efficient removals of committed or reverted transactions.
+    ///
+    /// The key is auto-incremented on each new insert to support this event ordering.
+    ///
+    /// A reverse lookup index is maintained in `uncommitted_txs_index`.
+    uncommitted_txs: BTreeMap<u64, MempoolEvent>,
 
-    /// Chronologically ordered transaction events which have not yet been committed or reverted.
-    ///
-    /// These need to be sent for new subscriptions since otherwise these events would be skipped.
-    ///
-    /// These events are stored as weak pointers to the actual data to allow for efficient removal
-    /// without moving the entire queue.
-    ///
-    /// The queue itself is trimmed by removing non-existent pointers whenever from the front and
-    /// back whenever txs are committed or reverted. This does mean slow or long-term txs let
-    /// the queue build up in size.
-    ordered_txs: VecDeque<Weak<MempoolEvent>>,
+    /// A reverse lookup index for `uncommitted_txs` which allows for efficient removal of committed or reverted events.
+    uncommitted_txs_index: BTreeMap<TransactionId, u64>,
 }
 
 impl SubscriptionProvider {
@@ -68,15 +64,12 @@ impl SubscriptionProvider {
         let (tx, rx) = mpsc::channel(capacity);
         self.subscription.replace(tx);
 
-        // Send each uncommited tx event.
+        // Send each uncommited tx event in chronological order.
         //
-        // TODO: Figure out a better solution without the clone.
-        for tx in self.ordered_txs.clone() {
-            let Some(tx) = tx.upgrade() else {
-                continue;
-            };
-
-            self.send_event(tx.as_ref().clone());
+        // The ordering is guaranteed by the btree map so we can safely
+        // iterate over the values.
+        for tx in self.uncommitted_txs.values() {
+            Self::send_event(&mut self.subscription, tx.clone());
         }
 
         Ok(rx)
@@ -102,52 +95,50 @@ impl SubscriptionProvider {
             account_delta,
         };
 
-        let uncommitted_event = Arc::new(event.clone());
-        self.ordered_txs.push_back(Arc::downgrade(&uncommitted_event));
-        self.uncommitted_txs.insert(id, uncommitted_event);
-        self.send_event(event);
+        // Add the event to the uncommitted set.
+        //
+        // The key increments to maintain chronological ordering.
+        let key = self.uncommitted_txs.last_key_value().map(|(k, _v)| k + 1).unwrap_or_default();
+        self.uncommitted_txs_index.insert(id, key);
+        self.uncommitted_txs.insert(key, event.clone());
+
+        Self::send_event(&mut self.subscription, event);
     }
 
     pub(super) fn block_committed(&mut self, header: BlockHeader, txs: Vec<TransactionId>) {
         self.chain_tip = header.block_num();
         self.decommit_txs(&txs);
-        self.send_event(MempoolEvent::BlockCommitted { header, txs });
+        Self::send_event(&mut self.subscription, MempoolEvent::BlockCommitted { header, txs });
     }
 
     pub(super) fn txs_reverted(&mut self, txs: BTreeSet<TransactionId>) {
         self.decommit_txs(&txs);
-        self.send_event(MempoolEvent::TransactionsReverted(txs));
+        Self::send_event(&mut self.subscription, MempoolEvent::TransactionsReverted(txs));
     }
 
     /// Sends a [`MempoolEvent`] to the subscriber, if any.
     ///
     /// If the send fails, then the subscription is cancelled.
-    fn send_event(&mut self, event: MempoolEvent) {
-        let Some(subscription) = &mut self.subscription else {
+    fn send_event(subscription: &mut Option<mpsc::Sender<MempoolEvent>>, event: MempoolEvent) {
+        let Some(sender) = subscription else {
             return;
         };
 
-        if let Err(error) = subscription.try_send(event) {
+        // If sending fails, end the subscription to prevent desync.
+        if let Err(error) = sender.try_send(event) {
             tracing::warn!(%error, "mempool subscription failed, cancelling subscription");
-            self.subscription = None;
+            subscription.take();
         }
     }
 
+    /// Removes the transactions from the uncommitted transactions set.
     fn decommit_txs<'a>(&mut self, txs: impl IntoIterator<Item = &'a TransactionId>) {
         for tx in txs {
-            self.uncommitted_txs.remove(tx);
-        }
-
-        // Attempt to drop as many non-existent txs from the queue.
-        while let Some(front) = self.ordered_txs.front() {
-            if front.upgrade().is_none() {
-                self.ordered_txs.pop_front();
-            }
-        }
-        while let Some(back) = self.ordered_txs.back() {
-            if back.upgrade().is_none() {
-                self.ordered_txs.pop_back();
-            }
+            let Some(idx) = self.uncommitted_txs_index.remove(tx) else {
+                tracing::error!(%tx, "inflight transaction not found in subscription index");
+                continue;
+            };
+            self.uncommitted_txs.remove(&idx);
         }
     }
 }

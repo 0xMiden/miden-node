@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use clap::Parser;
 use miden_proving_service::{COMPONENT, error::ProvingServiceError};
 use pingora::{
@@ -129,7 +127,7 @@ impl StartProxy {
         let status_service = ProxyStatusPingoraService::new(
             worker_lb,
             self.proxy_config.status_port,
-            Duration::from_secs(self.proxy_config.status_update_interval_secs),
+            self.proxy_config.status_update_interval,
         )
         .await;
         info!(target: COMPONENT,

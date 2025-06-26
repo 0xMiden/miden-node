@@ -9,8 +9,9 @@
 - Compressed faucet background image (#985).
 - Added support for TLS to `miden-proving-service-client` (#968).
 - Added support for TLS to faucet's connection to node RPC (#976).
-- Replaced integer-based duration args with human-readable duration strings (#998).
+- Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
+- Added configurable network id for the faucet (#1016).
 
 ### Changes
 

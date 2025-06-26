@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', function () {
         };
 
         evtSource.onerror = function (_) {
-            // Either rate limit exceeded or invalid account id. The error event does not contain the reason. 
+            // Either rate limit exceeded or invalid account id. The error event does not contain the reason.
             evtSource.close();
             setLoadingState(false);
             showError('Please try again soon.');

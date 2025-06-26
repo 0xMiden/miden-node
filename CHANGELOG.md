@@ -22,7 +22,7 @@
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
-- [BREAKING] Added PoW to faucet API Keys (#974).
+- [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
 - Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
 
 ### Fixes

@@ -32,4 +32,3 @@ rayon                     = { version = "1.10" }
 tokio                     = { workspace = true }
 tonic                     = { workspace = true }
 winterfell                = { version = "0.12" }
-fs-err = { version = "3"}

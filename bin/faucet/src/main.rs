@@ -3,6 +3,7 @@ mod rpc_client;
 mod server;
 mod types;
 
+mod network;
 #[cfg(test)]
 mod stub_rpc_api;
 
@@ -16,7 +17,7 @@ use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
 use miden_node_utils::{crypto::get_rpo_random_coin, logging::OpenTelemetry, version::LongVersion};
 use miden_objects::{
     Felt,
-    account::{AccountFile, AccountStorageMode, AuthSecretKey, NetworkId},
+    account::{AccountFile, AccountStorageMode, AuthSecretKey},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -28,15 +29,14 @@ use tokio::sync::mpsc;
 use types::AssetOptions;
 use url::Url;
 
+use crate::network::FaucetNetwork;
+
 // CONSTANTS
 // =================================================================================================
 
 pub const REQUESTS_QUEUE_SIZE: usize = 1000;
 const API_KEY_PREFIX: &str = "miden_faucet_";
 const COMPONENT: &str = "miden-faucet";
-// TODO: Make these configurable.
-const NETWORK_ID: NetworkId = NetworkId::Testnet;
-const EXPLORER_URL: &str = "https://testnet.midenscan.com";
 
 const ENV_ENDPOINT: &str = "MIDEN_FAUCET_ENDPOINT";
 const ENV_NODE_URL: &str = "MIDEN_FAUCET_NODE_URL";
@@ -47,6 +47,7 @@ const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
+const ENV_NETWORK: &str = "MIDEN_FAUCET_NETWORK";
 
 // COMMANDS
 // ================================================================================================
@@ -66,6 +67,11 @@ pub enum Command {
         /// Endpoint of the faucet in the format `<ip>:<port>`.
         #[arg(long = "endpoint", value_name = "URL", env = ENV_ENDPOINT)]
         endpoint: Url,
+
+        /// Network configuration to use. Options are `devnet`, `testnet`, `localhost` or a custom
+        /// network. It is used to show the correct addresses and explorer URL in the UI.
+        #[arg(long = "network", value_name = "NETWORK", default_value = "localhost", env = ENV_NETWORK)]
+        network: FaucetNetwork,
 
         /// Node RPC gRPC endpoint in the format `http://<host>[:<port>]`.
         #[arg(long = "node-url", value_name = "URL", env = ENV_NODE_URL)]
@@ -158,6 +164,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
         // Note: open-telemetry is handled in main.
         Command::Start {
             endpoint,
+            network,
             node_url,
             timeout,
             faucet_account_path,
@@ -174,7 +181,13 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 faucet_account_path.display()
             ))?;
 
-            let faucet = Faucet::load(account_file, &mut rpc_client, remote_tx_prover_url).await?;
+            let faucet = Faucet::load(
+                network.to_network_id()?,
+                account_file,
+                &mut rpc_client,
+                remote_tx_prover_url,
+            )
+            .await?;
 
             // Maximum of 1000 requests in-queue at once. Overflow is rejected for faster feedback.
             let (tx_requests, rx_requests) = mpsc::channel(REQUESTS_QUEUE_SIZE);
@@ -305,7 +318,7 @@ mod test {
     use tokio::{io::AsyncBufReadExt, time::sleep};
     use url::Url;
 
-    use crate::{API_KEY_PREFIX, Cli, run_faucet_command, stub_rpc_api::serve_stub};
+    use crate::{API_KEY_PREFIX, Cli, FaucetNetwork, run_faucet_command, stub_rpc_api::serve_stub};
 
     /// This test starts a stub node, a faucet connected to the stub node, and a chromedriver
     /// to test the faucet website. It then loads the website and checks that all the requests
@@ -458,6 +471,7 @@ mod test {
                 run_faucet_command(Cli {
                     command: crate::Command::Start {
                         endpoint: endpoint_clone,
+                        network: FaucetNetwork::Testnet,
                         node_url: stub_node_url,
                         timeout: Duration::from_millis(5000),
                         asset_amounts: vec![100, 500, 1000],

@@ -10,7 +10,7 @@ use miden_lib::{
 };
 use miden_objects::{
     AccountError, Digest, Felt, NoteError,
-    account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey},
+    account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey, NetworkId},
     assembly::DefaultSourceManager,
     asset::FungibleAsset,
     block::BlockNumber,
@@ -41,7 +41,6 @@ use updates::{ClientUpdater, MintUpdate, ResponseSender};
 use url::Url;
 
 use crate::{
-    NETWORK_ID,
     rpc_client::{RpcClient, RpcError},
     types::{AssetAmount, NoteType},
 };
@@ -100,22 +99,19 @@ impl FaucetProver {
 // FAUCET CLIENT
 // ================================================================================================
 
-/// The faucet's account ID.
+/// The faucet's account ID and network ID.
 ///
-/// Used as a type safety mechanism to avoid confusion with user account IDs,
-/// and allows us to implement traits.
+/// Used as a type safety mechanism to avoid confusion with user account IDs, and allows us to
+/// implement traits.
 #[derive(Clone, Copy)]
-pub struct FaucetId(AccountId);
-
-impl FaucetId {
-    pub fn inner(self) -> AccountId {
-        self.0
-    }
+pub struct FaucetId {
+    pub account_id: AccountId,
+    pub network_id: NetworkId,
 }
 
-impl std::fmt::Display for FaucetId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+impl FaucetId {
+    pub fn new(account_id: AccountId, network_id: NetworkId) -> Self {
+        Self { account_id, network_id }
     }
 }
 
@@ -124,7 +120,7 @@ impl Serialize for FaucetId {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.0.to_bech32(NETWORK_ID))
+        serializer.serialize_str(&self.account_id.to_bech32(self.network_id))
     }
 }
 
@@ -171,14 +167,15 @@ impl Faucet {
     /// Loads the faucet state from the node and the account file.
     #[instrument(name = "faucet.load", fields(id), skip_all)]
     pub async fn load(
+        network_id: NetworkId,
         account_file: AccountFile,
         rpc_client: &mut RpcClient,
         remote_tx_prover_url: Option<Url>,
     ) -> anyhow::Result<Self> {
         let id = account_file.account.id();
-        let id = FaucetId(id);
+        let id = FaucetId::new(id, network_id);
 
-        tracing::Span::current().record("id", id.to_string());
+        tracing::Span::current().record("id", id.account_id.to_string());
 
         info!("Fetching faucet state from node");
 
@@ -283,7 +280,7 @@ impl Faucet {
                 })
                 .unzip();
 
-            let updater = ClientUpdater::new(response_senders);
+            let updater = ClientUpdater::new(response_senders, self.id.network_id);
 
             match self.handle_request_batch(&requests, &mut rpc_client, &updater).await {
                 // Update local state on success.
@@ -441,7 +438,7 @@ impl Faucet {
             TransactionExecutor::new(self.data_store.as_ref(), Some(&self.authenticator));
         executor
             .execute_transaction(
-                self.id.inner(),
+                self.id.account_id,
                 BlockNumber::GENESIS,
                 InputNotes::default(),
                 tx_args,
@@ -506,9 +503,9 @@ impl P2IdNotes {
         for request in requests {
             let amount = request.asset_amount.inner() * 10u64.pow(decimals.into());
             // SAFETY: source is definitely a faucet account, and the amount is valid.
-            let asset = FungibleAsset::new(source.inner(), amount).unwrap();
+            let asset = FungibleAsset::new(source.account_id, amount).unwrap();
             let note = create_p2id_note(
-                source.inner(),
+                source.account_id,
                 request.account_id,
                 vec![asset.into()],
                 request.note_type.into(),
@@ -602,7 +599,9 @@ mod tests {
                 vec![AuthSecretKey::RpoFalcon512(secret)],
             );
 
-            Faucet::load(account_file, &mut rpc_client, None).await.unwrap()
+            Faucet::load(NetworkId::Testnet, account_file, &mut rpc_client, None)
+                .await
+                .unwrap()
         };
 
         // Create a set of mint requests

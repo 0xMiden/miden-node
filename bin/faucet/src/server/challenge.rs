@@ -127,9 +127,10 @@ impl Challenge {
     ///
     /// # Arguments
     /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
-    pub fn is_expired(&self, current_time: u64, challenge_expiration: u64) -> bool {
+    /// * `challenge_lifetime` - The number of seconds during which a challenge is valid.
+    pub fn is_expired(&self, current_time: u64, challenge_lifetime: u64) -> bool {
         let diff = current_time.checked_sub(self.timestamp).unwrap_or(u64::MAX);
-        diff > challenge_expiration
+        diff > challenge_lifetime
     }
 
     /// Computes the signature for a challenge.
@@ -213,17 +214,17 @@ mod tests {
         let secret = create_test_secret();
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let expiration_time = 30;
+        let lifetime = 30;
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
 
         // Valid timestamp (current time)
         let challenge = Challenge::new(1, current_time, account_id, api_key.clone(), secret);
-        assert!(!challenge.is_expired(current_time, expiration_time));
+        assert!(!challenge.is_expired(current_time, lifetime));
 
         // Expired timestamp (too old)
-        let old_timestamp = current_time - expiration_time - 10;
+        let old_timestamp = current_time - lifetime - 10;
         let challenge = Challenge::new(1, old_timestamp, account_id, api_key, secret);
-        assert!(challenge.is_expired(current_time, expiration_time));
+        assert!(challenge.is_expired(current_time, lifetime));
     }
 }

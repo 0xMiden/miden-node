@@ -46,7 +46,7 @@ The faucet implements several security measures to prevent abuse:
 1. **Proof of Work requests**:
   - Users must complete a computational challenge before their request is processed.
   - The challenge difficulty increases with the load. The load is measured by the amount of challenges that were submitted but still haven't expired.
-  - **Rate limiting**: if an account submitted a challenge, it can't submit another one until the previous one is expired. The challenge expiration time is fixed and set when running the faucet.
+  - **Rate limiting**: if an account submitted a challenge, it can't submit another one until the previous one is expired. The challenge lifetime duration is fixed and set when running the faucet.
   - **API Keys**: the faucet is initialized with a set of API Keys that can be distributed to developers. The difficulty of the challenges requested using the API Key will increase only with the load of that key, it won't be influenced by the overall load of the faucet.
 
 2. **Requests batching**:

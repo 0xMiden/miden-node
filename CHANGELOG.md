@@ -27,6 +27,7 @@
 - Faucet challenge expiration time is now configurable (#1017).
 - Removed system monitor from node binary (#1019).
 - [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).
+- [BREAKING] Renamed `Note` to `CommittedNote`, and `NetworkNote` to `Note` in the proto messages (#1022).
 
 ### Fixes
 

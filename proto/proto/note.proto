@@ -28,8 +28,10 @@ message NoteMetadata {
     fixed64 aux = 5;
 }
 
-// Represents a note.
-message Note {
+// Represents a committed note.
+//
+// A committed note is a note that has been included in a block.
+message CommittedNote {
     // The block number in which the note was created.
     fixed32 block_num = 1;
 
@@ -49,11 +51,10 @@ message Note {
     optional bytes details = 6;
 }
 
-// Represents a network note.
+// Represents a note.
 //
-// The note is composed of the note metadata and its serialized details. The note's tag
-// must express that the note is for network usage instead of local.
-message NetworkNote {
+// The note is composed of the note metadata and its serialized details.
+message Note {
     // The note's metadata.
     NoteMetadata metadata = 1;
 

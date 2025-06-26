@@ -159,7 +159,7 @@ impl NoteRecord {
     }
 }
 
-impl From<NoteRecord> for proto::Note {
+impl From<NoteRecord> for proto::CommittedNote {
     fn from(note: NoteRecord) -> Self {
         Self {
             block_num: note.block_num.as_u32(),

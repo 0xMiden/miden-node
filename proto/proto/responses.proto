@@ -189,7 +189,7 @@ message SubmitProvenTransactionResponse {
 // Represents the result of getting notes by IDs.
 message GetNotesByIdResponse {
     // Lists Note's returned by the database.
-    repeated note.Note notes = 1;
+    repeated note.CommittedNote notes = 1;
 }
 
 // Represents the result of getting account details.
@@ -280,7 +280,7 @@ message GetUnconsumedNetworkNotesResponse {
     optional uint64 next_token = 1;
 
     // The list of unconsumed network notes.
-    repeated note.NetworkNote notes = 2;
+    repeated note.Note notes = 2;
 }
 
 // Represents the status of the node.

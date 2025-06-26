@@ -32,7 +32,7 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
     }
 }
 
-impl From<Note> for proto::NetworkNote {
+impl From<Note> for proto::Note {
     fn from(note: Note) -> Self {
         Self {
             metadata: Some(proto::NoteMetadata::from(*note.metadata())),
@@ -149,16 +149,16 @@ pub enum NetworkNoteError {
     InvalidExecutionMode(NoteTag),
 }
 
-impl TryFrom<proto::NetworkNote> for NetworkNote {
+impl TryFrom<proto::Note> for NetworkNote {
     type Error = ConversionError;
 
-    fn try_from(proto_note: proto::NetworkNote) -> Result<Self, Self::Error> {
+    fn try_from(proto_note: proto::Note) -> Result<Self, Self::Error> {
         let details = NoteDetails::read_from_bytes(&proto_note.details)
             .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
         let (assets, recipient) = details.into_parts();
         let metadata: NoteMetadata = proto_note
             .metadata
-            .ok_or_else(|| proto::NetworkNote::missing_field(stringify!(metadata)))?
+            .ok_or_else(|| proto::Note::missing_field(stringify!(metadata)))?
             .try_into()?;
         let note = Note::new(assets, metadata, recipient);
 

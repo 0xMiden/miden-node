@@ -22,9 +22,11 @@ pub struct NoteMetadata {
     #[prost(fixed64, tag = "5")]
     pub aux: u64,
 }
-/// Represents a note.
+/// Represents a committed note.
+///
+/// A committed note is a note that has been included in a block.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Note {
+pub struct CommittedNote {
     /// The block number in which the note was created.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
@@ -44,12 +46,11 @@ pub struct Note {
     #[prost(bytes = "vec", optional, tag = "6")]
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
-/// Represents a network note.
+/// Represents a note.
 ///
-/// The note is composed of the note metadata and its serialized details. The note's tag
-/// must express that the note is for network usage instead of local.
+/// The note is composed of the note metadata and its serialized details.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NetworkNote {
+pub struct Note {
     /// The note's metadata.
     #[prost(message, optional, tag = "1")]
     pub metadata: ::core::option::Option<NoteMetadata>,

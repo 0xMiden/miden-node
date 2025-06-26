@@ -119,10 +119,7 @@ impl PoW {
 
         // Check if account has recently submitted a challenge.
         if challenge_cache.has_challenge_for_account(account_id) {
-            return Err(MintRequestError::RateLimited(
-                CHALLENGE_LIFETIME_SECONDS - (current_time - challenge.timestamp)
-                    + CLEANUP_INTERVAL_SECONDS,
-            ));
+            return Err(MintRequestError::RateLimited);
         }
 
         // Check if the cache already contains the challenge. If not, it is inserted.
@@ -206,7 +203,10 @@ impl ChallengeCache {
     fn cleanup_expired_challenges(&mut self, current_time: u64) {
         let limit_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS;
 
-        for issuers in self.challenges.split_off(&limit_timestamp).into_values() {
+        let valid_challenges = self.challenges.split_off(&limit_timestamp);
+        let expired_challenges = std::mem::replace(&mut self.challenges, valid_challenges);
+
+        for issuers in expired_challenges.into_values() {
             for (account_id, api_key) in issuers {
                 let remove_api_key = self
                     .challenges_per_key
@@ -376,7 +376,7 @@ mod tests {
         let result =
             pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time);
         assert!(result.is_err());
-        assert!(matches!(result.err(), Some(MintRequestError::RateLimited(_))));
+        assert!(matches!(result.err(), Some(MintRequestError::RateLimited)));
     }
 
     #[tokio::test]

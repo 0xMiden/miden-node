@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Not, sync::LazyLock};
+use std::{collections::HashMap, sync::LazyLock};
 
 use miden_objects::{
     Digest, Hasher,
@@ -50,10 +50,10 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
                 Digest::default(),
             )
             .unwrap(),
-            if new_account.not() {
-                Hasher::hash(&init_seed)
-            } else {
+            if new_account {
                 Digest::default()
+            } else {
+                Hasher::hash(&init_seed)
             },
         )
     }

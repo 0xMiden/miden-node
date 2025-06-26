@@ -207,6 +207,7 @@ impl ChallengeCache {
     /// # Panics
     /// Panics if any expired challenge has no corresponding entries on the account or API key maps.
     fn cleanup_expired_challenges(&mut self, current_time: u64, challenge_expiration: u64) {
+        // Challenges older than this are expired.
         let limit_timestamp = current_time - challenge_expiration;
 
         for issuers in self.challenges.split_off(&limit_timestamp).into_values() {

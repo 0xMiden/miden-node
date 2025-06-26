@@ -19,7 +19,6 @@ const ENV_ENABLE_OTEL: &str = "MIDEN_NODE_ENABLE_OTEL";
 
 const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(2);
-const DEFAULT_MONITOR_INTERVAL: Duration = Duration::from_secs(10);
 const DEFAULT_NTX_TICKER_INTERVAL: Duration = Duration::from_millis(200);
 
 // Formats a Duration into a human-readable string for display in clap help text.
@@ -47,26 +46,6 @@ pub struct NtxBuilderConfig {
         value_name = "DURATION"
     )]
     pub ticker_interval: Duration,
-}
-
-/// Configuration for telemetry and monitoring
-#[derive(clap::Args)]
-pub struct TelemetryConfig {
-    /// Interval at which to monitor the system.
-    #[arg(
-        long = "monitor.interval",
-        default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
-        value_parser = humantime::parse_duration,
-        value_name = "DURATION"
-    )]
-    pub monitor_interval: Duration,
-
-    /// Enables the exporting of traces for OpenTelemetry.
-    ///
-    /// This can be further configured using environment variables as defined in the official
-    /// OpenTelemetry documentation. See our operator manual for further details.
-    #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
-    pub open_telemetry: bool,
 }
 
 /// Configuration for the Block Producer component

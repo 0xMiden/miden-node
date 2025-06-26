@@ -3,11 +3,8 @@ use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
-use super::{
-    BlockProducerConfig, ENV_BLOCK_PRODUCER_URL, ENV_NTX_BUILDER_URL, ENV_STORE_URL,
-    TelemetryConfig,
-};
-use crate::system_monitor::SystemMonitor;
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_NTX_BUILDER_URL, ENV_STORE_URL};
+use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL};
 
 #[derive(clap::Subcommand)]
 pub enum BlockProducerCommand {
@@ -28,8 +25,12 @@ pub enum BlockProducerCommand {
         #[command(flatten)]
         block_producer: BlockProducerConfig,
 
-        #[command(flatten)]
-        telemetry: TelemetryConfig,
+        /// Enables the exporting of traces for OpenTelemetry.
+        ///
+        /// This can be further configured using environment variables as defined in the official
+        /// OpenTelemetry documentation. See our operator manual for further details.
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
+        open_telemetry: bool,
     },
 }
 
@@ -40,7 +41,7 @@ impl BlockProducerCommand {
             store_url,
             ntx_builder_url,
             block_producer,
-            telemetry,
+            open_telemetry: _,
         } = self;
 
         let store_address = store_url
@@ -57,9 +58,6 @@ impl BlockProducerCommand {
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
 
-        // Start system monitor.
-        SystemMonitor::new(telemetry.monitor_interval).run_with_supervisor();
-
         BlockProducer {
             block_producer_address,
             store_address,
@@ -75,7 +73,7 @@ impl BlockProducerCommand {
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        let Self::Start { telemetry, .. } = self;
-        telemetry.open_telemetry
+        let Self::Start { open_telemetry, .. } = self;
+        *open_telemetry
     }
 }

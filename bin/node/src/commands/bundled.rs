@@ -4,15 +4,13 @@ use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
-use miden_node_store::{DataDirectory, Store};
+use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
 use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
 
-use super::{
-    BlockProducerConfig, ENV_DATA_DIRECTORY, ENV_RPC_URL, NtxBuilderConfig, TelemetryConfig,
-};
-use crate::system_monitor::SystemMonitor;
+use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
+use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL, NtxBuilderConfig};
 
 #[derive(clap::Subcommand)]
 #[expect(clippy::large_enum_variant, reason = "This is a single use enum")]
@@ -51,8 +49,12 @@ pub enum BundledCommand {
         #[command(flatten)]
         ntx_builder: NtxBuilderConfig,
 
-        #[command(flatten)]
-        telemetry: TelemetryConfig,
+        /// Enables the exporting of traces for OpenTelemetry.
+        ///
+        /// This can be further configured using environment variables as defined in the official
+        /// OpenTelemetry documentation. See our operator manual for further details.
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
+        open_telemetry: bool,
     },
 }
 
@@ -74,8 +76,8 @@ impl BundledCommand {
                 data_directory,
                 block_producer,
                 ntx_builder,
-                telemetry,
-            } => Self::start(rpc_url, data_directory, ntx_builder, block_producer, telemetry).await,
+                open_telemetry: _,
+            } => Self::start(rpc_url, data_directory, ntx_builder, block_producer).await,
         }
     }
 
@@ -86,7 +88,6 @@ impl BundledCommand {
         data_directory: PathBuf,
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
-        telemetry: TelemetryConfig,
     ) -> anyhow::Result<()> {
         let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
@@ -167,13 +168,6 @@ impl BundledCommand {
             })
             .id();
 
-        // Start system monitor.
-        let data_dir =
-            DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        SystemMonitor::new(telemetry.monitor_interval)
-            .with_store_metrics(data_dir)
-            .run_with_supervisor();
-
         // Lookup table so we can identify the failed component.
         let mut component_ids = HashMap::from([
             (store_id, "store"),
@@ -219,8 +213,8 @@ impl BundledCommand {
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        if let Self::Start { telemetry, .. } = self {
-            telemetry.open_telemetry
+        if let Self::Start { open_telemetry, .. } = self {
+            *open_telemetry
         } else {
             false
         }

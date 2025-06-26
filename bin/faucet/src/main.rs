@@ -96,11 +96,11 @@ pub enum Command {
         #[arg(long = "pow-secret", value_name = "STRING", env = ENV_POW_SECRET)]
         pow_secret: Option<String>,
 
-        /// The number of seconds during which the `PoW` challenges are valid. Changing this will
-        /// affect the rate limiting, since it works by rejecting new submissions while the
-        /// previous submitted challenge is still valid.
-        #[arg(long = "pow-challenge-lifetime", value_name = "U64", env = ENV_POW_CHALLENGE_LIFETIME, default_value = "30")]
-        pow_challenge_lifetime: u64,
+        /// The duration during which the `PoW` challenges are valid. Changing this will affect the
+        /// rate limiting, since it works by rejecting new submissions while the previous submitted
+        /// challenge is still valid.
+        #[arg(long = "pow-challenge-lifetime", value_name = "DURATION", env = ENV_POW_CHALLENGE_LIFETIME, default_value = "30s", value_parser = humantime::parse_duration)]
+        pow_challenge_lifetime: Duration,
 
         /// Comma-separated list of API keys.
         #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
@@ -484,7 +484,7 @@ mod test {
                         asset_amounts: vec![100, 500, 1000],
                         api_keys: vec![],
                         pow_secret: None,
-                        pow_challenge_lifetime: 30,
+                        pow_challenge_lifetime: Duration::from_secs(30),
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

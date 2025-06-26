@@ -31,12 +31,12 @@ const CLEANUP_INTERVAL_SECONDS: u64 = 2;
 pub(crate) struct PoW {
     secret: [u8; 32],
     challenge_cache: Arc<Mutex<ChallengeCache>>,
-    challenge_lifetime: u64,
+    challenge_lifetime: Duration,
 }
 
 impl PoW {
     /// Creates a new `PoW` instance.
-    pub fn new(secret: [u8; 32], challenge_lifetime: u64) -> Self {
+    pub fn new(secret: [u8; 32], challenge_lifetime: Duration) -> Self {
         let challenge_cache = Arc::new(Mutex::new(ChallengeCache::default()));
 
         // Start the cleanup task
@@ -199,13 +199,13 @@ impl ChallengeCache {
     ///
     /// # Arguments
     /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
-    /// * `challenge_lifetime` - The number of seconds during which a challenge is valid.
+    /// * `challenge_lifetime` - The duration during which a challenge is valid.
     ///
     /// # Panics
     /// Panics if any expired challenge has no corresponding entries on the account or API key maps.
-    fn cleanup_expired_challenges(&mut self, current_time: u64, challenge_lifetime: u64) {
+    fn cleanup_expired_challenges(&mut self, current_time: u64, challenge_lifetime: Duration) {
         // Challenges older than this are expired.
-        let limit_timestamp = current_time - challenge_lifetime;
+        let limit_timestamp = current_time - challenge_lifetime.as_secs();
 
         let valid_challenges = self.challenges.split_off(&limit_timestamp);
         let expired_challenges = std::mem::replace(&mut self.challenges, valid_challenges);
@@ -244,7 +244,7 @@ impl ChallengeCache {
     /// The cleanup task is responsible for removing expired challenges from the cache.
     /// It runs every minute and removes challenges that are no longer valid because of their
     /// timestamp.
-    pub async fn run_cleanup(cache: Arc<Mutex<Self>>, challenge_lifetime: u64) {
+    pub async fn run_cleanup(cache: Arc<Mutex<Self>>, challenge_lifetime: Duration) {
         let mut interval = interval(Duration::from_secs(CLEANUP_INTERVAL_SECONDS));
 
         loop {
@@ -284,7 +284,7 @@ mod tests {
     #[tokio::test]
     async fn test_pow_validation() {
         let secret = create_test_secret();
-        let pow = PoW::new(secret, 30);
+        let pow = PoW::new(secret, Duration::from_secs(30));
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -329,7 +329,7 @@ mod tests {
     #[tokio::test]
     async fn test_timestamp_validation() {
         let secret = create_test_secret();
-        let challenge_lifetime = 30;
+        let challenge_lifetime = Duration::from_secs(30);
         let pow = PoW::new(secret, challenge_lifetime);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
@@ -345,7 +345,7 @@ mod tests {
             &api_key,
             &challenge.encode(),
             nonce,
-            current_time + challenge_lifetime + 1,
+            current_time + challenge_lifetime.as_secs() + 1,
         );
         assert!(result.is_err());
 
@@ -358,7 +358,7 @@ mod tests {
     #[tokio::test]
     async fn account_id_is_rate_limited() {
         let secret = create_test_secret();
-        let challenge_lifetime = 30;
+        let challenge_lifetime = Duration::from_secs(30);
         let pow = PoW::new(secret, challenge_lifetime);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
@@ -388,7 +388,7 @@ mod tests {
     #[tokio::test]
     async fn submit_challenge_and_check_difficulty() {
         let secret = create_test_secret();
-        let challenge_lifetime = 30;
+        let challenge_lifetime = Duration::from_secs(30);
         let pow = PoW::new(secret, challenge_lifetime);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
@@ -407,7 +407,7 @@ mod tests {
     #[tokio::test]
     async fn test_cleanup_expired_challenges() {
         let secret = create_test_secret();
-        let challenge_lifetime = 30;
+        let challenge_lifetime = Duration::from_secs(30);
         let pow = PoW::new(secret, challenge_lifetime);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
@@ -417,13 +417,13 @@ mod tests {
         // build challenge manually with past timestamp to ensure that expires in 1 second
         let challenge = Challenge::from_parts(
             1,
-            current_time - challenge_lifetime,
+            current_time - challenge_lifetime.as_secs(),
             account_id,
             api_key.clone(),
             Challenge::compute_signature(
                 secret,
                 1,
-                current_time - challenge_lifetime,
+                current_time - challenge_lifetime.as_secs(),
                 account_id,
                 &api_key.inner(),
             ),

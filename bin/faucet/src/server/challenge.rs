@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use miden_objects::{
     account::AccountId,
     utils::{Deserializable, Serializable},
@@ -127,10 +129,10 @@ impl Challenge {
     ///
     /// # Arguments
     /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
-    /// * `challenge_lifetime` - The number of seconds during which a challenge is valid.
-    pub fn is_expired(&self, current_time: u64, challenge_lifetime: u64) -> bool {
+    /// * `challenge_lifetime` - The duration during which a challenge is valid.
+    pub fn is_expired(&self, current_time: u64, challenge_lifetime: Duration) -> bool {
         let diff = current_time.checked_sub(self.timestamp).unwrap_or(u64::MAX);
-        diff > challenge_lifetime
+        diff > challenge_lifetime.as_secs()
     }
 
     /// Computes the signature for a challenge.
@@ -214,7 +216,7 @@ mod tests {
         let secret = create_test_secret();
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
-        let lifetime = 30;
+        let lifetime = Duration::from_secs(30);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
 
@@ -223,7 +225,7 @@ mod tests {
         assert!(!challenge.is_expired(current_time, lifetime));
 
         // Expired timestamp (too old)
-        let old_timestamp = current_time - lifetime - 10;
+        let old_timestamp = current_time - lifetime.as_secs() - 10;
         let challenge = Challenge::new(1, old_timestamp, account_id, api_key, secret);
         assert!(challenge.is_expired(current_time, lifetime));
     }

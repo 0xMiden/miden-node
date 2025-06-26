@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     convert::Infallible,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
@@ -58,7 +58,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_secret: &str,
-        pow_challenge_lifetime: u64,
+        pow_challenge_lifetime: Duration,
         api_keys: &[ApiKey],
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());

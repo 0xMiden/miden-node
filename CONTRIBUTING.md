@@ -98,13 +98,13 @@ We use [semver](https://semver.org/) naming convention.
 
 ## Pre-PR checklist
 
-To make sure all commits adhere to our programming standards we use [pre-commit](https://pre-commit.com/) ([file](.pre-commit-config.yaml)) to run automatic commands on each commit. Please install it and follow the setup instructions for your machine.
+To make sure all commits adhere to our programming standards please follow the checklist:
 
 1. Repo forked and branch created from `next` according to the naming convention.
 2. Commit messages and code style follow conventions.
 3. Tests added for new functionality.
 4. Documentation/comments updated for all changes according to our documentation convention.
-5. Rustfmt, Clippy and Rustdoc linting passed (Will be run automatically by pre-commit).
+5. Spellchecking ([typos](https://github.com/crate-ci/typos/tree/master?tab=readme-ov-file#install)), Rustfmt, Clippy and Rustdoc linting passed (run with `make lint`).
 6. New branch rebased from `next`.
 
 &nbsp;

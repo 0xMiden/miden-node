@@ -125,7 +125,7 @@ impl Server {
             .unwrap();
         let account_rate_limiter = Arc::new(account_rate_limiter);
 
-        // TODO: We should move the rate limiter paramers to the config file or as env vars. The
+        // TODO: We should move the rate limiter parameters to the config file or as env vars. The
         // same goes for the other rate limiters in this function.
         let api_key_rate_limiter = GovernorConfigBuilder::default()
             .const_burst_size(3)

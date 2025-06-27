@@ -185,7 +185,7 @@ impl BlockProducer {
         task_result
             .map_err(|source| BlockProducerError::JoinError { task, source })
             .map(|(_, result)| match result {
-                Ok(_) => Err(BlockProducerError::TaskFailedSuccesfully { task }),
+                Ok(_) => Err(BlockProducerError::TaskFailedSuccessfully { task }),
                 Err(source) => Err(BlockProducerError::TonicTransportError { task, source }),
             })
             .and_then(|x| x)?

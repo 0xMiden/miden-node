@@ -15,7 +15,8 @@
 
 ### Changes
 
-- Made the maximum transactions per batch and batches per block configurable via CLI for block-producer and bundled node modes, and increased the transaction per batch limit to 8 (was 2) to allow higher throughput (#1015).
+- Transaction limit per batch is now configurable (default 8) (#1015).
+- Batch limit per block is now configurable (default 8) (#1015).
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
 - [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).

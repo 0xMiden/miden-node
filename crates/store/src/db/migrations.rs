@@ -6,7 +6,10 @@ use tracing::{debug, error, info, instrument};
 
 use crate::{
     COMPONENT,
-    db::{connection::Connection, settings::Settings, sql::utils::schema_version},
+    db::{
+        connection::Connection, settings::Settings, sql::utils::schema_version,
+        transaction::Transaction,
+    },
     errors::DatabaseError,
 };
 
@@ -24,7 +27,7 @@ const DB_MIGRATION_HASH_FIELD: &str = "db-migration-hash";
 const DB_SCHEMA_VERSION_FIELD: &str = "db-schema-version";
 
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
+pub fn apply_migrations(conn: &mut Transaction<'_>) -> super::Result<()> {
     let version_before = MIGRATIONS.current_version(conn)?;
 
     info!(target: COMPONENT, %version_before, "Running database migrations");

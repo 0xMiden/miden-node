@@ -687,7 +687,7 @@ pub fn insert_nullifiers_for_block(
 /// # Returns
 ///
 /// A vector with nullifiers and the block height at which they were created, or an error.
-pub fn select_all_nullifiers(transaction: &Transaction) -> Result<Vec<(Nullifier, BlockNumber)>> {
+pub fn select_all_nullifiers(transaction: &Transaction) -> Result<Vec<NullifierInfo>> {
     let mut stmt = transaction
         .prepare_cached("SELECT nullifier, block_num FROM nullifiers ORDER BY block_num ASC")?;
     let mut rows = stmt.query([])?;
@@ -696,8 +696,8 @@ pub fn select_all_nullifiers(transaction: &Transaction) -> Result<Vec<(Nullifier
     while let Some(row) = rows.next()? {
         let nullifier_data = row.get_ref(0)?.as_blob()?;
         let nullifier = Nullifier::read_from_bytes(nullifier_data)?;
-        let block_number = read_block_number(row, 1)?;
-        result.push((nullifier, block_number));
+        let block_num = read_block_number(row, 1)?;
+        result.push(NullifierInfo { nullifier, block_num });
     }
     Ok(result)
 }

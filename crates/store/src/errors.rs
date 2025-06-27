@@ -1,6 +1,7 @@
 use std::io;
 
 use deadpool::managed::PoolError;
+use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::{

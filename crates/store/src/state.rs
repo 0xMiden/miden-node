@@ -766,7 +766,7 @@ impl State {
                 "latest block num should exist and all blocks in set should be < than latest block",
             );
 
-        // Fetch witnesses for all acounts.
+        // Fetch witnesses for all accounts.
         let account_witnesses = account_ids
             .iter()
             .copied()

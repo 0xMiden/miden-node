@@ -244,7 +244,7 @@ pub enum GetBatchInputsError {
     SelectNoteInclusionProofError(#[source] DatabaseError),
     #[error("failed to select block headers")]
     SelectBlockHeaderError(#[source] DatabaseError),
-    #[error("set of blocks refernced by transactions is empty")]
+    #[error("set of blocks referenced by transactions is empty")]
     TransactionBlockReferencesEmpty,
     #[error(
         "highest block number {highest_block_num} referenced by a transaction is newer than the latest block {latest_block_num}"

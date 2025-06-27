@@ -260,7 +260,7 @@ message AccountStateHeader {
     repeated StorageSlotMapProof storage_maps = 4;
 }
 
-// Represents a single storage slot with the reuqested keys and their respective values.
+// Represents a single storage slot with the requested keys and their respective values.
 message StorageSlotMapProof {
     // The storage slot index ([0..255]).
     uint32 storage_slot = 1;

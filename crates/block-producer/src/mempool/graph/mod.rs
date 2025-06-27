@@ -170,7 +170,7 @@ impl<K: Ord + Copy + Display + Debug, V: Clone> DependencyGraph<K, V> {
         Ok(())
     }
 
-    /// Reverts the nodes __and their descendents__, requeueing them for processing.
+    /// Reverts the nodes __and their descendents__, requeuing them for processing.
     ///
     /// Descendents which are pending remain unchanged.
     ///

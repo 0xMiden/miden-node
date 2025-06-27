@@ -2,12 +2,12 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{DataDirectory, GenesisState, Store};
+use miden_node_store::{GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -19,8 +19,8 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use url::Url;
 
-use super::{ENV_DATA_DIRECTORY, ENV_STORE_URL, TelemetryConfig};
-use crate::system_monitor::SystemMonitor;
+use super::{ENV_DATA_DIRECTORY, ENV_STORE_URL};
+use crate::commands::ENV_ENABLE_OTEL;
 
 /// The default filepath for the genesis account.
 const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
@@ -52,8 +52,12 @@ pub enum StoreCommand {
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
 
-        #[command(flatten)]
-        telemetry: TelemetryConfig,
+        /// Enables the exporting of traces for OpenTelemetry.
+        ///
+        /// This can be further configured using environment variables as defined in the official
+        /// OpenTelemetry documentation. See our operator manual for further details.
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
+        enable_otel: bool,
     },
 }
 
@@ -64,37 +68,26 @@ impl StoreCommand {
             StoreCommand::Bootstrap { data_directory, accounts_directory } => {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
-            StoreCommand::Start { url, data_directory, telemetry } => {
-                Self::start(url, data_directory, telemetry.monitor_interval).await
+            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
+                Self::start(url, data_directory).await
             },
         }
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        if let Self::Start { telemetry, .. } = self {
-            telemetry.open_telemetry
+        if let Self::Start { enable_otel, .. } = self {
+            *enable_otel
         } else {
             false
         }
     }
 
-    async fn start(
-        url: Url,
-        data_directory: PathBuf,
-        monitor_interval: Duration,
-    ) -> anyhow::Result<()> {
+    async fn start(url: Url, data_directory: PathBuf) -> anyhow::Result<()> {
         let listener =
             url.to_socket().context("Failed to extract socket address from store URL")?;
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to store's gRPC URL")?;
-
-        // Start system monitor.
-        let data_dir =
-            DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        SystemMonitor::new(monitor_interval)
-            .with_store_metrics(data_dir)
-            .run_with_supervisor();
 
         Store { listener, data_directory }
             .serve()

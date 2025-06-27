@@ -3,9 +3,9 @@
 As outlined in the [Architecture](./architecture.md) chapter, the node consists of several components which can be run
 separately or as a single bundled process. At present, the recommended way to operate a node is in bundled mode and is
 what this guide will focus on. Operating the components separately is very similar and should be relatively
-straight-foward to derive from these instructions.
+straight-forward to derive from these instructions.
 
-This guide focusses on basic usage. To discover more advanced options we recommend exploring the various help menus
+This guide focuses on basic usage. To discover more advanced options we recommend exploring the various help menus
 which can be accessed by appending `--help` to any of the commands.
 
 ## Bootstrapping

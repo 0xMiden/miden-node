@@ -2431,6 +2431,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rand 0.9.1",
  "serde",
+ "thiserror 2.0.12",
  "tokio",
  "tonic",
  "tower-http",
@@ -2495,6 +2496,7 @@ dependencies = [
 name = "miden-proving-service"
 version = "0.10.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "axum",
  "bytes",

@@ -24,9 +24,6 @@ pub mod proving_service;
 
 #[derive(Debug, Error)]
 pub enum RemoteProverError {
-    /// Indicates that the provided gRPC server endpoint is invalid.
-    #[error("invalid uri {0}")]
-    InvalidEndpoint(String),
     #[error("failed to connect to prover {0}")]
     /// Indicates that the connection to the server failed.
     ConnectionFailed(#[source] Box<dyn CoreError + Send + Sync + 'static>),

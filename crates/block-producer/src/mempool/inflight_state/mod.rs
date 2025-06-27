@@ -363,6 +363,7 @@ impl OutputNoteState {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use miden_node_utils::ErrorReport;
     use miden_objects::Digest;
 
     use super::*;
@@ -630,7 +631,10 @@ mod tests {
             let mut reverted = InflightState::new(BlockNumber::default(), 1, 0u32);
             for (idx, tx) in txs.iter().enumerate() {
                 reverted.add_transaction(tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
             reverted.revert_transactions(
@@ -640,7 +644,10 @@ mod tests {
             let mut inserted = InflightState::new(BlockNumber::default(), 1, 0u32);
             for (idx, tx) in txs.iter().rev().skip(i).rev().enumerate() {
                 inserted.add_transaction(tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
 
@@ -684,7 +691,10 @@ mod tests {
             let mut committed = InflightState::new(BlockNumber::default(), 0, 0u32);
             for (idx, tx) in txs.iter().enumerate() {
                 committed.add_transaction(tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
             committed.commit_block(txs.iter().take(i).map(AuthenticatedTransaction::id));
@@ -694,7 +704,10 @@ mod tests {
                 // We need to adjust the height since we are effectively at block "1" now.
                 let tx = tx.clone().with_authentication_height(1.into());
                 inserted.add_transaction(&tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
 

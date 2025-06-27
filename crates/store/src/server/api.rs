@@ -6,6 +6,7 @@ use miden_node_proto::{
         self, requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
     },
 };
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     account::AccountId,
     block::BlockNumber,
@@ -66,7 +67,9 @@ pub fn read_account_id(
 ) -> Result<AccountId, Box<Status>> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
-        .map_err(|err| invalid_argument(format!("invalid account ID: {err}")).into())
+        .map_err(|err: ConversionError| {
+            invalid_argument(err.as_report_context("invalid account ID")).into()
+        })
 }
 
 #[allow(clippy::result_large_err)]

@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use miden_node_proto::{
+    errors::ConversionError,
     generated::{
         block_producer::api_client as block_producer_client,
         requests::{
@@ -21,7 +22,7 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_node_utils::{ErrorReport, tracing::grpc::OtelInterceptor};
 use miden_objects::{
     Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
     account::{AccountId, delta::AccountUpdateDetails},
@@ -193,8 +194,9 @@ impl api_server::Api for RpcService {
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().note_ids.clone();
 
-        let _: Vec<RpoDigest> = try_convert(note_ids)
-            .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
+        let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err: ConversionError| {
+            Status::invalid_argument(err.as_report_context("Invalid NoteId"))
+        })?;
 
         self.store.clone().get_notes_by_id(request).await
     }
@@ -214,8 +216,9 @@ impl api_server::Api for RpcService {
 
         let request = request.into_inner();
 
-        let tx = ProvenTransaction::read_from_bytes(&request.transaction)
-            .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
+        let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("Invalid transaction"))
+        })?;
 
         // Only allow deployment transactions for new network accounts
         if tx.account_id().is_network()
@@ -229,7 +232,11 @@ impl api_server::Api for RpcService {
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
 
         tx_verifier.verify(&tx).map_err(|err| {
-            Status::invalid_argument(format!("Invalid proof for transaction {}: {err}", tx.id()))
+            Status::invalid_argument(format!(
+                "Invalid proof for transaction {}: {}",
+                tx.id(),
+                err.as_report()
+            ))
         })?;
 
         block_producer.clone().submit_proven_transaction(request).await

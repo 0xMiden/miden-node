@@ -161,14 +161,19 @@ impl NoteRecord {
 
 impl From<NoteRecord> for proto::CommittedNote {
     fn from(note: NoteRecord) -> Self {
-        Self {
-            block_num: note.block_num.as_u32(),
-            note_index: note.note_index.leaf_index_value().into(),
+        let inclusion_proof = Some(proto::NoteInclusionInBlockProof {
             note_id: Some(note.note_id.into()),
-            metadata: Some(note.metadata.into()),
+            block_num: note.block_num.as_u32(),
+            note_index_in_block: note.note_index.leaf_index_value().into(),
             merkle_path: Some(Into::into(&note.merkle_path)),
-            details: note.details.as_ref().map(Serializable::to_bytes),
-        }
+        });
+
+        let note = Some(proto::Note {
+            metadata: Some(note.metadata.into()),
+            details: note.details.map(|details| details.to_bytes()),
+        });
+
+        Self { inclusion_proof, note }
     }
 }
 

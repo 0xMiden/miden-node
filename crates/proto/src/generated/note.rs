@@ -27,24 +27,12 @@ pub struct NoteMetadata {
 /// A committed note is a note that has been included in a block.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommittedNote {
-    /// The block number in which the note was created.
-    #[prost(fixed32, tag = "1")]
-    pub block_num: u32,
-    /// The index of the note in the block.
-    #[prost(uint32, tag = "2")]
-    pub note_index: u32,
-    /// The ID of the note.
-    #[prost(message, optional, tag = "3")]
-    pub note_id: ::core::option::Option<super::digest::Digest>,
-    /// The note's metadata.
-    #[prost(message, optional, tag = "4")]
-    pub metadata: ::core::option::Option<NoteMetadata>,
-    /// The note's inclusion proof in the block.
-    #[prost(message, optional, tag = "5")]
-    pub merkle_path: ::core::option::Option<super::merkle::MerklePath>,
-    /// Serialized details of the public note (empty for private notes).
-    #[prost(bytes = "vec", optional, tag = "6")]
-    pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+    /// The note's inclusion proof and data.
+    #[prost(message, optional, tag = "1")]
+    pub inclusion_proof: ::core::option::Option<NoteInclusionInBlockProof>,
+    /// The note.
+    #[prost(message, optional, tag = "2")]
+    pub note: ::core::option::Option<Note>,
 }
 /// Represents a note.
 ///
@@ -55,8 +43,8 @@ pub struct Note {
     #[prost(message, optional, tag = "1")]
     pub metadata: ::core::option::Option<NoteMetadata>,
     /// Serialized note details (i.e., assets and recipient).
-    #[prost(bytes = "vec", tag = "2")]
-    pub details: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", optional, tag = "2")]
+    pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// Represents a proof of note's inclusion in a block.
 ///

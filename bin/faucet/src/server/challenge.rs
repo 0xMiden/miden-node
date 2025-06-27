@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use miden_objects::{
     account::AccountId,
     utils::{Deserializable, Serializable},
@@ -9,11 +11,6 @@ use sha3::{Digest, Sha3_256};
 
 use super::get_tokens::MintRequestError;
 use crate::server::ApiKey;
-
-/// The lifetime of a challenge.
-///
-/// A challenge is valid if it is within `CHALLENGE_LIFETIME_SECONDS` seconds of the current time.
-pub(crate) const CHALLENGE_LIFETIME_SECONDS: u64 = 30;
 
 /// The size of the encoded challenge in bytes.
 const CHALLENGE_ENCODED_SIZE: usize = 119;
@@ -140,9 +137,9 @@ impl Challenge {
     ///
     /// # Arguments
     /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
-    pub fn is_expired(&self, current_time: u64) -> bool {
+    pub fn is_expired(&self, current_time: u64, challenge_lifetime: Duration) -> bool {
         let diff = current_time.checked_sub(self.timestamp).unwrap_or(u64::MAX);
-        diff > CHALLENGE_LIFETIME_SECONDS
+        diff > challenge_lifetime.as_secs()
     }
 
     /// Computes the signature for a challenge.
@@ -228,14 +225,15 @@ mod tests {
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
+        let challenge_lifetime = Duration::from_secs(30);
 
         // Valid timestamp (current time)
         let challenge = Challenge::new(12, 1, current_time, account_id, api_key.clone(), secret);
-        assert!(!challenge.is_expired(current_time));
+        assert!(!challenge.is_expired(current_time, challenge_lifetime));
 
         // Expired timestamp (too old)
-        let old_timestamp = current_time - CHALLENGE_LIFETIME_SECONDS - 10;
+        let old_timestamp = current_time - challenge_lifetime.as_secs() - 10;
         let challenge = Challenge::new(12, 1, old_timestamp, account_id, api_key, secret);
-        assert!(challenge.is_expired(current_time));
+        assert!(challenge.is_expired(current_time, challenge_lifetime));
     }
 }

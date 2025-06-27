@@ -43,6 +43,7 @@ const ENV_ACCOUNT_PATH: &str = "MIDEN_FAUCET_ACCOUNT_PATH";
 const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
+const ENV_POW_CHALLENGE_LIFETIME: &str = "MIDEN_FAUCET_POW_CHALLENGE_LIFETIME";
 const ENV_POW_REQUESTS_PER_DIFFICULTY_LEVEL: &str =
     "MIDEN_FAUCET_POW_REQUESTS_PER_DIFFICULTY_LEVEL";
 const ENV_POW_INITIAL_TARGET_SHIFT: &str = "MIDEN_FAUCET_POW_INITIAL_TARGET_SHIFT";
@@ -97,6 +98,12 @@ pub enum Command {
         /// The secret to be used by the server to generate the `PoW` seed.
         #[arg(long = "pow-secret", value_name = "STRING", env = ENV_POW_SECRET)]
         pow_secret: Option<String>,
+
+        /// The duration during which the `PoW` challenges are valid. Changing this will affect the
+        /// rate limiting, since it works by rejecting new submissions while the previous submitted
+        /// challenge is still valid.
+        #[arg(long = "pow-challenge-lifetime", value_name = "DURATION", env = ENV_POW_CHALLENGE_LIFETIME, default_value = "30s", value_parser = humantime::parse_duration)]
+        pow_challenge_lifetime: Duration,
 
         /// The number of simultaneous active requests needed to increase the `PoW` challenges
         /// difficulty by 1.
@@ -185,6 +192,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             remote_tx_prover_url,
             asset_amounts,
             pow_secret,
+            pow_challenge_lifetime,
             pow_requests_per_difficulty_level,
             pow_initial_target_shift,
             api_keys,
@@ -220,6 +228,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 asset_options,
                 tx_requests,
                 pow_secret.unwrap_or_default().as_str(),
+                pow_challenge_lifetime,
                 pow_requests_per_difficulty_level,
                 pow_initial_target_shift,
                 &api_keys,
@@ -495,6 +504,7 @@ mod test {
                         asset_amounts: vec![100, 500, 1000],
                         api_keys: vec![],
                         pow_secret: None,
+                        pow_challenge_lifetime: Duration::from_secs(30),
                         pow_requests_per_difficulty_level: NonZeroUsize::new(1).unwrap(),
                         pow_initial_target_shift: 0,
                         faucet_account_path: faucet_account_path.clone(),

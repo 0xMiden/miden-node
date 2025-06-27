@@ -2,7 +2,7 @@ use std::{
     collections::HashSet,
     convert::Infallible,
     num::NonZeroUsize,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
@@ -59,6 +59,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_secret: &str,
+        pow_challenge_lifetime: Duration,
         pow_requests_per_difficulty_level: NonZeroUsize,
         pow_initial_target_shift: u8,
         api_keys: &[ApiKey],
@@ -76,8 +77,12 @@ impl Server {
         hasher.update(pow_secret.as_bytes());
         let secret_bytes: [u8; 32] = hasher.finalize().into();
 
-        let pow =
-            PoW::new(secret_bytes, pow_requests_per_difficulty_level, pow_initial_target_shift);
+        let pow = PoW::new(
+            secret_bytes,
+            pow_challenge_lifetime,
+            pow_requests_per_difficulty_level,
+            pow_initial_target_shift,
+        );
 
         Server {
             mint_state,

@@ -25,7 +25,8 @@
 - Exposed `miden-proving-service` as a library (#956).
 - [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
 - Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
-- Added configurable `PoW` difficulty for the faucet (#924).
+- Faucet challenge expiration time is now configurable (#1017).
+- Faucet `PoW` difficulty is now configurable (#924).
 - Removed system monitor from node binary (#1019).
 - [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).
 

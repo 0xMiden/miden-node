@@ -13,6 +13,7 @@
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 - Added configurable network id for the faucet (#1016).
 - Support gRPC server relection `v1alpha` (#1036).
+- Added option to specify genesis state for testnets via a toml config (#1000)
 
 ### Changes
 

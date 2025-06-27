@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-#![allow(clippy::from_iter_instead_of_collect)]
-
 //! Describe a subset of the genesis manifest in easily human readable format
 
 use std::collections::HashMap;
@@ -12,7 +9,6 @@ use miden_lib::{
         faucets::{BasicFungibleFaucet, FungibleFaucetError},
         wallets::create_basic_wallet,
     },
-    utils::{self},
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
@@ -34,14 +30,14 @@ mod tests;
 
 /// Represents an account, either a wallet or a faucet
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum AccountRepr {
-    Wallet(WalletRepr),
-    Faucet(FaucetRepr),
+pub enum AccountConfig {
+    Wallet(WalletConfig),
+    Faucet(FaucetConfig),
 }
 
 /// Represents a wallet, containing a set of assets
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WalletRepr {
+pub struct WalletConfig {
     #[serde(default)]
     can_be_updated: bool,
     #[serde(default)]
@@ -56,7 +52,7 @@ const fn ja() -> bool {
 
 /// Represents a faucet with asset specific properties
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FaucetRepr {
+pub struct FaucetConfig {
     // TODO eventually directly parse to `TokenSymbol`
     symbol: String,
     decimals: u8,
@@ -99,23 +95,25 @@ pub enum AssetKind {
     NonFungible,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct AssetEntry {
+    symbol: String, // TODO move to a wrapper around `TokenSymbol`
+    amount: u64,    // TODO we might want to provide `humantime`-like denominations
+}
+
 #[allow(missing_docs, reason = "Error variants must be descriptive by themselves")]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error(transparent)]
     Toml(#[from] toml::de::Error),
-    #[error("Failed to load library source from path")]
-    LibraryReference(#[source] std::io::Error),
-    #[error("Failed to and deserialize library, assuming it uses `Deserializable` file format")]
-    LibraryOnDiskFormat(#[source] utils::DeserializationError),
     #[error("Account translation from config to state failed")]
     Account(#[from] AccountError),
     #[error("Asset translation from config to state failed")]
     Asset(#[from] AssetError),
     #[error("Applying assets to account failed")]
     AccountDelta(#[from] miden_objects::AccountDeltaError),
-    #[error("You defined an asset {symbol} that has no faucet producing it")]
-    MissingFaucetDefinition { symbol: String },
+    #[error("You defined an asset {symbol:?} that has no faucet producing it")]
+    MissingFaucetDefinition { symbol: TokenSymbol },
     #[error(transparent)]
     TokenSymbol(#[from] TokenSymbolError),
     #[error("The provided max supply {max_supply} exceeds the field modulus {modulus}")]
@@ -146,8 +144,8 @@ pub struct TestSecrets {
 pub struct TestGenesisConfig {
     version: u32,
     timestamp: u32,
-    account: Vec<WalletRepr>,
-    faucet: Vec<FaucetRepr>,
+    wallet: Vec<WalletConfig>,
+    faucet: Vec<FaucetConfig>,
 }
 
 impl TestGenesisConfig {
@@ -166,7 +164,7 @@ impl TestGenesisConfig {
     pub fn into_state(self) -> Result<(GenesisState, TestSecrets), Error> {
         let version = self.version;
         let timestamp = self.timestamp;
-        let repr_accounts = self.account;
+        let repr_accounts = self.wallet;
         let repr_faucets = self.faucet;
         let mut all_accounts = Vec::new();
 
@@ -177,8 +175,8 @@ impl TestGenesisConfig {
         // accounts/sign transactions
         let mut secrets = Vec::<(AccountType, AccountId, SecretKey)>::new();
 
-        // first setup all the faucets
-        for FaucetRepr {
+        // First setup all the faucets
+        for FaucetConfig {
             symbol,
             decimals,
             max_supply,
@@ -214,7 +212,7 @@ impl TestGenesisConfig {
 
             let account_storage_mode = storage_mode.into();
 
-            // similar to `fn create_basic_fungible_faucet`, but we need to cover more cases
+            // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases
             let (faucet_account, _faucet_account_seed) = AccountBuilder::new(init_seed)
                 .account_type(account_type)
                 .storage_mode(account_storage_mode)
@@ -230,7 +228,7 @@ impl TestGenesisConfig {
         }
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
-        for WalletRepr { can_be_updated, storage_mode, assets } in repr_accounts {
+        for WalletConfig { can_be_updated, storage_mode, assets } in repr_accounts {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret.public_key() };
@@ -238,10 +236,10 @@ impl TestGenesisConfig {
 
             let assets = Result::<Vec<_>, Error>::from_iter(assets.into_iter().map(
                 |AssetEntry { amount, symbol }: AssetEntry| {
-                    let _ = TokenSymbol::new(&symbol)?;
+                    let token_symbol = TokenSymbol::new(&symbol)?;
                     let faucet_id = faucets
                         .get(&symbol)
-                        .ok_or_else(|| Error::MissingFaucetDefinition { symbol: symbol.clone() })?;
+                        .ok_or_else(|| Error::MissingFaucetDefinition { symbol: token_symbol })?;
                     // FIXME TODO add non funcgible assets
                     Ok(Asset::Fungible(FungibleAsset::new(*faucet_id, amount)?))
                 },
@@ -277,10 +275,4 @@ impl TestGenesisConfig {
             TestSecrets { secrets },
         ))
     }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct AssetEntry {
-    symbol: String, // TODO move to a wrapper around `TokenSymbol`
-    amount: u64,    // TODO we might want to provide `humantime`-like denominations
 }

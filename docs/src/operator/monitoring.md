@@ -117,7 +117,7 @@ The verbosity can also be specified by component (when running them as a single 
 export RUST_LOG=warn,block-producer=debug,rpc=error
 ```
 
-The above would set the general level to `warn`, and the `block-producer` and `rpc` components would be overriden to
+The above would set the general level to `warn`, and the `block-producer` and `rpc` components would be overridden to
 `debug` and `error` respectively. Though as mentioned, it should be unusual to do this.
 
 ## Configuration

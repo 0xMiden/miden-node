@@ -1,16 +1,10 @@
-use std::{
-    convert::Infallible,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::convert::Infallible;
 
 use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::{
-        Sse,
+        IntoResponse, Response, Sse,
         sse::{Event, KeepAlive},
     },
 };
@@ -21,10 +15,11 @@ use tokio::sync::mpsc::{self, error::TrySendError};
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::{error, instrument};
 
-use super::{Server, pow::PowParameters};
+use super::Server;
 use crate::{
     COMPONENT,
     faucet::MintRequest,
+    server::ApiKey,
     types::{AssetOptions, NoteType},
 };
 
@@ -50,16 +45,13 @@ pub struct RawMintRequest {
     pub account_id: String,
     pub is_private_note: bool,
     pub asset_amount: u64,
-    pub pow_seed: Option<String>,
-    pub pow_solution: Option<u64>,
-    pub pow_difficulty: Option<usize>,
-    pub server_signature: Option<String>,
-    pub server_timestamp: Option<u64>,
+    pub challenge: Option<String>,
+    pub nonce: Option<u64>,
     pub api_key: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum InvalidRequest {
+pub enum MintRequestError {
     #[error("account ID failed to parse")]
     AccountId(#[source] AccountIdError),
     #[error("asset amount {0} is not one of the provided options")]
@@ -76,10 +68,12 @@ pub enum InvalidRequest {
     ExpiredServerTimestamp(u64, u64),
     #[error("challenge already used")]
     ChallengeAlreadyUsed,
+    #[error("account is rate limited")]
+    RateLimited,
 }
 
 pub enum GetTokenError {
-    InvalidRequest(InvalidRequest),
+    InvalidRequest(MintRequestError),
     FaucetOverloaded,
     FaucetClosed,
 }
@@ -133,6 +127,13 @@ impl GetTokenError {
     }
 }
 
+impl IntoResponse for GetTokenError {
+    fn into_response(self) -> Response {
+        self.trace();
+        (self.status_code(), self.user_facing_error()).into_response()
+    }
+}
+
 impl RawMintRequest {
     /// Further validates a raw request, turning it into a valid [`MintRequest`] which can be
     /// submitted to the faucet client.
@@ -143,13 +144,12 @@ impl RawMintRequest {
     ///   - the account ID is not a valid hex string
     ///   - the asset amount is not one of the provided options
     ///   - the API key is invalid
-    ///   - the `PoW` parameters are missing
-    ///   - the `PoW` solution is invalid
-    ///   - the `PoW` server signature does not match
-    ///   - the `PoW` server timestamp is expired
-    ///   - the `PoW` challenge is invalid or expired
-    #[instrument(target = COMPONENT, name = "faucet.server.validate", skip_all)]
-    fn validate(self, server: &Server) -> Result<MintRequest, InvalidRequest> {
+    ///   - the challenge is missing or invalid
+    ///   - the nonce is missing or doesn't solve the challenge
+    ///   - the challenge timestamp is expired
+    ///   - the challenge has already been used
+    #[instrument(level = "debug", target = COMPONENT, name = "faucet.server.validate", skip_all)]
+    fn validate(self, server: &Server) -> Result<MintRequest, MintRequestError> {
         let note_type = if self.is_private_note {
             NoteType::Private
         } else {
@@ -161,53 +161,29 @@ impl RawMintRequest {
         } else {
             AccountId::from_bech32(&self.account_id).map(|(_, account_id)| account_id)
         }
-        .map_err(InvalidRequest::AccountId)?;
+        .map_err(MintRequestError::AccountId)?;
 
         let asset_amount = server
             .mint_state
             .asset_options
             .validate(self.asset_amount)
-            .ok_or(InvalidRequest::AssetAmount(self.asset_amount))?;
+            .ok_or(MintRequestError::AssetAmount(self.asset_amount))?;
 
         // Check the API key, if provided
-        if let Some(api_key) = &self.api_key {
-            if server.api_keys.contains(api_key) {
-                // If the API key is valid, we skip the PoW check
-                return Ok(MintRequest { account_id, note_type, asset_amount });
+        let api_key = self.api_key.as_deref().map(ApiKey::decode).transpose()?;
+        if let Some(api_key) = &api_key {
+            if !server.api_keys.contains(api_key) {
+                return Err(MintRequestError::InvalidApiKey(api_key.encode()));
             }
-            return Err(InvalidRequest::InvalidApiKey(api_key.clone()));
         }
 
-        if let Ok(pow_parameters) = PowParameters::try_from(&self) {
-            pow_parameters.check_pow_solution(&server.pow.challenge_cache)?;
-            pow_parameters.check_server_timestamp()?;
-            pow_parameters.check_server_signature(&server.pow.salt)?;
-        } else {
-            return Err(InvalidRequest::MissingPowParameters);
-        }
+        // Validate Challenge and nonce
+        let challenge_str = self.challenge.ok_or(MintRequestError::MissingPowParameters)?;
+        let nonce = self.nonce.ok_or(MintRequestError::MissingPowParameters)?;
+
+        server.submit_challenge(&challenge_str, nonce, account_id, &api_key.unwrap_or_default())?;
 
         Ok(MintRequest { account_id, note_type, asset_amount })
-    }
-}
-
-/// Guard that automatically tracks the lifecycle of an active request.
-///
-/// An "active request" represents any request currently being handled by the system,
-/// whether it's being validated, queued, or processed.
-struct ActiveRequestGuard {
-    active_count: Arc<AtomicUsize>,
-}
-
-impl ActiveRequestGuard {
-    fn new(active_count: &Arc<AtomicUsize>) -> Self {
-        active_count.fetch_add(1, Ordering::Relaxed);
-        Self { active_count: active_count.clone() }
-    }
-}
-
-impl Drop for ActiveRequestGuard {
-    fn drop(&mut self) {
-        self.active_count.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
@@ -223,12 +199,6 @@ pub async fn get_tokens(
     State(server): State<Server>,
     Query(request): Query<RawMintRequest>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
-    // Track this as an active request for the entire duration
-    let _active_guard = ActiveRequestGuard::new(&server.active_requests);
-
-    let current_active_requests = server.active_requests.load(Ordering::Relaxed);
-    server.pow.adjust_difficulty(current_active_requests);
-
     // Response channel with buffer size 5 since there are currently 5 possible updates
     let (tx_result_notifier, rx_result) = mpsc::channel(5);
 
@@ -253,91 +223,10 @@ pub async fn get_tokens(
         .err();
 
     if let Some(error) = mint_error {
+        // SAFETY: the channel is not closed because we just created it.
         tx_result_notifier.send(Ok(error.into_event())).await.unwrap();
     }
 
     let stream = ReceiverStream::new(rx_result);
     Sse::new(stream).keep_alive(KeepAlive::default())
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    };
-
-    use super::*;
-
-    #[test]
-    fn test_active_request_guard_increments_on_creation() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-
-        let _guard = ActiveRequestGuard::new(&active_count);
-        assert_eq!(active_count.load(Ordering::Relaxed), 1);
-    }
-
-    #[test]
-    fn test_active_request_guard_decrements_on_drop() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        {
-            let _guard = ActiveRequestGuard::new(&active_count);
-            assert_eq!(active_count.load(Ordering::Relaxed), 1);
-        } // Guard dropped here
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn test_multiple_active_request_guards() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        let guard1 = ActiveRequestGuard::new(&active_count);
-        assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-        let guard2 = ActiveRequestGuard::new(&active_count);
-        assert_eq!(active_count.load(Ordering::Relaxed), 2);
-
-        let guard3 = ActiveRequestGuard::new(&active_count);
-        assert_eq!(active_count.load(Ordering::Relaxed), 3);
-
-        drop(guard2);
-        assert_eq!(active_count.load(Ordering::Relaxed), 2);
-
-        drop(guard1);
-        assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-        drop(guard3);
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-    }
-
-    #[test]
-    fn test_active_request_guard_behavior_on_error_scenarios() {
-        let active_count = Arc::new(AtomicUsize::new(0));
-
-        // Simulate validation error - active guard created
-        {
-            let _active_guard = ActiveRequestGuard::new(&active_count);
-            assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-            // Validation fails, request doesn't proceed
-            // Guard will be dropped when going out of scope
-        }
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-
-        // Simulate queue full error - active guard created
-        {
-            let _active_guard = ActiveRequestGuard::new(&active_count);
-            assert_eq!(active_count.load(Ordering::Relaxed), 1);
-
-            // Queue is full, request doesn't proceed
-            // Guard will be dropped when going out of scope
-        }
-
-        assert_eq!(active_count.load(Ordering::Relaxed), 0);
-    }
 }

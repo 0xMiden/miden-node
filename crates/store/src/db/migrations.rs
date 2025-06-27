@@ -23,7 +23,7 @@ fn up(s: &'static str) -> M<'static> {
 const DB_MIGRATION_HASH_FIELD: &str = "db-migration-hash";
 const DB_SCHEMA_VERSION_FIELD: &str = "db-schema-version";
 
-#[instrument(target = COMPONENT, skip_all, err)]
+#[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 pub fn apply_migrations(conn: &mut Connection) -> super::Result<()> {
     let version_before = MIGRATIONS.current_version(conn)?;
 
@@ -113,17 +113,29 @@ fn compute_migration_hashes() -> Vec<Hash> {
         .collect()
 }
 
+// Strips new lines, whitespaces and comments.
 fn preprocess_sql(sql: &str) -> String {
-    // TODO: We can also remove all comments here (need to analyze the SQL script in order to remove
-    //       comments in string literals).
-    remove_spaces(sql)
+    sql.lines()
+        .map(|line| line.split_once("--").unwrap_or((line, "")).0)
+        .flat_map(|line| line.chars())
+        .filter(|c| !c.is_whitespace())
+        .collect()
 }
 
-fn remove_spaces(str: &str) -> String {
-    str.chars().filter(|chr| !chr.is_whitespace()).collect()
-}
+#[cfg(test)]
+mod tests {
+    use crate::db::migrations::{MIGRATIONS, preprocess_sql};
 
-#[test]
-fn migrations_validate() {
-    assert_eq!(MIGRATIONS.validate(), Ok(()));
+    #[test]
+    fn migrations_validate() {
+        assert_eq!(MIGRATIONS.validate(), Ok(()));
+    }
+
+    #[test]
+    fn preprocess_sql_strips_unwanted_chars() {
+        let whitespaces = "SELECT 1 FROM foo";
+        assert_eq!(preprocess_sql(whitespaces), "SELECT1FROMfoo");
+        let comments_and_new_lines = "SELECT 1; -- Comment\n-- Another comment\nSELECT 2";
+        assert_eq!(preprocess_sql(comments_and_new_lines), "SELECT1;SELECT2");
+    }
 }

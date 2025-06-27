@@ -8,6 +8,7 @@ use miden_node_proto::{
     domain::{account::NetworkAccountError, note::NetworkNote},
     generated::ntx_builder::api_server,
 };
+use miden_node_proto_build::ntx_builder_api_descriptor;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     AccountError, TransactionInputError,
@@ -108,16 +109,22 @@ impl NetworkTransactionBuilder {
         }
     }
 
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.serve_once", skip_all, err)]
     pub async fn serve_once(&self) -> anyhow::Result<()> {
         let store = StoreClient::new(&self.store_url);
         let unconsumed = store.get_unconsumed_network_notes().await?;
         let notes_queue = Arc::new(Mutex::new(PendingNotes::new(unconsumed)));
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(ntx_builder_api_descriptor())
+            .build_v1()
+            .context("failed to build reflection service")?;
 
         let listener = TcpListener::bind(self.ntx_builder_address).await?;
         let server = tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc())
             .add_service(api_server::ApiServer::new(NtxBuilderApi::new(notes_queue.clone())))
+            .add_service(reflection_service)
             .serve_with_incoming(TcpListenerStream::new(listener));
         tokio::pin!(server);
 
@@ -163,7 +170,7 @@ impl NetworkTransactionBuilder {
                 info!(target: COMPONENT, "Spawned NTB ticker (ticks every {} ms)", &ticker_interval.as_millis());
                 let store = StoreClient::new(&store_url);
                 let data_store = Arc::new(NtxBuilderDataStore::new(store).await?);
-                let tx_executor = TransactionExecutor::new(data_store.clone(), None);
+                let tx_executor = TransactionExecutor::new(data_store.as_ref(), None);
                 let tx_prover = NtbTransactionProver::from(prover_addr);
                 let block_prod = BlockProducerClient::new(block_addr);
 
@@ -216,7 +223,7 @@ impl NetworkTransactionBuilder {
     ///   logged and the transaction gets rolled back.
     async fn build_network_tx(
         api_state: &SharedPendingNotes,
-        tx_executor: &TransactionExecutor,
+        tx_executor: &TransactionExecutor<'_, '_>,
         data_store: &Arc<NtxBuilderDataStore>,
         tx_prover: &NtbTransactionProver,
         block_prod: &BlockProducerClient,
@@ -279,7 +286,7 @@ impl NetworkTransactionBuilder {
         };
 
         let span = info_span!("ntx_builder.select_next_batch");
-        span.set_attribute("ntx.tag", tag.inner());
+        span.set_attribute("ntx.tag", tag.as_u32());
 
         let block_num = Self::prepare_blockchain_data(data_store).await?;
         let account_id = Self::get_account_for_ntx(data_store, tag).await?;
@@ -320,7 +327,7 @@ impl NetworkTransactionBuilder {
     #[instrument(target = COMPONENT, name = "ntx_builder.filter_consumable_notes", skip_all, err)]
     async fn filter_consumable_notes(
         data_store: &Arc<NtxBuilderDataStore>,
-        tx_executor: &TransactionExecutor,
+        tx_executor: &TransactionExecutor<'_, '_>,
         tx_request: &NetworkTransactionRequest,
     ) -> Result<NetworkTransactionRequest, NtxBuilderError> {
         let input_notes = InputNotes::new(
@@ -384,7 +391,7 @@ impl NetworkTransactionBuilder {
     /// Executes the transaction with the account described by the request.
     #[instrument(target = COMPONENT, name = "ntx_builder.execute_transaction", skip_all, err)]
     async fn execute_transaction(
-        tx_executor: &TransactionExecutor,
+        tx_executor: &TransactionExecutor<'_, '_>,
         tx_request: NetworkTransactionRequest,
     ) -> Result<ExecutedTransaction, NtxBuilderError> {
         let input_notes = InputNotes::new(

@@ -604,7 +604,7 @@ mod tests {
         // Reverting txs should be equivalent to them never being inserted.
         //
         // We test this by reverting some txs and equating it to the remaining set.
-        // This is a form of proprty test.
+        // This is a form of property test.
         let states = (1u8..=5).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
         let txs = vec![
             MockProvenTxBuilder::with_account(mock_account_id(1), states[0], states[1]),
@@ -679,7 +679,7 @@ mod tests {
             // Insert all txs and then commit and prune the first `i` of them.
             //
             // This should match only inserting the final `N-i` transactions.
-            // Note: we force all committed state to immedietely be pruned by setting
+            // Note: we force all committed state to immediately be pruned by setting
             // it to zero.
             let mut committed = InflightState::new(BlockNumber::default(), 0, 0u32);
             for (idx, tx) in txs.iter().enumerate() {

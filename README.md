@@ -5,7 +5,7 @@
 [![RUST_VERSION](https://img.shields.io/badge/rustc-1.85+-lightgray.svg)](https://www.rust-lang.org/tools/install)
 [![crates.io](https://img.shields.io/crates/v/miden-node)](https://crates.io/crates/miden-node)
 
-Welcome to the Polygon Miden node implementation :) This software is used to operate a Miden ZK-rollup network by
+Welcome to the Miden node implementation :) This software is used to operate a Miden ZK-rollup network by
 receiving transactions and sequencing them into blocks.
 
 Access to the network is provided via a gRPC interface which can be found [here](./proto/readme.md).

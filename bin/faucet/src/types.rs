@@ -53,7 +53,7 @@ impl AssetOptions {
 ///
 /// Can only be created via [`AssetOptions`].
 ///
-/// A [`FungibleAsset`] has a maximum representible amount
+/// A [`FungibleAsset`] has a maximum representable amount
 /// and this type guarantees that its value is within this range.
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize)]
 pub struct AssetAmount(u64);
@@ -65,7 +65,7 @@ impl std::fmt::Display for AssetAmount {
 }
 
 impl AssetAmount {
-    /// The absolute maximum asset ammount allowed by the network.
+    /// The absolute maximum asset amount allowed by the network.
     ///
     /// An [`AssetAmount`] is further restricted to the values allowed by
     /// [`AssetOptions`].

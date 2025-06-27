@@ -6,7 +6,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY . .
+COPY ./Cargo.toml .
+COPY ./Cargo.lock .
+COPY ./bin ./bin
+COPY ./crates ./crates
+COPY ./proto ./proto
 
 RUN cargo install --path bin/node --locked
 RUN rm -rf data accounts && mkdir data accounts
@@ -26,11 +30,11 @@ COPY --from=builder /app/accounts accounts
 COPY --from=builder /app/data data
 COPY --from=builder /usr/local/cargo/bin/miden-node /usr/local/bin/miden-node
 
-LABEL org.opencontainers.image.authors=miden@polygon.io \
-    org.opencontainers.image.url=https://0xpolygonmiden.github.io/ \
+LABEL org.opencontainers.image.authors=devops@miden.team \
+    org.opencontainers.image.url=https://0xMiden.github.io/ \
     org.opencontainers.image.documentation=https://github.com/0xMiden/miden-node \
     org.opencontainers.image.source=https://github.com/0xMiden/miden-node \
-    org.opencontainers.image.vendor=Polygon \
+    org.opencontainers.image.vendor=Miden \
     org.opencontainers.image.licenses=MIT
 
 ARG CREATED

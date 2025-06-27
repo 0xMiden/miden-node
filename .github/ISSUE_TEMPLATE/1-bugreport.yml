@@ -1,7 +1,6 @@
 name: "Bug Report"
 description: "File a bug report"
-title: "[Bug]: "
-labels: ["bug"]
+type: "Bug"
 body:
   - type: markdown
     attributes:
@@ -12,7 +11,7 @@ body:
     attributes:
       label: "Version"
       description: "Which node version are you running?"
-      placeholder: "v0.2.0"
+      placeholder: "v0.9.0"
     validations:
       required: true
   - type: textarea
@@ -20,7 +19,7 @@ body:
     attributes:
       label: "Other packages versions"
       description: "Let us know of the versions of any other packages used. For example, which version of the client are you using?"
-      placeholder: "miden-client: v0.2.0"
+      placeholder: "miden-client: v0.9.0"
     validations:
       required: false
   - type: textarea

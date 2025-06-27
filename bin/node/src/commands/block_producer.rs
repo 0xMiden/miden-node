@@ -110,14 +110,18 @@ mod tests {
             url: dummy_url(),
             store_url: dummy_url(),
             ntx_builder_url: None,
-            batch_prover_url: None,
-            block_prover_url: None,
-            open_telemetry: false,
-            block_interval: std::time::Duration::from_secs(1),
-            batch_interval: std::time::Duration::from_secs(1),
-            monitor_interval: std::time::Duration::from_secs(1),
-            max_txs_per_batch: SERVER_MAX_TXS_PER_BATCH,
-            max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK,
+            block_producer: BlockProducerConfig {
+                batch_prover_url: None,
+                block_prover_url: None,
+                block_interval: std::time::Duration::from_secs(1),
+                batch_interval: std::time::Duration::from_secs(1),
+                max_txs_per_batch: 8,
+                max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
+            },
+            telemetry: TelemetryConfig {
+                open_telemetry: false,
+                monitor_interval: std::time::Duration::from_secs(1),
+            },
         };
         let result = cmd.handle().await;
         assert!(result.is_err());
@@ -131,18 +135,23 @@ mod tests {
             url: dummy_url(),
             store_url: dummy_url(),
             ntx_builder_url: None,
-            batch_prover_url: None,
-            block_prover_url: None,
-            open_telemetry: false,
-            block_interval: std::time::Duration::from_secs(1),
-            batch_interval: std::time::Duration::from_secs(1),
-            monitor_interval: std::time::Duration::from_secs(1),
-            max_txs_per_batch: miden_objects::MAX_ACCOUNTS_PER_BATCH,
-            max_batches_per_block: SERVER_MAX_BATCHES_PER_BLOCK,
+            block_producer: BlockProducerConfig {
+                batch_prover_url: None,
+                block_prover_url: None,
+                block_interval: std::time::Duration::from_secs(1),
+                batch_interval: std::time::Duration::from_secs(1),
+                max_txs_per_batch: miden_objects::MAX_ACCOUNTS_PER_BATCH, // Use protocol limit (should fail)
+                max_batches_per_block: 8,
+            },
+            telemetry: TelemetryConfig {
+                open_telemetry: false,
+                monitor_interval: std::time::Duration::from_secs(1),
+            },
         };
         let result = cmd.handle().await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
+        println!("Error: {}", err);
         assert!(err.contains("max-txs-per-batch"));
     }
 }

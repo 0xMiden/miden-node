@@ -1,5 +1,6 @@
 use std::num::{NonZero, TryFromIntError};
 
+use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, NetworkAccountPrefix},
     generated::{
@@ -11,10 +12,12 @@ use miden_node_proto::{
             GetBlockHeaderByNumberResponse, GetCurrentBlockchainDataResponse,
             GetNetworkAccountDetailsByPrefixResponse, GetUnconsumedNetworkNotesResponse,
         },
-        store::ntx_builder_server,
+        store::{
+            InclusiveUnboundedRange, NetworkUpdates as ProtoNetworkUpdates, ntx_builder_server,
+        },
     },
 };
-use miden_objects::{block::BlockNumber, note::Note};
+use miden_objects::{account::delta::AccountUpdateDetails, block::BlockNumber, note::Note};
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 
@@ -149,6 +152,40 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         Ok(Response::new(GetUnconsumedNetworkNotesResponse {
             notes: network_notes,
             next_token: next_page.token,
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.ntx_builder_server.get_network_updates",
+        skip_all,
+        err
+    )]
+    async fn get_network_updates(
+        &self,
+        request: Request<InclusiveUnboundedRange>,
+    ) -> Result<Response<ProtoNetworkUpdates>, Status> {
+        let start: BlockNumber = request.into_inner().start.into();
+
+        let (end, updates, notes, nullifiers) = self.state.network_account_updates(start).await?;
+        let account_updates = updates.iter().map(AccountUpdateDetails::to_bytes).collect();
+
+        let notes = notes
+            .into_iter()
+            .map(|note| {
+                // SAFETY: Network notes are filtered in the database, so they should have details;
+                // otherwise the state would be corrupted
+                let (assets, recipient) = note.details.unwrap().into_parts();
+                Note::new(assets, note.metadata, recipient).into()
+            })
+            .collect();
+
+        Ok(Response::new(ProtoNetworkUpdates {
+            end_inclusive: end.as_u32(),
+            account_updates,
+            notes,
+            nullifiers: nullifiers.into_iter().map(Into::into).collect(),
         }))
     }
 }

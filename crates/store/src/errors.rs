@@ -2,6 +2,7 @@ use std::io;
 
 use deadpool::managed::PoolError;
 use miden_node_proto::domain::account::NetworkAccountError;
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
@@ -71,6 +72,11 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
+    #[error("requested block {requested} exceeds the chain tip {chain_tip}")]
+    BlockOutOfRange {
+        requested: BlockNumber,
+        chain_tip: BlockNumber,
+    },
 }
 
 impl From<DatabaseError> for Status {
@@ -78,7 +84,8 @@ impl From<DatabaseError> for Status {
         match err {
             DatabaseError::AccountNotFoundInDb(_)
             | DatabaseError::AccountsNotFoundInDb(_)
-            | DatabaseError::AccountNotPublic(_) => Status::not_found(err.to_string()),
+            | DatabaseError::AccountNotPublic(_) => Status::not_found(err.as_report()),
+            DatabaseError::BlockOutOfRange { .. } => Status::out_of_range(err.as_report()),
 
             _ => Status::internal(err.to_string()),
         }

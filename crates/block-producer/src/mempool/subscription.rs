@@ -16,7 +16,8 @@ use crate::domain::transaction::AuthenticatedTransaction;
 pub(crate) struct SubscriptionProvider {
     /// The latest event subscription, if any.
     ///
-    /// The only current interested party is the network transaction builder, so one subscription is enough.
+    /// The only current interested party is the network transaction builder, so one subscription
+    /// is enough.
     subscription: Option<mpsc::Sender<MempoolEvent>>,
 
     /// The latest committed block number.
@@ -24,18 +25,22 @@ pub(crate) struct SubscriptionProvider {
     /// This is used to ensure synchronicity with new subscribers.
     chain_tip: BlockNumber,
 
-    /// [`MempoolEvent::TransactionAdded`] events which are still inflight i.e. have not been committed or reverted.
+    /// [`MempoolEvent::TransactionAdded`] events which are still inflight i.e. have not been
+    /// committed or reverted.
     ///
-    /// These events need to be transmitted when a subscription is started, since the subscriber only has the committed state.
+    /// These events need to be transmitted when a subscription is started, since the subscriber
+    /// only has the committed state.
     ///
-    /// A [`BTreeMap`] is used to maintain event ordering while allowing for efficient removals of committed or reverted transactions.
+    /// A [`BTreeMap`] is used to maintain event ordering while allowing for efficient removals of
+    /// committed or reverted transactions.
     ///
     /// The key is auto-incremented on each new insert to support this event ordering.
     ///
     /// A reverse lookup index is maintained in `uncommitted_txs_index`.
     uncommitted_txs: BTreeMap<u64, MempoolEvent>,
 
-    /// A reverse lookup index for `uncommitted_txs` which allows for efficient removal of committed or reverted events.
+    /// A reverse lookup index for `uncommitted_txs` which allows for efficient removal of
+    /// committed or reverted events.
     uncommitted_txs_index: BTreeMap<TransactionId, u64>,
 }
 
@@ -64,7 +69,7 @@ impl SubscriptionProvider {
         let (tx, rx) = mpsc::channel(capacity);
         self.subscription.replace(tx);
 
-        // Send each uncommited tx event in chronological order.
+        // Send each uncommitted tx event in chronological order.
         //
         // The ordering is guaranteed by the btree map so we can safely
         // iterate over the values.
@@ -81,9 +86,7 @@ impl SubscriptionProvider {
         let network_notes = tx
             .output_notes()
             .filter_map(|note| match note {
-                OutputNote::Full(inner) => {
-                    NetworkNote::try_from(inner.clone()).ok().map(Into::into)
-                },
+                OutputNote::Full(inner) => NetworkNote::try_from(inner.clone()).ok(),
                 _ => None,
             })
             .collect();

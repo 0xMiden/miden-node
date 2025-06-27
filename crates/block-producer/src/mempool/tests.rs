@@ -184,7 +184,7 @@ fn block_commitment_is_rejected_if_no_block_is_in_flight() {
 
 #[test]
 #[should_panic]
-fn cannot_have_multple_inflight_blocks() {
+fn cannot_have_multiple_inflight_blocks() {
     let mut uut = Mempool::for_tests();
 
     uut.select_block();

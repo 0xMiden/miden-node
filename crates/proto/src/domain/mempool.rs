@@ -8,6 +8,7 @@ use miden_objects::{
     utils::{Deserializable, Serializable},
 };
 
+use super::note::NetworkNote;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
     generated::block_producer::{
@@ -16,8 +17,6 @@ use crate::{
         TransactionsReverted as ProtoTransactionsReverted, mempool_event,
     },
 };
-
-use super::note::NetworkNote;
 
 #[derive(Debug, Clone)]
 pub enum MempoolEvent {

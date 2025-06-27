@@ -24,7 +24,7 @@
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
 - [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
-- Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
+- Faucet challenge expiration time is now configurable (#1017).
 
 ### Fixes
 

@@ -82,10 +82,10 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
-          crate_dir: proving-service
+          crate_dir: remote-prover
           service: miden-prover
           package: prover
-          crate: miden-proving-service
+          crate: miden-remote-prover
           arch: ${{ matrix.arch }}
 
   publish-prover-proxy:
@@ -105,8 +105,8 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           gitref: ${{ env.version }}
-          crate_dir: proving-service
+          crate_dir: remote-prover
           service: miden-prover-proxy
           package: prover-proxy
-          crate: miden-proving-service
+          crate: miden-remote-prover
           arch: ${{ matrix.arch }}

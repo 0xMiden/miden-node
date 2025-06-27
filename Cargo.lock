@@ -2135,7 +2135,7 @@ dependencies = [
  "miden-node-rpc",
  "miden-node-utils",
  "miden-objects",
- "miden-proving-service-client",
+ "miden-remote-prover-client",
  "miden-testing",
  "miden-tx",
  "rand 0.9.1",
@@ -2256,7 +2256,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-proving-service-client",
+ "miden-remote-prover-client",
  "miden-tx",
  "miden-tx-batch-prover",
  "pretty_assertions",
@@ -2289,7 +2289,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-proving-service-client",
+ "miden-remote-prover-client",
  "miden-tx",
  "rand 0.9.1",
  "thiserror 2.0.12",
@@ -2492,7 +2492,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-proving-service"
+name = "miden-remote-prover"
 version = "0.10.0"
 dependencies = [
  "async-trait",
@@ -2533,7 +2533,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-proving-service-client"
+name = "miden-remote-prover-client"
 version = "0.10.0"
 dependencies = [
  "async-trait",

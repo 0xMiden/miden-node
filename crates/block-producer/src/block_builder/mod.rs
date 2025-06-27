@@ -12,7 +12,7 @@ use miden_objects::{
     note::{Note, NoteExecutionMode, NoteHeader},
     transaction::{OutputNote, TransactionHeader, TransactionId},
 };
-use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
+use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -482,9 +482,10 @@ impl BlockProver {
             Self::Local(prover) => {
                 prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
             },
-            Self::Remote(prover) => {
-                prover.prove(proposed_block).await.map_err(BuildBlockError::RemoteProverError)
-            },
+            Self::Remote(prover) => prover
+                .prove(proposed_block)
+                .await
+                .map_err(BuildBlockError::RemoteProverClientError),
         }
     }
 }

@@ -21,7 +21,7 @@ inputs:
     options:
       - miden-node
       - miden-faucet
-      - miden-proving-service
+      - miden-remote-prover
   crate_dir:
     required: true
     description: Name of crate being packaged.
@@ -29,7 +29,7 @@ inputs:
     options:
       - miden-node
       - miden-faucet
-      - miden-proving-service
+      - miden-remote-prover
   service:
     required: true
     description: The service to build the packages for.

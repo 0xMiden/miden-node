@@ -7,7 +7,7 @@ use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL,
     batch::{BatchId, ProposedBatch, ProvenBatch},
 };
-use miden_proving_service_client::proving_service::batch_prover::RemoteBatchProver;
+use miden_remote_prover_client::remote_prover::batch_prover::RemoteBatchProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use rand::Rng;
 use tokio::{task::JoinSet, time};
@@ -236,9 +236,10 @@ impl BatchJob {
         Span::current().set_attribute("prover.kind", self.batch_prover.kind());
 
         let proven_batch = match &self.batch_prover {
-            BatchProver::Remote(prover) => {
-                prover.prove(proposed_batch).await.map_err(BuildBatchError::RemoteProverError)
-            },
+            BatchProver::Remote(prover) => prover
+                .prove(proposed_batch)
+                .await
+                .map_err(BuildBatchError::RemoteProverClientError),
             BatchProver::Local(prover) => tokio::task::spawn_blocking({
                 let prover = prover.clone();
                 move || prover.prove(proposed_batch).map_err(BuildBatchError::ProveBatchError)

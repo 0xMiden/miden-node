@@ -137,6 +137,7 @@ impl Challenge {
     ///
     /// # Arguments
     /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
+    /// * `challenge_lifetime` - The duration during which a challenge is valid.
     pub fn is_expired(&self, current_time: u64, challenge_lifetime: Duration) -> bool {
         let diff = current_time.checked_sub(self.timestamp).unwrap_or(u64::MAX);
         diff > challenge_lifetime.as_secs()

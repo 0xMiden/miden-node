@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf, time::Duration};
+use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -10,9 +10,7 @@ use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
 
 use super::{
-    DEFAULT_BATCH_INTERVAL, DEFAULT_BLOCK_INTERVAL, DEFAULT_MONITOR_INTERVAL,
-    DEFAULT_NTX_TICKER_INTERVAL, ENV_BATCH_PROVER_URL, ENV_BLOCK_PROVER_URL, ENV_DATA_DIRECTORY,
-    ENV_ENABLE_OTEL, ENV_NTX_PROVER_URL, ENV_RPC_URL, duration_to_human_readable_string,
+    BlockProducerConfig, ENV_DATA_DIRECTORY, ENV_RPC_URL, NtxBuilderConfig, TelemetryConfig,
 };
 use crate::system_monitor::SystemMonitor;
 
@@ -47,67 +45,14 @@ pub enum BundledCommand {
         #[arg(long = "data-directory", env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
 
-        /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
-        /// will default to running a prover in-process which is expensive.
-        #[arg(long = "tx-prover.url", env = ENV_NTX_PROVER_URL, value_name = "URL")]
-        tx_prover_url: Option<Url>,
+        #[command(flatten)]
+        block_producer: BlockProducerConfig,
 
-        /// Disable spawning the network transaction builder.
-        #[arg(long = "no-ntb", default_value_t = false)]
-        no_ntb: bool,
+        #[command(flatten)]
+        ntx_builder: NtxBuilderConfig,
 
-        /// The remote batch prover's gRPC url. If unset, will default to running a prover
-        /// in-process which is expensive.
-        #[arg(long = "batch-prover.url", env = ENV_BATCH_PROVER_URL, value_name = "URL")]
-        batch_prover_url: Option<Url>,
-
-        /// The remote block prover's gRPC url. If unset, will default to running a prover
-        /// in-process which is expensive.
-        #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
-        block_prover_url: Option<Url>,
-
-        /// Enables the exporting of traces for OpenTelemetry.
-        ///
-        /// This can be further configured using environment variables as defined in the official
-        /// OpenTelemetry documentation. See our operator manual for further details.
-        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
-        open_telemetry: bool,
-
-        /// Interval at which to produce blocks.
-        #[arg(
-            long = "block.interval",
-            default_value = &duration_to_human_readable_string(DEFAULT_BLOCK_INTERVAL),
-            value_parser = humantime::parse_duration,
-            value_name = "DURATION"
-        )]
-        block_interval: Duration,
-
-        /// Interval at which to run the network transaction builder's ticker.
-        #[arg(
-            long = "ntb.interval",
-            default_value = &duration_to_human_readable_string(DEFAULT_NTX_TICKER_INTERVAL),
-            value_parser = humantime::parse_duration,
-            value_name = "DURATION"
-        )]
-        ntx_ticker_interval: Duration,
-
-        /// Interval at which to produce batches.
-        #[arg(
-            long = "batch.interval",
-            default_value = &duration_to_human_readable_string(DEFAULT_BATCH_INTERVAL),
-            value_parser = humantime::parse_duration,
-            value_name = "DURATION"
-        )]
-        batch_interval: Duration,
-
-        /// Interval at which to monitor the system.
-        #[arg(
-            long = "monitor.interval",
-            default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
-            value_parser = humantime::parse_duration,
-            value_name = "DURATION"
-        )]
-        monitor_interval: Duration,
+        #[command(flatten)]
+        telemetry: TelemetryConfig,
     },
 }
 
@@ -127,31 +72,10 @@ impl BundledCommand {
             BundledCommand::Start {
                 rpc_url,
                 data_directory,
-                batch_prover_url,
-                block_prover_url,
-                // Note: open-telemetry is handled in main.
-                open_telemetry: _,
-                block_interval,
-                batch_interval,
-                tx_prover_url,
-                monitor_interval,
-                ntx_ticker_interval,
-                no_ntb,
-            } => {
-                Self::start(
-                    rpc_url,
-                    data_directory,
-                    no_ntb,
-                    batch_prover_url,
-                    block_prover_url,
-                    tx_prover_url,
-                    batch_interval,
-                    block_interval,
-                    monitor_interval,
-                    ntx_ticker_interval,
-                )
-                .await
-            },
+                block_producer,
+                ntx_builder,
+                telemetry,
+            } => Self::start(rpc_url, data_directory, ntx_builder, block_producer, telemetry).await,
         }
     }
 
@@ -160,16 +84,11 @@ impl BundledCommand {
     async fn start(
         rpc_url: Url,
         data_directory: PathBuf,
-        no_ntb: bool,
-        batch_prover_url: Option<Url>,
-        block_prover_url: Option<Url>,
-        tx_prover_url: Option<Url>,
-        batch_interval: Duration,
-        block_interval: Duration,
-        monitor_interval: Duration,
-        ntx_ticker_interval: Duration,
+        ntx_builder: NtxBuilderConfig,
+        block_producer: BlockProducerConfig,
+        telemetry: TelemetryConfig,
     ) -> anyhow::Result<()> {
-        let should_start_ntb = !no_ntb;
+        let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
         // before each component is fully started up.
         //
@@ -223,10 +142,10 @@ impl BundledCommand {
                     block_producer_address,
                     store_address,
                     ntx_builder_address: should_start_ntb.then_some(ntx_builder_address),
-                    batch_prover_url,
-                    block_prover_url,
-                    batch_interval,
-                    block_interval,
+                    batch_prover_url: block_producer.batch_prover_url,
+                    block_prover_url: block_producer.block_prover_url,
+                    batch_interval: block_producer.batch_interval,
+                    block_interval: block_producer.block_interval,
                 }
                 .serve()
                 .await
@@ -251,7 +170,7 @@ impl BundledCommand {
         // Start system monitor.
         let data_dir =
             DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        SystemMonitor::new(monitor_interval)
+        SystemMonitor::new(telemetry.monitor_interval)
             .with_store_metrics(data_dir)
             .run_with_supervisor();
 
@@ -269,8 +188,8 @@ impl BundledCommand {
                         ntx_builder_address,
                         store_url,
                         block_producer_address,
-                        tx_prover_url,
-                        ticker_interval: ntx_ticker_interval,
+                        tx_prover_url: ntx_builder.tx_prover_url,
+                        ticker_interval: ntx_builder.ticker_interval,
                         account_cache_capacity: NonZeroUsize::new(128).unwrap(),
                     }
                     .serve_once()
@@ -300,8 +219,8 @@ impl BundledCommand {
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        if let Self::Start { open_telemetry, .. } = self {
-            *open_telemetry
+        if let Self::Start { telemetry, .. } = self {
+            telemetry.open_telemetry
         } else {
             false
         }

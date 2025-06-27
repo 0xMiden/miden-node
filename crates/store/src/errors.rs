@@ -2,6 +2,7 @@ use std::io;
 
 use deadpool::managed::PoolError;
 use miden_node_proto::domain::account::NetworkAccountError;
+use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
@@ -46,6 +47,8 @@ pub enum DatabaseError {
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
     SqliteError(#[from] rusqlite::Error),
+    #[error(transparent)]
+    QueryParamLimitExceeded(#[from] QueryLimitError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------

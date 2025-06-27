@@ -33,6 +33,7 @@
 - [BREAKING] Rename `RemoteProverError` to `RemoteProverClientError` (#1004).
 - [BREAKING] Rename `ProvingServiceError` to `RemoteProverError` (#1004).
 - [BREAKING] Renamed `Note` to `CommittedNote`, and `NetworkNote` to `Note` in the proto messages (#1022).
+- [BREAKING] Limits of store queries per query parameter enforced (#1028).
 
 ### Fixes
 

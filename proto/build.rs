@@ -7,17 +7,13 @@ const RPC_PROTO: &str = "rpc.proto";
 const STORE_PROTO: &str = "store.proto";
 const BLOCK_PRODUCER_PROTO: &str = "block_producer.proto";
 const NTX_BUILDER_PROTO: &str = "ntx_builder.proto";
-const WORKER_STATUS_PROTO: &str = "worker_status.proto";
 const REMOTE_PROVER_PROTO: &str = "remote_prover.proto";
-const PROXY_STATUS_PROTO: &str = "proxy_status.proto";
 
 const RPC_DESCRIPTOR: &str = "rpc_file_descriptor.bin";
 const STORE_DESCRIPTOR: &str = "store_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const NTX_BUILDER_DESCRIPTOR: &str = "ntx_builder_file_descriptor.bin";
-const WORKER_STATUS_DESCRIPTOR: &str = "worker_status_file_descriptor.bin";
 const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
-const PROXY_STATUS_DESCRIPTOR: &str = "proxy_status_file_descriptor.bin";
 
 /// Generates Rust protobuf bindings from .proto files.
 ///
@@ -38,11 +34,6 @@ fn main() -> anyhow::Result<()> {
     fs::write(&rpc_path, rpc_file_descriptor.encode_to_vec())
         .context("writing rpc file descriptor")?;
 
-    let worker_status_file_descriptor = protox::compile([WORKER_STATUS_PROTO], includes)?;
-    let worker_status_path = PathBuf::from(&out).join(WORKER_STATUS_DESCRIPTOR);
-    fs::write(&worker_status_path, worker_status_file_descriptor.encode_to_vec())
-        .context("writing worker status file descriptor")?;
-
     let remote_prover_file_descriptor = protox::compile([REMOTE_PROVER_PROTO], includes)?;
     let remote_prover_path = PathBuf::from(&out).join(REMOTE_PROVER_DESCRIPTOR);
     fs::write(&remote_prover_path, remote_prover_file_descriptor.encode_to_vec())
@@ -62,11 +53,6 @@ fn main() -> anyhow::Result<()> {
     let block_producer_path = PathBuf::from(&out).join(NTX_BUILDER_DESCRIPTOR);
     fs::write(&block_producer_path, ntx_builder_descriptor.encode_to_vec())
         .context("writing ntx builder file descriptor")?;
-
-    let proxy_status_file_descriptor = protox::compile([PROXY_STATUS_PROTO], includes)?;
-    let proxy_status_path = PathBuf::from(&out).join(PROXY_STATUS_DESCRIPTOR);
-    fs::write(&proxy_status_path, proxy_status_file_descriptor.encode_to_vec())
-        .context("writing proxy status file descriptor")?;
 
     Ok(())
 }

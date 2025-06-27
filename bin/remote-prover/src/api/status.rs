@@ -2,7 +2,7 @@ use tonic::{Request, Response, Status};
 
 use crate::{
     api::prover::ProofType,
-    generated::status::{StatusRequest, StatusResponse, status_api_server::StatusApi},
+    generated::{StatusRequest, StatusResponse, status_api_server::StatusApi},
 };
 
 pub struct StatusRpcApi {

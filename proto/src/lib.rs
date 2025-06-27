@@ -15,13 +15,6 @@ pub fn remote_prover_api_descriptor() -> FileDescriptorSet {
         .expect("bytes should be a valid file descriptor created by build.rs")
 }
 
-/// Returns the Protobuf file descriptor for the proxy status API.
-pub fn proxy_status_api_descriptor() -> FileDescriptorSet {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", "proxy_status_file_descriptor.bin"));
-    FileDescriptorSet::decode(&bytes[..])
-        .expect("bytes should be a valid file descriptor created by build.rs")
-}
-
 /// Returns the Protobuf file descriptor for the store API.
 #[cfg(feature = "internal")]
 pub fn store_api_descriptor() -> FileDescriptorSet {
@@ -42,14 +35,6 @@ pub fn block_producer_api_descriptor() -> FileDescriptorSet {
 #[cfg(feature = "internal")]
 pub fn ntx_builder_api_descriptor() -> FileDescriptorSet {
     let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", "ntx_builder_file_descriptor.bin"));
-    FileDescriptorSet::decode(&bytes[..])
-        .expect("bytes should be a valid file descriptor created by build.rs")
-}
-
-/// Returns the Protobuf file descriptor for the worker status API.
-#[cfg(feature = "internal")]
-pub fn worker_status_api_descriptor() -> FileDescriptorSet {
-    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", "worker_status_file_descriptor.bin"));
     FileDescriptorSet::decode(&bytes[..])
         .expect("bytes should be a valid file descriptor created by build.rs")
 }

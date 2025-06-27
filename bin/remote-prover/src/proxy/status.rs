@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use miden_remote_prover::{
     api::ProofType,
-    generated::proxy_status::{
+    generated::remote_prover::{
         self as proto, ProxyStatusRequest, ProxyStatusResponse, WorkerStatus,
         proxy_status_api_server::{ProxyStatusApi, ProxyStatusApiServer},
     },

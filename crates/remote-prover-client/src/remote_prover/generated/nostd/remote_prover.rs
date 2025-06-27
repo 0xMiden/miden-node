@@ -23,6 +23,48 @@ pub struct ProvingResponse {
     #[prost(bytes = "vec", tag = "1")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
+/// Request message for the status of the proxy.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct ProxyStatusRequest {}
+/// Status of an individual worker in the proxy.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct WorkerStatus {
+    /// The address of the worker.
+    #[prost(string, tag = "1")]
+    pub address: ::prost::alloc::string::String,
+    /// The version of the worker.
+    #[prost(string, tag = "2")]
+    pub version: ::prost::alloc::string::String,
+    /// The health status of the worker.
+    #[prost(enumeration = "WorkerHealthStatus", tag = "3")]
+    pub status: i32,
+}
+/// Response message containing the status of the proxy.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProxyStatusResponse {
+    /// The version of the proxy.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The proof type supported by this proxy.
+    #[prost(enumeration = "ProofType", tag = "2")]
+    pub supported_proof_type: i32,
+    /// The list of workers managed by this proxy.
+    #[prost(message, repeated, tag = "3")]
+    pub workers: ::prost::alloc::vec::Vec<WorkerStatus>,
+}
+/// Request message for the status of the worker.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct StatusRequest {}
+/// Response message containing the status of the worker.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StatusResponse {
+    /// The version of the worker.
+    #[prost(string, tag = "1")]
+    pub version: ::prost::alloc::string::String,
+    /// The proof type supported by this worker.
+    #[prost(enumeration = "ProofType", tag = "2")]
+    pub supported_proof_type: i32,
+}
 /// Enumeration of supported proof types.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -52,6 +94,43 @@ impl ProofType {
             "TRANSACTION" => Some(Self::Transaction),
             "BATCH" => Some(Self::Batch),
             "BLOCK" => Some(Self::Block),
+            _ => None,
+        }
+    }
+}
+/// Health status of a worker.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum WorkerHealthStatus {
+    /// The worker's health status is unknown.
+    /// This value is used when the proxy is not able to determine the health status of the worker.
+    /// It is only a temporary state and the proxy will eventually determine the health status of the worker.
+    Unknown = 0,
+    /// The worker is healthy.
+    /// This value is used when the worker is able to successfully process requests.
+    Healthy = 1,
+    /// The worker is unhealthy.
+    /// This value is used when the worker is not receiving requests or is not able to successfully process requests.
+    Unhealthy = 2,
+}
+impl WorkerHealthStatus {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::Unknown => "UNKNOWN",
+            Self::Healthy => "HEALTHY",
+            Self::Unhealthy => "UNHEALTHY",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UNKNOWN" => Some(Self::Unknown),
+            "HEALTHY" => Some(Self::Healthy),
+            "UNHEALTHY" => Some(Self::Unhealthy),
             _ => None,
         }
     }
@@ -156,6 +235,217 @@ pub mod api_client {
             let path = http::uri::PathAndQuery::from_static("/remote_prover.Api/Prove");
             let mut req = request.into_request();
             req.extensions_mut().insert(GrpcMethod::new("remote_prover.Api", "Prove"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated client implementations.
+pub mod proxy_status_api_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct ProxyStatusApiClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> ProxyStatusApiClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + core::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + core::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> ProxyStatusApiClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + core::marker::Send + core::marker::Sync,
+        {
+            ProxyStatusApiClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// Returns the status of the proxy.
+        pub async fn status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ProxyStatusRequest>,
+        ) -> core::result::Result<
+            tonic::Response<super::ProxyStatusResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        alloc::format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/remote_prover.ProxyStatusApi/Status",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("remote_prover.ProxyStatusApi", "Status"));
+            self.inner.unary(req, path, codec).await
+        }
+    }
+}
+/// Generated client implementations.
+pub mod status_api_client {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    use tonic::codegen::http::Uri;
+    #[derive(Debug, Clone)]
+    pub struct StatusApiClient<T> {
+        inner: tonic::client::Grpc<T>,
+    }
+    impl<T> StatusApiClient<T>
+    where
+        T: tonic::client::GrpcService<tonic::body::Body>,
+        T::Error: Into<StdError>,
+        T::ResponseBody: Body<Data = Bytes> + core::marker::Send + 'static,
+        <T::ResponseBody as Body>::Error: Into<StdError> + core::marker::Send,
+    {
+        pub fn new(inner: T) -> Self {
+            let inner = tonic::client::Grpc::new(inner);
+            Self { inner }
+        }
+        pub fn with_origin(inner: T, origin: Uri) -> Self {
+            let inner = tonic::client::Grpc::with_origin(inner, origin);
+            Self { inner }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> StatusApiClient<InterceptedService<T, F>>
+        where
+            F: tonic::service::Interceptor,
+            T::ResponseBody: Default,
+            T: tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+                Response = http::Response<
+                    <T as tonic::client::GrpcService<tonic::body::Body>>::ResponseBody,
+                >,
+            >,
+            <T as tonic::codegen::Service<
+                http::Request<tonic::body::Body>,
+            >>::Error: Into<StdError> + core::marker::Send + core::marker::Sync,
+        {
+            StatusApiClient::new(InterceptedService::new(inner, interceptor))
+        }
+        /// Compress requests with the given encoding.
+        ///
+        /// This requires the server to support it otherwise it might respond with an
+        /// error.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.send_compressed(encoding);
+            self
+        }
+        /// Enable decompressing responses.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.inner = self.inner.accept_compressed(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_decoding_message_size(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.inner = self.inner.max_encoding_message_size(limit);
+            self
+        }
+        /// Returns the status of the worker.
+        pub async fn status(
+            &mut self,
+            request: impl tonic::IntoRequest<super::StatusRequest>,
+        ) -> core::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        alloc::format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/remote_prover.StatusApi/Status",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("remote_prover.StatusApi", "Status"));
             self.inner.unary(req, path, codec).await
         }
     }

@@ -7,7 +7,7 @@ use miden_remote_prover::{
     COMPONENT,
     api::ProofType,
     error::RemoteProverError,
-    generated::status::{StatusRequest, status_api_client::StatusApiClient},
+    generated::remote_prover::{StatusRequest, status_api_client::StatusApiClient},
 };
 use pingora::lb::Backend;
 use semver::{Version, VersionReq};

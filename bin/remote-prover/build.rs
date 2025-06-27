@@ -1,6 +1,4 @@
-use miden_node_proto_build::{
-    proxy_status_api_descriptor, remote_prover_api_descriptor, worker_status_api_descriptor,
-};
+use miden_node_proto_build::remote_prover_api_descriptor;
 use miette::IntoDiagnostic;
 use tonic_build::FileDescriptorSet;
 
@@ -19,15 +17,11 @@ fn main() -> miette::Result<()> {
         return Ok(());
     }
 
-    // Get both file descriptor sets
-    let worker_status_descriptor = worker_status_api_descriptor();
+    // Get the file descriptor set
     let remote_prover_descriptor = remote_prover_api_descriptor();
-    let proxy_status_descriptor = proxy_status_api_descriptor();
 
-    // Build tonic code for each descriptor
-    build_tonic_from_descriptor(worker_status_descriptor)?;
+    // Build tonic code
     build_tonic_from_descriptor(remote_prover_descriptor)?;
-    build_tonic_from_descriptor(proxy_status_descriptor)?;
 
     Ok(())
 }

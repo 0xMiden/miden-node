@@ -3,9 +3,5 @@
 #[rustfmt::skip]
 pub mod remote_prover;
 mod conversions;
-#[rustfmt::skip]
-pub mod status;
-#[rustfmt::skip]
-pub mod proxy_status;
 
 pub use remote_prover::*;

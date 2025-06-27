@@ -980,8 +980,10 @@ async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitiali
     let len = nullifiers.len();
 
     let now = Instant::now();
-    let nullifier_tree = NullifierTree::with_entries(nullifiers)
-        .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
+    let nullifier_tree = NullifierTree::with_entries(
+        nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)),
+    )
+    .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
     let elapsed = now.elapsed().as_secs();
 
     info!(

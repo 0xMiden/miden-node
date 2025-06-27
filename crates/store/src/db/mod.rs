@@ -62,6 +62,12 @@ pub struct NullifierInfo {
     pub block_num: BlockNumber,
 }
 
+impl PartialEq<(Nullifier, BlockNumber)> for NullifierInfo {
+    fn eq(&self, (nullifier, block_num): &(Nullifier, BlockNumber)) -> bool {
+        &self.nullifier == nullifier && &self.block_num == block_num
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct TransactionSummary {
     pub account_id: AccountId,
@@ -265,15 +271,38 @@ impl Db {
         R: Send + 'static,
         M: Send + ToString,
         E: From<DatabaseError>,
-        E: From<rusqlite::Error>,
         E: std::error::Error + Send + Sync + 'static,
     {
         let conn = self.pool.get().await.unwrap(); // FIXME XXX TOODO
 
         conn.interact(|conn| {
-            let mut db_tx = conn.transaction()?;
+            let mut db_tx = conn.transaction().map_err(DatabaseError::SqliteError)?;
             let r = query(&mut db_tx)?;
-            db_tx.commit()?;
+            db_tx.commit().map_err(DatabaseError::SqliteError)?;
+            Ok(r)
+        })
+        .await
+        .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
+    }
+
+    /// Avoid repeated boilerplate, frame the query in a transaction
+    pub(crate) async fn framed_without_transaction<R, E, Q, M>(
+        &self,
+        msg: M,
+        query: Q,
+    ) -> std::result::Result<R, E>
+    where
+        Q: Send + FnOnce(&mut Connection) -> std::result::Result<R, E> + 'static,
+        R: Send + 'static,
+        M: Send + ToString,
+        E: From<DatabaseError>,
+        E: From<rusqlite::Error>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let conn = self.pool.get().await.unwrap(); // FIXME XXX TOODO
+
+        conn.interact(move |conn| {
+            let r = query(conn)?;
             Ok(r)
         })
         .await
@@ -293,7 +322,7 @@ impl Db {
         );
 
         let me = Db { pool };
-        me.framed("migration", |conn| apply_migrations(conn)).await?;
+        me.framed_without_transaction("migrations", apply_migrations).await?;
 
         // TODO rationalize magic numbers, and make them
         Ok(me)
@@ -371,8 +400,10 @@ impl Db {
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
-        self.framed("read all account commitments", sql::select_all_account_commitments)
-            .await
+        self.framed("read all account commitments", move |conn| {
+            sql::select_all_account_commitments(conn)
+        })
+        .await
     }
 
     /// Loads public account details from the DB.
@@ -414,7 +445,7 @@ impl Db {
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
         self.framed::<StateSyncUpdate, StateSyncError, _, _>("state sync", move |conn| {
-            sql::get_state_sync(conn, block_number, account_ids, note_tags)
+            sql::get_state_sync(conn, block_number, &account_ids[..], &note_tags[..])
         })
         .await
     }
@@ -515,7 +546,11 @@ impl Db {
     /// Runs database optimization.
     #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
     pub async fn optimize(&self) -> Result<(), DatabaseError> {
-        self.framed("db optimization", |conn| todo!("PRAGMA OPTIMIZE")).await?;
+        self.framed_without_transaction("db optimization", move |conn| {
+            conn.execute("PRAGMA OPTIMIZE;", ()).map_err(DatabaseError::SqliteError)?;
+            Ok::<_, DatabaseError>(())
+        })
+        .await?;
         Ok(())
     }
 

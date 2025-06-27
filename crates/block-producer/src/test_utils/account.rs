@@ -8,7 +8,7 @@ use miden_objects::{
 pub static MOCK_ACCOUNTS: LazyLock<std::sync::Mutex<HashMap<u32, (AccountId, Digest)>>> =
     LazyLock::new(Default::default);
 
-/// A mock representation fo private accounts. An account starts in state `states[0]`, is modified
+/// A mock representation for private accounts. An account starts in state `states[0]`, is modified
 /// to state `states[1]`, and so on.
 #[derive(Clone, Copy, Debug)]
 pub struct MockPrivateAccount<const NUM_STATES: usize = 3> {

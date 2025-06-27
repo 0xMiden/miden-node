@@ -3,8 +3,8 @@ use miden_node_rpc::Rpc;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
-use super::{ENV_BLOCK_PRODUCER_URL, ENV_RPC_URL, ENV_STORE_URL, TelemetryConfig};
-use crate::system_monitor::SystemMonitor;
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_RPC_URL, ENV_STORE_URL};
+use crate::commands::ENV_ENABLE_OTEL;
 
 #[derive(clap::Subcommand)]
 pub enum RpcCommand {
@@ -23,8 +23,12 @@ pub enum RpcCommand {
         #[arg(long = "block-producer.url", env = ENV_BLOCK_PRODUCER_URL, value_name = "URL")]
         block_producer_url: Option<Url>,
 
-        #[command(flatten)]
-        telemetry: TelemetryConfig,
+        /// Enables the exporting of traces for OpenTelemetry.
+        ///
+        /// This can be further configured using environment variables as defined in the official
+        /// OpenTelemetry documentation. See our operator manual for further details.
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
+        enable_otel: bool,
     },
 }
 
@@ -34,7 +38,7 @@ impl RpcCommand {
             url,
             store_url,
             block_producer_url,
-            telemetry,
+            enable_otel: _,
         } = self;
 
         let store = store_url
@@ -52,14 +56,11 @@ impl RpcCommand {
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        // Start system monitor.
-        SystemMonitor::new(telemetry.monitor_interval).run_with_supervisor();
-
         Rpc { listener, store, block_producer }.serve().await.context("Serving RPC")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        let Self::Start { telemetry, .. } = self;
-        telemetry.open_telemetry
+        let Self::Start { enable_otel, .. } = self;
+        *enable_otel
     }
 }

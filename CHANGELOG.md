@@ -26,6 +26,8 @@
 - [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
 - Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
 - Added configurable `PoW` difficulty for the faucet (#924).
+- Removed system monitor from node binary (#1019).
+- [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).
 
 ### Fixes
 
@@ -237,7 +239,7 @@
 
 ## 0.3.0 (2024-05-15)
 
-- Added option to mint pulic notes in the faucet (#339).
+- Added option to mint public notes in the faucet (#339).
 - Renamed `note_hash` into `note_id` in the database (#336)
 - Changed `version` and `timestamp` fields in `Block` message to `u32` (#337).
 - [BREAKING] Implemented `NoteMetadata` protobuf message (#338).

@@ -828,7 +828,7 @@ pub fn insert_notes(
     Ok(count)
 }
 
-/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts holded by the
+/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts held by the
 /// notes passed as parameter. If the script root already exists in the DB, it will be ignored.
 ///
 /// # Returns

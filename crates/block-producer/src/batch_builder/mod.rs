@@ -86,7 +86,7 @@ impl BatchBuilder {
         );
 
         let mut interval = tokio::time::interval(self.batch_interval);
-        // We set the inverval's missed tick behaviour to burst. This means we'll catch up missed
+        // We set the interval's missed tick behaviour to burst. This means we'll catch up missed
         // batches as fast as possible. In other words, we try our best to keep the desired batch
         // interval on average. The other options would result in at least one skipped batch.
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Burst);

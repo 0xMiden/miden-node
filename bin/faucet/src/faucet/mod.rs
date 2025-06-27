@@ -352,7 +352,7 @@ impl Faucet {
     /// This relies on parsing the stringified error
     /// `VerifyTxError::IncorrectInitialAccountCommitment`.
     ///
-    /// Returns an error if the rollback was unsuccesful. This should be treated as fatal.
+    /// Returns an error if the rollback was unsuccessful. This should be treated as fatal.
     fn handle_desync(&mut self, err: &str) -> anyhow::Result<()> {
         let onchain_state = parse_desync_error(err).context("failed to parse desync message")?;
 

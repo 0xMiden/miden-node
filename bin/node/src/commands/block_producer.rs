@@ -140,7 +140,8 @@ mod tests {
                 block_prover_url: None,
                 block_interval: std::time::Duration::from_secs(1),
                 batch_interval: std::time::Duration::from_secs(1),
-                max_txs_per_batch: miden_objects::MAX_ACCOUNTS_PER_BATCH, // Use protocol limit (should fail)
+                max_txs_per_batch: miden_objects::MAX_ACCOUNTS_PER_BATCH, /* Use protocol limit
+                                                                           * (should fail) */
                 max_batches_per_block: 8,
             },
             telemetry: TelemetryConfig {
@@ -151,7 +152,6 @@ mod tests {
         let result = cmd.handle().await;
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        println!("Error: {}", err);
         assert!(err.contains("max-txs-per-batch"));
     }
 }

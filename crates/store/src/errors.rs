@@ -46,6 +46,8 @@ pub enum DatabaseError {
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
     SqliteError(#[from] rusqlite::Error),
+    #[error("Too many filter parameters: {which} = {dim}")]
+    TooManyFilterParameters { which: &'static str, dim: usize },
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------

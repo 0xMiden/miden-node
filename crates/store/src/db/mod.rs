@@ -29,6 +29,10 @@ use crate::{
     db::{
         migrations::apply_migrations,
         pool_manager::{Pool, SqlitePoolManager},
+        sql::utils::{
+            QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit,
+            QueryParamNoteTagLimit,
+        },
     },
     errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
     genesis::GenesisBlock,
@@ -456,6 +460,9 @@ impl Db {
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
+        QueryParamAccountIdLimit::check(account_ids.len())?;
+        QueryParamNoteTagLimit::check(note_tags.len())?;
+
         self.pool
             .get()
             .await
@@ -476,6 +483,8 @@ impl Db {
         block_num: BlockNumber,
         note_tags: Vec<u32>,
     ) -> Result<NoteSyncUpdate, NoteSyncError> {
+        QueryParamNoteTagLimit::check(note_tags.len())?;
+
         self.pool
             .get()
             .await
@@ -493,6 +502,8 @@ impl Db {
     /// Loads all the Note's matching a certain NoteId from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
+        QueryParamNoteIdLimit::check(note_ids.len())?;
+
         self.pool
             .get()
             .await?
@@ -512,6 +523,8 @@ impl Db {
         &self,
         note_ids: BTreeSet<NoteId>,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
+        QueryParamNoteIdLimit::check(note_ids.len())?;
+
         self.pool
             .get()
             .await?
@@ -530,6 +543,7 @@ impl Db {
     /// Loads all note IDs matching a certain NoteId from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<BTreeSet<NoteId>> {
+        QueryParamNoteIdLimit::check(note_ids.len())?;
         self.select_notes_by_id(note_ids)
             .await
             .map(|notes| notes.into_iter().map(|note| note.note_id.into()).collect())

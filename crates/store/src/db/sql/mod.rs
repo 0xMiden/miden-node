@@ -35,6 +35,8 @@ use super::{
 use crate::{
     db::{
         sql::utils::{
+            QueryParamAccountIdLimit, QueryParamBlockLimit, QueryParamLimiter,
+            QueryParamNoteIdLimit, QueryParamNoteTagLimit, QueryParamNullifierPrefixLimit,
             account_info_from_row, account_summary_from_row, apply_delta, column_value_as_u64,
             get_nullifier_prefix, u64_to_value,
         },
@@ -119,6 +121,8 @@ pub fn select_accounts_by_block_range(
     block_end: BlockNumber,
     account_ids: &[AccountId],
 ) -> Result<Vec<AccountSummary>> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     let mut stmt = transaction.prepare_cached(
         "
         SELECT
@@ -224,6 +228,8 @@ pub fn select_accounts_by_ids(
     transaction: &Transaction,
     account_ids: &[AccountId],
 ) -> Result<Vec<AccountInfo>> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     let mut stmt = transaction.prepare_cached(
         "
         SELECT
@@ -710,6 +716,8 @@ pub fn select_nullifiers_by_prefix(
 ) -> Result<Vec<NullifierInfo>> {
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
+    QueryParamNullifierPrefixLimit::check(nullifier_prefixes.len())?;
+
     let nullifier_prefixes: Vec<Value> =
         nullifier_prefixes.iter().copied().map(Into::into).collect();
 
@@ -936,6 +944,8 @@ pub fn select_notes_by_id(
     transaction: &Transaction,
     note_ids: &[NoteId],
 ) -> Result<Vec<NoteRecord>> {
+    QueryParamNoteIdLimit::check(note_ids.len())?;
+
     let note_ids: Vec<Value> = note_ids.iter().map(|id| id.to_bytes().into()).collect();
 
     let mut stmt = transaction.prepare_cached(&format!(
@@ -965,6 +975,8 @@ pub fn select_note_inclusion_proofs(
     transaction: &Transaction,
     note_ids: BTreeSet<NoteId>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
+    QueryParamNoteIdLimit::check(note_ids.len())?;
+
     let note_ids: Vec<Value> = note_ids.into_iter().map(|id| id.to_bytes().into()).collect();
 
     let mut select_notes_stmt = transaction.prepare_cached(
@@ -1124,6 +1136,13 @@ pub fn select_block_headers(
     transaction: &Transaction,
     blocks: impl Iterator<Item = BlockNumber> + Send,
 ) -> Result<Vec<BlockHeader>> {
+    // Best effort, the iterators are all deterministic `n+1`
+    // <https://doc.rust-lang.org/src/core/slice/iter/macros.rs.html#195>
+    // <https://doc.rust-lang.org/src/core/option.rs.html#2273>
+    // And the conjunction is truthful:
+    // <https://doc.rust-lang.org/src/core/iter/adapters/chain.rs.html#184>
+    QueryParamBlockLimit::check(blocks.size_hint().0)?;
+
     let blocks: Vec<Value> = blocks.map(|b| b.as_u32().into()).collect();
 
     let mut headers = Vec::with_capacity(blocks.len());
@@ -1205,6 +1224,8 @@ pub fn select_transactions_by_accounts_and_block_range(
     block_end: BlockNumber,
     account_ids: &[AccountId],
 ) -> Result<Vec<TransactionSummary>> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     let account_ids: Vec<Value> = account_ids
         .iter()
         .copied()
@@ -1296,6 +1317,7 @@ pub fn get_note_sync(
     block_num: BlockNumber,
     note_tags: &[u32],
 ) -> Result<NoteSyncUpdate, NoteSyncError> {
+    QueryParamNoteTagLimit::check(note_tags.len())?;
     let notes = select_notes_since_block_by_tag_and_sender(transaction, note_tags, &[], block_num)?;
 
     let block_header =

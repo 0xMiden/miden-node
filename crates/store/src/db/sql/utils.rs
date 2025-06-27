@@ -16,6 +16,51 @@ use crate::{
     errors::DatabaseError,
 };
 
+/// Checks limits against the desired query parameters, per query parameter and
+/// bails if they exceed a defined value.
+pub(crate) trait QueryParamLimiter {
+    /// Name of the parameter to mention in the error.
+    const PARAM_NAME: &'static str;
+    /// Limit that causes a bail if exceeded.
+    const LIMIT: usize;
+    /// Do the actual check.
+    fn check(dim: usize) -> Result<(), DatabaseError> {
+        if dim > Self::LIMIT {
+            Err(DatabaseError::TooManyFilterParameters { which: Self::PARAM_NAME, dim })?;
+        }
+        Ok(())
+    }
+}
+pub(crate) struct QueryParamAccountIdLimit;
+impl QueryParamLimiter for QueryParamAccountIdLimit {
+    const PARAM_NAME: &str = "account_id";
+    const LIMIT: usize = 1000;
+}
+
+pub(crate) struct QueryParamNullifierPrefixLimit;
+impl QueryParamLimiter for QueryParamNullifierPrefixLimit {
+    const PARAM_NAME: &str = "nullifier_prefix";
+    const LIMIT: usize = 1000;
+}
+
+pub(crate) struct QueryParamNoteTagLimit;
+impl QueryParamLimiter for QueryParamNoteTagLimit {
+    const PARAM_NAME: &str = "note_tag";
+    const LIMIT: usize = 1000;
+}
+
+pub(crate) struct QueryParamNoteIdLimit;
+impl QueryParamLimiter for QueryParamNoteIdLimit {
+    const PARAM_NAME: &str = "note_id";
+    const LIMIT: usize = 10_000;
+}
+
+pub(crate) struct QueryParamBlockLimit;
+impl QueryParamLimiter for QueryParamBlockLimit {
+    const PARAM_NAME: &str = "block_header";
+    const LIMIT: usize = 100_000;
+}
+
 /// Returns the high 16 bits of the provided nullifier.
 pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u32 {
     (nullifier.most_significant_felt().as_int() >> 48) as u32

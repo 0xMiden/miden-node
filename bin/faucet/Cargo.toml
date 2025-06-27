@@ -30,7 +30,6 @@ miden-node-utils             = { workspace = true }
 miden-objects                = { workspace = true }
 miden-proving-service-client = { features = ["tx-prover"], workspace = true }
 miden-tx                     = { features = ["async", "concurrent"], workspace = true }
-num-bigint                   = { version = "0.4" }
 rand                         = { features = ["thread_rng"], workspace = true }
 rand_chacha                  = { version = "0.9" }
 serde                        = { features = ["derive"], version = "1.0" }

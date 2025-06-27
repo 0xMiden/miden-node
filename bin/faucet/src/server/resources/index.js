@@ -226,8 +226,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 const nonceByteArray = new Uint8Array(nonceBytes);
                 hash.update(nonceByteArray);
 
-                // Interpret the hex digest as a number
-                let digest = BigInt("0x" + hash.hex());
+                // Take the last 8 bytes of the hash and parse them as u64
+                let digest = BigInt("0x" + hash.hex().slice(-16));
 
                 // Check if the hash is less than the target
                 if (digest < targetNum) {

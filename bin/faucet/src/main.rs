@@ -47,9 +47,8 @@ const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
 const ENV_POW_CHALLENGE_LIFETIME: &str = "MIDEN_FAUCET_POW_CHALLENGE_LIFETIME";
-const ENV_POW_REQUESTS_PER_DIFFICULTY_LEVEL: &str =
-    "MIDEN_FAUCET_POW_REQUESTS_PER_DIFFICULTY_LEVEL";
-const ENV_POW_INITIAL_TARGET_SHIFT: &str = "MIDEN_FAUCET_POW_INITIAL_TARGET_SHIFT";
+const ENV_POW_GROWTH_RATE: &str = "MIDEN_FAUCET_POW_GROWTH_RATE";
+const ENV_POW_BASELINE: &str = "MIDEN_FAUCET_POW_BASELINE";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 const ENV_NETWORK: &str = "MIDEN_FAUCET_NETWORK";
@@ -109,16 +108,16 @@ pub enum Command {
         pow_challenge_lifetime: Duration,
 
         /// The number of simultaneous active requests needed to increase the `PoW` challenges
-        /// difficulty by 1.
-        #[arg(long = "pow-requests-per-difficulty-level", value_name = "NON_ZERO_USIZE", env = ENV_POW_REQUESTS_PER_DIFFICULTY_LEVEL, default_value = "8")]
-        pow_requests_per_difficulty_level: NonZeroUsize,
+        /// difficulty. This sets how fast the difficulty increases with requests.
+        #[arg(long = "pow-growth-rate", value_name = "NON_ZERO_USIZE", env = ENV_POW_GROWTH_RATE, default_value = "8")]
+        pow_growth_rate: NonZeroUsize,
 
-        /// The initial target shift for the `PoW` challenges. This sets the base difficulty for
-        /// all challenges. It must be between 0 and 32. A bigger shift means higher
+        /// The baseline for the `PoW` challenges. This sets the base difficulty for
+        /// all challenges. It must be between 0 and 32. A bigger baseline means higher
         /// difficulty.
         #[arg(value_parser = clap::value_parser!(u8).range(0..=32))]
-        #[arg(long = "pow-initial-target-shift", value_name = "U8", env = ENV_POW_INITIAL_TARGET_SHIFT, default_value = "12")]
-        pow_initial_target_shift: u8,
+        #[arg(long = "pow-baseline", value_name = "U8", env = ENV_POW_BASELINE, default_value = "8")]
+        pow_baseline: u8,
 
         /// Comma-separated list of API keys.
         #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
@@ -196,8 +195,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             asset_amounts,
             pow_secret,
             pow_challenge_lifetime,
-            pow_requests_per_difficulty_level,
-            pow_initial_target_shift,
+            pow_growth_rate,
+            pow_baseline,
             api_keys,
             open_telemetry: _,
         } => {
@@ -228,8 +227,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("failed to create asset options: {}", e))?;
             let pow_config = PoWConfig {
                 challenge_lifetime: pow_challenge_lifetime,
-                requests_per_difficulty_level: pow_requests_per_difficulty_level,
-                initial_target_shift: pow_initial_target_shift,
+                growth_rate: pow_growth_rate,
+                baseline: pow_baseline,
             };
             let server = Server::new(
                 faucet.faucet_id(),
@@ -511,8 +510,8 @@ mod test {
                         api_keys: vec![],
                         pow_secret: None,
                         pow_challenge_lifetime: Duration::from_secs(30),
-                        pow_requests_per_difficulty_level: NonZeroUsize::new(1).unwrap(),
-                        pow_initial_target_shift: 0,
+                        pow_growth_rate: NonZeroUsize::new(1).unwrap(),
+                        pow_baseline: 0,
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

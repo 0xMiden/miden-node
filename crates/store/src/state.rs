@@ -170,8 +170,13 @@ impl State {
             .await?
             .ok_or(ApplyBlockError::DbBlockHeaderEmpty)?;
 
-        if block_num != prev_block.block_num() + 1 {
-            return Err(InvalidBlockError::NewBlockInvalidBlockNum.into());
+        let expected_block_num = prev_block.block_num() + 1;
+        if block_num != expected_block_num {
+            return Err(InvalidBlockError::NewBlockInvalidBlockNum {
+                expected: expected_block_num,
+                submitted: block_num,
+            }
+            .into());
         }
         if header.prev_block_commitment() != prev_block.commitment() {
             return Err(InvalidBlockError::NewBlockInvalidPrevCommitment.into());

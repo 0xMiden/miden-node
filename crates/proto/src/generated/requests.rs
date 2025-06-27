@@ -250,7 +250,7 @@ pub struct SubmitNetworkNotesRequest {
     pub transaction_id: ::core::option::Option<super::digest::Digest>,
     /// The network notes to submit.
     #[prost(message, repeated, tag = "2")]
-    pub note: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
+    pub note: ::prost::alloc::vec::Vec<super::note::Note>,
 }
 /// Update the status of network notes that were consumed externally.
 #[derive(Clone, PartialEq, ::prost::Message)]

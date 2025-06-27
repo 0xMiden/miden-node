@@ -196,7 +196,7 @@ pub struct SubmitProvenTransactionResponse {
 pub struct GetNotesByIdResponse {
     /// Lists Note's returned by the database.
     #[prost(message, repeated, tag = "1")]
-    pub notes: ::prost::alloc::vec::Vec<super::note::Note>,
+    pub notes: ::prost::alloc::vec::Vec<super::note::CommittedNote>,
 }
 /// Represents the result of getting account details.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -298,7 +298,7 @@ pub struct GetUnconsumedNetworkNotesResponse {
     pub next_token: ::core::option::Option<u64>,
     /// The list of unconsumed network notes.
     #[prost(message, repeated, tag = "2")]
-    pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
+    pub notes: ::prost::alloc::vec::Vec<super::note::Note>,
 }
 /// Represents the status of the node.
 #[derive(Clone, PartialEq, ::prost::Message)]

@@ -23,6 +23,10 @@
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
+- [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
+- Faucet challenge expiration time is now configurable (#1017).
+- Removed system monitor from node binary (#1019).
+- [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).
 - [BREAKING] Rename `miden-proving-service` to `miden-remote-prover` (#1004).
 - [BREAKING] Rename `miden-proving-service-client` to `miden-remote-prover-client` (#1004).
 - [BREAKING] Rename `RemoteProverError` to `RemoteProverClientError` (#1004).
@@ -238,7 +242,7 @@
 
 ## 0.3.0 (2024-05-15)
 
-- Added option to mint pulic notes in the faucet (#339).
+- Added option to mint public notes in the faucet (#339).
 - Renamed `note_hash` into `note_id` in the database (#336)
 - Changed `version` and `timestamp` fields in `Block` message to `u32` (#337).
 - [BREAKING] Implemented `NoteMetadata` protobuf message (#338).

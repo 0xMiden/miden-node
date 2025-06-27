@@ -2,12 +2,12 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{DataDirectory, GenesisState, Store};
+use miden_node_store::{GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -19,11 +19,8 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use url::Url;
 
-use super::{
-    DEFAULT_MONITOR_INTERVAL, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL,
-    duration_to_human_readable_string,
-};
-use crate::system_monitor::SystemMonitor;
+use super::{ENV_DATA_DIRECTORY, ENV_STORE_URL};
+use crate::commands::ENV_ENABLE_OTEL;
 
 /// The default filepath for the genesis account.
 const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
@@ -60,16 +57,7 @@ pub enum StoreCommand {
         /// This can be further configured using environment variables as defined in the official
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
-        open_telemetry: bool,
-
-        /// Interval at which to monitor the system.
-        #[arg(
-            long = "monitor.interval",
-            default_value = &duration_to_human_readable_string(DEFAULT_MONITOR_INTERVAL),
-            value_parser = humantime::parse_duration,
-            value_name = "DURATION"
-        )]
-        monitor_interval: Duration,
+        enable_otel: bool,
     },
 }
 
@@ -80,41 +68,26 @@ impl StoreCommand {
             StoreCommand::Bootstrap { data_directory, accounts_directory } => {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
-            // Note: open-telemetry is handled in main.
-            StoreCommand::Start {
-                url,
-                data_directory,
-                open_telemetry: _,
-                monitor_interval,
-            } => Self::start(url, data_directory, monitor_interval).await,
+            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
+                Self::start(url, data_directory).await
+            },
         }
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        if let Self::Start { open_telemetry, .. } = self {
-            *open_telemetry
+        if let Self::Start { enable_otel, .. } = self {
+            *enable_otel
         } else {
             false
         }
     }
 
-    async fn start(
-        url: Url,
-        data_directory: PathBuf,
-        monitor_interval: Duration,
-    ) -> anyhow::Result<()> {
+    async fn start(url: Url, data_directory: PathBuf) -> anyhow::Result<()> {
         let listener =
             url.to_socket().context("Failed to extract socket address from store URL")?;
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to store's gRPC URL")?;
-
-        // Start system monitor.
-        let data_dir =
-            DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        SystemMonitor::new(monitor_interval)
-            .with_store_metrics(data_dir)
-            .run_with_supervisor();
 
         Store { listener, data_directory }
             .serve()

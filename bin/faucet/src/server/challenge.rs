@@ -1,19 +1,26 @@
+use std::time::Duration;
+
+use miden_objects::{
+    account::AccountId,
+    utils::{Deserializable, Serializable},
+};
 use miden_tx::utils::{ToHex, hex_to_bytes};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Serialize, Serializer};
 use sha3::{Digest, Sha3_256};
 
-use super::get_tokens::InvalidRequest;
+use super::get_tokens::MintRequestError;
+use crate::server::ApiKey;
 
-/// The lifetime of a challenge.
-///
-/// A challenge is valid if it is within `CHALLENGE_LIFETIME_SECONDS` seconds of the current time.
-pub(crate) const CHALLENGE_LIFETIME_SECONDS: u64 = 30;
+/// The size of the encoded challenge in bytes.
+const CHALLENGE_ENCODED_SIZE: usize = 95;
 
 /// A challenge for proof-of-work validation.
-#[derive(Debug, Clone, Deserialize, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Challenge {
     pub(crate) difficulty: usize,
     pub(crate) timestamp: u64,
+    pub(crate) account_id: AccountId,
+    pub(crate) api_key: ApiKey,
     pub(crate) signature: [u8; 32],
 }
 
@@ -34,46 +41,73 @@ impl Serialize for Challenge {
 impl Challenge {
     /// Creates a new challenge with the given parameters.
     /// The signature is computed internally using the provided secret.
-    pub fn new(difficulty: usize, timestamp: u64, secret: [u8; 32]) -> Self {
-        let signature = Self::compute_signature(secret, difficulty, timestamp);
-        Self { difficulty, timestamp, signature }
+    pub fn new(
+        difficulty: usize,
+        timestamp: u64,
+        account_id: AccountId,
+        api_key: ApiKey,
+        secret: [u8; 32],
+    ) -> Self {
+        let signature =
+            Self::compute_signature(secret, difficulty, timestamp, account_id, &api_key.inner());
+        Self {
+            difficulty,
+            timestamp,
+            account_id,
+            api_key,
+            signature,
+        }
     }
 
     /// Creates a challenge from existing parts (used for decoding).
-    pub fn from_parts(difficulty: usize, timestamp: u64, signature: [u8; 32]) -> Self {
-        Self { difficulty, timestamp, signature }
+    pub fn from_parts(
+        difficulty: usize,
+        timestamp: u64,
+        account_id: AccountId,
+        api_key: ApiKey,
+        signature: [u8; 32],
+    ) -> Self {
+        Self {
+            difficulty,
+            timestamp,
+            account_id,
+            api_key,
+            signature,
+        }
     }
 
     /// Decodes the challenge and verifies that the signature part of the challenge is valid
     /// in the context of the specified secret.
-    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, InvalidRequest> {
+    pub fn decode(value: &str, secret: [u8; 32]) -> Result<Self, MintRequestError> {
         // Parse the hex-encoded challenge string
-        let bytes = hex_to_bytes::<48>(value).map_err(|_| InvalidRequest::MissingPowParameters)?;
+        let bytes: [u8; CHALLENGE_ENCODED_SIZE] =
+            hex_to_bytes(value).map_err(|_| MintRequestError::MissingPowParameters)?;
 
-        if bytes.len() != 48 {
-            // 8 + 8 + 32 bytes
-            return Err(InvalidRequest::MissingPowParameters);
-        }
-
-        // SAFETY: Length of 48 is enforced above.
+        // SAFETY: Length of the bytes is enforced above.
         let difficulty = u64::from_le_bytes(bytes[0..8].try_into().unwrap()) as usize;
         let timestamp = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
-        let signature: [u8; 32] = bytes[16..48].try_into().unwrap();
+        let account_id = AccountId::read_from_bytes(&bytes[16..31]).unwrap();
+        let api_key_bytes: [u8; 32] = bytes[31..63].try_into().unwrap();
+        let api_key = ApiKey::new(api_key_bytes);
+        let signature: [u8; 32] = bytes[63..CHALLENGE_ENCODED_SIZE].try_into().unwrap();
 
         // Verify the signature
-        let expected_signature = Self::compute_signature(secret, difficulty, timestamp);
+        let expected_signature =
+            Self::compute_signature(secret, difficulty, timestamp, account_id, &api_key_bytes);
         if signature == expected_signature {
-            Ok(Self::from_parts(difficulty, timestamp, signature))
+            Ok(Self::from_parts(difficulty, timestamp, account_id, api_key, signature))
         } else {
-            Err(InvalidRequest::ServerSignaturesDoNotMatch)
+            Err(MintRequestError::ServerSignaturesDoNotMatch)
         }
     }
 
     /// Encodes the challenge into a hex string.
     pub fn encode(&self) -> String {
-        let mut bytes = Vec::with_capacity(48);
+        let mut bytes = Vec::with_capacity(CHALLENGE_ENCODED_SIZE);
         bytes.extend_from_slice(&(self.difficulty as u64).to_le_bytes());
         bytes.extend_from_slice(&self.timestamp.to_le_bytes());
+        bytes.extend_from_slice(&self.account_id.to_bytes());
+        bytes.extend_from_slice(&self.api_key.inner());
         bytes.extend_from_slice(&self.signature);
         bytes.to_hex_with_prefix()
     }
@@ -92,28 +126,56 @@ impl Challenge {
     }
 
     /// Checks if the challenge timestamp is expired.
-    pub fn is_expired(&self, current_time: u64) -> bool {
-        (current_time - self.timestamp) > CHALLENGE_LIFETIME_SECONDS
+    ///
+    /// # Arguments
+    /// * `current_time` - The current timestamp in seconds since the UNIX epoch.
+    /// * `challenge_lifetime` - The duration during which a challenge is valid.
+    pub fn is_expired(&self, current_time: u64, challenge_lifetime: Duration) -> bool {
+        let diff = current_time.checked_sub(self.timestamp).unwrap_or(u64::MAX);
+        diff > challenge_lifetime.as_secs()
     }
 
     /// Computes the signature for a challenge.
-    fn compute_signature(secret: [u8; 32], difficulty: usize, timestamp: u64) -> [u8; 32] {
+    pub fn compute_signature(
+        secret: [u8; 32],
+        difficulty: usize,
+        timestamp: u64,
+        account_id: AccountId,
+        api_key: &[u8],
+    ) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         hasher.update(secret);
         hasher.update(difficulty.to_le_bytes());
         hasher.update(timestamp.to_le_bytes());
+        let account_id_bytes: [u8; AccountId::SERIALIZED_SIZE] = account_id.into();
+        hasher.update(account_id_bytes);
+        hasher.update(api_key);
         hasher.finalize().into()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha20Rng;
+
     use super::*;
 
+    fn create_test_secret() -> [u8; 32] {
+        let mut secret = [0u8; 32];
+        secret[..12].copy_from_slice(b"miden-faucet");
+        secret
+    }
+
     #[test]
-    fn test_challenge_serialization() {
+    fn challenge_serialize_and_deserialize_json() {
         let secret = [1u8; 32];
-        let challenge = Challenge::new(2, 1_234_567_890, secret);
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
+        let challenge = Challenge::new(2, 1_234_567_890, account_id, api_key, secret);
 
         // Test that it serializes to the expected JSON format
         let json = serde_json::to_string(&challenge).unwrap();
@@ -130,5 +192,41 @@ mod tests {
         assert!(parsed.get("timestamp").is_some());
         assert_eq!(parsed["difficulty"], 2);
         assert_eq!(parsed["timestamp"], 1_234_567_890);
+    }
+
+    #[test]
+    fn test_challenge_encode_decode() {
+        let secret = create_test_secret();
+        let difficulty = 3;
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
+
+        let challenge = Challenge::new(difficulty, current_time, account_id, api_key, secret);
+
+        let encoded = challenge.encode();
+        let decoded = Challenge::decode(&encoded, secret).unwrap();
+
+        assert_eq!(challenge, decoded);
+    }
+
+    #[test]
+    fn test_timestamp_validation() {
+        let secret = create_test_secret();
+        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
+        let lifetime = Duration::from_secs(30);
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let api_key = ApiKey::generate(&mut rng);
+
+        // Valid timestamp (current time)
+        let challenge = Challenge::new(1, current_time, account_id, api_key.clone(), secret);
+        assert!(!challenge.is_expired(current_time, lifetime));
+
+        // Expired timestamp (too old)
+        let old_timestamp = current_time - lifetime.as_secs() - 10;
+        let challenge = Challenge::new(1, old_timestamp, account_id, api_key, secret);
+        assert!(challenge.is_expired(current_time, lifetime));
     }
 }

@@ -37,7 +37,6 @@ body::before {
 #error-message {
     display: block;
     visibility: hidden;
-    height: 18.5px;
     color: red;
     text-align: center;
     margin-bottom: 4.5px;

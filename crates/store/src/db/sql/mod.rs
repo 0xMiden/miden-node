@@ -596,7 +596,7 @@ fn insert_account_delta(
     }
 
     for (&slot, map_delta) in delta.storage().maps() {
-        for (key, value) in map_delta.leaves() {
+        for (key, value) in map_delta.entries() {
             insert_storage_map_update_stmt.execute(params![
                 account_id.to_bytes(),
                 block_number.as_u32(),
@@ -828,7 +828,7 @@ pub fn insert_notes(
     Ok(count)
 }
 
-/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts holded by the
+/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts held by the
 /// notes passed as parameter. If the script root already exists in the DB, it will be ignored.
 ///
 /// # Returns

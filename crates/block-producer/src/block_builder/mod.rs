@@ -92,7 +92,7 @@ impl BlockBuilder {
         );
 
         let mut interval = tokio::time::interval(self.block_interval);
-        // We set the inverval's missed tick behaviour to burst. This means we'll catch up missed
+        // We set the interval's missed tick behaviour to burst. This means we'll catch up missed
         // blocks as fast as possible. In other words, we try our best to keep the desired block
         // interval on average. The other options would result in at least one skipped block.
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);

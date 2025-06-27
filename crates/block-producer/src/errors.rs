@@ -18,7 +18,7 @@ use tokio::task::JoinError;
 pub enum BlockProducerError {
     /// A block-producer task completed although it should have ran indefinitely.
     #[error("task {task} completed unexpectedly")]
-    TaskFailedSuccesfully { task: &'static str },
+    TaskFailedSuccessfully { task: &'static str },
 
     /// A block-producer task panic'd.
     #[error("error joining {task} task")]

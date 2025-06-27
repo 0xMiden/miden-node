@@ -139,7 +139,7 @@ pub struct TestSecrets {
 
 /// Specify a set of faucets and wallets with assets for easier test depoyments
 ///
-/// Notice: Any faucet must be delcared _before_ it's use in a wallet/regular account.
+/// Notice: Any faucet must be declared _before_ it's use in a wallet/regular account.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TestGenesisConfig {
     version: u32,

@@ -35,20 +35,20 @@ mod tests;
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BatchBudget {
     /// Maximum number of transactions allowed in a batch.
-    transactions: usize,
+    pub transactions: usize,
     /// Maximum number of input notes allowed.
-    input_notes: usize,
+    pub input_notes: usize,
     /// Maximum number of output notes allowed.
-    output_notes: usize,
+    pub output_notes: usize,
     /// Maximum number of updated accounts.
-    accounts: usize,
+    pub accounts: usize,
 }
 
 /// Limits placed on a blocks's contents.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct BlockBudget {
     /// Maximum number of batches allowed in a block.
-    batches: usize,
+    pub batches: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

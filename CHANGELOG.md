@@ -15,6 +15,8 @@
 
 ### Changes
 
+- Transaction limit per batch is now configurable (default 8) (#1015).
+- Batch limit per block is now configurable (default 8) (#1015).
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
 - [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).

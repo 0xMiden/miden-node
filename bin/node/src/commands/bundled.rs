@@ -147,6 +147,8 @@ impl BundledCommand {
                     block_prover_url: block_producer.block_prover_url,
                     batch_interval: block_producer.batch_interval,
                     block_interval: block_producer.block_interval,
+                    max_batches_per_block: block_producer.max_batches_per_block,
+                    max_txs_per_batch: block_producer.max_txs_per_batch,
                 }
                 .serve()
                 .await

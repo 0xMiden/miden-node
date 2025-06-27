@@ -118,10 +118,7 @@ mod tests {
                 max_txs_per_batch: 8,
                 max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
             },
-            telemetry: TelemetryConfig {
-                open_telemetry: false,
-                monitor_interval: std::time::Duration::from_secs(1),
-            },
+            enable_otel: false,
         };
         let result = cmd.handle().await;
         assert!(result.is_err());
@@ -144,10 +141,7 @@ mod tests {
                                                                            * (should fail) */
                 max_batches_per_block: 8,
             },
-            telemetry: TelemetryConfig {
-                open_telemetry: false,
-                monitor_interval: std::time::Duration::from_secs(1),
-            },
+            enable_otel: false,
         };
         let result = cmd.handle().await;
         assert!(result.is_err());

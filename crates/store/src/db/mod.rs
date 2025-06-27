@@ -349,12 +349,7 @@ impl Db {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.framed("nullifieres by prefix", move |conn| {
-            sql::select_nullifiers_by_prefix(
-                conn,
-                prefix_len as u32,
-                &nullifier_prefixes[..],
-                block_num,
-            )
+            sql::select_nullifiers_by_prefix(conn, prefix_len, &nullifier_prefixes[..], block_num)
         })
         .await
     }

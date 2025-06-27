@@ -57,7 +57,7 @@ pub enum StoreCommand {
         /// This can be further configured using environment variables as defined in the official
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
-        open_telemetry: bool,
+        enable_otel: bool,
     },
 }
 
@@ -68,15 +68,15 @@ impl StoreCommand {
             StoreCommand::Bootstrap { data_directory, accounts_directory } => {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
-            StoreCommand::Start { url, data_directory, open_telemetry: _ } => {
+            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
                 Self::start(url, data_directory).await
             },
         }
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        if let Self::Start { open_telemetry, .. } = self {
-            *open_telemetry
+        if let Self::Start { enable_otel, .. } = self {
+            *enable_otel
         } else {
             false
         }

@@ -28,7 +28,7 @@ pub enum RpcCommand {
         /// This can be further configured using environment variables as defined in the official
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
-        open_telemetry: bool,
+        enable_otel: bool,
     },
 }
 
@@ -38,7 +38,7 @@ impl RpcCommand {
             url,
             store_url,
             block_producer_url,
-            open_telemetry: _,
+            enable_otel: _,
         } = self;
 
         let store = store_url
@@ -60,7 +60,7 @@ impl RpcCommand {
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        let Self::Start { open_telemetry, .. } = self;
-        *open_telemetry
+        let Self::Start { enable_otel, .. } = self;
+        *enable_otel
     }
 }

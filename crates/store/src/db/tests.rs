@@ -6,9 +6,11 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use diesel::{Connection, SqliteConnection};
 use miden_lib::{
     account::auth::AuthRpoFalcon512, note::create_p2id_note, transaction::TransactionKernel,
 };
+use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
 use miden_node_proto::domain::account::AccountSummary;
 use miden_objects::{
     EMPTY_WORD, Felt, FieldElement, Word, ZERO,
@@ -29,20 +31,26 @@ use miden_objects::{
     },
     transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId},
 };
+use pretty_assertions::assert_eq;
 use rand::Rng;
 
-use super::{AccountInfo, NoteRecord, NullifierInfo, sql};
-use crate::db::{
-    TransactionSummary, connection::Connection, migrations::apply_migrations, sql::Page,
+use super::{AccountInfo, NoteRecord, NullifierInfo};
+use crate::{
+    db::{
+        TransactionSummary,
+        migrations::apply_migrations,
+        models::{Page, queries, utils},
+    },
+    errors::DatabaseError,
 };
 
-fn create_db() -> Connection {
-    let mut conn = Connection::open_in_memory().unwrap();
-    apply_migrations(&mut conn).unwrap();
+fn create_db() -> SqliteConnection {
+    let mut conn = SqliteConnection::establish(":memory:").expect("In memory sqlite always works");
+    apply_migrations(&mut conn).expect("Migrations always work on an empty database");
     conn
 }
 
-fn create_block(conn: &mut Connection, block_num: BlockNumber) {
+fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
     let block_header = BlockHeader::new(
         1_u8.into(),
         num_to_word(2),
@@ -57,41 +65,40 @@ fn create_block(conn: &mut Connection, block_num: BlockNumber) {
         11_u8.into(),
     );
 
-    let transaction = conn.transaction().unwrap();
-    sql::insert_block_header(&transaction, &block_header).unwrap();
-    transaction.commit().unwrap();
+    conn.transaction(|conn| queries::insert_block_header(conn, &block_header))
+        .unwrap();
 }
 
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn sql_insert_nullifiers_for_block() {
     let mut conn = create_db();
-
+    let conn = &mut conn;
     let nullifiers = [num_to_nullifier(1 << 48)];
 
     let block_num = 1.into();
-    create_block(&mut conn, block_num);
+    create_block(conn, block_num);
 
     // Insert a new nullifier succeeds
     {
-        let transaction = conn.transaction().unwrap();
-        let res = sql::insert_nullifiers_for_block(&transaction, &nullifiers, block_num);
-        assert_eq!(res.unwrap(), nullifiers.len(), "There should be one entry");
-        transaction.commit().unwrap();
+        conn.transaction(|conn| {
+            let res = queries::insert_nullifiers_for_block(conn, &nullifiers, block_num);
+            assert_eq!(res.unwrap(), nullifiers.len(), "There should be one entry");
+            Ok::<_, DatabaseError>(())
+        })
+        .unwrap();
     }
 
     // Inserting the nullifier twice is an error
     {
-        let transaction = conn.transaction().unwrap();
-        let res = sql::insert_nullifiers_for_block(&transaction, &nullifiers, block_num);
+        let res = queries::insert_nullifiers_for_block(conn, &nullifiers, block_num);
         assert!(res.is_err(), "Inserting the same nullifier twice is an error");
     }
 
     // even if the block number is different
     {
-        let transaction = conn.transaction().unwrap();
-        let res = sql::insert_nullifiers_for_block(&transaction, &nullifiers, block_num + 1);
-        transaction.commit().unwrap();
+        let res = queries::insert_nullifiers_for_block(conn, &nullifiers, block_num + 1);
+
         assert!(
             res.is_err(),
             "Inserting the same nullifier twice is an error, even if with a different block number"
@@ -102,9 +109,9 @@ fn sql_insert_nullifiers_for_block() {
     {
         let nullifiers: Vec<_> = (0..10).map(num_to_nullifier).collect();
         let block_num = 1.into();
-        let transaction = conn.transaction().unwrap();
-        let res = sql::insert_nullifiers_for_block(&transaction, &nullifiers, block_num);
-        transaction.commit().unwrap();
+
+        let res = queries::insert_nullifiers_for_block(conn, &nullifiers, block_num);
+
         assert_eq!(res.unwrap(), nullifiers.len(), "There should be 10 entries");
     }
 }
@@ -113,8 +120,8 @@ fn sql_insert_nullifiers_for_block() {
 #[miden_node_test_macro::enable_logging]
 fn sql_insert_transactions() {
     let mut conn = create_db();
-
-    let count = insert_transactions(&mut conn);
+    let conn = &mut conn;
+    let count = insert_transactions(conn);
 
     assert_eq!(count, 2, "Two elements must have been inserted");
 }
@@ -122,27 +129,28 @@ fn sql_insert_transactions() {
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn sql_select_transactions() {
-    fn query_transactions(conn: &mut Connection) -> Vec<TransactionSummary> {
-        sql::select_transactions_by_accounts_and_block_range(
-            &conn.transaction().unwrap(),
+    fn query_transactions(conn: &mut SqliteConnection) -> Vec<TransactionSummary> {
+        queries::select_transactions_by_accounts_and_block_range(
+            conn,
+            &[AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()],
+            // TODO use a Range<BlockNumber> expression
             0.into(),
             2.into(),
-            &[AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()],
         )
         .unwrap()
     }
 
     let mut conn = create_db();
-
-    let transactions = query_transactions(&mut conn);
+    let conn = &mut conn;
+    let transactions = query_transactions(conn);
 
     assert!(transactions.is_empty(), "No elements must be initially in the DB");
 
-    let count = insert_transactions(&mut conn);
+    let count = insert_transactions(conn);
 
     assert_eq!(count, 2, "Two elements must have been inserted");
 
-    let transactions = query_transactions(&mut conn);
+    let transactions = query_transactions(conn);
 
     assert_eq!(transactions.len(), 2, "Two elements must be in the DB");
 }
@@ -151,25 +159,24 @@ fn sql_select_transactions() {
 #[miden_node_test_macro::enable_logging]
 fn sql_select_nullifiers() {
     let mut conn = create_db();
-
+    let conn = &mut conn;
     let block_num = 1.into();
-    create_block(&mut conn, block_num);
+    create_block(conn, block_num);
 
     // test querying empty table
-    let nullifiers = sql::select_all_nullifiers(&conn.transaction().unwrap()).unwrap();
+    let nullifiers = queries::select_all_nullifiers(conn).unwrap();
     assert!(nullifiers.is_empty());
 
     // test multiple entries
     let mut state = vec![];
     for i in 0..10 {
         let nullifier = num_to_nullifier(i);
-        state.push((nullifier, block_num));
+        state.push(NullifierInfo { nullifier, block_num });
 
-        let transaction = conn.transaction().unwrap();
-        let res = sql::insert_nullifiers_for_block(&transaction, &[nullifier], block_num);
+        let res = queries::insert_nullifiers_for_block(conn, &[nullifier], block_num);
         assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-        transaction.commit().unwrap();
-        let nullifiers = sql::select_all_nullifiers(&conn.transaction().unwrap()).unwrap();
+
+        let nullifiers = queries::select_all_nullifiers(conn).unwrap();
         assert_eq!(nullifiers, state);
     }
 }
@@ -195,22 +202,17 @@ pub fn create_note(account_id: AccountId) -> Note {
 #[miden_node_test_macro::enable_logging]
 fn sql_select_notes() {
     let mut conn = create_db();
-
+    let conn = &mut conn;
     let block_num = BlockNumber::from(1);
-    create_block(&mut conn, block_num);
+    create_block(conn, block_num);
 
     // test querying empty table
-    let notes = sql::select_all_notes(&conn.transaction().unwrap()).unwrap();
+    let notes = queries::select_all_notes(conn).unwrap();
     assert!(notes.is_empty());
 
     let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
-    let transaction = conn.transaction().unwrap();
-
-    sql::upsert_accounts(&transaction, &[mock_block_account_update(account_id, 0)], block_num)
-        .unwrap();
-
-    transaction.commit().unwrap();
+    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block_num).unwrap();
 
     let new_note = create_note(account_id);
 
@@ -227,10 +229,8 @@ fn sql_select_notes() {
         };
         state.push(note.clone());
 
-        let transaction = conn.transaction().unwrap();
-
         // insert scripts (after the first iteration the script is already in the db)
-        let res = sql::insert_scripts(&transaction, [&note]);
+        let res = queries::insert_scripts(conn, [&note]);
         if i == 0 {
             assert_eq!(res.unwrap(), 1, "One element must have been inserted");
         } else {
@@ -238,10 +238,10 @@ fn sql_select_notes() {
         }
 
         // insert notes
-        let res = sql::insert_notes(&transaction, &[(note, None)]);
+        let res = queries::insert_notes(conn, &[(note, None)]);
         assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-        transaction.commit().unwrap();
-        let notes = sql::select_all_notes(&conn.transaction().unwrap()).unwrap();
+
+        let notes = queries::select_all_notes(conn).unwrap();
         assert_eq!(notes, state);
     }
 }
@@ -250,21 +250,18 @@ fn sql_select_notes() {
 #[miden_node_test_macro::enable_logging]
 fn sql_select_notes_different_execution_hints() {
     let mut conn = create_db();
+    let conn = &mut conn;
 
     let block_num = 1.into();
-    create_block(&mut conn, block_num);
+    create_block(conn, block_num);
 
     // test querying empty table
-    let notes = sql::select_all_notes(&conn.transaction().unwrap()).unwrap();
+    let notes = queries::select_all_notes(conn).unwrap();
     assert!(notes.is_empty());
 
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
-    let transaction = conn.transaction().unwrap();
-
-    sql::upsert_accounts(&transaction, &[mock_block_account_update(sender, 0)], block_num).unwrap();
-
-    transaction.commit().unwrap();
+    queries::upsert_accounts(conn, &[mock_block_account_update(sender, 0)], block_num).unwrap();
 
     // test multiple entries
     let mut state = vec![];
@@ -288,13 +285,17 @@ fn sql_select_notes_different_execution_hints() {
     };
     state.push(note_none.clone());
 
-    let transaction = conn.transaction().unwrap();
-    sql::insert_scripts(&transaction, [&note_none]).unwrap(); // only necessary for the first note
-    let res = sql::insert_notes(&transaction, &[(note_none, None)]);
+    queries::insert_scripts(conn, [&note_none]).unwrap(); // only necessary for the first note
+    let res = queries::insert_notes(conn, &[(note_none, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
+<<<<<<< HEAD
     transaction.commit().unwrap();
     let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(0).into()])
         .unwrap()[0];
+=======
+
+    let note = &queries::select_notes_by_id(conn, &[num_to_rpo_digest(0).into()]).unwrap()[0];
+>>>>>>> b1ad1a38 (migrate to diesel-rs)
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::none());
 
     let note_always = NoteRecord {
@@ -314,12 +315,16 @@ fn sql_select_notes_different_execution_hints() {
     };
     state.push(note_always.clone());
 
-    let transaction = conn.transaction().unwrap();
-    let res = sql::insert_notes(&transaction, &[(note_always, None)]);
+    let res = queries::insert_notes(conn, &[(note_always, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
+<<<<<<< HEAD
     transaction.commit().unwrap();
     let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(1).into()])
         .unwrap()[0];
+=======
+
+    let note = &queries::select_notes_by_id(conn, &[num_to_rpo_digest(1).into()]).unwrap()[0];
+>>>>>>> b1ad1a38 (migrate to diesel-rs)
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::always());
 
     let note_after_block = NoteRecord {
@@ -339,12 +344,16 @@ fn sql_select_notes_different_execution_hints() {
     };
     state.push(note_after_block.clone());
 
-    let transaction = conn.transaction().unwrap();
-    let res = sql::insert_notes(&transaction, &[(note_after_block, None)]);
+    let res = queries::insert_notes(conn, &[(note_after_block, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
+<<<<<<< HEAD
     transaction.commit().unwrap();
     let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(2).into()])
         .unwrap()[0];
+=======
+
+    let note = &queries::select_notes_by_id(conn, &[num_to_rpo_digest(2).into()]).unwrap()[0];
+>>>>>>> b1ad1a38 (migrate to diesel-rs)
     assert_eq!(
         note.metadata.execution_hint(),
         NoteExecutionHint::after_block(12.into()).unwrap()
@@ -353,35 +362,34 @@ fn sql_select_notes_different_execution_hints() {
 
 // Generates an account, inserts into the database, and creates a note for it.
 fn make_account_and_note(
-    conn: &mut Connection,
+    conn: &mut SqliteConnection,
     block_num: BlockNumber,
     init_seed: [u8; 32],
     storage_mode: AccountStorageMode,
 ) -> (AccountId, Note) {
-    let transaction = conn.transaction().unwrap();
+    conn.transaction(|conn| {
+        let account = mock_account_code_and_storage(
+            AccountType::RegularAccountUpdatableCode,
+            storage_mode,
+            [],
+            Some(init_seed),
+        );
+        let account_id = account.id();
+        queries::upsert_accounts(
+            conn,
+            &[BlockAccountUpdate::new(
+                account_id,
+                account.commitment(),
+                AccountUpdateDetails::New(account),
+            )],
+            block_num,
+        )
+        .unwrap();
 
-    let account = mock_account_code_and_storage(
-        AccountType::RegularAccountUpdatableCode,
-        storage_mode,
-        [],
-        Some(init_seed),
-    );
-    let account_id = account.id();
-    sql::upsert_accounts(
-        &transaction,
-        &[BlockAccountUpdate::new(
-            account_id,
-            account.commitment(),
-            AccountUpdateDetails::New(account),
-        )],
-        block_num,
-    )
-    .unwrap();
-
-    transaction.commit().unwrap();
-
-    let new_note = create_note(account_id);
-    (account_id, new_note)
+        let new_note = create_note(account_id);
+        Ok::<_, DatabaseError>((account_id, new_note))
+    })
+    .unwrap()
 }
 
 #[test]
@@ -391,14 +399,15 @@ fn sql_unconsumed_network_notes() {
     const N: u64 = 32;
 
     let mut conn = create_db();
+    let conn = &mut conn;
 
     let block_num = BlockNumber::from(1);
     // An arbitrary public account (network note tag requires public account).
-    create_block(&mut conn, block_num);
+    create_block(conn, block_num);
 
     let account_notes = vec![
-        make_account_and_note(&mut conn, block_num, [0u8; 32], AccountStorageMode::Public),
-        make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network),
+        make_account_and_note(conn, block_num, [0u8; 32], AccountStorageMode::Public),
+        make_account_and_note(conn, block_num, [1u8; 32], AccountStorageMode::Network),
     ];
 
     // Create some notes, of which half are network notes.
@@ -435,13 +444,12 @@ fn sql_unconsumed_network_notes() {
         .collect::<Vec<_>>();
 
     // Insert the set of notes.
-    let db_tx = conn.transaction().unwrap();
-    sql::insert_scripts(&db_tx, notes.iter().map(|(note, _)| note)).unwrap();
-    sql::insert_notes(&db_tx, &notes).unwrap();
+    queries::insert_scripts(conn, notes.iter().map(|(note, _)| note)).unwrap();
+    queries::insert_notes(conn, &notes).unwrap();
 
     // Fetch all network notes by setting a limit larger than the amount available.
-    let (result, _) = sql::unconsumed_network_notes(
-        &db_tx,
+    let (result, _) = queries::unconsumed_network_notes(
+        conn,
         Page {
             token: None,
             size: NonZeroUsize::new(N as usize * 10).unwrap(),
@@ -457,7 +465,7 @@ fn sql_unconsumed_network_notes() {
         size: NonZeroUsize::new(limit).unwrap(),
     };
     network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
+        let (result, new_page) = queries::unconsumed_network_notes(conn, page).unwrap();
         page = new_page;
         assert_eq!(result, expected);
     });
@@ -469,7 +477,7 @@ fn sql_unconsumed_network_notes() {
         .filter_map(|(_, nullifier)| *nullifier)
         .step_by(3)
         .collect::<Vec<_>>();
-    sql::insert_nullifiers_for_block(&db_tx, &consumed, block_num).unwrap();
+    queries::insert_nullifiers_for_block(conn, &consumed, block_num).unwrap();
 
     let expected = network_notes
         .iter()
@@ -481,7 +489,7 @@ fn sql_unconsumed_network_notes() {
         token: None,
         size: NonZeroUsize::new(N as usize * 10).unwrap(),
     };
-    let (result, _) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
+    let (result, _) = queries::unconsumed_network_notes(conn, page).unwrap();
     assert_eq!(result, expected);
 }
 
@@ -489,12 +497,12 @@ fn sql_unconsumed_network_notes() {
 #[miden_node_test_macro::enable_logging]
 fn sql_select_accounts() {
     let mut conn = create_db();
-
+    let conn = &mut conn;
     let block_num = 1.into();
-    create_block(&mut conn, block_num);
+    create_block(conn, block_num);
 
     // test querying empty table
-    let accounts = sql::select_all_accounts(&conn.transaction().unwrap()).unwrap();
+    let accounts = queries::select_all_accounts(conn).unwrap();
     assert!(accounts.is_empty());
     // test multiple entries
     let mut state = vec![];
@@ -515,9 +523,8 @@ fn sql_select_accounts() {
             details: None,
         });
 
-        let transaction = conn.transaction().unwrap();
-        let res = sql::upsert_accounts(
-            &transaction,
+        let res = queries::upsert_accounts(
+            conn,
             &[BlockAccountUpdate::new(
                 account_id,
                 account_commitment,
@@ -526,8 +533,8 @@ fn sql_select_accounts() {
             block_num,
         );
         assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-        transaction.commit().unwrap();
-        let accounts = sql::select_all_accounts(&conn.transaction().unwrap()).unwrap();
+
+        let accounts = queries::select_all_accounts(conn).unwrap();
         assert_eq!(accounts, state);
     }
 }
@@ -536,8 +543,8 @@ fn sql_select_accounts() {
 #[miden_node_test_macro::enable_logging]
 fn sql_public_account_details() {
     let mut conn = create_db();
-
-    create_block(&mut conn, 1.into());
+    let conn = &mut conn;
+    create_block(conn, 1.into());
 
     let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let non_fungible_faucet_id =
@@ -558,12 +565,11 @@ fn sql_public_account_details() {
     );
 
     // test querying empty table
-    let accounts_in_db = sql::select_all_accounts(&conn.transaction().unwrap()).unwrap();
+    let accounts_in_db = queries::select_all_accounts(conn).unwrap();
     assert!(accounts_in_db.is_empty());
 
-    let transaction = conn.transaction().unwrap();
-    let inserted = sql::upsert_accounts(
-        &transaction,
+    let inserted = queries::upsert_accounts(
+        conn,
         &[BlockAccountUpdate::new(
             account.id(),
             account.commitment(),
@@ -575,20 +581,16 @@ fn sql_public_account_details() {
 
     assert_eq!(inserted, 1, "One element must have been inserted");
 
-    transaction.commit().unwrap();
-
-    let mut accounts_in_db = sql::select_all_accounts(&conn.transaction().unwrap()).unwrap();
+    let mut accounts_in_db = queries::select_all_accounts(conn).unwrap();
 
     assert_eq!(accounts_in_db.len(), 1, "One element must have been inserted");
 
     let account_read = accounts_in_db.pop().unwrap().details.unwrap();
     assert_eq!(account_read, account);
 
-    create_block(&mut conn, 2.into());
+    create_block(conn, 2.into());
 
-    let read_delta =
-        sql::select_account_delta(&conn.transaction().unwrap(), account.id(), 1.into(), 2.into())
-            .unwrap();
+    let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 2.into()).unwrap();
 
     assert_eq!(read_delta, None);
 
@@ -609,9 +611,8 @@ fn sql_public_account_details() {
 
     account.apply_delta(&delta2).unwrap();
 
-    let transaction = conn.transaction().unwrap();
-    let inserted = sql::upsert_accounts(
-        &transaction,
+    let inserted = queries::upsert_accounts(
+        conn,
         &[BlockAccountUpdate::new(
             account.id(),
             account.commitment(),
@@ -623,9 +624,7 @@ fn sql_public_account_details() {
 
     assert_eq!(inserted, 1, "One element must have been inserted");
 
-    transaction.commit().unwrap();
-
-    let mut accounts_in_db = sql::select_all_accounts(&conn.transaction().unwrap()).unwrap();
+    let mut accounts_in_db = queries::select_all_accounts(conn).unwrap();
 
     assert_eq!(accounts_in_db.len(), 1, "One element must have been inserted");
 
@@ -636,12 +635,10 @@ fn sql_public_account_details() {
     assert_eq!(account_read.nonce(), account.nonce());
     assert_eq!(account_read.storage(), account.storage());
 
-    let read_delta =
-        sql::select_account_delta(&conn.transaction().unwrap(), account.id(), 1.into(), 2.into())
-            .unwrap();
+    let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 2.into()).unwrap();
     assert_eq!(read_delta.as_ref(), Some(&delta2));
 
-    create_block(&mut conn, 3.into());
+    create_block(conn, 3.into());
 
     let storage_delta3 = AccountStorageDelta::from_iters([5], [], []);
 
@@ -655,9 +652,8 @@ fn sql_public_account_details() {
 
     account.apply_delta(&delta3).unwrap();
 
-    let transaction = conn.transaction().unwrap();
-    let inserted = sql::upsert_accounts(
-        &transaction,
+    let inserted = queries::upsert_accounts(
+        conn,
         &[BlockAccountUpdate::new(
             account.id(),
             account.commitment(),
@@ -669,9 +665,7 @@ fn sql_public_account_details() {
 
     assert_eq!(inserted, 1, "One element must have been inserted");
 
-    transaction.commit().unwrap();
-
-    let mut accounts_in_db = sql::select_all_accounts(&conn.transaction().unwrap()).unwrap();
+    let mut accounts_in_db = queries::select_all_accounts(conn).unwrap();
 
     assert_eq!(accounts_in_db.len(), 1, "One element must have been inserted");
 
@@ -681,9 +675,7 @@ fn sql_public_account_details() {
     assert_eq!(account_read.vault(), account.vault());
     assert_eq!(account_read.nonce(), account.nonce());
 
-    let read_delta =
-        sql::select_account_delta(&conn.transaction().unwrap(), account.id(), 1.into(), 3.into())
-            .unwrap();
+    let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 3.into()).unwrap();
 
     delta2.merge(delta3).unwrap();
 
@@ -692,33 +684,26 @@ fn sql_public_account_details() {
 
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn select_nullifiers_by_prefix() {
-    const PREFIX_LEN: u32 = 16;
+fn select_nullifiers_by_prefix_works() {
+    const PREFIX_LEN: u8 = 16;
     let mut conn = create_db();
-    // test empty table
+    let conn = &mut conn; // test empty table
     let block_number0 = 0.into();
-    let nullifiers = sql::select_nullifiers_by_prefix(
-        &conn.transaction().unwrap(),
-        PREFIX_LEN,
-        &[],
-        block_number0,
-    )
-    .unwrap();
+    let nullifiers =
+        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0).unwrap();
     assert!(nullifiers.is_empty());
 
     // test single item
     let nullifier1 = num_to_nullifier(1 << 48);
     let block_number1 = 1.into();
-    create_block(&mut conn, block_number1);
+    create_block(conn, block_number1);
 
-    let transaction = conn.transaction().unwrap();
-    sql::insert_nullifiers_for_block(&transaction, &[nullifier1], block_number1).unwrap();
-    transaction.commit().unwrap();
+    queries::insert_nullifiers_for_block(conn, &[nullifier1], block_number1).unwrap();
 
-    let nullifiers = sql::select_nullifiers_by_prefix(
-        &conn.transaction().unwrap(),
+    let nullifiers = queries::select_nullifiers_by_prefix(
+        conn,
         PREFIX_LEN,
-        &[sql::utils::get_nullifier_prefix(&nullifier1)],
+        &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
     )
     .unwrap();
@@ -733,20 +718,18 @@ fn select_nullifiers_by_prefix() {
     // test two elements
     let nullifier2 = num_to_nullifier(2 << 48);
     let block_number2 = 2.into();
-    create_block(&mut conn, block_number2);
+    create_block(conn, block_number2);
 
-    let transaction = conn.transaction().unwrap();
-    sql::insert_nullifiers_for_block(&transaction, &[nullifier2], block_number2).unwrap();
-    transaction.commit().unwrap();
+    queries::insert_nullifiers_for_block(conn, &[nullifier2], block_number2).unwrap();
 
-    let nullifiers = sql::select_all_nullifiers(&conn.transaction().unwrap()).unwrap();
+    let nullifiers = queries::select_all_nullifiers(conn).unwrap();
     assert_eq!(nullifiers, vec![(nullifier1, block_number1), (nullifier2, block_number2)]);
 
     // only the nullifiers matching the prefix are included
-    let nullifiers = sql::select_nullifiers_by_prefix(
-        &conn.transaction().unwrap(),
+    let nullifiers = queries::select_nullifiers_by_prefix(
+        conn,
         PREFIX_LEN,
-        &[sql::utils::get_nullifier_prefix(&nullifier1)],
+        &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
     )
     .unwrap();
@@ -757,10 +740,10 @@ fn select_nullifiers_by_prefix() {
             block_num: block_number1
         }]
     );
-    let nullifiers = sql::select_nullifiers_by_prefix(
-        &conn.transaction().unwrap(),
+    let nullifiers = queries::select_nullifiers_by_prefix(
+        conn,
         PREFIX_LEN,
-        &[sql::utils::get_nullifier_prefix(&nullifier2)],
+        &[utils::get_nullifier_prefix(&nullifier2)],
         block_number0,
     )
     .unwrap();
@@ -773,12 +756,12 @@ fn select_nullifiers_by_prefix() {
     );
 
     // All matching nullifiers are included
-    let nullifiers = sql::select_nullifiers_by_prefix(
-        &conn.transaction().unwrap(),
+    let nullifiers = queries::select_nullifiers_by_prefix(
+        conn,
         PREFIX_LEN,
         &[
-            sql::utils::get_nullifier_prefix(&nullifier1),
-            sql::utils::get_nullifier_prefix(&nullifier2),
+            utils::get_nullifier_prefix(&nullifier1),
+            utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number0,
     )
@@ -798,10 +781,10 @@ fn select_nullifiers_by_prefix() {
     );
 
     // If a non-matching prefix is provided, no nullifiers are returned
-    let nullifiers = sql::select_nullifiers_by_prefix(
-        &conn.transaction().unwrap(),
+    let nullifiers = queries::select_nullifiers_by_prefix(
+        conn,
         PREFIX_LEN,
-        &[sql::utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
+        &[utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
         block_number0,
     )
     .unwrap();
@@ -809,12 +792,12 @@ fn select_nullifiers_by_prefix() {
 
     // If a block number is provided, only matching nullifiers created at or after that block are
     // returned
-    let nullifiers = sql::select_nullifiers_by_prefix(
-        &conn.transaction().unwrap(),
+    let nullifiers = queries::select_nullifiers_by_prefix(
+        conn,
         PREFIX_LEN,
         &[
-            sql::utils::get_nullifier_prefix(&nullifier1),
-            sql::utils::get_nullifier_prefix(&nullifier2),
+            utils::get_nullifier_prefix(&nullifier1),
+            utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number2,
     )
@@ -832,20 +815,15 @@ fn select_nullifiers_by_prefix() {
 #[miden_node_test_macro::enable_logging]
 fn db_block_header() {
     let mut conn = create_db();
-
-    // test querying empty table
+    let conn = &mut conn; // test querying empty table
     let block_number = 1;
-    let res = sql::select_block_header_by_block_num(
-        &conn.transaction().unwrap(),
-        Some(block_number.into()),
-    )
-    .unwrap();
+    let res = queries::select_block_header_by_block_num(conn, Some(block_number.into())).unwrap();
     assert!(res.is_none());
 
-    let res = sql::select_block_header_by_block_num(&conn.transaction().unwrap(), None).unwrap();
+    let res = queries::select_block_header_by_block_num(conn, None).unwrap();
     assert!(res.is_none());
 
-    let res = sql::select_all_block_headers(&conn.transaction().unwrap()).unwrap();
+    let res = queries::select_all_block_headers(conn).unwrap();
     assert!(res.is_empty());
 
     let block_header = BlockHeader::new(
@@ -862,29 +840,21 @@ fn db_block_header() {
         11_u8.into(),
     );
     // test insertion
-    let transaction = conn.transaction().unwrap();
-    sql::insert_block_header(&transaction, &block_header).unwrap();
-    transaction.commit().unwrap();
+
+    queries::insert_block_header(conn, &block_header).unwrap();
 
     // test fetch unknown block header
     let block_number = 1;
-    let res = sql::select_block_header_by_block_num(
-        &conn.transaction().unwrap(),
-        Some(block_number.into()),
-    )
-    .unwrap();
+    let res = queries::select_block_header_by_block_num(conn, Some(block_number.into())).unwrap();
     assert!(res.is_none());
 
     // test fetch block header by block number
-    let res = sql::select_block_header_by_block_num(
-        &conn.transaction().unwrap(),
-        Some(block_header.block_num()),
-    )
-    .unwrap();
+    let res =
+        queries::select_block_header_by_block_num(conn, Some(block_header.block_num())).unwrap();
     assert_eq!(res.unwrap(), block_header);
 
     // test fetch latest block header
-    let res = sql::select_block_header_by_block_num(&conn.transaction().unwrap(), None).unwrap();
+    let res = queries::select_block_header_by_block_num(conn, None).unwrap();
     assert_eq!(res.unwrap(), block_header);
 
     let block_header2 = BlockHeader::new(
@@ -901,14 +871,12 @@ fn db_block_header() {
         21_u8.into(),
     );
 
-    let transaction = conn.transaction().unwrap();
-    sql::insert_block_header(&transaction, &block_header2).unwrap();
-    transaction.commit().unwrap();
+    queries::insert_block_header(conn, &block_header2).unwrap();
 
-    let res = sql::select_block_header_by_block_num(&conn.transaction().unwrap(), None).unwrap();
+    let res = queries::select_block_header_by_block_num(conn, None).unwrap();
     assert_eq!(res.unwrap(), block_header2);
 
-    let res = sql::select_all_block_headers(&conn.transaction().unwrap()).unwrap();
+    let res = queries::select_all_block_headers(conn).unwrap();
     assert_eq!(res, [block_header, block_header2]);
 }
 
@@ -916,9 +884,9 @@ fn db_block_header() {
 #[miden_node_test_macro::enable_logging]
 fn db_account() {
     let mut conn = create_db();
-
-    let block_num = 1.into();
-    create_block(&mut conn, block_num);
+    let conn = &mut conn;
+    let block_num: BlockNumber = 1.into();
+    create_block(conn, block_num);
 
     // test empty table
     let account_ids: Vec<AccountId> =
@@ -926,22 +894,17 @@ fn db_account() {
             .iter()
             .map(|acc_id| (*acc_id).try_into().unwrap())
             .collect();
-    let res = sql::select_accounts_by_block_range(
-        &conn.transaction().unwrap(),
-        0.into(),
-        u32::MAX.into(),
-        &account_ids,
-    )
-    .unwrap();
+    let res =
+        queries::select_accounts_by_block_range(conn, &account_ids, 0.into(), u32::MAX.into())
+            .unwrap();
     assert!(res.is_empty());
 
     // test insertion
     let account_id = ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE;
     let account_commitment = num_to_word(0);
 
-    let transaction = conn.transaction().unwrap();
-    let row_count = sql::upsert_accounts(
-        &transaction,
+    let row_count = queries::upsert_accounts(
+        conn,
         &[BlockAccountUpdate::new(
             account_id.try_into().unwrap(),
             account_commitment,
@@ -950,15 +913,12 @@ fn db_account() {
         block_num,
     )
     .unwrap();
-    transaction.commit().unwrap();
 
     assert_eq!(row_count, 1);
 
-    let transaction = conn.transaction().unwrap();
-
     // test successful query
     let res =
-        sql::select_accounts_by_block_range(&transaction, 0.into(), u32::MAX.into(), &account_ids)
+        queries::select_accounts_by_block_range(conn, &account_ids, 0.into(), u32::MAX.into())
             .unwrap();
     assert_eq!(
         res,
@@ -970,21 +930,21 @@ fn db_account() {
     );
 
     // test query for update outside the block range
-    let res = sql::select_accounts_by_block_range(
-        &transaction,
-        block_num + 1,
-        u32::MAX.into(),
+    let res = queries::select_accounts_by_block_range(
+        conn,
         &account_ids,
+        (block_num.as_u32() + 1).into(),
+        u32::MAX.into(),
     )
     .unwrap();
     assert!(res.is_empty());
 
     // test query with unknown accounts
-    let res = sql::select_accounts_by_block_range(
-        &transaction,
-        block_num + 1,
-        u32::MAX.into(),
+    let res = queries::select_accounts_by_block_range(
+        conn,
         &[6.try_into().unwrap(), 7.try_into().unwrap(), 8.try_into().unwrap()],
+        (block_num.as_u32() + 1).into(),
+        u32::MAX.into(),
     )
     .unwrap();
     assert!(res.is_empty());
@@ -994,25 +954,22 @@ fn db_account() {
 #[miden_node_test_macro::enable_logging]
 fn notes() {
     let mut conn = create_db();
-
+    let conn = &mut conn;
     let block_num_1 = 1.into();
-    create_block(&mut conn, block_num_1);
+    create_block(conn, block_num_1);
 
     // test empty table
-    let res = sql::select_notes_since_block_by_tag_and_sender(
-        &conn.transaction().unwrap(),
-        &[],
-        &[],
-        0.into(),
-    )
-    .unwrap();
+    let res =
+        queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
+            .unwrap();
+
     assert!(res.is_empty());
 
-    let res = sql::select_notes_since_block_by_tag_and_sender(
-        &conn.transaction().unwrap(),
-        &[1, 2, 3],
+    let res = queries::select_notes_since_block_by_tag_and_sender(
+        conn,
+        BlockNumber::from(0),
         &[],
-        0.into(),
+        &[1, 2, 3],
     )
     .unwrap();
     assert!(res.is_empty());
@@ -1020,10 +977,8 @@ fn notes() {
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
     // test insertion
-    let transaction = conn.transaction().unwrap();
 
-    sql::upsert_accounts(&transaction, &[mock_block_account_update(sender, 0)], block_num_1)
-        .unwrap();
+    queries::upsert_accounts(conn, &[mock_block_account_update(sender, 0)], block_num_1).unwrap();
 
     let new_note = create_note(sender);
     let note_index = BlockNoteIndex::new(0, 2).unwrap();
@@ -1052,42 +1007,32 @@ fn notes() {
         inclusion_path: inclusion_path.clone(),
     };
 
-    sql::insert_scripts(&transaction, [&note]).unwrap();
-    sql::insert_notes(&transaction, &[(note.clone(), None)]).unwrap();
-    transaction.commit().unwrap();
+    queries::insert_scripts(conn, [&note]).unwrap();
+    queries::insert_notes(conn, &[(note.clone(), None)]).unwrap();
 
     // test empty tags
-    let res = sql::select_notes_since_block_by_tag_and_sender(
-        &conn.transaction().unwrap(),
-        &[],
-        &[],
-        0.into(),
-    )
-    .unwrap();
+    let res =
+        queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
+            .unwrap();
     assert!(res.is_empty());
 
     // test no updates
-    let res = sql::select_notes_since_block_by_tag_and_sender(
-        &conn.transaction().unwrap(),
-        &[tag],
-        &[],
-        block_num_1,
-    )
-    .unwrap();
+    let res = queries::select_notes_since_block_by_tag_and_sender(conn, block_num_1, &[], &[tag])
+        .unwrap();
     assert!(res.is_empty());
 
     // test match
-    let res = sql::select_notes_since_block_by_tag_and_sender(
-        &conn.transaction().unwrap(),
-        &[tag],
-        &[],
+    let res = queries::select_notes_since_block_by_tag_and_sender(
+        conn,
         block_num_1.parent().unwrap(),
+        &[],
+        &[tag],
     )
     .unwrap();
     assert_eq!(res, vec![note.clone().into()]);
 
     let block_num_2 = note.block_num + 1;
-    create_block(&mut conn, block_num_2);
+    create_block(conn, block_num_2);
 
     // insertion second note with same tag, but on higher block
     let note2 = NoteRecord {
@@ -1099,36 +1044,28 @@ fn notes() {
         inclusion_path: inclusion_path.clone(),
     };
 
-    let transaction = conn.transaction().unwrap();
-    sql::insert_notes(&transaction, &[(note2.clone(), None)]).unwrap();
-    transaction.commit().unwrap();
+    queries::insert_notes(conn, &[(note2.clone(), None)]).unwrap();
 
     // only first note is returned
-    let res = sql::select_notes_since_block_by_tag_and_sender(
-        &conn.transaction().unwrap(),
-        &[tag],
-        &[],
+    let res = queries::select_notes_since_block_by_tag_and_sender(
+        conn,
         block_num_1.parent().unwrap(),
+        &[],
+        &[tag],
     )
     .unwrap();
     assert_eq!(res, vec![note.clone().into()]);
 
     // only the second note is returned
-    let res = sql::select_notes_since_block_by_tag_and_sender(
-        &conn.transaction().unwrap(),
-        &[tag],
-        &[],
-        block_num_1,
-    )
-    .unwrap();
+    let res = queries::select_notes_since_block_by_tag_and_sender(conn, block_num_1, &[], &[tag])
+        .unwrap();
     assert_eq!(res, vec![note2.clone().into()]);
-
     // test query notes by id
     let notes = vec![note.clone(), note2];
-    let note_ids: Vec<Word> = notes.clone().iter().map(|note| note.note_id).collect();
-    let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
 
-    let res = sql::select_notes_by_id(&conn.transaction().unwrap(), &note_ids).unwrap();
+    let note_ids: Vec<NoteId> = note_ids.into_iter().map(|note| note.note_id).map(From::from).collect();
+
+    let res = queries::select_notes_by_id(conn, &note_ids).unwrap();
     assert_eq!(res, notes);
 
     // test notes have correct details
@@ -1176,27 +1113,27 @@ fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader 
     )
 }
 
-fn insert_transactions(conn: &mut Connection) -> usize {
+fn insert_transactions(conn: &mut SqliteConnection) -> usize {
     let block_num = 1.into();
     create_block(conn, block_num);
 
-    let transaction = conn.transaction().unwrap();
-    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    conn.transaction(|conn| {
+        let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
-    let account_updates = vec![mock_block_account_update(account_id, 1)];
+        let account_updates = vec![mock_block_account_update(account_id, 1)];
 
-    let mock_tx1 =
-        mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 1);
-    let mock_tx2 =
-        mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 2);
-    let transactions = OrderedTransactionHeaders::new_unchecked(vec![mock_tx1, mock_tx2]);
+        let mock_tx1 =
+            mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 1);
+        let mock_tx2 =
+            mock_block_transaction(AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap(), 2);
+        let ordered_tx_headers = OrderedTransactionHeaders::new_unchecked(vec![mock_tx1, mock_tx2]);
 
-    sql::upsert_accounts(&transaction, &account_updates, block_num).unwrap();
+        queries::upsert_accounts(conn, &account_updates, block_num).unwrap();
 
-    let count = sql::insert_transactions(&transaction, block_num, &transactions).unwrap();
-    transaction.commit().unwrap();
-
-    count
+        let count = queries::insert_transactions(conn, block_num, &ordered_tx_headers).unwrap();
+        Ok::<_, DatabaseError>(count)
+    })
+    .unwrap()
 }
 
 fn mock_account_code_and_storage(

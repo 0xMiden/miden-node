@@ -197,7 +197,7 @@ pub fn select_account(transaction: &Transaction, account_id: AccountId) -> Resul
 pub fn select_network_account_by_prefix(
     transaction: &Transaction,
     id_prefix: u32,
-) -> Result<Option<AccountInfo>> {
+) -> Result<Option<AccountInfo>> {select_accounts_
     let mut stmt = transaction.prepare_cached(
         "
         SELECT
@@ -221,6 +221,7 @@ pub fn select_network_account_by_prefix(
     }
 }
 
+<<<<<<< HEAD
 /// Select the latest accounts' details filtered by IDs from the DB using the given
 /// [Connection].
 ///
@@ -262,6 +263,48 @@ pub fn select_accounts_by_ids(
     Ok(result)
 }
 
+||||||| parent of 3a1bb2f (refactor: migrate to diesel-rs)
+/// Select the latest accounts' details filtered by IDs from the DB using the given
+/// [Connection].
+///
+/// # Returns
+///
+/// The account details vector, or an error.
+pub fn select_accounts_by_ids(
+    transaction: &Transaction,
+    account_ids: &[AccountId],
+) -> Result<Vec<AccountInfo>> {
+    let mut stmt = transaction.prepare_cached(
+        "
+        SELECT
+            account_id,
+            account_commitment,
+            block_num,
+            details
+        FROM
+            accounts
+        WHERE
+            account_id IN rarray(?1);
+    ",
+    )?;
+
+    let account_ids: Vec<Value> = account_ids
+        .iter()
+        .copied()
+        .map(|account_id| account_id.to_bytes().into())
+        .collect();
+    let mut rows = stmt.query(params![Rc::new(account_ids)])?;
+
+    let mut result = Vec::new();
+    while let Some(row) = rows.next()? {
+        result.push(account_info_from_row(row)?);
+    }
+
+    Ok(result)
+}
+
+=======
+>>>>>>> 3a1bb2f (refactor: migrate to diesel-rs)
 /// Selects and merges account deltas by account id and block range from the DB using the given
 /// [Connection].
 ///
@@ -811,7 +854,6 @@ pub fn select_nullifiers_by_prefix(
 /// # Returns
 ///
 /// A vector with notes, or an error.
-#[cfg(test)]
 pub fn select_all_notes(transaction: &Transaction) -> Result<Vec<NoteRecord>> {
     let mut stmt = transaction.prepare_cached(&format!(
         "SELECT {}
@@ -992,6 +1034,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
     Ok(res)
 }
 
+<<<<<<< HEAD
 /// Select Note's matching the `NoteId` using the given [Connection].
 ///
 /// # Returns
@@ -1023,6 +1066,38 @@ pub fn select_notes_by_id(
     Ok(notes)
 }
 
+||||||| parent of 3a1bb2f (refactor: migrate to diesel-rs)
+/// Select Note's matching the `NoteId` using the given [Connection].
+///
+/// # Returns
+///
+/// - Empty vector if no matching `note`.
+/// - Otherwise, notes which `note_id` matches the `NoteId` as bytes.
+pub fn select_notes_by_id(
+    transaction: &Transaction,
+    note_ids: &[NoteId],
+) -> Result<Vec<NoteRecord>> {
+    let note_ids: Vec<Value> = note_ids.iter().map(|id| id.to_bytes().into()).collect();
+
+    let mut stmt = transaction.prepare_cached(&format!(
+        "SELECT {}
+        FROM notes
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+        WHERE note_id IN rarray(?1)",
+        NoteRecord::SELECT_COLUMNS
+    ))?;
+    let mut rows = stmt.query(params![Rc::new(note_ids)])?;
+
+    let mut notes = Vec::new();
+    while let Some(row) = rows.next()? {
+        notes.push(NoteRecord::from_row(row)?);
+    }
+
+    Ok(notes)
+}
+
+=======
+>>>>>>> 3a1bb2f (refactor: migrate to diesel-rs)
 /// Select note inclusion proofs matching the `NoteId`, using the given [Connection].
 ///
 /// # Returns
@@ -1111,7 +1186,7 @@ pub fn unconsumed_network_notes(
         ORDER BY rowid
         LIMIT ?
         ",
-        NoteRecord::SELECT_COLUMNS
+        "dummy"
     ))?;
 
     // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
@@ -1125,7 +1200,7 @@ pub fn unconsumed_network_notes(
             page.token = Some(row.get::<_, u64>(14)?);
             break;
         }
-        notes.push(NoteRecord::from_row(row)?);
+        notes.push(todo!());
     }
 
     Ok((notes, page))
@@ -1394,7 +1469,8 @@ pub fn get_note_sync(
 ///
 /// # Returns
 ///
-/// The number of affected rows in the DB.
+/// The number of affected rows
+/// in the DB.
 pub fn apply_block(
     transaction: &Transaction,
     block_header: &BlockHeader,

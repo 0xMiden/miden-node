@@ -17,7 +17,10 @@ workspace = true
 [dependencies]
 anyhow                 = { workspace = true }
 deadpool               = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
+deadpool-diesel        = { features = ["sqlite"], version = "0.6" }
 deadpool-sync          = { version = "0.1" }
+diesel                 = { features = ["sqlite"], version = "2.2" }
+diesel_migrations      = { features = ["sqlite"], version = "2.2" }
 hex                    = { version = "0.4" }
 miden-lib              = { workspace = true }
 miden-node-proto       = { workspace = true }
@@ -44,5 +47,7 @@ miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["tracing-forest"], workspace = true }
 miden-objects         = { default-features = true, features = ["testing"], workspace = true }
+pretty_assertions     = { version = "1.4" }
+rand                  = { version = "0.9" }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }

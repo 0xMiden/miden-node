@@ -12,7 +12,6 @@ use miden_objects::{
     note::Nullifier,
     transaction::OutputNote,
 };
-use rusqlite::types::FromSqlError;
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 use tonic::Status;
@@ -34,24 +33,26 @@ pub enum DatabaseError {
     DeserializationError(#[from] DeserializationError),
     #[error("hex parsing error")]
     FromHexError(#[from] hex::FromHexError),
-    #[error("SQLite deserialization error")]
-    FromSqlError(#[from] FromSqlError),
     #[error("I/O error")]
     IoError(#[from] io::Error),
     #[error("merkle error")]
     MerkleError(#[from] miden_objects::crypto::merkle::MerkleError),
-    #[error("migration failed")]
-    MigrationError(#[from] rusqlite_migration::Error),
-    #[error("missing database connection")]
-    MissingDbConnection(#[from] PoolError<rusqlite::Error>),
     #[error("network account error")]
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
-    #[error("SQLite error")]
-    SqliteError(#[from] rusqlite::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error(transparent)]
-    QueryParamLimitExceeded(#[from] QueryLimitError),
+    Diesel(#[from] diesel::result::Error),
+    #[error("Sqlite FFI boundary NUL termination error (not much you can do, file an issue)")]
+    DieselSqliteFfi(#[from] std::ffi::NulError),
+    #[error(transparent)]
+    DeadpoolDiesel(#[from] deadpool_diesel::Error),
+    #[error(transparent)]
+    PoolRecycle(#[from] deadpool::managed::RecycleError<deadpool_diesel::Error>),
+    #[error(transparent)]
+    QueryParamLimit(#[from] QueryLimitError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -128,8 +129,8 @@ pub enum DatabaseSetupError {
     GenesisBlock(#[from] GenesisError),
     #[error("pool build error")]
     PoolBuild(#[from] deadpool::managed::BuildError),
-    #[error("SQLite migration error")]
-    SqliteMigration(#[from] rusqlite_migration::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Pool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
 }
 
 #[derive(Debug, Error)]
@@ -243,6 +244,12 @@ pub enum StateSyncError {
     FailedToBuildMmrDelta(#[from] MmrError),
 }
 
+impl From<diesel::result::Error> for StateSyncError {
+    fn from(value: diesel::result::Error) -> Self {
+        Self::DatabaseError(DatabaseError::from(value))
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum NoteSyncError {
     #[error("database error")]
@@ -251,6 +258,12 @@ pub enum NoteSyncError {
     EmptyBlockHeadersTable,
     #[error("error retrieving the merkle proof for the block")]
     MmrError(#[from] MmrError),
+}
+
+impl From<diesel::result::Error> for NoteSyncError {
+    fn from(value: diesel::result::Error) -> Self {
+        Self::DatabaseError(DatabaseError::from(value))
+    }
 }
 
 #[derive(Error, Debug)]
@@ -276,4 +289,44 @@ pub enum GetBatchInputsError {
         highest_block_num: BlockNumber,
         latest_block_num: BlockNumber,
     },
+}
+
+mod compile_tests {
+    use std::marker::PhantomData;
+
+    use super::{
+        AccountDeltaError, AccountError, DatabaseError, DatabaseSetupError, DeserializationError,
+        GenesisError, NetworkAccountError, NoteError, RecvError, StateInitializationError,
+    };
+
+    #[allow(dead_code)]
+    fn ensure_is_error<E>(_phony: PhantomData<E>)
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+    }
+
+    /// Ensure all enum variants remain compat with the desired
+    /// trait bounds. Otherwise one gets very unwieldy errors.
+    #[allow(dead_code)]
+    fn assumed_trait_bounds_upheld() {
+        ensure_is_error::<AccountError>(PhantomData);
+        ensure_is_error::<AccountDeltaError>(PhantomData);
+        ensure_is_error::<RecvError>(PhantomData);
+        ensure_is_error::<DeserializationError>(PhantomData);
+        ensure_is_error::<NetworkAccountError>(PhantomData);
+        ensure_is_error::<NoteError>(PhantomData);
+        ensure_is_error::<hex::FromHexError>(PhantomData);
+        ensure_is_error::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
+        ensure_is_error::<diesel::result::Error>(PhantomData);
+        ensure_is_error::<deadpool_diesel::Error>(PhantomData);
+        ensure_is_error::<deadpool::managed::RecycleError<deadpool_diesel::Error>>(PhantomData);
+
+        ensure_is_error::<DatabaseError>(PhantomData);
+        ensure_is_error::<DatabaseSetupError>(PhantomData);
+        ensure_is_error::<diesel::result::Error>(PhantomData);
+        ensure_is_error::<GenesisError>(PhantomData);
+        ensure_is_error::<StateInitializationError>(PhantomData);
+        ensure_is_error::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
+    }
 }

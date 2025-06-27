@@ -2,7 +2,7 @@
 -- Note: we can store values of different types in the same `value` field.
 CREATE TABLE settings (
     name  TEXT NOT NULL,
-    value ANY,
+    value BLOB, -- FIXME was ANY before, but that's not supported by diesel
 
     PRIMARY KEY (name),
     CONSTRAINT settings_name_is_not_empty CHECK (length(name) > 0)

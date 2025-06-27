@@ -5,10 +5,10 @@ version   = 1
 decimals     = 12
 max_supply   = 1000000
 storage_mode = "public"
-symbol       = "MID"
+symbol       = "MIDEN"
 
-[[account]]
-assets       = [{ amount = 999, symbol = "MID" }]
+[[wallet]]
+assets       = [{ amount = 999, symbol = "MIDEN" }]
 mutable      = false
 storage_mode = "private"
 # can_be_updated = false # default value

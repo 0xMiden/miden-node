@@ -23,6 +23,7 @@
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
+- Refactor store aiming at boilerplate reduction (#1025).
 
 ### Fixes
 

@@ -21,34 +21,28 @@ const CLEANUP_INTERVAL_SECONDS: u64 = 2;
 pub(crate) struct PoW {
     secret: [u8; 32],
     challenge_cache: Arc<Mutex<ChallengeCache>>,
-    challenge_lifetime: Duration,
-    requests_per_difficulty_level: NonZeroUsize,
-    initial_target_shift: u8,
+    config: PoWConfig,
+}
+
+#[derive(Clone)]
+pub struct PoWConfig {
+    pub challenge_lifetime: Duration,
+    pub requests_per_difficulty_level: NonZeroUsize,
+    pub initial_target_shift: u8,
 }
 
 impl PoW {
     /// Creates a new `PoW` instance.
-    pub fn new(
-        secret: [u8; 32],
-        challenge_lifetime: Duration,
-        requests_per_difficulty_level: NonZeroUsize,
-        initial_target_shift: u8,
-    ) -> Self {
+    pub fn new(secret: [u8; 32], config: PoWConfig) -> Self {
         let challenge_cache = Arc::new(Mutex::new(ChallengeCache::default()));
 
         // Start the cleanup task
         let cleanup_state = challenge_cache.clone();
         tokio::spawn(async move {
-            ChallengeCache::run_cleanup(cleanup_state, challenge_lifetime).await;
+            ChallengeCache::run_cleanup(cleanup_state, config.challenge_lifetime).await;
         });
 
-        Self {
-            secret,
-            challenge_cache,
-            challenge_lifetime,
-            requests_per_difficulty_level,
-            initial_target_shift,
-        }
+        Self { secret, challenge_cache, config }
     }
 
     /// Generates a new challenge.
@@ -60,7 +54,7 @@ impl PoW {
         let difficulty = self.get_difficulty(&request.api_key);
 
         Challenge::new(
-            self.initial_target_shift,
+            self.config.initial_target_shift,
             difficulty,
             current_time,
             request.account_id,
@@ -78,7 +72,7 @@ impl PoW {
             .lock()
             .expect("challenge cache lock should not be poisoned")
             .num_challenges_for_api_key(api_key);
-        num_challenges / self.requests_per_difficulty_level
+        num_challenges / self.config.requests_per_difficulty_level
     }
 
     /// Submits a challenge.
@@ -105,7 +99,7 @@ impl PoW {
         let challenge = Challenge::decode(challenge, self.secret)?;
 
         // Check timestamp validity
-        if challenge.is_expired(current_time, self.challenge_lifetime) {
+        if challenge.is_expired(current_time, self.config.challenge_lifetime) {
             return Err(MintRequestError::ExpiredServerTimestamp(
                 challenge.timestamp,
                 current_time,
@@ -276,20 +270,27 @@ mod tests {
 
     use super::*;
 
-    fn create_test_secret() -> [u8; 32] {
-        let mut secret = [0u8; 32];
-        secret[..12].copy_from_slice(b"miden-faucet");
-        secret
-    }
-
     fn find_pow_solution(challenge: &Challenge, max_iterations: u64) -> Option<u64> {
         (0..max_iterations).find(|&nonce| challenge.validate_pow(nonce))
     }
 
+    fn create_test_pow() -> PoW {
+        let mut secret = [0u8; 32];
+        secret[..12].copy_from_slice(b"miden-faucet");
+
+        PoW::new(
+            secret,
+            PoWConfig {
+                challenge_lifetime: Duration::from_secs(30),
+                requests_per_difficulty_level: NonZeroUsize::new(1).unwrap(),
+                initial_target_shift: 0,
+            },
+        )
+    }
+
     #[tokio::test]
     async fn test_pow_validation() {
-        let secret = create_test_secret();
-        let pow = PoW::new(secret, Duration::from_secs(30), NonZeroUsize::new(1).unwrap(), 0);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -312,8 +313,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_timestamp_validation() {
-        let secret = create_test_secret();
-        let pow = PoW::new(secret, Duration::from_secs(30), NonZeroUsize::new(1).unwrap(), 0);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -328,7 +328,7 @@ mod tests {
             &api_key,
             &challenge.encode(),
             nonce,
-            current_time + pow.challenge_lifetime.as_secs() + 1,
+            current_time + pow.config.challenge_lifetime.as_secs() + 1,
         );
         assert!(result.is_err());
 
@@ -340,8 +340,7 @@ mod tests {
 
     #[tokio::test]
     async fn account_id_is_rate_limited() {
-        let secret = create_test_secret();
-        let pow = PoW::new(secret, Duration::from_secs(30), NonZeroUsize::new(1).unwrap(), 0);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -369,8 +368,7 @@ mod tests {
 
     #[tokio::test]
     async fn submit_challenge_and_check_difficulty() {
-        let secret = create_test_secret();
-        let pow = PoW::new(secret, Duration::from_secs(30), NonZeroUsize::new(1).unwrap(), 0);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -390,8 +388,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_cleanup_expired_challenges() {
-        let secret = create_test_secret();
-        let pow = PoW::new(secret, Duration::from_secs(30), NonZeroUsize::new(1).unwrap(), 0);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -400,13 +397,13 @@ mod tests {
         // build challenge manually with past timestamp to ensure that expires in 1 second
         let challenge = Challenge::from_parts(
             BigUint::from_bytes_be(&[0xff; 32]),
-            current_time - pow.challenge_lifetime.as_secs(),
+            current_time - pow.config.challenge_lifetime.as_secs(),
             account_id,
             api_key.clone(),
             Challenge::compute_signature(
-                secret,
+                pow.secret,
                 &BigUint::from_bytes_be(&[0xff; 32]),
-                current_time - pow.challenge_lifetime.as_secs(),
+                current_time - pow.config.challenge_lifetime.as_secs(),
                 account_id,
                 &api_key.inner(),
             ),
@@ -437,9 +434,7 @@ mod tests {
 
     #[tokio::test]
     async fn difficulty_is_increased_with_load() {
-        let secret = create_test_secret();
-        let challenge_lifetime = Duration::from_secs(30);
-        let pow = PoW::new(secret, challenge_lifetime, NonZeroUsize::new(1).unwrap(), 0);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
 

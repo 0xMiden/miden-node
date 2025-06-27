@@ -28,7 +28,10 @@ use tokio::sync::mpsc;
 use types::AssetOptions;
 use url::Url;
 
-use crate::{network::FaucetNetwork, server::ApiKey};
+use crate::{
+    network::FaucetNetwork,
+    server::{ApiKey, PoWConfig},
+};
 
 // CONSTANTS
 // =================================================================================================
@@ -223,14 +226,17 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 .context("failed to decode API keys")?;
             let asset_options = AssetOptions::new(asset_amounts)
                 .map_err(|e| anyhow::anyhow!("failed to create asset options: {}", e))?;
+            let pow_config = PoWConfig {
+                challenge_lifetime: pow_challenge_lifetime,
+                requests_per_difficulty_level: pow_requests_per_difficulty_level,
+                initial_target_shift: pow_initial_target_shift,
+            };
             let server = Server::new(
                 faucet.faucet_id(),
                 asset_options,
                 tx_requests,
                 pow_secret.unwrap_or_default().as_str(),
-                pow_challenge_lifetime,
-                pow_requests_per_difficulty_level,
-                pow_initial_target_shift,
+                pow_config,
                 &api_keys,
             );
 

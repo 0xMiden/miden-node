@@ -1,9 +1,13 @@
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, Result};
+use futures::StreamExt;
 use miden_node_proto::{
+    domain::mempool::MempoolEvent,
     generated::{
-        block_producer::api_server,
+        block_producer::{
+            MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest, api_server,
+        },
         requests::SubmitProvenTransactionRequest,
         responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
     },
@@ -15,10 +19,11 @@ use miden_node_utils::{
     tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
 };
 use miden_objects::{
-    note::Nullifier, transaction::ProvenTransaction, utils::serde::Deserializable,
+    block::BlockNumber, note::Nullifier, transaction::ProvenTransaction,
+    utils::serde::Deserializable,
 };
 use tokio::{net::TcpListener, sync::Mutex};
-use tokio_stream::wrappers::TcpListenerStream;
+use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
@@ -234,6 +239,48 @@ impl api_server::Api for BlockProducerRpcServer {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
         }))
+    }
+
+    type MempoolSubscriptionStream = MempoolEventSubscription;
+
+    async fn mempool_subscription(
+        &self,
+        request: tonic::Request<MempoolSubscriptionRequest>,
+    ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
+        let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
+
+        let subscription =
+            self.mempool
+                .lock()
+                .await
+                .lock()
+                .await
+                .subscribe(chain_tip)
+                .map_err(|mempool_tip| {
+                    tonic::Status::invalid_argument(format!(
+                        "Mempool's chain tip {mempool_tip} does not match request's {chain_tip}"
+                    ))
+                })?;
+        let subscription = ReceiverStream::new(subscription);
+
+        Ok(tonic::Response::new(MempoolEventSubscription { inner: subscription }))
+    }
+}
+
+struct MempoolEventSubscription {
+    inner: ReceiverStream<MempoolEvent>,
+}
+
+impl tokio_stream::Stream for MempoolEventSubscription {
+    type Item = Result<ProtoMempoolEvent, tonic::Status>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.inner
+            .poll_next_unpin(cx)
+            .map(|x| x.map(ProtoMempoolEvent::from).map(Result::Ok))
     }
 }
 

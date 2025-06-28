@@ -341,6 +341,9 @@ impl Mempool {
     /// The pool will mark the associated batches and transactions as committed, and prune stale
     /// committed data, and purge transactions that are now considered expired.
     ///
+    /// Sends a [`MempoolEvent::BlockCommitted`] event to subscribers, as well as a
+    /// [`MempoolEvent::TransactionsReverted`] for transactions that are now considered expired.
+    ///
     /// # Returns
     ///
     /// Returns a set of transactions that were purged from the mempool because they can no longer
@@ -375,6 +378,8 @@ impl Mempool {
     /// Notify the pool that construction of the in flight block failed.
     ///
     /// The pool will purge the block and all of its contents from the pool.
+    ///
+    /// Sends a [`MempoolEvent::TransactionsReverted`] event to subscribers.
     ///
     /// # Returns
     ///

@@ -7,7 +7,9 @@ use miden_remote_prover::{
     COMPONENT,
     api::ProofType,
     error::RemoteProverError,
-    generated::remote_prover::{StatusRequest, status_api_client::StatusApiClient},
+    generated::remote_prover::{
+        WorkerStatusRequest, worker_status_api_client::WorkerStatusApiClient,
+    },
 };
 use pingora::lb::Backend;
 use semver::{Version, VersionReq};
@@ -54,7 +56,7 @@ static WORKER_VERSION_REQUIREMENT: LazyLock<VersionReq> = LazyLock::new(|| {
 #[derive(Debug, Clone)]
 pub struct Worker {
     backend: Backend,
-    status_client: Option<StatusApiClient<Channel>>,
+    status_client: Option<WorkerStatusApiClient<Channel>>,
     is_available: bool,
     health_status: WorkerHealthStatus,
     version: String,
@@ -180,7 +182,7 @@ impl Worker {
         }
 
         let worker_status =
-            match self.status_client.as_mut().unwrap().status(StatusRequest {}).await {
+            match self.status_client.as_mut().unwrap().status(WorkerStatusRequest {}).await {
                 Ok(response) => response.into_inner(),
                 Err(e) => {
                     error!("Failed to check worker status ({}): {}", self.address(), e);
@@ -363,7 +365,7 @@ async fn create_status_client(
     address: &str,
     connection_timeout: Duration,
     total_timeout: Duration,
-) -> Result<StatusApiClient<Channel>, RemoteProverError> {
+) -> Result<WorkerStatusApiClient<Channel>, RemoteProverError> {
     let channel = Channel::from_shared(format!("http://{address}"))
         .map_err(|err| RemoteProverError::InvalidURI(err, address.to_string()))?
         .connect_timeout(connection_timeout)
@@ -372,7 +374,7 @@ async fn create_status_client(
         .await
         .map_err(|err| RemoteProverError::ConnectionFailed(err, address.to_string()))?;
 
-    Ok(StatusApiClient::new(channel))
+    Ok(WorkerStatusApiClient::new(channel))
 }
 
 /// Returns true if the version has major and minor versions match the major and minor

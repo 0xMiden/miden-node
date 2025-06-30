@@ -2,7 +2,9 @@ use tonic::{Request, Response, Status};
 
 use crate::{
     api::prover::ProofType,
-    generated::{StatusRequest, StatusResponse, status_api_server::StatusApi},
+    generated::{
+        WorkerStatusRequest, WorkerStatusResponse, worker_status_api_server::WorkerStatusApi,
+    },
 };
 
 pub struct StatusRpcApi {
@@ -16,9 +18,12 @@ impl StatusRpcApi {
 }
 
 #[async_trait::async_trait]
-impl StatusApi for StatusRpcApi {
-    async fn status(&self, _: Request<StatusRequest>) -> Result<Response<StatusResponse>, Status> {
-        Ok(Response::new(StatusResponse {
+impl WorkerStatusApi for StatusRpcApi {
+    async fn status(
+        &self,
+        _: Request<WorkerStatusRequest>,
+    ) -> Result<Response<WorkerStatusResponse>, Status> {
+        Ok(Response::new(WorkerStatusResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
             supported_proof_type: self.proof_type as i32,
         }))

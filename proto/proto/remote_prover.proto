@@ -2,6 +2,9 @@
 syntax = "proto3";
 package remote_prover;
 
+// PROVER SERVICE
+// ================================================================================================
+
 service Api {
     // Generates a proof for the requested payload.
     rpc Prove(ProvingRequest) returns (ProvingResponse) {}
@@ -40,6 +43,9 @@ message ProvingResponse {
     // - BLOCK: Returns an encoded ProvenBlock.
     bytes payload = 1;
 }
+
+// PROXY STATUS SERVICE
+// ================================================================================================
 
 service ProxyStatusApi {
     // Returns the status of the proxy.
@@ -83,16 +89,19 @@ message ProxyStatusResponse {
     repeated WorkerStatus workers = 3;
 }
 
-service StatusApi {
+// WORKER STATUS SERVICE
+// ================================================================================================
+
+service WorkerStatusApi {
     // Returns the status of the worker.
-    rpc Status(StatusRequest) returns (StatusResponse) {}
+    rpc Status(WorkerStatusRequest) returns (WorkerStatusResponse) {}
 }
 
 // Request message for the status of the worker.
-message StatusRequest {}
+message WorkerStatusRequest {}
 
 // Response message containing the status of the worker.
-message StatusResponse {
+message WorkerStatusResponse {
     // The version of the worker.
     string version = 1;
     // The proof type supported by this worker.

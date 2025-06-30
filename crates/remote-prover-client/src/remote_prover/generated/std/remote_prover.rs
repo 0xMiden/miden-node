@@ -54,10 +54,10 @@ pub struct ProxyStatusResponse {
 }
 /// Request message for the status of the worker.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct StatusRequest {}
+pub struct WorkerStatusRequest {}
 /// Response message containing the status of the worker.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StatusResponse {
+pub struct WorkerStatusResponse {
     /// The version of the worker.
     #[prost(string, tag = "1")]
     pub version: ::prost::alloc::string::String,
@@ -369,7 +369,7 @@ pub mod proxy_status_api_client {
     }
 }
 /// Generated client implementations.
-pub mod status_api_client {
+pub mod worker_status_api_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -380,10 +380,10 @@ pub mod status_api_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct StatusApiClient<T> {
+    pub struct WorkerStatusApiClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl StatusApiClient<tonic::transport::Channel> {
+    impl WorkerStatusApiClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -394,7 +394,7 @@ pub mod status_api_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> StatusApiClient<T>
+    impl<T> WorkerStatusApiClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -412,7 +412,7 @@ pub mod status_api_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> StatusApiClient<InterceptedService<T, F>>
+        ) -> WorkerStatusApiClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -426,7 +426,7 @@ pub mod status_api_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            StatusApiClient::new(InterceptedService::new(inner, interceptor))
+            WorkerStatusApiClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -462,8 +462,11 @@ pub mod status_api_client {
         /// Returns the status of the worker.
         pub async fn status(
             &mut self,
-            request: impl tonic::IntoRequest<super::StatusRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::WorkerStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkerStatusResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -474,11 +477,11 @@ pub mod status_api_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/remote_prover.StatusApi/Status",
+                "/remote_prover.WorkerStatusApi/Status",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("remote_prover.StatusApi", "Status"));
+                .insert(GrpcMethod::new("remote_prover.WorkerStatusApi", "Status"));
             self.inner.unary(req, path, codec).await
         }
     }

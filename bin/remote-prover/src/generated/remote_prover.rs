@@ -54,10 +54,10 @@ pub struct ProxyStatusResponse {
 }
 /// Request message for the status of the worker.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct StatusRequest {}
+pub struct WorkerStatusRequest {}
 /// Response message containing the status of the worker.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StatusResponse {
+pub struct WorkerStatusResponse {
     /// The version of the worker.
     #[prost(string, tag = "1")]
     pub version: ::prost::alloc::string::String,
@@ -369,7 +369,7 @@ pub mod proxy_status_api_client {
     }
 }
 /// Generated client implementations.
-pub mod status_api_client {
+pub mod worker_status_api_client {
     #![allow(
         unused_variables,
         dead_code,
@@ -380,10 +380,10 @@ pub mod status_api_client {
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
     #[derive(Debug, Clone)]
-    pub struct StatusApiClient<T> {
+    pub struct WorkerStatusApiClient<T> {
         inner: tonic::client::Grpc<T>,
     }
-    impl StatusApiClient<tonic::transport::Channel> {
+    impl WorkerStatusApiClient<tonic::transport::Channel> {
         /// Attempt to create a new client by connecting to a given endpoint.
         pub async fn connect<D>(dst: D) -> Result<Self, tonic::transport::Error>
         where
@@ -394,7 +394,7 @@ pub mod status_api_client {
             Ok(Self::new(conn))
         }
     }
-    impl<T> StatusApiClient<T>
+    impl<T> WorkerStatusApiClient<T>
     where
         T: tonic::client::GrpcService<tonic::body::Body>,
         T::Error: Into<StdError>,
@@ -412,7 +412,7 @@ pub mod status_api_client {
         pub fn with_interceptor<F>(
             inner: T,
             interceptor: F,
-        ) -> StatusApiClient<InterceptedService<T, F>>
+        ) -> WorkerStatusApiClient<InterceptedService<T, F>>
         where
             F: tonic::service::Interceptor,
             T::ResponseBody: Default,
@@ -426,7 +426,7 @@ pub mod status_api_client {
                 http::Request<tonic::body::Body>,
             >>::Error: Into<StdError> + std::marker::Send + std::marker::Sync,
         {
-            StatusApiClient::new(InterceptedService::new(inner, interceptor))
+            WorkerStatusApiClient::new(InterceptedService::new(inner, interceptor))
         }
         /// Compress requests with the given encoding.
         ///
@@ -462,8 +462,11 @@ pub mod status_api_client {
         /// Returns the status of the worker.
         pub async fn status(
             &mut self,
-            request: impl tonic::IntoRequest<super::StatusRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::WorkerStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkerStatusResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -474,11 +477,11 @@ pub mod status_api_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/remote_prover.StatusApi/Status",
+                "/remote_prover.WorkerStatusApi/Status",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("remote_prover.StatusApi", "Status"));
+                .insert(GrpcMethod::new("remote_prover.WorkerStatusApi", "Status"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -845,7 +848,7 @@ pub mod proxy_status_api_server {
     }
 }
 /// Generated server implementations.
-pub mod status_api_server {
+pub mod worker_status_api_server {
     #![allow(
         unused_variables,
         dead_code,
@@ -854,24 +857,27 @@ pub mod status_api_server {
         clippy::let_unit_value,
     )]
     use tonic::codegen::*;
-    /// Generated trait containing gRPC methods that should be implemented for use with StatusApiServer.
+    /// Generated trait containing gRPC methods that should be implemented for use with WorkerStatusApiServer.
     #[async_trait]
-    pub trait StatusApi: std::marker::Send + std::marker::Sync + 'static {
+    pub trait WorkerStatusApi: std::marker::Send + std::marker::Sync + 'static {
         /// Returns the status of the worker.
         async fn status(
             &self,
-            request: tonic::Request<super::StatusRequest>,
-        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
+            request: tonic::Request<super::WorkerStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::WorkerStatusResponse>,
+            tonic::Status,
+        >;
     }
     #[derive(Debug)]
-    pub struct StatusApiServer<T> {
+    pub struct WorkerStatusApiServer<T> {
         inner: Arc<T>,
         accept_compression_encodings: EnabledCompressionEncodings,
         send_compression_encodings: EnabledCompressionEncodings,
         max_decoding_message_size: Option<usize>,
         max_encoding_message_size: Option<usize>,
     }
-    impl<T> StatusApiServer<T> {
+    impl<T> WorkerStatusApiServer<T> {
         pub fn new(inner: T) -> Self {
             Self::from_arc(Arc::new(inner))
         }
@@ -922,9 +928,9 @@ pub mod status_api_server {
             self
         }
     }
-    impl<T, B> tonic::codegen::Service<http::Request<B>> for StatusApiServer<T>
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for WorkerStatusApiServer<T>
     where
-        T: StatusApi,
+        T: WorkerStatusApi,
         B: Body + std::marker::Send + 'static,
         B::Error: Into<StdError> + std::marker::Send + 'static,
     {
@@ -939,23 +945,25 @@ pub mod status_api_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
-                "/remote_prover.StatusApi/Status" => {
+                "/remote_prover.WorkerStatusApi/Status" => {
                     #[allow(non_camel_case_types)]
-                    struct StatusSvc<T: StatusApi>(pub Arc<T>);
-                    impl<T: StatusApi> tonic::server::UnaryService<super::StatusRequest>
+                    struct StatusSvc<T: WorkerStatusApi>(pub Arc<T>);
+                    impl<
+                        T: WorkerStatusApi,
+                    > tonic::server::UnaryService<super::WorkerStatusRequest>
                     for StatusSvc<T> {
-                        type Response = super::StatusResponse;
+                        type Response = super::WorkerStatusResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::StatusRequest>,
+                            request: tonic::Request<super::WorkerStatusRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as StatusApi>::status(&inner, request).await
+                                <T as WorkerStatusApi>::status(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1004,7 +1012,7 @@ pub mod status_api_server {
             }
         }
     }
-    impl<T> Clone for StatusApiServer<T> {
+    impl<T> Clone for WorkerStatusApiServer<T> {
         fn clone(&self) -> Self {
             let inner = self.inner.clone();
             Self {
@@ -1017,8 +1025,8 @@ pub mod status_api_server {
         }
     }
     /// Generated gRPC service name
-    pub const SERVICE_NAME: &str = "remote_prover.StatusApi";
-    impl<T> tonic::server::NamedService for StatusApiServer<T> {
+    pub const SERVICE_NAME: &str = "remote_prover.WorkerStatusApi";
+    impl<T> tonic::server::NamedService for WorkerStatusApiServer<T> {
         const NAME: &'static str = SERVICE_NAME;
     }
 }

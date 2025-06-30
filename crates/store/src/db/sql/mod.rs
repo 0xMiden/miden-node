@@ -361,9 +361,8 @@ pub fn select_account_delta(
         .query_row(params![account_id_bytes, block_start.as_u32(), block_end.as_u32()], |row| {
             row.get::<_, Option<u64>>(0)
         }) {
-        Ok(None) => return Ok(None),
         Ok(Some(nonce)) => nonce.try_into().map_err(DatabaseError::InvalidFelt)?,
-        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Err(rusqlite::Error::QueryReturnedNoRows) | Ok(None) => return Ok(None),
         Err(e) => return Err(e.into()),
     };
 

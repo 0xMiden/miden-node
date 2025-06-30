@@ -27,11 +27,11 @@ pub struct NoteMetadata {
 /// A committed note is a note that has been included in a block.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommittedNote {
-    /// The note.
-    #[prost(message, optional, tag = "2")]
-    pub note: ::core::option::Option<Note>,
-    /// The note's inclusion proof and data.
+    /// Either private, public, or network note.
     #[prost(message, optional, tag = "1")]
+    pub note: ::core::option::Option<Note>,
+    /// The data needed to prove that the note is present in the chain.
+    #[prost(message, optional, tag = "2")]
     pub inclusion_proof: ::core::option::Option<NoteInclusionInBlockProof>,
 }
 /// Represents a note.

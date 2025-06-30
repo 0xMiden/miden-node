@@ -32,11 +32,11 @@ message NoteMetadata {
 //
 // A committed note is a note that has been included in a block.
 message CommittedNote {
-    // The note.
-    Note note = 2;
+    // Either private, public, or network note.
+    Note note = 1;
 
-    // The note's inclusion proof and data.
-    NoteInclusionInBlockProof inclusion_proof = 1;
+    // The data needed to prove that the note is present in the chain.
+    NoteInclusionInBlockProof inclusion_proof = 2;
 }
 
 // Represents a note.

@@ -10,7 +10,9 @@ use tokio::{net::TcpListener, task::JoinSet};
 use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
-use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL, NtxBuilderConfig};
+use crate::commands::{
+    BlockProducerConfig, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE, NtxBuilderConfig,
+};
 
 #[derive(clap::Subcommand)]
 #[expect(clippy::large_enum_variant, reason = "This is a single use enum")]
@@ -28,6 +30,9 @@ pub enum BundledCommand {
         // Directory to write the account data to.
         #[arg(long, value_name = "DIR")]
         accounts_directory: PathBuf,
+        /// Use the given configuration file to construct the genesis state from.
+        #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
+        genesis_config_file: Option<PathBuf>,
     },
 
     /// Runs all three node components in the same process.
@@ -61,11 +66,16 @@ pub enum BundledCommand {
 impl BundledCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
         match self {
-            BundledCommand::Bootstrap { data_directory, accounts_directory } => {
+            BundledCommand::Bootstrap {
+                data_directory,
+                accounts_directory,
+                genesis_config_file,
+            } => {
                 // Currently the bundled bootstrap is identical to the store's bootstrap.
                 crate::commands::store::StoreCommand::Bootstrap {
                     data_directory,
                     accounts_directory,
+                    genesis_config_file,
                 }
                 .handle()
                 .await

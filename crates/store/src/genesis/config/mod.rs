@@ -12,10 +12,11 @@ use miden_lib::{
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
-    AccountError, AssetError, Felt, FieldElement, StarkField, TokenSymbolError,
+    AccountError, AssetError, Felt, FieldElement, StarkField, TokenSymbolError, Word,
     account::{
-        AccountBuilder, AccountDelta, AccountId, AccountStorageDelta, AccountStorageMode,
-        AccountType, AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta,
+        Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
+        AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
+        NonFungibleAssetDelta,
     },
     asset::{FungibleAsset, TokenSymbol},
     crypto::dsa::rpo_falcon512::SecretKey,
@@ -129,12 +130,22 @@ pub enum Error {
 }
 
 /// Secrets generated during the state generation
-///
-/// Attention: Only to be used for testing, for all other usecases
-/// inject only the public keys.
 #[derive(Debug, Clone)]
-pub struct TestSecrets {
-    pub secrets: Vec<(AccountType, AccountId, SecretKey)>,
+pub struct AccountSecrets {
+    pub secrets: Vec<(Account, SecretKey, Word)>,
+}
+
+impl AccountSecrets {
+    /// Convert the internal tuple into an `AccountFile`
+    pub fn as_account_files(&self) -> impl Iterator<Item = AccountFile> {
+        self.secrets.iter().map(|(account, secret_key, account_seed)| {
+            AccountFile::new(
+                account.clone(),
+                Some(*account_seed),
+                vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
+            )
+        })
+    }
 }
 
 /// Specify a set of faucets and wallets with assets for easier test depoyments
@@ -161,7 +172,7 @@ impl GenesisConfig {
     ///
     /// Notice: Generates keys and returns the secret keys, hence this is not sane to be used
     /// for production environments. There, you want to generate the keys externally.
-    pub fn into_state(self) -> Result<(GenesisState, TestSecrets), Error> {
+    pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), Error> {
         let version = self.version;
         let timestamp = self.timestamp;
         let repr_accounts = self.wallet;
@@ -173,7 +184,7 @@ impl GenesisConfig {
 
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
-        let mut secrets = Vec::<(AccountType, AccountId, SecretKey)>::new();
+        let mut secrets = Vec::<(Account, SecretKey, Word)>::new();
 
         // First setup all the faucets
         for FaucetConfig {
@@ -185,8 +196,8 @@ impl GenesisConfig {
         } in repr_faucets
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
-            let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-            let auth = RpoFalcon512::new(secret.public_key());
+            let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let auth = RpoFalcon512::new(secret_key.public_key());
             let init_seed: [u8; 32] = rng.random();
 
             let token_symbol = TokenSymbol::new(&symbol)?;
@@ -213,7 +224,7 @@ impl GenesisConfig {
             let account_storage_mode = storage_mode.into();
 
             // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases
-            let (faucet_account, _faucet_account_seed) = AccountBuilder::new(init_seed)
+            let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
                 .account_type(account_type)
                 .storage_mode(account_storage_mode)
                 .with_component(auth)
@@ -222,7 +233,7 @@ impl GenesisConfig {
 
             faucets.insert(symbol, faucet_account.id());
 
-            secrets.push((account_type, faucet_account.id(), secret));
+            secrets.push((faucet_account.clone(), secret_key, faucet_account_seed));
 
             all_accounts.push(faucet_account);
         }
@@ -230,8 +241,8 @@ impl GenesisConfig {
         // then setup all wallet accounts, which reference the faucet's for their provided assets
         for WalletConfig { can_be_updated, storage_mode, assets } in repr_accounts {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
-            let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-            let auth = AuthScheme::RpoFalcon512 { pub_key: secret.public_key() };
+            let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+            let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
             let init_seed: [u8; 32] = rng.random();
 
             let assets = Result::<Vec<_>, Error>::from_iter(assets.into_iter().map(
@@ -250,7 +261,7 @@ impl GenesisConfig {
                 AccountType::RegularAccountImmutableCode
             };
             let account_storage_mode = storage_mode.into();
-            let (mut account, _seed) =
+            let (mut wallet_account, wallet_account_seed) =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
 
             // Add fungible assets.
@@ -264,11 +275,11 @@ impl GenesisConfig {
                 AccountVaultDelta::new(fungible_assets, NonFungibleAssetDelta::default()),
                 Some(Felt::ONE),
             )?;
-            account.apply_delta(&delta)?;
+            wallet_account.apply_delta(&delta)?;
 
-            secrets.push((account_type, account.id(), secret));
+            secrets.push((wallet_account.clone(), secret_key, wallet_account_seed));
 
-            all_accounts.push(account);
+            all_accounts.push(wallet_account);
         }
 
         Ok((
@@ -277,7 +288,7 @@ impl GenesisConfig {
                 version,
                 timestamp,
             },
-            TestSecrets { secrets },
+            AccountSecrets { secrets },
         ))
     }
 }

@@ -10,7 +10,7 @@ which can be accessed by appending `--help` to any of the commands.
 
 ## Bootstrapping
 
-The first step in starting a new Miden network is to initialize the genesis block data. This is a once-off operation.
+The first step in starting a new Miden network is to initialize the genesis block data. This is a one-off operation. It can either be done through the default of generating a single account and genesis with default values:
 
 ```sh
 # Create a folder to store the node's data.
@@ -30,6 +30,33 @@ mkdir data
 miden-node bundled bootstrap \
   --data-directory data \
   --accounts-directory .
+```
+
+Alternatively, provide an explicit toml-formatted configuration format.
+
+```sh
+miden-node bundled bootstrap \
+  --data-directory data \
+  --accounts-directory . \
+  --genesis-config-file genesis.toml
+```
+
+containing i.e.
+
+```toml
+timestamp = 1717344256
+version   = 1
+
+[[faucet]]
+decimals     = 12
+max_supply   = 10000
+storage_mode = "public"
+symbol       = "FUZZY"
+
+[[wallet]]
+assets       = [{ amount = 999, symbol = "FUZZY" }]
+storage_mode = "private"
+can_be_updated = false # default value
 ```
 
 ## Operation

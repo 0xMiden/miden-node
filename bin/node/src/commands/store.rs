@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{GenesisState, Store};
+use miden_node_store::{GenesisState, Store, genesis::config::GenesisConfig};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -22,7 +22,6 @@ use url::Url;
 use super::{
     ENV_DATA_DIRECTORY, ENV_STORE_BLOCK_PRODUCER_URL, ENV_STORE_NTX_BUILDER_URL, ENV_STORE_RPC_URL,
 };
-use crate::commands::ENV_ENABLE_OTEL;
 
 /// The default filepath for the genesis account.
 const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
@@ -40,9 +39,12 @@ pub enum StoreCommand {
         /// Directory in which to store the database and raw block data.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
         data_directory: PathBuf,
-        // Directory to write the account data to.
+        /// Directory to write the account data to.
         #[arg(long, value_name = "DIR")]
         accounts_directory: PathBuf,
+        /// Use the given configuration file to construct the genesis state from.
+        #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
+        genesis_config_file: Option<PathBuf>,
     },
 
     /// Starts the store component.
@@ -79,6 +81,7 @@ impl StoreCommand {
     /// Executes the subcommand as described by each variants documentation.
     pub async fn handle(self) -> anyhow::Result<()> {
         match self {
+<<<<<<< HEAD
             StoreCommand::Bootstrap { data_directory, accounts_directory } => {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
@@ -89,6 +92,23 @@ impl StoreCommand {
                 data_directory,
                 enable_otel: _,
             } => Self::start(rpc_url, ntx_builder_url, block_producer_url, data_directory).await,
+||||||| parent of fa62ab7 (integrate into bootstrap command and doc)
+            StoreCommand::Bootstrap { data_directory, accounts_directory } => {
+                Self::bootstrap(&data_directory, &accounts_directory)
+            },
+            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
+                Self::start(url, data_directory).await
+            },
+=======
+            StoreCommand::Bootstrap {
+                data_directory,
+                accounts_directory,
+                genesis_config_file: config_path,
+            } => Self::bootstrap(&data_directory, &accounts_directory, config_path.as_ref()),
+            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
+                Self::start(url, data_directory).await
+            },
+>>>>>>> fa62ab7 (integrate into bootstrap command and doc)
         }
     }
 
@@ -138,31 +158,53 @@ impl StoreCommand {
         .context("failed while serving store component")
     }
 
-    fn bootstrap(data_directory: &Path, accounts_directory: &Path) -> anyhow::Result<()> {
-        // Generate the genesis accounts.
-        let account_file =
-            Self::generate_genesis_account().context("failed to create genesis account")?;
+    fn bootstrap(
+        data_directory: &Path,
+        accounts_directory: &Path,
+        maybe_genesis_config_path: Option<&PathBuf>,
+    ) -> anyhow::Result<()> {
+        let genesis_state = if let Some(genesis_config_path) = maybe_genesis_config_path {
+            let toml_str = fs_err::read_to_string(genesis_config_path)?;
+            let config = GenesisConfig::read_toml(toml_str.as_str())
+                .context(format!("Read from file: {}", genesis_config_path.display()))?;
 
-        // Write account data to disk (including secrets).
-        //
-        // Without this the accounts would be inaccessible by the user.
-        // This is not used directly by the node, but rather by the owner / operator of the node.
-        let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
-        File::create_new(&filepath)
-            .and_then(|mut file| file.write_all(&account_file.to_bytes()))
-            .with_context(|| {
-                format!("failed to write data for genesis account to file {}", filepath.display())
-            })?;
+            let (state, secrets) = config.into_state()?;
+            // Write the accounts to disk
+            for account in secrets.as_account_files() {
+                let accountpath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
+                account.write(accountpath)?;
+            }
+            state
+        } else {
+            // Generate the genesis accounts.
+            let account_file =
+                Self::generate_genesis_account().context("failed to create genesis account")?;
 
-        // Bootstrap the store database.
-        let version = 1;
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current timestamp should be greater than unix epoch")
-            .as_secs()
-            .try_into()
-            .expect("timestamp should fit into u32");
-        let genesis_state = GenesisState::new(vec![account_file.account], version, timestamp);
+            // Write account data to disk (including secrets).
+            //
+            // Without this the accounts would be inaccessible by the user.
+            // This is not used directly by the node, but rather by the owner / operator of the
+            // node.
+            let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
+            File::create_new(&filepath)
+                .and_then(|mut file| file.write_all(&account_file.to_bytes()))
+                .with_context(|| {
+                    format!(
+                        "failed to write data for genesis account to file {}",
+                        filepath.display()
+                    )
+                })?;
+
+            // Bootstrap the store database.
+            let version = 1;
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("current timestamp should be greater than unix epoch")
+                .as_secs()
+                .try_into()
+                .expect("timestamp should fit into u32");
+            GenesisState::new(vec![account_file.account], version, timestamp)
+        };
         Store::bootstrap(genesis_state, data_directory)
     }
 

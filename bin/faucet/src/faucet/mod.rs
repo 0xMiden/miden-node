@@ -1,7 +1,13 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use anyhow::{Context, anyhow};
-use miden_lib::{account::faucets::BasicFungibleFaucet, note::create_p2id_note};
+use miden_lib::{
+    account::{
+        faucets::BasicFungibleFaucet,
+        interface::{AccountInterface, AccountInterfaceError},
+    },
+    note::create_p2id_note,
+};
 use miden_objects::{
     AccountError, Digest, Felt, NoteError,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey, NetworkId},
@@ -17,6 +23,7 @@ use miden_objects::{
         ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction, TransactionArgs,
         TransactionId, TransactionWitness,
     },
+    vm::AdviceMap,
 };
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{
@@ -132,6 +139,8 @@ type MintResult<T> = Result<T, MintError>;
 /// Error indicating what went wrong in the minting process for a request.
 #[derive(Debug, thiserror::Error)]
 pub enum MintError {
+    #[error("compiling the tx script failed")]
+    ScriptCompilation(#[source] AccountInterfaceError),
     #[error("execution of the tx script failed")]
     Execution(#[source] TransactionExecutorError),
     #[error("proving the tx failed")]
@@ -150,6 +159,7 @@ pub struct Faucet {
     prior_state: VecDeque<Account>,
     tx_prover: Arc<FaucetProver>,
     authenticator: BasicAuthenticator<StdRng>,
+    account_interface: AccountInterface,
     decimals: u8,
 }
 
@@ -209,6 +219,7 @@ impl Faucet {
         .expect("Empty ChainMmr should be valid");
 
         let faucet = BasicFungibleFaucet::try_from(&account)?;
+        let account_interface = AccountInterface::from(&account);
 
         let data_store = Arc::new(FaucetDataStore::new(
             account,
@@ -239,6 +250,7 @@ impl Faucet {
             id,
             prior_state: VecDeque::new(),
             tx_prover,
+            account_interface,
             decimals: faucet.decimals(),
             authenticator,
         })
@@ -379,8 +391,7 @@ impl Faucet {
 
         // Build the note
         let notes = p2id_notes.into_inner();
-        let mut tx_args = TransactionArgs::default();
-        tx_args.extend_output_note_recipients(&notes);
+        let tx_args = self.compile(&notes)?;
 
         self.data_store
             .load_transaction_script(tx_args.tx_script().expect("should have script"));
@@ -402,6 +413,21 @@ impl Faucet {
         updater.send_updates(MintUpdate::Submitted).await;
 
         Ok((account_delta, block_number, notes, tx_id))
+    }
+
+    /// Compiles the transaction script that creates the given set of notes.
+    fn compile(&self, notes: &[Note]) -> MintResult<TransactionArgs> {
+        let partial_notes = notes.iter().map(Into::into).collect::<Vec<_>>();
+        let script = self
+            .account_interface
+            .build_send_notes_script(&partial_notes, None, false)
+            .map_err(MintError::ScriptCompilation)?;
+
+        let mut transaction_args =
+            TransactionArgs::new(Some(script), None, AdviceMap::new(), vec![]);
+        transaction_args.extend_output_note_recipients(notes);
+
+        Ok(transaction_args)
     }
 
     async fn execute_transaction(
@@ -604,8 +630,7 @@ mod tests {
         let notes = P2IdNotes::build(faucet.faucet_id(), 6, &requests, &mut rng)
             .unwrap()
             .into_inner();
-        let mut tx_args = TransactionArgs::default();
-        tx_args.extend_output_note_recipients(&notes);
+        let tx_args = faucet.compile(&notes).unwrap();
 
         faucet
             .data_store

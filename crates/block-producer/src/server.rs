@@ -400,8 +400,11 @@ mod test {
             Store::bootstrap(genesis_state.clone(), data_directory.path())
                 .expect("store should bootstrap");
             let dir = data_directory.path().to_path_buf();
-            let store_listener =
-                TcpListener::bind(store_addr).await.expect("store should bind a port");
+            let rpc_listener =
+                TcpListener::bind("127.0.0.1:0").await.expect("store should bind the RPC port");
+            let block_producer_listener = TcpListener::bind(store_addr)
+                .await
+                .expect("store should bind the block-producer port");
             // in order to later kill the store, we need to spawn a new runtime and run the store on
             // it. That allows us to kill all the tasks spawned by the store when we
             // kill the runtime.
@@ -409,7 +412,9 @@ mod test {
                 runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
             store_runtime.spawn(async move {
                 Store {
-                    listener: store_listener,
+                    rpc_listener,
+                    ntx_builder_listener: None,
+                    block_producer_listener,
                     data_directory: dir,
                 }
                 .serve()
@@ -439,10 +444,16 @@ mod test {
         assert!(response.is_err());
 
         // test: restart the store and request should succeed
-        let store_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
+        let rpc_listener =
+            TcpListener::bind("127.0.0.1:0").await.expect("store should bind the RPC port");
+        let block_producer_listener = TcpListener::bind(store_addr)
+            .await
+            .expect("store should bind the block-producer port");
         task::spawn(async move {
             Store {
-                listener: store_listener,
+                rpc_listener,
+                ntx_builder_listener: None,
+                block_producer_listener,
                 data_directory: data_directory.path().to_path_buf(),
             }
             .serve()

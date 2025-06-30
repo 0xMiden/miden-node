@@ -3,7 +3,7 @@ use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
-use super::{ENV_BLOCK_PRODUCER_URL, ENV_NTX_BUILDER_URL, ENV_STORE_URL};
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_NTX_BUILDER_URL, ENV_STORE_BLOCK_PRODUCER_URL};
 use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL};
 
 #[derive(clap::Subcommand)]
@@ -15,7 +15,7 @@ pub enum BlockProducerCommand {
         url: Url,
 
         /// The store's gRPC url.
-        #[arg(long = "store.url", env = ENV_STORE_URL)]
+        #[arg(long = "store.url", env = ENV_STORE_BLOCK_PRODUCER_URL)]
         store_url: Url,
 
         /// The network transaction builder's gRPC url.

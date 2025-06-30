@@ -477,13 +477,23 @@ async fn get_block_inputs(
 pub async fn start_store(
     data_directory: PathBuf,
 ) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
-    let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
-    let store_addr = grpc_store.local_addr().expect("Failed to get store address");
+    let rpc_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store RPC gRPC endpoint");
+    let block_producer_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store block-producer gRPC endpoint");
+    let store_addr = rpc_listener.local_addr().expect("Failed to get store RPC address");
+    let store_block_producer_addr = block_producer_listener
+        .local_addr()
+        .expect("Failed to get store block-producer address");
     let dir = data_directory.clone();
 
     task::spawn(async move {
         Store {
-            listener: grpc_store,
+            rpc_listener,
+            ntx_builder_listener: None,
+            block_producer_listener,
             data_directory: dir,
         }
         .serve()
@@ -497,5 +507,5 @@ pub async fn start_store(
         .await
         .expect("Failed to connect to store");
 
-    (RpcClient::with_interceptor(channel, OtelInterceptor), store_addr)
+    (RpcClient::with_interceptor(channel, OtelInterceptor), store_block_producer_addr)
 }

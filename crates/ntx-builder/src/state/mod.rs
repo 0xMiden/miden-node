@@ -1,3 +1,6 @@
 mod account;
+mod notes;
 
-pub struct State {}
+pub struct State {
+    accounts: account::AccountStates,
+}

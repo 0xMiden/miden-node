@@ -13,6 +13,8 @@ use crate::{
     generated::note as proto,
 };
 
+use super::account::NetworkAccountPrefix;
+
 impl TryFrom<proto::NoteMetadata> for NoteMetadata {
     type Error = ConversionError;
 
@@ -121,6 +123,11 @@ impl NetworkNote {
 
     pub fn id(&self) -> NoteId {
         self.inner().id()
+    }
+
+    pub fn account_prefix(&self) -> NetworkAccountPrefix {
+        // SAFETY: This must succeed because this is a network note.
+        self.metadata().tag().try_into().unwrap()
     }
 }
 

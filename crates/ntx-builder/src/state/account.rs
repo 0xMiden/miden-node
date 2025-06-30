@@ -74,7 +74,7 @@ impl AccountUpdate {
     fn account_id(&self) -> AccountId {
         match self {
             AccountUpdate::New(account) => account.id(),
-            AccountUpdate::Delta(_account_delta) => todo!("Waiting on miden-base"),
+            AccountUpdate::Delta(account_delta) => todo!("Waiting on miden-base"),
         }
     }
 }

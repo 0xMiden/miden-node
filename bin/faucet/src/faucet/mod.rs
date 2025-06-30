@@ -23,7 +23,6 @@ use miden_objects::{
         ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction, TransactionArgs,
         TransactionId, TransactionWitness,
     },
-    vm::AdviceMap,
 };
 use miden_proving_service_client::proving_service::tx_prover::RemoteTransactionProver;
 use miden_tx::{
@@ -423,8 +422,7 @@ impl Faucet {
             .build_send_notes_script(&partial_notes, None, false)
             .map_err(MintError::ScriptCompilation)?;
 
-        let mut transaction_args =
-            TransactionArgs::new(Some(script), None, AdviceMap::new(), vec![]);
+        let mut transaction_args = TransactionArgs::default().with_tx_script(script);
         transaction_args.extend_output_note_recipients(notes);
 
         Ok(transaction_args)

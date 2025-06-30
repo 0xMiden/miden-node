@@ -15,7 +15,7 @@ body:
         - label: "Block producer"
         - label: "Store"
         - label: "Network transaction builder"
-        - label: "Proving service"
+        - label: "Remote prover"
         - label: "Protobuf messages"
         - label: "Testing"
     validations:

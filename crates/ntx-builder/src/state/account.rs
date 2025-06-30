@@ -6,6 +6,7 @@ use miden_objects::{
     transaction::TransactionId,
 };
 
+/// Tracks network account deltas for all currently inflight transactions.
 #[derive(Default)]
 pub struct AccountStates {
     deltas: HashMap<NetworkAccountPrefix, VecDeque<AccountUpdate>>,
@@ -18,10 +19,12 @@ pub enum AccountUpdate {
 }
 
 impl AccountStates {
+    /// Returns the account delta's for the account, if any.
     pub fn get(&self, account: &NetworkAccountPrefix) -> Option<&VecDeque<AccountUpdate>> {
         self.deltas.get(account)
     }
 
+    /// Tracks a new transaction and its account delta.
     pub fn add(&mut self, tx: TransactionId, update: AccountUpdateDetails) {
         let update = match update {
             AccountUpdateDetails::Private => {
@@ -41,10 +44,12 @@ impl AccountStates {
         self.txs.insert(tx, account);
     }
 
+    /// The transaction and its account delta is removed.
     pub fn commit(&mut self, tx: TransactionId) {
         self.tx_update(tx, TxUpdate::Commit);
     }
 
+    /// The transaction and its account delta is removed.
     pub fn revert(&mut self, tx: TransactionId) {
         self.tx_update(tx, TxUpdate::Revert);
     }

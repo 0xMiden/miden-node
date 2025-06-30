@@ -19,7 +19,7 @@ on:
         options:
           - node
           - faucet
-          - proving-service
+          - remote-prover
       package:
         required: true
         description: "Name of packaging directory"
@@ -36,7 +36,7 @@ on:
         options:
           - miden-node
           - miden-faucet
-          - miden-proving-service
+          - miden-remote-prover
       version:
         description: "Version to release (E.G. v0.10.0-rc.1, v0.10.0). Corresponding git tag must already exist."
         required: true

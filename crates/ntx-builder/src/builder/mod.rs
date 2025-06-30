@@ -84,7 +84,7 @@ pub struct NetworkTransactionBuilder {
     pub store_url: Url,
     /// Address of the block producer gRPC server.
     pub block_producer_address: SocketAddr,
-    /// Address of the remote proving service. If `None`, transactions will be proven locally,
+    /// Address of the remote prover. If `None`, transactions will be proven locally,
     /// which is undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.

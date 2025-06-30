@@ -2234,6 +2234,7 @@ dependencies = [
  "anyhow",
  "clap 4.5.40",
  "figment",
+ "fs-err",
  "humantime",
  "miden-lib",
  "miden-node-block-producer",

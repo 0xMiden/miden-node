@@ -27,12 +27,12 @@ pub struct NoteMetadata {
 /// A committed note is a note that has been included in a block.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CommittedNote {
-    /// The note's inclusion proof and data.
-    #[prost(message, optional, tag = "1")]
-    pub inclusion_proof: ::core::option::Option<NoteInclusionInBlockProof>,
     /// The note.
     #[prost(message, optional, tag = "2")]
     pub note: ::core::option::Option<Note>,
+    /// The note's inclusion proof and data.
+    #[prost(message, optional, tag = "1")]
+    pub inclusion_proof: ::core::option::Option<NoteInclusionInBlockProof>,
 }
 /// Represents a note.
 ///
@@ -42,9 +42,21 @@ pub struct Note {
     /// The note's metadata.
     #[prost(message, optional, tag = "1")]
     pub metadata: ::core::option::Option<NoteMetadata>,
-    /// Serialized note details (i.e., assets and recipient).
+    /// Serialized note details (empty for private notes).
     #[prost(bytes = "vec", optional, tag = "2")]
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
+/// Represents a network note.
+///
+/// The note is composed of the note metadata and its serialized details.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NetworkNote {
+    /// The note's metadata.
+    #[prost(message, optional, tag = "1")]
+    pub metadata: ::core::option::Option<NoteMetadata>,
+    /// Serialized note details (i.e., assets and recipient).
+    #[prost(bytes = "vec", tag = "2")]
+    pub details: ::prost::alloc::vec::Vec<u8>,
 }
 /// Represents a proof of note's inclusion in a block.
 ///

@@ -280,7 +280,7 @@ message GetUnconsumedNetworkNotesResponse {
     optional uint64 next_token = 1;
 
     // The list of unconsumed network notes.
-    repeated note.Note notes = 2;
+    repeated note.NetworkNote notes = 2;
 }
 
 // Represents the status of the node.

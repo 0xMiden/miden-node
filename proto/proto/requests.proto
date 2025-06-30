@@ -222,7 +222,7 @@ message SubmitNetworkNotesRequest {
     digest.Digest transaction_id = 1;
 
     // The network notes to submit.
-    repeated note.Note note = 2;
+    repeated note.NetworkNote note = 2;
 }
 
 // Update the status of network notes that were consumed externally.

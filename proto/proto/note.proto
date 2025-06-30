@@ -32,11 +32,11 @@ message NoteMetadata {
 //
 // A committed note is a note that has been included in a block.
 message CommittedNote {
-    // The note's inclusion proof and data.
-    NoteInclusionInBlockProof inclusion_proof = 1;
-
     // The note.
     Note note = 2;
+
+    // The note's inclusion proof and data.
+    NoteInclusionInBlockProof inclusion_proof = 1;
 }
 
 // Represents a note.
@@ -46,8 +46,19 @@ message Note {
     // The note's metadata.
     NoteMetadata metadata = 1;
 
-    // Serialized note details (i.e., assets and recipient).
+    // Serialized note details (empty for private notes).
     optional bytes details = 2;
+}
+
+// Represents a network note.
+//
+// The note is composed of the note metadata and its serialized details.
+message NetworkNote {
+    // The note's metadata.
+    NoteMetadata metadata = 1;
+
+    // Serialized note details (i.e., assets and recipient).
+    bytes details = 2;
 }
 
 // Represents a proof of note's inclusion in a block.

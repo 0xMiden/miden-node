@@ -194,12 +194,10 @@ pub async fn bench_check_nullifiers_by_prefix(
             notes
                 .iter()
                 .filter_map(|n| {
-                    // private notes are filtered out because `details` is None
-                    Note::read_from_bytes(
-                        n.note.as_ref().expect("note should be present").details.as_ref()?,
-                    )
-                    .ok()
-                    .map(|n| u32::from(n.nullifier().prefix()))
+                    // private notes are filtered out because `n.details` is None
+                    Note::read_from_bytes(n.note.as_ref().unwrap().details.as_ref()?)
+                        .ok()
+                        .map(|n| u32::from(n.nullifier().prefix()))
                 })
                 .collect::<Vec<u32>>(),
         );

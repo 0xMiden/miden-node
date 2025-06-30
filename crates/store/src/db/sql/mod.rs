@@ -273,14 +273,11 @@ pub fn select_account_delta(
     let mut select_nonce_stmt = transaction.prepare_cached(
         "
         SELECT
-            nonce
+            SUM(nonce)
         FROM
             account_deltas
         WHERE
             account_id = ?1 AND block_num > ?2 AND block_num <= ?3
-        ORDER BY
-            block_num DESC
-        LIMIT 1
     ",
     )?;
 
@@ -362,9 +359,10 @@ pub fn select_account_delta(
     let account_id_bytes = account_id.to_bytes();
     let nonce = match select_nonce_stmt
         .query_row(params![account_id_bytes, block_start.as_u32(), block_end.as_u32()], |row| {
-            row.get::<_, u64>(0)
+            row.get::<_, Option<u64>>(0)
         }) {
-        Ok(nonce) => nonce.try_into().map_err(DatabaseError::InvalidFelt)?,
+        Ok(None) => return Ok(None),
+        Ok(Some(nonce)) => nonce.try_into().map_err(DatabaseError::InvalidFelt)?,
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
         Err(e) => return Err(e.into()),
     };

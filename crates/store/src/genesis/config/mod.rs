@@ -15,9 +15,9 @@ use miden_objects::{
     AccountError, AssetError, Felt, FieldElement, StarkField, TokenSymbolError,
     account::{
         AccountBuilder, AccountDelta, AccountId, AccountStorageDelta, AccountStorageMode,
-        AccountType, AccountVaultDelta,
+        AccountType, AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta,
     },
-    asset::{Asset, FungibleAsset, TokenSymbol},
+    asset::{FungibleAsset, TokenSymbol},
     crypto::dsa::rpo_falcon512::SecretKey,
 };
 use rand::{Rng, SeedableRng};
@@ -240,8 +240,8 @@ impl TestGenesisConfig {
                     let faucet_id = faucets
                         .get(&symbol)
                         .ok_or_else(|| Error::MissingFaucetDefinition { symbol: token_symbol })?;
-                    // FIXME TODO add non funcgible assets
-                    Ok(Asset::Fungible(FungibleAsset::new(*faucet_id, amount)?))
+                    // TODO add non funcgible assets support
+                    Ok(FungibleAsset::new(*faucet_id, amount)?)
                 },
             ))?;
             let account_type = if can_be_updated {
@@ -252,11 +252,18 @@ impl TestGenesisConfig {
             let account_storage_mode = storage_mode.into();
             let (mut account, _seed) =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
-            // by convention, 1 is the nonce for a shared account, which genesis by definition
-            // is, so all the accounts there should have nonce 1
+            // By convention, 1 is the nonce for a shared account, which genesis by definition
+            // is, so all the accounts there should have nonce 1.
+
+            // Add fungible assets.
+            let mut fungible_assets = FungibleAssetDelta::default();
+            assets
+                .into_iter()
+                .try_for_each(|fungible_asset| fungible_assets.add(fungible_asset))?;
+
             let delta = AccountDelta::new(
                 AccountStorageDelta::default(),
-                AccountVaultDelta::from_iters(assets, None),
+                AccountVaultDelta::new(fungible_assets, NonFungibleAssetDelta::default()),
                 Some(Felt::ONE),
             )?;
             account.apply_delta(&delta)?;

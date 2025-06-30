@@ -32,7 +32,8 @@ miden-node bundled bootstrap \
   --accounts-directory .
 ```
 
-Alternatively, provide an explicit toml-formatted configuration format.
+Alternatively, provide an explicit toml-formatted configuration format which allows you to define
+multiple assets and faucets easily, without having to register them by additional program invocations.
 
 ```sh
 miden-node bundled bootstrap \

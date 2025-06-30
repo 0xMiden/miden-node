@@ -141,14 +141,14 @@ pub struct TestSecrets {
 ///
 /// Notice: Any faucet must be declared _before_ it's use in a wallet/regular account.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TestGenesisConfig {
+pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
     wallet: Vec<WalletConfig>,
     faucet: Vec<FaucetConfig>,
 }
 
-impl TestGenesisConfig {
+impl GenesisConfig {
     /// Read the genesis accounts from a toml formatted string
     ///
     /// Notice: It will generate the specified case during [`fn into_state`].
@@ -252,8 +252,6 @@ impl TestGenesisConfig {
             let account_storage_mode = storage_mode.into();
             let (mut account, _seed) =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
-            // By convention, 1 is the nonce for a shared account, which genesis by definition
-            // is, so all the accounts there should have nonce 1.
 
             // Add fungible assets.
             let mut fungible_assets = FungibleAssetDelta::default();

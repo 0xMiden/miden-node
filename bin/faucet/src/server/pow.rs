@@ -21,9 +21,6 @@ const MAX_DIFFICULTY: usize = 24;
 /// The number of active requests to increase the difficulty by 1.
 const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY;
 
-/// The interval at which the challenge cache is cleaned up.
-const CLEANUP_INTERVAL_SECONDS: u64 = 2;
-
 // POW
 // ================================================================================================
 
@@ -36,13 +33,13 @@ pub(crate) struct PoW {
 
 impl PoW {
     /// Creates a new `PoW` instance.
-    pub fn new(secret: [u8; 32], challenge_lifetime: Duration) -> Self {
+    pub fn new(secret: [u8; 32], challenge_lifetime: Duration, cleanup_interval: Duration) -> Self {
         let challenge_cache = Arc::new(Mutex::new(ChallengeCache::default()));
 
         // Start the cleanup task
         let cleanup_state = challenge_cache.clone();
         tokio::spawn(async move {
-            ChallengeCache::run_cleanup(cleanup_state, challenge_lifetime).await;
+            ChallengeCache::run_cleanup(cleanup_state, challenge_lifetime, cleanup_interval).await;
         });
 
         Self {
@@ -244,8 +241,12 @@ impl ChallengeCache {
     /// The cleanup task is responsible for removing expired challenges from the cache.
     /// It runs every minute and removes challenges that are no longer valid because of their
     /// timestamp.
-    pub async fn run_cleanup(cache: Arc<Mutex<Self>>, challenge_lifetime: Duration) {
-        let mut interval = interval(Duration::from_secs(CLEANUP_INTERVAL_SECONDS));
+    pub async fn run_cleanup(
+        cache: Arc<Mutex<Self>>,
+        challenge_lifetime: Duration,
+        cleanup_interval: Duration,
+    ) {
+        let mut interval = interval(cleanup_interval);
 
         loop {
             interval.tick().await;
@@ -284,7 +285,7 @@ mod tests {
     #[tokio::test]
     async fn test_pow_validation() {
         let secret = create_test_secret();
-        let pow = PoW::new(secret, Duration::from_secs(30));
+        let pow = PoW::new(secret, Duration::from_secs(30), Duration::from_secs(2));
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -330,7 +331,7 @@ mod tests {
     async fn test_timestamp_validation() {
         let secret = create_test_secret();
         let challenge_lifetime = Duration::from_secs(30);
-        let pow = PoW::new(secret, challenge_lifetime);
+        let pow = PoW::new(secret, challenge_lifetime, Duration::from_secs(2));
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -359,7 +360,8 @@ mod tests {
     async fn account_id_is_rate_limited() {
         let secret = create_test_secret();
         let challenge_lifetime = Duration::from_secs(30);
-        let pow = PoW::new(secret, challenge_lifetime);
+        let cleanup_interval = Duration::from_millis(100);
+        let pow = PoW::new(secret, challenge_lifetime, cleanup_interval);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -374,7 +376,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Try to submit second challenge - should fail because of rate limiting
-        tokio::time::sleep(Duration::from_secs(CLEANUP_INTERVAL_SECONDS)).await;
+        tokio::time::sleep(cleanup_interval).await;
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
@@ -389,7 +391,7 @@ mod tests {
     async fn submit_challenge_and_check_difficulty() {
         let secret = create_test_secret();
         let challenge_lifetime = Duration::from_secs(30);
-        let pow = PoW::new(secret, challenge_lifetime);
+        let pow = PoW::new(secret, challenge_lifetime, Duration::from_secs(2));
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -408,22 +410,23 @@ mod tests {
     async fn test_cleanup_expired_challenges() {
         let secret = create_test_secret();
         let challenge_lifetime = Duration::from_secs(30);
-        let pow = PoW::new(secret, challenge_lifetime);
+        let cleanup_interval = Duration::from_millis(100);
+        let pow = PoW::new(secret, challenge_lifetime, cleanup_interval);
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-
         // build challenge manually with past timestamp to ensure that expires in 1 second
+        let challenge_timestamp = current_time - challenge_lifetime.as_secs();
         let challenge = Challenge::from_parts(
             1,
-            current_time - challenge_lifetime.as_secs(),
+            challenge_timestamp,
             account_id,
             api_key.clone(),
             Challenge::compute_signature(
                 secret,
                 1,
-                current_time - challenge_lifetime.as_secs(),
+                challenge_timestamp,
                 account_id,
                 &api_key.inner(),
             ),
@@ -434,7 +437,7 @@ mod tests {
             .unwrap();
 
         // wait for cleanup
-        tokio::time::sleep(Duration::from_secs(CLEANUP_INTERVAL_SECONDS + 1)).await;
+        tokio::time::sleep(cleanup_interval + Duration::from_secs(1)).await;
 
         // check that the challenge is removed from the cache
         assert!(!pow.challenge_cache.lock().unwrap().has_challenge_for_account(account_id));

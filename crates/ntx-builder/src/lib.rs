@@ -1,5 +1,6 @@
 mod builder;
 pub use builder::NetworkTransactionBuilder;
+pub(crate) mod state;
 
 // CONSTANTS
 // =================================================================================================

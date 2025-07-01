@@ -5,7 +5,7 @@ use miden_objects::{
     account::AccountId,
     block::BlockNumber,
     note::{NoteId, Nullifier},
-    transaction::{ProvenTransaction, TransactionId, TxAccountUpdate},
+    transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate},
 };
 
 use crate::{errors::VerifyTxError, store::TransactionInputs};
@@ -89,8 +89,12 @@ impl AuthenticatedTransaction {
         self.inner.nullifiers()
     }
 
-    pub fn output_notes(&self) -> impl Iterator<Item = NoteId> + '_ {
+    pub fn output_note_ids(&self) -> impl Iterator<Item = NoteId> + '_ {
         self.inner.output_notes().iter().map(miden_objects::transaction::OutputNote::id)
+    }
+
+    pub fn output_notes(&self) -> impl Iterator<Item = &OutputNote> + '_ {
+        self.inner.output_notes().iter()
     }
 
     pub fn output_note_count(&self) -> usize {

@@ -273,14 +273,11 @@ pub fn select_account_delta(
     let mut select_nonce_stmt = transaction.prepare_cached(
         "
         SELECT
-            nonce
+            SUM(nonce)
         FROM
             account_deltas
         WHERE
             account_id = ?1 AND block_num > ?2 AND block_num <= ?3
-        ORDER BY
-            block_num DESC
-        LIMIT 1
     ",
     )?;
 
@@ -359,19 +356,19 @@ pub fn select_account_delta(
         ",
     )?;
 
-    let account_id = account_id.to_bytes();
+    let account_id_bytes = account_id.to_bytes();
     let nonce = match select_nonce_stmt
-        .query_row(params![account_id, block_start.as_u32(), block_end.as_u32()], |row| {
-            row.get::<_, u64>(0)
+        .query_row(params![account_id_bytes, block_start.as_u32(), block_end.as_u32()], |row| {
+            row.get::<_, Option<u64>>(0)
         }) {
-        Ok(nonce) => nonce.try_into().map_err(DatabaseError::InvalidFelt)?,
-        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Ok(Some(nonce)) => nonce.try_into().map_err(DatabaseError::InvalidFelt)?,
+        Err(rusqlite::Error::QueryReturnedNoRows) | Ok(None) => return Ok(None),
         Err(e) => return Err(e.into()),
     };
 
     let mut storage_scalars = BTreeMap::new();
     let mut rows = select_slot_updates_stmt.query(params![
-        account_id,
+        account_id_bytes,
         block_start.as_u32(),
         block_end.as_u32()
     ])?;
@@ -384,7 +381,7 @@ pub fn select_account_delta(
 
     let mut storage_maps = BTreeMap::new();
     let mut rows = select_storage_map_updates_stmt.query(params![
-        account_id,
+        account_id_bytes,
         block_start.as_u32(),
         block_end.as_u32()
     ])?;
@@ -407,7 +404,7 @@ pub fn select_account_delta(
 
     let mut fungible = BTreeMap::new();
     let mut rows = select_fungible_asset_deltas_stmt.query(params![
-        account_id,
+        account_id_bytes,
         block_start.as_u32(),
         block_end.as_u32()
     ])?;
@@ -419,7 +416,7 @@ pub fn select_account_delta(
 
     let mut non_fungible_delta = NonFungibleAssetDelta::default();
     let mut rows = select_non_fungible_asset_updates_stmt.query(params![
-        account_id,
+        account_id_bytes,
         block_start.as_u32(),
         block_end.as_u32()
     ])?;
@@ -439,10 +436,10 @@ pub fn select_account_delta(
         }
     }
 
-    let storage = AccountStorageDelta::new(storage_scalars, storage_maps)?;
+    let storage = AccountStorageDelta::from_parts(storage_scalars, storage_maps)?;
     let vault = AccountVaultDelta::new(FungibleAssetDelta::new(fungible)?, non_fungible_delta);
 
-    Ok(Some(AccountDelta::new(storage, vault, Some(nonce))?))
+    Ok(Some(AccountDelta::new(account_id, storage, vault, Some(nonce))?))
 }
 
 /// Inserts or updates accounts to the DB using the given [Transaction].

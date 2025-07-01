@@ -20,7 +20,7 @@ const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
 /// This is done only if `BUILD_PROTO` environment variable is set to `1` to avoid running the
 /// script on crates.io where repo-level .proto files are not available.
 fn main() -> anyhow::Result<()> {
-    println!("cargo::rerun-if-changed=../proto");
+    println!("cargo::rerun-if-changed=./proto");
     println!("cargo::rerun-if-env-changed=BUILD_PROTO");
 
     let out = env::var("OUT_DIR").context("env::OUT_DIR not set")?;

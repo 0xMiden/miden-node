@@ -60,3 +60,9 @@ impl<T: prost::Message> MissingFieldHelper for T {
         }
     }
 }
+
+impl From<ConversionError> for tonic::Status {
+    fn from(value: ConversionError) -> Self {
+        tonic::Status::invalid_argument(value.to_string())
+    }
+}

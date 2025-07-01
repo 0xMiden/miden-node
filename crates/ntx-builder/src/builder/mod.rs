@@ -1,5 +1,6 @@
 use std::{collections::BTreeSet, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
+use crate::store::{StoreClient, StoreError};
 use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
@@ -24,7 +25,6 @@ use miden_tx::{
 };
 use prover::NtbTransactionProver;
 use server::{NtxBuilderApi, PendingNotes};
-use store::{StoreClient, StoreError};
 use thiserror::Error;
 use tokio::{
     net::TcpListener,
@@ -44,7 +44,6 @@ mod block_producer;
 mod data_store;
 mod prover;
 mod server;
-mod store;
 
 type SharedPendingNotes = Arc<Mutex<PendingNotes>>;
 

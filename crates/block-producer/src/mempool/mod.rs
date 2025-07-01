@@ -239,6 +239,8 @@ impl Mempool {
 
     /// Adds a transaction to the mempool.
     ///
+    /// Sends a [`MempoolEvent::TransactionAdded`] event to subscribers.
+    ///
     /// # Returns
     ///
     /// Returns the current block height.
@@ -476,6 +478,7 @@ impl Mempool {
     ///
     /// Returns an error if the provided chain tip does not match the mempool's chain tip. This
     /// prevents desync between the caller's view of the world and the mempool's event stream.
+    #[instrument(target = COMPONENT, name = "mempool.subscribe", skip_all)]
     pub fn subscribe(
         &mut self,
         chain_tip: BlockNumber,

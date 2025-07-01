@@ -28,6 +28,9 @@ pub(crate) struct SubscriptionProvider {
     /// Tracks all uncommitted transaction events. These events must be resent on start
     /// of a new subscription since the subscriber will only have data up to the latest
     /// committed block and would otherwise miss these uncommiited transactions.
+    ///
+    /// The size is bounded by removing events as they are committed or reverted, and as
+    /// such this is always bound to the current amount of inflight transactions.
     inflight_txs: InflightTransactions,
 }
 
@@ -59,6 +62,9 @@ impl SubscriptionProvider {
         // Send each uncommitted tx event in chronological order.
         //
         // The ordering is guaranteed by the tracker.
+        //
+        // We don't clear the queue so that they're available for other new subscriptions.
+        // The queue size is managed by instead removing events once they're committed or reverted.
         for tx in self.inflight_txs.iter() {
             Self::send_event(&mut self.subscription, tx.clone());
         }

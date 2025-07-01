@@ -252,7 +252,7 @@ impl BlockBuilder {
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        let reverted_transactions = mempool.lock().await.commit_block();
+        let reverted_transactions = mempool.lock().await.commit_block(built_block.header().clone());
         let committed_transactions = built_block
             .transactions()
             .as_slice()

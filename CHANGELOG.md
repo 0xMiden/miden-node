@@ -12,6 +12,7 @@
 - Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 - Added configurable network id for the faucet (#1016).
+- Support gRPC server relection `v1alpha` (#1036).
 
 ### Changes
 

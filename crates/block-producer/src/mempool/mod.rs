@@ -3,14 +3,16 @@ use std::{collections::BTreeSet, sync::Arc};
 use batch_graph::BatchGraph;
 use graph::GraphError;
 use inflight_state::InflightState;
+use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::{
     MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH,
     batch::{BatchId, ProvenBatch},
-    block::BlockNumber,
+    block::{BlockHeader, BlockNumber},
     transaction::TransactionId,
 };
-use tokio::sync::{Mutex, MutexGuard};
-use tracing::instrument;
+use subscription::SubscriptionProvider;
+use tokio::sync::{Mutex, MutexGuard, mpsc};
+use tracing::{instrument, warn};
 use transaction_expiration::TransactionExpirations;
 use transaction_graph::TransactionGraph;
 
@@ -22,6 +24,7 @@ use crate::{
 mod batch_graph;
 mod graph;
 mod inflight_state;
+mod subscription;
 mod transaction_expiration;
 mod transaction_graph;
 
@@ -137,7 +140,7 @@ impl SharedMempool {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Mempool {
     /// The latest inflight state of each account.
     ///
@@ -165,6 +168,35 @@ pub struct Mempool {
 
     block_budget: BlockBudget,
     batch_budget: BatchBudget,
+
+    subscription: subscription::SubscriptionProvider,
+}
+
+// We have to implement this manually since the event's channel does not implement PartialEq.
+impl PartialEq for Mempool {
+    fn eq(&self, other: &Self) -> bool {
+        // We use this deconstructive pattern to ensure we adapt this whenever fields are changed.
+        let Self {
+            state,
+            transactions,
+            expirations,
+            batches,
+            chain_tip,
+            block_in_progress,
+            block_budget,
+            batch_budget,
+            subscription: _,
+        } = self;
+
+        state == &other.state
+            && transactions == &other.transactions
+            && expirations == &other.expirations
+            && batches == &other.batches
+            && chain_tip == &other.chain_tip
+            && block_in_progress == &other.block_in_progress
+            && block_budget == &other.block_budget
+            && batch_budget == &other.batch_budget
+    }
 }
 
 impl Mempool {
@@ -201,10 +233,13 @@ impl Mempool {
             transactions: TransactionGraph::default(),
             batches: BatchGraph::default(),
             expirations: TransactionExpirations::default(),
+            subscription: SubscriptionProvider::default(),
         }
     }
 
     /// Adds a transaction to the mempool.
+    ///
+    /// Sends a [`MempoolEvent::TransactionAdded`] event to subscribers.
     ///
     /// # Returns
     ///
@@ -220,9 +255,8 @@ impl Mempool {
     ) -> Result<BlockNumber, AddTransactionError> {
         // Add transaction to inflight state.
         let parents = self.state.add_transaction(&transaction)?;
-
+        self.subscription.transaction_added(&transaction);
         self.expirations.insert(transaction.id(), transaction.expires_at());
-
         self.transactions
             .insert(transaction, parents)
             .expect("Transaction should insert after passing inflight state");
@@ -309,6 +343,9 @@ impl Mempool {
     /// The pool will mark the associated batches and transactions as committed, and prune stale
     /// committed data, and purge transactions that are now considered expired.
     ///
+    /// Sends a [`MempoolEvent::BlockCommitted`] event to subscribers, as well as a
+    /// [`MempoolEvent::TransactionsReverted`] for transactions that are now considered expired.
+    ///
     /// # Returns
     ///
     /// Returns a set of transactions that were purged from the mempool because they can no longer
@@ -318,7 +355,7 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self) -> BTreeSet<TransactionId> {
+    pub fn commit_block(&mut self, header: BlockHeader) -> BTreeSet<TransactionId> {
         // Remove committed batches and transactions from graphs.
         let batches = self.block_in_progress.take().expect("No block in progress to commit");
         let transactions =
@@ -331,8 +368,10 @@ impl Mempool {
         self.expirations.remove(transactions.iter());
 
         // Inform inflight state about committed data.
-        self.state.commit_block(transactions);
+        self.state.commit_block(transactions.clone());
         self.chain_tip = self.chain_tip.child();
+
+        self.subscription.block_committed(header, transactions);
 
         // Revert expired transactions and their descendents.
         self.revert_expired_transactions()
@@ -341,6 +380,8 @@ impl Mempool {
     /// Notify the pool that construction of the in flight block failed.
     ///
     /// The pool will purge the block and all of its contents from the pool.
+    ///
+    /// Sends a [`MempoolEvent::TransactionsReverted`] event to subscribers.
     ///
     /// # Returns
     ///
@@ -381,7 +422,9 @@ impl Mempool {
         let expired = self.expirations.get(self.chain_tip);
 
         self.revert_transactions(expired.iter().copied().collect())
-            .expect("expired transactions must be part of the mempool")
+            .expect("expired transactions must be part of the mempool");
+
+        expired
     }
 
     /// Reverts the given transactions and their descendents from the mempool.
@@ -391,12 +434,6 @@ impl Mempool {
     ///
     /// Transactions that were in reverted batches but that are disjoint from the reverted
     /// transactions (i.e. not descendents) are requeued and _not_ reverted.
-    ///
-    /// # Returns
-    ///
-    /// A set of the IDs of every transaction that ended up being reverted.
-    /// This includes both the transactions explicitly passed in `txs` and any of their
-    /// descendents that were also removed from the mempool.
     ///
     /// # Errors
     ///
@@ -428,6 +465,24 @@ impl Mempool {
         self.expirations.remove(reverted.iter());
         self.state.revert_transactions(reverted.clone());
 
+        self.subscription.txs_reverted(reverted.clone());
+
         Ok(reverted)
+    }
+
+    /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.
+    ///
+    /// Only emits events which occurred after the current committed block.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the provided chain tip does not match the mempool's chain tip. This
+    /// prevents desync between the caller's view of the world and the mempool's event stream.
+    #[instrument(target = COMPONENT, name = "mempool.subscribe", skip_all)]
+    pub fn subscribe(
+        &mut self,
+        chain_tip: BlockNumber,
+    ) -> Result<mpsc::Receiver<MempoolEvent>, BlockNumber> {
+        self.subscription.subscribe(chain_tip)
     }
 }

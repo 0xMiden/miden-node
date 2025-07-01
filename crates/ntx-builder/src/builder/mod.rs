@@ -125,7 +125,7 @@ impl NetworkTransactionBuilder {
         // See: <https://github.com/postmanlabs/postman-app-support/issues/13120>.
         let reflection_service_alpha = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(ntx_builder_api_descriptor())
-            .build_v1()
+            .build_v1alpha()
             .context("failed to build reflection service")?;
 
         let listener = TcpListener::bind(self.ntx_builder_address).await?;

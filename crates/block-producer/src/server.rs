@@ -258,7 +258,7 @@ impl BlockProducerRpcServer {
         // See: <https://github.com/postmanlabs/postman-app-support/issues/13120>.
         let reflection_service_alpha = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())
-            .build_v1()
+            .build_v1alpha()
             .context("failed to build reflection service")?;
 
         // Build the gRPC server with the API service and trace layer.

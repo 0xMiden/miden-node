@@ -113,7 +113,7 @@ pub enum Error {
     Asset(#[from] AssetError),
     #[error("Applying assets to account failed")]
     AccountDelta(#[from] miden_objects::AccountDeltaError),
-    #[error("You defined an asset {symbol:?} that has no faucet producing it")]
+    #[error("The defined asset {symbol:?} has no corresponding faucet")]
     MissingFaucetDefinition { symbol: TokenSymbol },
     #[error(transparent)]
     TokenSymbol(#[from] TokenSymbolError),

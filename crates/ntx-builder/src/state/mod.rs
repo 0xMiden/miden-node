@@ -18,9 +18,9 @@ pub struct Candidate {
     /// The current inflight deltas which should be applied to this account.
     ///
     /// Note that the first item _might_ be an account creation update.
-    pub account_deltas: VecDeque<NetworkAccountUpdate>,
+    pub _account_deltas: VecDeque<NetworkAccountUpdate>,
     /// A set of notes addressed to this network account.
-    pub notes: Vec<NetworkNote>,
+    pub _notes: Vec<NetworkNote>,
 }
 
 /// Holds the state of the network transaction builder.
@@ -54,7 +54,7 @@ impl State {
                     if let Some(account) = self.accounts.add(id, update) {
                         self.notes.deselect(account);
                     }
-                };
+                }
 
                 self.notes.add(id, network_notes, nullifiers);
             },
@@ -79,15 +79,16 @@ impl State {
     /// be selected again until either:
     ///
     ///   - it has been marked as failed if the transaction failed, or
-    ///   - the transaction was submitted successfully, indicated by the associated mempool event being submitted
+    ///   - the transaction was submitted successfully, indicated by the associated mempool event
+    ///     being submitted
     pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<Candidate> {
         let candidate = self.notes.select()?;
-        let account_deltas = self.accounts.get(&candidate).cloned().unwrap_or_default();
-        let notes = self.notes.get(&candidate).take(limit.get()).cloned().collect();
+        let account_deltas = self.accounts.get(candidate).cloned().unwrap_or_default();
+        let notes = self.notes.get(candidate).take(limit.get()).cloned().collect();
 
         Some(Candidate {
-            account_deltas,
-            notes,
+            _account_deltas: account_deltas,
+            _notes: notes,
             reference: candidate,
         })
     }

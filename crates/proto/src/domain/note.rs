@@ -8,12 +8,11 @@ use miden_objects::{
 };
 use thiserror::Error;
 
+use super::account::NetworkAccountPrefix;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
     generated::note as proto,
 };
-
-use super::account::NetworkAccountPrefix;
 
 impl TryFrom<proto::NoteMetadata> for NoteMetadata {
     type Error = ConversionError;

@@ -21,8 +21,8 @@ pub enum NetworkAccountUpdate {
 
 impl AccountDeltas {
     /// Returns the account delta's for the account, if any.
-    pub fn get(&self, account: &NetworkAccountPrefix) -> Option<&VecDeque<NetworkAccountUpdate>> {
-        self.deltas.get(account)
+    pub fn get(&self, account: NetworkAccountPrefix) -> Option<&VecDeque<NetworkAccountUpdate>> {
+        self.deltas.get(&account)
     }
 
     /// Tracks a new transaction and its account delta.
@@ -66,7 +66,7 @@ impl AccountDeltas {
     }
 
     fn tx_update(&mut self, tx: &TransactionId, change: TxUpdate) {
-        let Some(account) = self.txs.remove(&tx) else {
+        let Some(account) = self.txs.remove(tx) else {
             return;
         };
 
@@ -81,6 +81,7 @@ impl AccountDeltas {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum TxUpdate {
     Commit,
     Revert,

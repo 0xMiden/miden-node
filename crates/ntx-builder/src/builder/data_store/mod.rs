@@ -15,8 +15,10 @@ use tokio::sync::Mutex;
 use tracing::warn;
 
 use super::NtxBuilderError;
-use crate::COMPONENT;
-use crate::store::{StoreClient, StoreError};
+use crate::{
+    COMPONENT,
+    store::{StoreClient, StoreError},
+};
 
 mod account_cache;
 

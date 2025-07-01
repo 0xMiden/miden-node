@@ -3,7 +3,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
 use miden_objects::{note::Nullifier, transaction::TransactionId};
 
-/// Manages the available [`NetworkNotes`](NetworkNote) and the inflight state that pertains to them.
+/// Manages the available [`NetworkNotes`](NetworkNote) and the inflight state that pertains to
+/// them.
 ///
 /// It allows selecting a network account with notes available to consume.
 ///
@@ -55,11 +56,12 @@ impl Notes {
         notes
     }
 
-    /// Adds the transaction to the state, making the created notes available for selection and nullifying the consumed notes.
+    /// Adds the transaction to the state, making the created notes available for selection and
+    /// nullifying the consumed notes.
     pub fn add(&mut self, tx: TransactionId, created: Vec<NetworkNote>, consumed: Vec<Nullifier>) {
         let created_nul = created.iter().map(NetworkNote::nullifier).collect();
-        for note in &created {
-            self.insert_note(note.clone());
+        for note in created {
+            self.insert_note(note);
         }
 
         // Not all nullifiers are network note nullifiers.
@@ -169,7 +171,7 @@ impl Notes {
     /// Returns an iterator over all notes available for the given network account.
     ///
     /// This iterator can be empty if the account has no notes.
-    pub fn get(&mut self, account: &NetworkAccountPrefix) -> impl Iterator<Item = &NetworkNote> {
+    pub fn get(&mut self, account: NetworkAccountPrefix) -> impl Iterator<Item = &NetworkNote> {
         self.by_account
             .get(&account)
             .map(BTreeSet::iter)
@@ -179,11 +181,12 @@ impl Notes {
 
     /// Inserts a new note, making it available for selection.
     fn insert_note(&mut self, note: NetworkNote) {
+        use std::collections::hash_map::Entry;
+
         let account = note.account_prefix();
 
         // Accounts with no entry also need to be added to the queue
         // so they are available for selection.
-        use std::collections::hash_map::Entry;
         match self.by_account.entry(account) {
             Entry::Occupied(occupied) => occupied,
             Entry::Vacant(vacant) => {
@@ -210,7 +213,8 @@ impl Notes {
 
     /// Removes the note from the available set.
     ///
-    /// If this is the last available note for a given account, then this is also removed from tracking.
+    /// If this is the last available note for a given account, then this is also removed from
+    /// tracking.
     fn remove_available_note(&mut self, nullifier: &Nullifier) -> Option<NetworkNote> {
         let note = self.available.remove(nullifier)?;
 
@@ -220,7 +224,7 @@ impl Notes {
             .by_account
             .get_mut(&account)
             .expect("account must be tracked for an available note");
-        by_account.remove(&nullifier);
+        by_account.remove(nullifier);
 
         // Remove account from tracking if its empty.
         if by_account.is_empty() {

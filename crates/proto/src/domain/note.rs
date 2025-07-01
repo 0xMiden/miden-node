@@ -167,7 +167,7 @@ impl TryFrom<proto::NetworkNote> for NetworkNote {
         let (assets, recipient) = details.into_parts();
         let metadata: NoteMetadata = proto_note
             .metadata
-            .ok_or_else(|| proto::Note::missing_field(stringify!(metadata)))?
+            .ok_or_else(|| proto::NetworkNote::missing_field(stringify!(metadata)))?
             .try_into()?;
         let note = Note::new(assets, metadata, recipient);
 

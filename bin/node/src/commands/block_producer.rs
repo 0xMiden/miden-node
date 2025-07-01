@@ -14,7 +14,7 @@ pub enum BlockProducerCommand {
         #[arg(env = ENV_BLOCK_PRODUCER_URL)]
         url: Url,
 
-        /// The store's gRPC url.
+        /// The store's block-producer service gRPC url.
         #[arg(long = "store.url", env = ENV_STORE_BLOCK_PRODUCER_URL)]
         store_url: Url,
 

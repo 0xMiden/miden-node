@@ -14,7 +14,7 @@ pub enum RpcCommand {
         #[arg(long = "url", env = ENV_RPC_URL, value_name = "URL")]
         url: Url,
 
-        /// The store's gRPC url.
+        /// The store's RPC service gRPC url.
         #[arg(long = "store.url", env = ENV_STORE_RPC_URL, value_name = "URL")]
         store_url: Url,
 

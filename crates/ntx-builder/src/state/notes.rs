@@ -58,7 +58,7 @@ impl Notes {
         self.txs.insert(
             tx,
             InflightTx {
-                created: create_nul,
+                created: created_nul,
                 consumed: actually_consumed,
             },
         );

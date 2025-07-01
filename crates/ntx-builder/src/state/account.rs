@@ -9,52 +9,63 @@ use miden_objects::{
 /// Tracks network account deltas for all currently inflight transactions.
 #[derive(Default)]
 pub struct AccountStates {
-    deltas: HashMap<NetworkAccountPrefix, VecDeque<AccountUpdate>>,
+    deltas: HashMap<NetworkAccountPrefix, VecDeque<NetworkAccountUpdate>>,
     txs: BTreeMap<TransactionId, NetworkAccountPrefix>,
 }
 
-pub enum AccountUpdate {
+#[derive(Clone)]
+pub enum NetworkAccountUpdate {
     New(Account),
     Delta(AccountDelta),
 }
 
 impl AccountStates {
     /// Returns the account delta's for the account, if any.
-    pub fn get(&self, account: &NetworkAccountPrefix) -> Option<&VecDeque<AccountUpdate>> {
+    pub fn get(&self, account: &NetworkAccountPrefix) -> Option<&VecDeque<NetworkAccountUpdate>> {
         self.deltas.get(account)
     }
 
     /// Tracks a new transaction and its account delta.
-    pub fn add(&mut self, tx: TransactionId, update: AccountUpdateDetails) {
+    ///
+    /// Non-network account updates are ignored.
+    pub fn add(
+        &mut self,
+        tx: TransactionId,
+        update: AccountUpdateDetails,
+    ) -> Option<NetworkAccountPrefix> {
         let update = match update {
             AccountUpdateDetails::Private => {
                 tracing::warn!("ignoring private network account update");
-                return;
+                return None;
             },
-            AccountUpdateDetails::New(account) => AccountUpdate::New(account),
-            AccountUpdateDetails::Delta(account_delta) => AccountUpdate::Delta(account_delta),
+            AccountUpdateDetails::New(account) => NetworkAccountUpdate::New(account),
+            AccountUpdateDetails::Delta(account_delta) => {
+                NetworkAccountUpdate::Delta(account_delta)
+            },
         };
 
         let Ok(account) = NetworkAccountPrefix::try_from(update.account_id()) else {
             tracing::warn!("ignoring non-network account update");
-            return;
+            return None;
         };
 
         self.deltas.entry(account).or_default().push_back(update);
         self.txs.insert(tx, account);
+
+        Some(account)
     }
 
     /// The transaction and its account delta is removed.
-    pub fn commit(&mut self, tx: TransactionId) {
+    pub fn commit(&mut self, tx: &TransactionId) {
         self.tx_update(tx, TxUpdate::Commit);
     }
 
     /// The transaction and its account delta is removed.
-    pub fn revert(&mut self, tx: TransactionId) {
+    pub fn revert(&mut self, tx: &TransactionId) {
         self.tx_update(tx, TxUpdate::Revert);
     }
 
-    fn tx_update(&mut self, tx: TransactionId, change: TxUpdate) {
+    fn tx_update(&mut self, tx: &TransactionId, change: TxUpdate) {
         let Some(account) = self.txs.remove(&tx) else {
             return;
         };
@@ -75,11 +86,11 @@ enum TxUpdate {
     Revert,
 }
 
-impl AccountUpdate {
+impl NetworkAccountUpdate {
     fn account_id(&self) -> AccountId {
         match self {
-            AccountUpdate::New(account) => account.id(),
-            AccountUpdate::Delta(account_delta) => todo!("Waiting on miden-base"),
+            NetworkAccountUpdate::New(account) => account.id(),
+            NetworkAccountUpdate::Delta(account_delta) => account_delta.id(),
         }
     }
 }

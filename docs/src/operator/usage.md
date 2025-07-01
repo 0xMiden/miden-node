@@ -33,7 +33,7 @@ miden-node bundled bootstrap \
 ```
 
 Alternatively, provide an explicit toml-formatted configuration format which allows you to define
-multiple assets and faucets easily, without having to register them by additional program invocations.
+multiple assets and faucets easily at chain startup.
 
 ```sh
 miden-node bundled bootstrap \
@@ -42,7 +42,7 @@ miden-node bundled bootstrap \
   --genesis-config-file genesis.toml
 ```
 
-containing i.e.
+The genesis configuration file should contain at least one faucet, and optionally, wallet definitions with assets, for example:
 
 ```toml
 timestamp = 1717344256

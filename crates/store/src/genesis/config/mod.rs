@@ -251,7 +251,7 @@ impl GenesisConfig {
                     let faucet_id = faucets
                         .get(&symbol)
                         .ok_or_else(|| Error::MissingFaucetDefinition { symbol: token_symbol })?;
-                    // TODO add non funcgible assets support
+
                     Ok(FungibleAsset::new(*faucet_id, amount)?)
                 },
             ))?;

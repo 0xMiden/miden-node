@@ -8,7 +8,7 @@ use miden_objects::{
 
 /// Tracks network account deltas for all currently inflight transactions.
 #[derive(Default)]
-pub struct AccountStates {
+pub struct AccountDeltas {
     deltas: HashMap<NetworkAccountPrefix, VecDeque<NetworkAccountUpdate>>,
     txs: BTreeMap<TransactionId, NetworkAccountPrefix>,
 }
@@ -19,7 +19,7 @@ pub enum NetworkAccountUpdate {
     Delta(AccountDelta),
 }
 
-impl AccountStates {
+impl AccountDeltas {
     /// Returns the account delta's for the account, if any.
     pub fn get(&self, account: &NetworkAccountPrefix) -> Option<&VecDeque<NetworkAccountUpdate>> {
         self.deltas.get(account)

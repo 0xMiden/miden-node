@@ -14,11 +14,9 @@ use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore}
 use tokio::sync::Mutex;
 use tracing::warn;
 
-use super::{
-    NtxBuilderError,
-    store::{StoreClient, StoreError},
-};
+use super::NtxBuilderError;
 use crate::COMPONENT;
+use crate::store::{StoreClient, StoreError};
 
 mod account_cache;
 

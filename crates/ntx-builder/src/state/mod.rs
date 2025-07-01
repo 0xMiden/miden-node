@@ -4,10 +4,9 @@ use account::NetworkAccountUpdate;
 use miden_node_proto::domain::{
     account::NetworkAccountPrefix, mempool::MempoolEvent, note::NetworkNote,
 };
-use miden_objects::block::BlockHeader;
 
 mod account;
-mod notes;
+mod note;
 
 /// A candidate network transaction.
 ///
@@ -28,12 +27,18 @@ pub struct Candidate {
 ///
 /// It tracks inflight transactions, and their impact on network-related state.
 pub struct State {
-    accounts: account::AccountStates,
-    notes: notes::Notes,
-    chain_tip: BlockHeader,
+    accounts: account::AccountDeltas,
+    notes: note::Notes,
 }
 
 impl State {
+    pub fn new(notes: impl Iterator<Item = NetworkNote>) -> Self {
+        Self {
+            notes: note::Notes::new(notes),
+            accounts: account::AccountDeltas::default(),
+        }
+    }
+
     /// Updates state with the mempool event.
     pub fn mempool_update(&mut self, update: MempoolEvent) {
         match update {
@@ -53,9 +58,7 @@ impl State {
 
                 self.notes.add(id, network_notes, nullifiers);
             },
-            MempoolEvent::BlockCommitted { header, txs } => {
-                self.chain_tip = header;
-
+            MempoolEvent::BlockCommitted { header: _, txs } => {
                 for tx in txs {
                     self.accounts.commit(&tx);
                     self.notes.commit(&tx);

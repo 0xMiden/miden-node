@@ -119,12 +119,22 @@ impl NetworkTransactionBuilder {
             .build_v1()
             .context("failed to build reflection service")?;
 
+        // This is currently required for postman to work properly because
+        // it doesn't support the new version yet.
+        //
+        // See: <https://github.com/postmanlabs/postman-app-support/issues/13120>.
+        let reflection_service_alpha = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(ntx_builder_api_descriptor())
+            .build_v1()
+            .context("failed to build reflection service")?;
+
         let listener = TcpListener::bind(self.ntx_builder_address).await?;
         let server = tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc())
             .add_service(api_server::ApiServer::new(NtxBuilderApi::new(notes_queue.clone())))
             .add_service(reflection_service)
+            .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener));
         tokio::pin!(server);
 

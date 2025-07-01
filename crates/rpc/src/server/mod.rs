@@ -41,6 +41,15 @@ impl Rpc {
             .build_v1()
             .context("failed to build reflection service")?;
 
+        // This is currently required for postman to work properly because
+        // it doesn't support the new version yet.
+        //
+        // See: <https://github.com/postmanlabs/postman-app-support/issues/13120>.
+        let reflection_service_alpha = server::Builder::configure()
+            .register_file_descriptor_set(rpc_api_descriptor())
+            .build_v1alpha()
+            .context("failed to build reflection service")?;
+
         info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
 
         tonic::transport::Server::builder()
@@ -53,6 +62,7 @@ impl Rpc {
             .add_service(api_service)
             // Enables gRPC reflection service.
             .add_service(reflection_service)
+            .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve RPC API")

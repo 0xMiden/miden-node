@@ -7,6 +7,11 @@ use store::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state
 mod seeding;
 mod store;
 
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
 #[derive(Parser)]
 #[command(version)]
 pub struct Cli {

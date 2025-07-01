@@ -163,16 +163,13 @@ impl Display for SeedingMetrics {
 
 /// Gets the size of the store file and its WAL file.
 fn get_store_size(dump_file: &Path) -> u64 {
-    let store_file_size = fs_err::metadata(dump_file)
-        .unwrap_or_else(|_| panic!("Dumpfile always exists: {}", dump_file.display()))
-        .len();
+    let store_file_size = fs_err::metadata(dump_file).expect("Dumpfile always exists").len();
     let wal_file = format!("{}-wal", dump_file.to_str().unwrap());
-    let wal_file_size = fs_err::metadata(&wal_file).map_or_else(
-        |_err| {
+    let wal_file_size = fs_err::metadata(&wal_file)
+        .inspect_err(|_err| {
             eprintln!("No WAL file found: {wal_file}");
-            0
-        },
-        |meta| meta.len(),
-    );
+        })
+        .map(|m| m.len())
+        .unwrap_or_default();
     store_file_size + wal_file_size
 }

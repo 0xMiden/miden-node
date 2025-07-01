@@ -12,6 +12,7 @@
 - Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 - Added configurable network id for the faucet (#1016).
+- Support gRPC server relection `v1alpha` (#1036).
 
 ### Changes
 
@@ -23,8 +24,14 @@
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
 - Exposed `miden-proving-service` as a library (#956).
+- [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
+- Faucet challenge expiration time is now configurable (#1017).
 - Removed system monitor from node binary (#1019).
 - [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).
+- [BREAKING] Rename `miden-proving-service` to `miden-remote-prover` (#1004).
+- [BREAKING] Rename `miden-proving-service-client` to `miden-remote-prover-client` (#1004).
+- [BREAKING] Rename `RemoteProverError` to `RemoteProverClientError` (#1004).
+- [BREAKING] Rename `ProvingServiceError` to `RemoteProverError` (#1004).
 
 ### Fixes
 

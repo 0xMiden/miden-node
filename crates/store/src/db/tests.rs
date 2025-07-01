@@ -605,7 +605,8 @@ fn sql_public_account_details() {
 
     let vault_delta = AccountVaultDelta::from_iters([nft2], [nft1]);
 
-    let mut delta2 = AccountDelta::new(storage_delta, vault_delta, Some(Felt::new(2))).unwrap();
+    let mut delta2 =
+        AccountDelta::new(account.id(), storage_delta, vault_delta, Some(Felt::new(2))).unwrap();
 
     account.apply_delta(&delta2).unwrap();
 
@@ -646,6 +647,7 @@ fn sql_public_account_details() {
     let storage_delta3 = AccountStorageDelta::from_iters([5], [], []);
 
     let delta3 = AccountDelta::new(
+        account.id(),
         storage_delta3,
         AccountVaultDelta::from_iters([nft1], []),
         Some(Felt::new(3)),

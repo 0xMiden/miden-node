@@ -76,8 +76,10 @@ document.addEventListener('DOMContentLoaded', function () {
         publicButton.disabled = isLoading;
         loading.style.display = isLoading ? 'flex' : 'none';
         status.textContent = "";
-        info.style.visibility = isLoading ? 'hidden' : 'visible';
-        importCommand.style.visibility = isLoading ? 'hidden' : 'visible';
+        if (isLoading) {
+            info.style.visibility = 'hidden';
+            importCommand.style.visibility = 'hidden';
+        }
     }
 
     async function handleButtonClick(isPrivateNote) {
@@ -100,7 +102,9 @@ document.addEventListener('DOMContentLoaded', function () {
         // Get the PoW challenge from the new /pow endpoint
         let powResponse;
         try {
-            powResponse = await fetch(window.location.href + 'pow', {
+            powResponse = await fetch(window.location.href + 'pow?' + new URLSearchParams({
+                account_id: accountAddress
+            }), {
                 method: "GET"
             });
         } catch (error) {
@@ -109,7 +113,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (!powResponse.ok) {
-            showError('Please try again soon.');
+            const message = await powResponse.text();
+            showError(message);
+            setLoadingState(false);
             return;
         }
         setLoadingState(true);
@@ -132,7 +138,6 @@ document.addEventListener('DOMContentLoaded', function () {
             nonce: nonce
         };
 
-
         const evtSource = new EventSource(window.location.href + 'get_tokens?' + new URLSearchParams(params));
 
         evtSource.onopen = function () {
@@ -151,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function () {
             evtSource.close();
 
             const data = JSON.parse(event.data);
-            showError('Failed to receive tokens. ' + data.message);
+            showError('Failed to receive tokens: ' + data.message);
             setLoadingState(false);
         });
 
@@ -185,6 +190,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             txLink.textContent = data.transaction_id;
+            info.style.visibility = 'visible';
+            importCommand.style.visibility = 'visible';
             // If the explorer URL is available, set the link.
             if (data.explorer_url) {
                 txLink.href = data.explorer_url + '/tx/' + data.transaction_id;

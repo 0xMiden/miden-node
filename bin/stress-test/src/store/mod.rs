@@ -16,7 +16,7 @@ use miden_node_proto::generated::{
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::AccountId,
-    note::{Note, NoteTag},
+    note::{Note, NoteDetails, NoteMetadata, NoteTag},
     utils::{Deserializable, Serializable},
 };
 use tokio::fs;
@@ -195,9 +195,16 @@ pub async fn bench_check_nullifiers_by_prefix(
                 .iter()
                 .filter_map(|n| {
                     // private notes are filtered out because `n.details` is None
-                    Note::read_from_bytes(n.note.as_ref().unwrap().details.as_ref()?)
-                        .ok()
-                        .map(|n| u32::from(n.nullifier().prefix()))
+                    let inner_note = n.note.as_ref()?;
+                    let details =
+                        NoteDetails::read_from_bytes(inner_note.details.as_ref()?).unwrap();
+                    let (assets, recipient) = details.into_parts();
+                    let note = Note::new(
+                        assets,
+                        NoteMetadata::try_from(inner_note.clone().metadata?).ok()?,
+                        recipient,
+                    );
+                    Some(u32::from(note.nullifier().prefix()))
                 })
                 .collect::<Vec<u32>>(),
         );

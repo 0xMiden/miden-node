@@ -21,6 +21,7 @@ miden-node-utils = { workspace = true }
 miden-objects    = { workspace = true }
 prost            = { workspace = true }
 thiserror        = { workspace = true }
+tokio            = { default-features = false, features = ["sync"], version = "1.44" }
 tonic            = { workspace = true }
 url              = { workspace = true }
 

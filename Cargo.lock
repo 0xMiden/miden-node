@@ -2340,6 +2340,7 @@ dependencies = [
  "prost-build",
  "protox",
  "thiserror 2.0.12",
+ "tokio",
  "tonic",
  "tonic-build",
  "url",

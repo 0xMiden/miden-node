@@ -5,13 +5,12 @@ use alloc::{
 };
 use core::time::Duration;
 
-use miden_node_proto::clients::ClientBuilder;
+use miden_node_proto::clients::{ClientBuilder, RemoteClientManager};
 use miden_objects::{
     batch::{ProposedBatch, ProvenBatch},
     transaction::{OutputNote, ProvenTransaction, TransactionHeader, TransactionId},
     utils::{Deserializable, DeserializationError, Serializable},
 };
-use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
 use crate::{
@@ -32,13 +31,10 @@ use crate::{
 #[derive(Clone)]
 pub struct RemoteBatchProver {
     #[cfg(target_arch = "wasm32")]
-    client: Arc<Mutex<Option<ApiClient<tonic_web_wasm_client::Client>>>>,
+    manager: RemoteClientManager<ApiClient<tonic_web_wasm_client::Client>>,
 
     #[cfg(not(target_arch = "wasm32"))]
-    client: Arc<Mutex<Option<ApiClient<tonic::transport::Channel>>>>,
-
-    endpoint: String,
-    timeout: Option<Duration>,
+    manager: RemoteClientManager<ApiClient<tonic::transport::Channel>>,
 }
 
 impl RemoteBatchProver {
@@ -56,51 +52,42 @@ impl RemoteBatchProver {
     /// If `timeout` is `Some(duration)`, uses the specified timeout.
     pub fn with_timeout(endpoint: impl Into<String>, timeout: Option<Duration>) -> Self {
         RemoteBatchProver {
-            endpoint: endpoint.into(),
-            client: Arc::new(Mutex::new(None)),
-            timeout,
+            manager: RemoteClientManager::with_timeout(endpoint, timeout),
         }
     }
 
     /// Establishes a connection to the remote batch prover server. The connection is
     /// maintained for the lifetime of the prover. If the connection is already established, this
     /// method does nothing.
-    async fn connect(&self) -> Result<(), RemoteProverClientError> {
-        let mut client = self.client.lock().await;
-        if client.is_some() {
-            return Ok(());
-        }
+    #[cfg(target_arch = "wasm32")]
+    async fn connect(
+        &self,
+    ) -> Result<ApiClient<tonic_web_wasm_client::Client>, RemoteProverClientError> {
+        self.manager
+            .connect_wasm_with(|endpoint| {
+                let web_client = tonic_web_wasm_client::Client::new(endpoint);
+                Ok(ApiClient::new(web_client))
+            })
+            .await
+    }
 
-        #[cfg(target_arch = "wasm32")]
-        let new_client = {
-            // For WASM, use the direct approach since ClientBuilder doesn't support WASM yet
-            let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
-            ApiClient::new(web_client)
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let new_client = {
-            use miden_node_proto::clients::ClientBuilder;
-
-            let mut builder = ClientBuilder::new().with_tls();
-
-            // Apply custom timeout if specified (ClientBuilder defaults to 10 seconds)
-            if let Some(timeout) = self.timeout {
-                builder = builder.with_timeout(timeout);
-            }
-
-            let channel = builder.create_channel(self.endpoint.clone()).await.map_err(|e| {
-                RemoteProverClientError::ConnectionFailed(
-                    format!("Failed to create channel: {e}").into(),
-                )
-            })?;
-
-            ApiClient::new(channel)
-        };
-
-        *client = Some(new_client);
-
-        Ok(())
+    /// Establishes a connection to the remote batch prover server. The connection is
+    /// maintained for the lifetime of the prover. If the connection is already established, this
+    /// method does nothing.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn connect(
+        &self,
+    ) -> Result<ApiClient<tonic::transport::Channel>, RemoteProverClientError> {
+        self.manager
+            .connect_with(|endpoint, builder| async move {
+                let channel = builder.create_channel(endpoint).await.map_err(|e| {
+                    RemoteProverClientError::ConnectionFailed(
+                        format!("Failed to create channel: {e}").into(),
+                    )
+                })?;
+                Ok(ApiClient::new(channel))
+            })
+            .await
     }
 }
 
@@ -110,17 +97,8 @@ impl RemoteBatchProver {
         proposed_batch: ProposedBatch,
     ) -> Result<ProvenBatch, RemoteProverClientError> {
         use miden_objects::utils::Serializable;
-        self.connect().await?;
 
-        let mut client = self
-            .client
-            .lock()
-            .await
-            .as_ref()
-            .ok_or_else(|| {
-                RemoteProverClientError::ConnectionFailed("client should be connected".into())
-            })?
-            .clone();
+        let mut client = self.connect().await?;
 
         // Create the set of the transactions we pass to the prover for later validation.
         let proposed_txs: Vec<_> = proposed_batch.transactions().iter().map(Arc::clone).collect();

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use tonic::{
@@ -474,5 +474,157 @@ mod tests {
     fn test_client_builder_no_timeout() {
         let builder = ClientBuilder::new().with_no_timeout();
         assert!(builder.timeout_disabled);
+    }
+}
+
+// REMOTE CLIENT MANAGER
+// ================================================================================================
+
+/// Generic manager for remote gRPC clients with lazy connection and timeout support.
+///
+/// This abstraction eliminates code duplication across remote prover clients by providing
+/// common connection management, endpoint handling, and timeout configuration.
+///
+/// # Type Parameters
+/// * `C` - The gRPC client type (e.g., `ApiClient<Channel>` or
+///   `ApiClient<tonic_web_wasm_client::Client>`)
+///
+/// # Example
+/// ```rust
+/// use miden_node_proto::clients::RemoteClientManager;
+/// use std::time::Duration;
+///
+/// // Create a manager with default timeout
+/// let manager = RemoteClientManager::new("https://prover.example.com");
+///
+/// // Create a manager with custom timeout
+/// let manager = RemoteClientManager::with_timeout("https://prover.example.com", Some(Duration::from_secs(30)));
+///
+/// // Connect and get the client
+/// let client = manager.connect_with(|endpoint, builder| async move {
+///     let channel = builder.create_channel(endpoint).await?;
+///     Ok(ApiClient::new(channel))
+/// }).await?;
+/// ```
+#[derive(Clone)]
+pub struct RemoteClientManager<C> {
+    client: Arc<tokio::sync::Mutex<Option<C>>>,
+    endpoint: String,
+    timeout: Option<Duration>,
+}
+
+impl<C> RemoteClientManager<C>
+where
+    C: Clone,
+{
+    /// Creates a new remote client manager with the specified endpoint.
+    ///
+    /// Uses the default timeout behavior (`ClientBuilder`'s 10-second default).
+    pub fn new(endpoint: impl Into<String>) -> Self {
+        Self {
+            client: Arc::new(tokio::sync::Mutex::new(None)),
+            endpoint: endpoint.into(),
+            timeout: None,
+        }
+    }
+
+    /// Creates a new remote client manager with an optional custom timeout.
+    ///
+    /// If `timeout` is `None`, uses the default 10-second timeout.
+    /// If `timeout` is `Some(duration)`, uses the specified timeout.
+    pub fn with_timeout(endpoint: impl Into<String>, timeout: Option<Duration>) -> Self {
+        Self {
+            client: Arc::new(tokio::sync::Mutex::new(None)),
+            endpoint: endpoint.into(),
+            timeout,
+        }
+    }
+
+    /// Connects to the remote service using a provided factory function.
+    ///
+    /// This method handles the connection logic, including:
+    /// - Checking if already connected (returns existing client)
+    /// - Creating a configured `ClientBuilder` with TLS and timeout
+    /// - Calling the factory function to create the specific client type
+    /// - Storing the client for reuse
+    ///
+    /// # Arguments
+    /// * `factory` - Async function that creates the client given an endpoint and configured
+    ///   `ClientBuilder`
+    ///
+    /// # Returns
+    /// A clone of the connected client
+    pub async fn connect_with<F, Fut, E>(&self, factory: F) -> Result<C, E>
+    where
+        F: FnOnce(String, ClientBuilder) -> Fut,
+        Fut: std::future::Future<Output = Result<C, E>>,
+    {
+        let mut client_guard = self.client.lock().await;
+
+        // Return existing client if already connected
+        if let Some(client) = client_guard.as_ref() {
+            return Ok(client.clone());
+        }
+
+        // Create configured builder
+        let mut builder = ClientBuilder::new().with_tls();
+
+        // Apply custom timeout if specified (`ClientBuilder` defaults to 10 seconds)
+        if let Some(timeout) = self.timeout {
+            builder = builder.with_timeout(timeout);
+        }
+
+        // Create the client using the factory
+        let new_client = factory(self.endpoint.clone(), builder).await?;
+
+        // Store and return the client
+        *client_guard = Some(new_client.clone());
+        Ok(new_client)
+    }
+
+    /// Gets a clone of the current client if connected.
+    ///
+    /// Returns `None` if no connection has been established yet.
+    pub async fn get_client(&self) -> Option<C> {
+        self.client.lock().await.clone()
+    }
+
+    /// Gets the endpoint URL.
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    /// Gets the configured timeout.
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+}
+
+// WASM-specific factory helper for remote prover clients
+#[cfg(target_arch = "wasm32")]
+impl<C> RemoteClientManager<C>
+where
+    C: Clone,
+{
+    /// Connects using a WASM-compatible client factory.
+    ///
+    /// This is a convenience method for WASM targets that don't use `ClientBuilder`.
+    pub async fn connect_wasm_with<F, E>(&self, factory: F) -> Result<C, E>
+    where
+        F: FnOnce(String) -> Result<C, E>,
+    {
+        let mut client_guard = self.client.lock().await;
+
+        // Return existing client if already connected
+        if let Some(client) = client_guard.as_ref() {
+            return Ok(client.clone());
+        }
+
+        // Create the client using the factory
+        let new_client = factory(self.endpoint.clone())?;
+
+        // Store and return the client
+        *client_guard = Some(new_client.clone());
+        Ok(new_client)
     }
 }

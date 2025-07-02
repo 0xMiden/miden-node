@@ -441,42 +441,6 @@ impl<T: Clone> Clone for Client<T> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_client_builder_creation() {
-        let builder = ClientBuilder::new();
-        assert!(!builder.with_otel);
-        assert!(builder.tls.is_none());
-        assert_eq!(builder.timeout, DEFAULT_TIMEOUT);
-        assert!(!builder.timeout_disabled);
-        assert!(!builder.connect_lazy);
-    }
-
-    #[test]
-    fn test_client_builder_configuration() {
-        let builder = ClientBuilder::new()
-            .with_otel()
-            .with_tls()
-            .with_timeout(Duration::from_secs(30))
-            .with_lazy_connection(true);
-
-        assert!(builder.with_otel);
-        assert!(builder.tls.is_some());
-        assert_eq!(builder.timeout, Duration::from_secs(30));
-        assert!(!builder.timeout_disabled);
-        assert!(builder.connect_lazy);
-    }
-
-    #[test]
-    fn test_client_builder_no_timeout() {
-        let builder = ClientBuilder::new().with_no_timeout();
-        assert!(builder.timeout_disabled);
-    }
-}
-
 // REMOTE CLIENT MANAGER
 // ================================================================================================
 
@@ -626,5 +590,44 @@ where
         // Store and return the client
         *client_guard = Some(new_client.clone());
         Ok(new_client)
+    }
+}
+
+// TESTS
+// ================================================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_client_builder_creation() {
+        let builder = ClientBuilder::new();
+        assert!(!builder.with_otel);
+        assert!(builder.tls.is_none());
+        assert_eq!(builder.timeout, DEFAULT_TIMEOUT);
+        assert!(!builder.timeout_disabled);
+        assert!(!builder.connect_lazy);
+    }
+
+    #[test]
+    fn test_client_builder_configuration() {
+        let builder = ClientBuilder::new()
+            .with_otel()
+            .with_tls()
+            .with_timeout(Duration::from_secs(30))
+            .with_lazy_connection(true);
+
+        assert!(builder.with_otel);
+        assert!(builder.tls.is_some());
+        assert_eq!(builder.timeout, Duration::from_secs(30));
+        assert!(!builder.timeout_disabled);
+        assert!(builder.connect_lazy);
+    }
+
+    #[test]
+    fn test_client_builder_no_timeout() {
+        let builder = ClientBuilder::new().with_no_timeout();
+        assert!(builder.timeout_disabled);
     }
 }

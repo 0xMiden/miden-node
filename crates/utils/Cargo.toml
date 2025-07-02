@@ -47,4 +47,4 @@ vergen-gitcl = { features = ["cargo", "rustc"], optional = true, version = "1.0"
 tokio = { optional = true, workspace = true }
 
 [dev-dependencies]
-thiserror = { version = "2.0" }
+thiserror = { workspace = true }

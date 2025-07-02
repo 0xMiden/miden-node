@@ -44,7 +44,7 @@ use tracing::{Instrument, Span, debug, error, info, info_span, instrument, warn}
 use url::Url;
 
 use crate::{
-    COMPONENT,
+    COMPONENT, MAX_IN_PROGRESS_TXS,
     store::{StoreClient, StoreError},
 };
 
@@ -124,6 +124,7 @@ impl NetworkTransactionBuilder {
 
         let mut state = crate::state::State::new(unconsumed.into_iter());
         let mut interval = tokio::time::interval(self.ticker_interval);
+        interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
         // Tracks network transaction tasks until they are submitted to the mempool.
         //
@@ -135,7 +136,12 @@ impl NetworkTransactionBuilder {
         loop {
             tokio::select! {
                 _next = interval.tick() => {
-                    let Some(candidate) = state.select_candidate(crate::TX_NOTE_LIMIT) else {
+                    if inflight.len() > MAX_IN_PROGRESS_TXS {
+                        tracing::info!("At maximum network tx capacity, skipping");
+                        continue;
+                    }
+
+                    let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
                         tracing::info!("No candidate network transaction available");
                         continue;
                     };
@@ -593,5 +599,9 @@ where
             // Cannot be None as its not empty.
             self.0.join_next_with_id().await.unwrap()
         }
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
     }
 }

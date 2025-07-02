@@ -32,8 +32,7 @@ miden-node bundled bootstrap \
   --accounts-directory .
 ```
 
-Alternatively, provide an explicit toml-formatted configuration which allows you to define
-multiple assets and faucets easily at chain startup.
+You can also configure the account and asset data in the genesis block by passing in toml file. This is particularly useful for setting up test scenarios without requiring multiple rounds of transactions to achieve this state.
 
 ```sh
 miden-node bundled bootstrap \

@@ -16,8 +16,8 @@ use miden_lib::{
 };
 use miden_node_block_producer::store::StoreClient;
 use miden_node_proto::{
-    domain::batch::BatchInputs, 
     clients::{ClientBuilder, RpcStoreClient},
+    domain::batch::BatchInputs,
 };
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_objects::{
@@ -79,9 +79,7 @@ pub async fn seed_store(
 
     // start the store
     let (_, store_addr) = start_store(data_directory.clone()).await;
-    let store_client = StoreClient::new(store_addr)
-        .await
-        .expect("Failed to create store client");
+    let store_client = StoreClient::new(store_addr).await.expect("Failed to create store client");
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
@@ -477,9 +475,7 @@ async fn get_block_inputs(
 /// Runs the store with the given data directory. Returns a tuple with:
 /// - a gRPC client to access the store
 /// - the address of the store
-pub async fn start_store(
-    data_directory: PathBuf,
-) -> (RpcStoreClient, SocketAddr) {
+pub async fn start_store(data_directory: PathBuf) -> (RpcStoreClient, SocketAddr) {
     let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
     let store_addr = grpc_store.local_addr().expect("Failed to get store address");
     let dir = data_directory.clone();

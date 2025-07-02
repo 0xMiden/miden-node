@@ -34,7 +34,9 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        let api = api::RpcService::new(self.store, self.block_producer);
+        let api = api::RpcService::new(self.store, self.block_producer)
+            .await
+            .context("Failed to create RPC service")?;
         let api_service = api_server::ApiServer::new(api);
         let reflection_service = server::Builder::configure()
             .register_file_descriptor_set(rpc_api_descriptor())

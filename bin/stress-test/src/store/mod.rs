@@ -5,6 +5,7 @@ use std::{
 
 use futures::{StreamExt, stream};
 use miden_node_proto::{
+    clients::RpcStoreClient,
     generated::{
         account as account_proto,
         digest::Digest,
@@ -13,7 +14,6 @@ use miden_node_proto::{
         },
         responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
     },
-    clients::RpcStoreClient,
 };
 use miden_objects::{
     account::AccountId,
@@ -134,10 +134,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
 /// Sends a single `sync_notes` request to the store and returns the elapsed time.
 /// The note tags are generated from the account ids, so the request will contain a note tag for
 /// each account id, with a block number of 0.
-pub async fn sync_notes(
-    api_client: &mut RpcStoreClient,
-    account_ids: Vec<AccountId>,
-) -> Duration {
+pub async fn sync_notes(api_client: &mut RpcStoreClient, account_ids: Vec<AccountId>) -> Duration {
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))

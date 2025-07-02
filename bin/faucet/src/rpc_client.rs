@@ -1,10 +1,12 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::generated::requests::{
-    GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
+use miden_node_proto::{
+    clients::{ClientBuilder, RpcApiClient},
+    generated::requests::{
+        GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
+    },
 };
-use miden_node_rpc::ApiClient;
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
@@ -24,15 +26,21 @@ pub enum RpcError {
 }
 
 pub struct RpcClient {
-    inner: ApiClient,
+    inner: RpcApiClient,
 }
 
 impl RpcClient {
     /// Creates an RPC client to the given address.
     ///
     /// The connection is lazy and will re-establish in the background on disconnection.
-    pub fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
-        let client = ApiClient::connect_lazy(url, Duration::from_millis(timeout_ms), None)?;
+    pub async fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
+        let client = ClientBuilder::new()
+            .with_tls()
+            .with_timeout(Duration::from_millis(timeout_ms))
+            .with_lazy_connection(true)
+            .with_rpc_version(env!("CARGO_PKG_VERSION"))
+            .build_rpc_api_client(url)
+            .await?;
 
         Ok(Self { inner: client })
     }

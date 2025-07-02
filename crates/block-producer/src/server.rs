@@ -115,7 +115,7 @@ impl BlockProducer {
 
         let block_builder = BlockBuilder::new(
             store.clone(),
-            ntx_builder,
+            ntx_builder.clone(),
             self.block_prover_url,
             self.block_interval,
         );
@@ -159,10 +159,6 @@ impl BlockProducer {
                 }
             })
             .id();
-
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
 
         let rpc_id = tasks
             .spawn(async move {

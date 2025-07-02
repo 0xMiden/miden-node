@@ -1,17 +1,21 @@
 use std::net::SocketAddr;
 
-use miden_node_proto::generated::{
-    block_producer::api_client::ApiClient, requests::SubmitProvenTransactionRequest,
+use miden_node_proto::{
+    clients::ClientBuilder, generated::requests::SubmitProvenTransactionRequest,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::transaction::ProvenTransaction;
 use miden_tx::utils::Serializable;
-use tonic::{Status, service::interceptor::InterceptedService, transport::Channel};
+use tonic::Status;
 use tracing::{info, instrument};
 
 use crate::COMPONENT;
 
-type InnerClient = ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+type InnerClient = miden_node_proto::generated::block_producer::api_client::ApiClient<
+    tonic::service::interceptor::InterceptedService<
+        tonic::transport::Channel,
+        miden_node_utils::tracing::grpc::OtelInterceptor,
+    >,
+>;
 
 /// Interface to the block producer's gRPC API.
 ///
@@ -23,15 +27,18 @@ pub struct BlockProducerClient {
 
 impl BlockProducerClient {
     /// Creates a new block producer client with a lazy connection.
-    pub fn new(block_producer_address: SocketAddr) -> Self {
-        // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
-        let block_producer_url = format!("http://{block_producer_address}");
-        let channel =
-            tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
-        let block_producer = ApiClient::with_interceptor(channel, OtelInterceptor);
-        info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Store client initialized");
+    pub async fn new(
+        block_producer_address: SocketAddr,
+    ) -> Result<Self, miden_node_proto::clients::ClientError> {
+        let client = ClientBuilder::new()
+            .with_otel()
+            .with_lazy_connection(true)
+            .build_block_producer_api_client(block_producer_address)
+            .await?;
 
-        Self { inner: block_producer }
+        info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Block producer client initialized");
+
+        Ok(Self { inner: client })
     }
 
     #[instrument(target = COMPONENT, name = "block_producer.client.submit_proven_transaction", skip_all, err)]

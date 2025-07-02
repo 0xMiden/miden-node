@@ -1,14 +1,12 @@
 use miden_node_proto::{
+    clients::{ClientBuilder, NtxBuilderStoreClient},
     domain::note::NetworkNote,
     errors::{ConversionError, MissingFieldHelper},
-    generated::{
-        requests::{
-            GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
-            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
-        },
+    generated::requests::{
+        GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
+        GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
     },
     try_convert,
-    clients::{ClientBuilder, NtxBuilderStoreClient},
 };
 use miden_objects::{
     account::Account,
@@ -42,7 +40,7 @@ impl StoreClient {
             .with_lazy_connection(true)
             .build_ntx_builder_store_client(store_url)
             .await?;
-        
+
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 
         Ok(Self { inner })
@@ -81,7 +79,13 @@ impl StoreClient {
             block_num: block_num.as_ref().map(BlockNumber::as_u32),
         });
 
-        let response = self.inner.clone().get_mut().get_current_blockchain_data(request).await?.into_inner();
+        let response = self
+            .inner
+            .clone()
+            .get_mut()
+            .get_current_blockchain_data(request)
+            .await?
+            .into_inner();
 
         match response.current_block_header {
             // There are new blocks compared to the builder's latest state
@@ -113,7 +117,13 @@ impl StoreClient {
 
         loop {
             let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
-            let resp = self.inner.clone().get_mut().get_unconsumed_network_notes(req).await?.into_inner();
+            let resp = self
+                .inner
+                .clone()
+                .get_mut()
+                .get_unconsumed_network_notes(req)
+                .await?
+                .into_inner();
 
             let page: Vec<NetworkNote> = resp
                 .notes

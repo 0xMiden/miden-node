@@ -186,7 +186,8 @@ impl NetworkTransactionBuilder {
                 let data_store = Arc::new(NtxBuilderDataStore::new(store).await?);
                 let tx_executor = TransactionExecutor::new(data_store.as_ref(), None);
                 let tx_prover = NtbTransactionProver::from(prover_addr);
-                let block_prod = BlockProducerClient::new(block_addr);
+                let block_prod = BlockProducerClient::new(block_addr).await
+                    .context("Failed to create block producer client")?;
 
                 let mut interval = time::interval(ticker_interval);
 

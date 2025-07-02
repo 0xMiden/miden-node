@@ -5,17 +5,27 @@ use thiserror::Error;
 pub enum ClientError {
     /// gRPC-level error from tonic.
     #[error("gRPC error: {0}")]
-    GrpcError(#[from] tonic::Status),
-    
+    GrpcError(Box<tonic::Status>),
+
     /// Transport-level error (connection, network, etc.).
     #[error("Transport error: {0}")]
     Transport(#[from] tonic::transport::Error),
-    
+
     /// Invalid endpoint URL or configuration.
     #[error("Invalid endpoint: {0}")]
     InvalidEndpoint(String),
-    
+
     /// Client configuration error.
     #[error("Configuration error: {0}")]
     Configuration(String),
-} 
+
+    /// Invalid metadata.
+    #[error("Invalid metadata: {0}")]
+    InvalidMetadata(String),
+}
+
+impl From<tonic::Status> for ClientError {
+    fn from(status: tonic::Status) -> Self {
+        Self::GrpcError(Box::new(status))
+    }
+}

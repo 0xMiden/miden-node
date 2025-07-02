@@ -10,14 +10,13 @@ pub mod clients;
 // RE-EXPORTS
 // ================================================================================================
 
+pub use clients::{
+    BlockProducerStoreClient, Client, ClientBuilder, ClientError, NtxBuilderStoreClient,
+    RpcStoreClient,
+};
 pub use domain::{
     account::{AccountState, AccountWitnessRecord},
     convert,
     nullifier::NullifierWitnessRecord,
     try_convert,
-};
-
-pub use clients::{
-    ClientBuilder, Client, ClientError,
-    RpcStoreClient, BlockProducerStoreClient, NtxBuilderStoreClient,
 };

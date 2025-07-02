@@ -8,6 +8,7 @@ use std::{
 use itertools::Itertools;
 use miden_node_proto::{
     AccountState,
+    clients::{BlockProducerStoreClient, ClientBuilder},
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
@@ -18,7 +19,6 @@ use miden_node_proto::{
         },
         responses::{GetTransactionInputsResponse, NullifierTransactionInputRecord},
     },
-    clients::{ClientBuilder, BlockProducerStoreClient},
 };
 use miden_node_utils::formatting::format_opt;
 use miden_objects::{
@@ -130,13 +130,15 @@ pub struct StoreClient {
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub async fn new(store_address: SocketAddr) -> Result<Self, miden_node_proto::clients::ClientError> {
+    pub async fn new(
+        store_address: SocketAddr,
+    ) -> Result<Self, miden_node_proto::clients::ClientError> {
         let inner = ClientBuilder::new()
             .with_otel()
             .with_lazy_connection(true)
             .build_block_producer_store_client(store_address)
             .await?;
-        
+
         info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
 
         Ok(Self { inner })
@@ -180,7 +182,8 @@ impl StoreClient {
         debug!(target: COMPONENT, ?message);
 
         let request = tonic::Request::new(message);
-        let response = self.inner.clone().get_mut().get_transaction_inputs(request).await?.into_inner();
+        let response =
+            self.inner.clone().get_mut().get_transaction_inputs(request).await?.into_inner();
 
         debug!(target: COMPONENT, ?response);
 
@@ -214,7 +217,8 @@ impl StoreClient {
             reference_blocks: reference_blocks.map(|block_num| block_num.as_u32()).collect(),
         });
 
-        let store_response = self.inner.clone().get_mut().get_block_inputs(request).await?.into_inner();
+        let store_response =
+            self.inner.clone().get_mut().get_block_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -230,7 +234,8 @@ impl StoreClient {
             note_ids: notes.map(digest::Digest::from).collect(),
         });
 
-        let store_response = self.inner.clone().get_mut().get_batch_inputs(request).await?.into_inner();
+        let store_response =
+            self.inner.clone().get_mut().get_batch_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -239,6 +244,12 @@ impl StoreClient {
     pub async fn apply_block(&self, block: &ProvenBlock) -> Result<(), StoreError> {
         let request = tonic::Request::new(ApplyBlockRequest { block: block.to_bytes() });
 
-        self.inner.clone().get_mut().apply_block(request).await.map(|_| ()).map_err(Into::into)
+        self.inner
+            .clone()
+            .get_mut()
+            .apply_block(request)
+            .await
+            .map(|_| ())
+            .map_err(Into::into)
     }
 }

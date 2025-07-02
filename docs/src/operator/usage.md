@@ -10,7 +10,9 @@ which can be accessed by appending `--help` to any of the commands.
 
 ## Bootstrapping
 
-The first step in starting a new Miden network is to initialize the genesis block data. This is a one-off operation using the `bootstrap` command and by default the genesis block contains a single faucet account.
+The first step in starting a new Miden network is to initialize the genesis block data. This is a
+one-off operation using the `bootstrap` command and by default the genesis block contains a single
+faucet account.
 
 ```sh
 # Create a folder to store the node's data.
@@ -32,7 +34,9 @@ miden-node bundled bootstrap \
   --accounts-directory .
 ```
 
-You can also configure the account and asset data in the genesis block by passing in toml file. This is particularly useful for setting up test scenarios without requiring multiple rounds of transactions to achieve this state.
+You can also configure the account and asset data in the genesis block by passing in toml file.
+This is particularly useful for setting up test scenarios without requiring multiple rounds of
+transactions to achieve this state.
 
 ```sh
 miden-node bundled bootstrap \
@@ -41,7 +45,8 @@ miden-node bundled bootstrap \
   --genesis-config-file genesis.toml
 ```
 
-The genesis configuration file should contain at least one faucet, and optionally, wallet definitions with assets, for example:
+The genesis configuration file should contain at least one faucet, and optionally, wallet definitions
+with assets, for example:
 
 ```toml
 timestamp = 1717344256

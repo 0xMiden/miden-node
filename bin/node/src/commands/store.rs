@@ -158,6 +158,34 @@ impl StoreCommand {
         .context("failed while serving store component")
     }
 
+    fn default_genesis_state(accounts_directory: &Path) -> anyhow::Result<GenesisState> {
+        // Generate the genesis accounts.
+        let account_file =
+            Self::generate_genesis_account().context("failed to create genesis account")?;
+
+        // Write account data to disk (including secrets).
+        //
+        // Without this the accounts would be inaccessible by the user.
+        // This is not used directly by the node, but rather by the owner / operator of the
+        // node.
+        let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
+        File::create_new(&filepath)
+            .and_then(|mut file| file.write_all(&account_file.to_bytes()))
+            .with_context(|| {
+                format!("failed to write data for genesis account to file {}", filepath.display())
+            })?;
+
+        // Bootstrap the store database.
+        let version = 1;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current timestamp should be greater than unix epoch")
+            .as_secs()
+            .try_into()
+            .expect("timestamp should fit into u32");
+        Ok(GenesisState::new(vec![account_file.account], version, timestamp))
+    }
+
     fn bootstrap(
         data_directory: &Path,
         accounts_directory: &Path,
@@ -176,34 +204,7 @@ impl StoreCommand {
             }
             state
         } else {
-            // Generate the genesis accounts.
-            let account_file =
-                Self::generate_genesis_account().context("failed to create genesis account")?;
-
-            // Write account data to disk (including secrets).
-            //
-            // Without this the accounts would be inaccessible by the user.
-            // This is not used directly by the node, but rather by the owner / operator of the
-            // node.
-            let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
-            File::create_new(&filepath)
-                .and_then(|mut file| file.write_all(&account_file.to_bytes()))
-                .with_context(|| {
-                    format!(
-                        "failed to write data for genesis account to file {}",
-                        filepath.display()
-                    )
-                })?;
-
-            // Bootstrap the store database.
-            let version = 1;
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .expect("current timestamp should be greater than unix epoch")
-                .as_secs()
-                .try_into()
-                .expect("timestamp should fit into u32");
-            GenesisState::new(vec![account_file.account], version, timestamp)
+            Self::default_genesis_state(accounts_directory)?
         };
         Store::bootstrap(genesis_state, data_directory)
     }

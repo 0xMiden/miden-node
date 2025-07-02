@@ -51,13 +51,30 @@ mod error;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Default, Clone)]
+/// Default timeout for gRPC connections (10 seconds).
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Clone)]
 pub struct ClientBuilder {
     with_otel: bool,
     tls: Option<ClientTlsConfig>,
-    timeout: Option<Duration>,
+    timeout: Duration,
+    timeout_disabled: bool,
     connect_lazy: bool,
     rpc_version: Option<String>,
+}
+
+impl Default for ClientBuilder {
+    fn default() -> Self {
+        Self {
+            with_otel: false,
+            tls: None,
+            timeout: DEFAULT_TIMEOUT,
+            timeout_disabled: false,
+            connect_lazy: false,
+            rpc_version: None,
+        }
+    }
 }
 
 impl ClientBuilder {
@@ -87,10 +104,18 @@ impl ClientBuilder {
         self
     }
 
-    /// Set a timeout for requests.
+    /// Set a custom timeout for requests (overrides the default 10-second timeout).
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = Some(timeout);
+        self.timeout = timeout;
+        self.timeout_disabled = false;
+        self
+    }
+
+    /// Disable timeout (no request timeout).
+    #[must_use]
+    pub fn with_no_timeout(mut self) -> Self {
+        self.timeout_disabled = true;
         self
     }
 
@@ -174,13 +199,17 @@ impl ClientBuilder {
         ))
     }
 
-    /// Internal helper to create a configured channel.
-    async fn create_channel(&self, endpoint: String) -> Result<Channel, ClientError> {
+    /// Create a configured channel with the builder's settings.
+    ///
+    /// This method creates a gRPC channel with the configured TLS, timeout, and connection
+    /// settings. It can be used by external clients that need custom channel creation logic.
+    pub async fn create_channel(&self, endpoint: String) -> Result<Channel, ClientError> {
         let mut ep = Endpoint::try_from(endpoint)
             .map_err(|e| ClientError::InvalidEndpoint(e.to_string()))?;
 
-        if let Some(timeout) = self.timeout {
-            ep = ep.timeout(timeout);
+        // Apply timeout unless explicitly disabled
+        if !self.timeout_disabled {
+            ep = ep.timeout(self.timeout);
         }
 
         if let Some(tls) = &self.tls {
@@ -421,7 +450,8 @@ mod tests {
         let builder = ClientBuilder::new();
         assert!(!builder.with_otel);
         assert!(builder.tls.is_none());
-        assert!(builder.timeout.is_none());
+        assert_eq!(builder.timeout, DEFAULT_TIMEOUT);
+        assert!(!builder.timeout_disabled);
         assert!(!builder.connect_lazy);
     }
 
@@ -435,7 +465,14 @@ mod tests {
 
         assert!(builder.with_otel);
         assert!(builder.tls.is_some());
-        assert_eq!(builder.timeout, Some(Duration::from_secs(30)));
+        assert_eq!(builder.timeout, Duration::from_secs(30));
+        assert!(!builder.timeout_disabled);
         assert!(builder.connect_lazy);
+    }
+
+    #[test]
+    fn test_client_builder_no_timeout() {
+        let builder = ClientBuilder::new().with_no_timeout();
+        assert!(builder.timeout_disabled);
     }
 }

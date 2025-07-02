@@ -5,6 +5,7 @@ use alloc::{
 };
 use core::time::Duration;
 
+use miden_node_proto::clients::ClientBuilder;
 use miden_objects::{
     batch::ProvenBatch,
     block::{ProposedBlock, ProvenBlock},
@@ -38,15 +39,27 @@ pub struct RemoteBlockProver {
     client: Arc<Mutex<Option<ApiClient<tonic::transport::Channel>>>>,
 
     endpoint: String,
+    timeout: Option<Duration>,
 }
 
 impl RemoteBlockProver {
-    /// Creates a new [`RemoteBlockProver`] with the specified gRPC server endpoint. The
-    /// endpoint should be in the format `{protocol}://{hostname}:{port}`.
+    /// Creates a new [`RemoteBlockProver`] with the specified gRPC server endpoint.
+    ///
+    /// The endpoint should be in the format `{protocol}://{hostname}:{port}`.
+    /// Uses a default timeout of 10 seconds.
     pub fn new(endpoint: impl Into<String>) -> Self {
+        Self::with_timeout(endpoint, None)
+    }
+
+    /// Creates a new [`RemoteBlockProver`] with an optional custom timeout.
+    ///
+    /// If `timeout` is `None`, uses the default 10-second timeout.
+    /// If `timeout` is `Some(duration)`, uses the specified timeout.
+    pub fn with_timeout(endpoint: impl Into<String>, timeout: Option<Duration>) -> Self {
         RemoteBlockProver {
             endpoint: endpoint.into(),
             client: Arc::new(Mutex::new(None)),
+            timeout,
         }
     }
 
@@ -61,21 +74,26 @@ impl RemoteBlockProver {
 
         #[cfg(target_arch = "wasm32")]
         let new_client = {
+            // For WASM, use the direct approach since ClientBuilder doesn't support WASM yet
             let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
             ApiClient::new(web_client)
         };
 
         #[cfg(not(target_arch = "wasm32"))]
         let new_client = {
-            let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
-                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .timeout(Duration::from_millis(10000));
-            let channel = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .connect()
-                .await
-                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?;
+            let mut builder = ClientBuilder::new().with_tls();
+
+            // Apply custom timeout if specified (ClientBuilder defaults to 10 seconds)
+            if let Some(timeout) = self.timeout {
+                builder = builder.with_timeout(timeout);
+            }
+
+            let channel = builder.create_channel(self.endpoint.clone()).await.map_err(|e| {
+                RemoteProverClientError::ConnectionFailed(
+                    format!("Failed to create channel: {e}").into(),
+                )
+            })?;
+
             ApiClient::new(channel)
         };
 

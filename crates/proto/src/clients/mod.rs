@@ -146,6 +146,7 @@ impl ClientBuilder {
 ///
 /// This wrapper provides access to all RPC methods like `check_nullifiers`,
 /// `get_account_details`, `sync_notes`, etc.
+#[derive(Debug)]
 pub struct RpcStoreClient {
     inner: crate::generated::store::rpc_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>,
 }
@@ -179,6 +180,7 @@ impl Clone for RpcStoreClient {
 ///
 /// This wrapper provides access to all BlockProducer methods like `get_transaction_inputs`,
 /// `get_block_inputs`, `apply_block`, etc.
+#[derive(Debug)]
 pub struct BlockProducerStoreClient {
     inner: crate::generated::store::block_producer_client::BlockProducerClient<InterceptedService<Channel, OtelInterceptor>>,
 }
@@ -212,6 +214,7 @@ impl Clone for BlockProducerStoreClient {
 ///
 /// This wrapper provides access to all NtxBuilder methods like `get_current_blockchain_data`,
 /// `get_unconsumed_network_notes`, etc.
+#[derive(Debug)]
 pub struct NtxBuilderStoreClient {
     inner: crate::generated::store::ntx_builder_client::NtxBuilderClient<InterceptedService<Channel, OtelInterceptor>>,
 }

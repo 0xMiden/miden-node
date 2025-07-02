@@ -111,7 +111,9 @@ impl NetworkTransactionBuilder {
 
     #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.serve_once", skip_all, err)]
     pub async fn serve_once(&self) -> anyhow::Result<()> {
-        let store = StoreClient::new(&self.store_url);
+        let store = StoreClient::new(&self.store_url)
+            .await
+            .context("Failed to create store client")?;
         let unconsumed = store.get_unconsumed_network_notes().await?;
         let notes_queue = Arc::new(Mutex::new(PendingNotes::new(unconsumed)));
         let reflection_service = tonic_reflection::server::Builder::configure()
@@ -178,7 +180,9 @@ impl NetworkTransactionBuilder {
 
             rt.block_on(async move {
                 info!(target: COMPONENT, "Spawned NTB ticker (ticks every {} ms)", &ticker_interval.as_millis());
-                let store = StoreClient::new(&store_url);
+                let store = StoreClient::new(&store_url)
+                    .await
+                    .context("Failed to create store client")?;
                 let data_store = Arc::new(NtxBuilderDataStore::new(store).await?);
                 let tx_executor = TransactionExecutor::new(data_store.as_ref(), None);
                 let tx_prover = NtbTransactionProver::from(prover_addr);

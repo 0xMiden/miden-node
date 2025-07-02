@@ -271,6 +271,7 @@ impl GenesisConfig {
                 .try_for_each(|fungible_asset| fungible_assets.add(fungible_asset))?;
 
             let delta = AccountDelta::new(
+                wallet_account.id(),
                 AccountStorageDelta::default(),
                 AccountVaultDelta::new(fungible_assets, NonFungibleAssetDelta::default()),
                 Some(Felt::ONE),

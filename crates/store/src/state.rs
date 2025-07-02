@@ -170,7 +170,7 @@ impl State {
             .await?
             .ok_or(ApplyBlockError::DbBlockHeaderEmpty)?;
 
-        let expected_block_num = prev_block.block_num() + 1;
+        let expected_block_num = prev_block.block_num().child();
         if block_num != expected_block_num {
             return Err(InvalidBlockError::NewBlockInvalidBlockNum {
                 expected: expected_block_num,

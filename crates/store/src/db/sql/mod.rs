@@ -16,7 +16,7 @@ use miden_objects::{
     account::{
         AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta, FungibleAssetDelta,
         NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
-        delta::AccountUpdateDetails,
+        delta::{AccountUpdateDetails, LexicographicWord},
     },
     asset::NonFungibleAsset,
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
@@ -394,6 +394,7 @@ pub fn select_account_delta(
 
         match storage_maps.entry(slot) {
             Entry::Vacant(entry) => {
+                let key = LexicographicWord::new(key);
                 entry.insert(StorageMapDelta::new(BTreeMap::from([(key, value)])));
             },
             Entry::Occupied(mut entry) => {
@@ -598,7 +599,7 @@ fn insert_account_delta(
                 account_id.to_bytes(),
                 block_number.as_u32(),
                 slot,
-                key.to_bytes(),
+                key.inner().to_bytes(),
                 value.to_bytes(),
             ])?;
         }

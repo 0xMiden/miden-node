@@ -301,6 +301,7 @@ mod test {
                 .unwrap();
         let tx_context = mock_chain
             .build_tx_context(account.id(), &[], &[])
+            .unwrap()
             .extend_input_notes(vec![note_1])
             .tx_script(tx_script)
             .build();

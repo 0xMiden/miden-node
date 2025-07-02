@@ -30,8 +30,8 @@ pub enum BundledCommand {
         // Directory to write the account data to.
         #[arg(long, value_name = "DIR")]
         accounts_directory: PathBuf,
-        /// Use the given configuration file to construct the genesis state from.
-        #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "GENESIS_CONFIG")]
+        /// Constructs the genesis block from the given toml file.
+        #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "FILE")]
         genesis_config_file: Option<PathBuf>,
     },
 

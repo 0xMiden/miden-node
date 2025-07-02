@@ -262,8 +262,8 @@ impl Db {
         db_tx.commit().context("failed to commit database transaction")
     }
 
-    /// Avoid repeated boilerplate, frame the query in a transaction
-    pub(crate) async fn framed<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
+    /// Create and commit a transaction with the queries added in the provided closure
+    pub(crate) async fn transact<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
         Q: Send
             + for<'a, 't> FnOnce(&'a mut Transaction<'t>) -> std::result::Result<R, E>
@@ -273,7 +273,7 @@ impl Db {
         E: From<DatabaseError>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let conn = self.pool.get().await.unwrap(); // FIXME XXX TOODO
+        let conn = self.pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
 
         conn.interact(|conn| {
             let mut db_tx = conn.transaction().map_err(DatabaseError::SqliteError)?;
@@ -285,12 +285,8 @@ impl Db {
         .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
     }
 
-    /// Avoid repeated boilerplate, frame the query in a transaction
-    pub(crate) async fn framed_without_transaction<R, E, Q, M>(
-        &self,
-        msg: M,
-        query: Q,
-    ) -> std::result::Result<R, E>
+    /// Run the query _without_ a transaction
+    pub(crate) async fn query<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
         Q: Send + FnOnce(&mut Connection) -> std::result::Result<R, E> + 'static,
         R: Send + 'static,
@@ -322,16 +318,15 @@ impl Db {
         );
 
         let me = Db { pool };
-        me.framed_without_transaction("migrations", apply_migrations).await?;
+        me.query("migrations", apply_migrations).await?;
 
-        // TODO rationalize magic numbers, and make them
         Ok(me)
     }
 
     /// Loads all the nullifiers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_nullifiers(&self) -> Result<Vec<NullifierInfo>> {
-        self.framed("all nullifiers", move |conn| {
+        self.transact("all nullifiers", move |conn| {
             let nullifiers = sql::select_all_nullifiers(conn)?;
             Ok(nullifiers)
         })
@@ -348,7 +343,7 @@ impl Db {
     ) -> Result<Vec<NullifierInfo>> {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
-        self.framed("nullifieres by prefix", move |conn| {
+        self.transact("nullifieres by prefix", move |conn| {
             sql::select_nullifiers_by_prefix(conn, prefix_len, &nullifier_prefixes[..], block_num)
         })
         .await
@@ -362,7 +357,7 @@ impl Db {
         &self,
         maybe_block_number: Option<BlockNumber>,
     ) -> Result<Option<BlockHeader>> {
-        self.framed("block headers by block number", move |conn| {
+        self.transact("block headers by block number", move |conn| {
             let val = sql::select_block_header_by_block_num(conn, maybe_block_number)?;
             Ok(val)
         })
@@ -375,7 +370,7 @@ impl Db {
         &self,
         blocks: impl Iterator<Item = BlockNumber> + Send + 'static,
     ) -> Result<Vec<BlockHeader>> {
-        self.framed("block headers from given block numbers", move |conn| {
+        self.transact("block headers from given block numbers", move |conn| {
             let raw = sql::select_block_headers(conn, blocks)?;
             Ok(raw)
         })
@@ -385,7 +380,7 @@ impl Db {
     /// Loads all the block headers from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_block_headers(&self) -> Result<Vec<BlockHeader>> {
-        self.framed("all block headers", |conn| {
+        self.transact("all block headers", |conn| {
             let raw = sql::select_all_block_headers(conn)?;
             Ok(raw)
         })
@@ -395,7 +390,7 @@ impl Db {
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
-        self.framed("read all account commitments", move |conn| {
+        self.transact("read all account commitments", move |conn| {
             sql::select_all_account_commitments(conn)
         })
         .await
@@ -404,7 +399,7 @@ impl Db {
     /// Loads public account details from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_account(&self, id: AccountId) -> Result<AccountInfo> {
-        self.framed("Get account details", move |conn| sql::select_account(conn, id))
+        self.transact("Get account details", move |conn| sql::select_account(conn, id))
             .await
     }
 
@@ -414,7 +409,7 @@ impl Db {
         &self,
         id_prefix: u32,
     ) -> Result<Option<AccountInfo>> {
-        self.framed("Get account by id prefix", move |conn| {
+        self.transact("Get account by id prefix", move |conn| {
             sql::select_network_account_by_prefix(conn, id_prefix)
         })
         .await
@@ -426,7 +421,7 @@ impl Db {
         &self,
         account_ids: Vec<AccountId>,
     ) -> Result<Vec<AccountInfo>> {
-        self.framed("Select account by id set", move |conn| {
+        self.transact("Select account by id set", move |conn| {
             sql::select_accounts_by_ids(conn, &account_ids[..])
         })
         .await
@@ -439,7 +434,7 @@ impl Db {
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
     ) -> Result<StateSyncUpdate, StateSyncError> {
-        self.framed::<StateSyncUpdate, StateSyncError, _, _>("state sync", move |conn| {
+        self.transact::<StateSyncUpdate, StateSyncError, _, _>("state sync", move |conn| {
             sql::get_state_sync(conn, block_number, &account_ids[..], &note_tags[..])
         })
         .await
@@ -451,7 +446,7 @@ impl Db {
         block_num: BlockNumber,
         note_tags: Vec<u32>,
     ) -> Result<NoteSyncUpdate, NoteSyncError> {
-        self.framed("notes sync task", move |conn| {
+        self.transact("notes sync task", move |conn| {
             sql::get_note_sync(conn, block_num, note_tags.as_slice())
         })
         .await
@@ -460,7 +455,7 @@ impl Db {
     /// Loads all the Note's matching a certain NoteId from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
-        self.framed("note by id", move |conn| sql::select_notes_by_id(conn, note_ids.as_slice()))
+        self.transact("note by id", move |conn| sql::select_notes_by_id(conn, note_ids.as_slice()))
             .await
     }
 
@@ -470,7 +465,7 @@ impl Db {
         &self,
         note_ids: BTreeSet<NoteId>,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
-        self.framed("block note inclusion proofs", move |conn| {
+        self.transact("block note inclusion proofs", move |conn| {
             sql::select_note_inclusion_proofs(conn, note_ids)
         })
         .await
@@ -497,7 +492,7 @@ impl Db {
         block: ProvenBlock,
         notes: Vec<(NoteRecord, Option<Nullifier>)>,
     ) -> Result<()> {
-        self.framed("apply block", move |conn| -> Result<()> {
+        self.transact("apply block", move |conn| -> Result<()> {
             // TODO: This span is logged in a root span, we should connect it to the parent one.
             let _span = info_span!(target: COMPONENT, "write_block_to_db").entered();
 
@@ -532,7 +527,7 @@ impl Db {
         from_block: BlockNumber,
         to_block: BlockNumber,
     ) -> Result<Option<AccountDelta>> {
-        self.framed("select account state data", move |conn| {
+        self.transact("select account state data", move |conn| {
             sql::select_account_delta(conn, account_id, from_block, to_block)
         })
         .await
@@ -541,7 +536,7 @@ impl Db {
     /// Runs database optimization.
     #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
     pub async fn optimize(&self) -> Result<(), DatabaseError> {
-        self.framed_without_transaction("db optimization", move |conn| {
+        self.transact("db optimization", move |conn| {
             conn.execute("PRAGMA OPTIMIZE;", ()).map_err(DatabaseError::SqliteError)?;
             Ok::<_, DatabaseError>(())
         })
@@ -555,7 +550,7 @@ impl Db {
         &self,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
-        self.framed("unconsumed network notes", move |conn| {
+        self.transact("unconsumed network notes", move |conn| {
             sql::unconsumed_network_notes(conn, page)
         })
         .await

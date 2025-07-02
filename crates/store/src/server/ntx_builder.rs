@@ -130,7 +130,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
 
         let size =
             NonZero::try_from(request.page_size as usize).map_err(|err: TryFromIntError| {
-                invalid_argument(err.as_report_context("Invalid page_size"))
+                invalid_argument(err.as_report_context("invalid page_size"))
             })?;
         let page = Page { token: request.page_token, size };
         // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created

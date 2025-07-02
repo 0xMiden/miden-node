@@ -74,7 +74,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         debug!(target: COMPONENT, ?request);
 
         let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("Block deserialization error"))
+            Status::invalid_argument(err.as_report_context("block deserialization error"))
         })?;
 
         let block_num = block.header().block_num().as_u32();

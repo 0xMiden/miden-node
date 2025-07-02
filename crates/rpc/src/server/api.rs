@@ -195,7 +195,7 @@ impl api_server::Api for RpcService {
         let note_ids = request.get_ref().note_ids.clone();
 
         let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err: ConversionError| {
-            Status::invalid_argument(err.as_report_context("Invalid NoteId"))
+            Status::invalid_argument(err.as_report_context("invalid NoteId"))
         })?;
 
         self.store.clone().get_notes_by_id(request).await
@@ -217,7 +217,7 @@ impl api_server::Api for RpcService {
         let request = request.into_inner();
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
-            Status::invalid_argument(err.as_report_context("Invalid transaction"))
+            Status::invalid_argument(err.as_report_context("invalid transaction"))
         })?;
 
         // Only allow deployment transactions for new network accounts

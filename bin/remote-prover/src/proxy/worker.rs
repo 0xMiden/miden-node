@@ -115,7 +115,7 @@ impl Worker {
                         WorkerHealthStatus::Unhealthy {
                             num_failed_attempts: 1,
                             first_fail_timestamp: Instant::now(),
-                            reason: err.as_report_context("Failed to create status client"),
+                            reason: err.as_report_context("failed to create status client"),
                         },
                     )
                 },
@@ -178,7 +178,7 @@ impl Worker {
                     info!("Successfully recreated status client for worker {}", self.address());
                 },
                 Err(err) => {
-                    return Err(err.as_report_context("Failed to recreate status client"));
+                    return Err(err.as_report_context("failed to recreate status client"));
                 },
             }
         }

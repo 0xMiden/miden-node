@@ -15,7 +15,7 @@ pub trait ErrorReport: std::error::Error {
 
         // SAFETY: write! is suggested by clippy, and is trivially safe usage.
         std::iter::successors(self.source(), |child| child.source())
-            .for_each(|source| write!(report, "\nCaused by: {source}").unwrap());
+            .for_each(|source| write!(report, "\ncaused by: {source}").unwrap());
 
         report
     }
@@ -23,7 +23,7 @@ pub trait ErrorReport: std::error::Error {
     /// Creates a new root in the error chain and returns a string representation of the error and
     /// its source chain.
     fn as_report_context(&self, context: &'static str) -> String {
-        format!("{context}: \nCaused by: {}", self.as_report())
+        format!("{context}: \ncaused by: {}", self.as_report())
     }
 }
 
@@ -35,28 +35,28 @@ mod tests {
 
     #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]
     pub enum TestSourceError {
-        #[error("Source error")]
+        #[error("source error")]
         Source,
     }
 
     #[derive(thiserror::Error, Debug)]
     pub enum TestError {
-        #[error("Parent error")]
+        #[error("parent error")]
         Parent(#[from] TestSourceError),
     }
 
     #[test]
     fn as_report() {
         let error = TestError::Parent(TestSourceError::Source);
-        assert_eq!("Parent error\nCaused by: Source error", error.as_report());
+        assert_eq!("parent error\ncaused by: source error", error.as_report());
     }
 
     #[test]
     fn as_report_context() {
         let error = TestError::Parent(TestSourceError::Source);
         assert_eq!(
-            "Final error: \nCaused by: Parent error\nCaused by: Source error",
-            error.as_report_context("Final error")
+            "final error: \ncaused by: parent error\ncaused by: source error",
+            error.as_report_context("final error")
         );
     }
 }

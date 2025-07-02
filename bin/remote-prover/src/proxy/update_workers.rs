@@ -104,7 +104,7 @@ impl HttpServerApp for LoadBalancerUpdateService {
         let update_workers = match update_workers {
             Ok(workers) => workers,
             Err(err) => {
-                let error_message = err.as_report_context("Failed to parse query parameters");
+                let error_message = err.as_report_context("failed to parse query parameters");
                 error!("{}", error_message);
                 create_response_with_error_message(&mut http, error_message).await.ok();
                 return None;
@@ -113,7 +113,7 @@ impl HttpServerApp for LoadBalancerUpdateService {
 
         // Update workers and handle potential errors.
         if let Err(err) = self.lb_state.update_workers(update_workers).await {
-            let error_message = err.as_report_context("Failed to update workers");
+            let error_message = err.as_report_context("failed to update workers");
             error!("{}", error_message);
             create_response_with_error_message(&mut http, error_message).await.ok();
             return None;

@@ -459,6 +459,9 @@ mod test {
             let dir = data_directory.path().to_path_buf();
             let rpc_listener =
                 TcpListener::bind("127.0.0.1:0").await.expect("store should bind the RPC port");
+            let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("Failed to bind store ntx-builder gRPC endpoint");
             let block_producer_listener = TcpListener::bind(store_addr)
                 .await
                 .expect("store should bind the block-producer port");
@@ -470,7 +473,7 @@ mod test {
             store_runtime.spawn(async move {
                 Store {
                     rpc_listener,
-                    ntx_builder_listener: None,
+                    ntx_builder_listener,
                     block_producer_listener,
                     data_directory: dir,
                 }
@@ -503,13 +506,16 @@ mod test {
         // test: restart the store and request should succeed
         let rpc_listener =
             TcpListener::bind("127.0.0.1:0").await.expect("store should bind the RPC port");
+        let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("Failed to bind store ntx-builder gRPC endpoint");
         let block_producer_listener = TcpListener::bind(store_addr)
             .await
             .expect("store should bind the block-producer port");
         task::spawn(async move {
             Store {
                 rpc_listener,
-                ntx_builder_listener: None,
+                ntx_builder_listener,
                 block_producer_listener,
                 data_directory: data_directory.path().to_path_buf(),
             }

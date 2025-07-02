@@ -137,7 +137,7 @@ impl BundledCommand {
                 Store {
                     rpc_listener: store_rpc_listener,
                     block_producer_listener: store_block_producer_listener,
-                    ntx_builder_listener: should_start_ntb.then_some(store_ntx_builder_listener),
+                    ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
                 }
                 .serve()

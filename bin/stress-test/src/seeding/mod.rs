@@ -484,6 +484,9 @@ pub async fn start_store(
         .await
         .expect("Failed to bind store block-producer gRPC endpoint");
     let store_addr = rpc_listener.local_addr().expect("Failed to get store RPC address");
+    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store ntx-builder gRPC endpoint");
     let store_block_producer_addr = block_producer_listener
         .local_addr()
         .expect("Failed to get store block-producer address");
@@ -492,7 +495,7 @@ pub async fn start_store(
     task::spawn(async move {
         Store {
             rpc_listener,
-            ntx_builder_listener: None,
+            ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
         }

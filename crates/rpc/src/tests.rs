@@ -117,12 +117,15 @@ async fn rpc_startup_is_robust_to_network_failures() {
 
     // Test: restart the store and request should succeed
     let rpc_listener = TcpListener::bind(store_addr).await.expect("Failed to bind store");
+    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store ntx-builder gRPC endpoint");
     let block_producer_listener =
         TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
     task::spawn(async move {
         Store {
             rpc_listener,
-            ntx_builder_listener: None,
+            ntx_builder_listener,
             block_producer_listener,
             data_directory: data_directory.path().to_path_buf(),
         }
@@ -188,6 +191,9 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();
     let rpc_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
+    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store ntx-builder gRPC endpoint");
     let block_producer_listener =
         TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
     // In order to later kill the store, we need to spawn a new runtime and run the store on
@@ -198,7 +204,7 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
     store_runtime.spawn(async move {
         Store {
             rpc_listener,
-            ntx_builder_listener: None,
+            ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
         }

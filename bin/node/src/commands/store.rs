@@ -56,7 +56,7 @@ pub enum StoreCommand {
 
         /// Url at which to serve the store's network transaction builder API.
         #[arg(long = "ntx-builder.url", env = ENV_STORE_NTX_BUILDER_URL, value_name = "URL")]
-        ntx_builder_url: Option<Url>,
+        ntx_builder_url: Url,
 
         /// Url at which to serve the store's block producer API.
         #[arg(long = "block-producer.url", env = ENV_STORE_BLOCK_PRODUCER_URL, value_name = "URL")]
@@ -102,7 +102,7 @@ impl StoreCommand {
 
     async fn start(
         rpc_url: Url,
-        ntx_builder_url: Option<Url>,
+        ntx_builder_url: Url,
         block_producer_url: Url,
         data_directory: PathBuf,
     ) -> anyhow::Result<()> {
@@ -113,17 +113,12 @@ impl StoreCommand {
             .await
             .context("Failed to bind to store's RPC gRPC URL")?;
 
-        let ntx_builder_listener = if let Some(url) = ntx_builder_url {
-            let ntx_builder_addr = url
-                .to_socket()
-                .context("Failed to extract socket address from store ntx-builder URL")?;
-            let listener = tokio::net::TcpListener::bind(ntx_builder_addr)
-                .await
-                .context("Failed to bind to store's ntx-builder gRPC URL")?;
-            Some(listener)
-        } else {
-            None
-        };
+        let ntx_builder_addr = ntx_builder_url
+            .to_socket()
+            .context("Failed to extract socket address from store ntx-builder URL")?;
+        let ntx_builder_listener = tokio::net::TcpListener::bind(ntx_builder_addr)
+            .await
+            .context("Failed to bind to store's ntx-builder gRPC URL")?;
 
         let block_producer_listener = block_producer_url
             .to_socket()

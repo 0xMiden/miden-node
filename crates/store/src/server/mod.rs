@@ -27,7 +27,7 @@ mod rpc_api;
 /// The store server.
 pub struct Store {
     pub rpc_listener: TcpListener,
-    pub ntx_builder_listener: Option<TcpListener>,
+    pub ntx_builder_listener: TcpListener,
     pub block_producer_listener: TcpListener,
     pub data_directory: PathBuf,
 }
@@ -73,8 +73,7 @@ impl Store {
     /// Note: this blocks until the server dies.
     pub async fn serve(self) -> anyhow::Result<()> {
         let rpc_address = self.rpc_listener.local_addr()?;
-        let ntx_builder_address =
-            self.ntx_builder_listener.as_ref().map(TcpListener::local_addr).transpose()?;
+        let ntx_builder_address = self.ntx_builder_listener.local_addr()?;
         let block_producer_address = self.block_producer_listener.local_addr()?;
         info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address, block_producer_endpoint=?block_producer_address, ?self.data_directory, "Loading database");
 
@@ -139,16 +138,16 @@ impl Store {
                 .add_service(reflection_service_alpha.clone())
                 .serve_with_incoming(TcpListenerStream::new(self.rpc_listener)),
         );
-        if let Some(ntx_builder_listener) = self.ntx_builder_listener {
-            join_set.spawn(
-                tonic::transport::Server::builder()
-                    .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
-                    .add_service(ntx_builder_service)
-                    .add_service(reflection_service.clone())
-                    .add_service(reflection_service_alpha.clone())
-                    .serve_with_incoming(TcpListenerStream::new(ntx_builder_listener)),
-            );
-        }
+
+        join_set.spawn(
+            tonic::transport::Server::builder()
+                .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
+                .add_service(ntx_builder_service)
+                .add_service(reflection_service.clone())
+                .add_service(reflection_service_alpha.clone())
+                .serve_with_incoming(TcpListenerStream::new(self.ntx_builder_listener)),
+        );
+
         join_set.spawn(
             tonic::transport::Server::builder()
                 .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))

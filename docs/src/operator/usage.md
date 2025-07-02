@@ -32,7 +32,7 @@ miden-node bundled bootstrap \
   --accounts-directory .
 ```
 
-Alternatively, provide an explicit toml-formatted configuration format which allows you to define
+Alternatively, provide an explicit toml-formatted configuration which allows you to define
 multiple assets and faucets easily at chain startup.
 
 ```sh

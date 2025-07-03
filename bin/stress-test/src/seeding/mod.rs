@@ -354,11 +354,11 @@ fn create_consume_note_txs(
     accounts
         .into_iter()
         .zip(notes)
-        .map(|(mut account, note)| {
+        .map(|(account, note)| {
             let inclusion_proof = note_proofs.get(&note.id()).unwrap();
             create_consume_note_tx(
                 block_ref,
-                &mut account,
+                account,
                 InputNote::authenticated(note, inclusion_proof.clone()),
             )
         })
@@ -370,7 +370,7 @@ fn create_consume_note_txs(
 /// The account is updated with the assets from the input note, and the nonce is set to 1.
 fn create_consume_note_tx(
     block_ref: &BlockHeader,
-    account: &mut Account,
+    mut account: Account,
     input_note: InputNote,
 ) -> ProvenTransaction {
     let init_hash = account.init_commitment();
@@ -379,16 +379,11 @@ fn create_consume_note_tx(
         account.vault_mut().add_asset(*asset).unwrap();
     });
 
-    let updated_account = Account::from_parts(
-        account.id(),
-        account.vault().clone(),
-        account.storage().clone(),
-        account.code().clone(),
-        ONE,
-    );
+    let (id, vault, sorage, code, _) = account.into_parts();
+    let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
     ProvenTransactionBuilder::new(
-        account.id(),
+        updated_account.id(),
         init_hash,
         updated_account.commitment(),
         Digest::default(),
@@ -417,16 +412,11 @@ fn create_emit_note_tx(
         .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)])
         .unwrap();
 
-    let updated_faucet = Account::from_parts(
-        faucet.id(),
-        faucet.vault().clone(),
-        faucet.storage().clone(),
-        faucet.code().clone(),
-        faucet.nonce() + ONE,
-    );
+    let (id, vault, sorage, code, nonce) = faucet.clone().into_parts();
+    let updated_faucet = Account::from_parts(id, vault, sorage, code, nonce + ONE);
 
     ProvenTransactionBuilder::new(
-        faucet.id(),
+        updated_faucet.id(),
         initial_account_hash,
         updated_faucet.commitment(),
         Digest::default(),

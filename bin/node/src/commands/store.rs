@@ -151,13 +151,8 @@ impl StoreCommand {
         //
         // The genesis block is special in that accounts are "deplyed" without transactions and
         // therefore we need bump the nonce manually to uphold this invariant.
-        let updated_account = Account::from_parts(
-            account.id(),
-            account.vault().clone(),
-            account.storage().clone(),
-            account.code().clone(),
-            ONE,
-        );
+        let (id, vault, sorage, code, _) = account.into_parts();
+        let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
         Ok(AccountFile::new(
             updated_account,

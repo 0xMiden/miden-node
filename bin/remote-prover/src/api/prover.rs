@@ -295,9 +295,7 @@ mod test {
 
         let tx_script = TransactionScript::compile(
             "begin
-                padw padw padw padw
                 call.::miden::contracts::auth::basic::auth__tx_rpo_falcon512
-                dropw dropw dropw dropw
             end",
             TransactionKernel::assembler(),
         )

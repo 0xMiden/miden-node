@@ -187,12 +187,8 @@ impl BundledCommand {
 
         // Start network transaction builder. The endpoint is available after loading completes.
         // SAFETY: socket addr yields valid URLs
-        let store_ntx_builder_url = Url::parse(&format!(
-            "http://{}:{}/",
-            store_ntx_builder_address.ip(),
-            store_ntx_builder_address.port()
-        ))
-        .unwrap();
+        let store_ntx_builder_url =
+            Url::parse(&format!("http://{store_ntx_builder_address}")).unwrap();
 
         if should_start_ntb {
             let id = join_set

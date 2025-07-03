@@ -42,7 +42,7 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     blocks::BlockStore,
-    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate},
+    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate, models::Page},
     errors::{
         ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError,
         GetBlockInputsError, GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError,
@@ -170,8 +170,13 @@ impl State {
             .await?
             .ok_or(ApplyBlockError::DbBlockHeaderEmpty)?;
 
-        if block_num != prev_block.block_num() + 1 {
-            return Err(InvalidBlockError::NewBlockInvalidBlockNum.into());
+        let expected_block_num = prev_block.block_num().child();
+        if block_num != expected_block_num {
+            return Err(InvalidBlockError::NewBlockInvalidBlockNum {
+                expected: expected_block_num,
+                submitted: block_num,
+            }
+            .into());
         }
         if header.prev_block_commitment() != prev_block.commitment() {
             return Err(InvalidBlockError::NewBlockInvalidPrevCommitment.into());
@@ -975,8 +980,10 @@ async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitiali
     let len = nullifiers.len();
 
     let now = Instant::now();
-    let nullifier_tree = NullifierTree::with_entries(nullifiers)
-        .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
+    let nullifier_tree = NullifierTree::with_entries(
+        nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)),
+    )
+    .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
     let elapsed = now.elapsed().as_secs();
 
     info!(

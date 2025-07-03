@@ -1,6 +1,6 @@
 use std::io;
 
-use deadpool::managed::PoolError;
+use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::{
@@ -11,7 +11,6 @@ use miden_objects::{
     note::Nullifier,
     transaction::OutputNote,
 };
-use rusqlite::types::FromSqlError;
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 use tonic::Status;
@@ -33,22 +32,24 @@ pub enum DatabaseError {
     DeserializationError(#[from] DeserializationError),
     #[error("hex parsing error")]
     FromHexError(#[from] hex::FromHexError),
-    #[error("SQLite deserialization error")]
-    FromSqlError(#[from] FromSqlError),
     #[error("I/O error")]
     IoError(#[from] io::Error),
-    #[error("migration failed")]
-    MigrationError(#[from] rusqlite_migration::Error),
-    #[error("missing database connection")]
-    MissingDbConnection(#[from] PoolError<rusqlite::Error>),
     #[error("network account error")]
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
-    #[error("SQLite error")]
-    SqliteError(#[from] rusqlite::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
     #[error(transparent)]
-    QueryParamLimitExceeded(#[from] QueryLimitError),
+    Diesel(#[from] diesel::result::Error),
+    #[error("Sqlite FFI boundary NUL termination error (not much you can do, file an issue)")]
+    DieselSqliteFfi(#[from] std::ffi::NulError),
+    #[error(transparent)]
+    DeadpoolDiesel(#[from] deadpool_diesel::Error),
+    #[error(transparent)]
+    PoolRecycle(#[from] deadpool::managed::RecycleError<deadpool_diesel::Error>),
+    #[error(transparent)]
+    QueryParamLimit(#[from] QueryLimitError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -74,6 +75,23 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
+}
+
+impl DatabaseError {
+    /// Converts from `InteractError`
+    ///
+    /// Note: Required since `InteractError` has at least one enum
+    /// variant that is _not_ `Send + Sync` and hence prevents the
+    /// `Sync` auto implementation.
+    /// This does an internal conversion to string while maintaining
+    /// convenience.
+    ///
+    /// Using `MSG` as const so it can be called as
+    /// `.map_err(DatabaseError::interact::<"Your message">)`
+    pub fn interact(msg: &(impl ToString + ?Sized), e: &InteractError) -> Self {
+        let msg = msg.to_string();
+        Self::InteractError(format!("{msg} failed: {e:?}"))
+    }
 }
 
 impl From<DatabaseError> for Status {
@@ -111,8 +129,8 @@ pub enum DatabaseSetupError {
     GenesisBlock(#[from] GenesisError),
     #[error("pool build error")]
     PoolBuild(#[from] deadpool::managed::BuildError),
-    #[error("SQLite migration error")]
-    SqliteMigration(#[from] rusqlite_migration::Error),
+    #[error("Setup deadpool connection pool failed")]
+    Pool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
 }
 
 #[derive(Debug, Error)]
@@ -140,7 +158,10 @@ pub enum InvalidBlockError {
     #[error("received invalid account tree root")]
     NewBlockInvalidAccountRoot,
     #[error("new block number must be 1 greater than the current block number")]
-    NewBlockInvalidBlockNum,
+    NewBlockInvalidBlockNum {
+        expected: BlockNumber,
+        submitted: BlockNumber,
+    },
     #[error("new block chain commitment is not consistent with chain MMR")]
     NewBlockInvalidChainCommitment,
     #[error("received invalid note root")]
@@ -223,6 +244,12 @@ pub enum StateSyncError {
     FailedToBuildMmrDelta(#[from] MmrError),
 }
 
+impl From<diesel::result::Error> for StateSyncError {
+    fn from(value: diesel::result::Error) -> Self {
+        Self::DatabaseError(DatabaseError::from(value))
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum NoteSyncError {
     #[error("database error")]
@@ -231,6 +258,12 @@ pub enum NoteSyncError {
     EmptyBlockHeadersTable,
     #[error("error retrieving the merkle proof for the block")]
     MmrError(#[from] MmrError),
+}
+
+impl From<diesel::result::Error> for NoteSyncError {
+    fn from(value: diesel::result::Error) -> Self {
+        Self::DatabaseError(DatabaseError::from(value))
+    }
 }
 
 #[derive(Error, Debug)]
@@ -256,4 +289,44 @@ pub enum GetBatchInputsError {
         highest_block_num: BlockNumber,
         latest_block_num: BlockNumber,
     },
+}
+
+mod compile_tests {
+    use std::marker::PhantomData;
+
+    use super::{
+        AccountDeltaError, AccountError, DatabaseError, DatabaseSetupError, DeserializationError,
+        GenesisError, NetworkAccountError, NoteError, RecvError, StateInitializationError,
+    };
+
+    #[allow(dead_code)]
+    fn pinky_promise<E>(_phony: PhantomData<E>)
+    where
+        E: std::error::Error + Send + Sync + 'static,
+    {
+    }
+
+    /// Ensure all enum variants remain compat with the desired
+    /// trait bounds. Otherwise one gets very unwieldy errors.
+    #[allow(dead_code)]
+    fn assumed_trait_bounds_upheld() {
+        pinky_promise::<AccountError>(PhantomData);
+        pinky_promise::<AccountDeltaError>(PhantomData);
+        pinky_promise::<RecvError>(PhantomData);
+        pinky_promise::<DeserializationError>(PhantomData);
+        pinky_promise::<NetworkAccountError>(PhantomData);
+        pinky_promise::<NoteError>(PhantomData);
+        pinky_promise::<hex::FromHexError>(PhantomData);
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
+        pinky_promise::<diesel::result::Error>(PhantomData);
+        pinky_promise::<deadpool_diesel::Error>(PhantomData);
+        pinky_promise::<deadpool::managed::RecycleError<deadpool_diesel::Error>>(PhantomData);
+
+        pinky_promise::<DatabaseError>(PhantomData);
+        pinky_promise::<DatabaseSetupError>(PhantomData);
+        pinky_promise::<diesel::result::Error>(PhantomData);
+        pinky_promise::<GenesisError>(PhantomData);
+        pinky_promise::<StateInitializationError>(PhantomData);
+        pinky_promise::<deadpool::managed::PoolError<deadpool_diesel::Error>>(PhantomData);
+    }
 }

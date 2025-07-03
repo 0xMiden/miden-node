@@ -2,6 +2,7 @@ use std::io;
 
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
+use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
@@ -47,6 +48,8 @@ pub enum DatabaseError {
     DeadpoolDiesel(#[from] deadpool_diesel::Error),
     #[error(transparent)]
     PoolRecycle(#[from] deadpool::managed::RecycleError<deadpool_diesel::Error>),
+    #[error(transparent)]
+    QueryParamLimit(#[from] QueryLimitError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------

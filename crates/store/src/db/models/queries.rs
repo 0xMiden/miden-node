@@ -14,6 +14,10 @@ use diesel::{
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
+use miden_node_utils::limiter::{
+    QueryParamAccountIdLimit, QueryParamBlockLimit, QueryParamLimiter, QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
+};
 use miden_objects::{
     Word,
     account::{
@@ -71,6 +75,8 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
     account_ids: &[AccountId],
     note_tags: &[u32],
 ) -> Result<Vec<NoteSyncRecord>, DatabaseError> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+    QueryParamNoteTagLimit::check(note_tags.len())?;
     // SELECT
     //     block_num,
     //     batch_index,
@@ -180,6 +186,8 @@ pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
     note_ids: &BTreeSet<NoteId>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
+    QueryParamNoteIdLimit::check(note_ids.len())?;
+
     // SELECT
     //     block_num,
     //     note_id,
@@ -742,6 +750,8 @@ pub(crate) fn insert_nullifiers_for_block(
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
+    QueryParamNullifierLimit::check(nullifiers.len())?;
+
     // UPDATE notes SET consumed = TRUE WHERE nullifier IN rarray(?1)
     let serialized_nullifiers =
         Vec::<Vec<u8>>::from_iter(nullifiers.iter().map(Nullifier::to_bytes));
@@ -802,6 +812,9 @@ pub(crate) fn select_nullifiers_by_prefix(
     block_num: BlockNumber,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
+
+    QueryParamNullifierPrefixLimit::check(nullifier_prefixes.len())?;
+
     // SELECT
     //     nullifier,
     //     block_num
@@ -1062,6 +1075,8 @@ pub(crate) fn select_accounts_by_id(
     conn: &mut SqliteConnection,
     account_ids: Vec<AccountId>,
 ) -> Result<Vec<AccountInfo>, DatabaseError> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
 
     let accounts_raw = QueryDsl::filter(
@@ -1402,6 +1417,14 @@ pub fn select_block_headers(
     conn: &mut SqliteConnection,
     blocks: impl Iterator<Item = BlockNumber> + Send,
 ) -> Result<Vec<BlockHeader>, DatabaseError> {
+    // The iterators are all deterministic, so is the conjunction.
+    // All calling sites do it equivalently, hence the below holds.
+    // <https://doc.rust-lang.org/src/core/slice/iter/macros.rs.html#195>
+    // <https://doc.rust-lang.org/src/core/option.rs.html#2273>
+    // And the conjunction is truthful:
+    // <https://doc.rust-lang.org/src/core/iter/adapters/chain.rs.html#184>
+    QueryParamBlockLimit::check(blocks.size_hint().0)?;
+
     // SELECT block_header FROM block_headers WHERE block_num IN rarray(?1)
     let blocks = Vec::from_iter(blocks.map(block_number_to_raw_sql));
     let raw_block_headers =
@@ -1474,6 +1497,8 @@ pub(crate) fn get_note_sync(
     block_num: BlockNumber,
     note_tags: &[u32],
 ) -> Result<NoteSyncUpdate, NoteSyncError> {
+    QueryParamNoteTagLimit::check(note_tags.len()).map_err(DatabaseError::from)?;
+
     let notes = select_notes_since_block_by_tag_and_sender(conn, block_num, &[], note_tags)?;
 
     let block_header =
@@ -1494,6 +1519,8 @@ pub fn select_accounts_by_block_range(
     block_start: i64,
     block_end: i64,
 ) -> Result<Vec<AccountSummary>, DatabaseError> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     // SELECT
     //     account_id,
     //     account_commitment,
@@ -1523,6 +1550,8 @@ pub fn select_transactions_by_accounts_and_block_range(
     block_start: i64,
     block_end: i64, // TODO migrate to BlockNumber as argument type
 ) -> Result<Vec<TransactionSummary>, DatabaseError> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     // SELECT
     //     account_id,
     //     block_num,

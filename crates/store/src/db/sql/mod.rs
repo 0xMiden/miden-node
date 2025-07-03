@@ -199,7 +199,7 @@ pub fn select_account(transaction: &Transaction, account_id: AccountId) -> Resul
 pub fn select_network_account_by_prefix(
     transaction: &Transaction,
     id_prefix: u32,
-) -> Result<Option<AccountInfo>> {
+) -> Result<Option<AccountInfo>> {select_accounts_
     let mut stmt = transaction.prepare_cached(
         "
         SELECT

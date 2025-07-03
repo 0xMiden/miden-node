@@ -14,11 +14,11 @@ version.workspace      = true
 crate-type = ["lib"]
 
 [features]
-batch-prover = ["dep:miden-objects", "dep:tokio"]
-block-prover = ["dep:miden-objects", "dep:tokio"]
+batch-prover = ["dep:miden-objects"]
+block-prover = ["dep:miden-objects"]
 default      = ["std"]
 std          = ["miden-objects/std", "miden-tx/std"]
-tx-prover    = ["dep:miden-objects", "dep:tokio", "miden-tx/async"]
+tx-prover    = ["dep:miden-objects", "miden-tx/async"]
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom             = { features = ["wasm_js"], version = "0.3" }
@@ -45,7 +45,6 @@ miden-objects    = { optional = true, workspace = true }
 miden-tx         = { optional = true, workspace = true }
 prost            = { default-features = false, features = ["derive"], version = "0.13" }
 thiserror        = { version = "2.0" }
-tokio            = { default-features = false, features = ["sync"], optional = true, version = "1.44" }
 
 [build-dependencies]
 miden-node-proto-build = { workspace = true }

@@ -7,7 +7,10 @@ use std::{
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{GenesisState, Store, genesis::config::GenesisConfig};
+use miden_node_store::{
+    GenesisState, Store,
+    genesis::config::{AccountFileWithName, GenesisConfig},
+};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
@@ -189,18 +192,18 @@ impl StoreCommand {
     fn bootstrap(
         data_directory: &Path,
         accounts_directory: &Path,
-        maybe_genesis_config_path: Option<&PathBuf>,
+        genesis_config: Option<&PathBuf>,
     ) -> anyhow::Result<()> {
-        let genesis_state = if let Some(genesis_config_path) = maybe_genesis_config_path {
-            let toml_str = fs_err::read_to_string(genesis_config_path)?;
+        let genesis_state = if let Some(genesis_config) = genesis_config {
+            let toml_str = fs_err::read_to_string(genesis_config)?;
             let config = GenesisConfig::read_toml(toml_str.as_str())
-                .context(format!("Read from file: {}", genesis_config_path.display()))?;
+                .context(format!("Read from file: {}", genesis_config.display()))?;
 
             let (state, secrets) = config.into_state()?;
             // Write the accounts to disk
-            for account in secrets.as_account_files() {
-                let accountpath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
-                account.write(accountpath)?;
+            for AccountFileWithName { account_file, name } in secrets.as_account_files() {
+                let accountpath = accounts_directory.join(name);
+                account_file.write(accountpath)?;
             }
             state
         } else {

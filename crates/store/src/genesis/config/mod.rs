@@ -4,15 +4,11 @@ use std::collections::HashMap;
 
 use miden_lib::{
     AuthScheme,
-    account::{
-        auth::RpoFalcon512,
-        faucets::{BasicFungibleFaucet, FungibleFaucetError},
-        wallets::create_basic_wallet,
-    },
+    account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::create_basic_wallet},
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
-    AccountError, AssetError, Felt, FieldElement, StarkField, TokenSymbolError, Word,
+    Felt, FieldElement, StarkField, Word,
     account::{
         Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
         AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
@@ -26,6 +22,9 @@ use rand_chacha::ChaCha20Rng;
 
 use crate::GenesisState;
 
+mod errors;
+use self::errors::Error;
+
 #[cfg(test)]
 mod tests;
 
@@ -36,9 +35,17 @@ pub enum AccountConfig {
     Faucet(FaucetConfig),
 }
 
+/// `false` doesn't pass the `syn::Path` parsing, so we do one level indirection
+const fn ja() -> bool {
+    true
+}
+
 /// Represents a wallet, containing a set of assets
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WalletConfig {
+    /// Provide a name, that will be used for the keyfile.
+    #[serde(default)]
+    name: Option<String>,
     #[serde(default)]
     can_be_updated: bool,
     #[serde(default)]
@@ -46,14 +53,12 @@ pub struct WalletConfig {
     assets: Vec<AssetEntry>,
 }
 
-/// `false` doesn't pass the `syn::Path` parsing, so we do one level indirection
-const fn ja() -> bool {
-    true
-}
-
 /// Represents a faucet with asset specific properties
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FaucetConfig {
+    /// Provide a name, that will be used for the keyfile.
+    #[serde(default)]
+    name: Option<String>,
     // TODO eventually directly parse to `TokenSymbol`
     symbol: String,
     decimals: u8,
@@ -91,60 +96,50 @@ impl From<StorageMode> for AccountStorageMode {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum AssetKind {
-    Fungible,
-    NonFungible,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct AssetEntry {
     symbol: String, // TODO move to a wrapper around `TokenSymbol`
     amount: u64,    // TODO we might want to provide `humantime`-like denominations
 }
 
-#[allow(missing_docs, reason = "Error variants must be descriptive by themselves")]
-#[derive(Debug, thiserror::Error)]
-pub enum Error {
-    #[error(transparent)]
-    Toml(#[from] toml::de::Error),
-    #[error("Account translation from config to state failed")]
-    Account(#[from] AccountError),
-    #[error("Asset translation from config to state failed")]
-    Asset(#[from] AssetError),
-    #[error("Applying assets to account failed")]
-    AccountDelta(#[from] miden_objects::AccountDeltaError),
-    #[error("The defined asset {symbol:?} has no corresponding faucet")]
-    MissingFaucetDefinition { symbol: TokenSymbol },
-    #[error(transparent)]
-    TokenSymbol(#[from] TokenSymbolError),
-    #[error("The provided max supply {max_supply} exceeds the field modulus {modulus}")]
-    MaxSupplyExceedsFieldModulus { max_supply: u64, modulus: u64 },
-    #[error("Unsupported value for key {key} : {value}")]
-    UnsupportedValue {
-        key: &'static str,
-        value: String,
-        message: String,
-    },
-    #[error("Failed to create fungible faucet account")]
-    FungibleFaucet(#[from] FungibleFaucetError),
+#[derive(Debug, Clone)]
+pub struct AccountFileWithName {
+    pub name: String,
+    pub account_file: AccountFile,
 }
 
 /// Secrets generated during the state generation
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
-    pub secrets: Vec<(Account, SecretKey, Word)>,
+    // name, account, private key, account seed
+    pub secrets: Vec<(Option<String>, Account, SecretKey, Word)>,
 }
 
 impl AccountSecrets {
     /// Convert the internal tuple into an `AccountFile`
-    pub fn as_account_files(&self) -> impl Iterator<Item = AccountFile> {
-        self.secrets.iter().map(|(account, secret_key, account_seed)| {
-            AccountFile::new(
-                account.clone(),
-                Some(*account_seed),
-                vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
-            )
-        })
+    ///
+    /// If no name is present, a new one is generated based on the current time
+    /// and the index in
+    pub fn as_account_files(&self) -> impl Iterator<Item = AccountFileWithName> {
+        self.secrets.iter().enumerate().map(
+            |(idx, (maybe_name, account, secret_key, account_seed))| {
+                let account_file = AccountFile::new(
+                    account.clone(),
+                    Some(*account_seed),
+                    vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
+                );
+                // avoid empty strings and construct a new one based on the account type
+                let name =
+                    maybe_name.clone().filter(|name| !name.is_empty()).unwrap_or_else(|| {
+                        let account_prefix = account.account_type().to_string().to_lowercase();
+
+                        let now = chrono::Local::now();
+                        let now = now.format("%Y%m%d_%H%M%S");
+
+                        format!("{account_prefix}_account{idx:02}__{now}.mac")
+                    });
+                AccountFileWithName { name, account_file }
+            },
+        )
     }
 }
 
@@ -184,10 +179,11 @@ impl GenesisConfig {
 
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
-        let mut secrets = Vec::<(Account, SecretKey, Word)>::new();
+        let mut secrets = Vec::<(Option<String>, Account, SecretKey, Word)>::new();
 
         // First setup all the faucets
         for FaucetConfig {
+            name,
             symbol,
             decimals,
             max_supply,
@@ -233,13 +229,19 @@ impl GenesisConfig {
 
             faucets.insert(symbol, faucet_account.id());
 
-            secrets.push((faucet_account.clone(), secret_key, faucet_account_seed));
+            secrets.push((name, faucet_account.clone(), secret_key, faucet_account_seed));
 
             all_accounts.push(faucet_account);
         }
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
-        for WalletConfig { can_be_updated, storage_mode, assets } in repr_accounts {
+        for WalletConfig {
+            name,
+            can_be_updated,
+            storage_mode,
+            assets,
+        } in repr_accounts
+        {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
@@ -278,7 +280,7 @@ impl GenesisConfig {
             )?;
             wallet_account.apply_delta(&delta)?;
 
-            secrets.push((wallet_account.clone(), secret_key, wallet_account_seed));
+            secrets.push((name, wallet_account.clone(), secret_key, wallet_account_seed));
 
             all_accounts.push(wallet_account);
         }

@@ -138,12 +138,16 @@ impl State {
             self.inflight_txs.remove(&tx).unwrap_or_default();
 
         if let Some(prefix) = account_delta {
-            self.accounts.get_mut(&prefix).unwrap().commit_delta();
+            if self.accounts.get_mut(&prefix).unwrap().commit_delta().is_empty() {
+                self.remove_account(prefix);
+            }
         }
 
         for nullifier in nullifiers {
             let prefix = self.nullifier_idx.remove(&nullifier).unwrap();
-            self.accounts.get_mut(&prefix).unwrap().commit_nullifier(nullifier);
+            if self.accounts.get_mut(&prefix).unwrap().commit_nullifier(nullifier).is_empty() {
+                self.remove_account(prefix);
+            }
         }
     }
 
@@ -158,13 +162,20 @@ impl State {
 
         for note in notes {
             let prefix = self.nullifier_idx.remove(&note).unwrap();
-            self.accounts.get_mut(&prefix).unwrap().revert_note(note);
+            if self.accounts.get_mut(&prefix).unwrap().revert_note(note).is_empty() {
+                self.remove_account(prefix);
+            }
         }
 
         for nullifier in nullifiers {
             let prefix = self.nullifier_idx.get(&nullifier).unwrap();
             self.accounts.get_mut(prefix).unwrap().revert_nullifier(nullifier);
         }
+    }
+
+    /// Removes the account from tracking under the assumption that it is empty.
+    fn remove_account(&mut self, prefix: NetworkAccountPrefix) {
+        self.accounts.remove(&prefix);
     }
 }
 

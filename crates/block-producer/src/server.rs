@@ -524,6 +524,7 @@ mod test {
             ),
             Digest::default(),
             [i; 32].try_into().unwrap(),
+            Digest::default(),
             0.into(),
             Digest::default(),
             u32::MAX.into(),

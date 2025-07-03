@@ -440,7 +440,7 @@ pub fn select_account_delta(
     let storage = AccountStorageDelta::from_parts(storage_scalars, storage_maps)?;
     let vault = AccountVaultDelta::new(FungibleAssetDelta::new(fungible)?, non_fungible_delta);
 
-    Ok(Some(AccountDelta::new(account_id, storage, vault, Some(nonce))?))
+    Ok(Some(AccountDelta::new(account_id, storage, vault, nonce)?))
 }
 
 /// Inserts or updates accounts to the DB using the given [Transaction].
@@ -494,9 +494,7 @@ pub fn upsert_accounts(
                     });
                 }
 
-                let insert_delta = AccountDelta::from(account.clone());
-
-                (Some(Cow::Borrowed(account)), Some(Cow::Owned(insert_delta)))
+                (Some(Cow::Borrowed(account)), None)
             },
             AccountUpdateDetails::Delta(delta) => {
                 let mut rows = select_details_stmt.query(params![account_id.to_bytes()])?;
@@ -581,7 +579,7 @@ fn insert_account_delta(
     insert_acc_delta_stmt.execute(params![
         account_id.to_bytes(),
         block_number.as_u32(),
-        delta.nonce().map(Into::<u64>::into).unwrap_or_default()
+        u64::from(delta.nonce_increment())
     ])?;
 
     for (&slot, value) in delta.storage().values() {
@@ -599,7 +597,7 @@ fn insert_account_delta(
                 account_id.to_bytes(),
                 block_number.as_u32(),
                 slot,
-                key.inner().to_bytes(),
+                key.to_bytes(),
                 value.to_bytes(),
             ])?;
         }

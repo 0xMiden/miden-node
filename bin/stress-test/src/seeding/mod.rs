@@ -7,7 +7,7 @@ use std::{
 };
 
 use metrics::SeedingMetrics;
-use miden_air::{FieldElement, HashFunction};
+use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::{
     account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
@@ -19,7 +19,7 @@ use miden_node_proto::{domain::batch::BatchInputs, generated::store::rpc_client:
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    Felt,
+    Digest, Felt, ONE,
     account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType},
     asset::{Asset, FungibleAsset, TokenSymbol},
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
@@ -378,12 +378,20 @@ fn create_consume_note_tx(
     input_note.note().assets().iter().for_each(|asset| {
         account.vault_mut().add_asset(*asset).unwrap();
     });
-    account.set_nonce(Felt::ONE).unwrap();
+
+    let updated_account = Account::from_parts(
+        account.id(),
+        account.vault().clone(),
+        account.storage().clone(),
+        account.code().clone(),
+        ONE,
+    );
 
     ProvenTransactionBuilder::new(
         account.id(),
         init_hash,
-        account.commitment(),
+        updated_account.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
@@ -408,12 +416,20 @@ fn create_emit_note_tx(
         .storage_mut()
         .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)])
         .unwrap();
-    faucet.set_nonce(faucet.nonce() + Felt::ONE).unwrap();
+
+    let updated_faucet = Account::from_parts(
+        faucet.id(),
+        faucet.vault().clone(),
+        faucet.storage().clone(),
+        faucet.code().clone(),
+        faucet.nonce() + ONE,
+    );
 
     ProvenTransactionBuilder::new(
         faucet.id(),
         initial_account_hash,
-        faucet.commitment(),
+        updated_faucet.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),

@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 
 use miden_node_proto::{
     clients::ClientBuilder,
+    errors::ConversionError,
     generated::{
         block_producer::api_client as block_producer_client,
         requests::{
@@ -21,7 +22,14 @@ use miden_node_proto::{
     },
     try_convert,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_node_utils::{
+    ErrorReport,
+    limiter::{
+        QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
+        QueryParamNullifierLimit,
+    },
+    tracing::grpc::OtelInterceptor,
+};
 use miden_objects::{
     Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
     account::{AccountId, delta::AccountUpdateDetails},
@@ -97,6 +105,8 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<CheckNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
+
         // validate all the nullifiers from the user request
         for nullifier in &request.get_ref().nullifiers {
             let _: Digest = nullifier
@@ -120,6 +130,8 @@ impl api_server::Api for RpcService {
         request: Request<CheckNullifiersByPrefixRequest>,
     ) -> Result<Response<CheckNullifiersByPrefixResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
+
+        check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
 
         self.store.clone().into_inner().check_nullifiers_by_prefix(request).await
     }
@@ -155,6 +167,9 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<SyncStateResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamAccountIdLimit>(request.get_ref().account_ids.len())?;
+        check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
+
         self.store.clone().into_inner().sync_state(request).await
     }
 
@@ -171,6 +186,8 @@ impl api_server::Api for RpcService {
         request: Request<SyncNoteRequest>,
     ) -> Result<Response<SyncNoteResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
+
+        check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
 
         self.store.clone().into_inner().sync_notes(request).await
     }
@@ -189,11 +206,14 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<GetNotesByIdResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamNoteIdLimit>(request.get_ref().note_ids.len())?;
+
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().note_ids.clone();
 
-        let _: Vec<RpoDigest> = try_convert(note_ids)
-            .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
+        let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err: ConversionError| {
+            Status::invalid_argument(err.as_report_context("invalid NoteId"))
+        })?;
 
         self.store.clone().into_inner().get_notes_by_id(request).await
     }
@@ -213,8 +233,9 @@ impl api_server::Api for RpcService {
 
         let request = request.into_inner();
 
-        let tx = ProvenTransaction::read_from_bytes(&request.transaction)
-            .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
+        let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("invalid transaction"))
+        })?;
 
         // Only allow deployment transactions for new network accounts
         if tx.account_id().is_network()
@@ -228,7 +249,11 @@ impl api_server::Api for RpcService {
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
 
         tx_verifier.verify(&tx).map_err(|err| {
-            Status::invalid_argument(format!("Invalid proof for transaction {}: {err}", tx.id()))
+            Status::invalid_argument(format!(
+                "Invalid proof for transaction {}: {}",
+                tx.id(),
+                err.as_report()
+            ))
         })?;
 
         block_producer.clone().submit_proven_transaction(request).await
@@ -374,4 +399,18 @@ impl api_server::Api for RpcService {
             })),
         }))
     }
+}
+
+// LIMIT HELPERS
+// ================================================================================================
+
+/// Formats an "Out of range" error
+fn out_of_range_error<E: core::fmt::Display>(err: E) -> Status {
+    Status::out_of_range(err.to_string())
+}
+
+/// Check, but don't repeat ourselves mapping the error
+#[allow(clippy::result_large_err)]
+fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
+    <Q as QueryParamLimiter>::check(n).map_err(out_of_range_error)
 }

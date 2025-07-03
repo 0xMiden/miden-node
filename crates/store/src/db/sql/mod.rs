@@ -11,6 +11,13 @@ use std::{
 };
 
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
+use miden_node_utils::{
+    ErrorReport,
+    limiter::{
+        QueryParamAccountIdLimit, QueryParamBlockLimit, QueryParamLimiter, QueryParamNoteIdLimit,
+        QueryParamNoteTagLimit, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
+    },
+};
 use miden_objects::{
     Digest, Word,
     account::{
@@ -119,6 +126,8 @@ pub fn select_accounts_by_block_range(
     block_end: BlockNumber,
     account_ids: &[AccountId],
 ) -> Result<Vec<AccountSummary>> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     let mut stmt = transaction.prepare_cached(
         "
         SELECT
@@ -224,6 +233,8 @@ pub fn select_accounts_by_ids(
     transaction: &Transaction,
     account_ids: &[AccountId],
 ) -> Result<Vec<AccountInfo>> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     let mut stmt = transaction.prepare_cached(
         "
         SELECT
@@ -423,7 +434,7 @@ pub fn select_account_delta(
     while let Some(row) = rows.next()? {
         let vault_key_data = row.get_ref(1)?.as_blob()?;
         let asset = NonFungibleAsset::read_from_bytes(vault_key_data)
-            .map_err(|err| DatabaseError::DataCorrupted(err.to_string()))?;
+            .map_err(|err| DatabaseError::DataCorrupted(err.as_report()))?;
         let action: usize = row.get(2)?;
         match action {
             0 => non_fungible_delta.add(asset)?,
@@ -648,6 +659,8 @@ pub fn insert_nullifiers_for_block(
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<usize> {
+    QueryParamNullifierLimit::check(nullifiers.len())?;
+
     let serialized_nullifiers: Vec<Value> =
         nullifiers.iter().map(Nullifier::to_bytes).map(Into::into).collect();
     let serialized_nullifiers = Rc::new(serialized_nullifiers);
@@ -674,7 +687,7 @@ pub fn insert_nullifiers_for_block(
 /// # Returns
 ///
 /// A vector with nullifiers and the block height at which they were created, or an error.
-pub fn select_all_nullifiers(transaction: &Transaction) -> Result<Vec<(Nullifier, BlockNumber)>> {
+pub fn select_all_nullifiers(transaction: &Transaction) -> Result<Vec<NullifierInfo>> {
     let mut stmt = transaction
         .prepare_cached("SELECT nullifier, block_num FROM nullifiers ORDER BY block_num ASC")?;
     let mut rows = stmt.query([])?;
@@ -683,8 +696,8 @@ pub fn select_all_nullifiers(transaction: &Transaction) -> Result<Vec<(Nullifier
     while let Some(row) = rows.next()? {
         let nullifier_data = row.get_ref(0)?.as_blob()?;
         let nullifier = Nullifier::read_from_bytes(nullifier_data)?;
-        let block_number = read_block_number(row, 1)?;
-        result.push((nullifier, block_number));
+        let block_num = read_block_number(row, 1)?;
+        result.push(NullifierInfo { nullifier, block_num });
     }
     Ok(result)
 }
@@ -706,6 +719,8 @@ pub fn select_nullifiers_by_prefix(
     block_num: BlockNumber,
 ) -> Result<Vec<NullifierInfo>> {
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
+
+    QueryParamNullifierPrefixLimit::check(nullifier_prefixes.len())?;
 
     let nullifier_prefixes: Vec<Value> =
         nullifier_prefixes.iter().copied().map(Into::into).collect();
@@ -874,6 +889,9 @@ pub fn select_notes_since_block_by_tag_and_sender(
     account_ids: &[AccountId],
     block_num: BlockNumber,
 ) -> Result<Vec<NoteSyncRecord>> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+    QueryParamNoteTagLimit::check(tags.len())?;
+
     let mut stmt = transaction
         .prepare_cached(include_str!("queries/select_notes_since_block_by_tag_and_sender.sql"))?;
 
@@ -933,6 +951,8 @@ pub fn select_notes_by_id(
     transaction: &Transaction,
     note_ids: &[NoteId],
 ) -> Result<Vec<NoteRecord>> {
+    QueryParamNoteIdLimit::check(note_ids.len())?;
+
     let note_ids: Vec<Value> = note_ids.iter().map(|id| id.to_bytes().into()).collect();
 
     let mut stmt = transaction.prepare_cached(&format!(
@@ -962,6 +982,8 @@ pub fn select_note_inclusion_proofs(
     transaction: &Transaction,
     note_ids: BTreeSet<NoteId>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
+    QueryParamNoteIdLimit::check(note_ids.len())?;
+
     let note_ids: Vec<Value> = note_ids.into_iter().map(|id| id.to_bytes().into()).collect();
 
     let mut select_notes_stmt = transaction.prepare_cached(
@@ -1121,6 +1143,14 @@ pub fn select_block_headers(
     transaction: &Transaction,
     blocks: impl Iterator<Item = BlockNumber> + Send,
 ) -> Result<Vec<BlockHeader>> {
+    // The iterators are all deterministic, so is the conjunction.
+    // All calling sites do it equivalently, hence the below holds.
+    // <https://doc.rust-lang.org/src/core/slice/iter/macros.rs.html#195>
+    // <https://doc.rust-lang.org/src/core/option.rs.html#2273>
+    // And the conjunction is truthful:
+    // <https://doc.rust-lang.org/src/core/iter/adapters/chain.rs.html#184>
+    QueryParamBlockLimit::check(blocks.size_hint().0)?;
+
     let blocks: Vec<Value> = blocks.map(|b| b.as_u32().into()).collect();
 
     let mut headers = Vec::with_capacity(blocks.len());
@@ -1202,6 +1232,8 @@ pub fn select_transactions_by_accounts_and_block_range(
     block_end: BlockNumber,
     account_ids: &[AccountId],
 ) -> Result<Vec<TransactionSummary>> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
     let account_ids: Vec<Value> = account_ids
         .iter()
         .copied()
@@ -1293,6 +1325,7 @@ pub fn get_note_sync(
     block_num: BlockNumber,
     note_tags: &[u32],
 ) -> Result<NoteSyncUpdate, NoteSyncError> {
+    QueryParamNoteTagLimit::check(note_tags.len()).map_err(DatabaseError::from)?;
     let notes = select_notes_since_block_by_tag_and_sender(transaction, note_tags, &[], block_num)?;
 
     let block_header =

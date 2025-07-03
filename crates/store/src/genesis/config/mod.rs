@@ -235,13 +235,7 @@ impl GenesisConfig {
         }
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
-        for WalletConfig {
-            name,
-            is_updatable,
-            storage_mode,
-            assets,
-        } in repr_accounts
-        {
+        for WalletConfig { name, is_updatable, storage_mode, assets } in repr_accounts {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };

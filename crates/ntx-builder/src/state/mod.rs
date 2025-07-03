@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque, hash_map::Entry},
     num::NonZeroUsize,
 };
 
@@ -33,13 +33,43 @@ pub struct Candidate {
 /// It tracks inflight transactions, and their impact on network-related state.
 #[derive(Default)]
 pub struct State {
+    /// Tracks all network accounts with inflight state.
+    ///
+    /// This is network account deltas, network notes and their nullifiers.
     accounts: HashMap<NetworkAccountPrefix, AccountState>,
+
+    /// A rotating queue of all tracked network accounts.
+    ///
+    /// This is used to select the next transaction's account.
+    ///
+    /// Note that this _always_ includes _all_ network accounts. Filtering out
+    /// accounts that aren't viable is handled within the select method itself.
+    queue: VecDeque<NetworkAccountPrefix>,
+
+    /// Network accounts which have been selected but whose transaction has not yet
+    /// completed.
     in_progress: HashSet<NetworkAccountPrefix>,
+
+    /// Uncommitted transactions and their impact on the state.
+    ///
+    /// This is tracked so we can commit or revert such transaction effects.
     inflight_txs: BTreeMap<TransactionId, Impact>,
+
+    /// A mapping of network note's to their account.
     nullifier_idx: BTreeMap<Nullifier, NetworkAccountPrefix>,
 }
 
 impl State {
+    pub fn with_committed_notes(notes: impl Iterator<Item = NetworkNote>) -> Self {
+        let mut state = Self::default();
+        for note in notes {
+            state.nullifier_idx.insert(note.nullifier(), note.account_prefix());
+            state.account_or_default(note.account_prefix()).add_note(note);
+        }
+
+        state
+    }
+
     /// Selects the next candidate network transaction.
     ///
     /// Note that this marks the candidate account as in-progress and that it cannot
@@ -49,22 +79,46 @@ impl State {
     ///   - the transaction was submitted successfully, indicated by the associated mempool event
     ///     being submitted
     pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<Candidate> {
-        // let candidate = self.notes.select()?;
-        // let account_deltas = self.accounts.get(candidate).cloned().unwrap_or_default();
-        // let notes = self.notes.get(candidate).take(limit.get()).cloned().collect();
+        // Loop through the account queue until we find one that is selectable.
+        //
+        // Since the queue contains _all_ accounts, including unselectable accounts, we
+        // limit our search to once through the entire queue.
+        //
+        // There are smarter ways of doing this, but this should scale more than well enough
+        // for a long time.
+        for _ in 0..self.queue.len() {
+            // This is a rotating queue.
+            let candidate = self.queue.pop_front().unwrap();
+            self.queue.push_back(candidate);
 
-        // Some(Candidate {
-        //     _account_deltas: account_deltas,
-        //     _notes: notes,
-        //     reference: candidate,
-        // })
-        todo!()
+            // Skip accounts which are already in-progress.
+            if self.in_progress.contains(&candidate) {
+                continue;
+            }
+
+            let account = self.accounts.get(&candidate).expect("queue account must be tracked");
+            let notes = account.notes().take(limit.get()).cloned().collect::<Vec<_>>();
+
+            // Skip accounts with no available notes.
+            if notes.is_empty() {
+                continue;
+            }
+
+            return Candidate {
+                reference: candidate,
+                _account_deltas: account.deltas().clone(),
+                _notes: notes,
+            }
+            .into();
+        }
+
+        None
     }
 
     /// Marks a previously selected candidate account as failed, allowing it to be
     /// available for selection again.
     pub fn candidate_failed(&mut self, candidate: NetworkAccountPrefix) {
-        // self.notes.deselect(candidate);
+        self.in_progress.remove(&candidate);
     }
 
     /// Updates state with the mempool event.
@@ -109,14 +163,14 @@ impl State {
         }
 
         let mut tx_impact = Impact::default();
-        if let Some(update) = account_delta.map(NetworkAccountUpdate::from_protocol).flatten() {
+        if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
             tx_impact.account_delta = Some(update.prefix());
-            self.accounts.entry(update.prefix()).or_default().add_delta(update);
+            self.account_or_default(update.prefix()).add_delta(update);
         }
         for note in network_notes {
             tx_impact.notes.insert(note.nullifier());
             self.nullifier_idx.insert(note.nullifier(), note.account_prefix());
-            self.accounts.entry(note.account_prefix()).or_default().add_note(note);
+            self.account_or_default(note.account_prefix()).add_note(note);
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.
@@ -124,12 +178,32 @@ impl State {
                 continue;
             };
             tx_impact.nullifiers.insert(nullifier);
+            // We don't use the entry wrapper here because the account must already exist.
             self.accounts
-                .get_mut(&account)
+                .get_mut(account)
                 .expect("nullifier account must exist")
                 .add_nullifier(nullifier);
         }
-        self.inflight_txs.insert(id, tx_impact);
+
+        if !tx_impact.is_empty() {
+            self.inflight_txs.insert(id, tx_impact);
+        }
+    }
+
+    /// Grants mutable access to the given account state, creating a default entry if none exists.
+    ///
+    /// This is effectively a thin wrapper around the entry API, but this also tracks new
+    /// accounts to the queue.
+    ///
+    /// This _must_ be the only way new accounts are added as otherwise they won't be queued.
+    fn account_or_default(&mut self, prefix: NetworkAccountPrefix) -> &mut AccountState {
+        match self.accounts.entry(prefix) {
+            Entry::Occupied(occupied_entry) => occupied_entry.into_mut(),
+            Entry::Vacant(vacant_entry) => {
+                self.queue.push_back(prefix);
+                vacant_entry.insert(AccountState::default())
+            },
+        }
     }
 
     /// Handles [`MempoolEvent::BlockCommitted`] events.
@@ -157,7 +231,9 @@ impl State {
             self.inflight_txs.remove(&tx).unwrap_or_default();
 
         if let Some(prefix) = account_delta {
-            self.accounts.get_mut(&prefix).unwrap().revert_delta();
+            if self.accounts.get_mut(&prefix).unwrap().revert_delta().is_empty() {
+                self.remove_account(prefix);
+            }
         }
 
         for note in notes {
@@ -175,13 +251,28 @@ impl State {
 
     /// Removes the account from tracking under the assumption that it is empty.
     fn remove_account(&mut self, prefix: NetworkAccountPrefix) {
+        // We don't need to prune the inflight transactions because if the account is empty, then it
+        // would have no inflight txs.
         self.accounts.remove(&prefix);
+        self.queue.retain(|x| x != &prefix);
     }
 }
 
+/// The impact a transaction has on the state.
 #[derive(Default)]
 struct Impact {
+    /// The network account this transaction added an account delta to.
     account_delta: Option<NetworkAccountPrefix>,
+
+    /// Network notes this transaction created.
     notes: BTreeSet<Nullifier>,
+
+    /// Network notes this transaction consumed.
     nullifiers: BTreeSet<Nullifier>,
+}
+
+impl Impact {
+    fn is_empty(&self) -> bool {
+        self.account_delta.is_none() && self.notes.is_empty() && self.nullifiers.is_empty()
+    }
 }

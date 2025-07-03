@@ -54,7 +54,8 @@ impl AccountState {
     pub fn revert_note(&mut self, note: Nullifier) -> Status {
         // Transactions can be reverted out of order.
         //
-        // This means the tx which nullified the note might not have been reverted yet, and the note might still be in the nullified
+        // This means the tx which nullified the note might not have been reverted yet, and the note
+        // might still be in the nullified
         self.available_notes.remove(&note);
         self.nullified_notes.remove(&note);
         self.status()
@@ -93,14 +94,19 @@ impl AccountState {
     pub fn revert_nullifier(&mut self, nullifier: Nullifier) {
         // Transactions can be reverted out of order.
         //
-        // The note may already have been fully removed by `revert_note` if the transaction creating the note was reverted before the transaction that consumed it.
+        // The note may already have been fully removed by `revert_note` if the transaction creating
+        // the note was reverted before the transaction that consumed it.
         if let Some(note) = self.nullified_notes.remove(&nullifier) {
             self.available_notes.insert(nullifier, note);
         }
     }
 
-    pub fn has_notes_available(&self) -> bool {
-        !self.available_notes.is_empty()
+    pub fn notes(&self) -> impl Iterator<Item = &NetworkNote> {
+        self.available_notes.values()
+    }
+
+    pub fn deltas(&self) -> &VecDeque<NetworkAccountUpdate> {
+        &self.deltas
     }
 
     fn status(&self) -> Status {
@@ -120,7 +126,8 @@ impl AccountState {
 pub enum Status {
     /// The account state is completely empty.
     ///
-    /// This means there are no notes or account deltas being tracked and this account can be safetly removed.
+    /// This means there are no notes or account deltas being tracked and this account can be safely
+    /// removed.
     Empty,
     /// The state contains some active data.
     ///
@@ -129,8 +136,8 @@ pub enum Status {
 }
 
 impl Status {
-    pub fn is_empty(&self) -> bool {
-        *self == Status::Empty
+    pub fn is_empty(self) -> bool {
+        self == Status::Empty
     }
 }
 

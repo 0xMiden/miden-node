@@ -122,7 +122,7 @@ impl NetworkTransactionBuilder {
             .await
             .context("failed to subscribe to mempool events")?;
 
-        let mut state = crate::state::State::new(unconsumed.into_iter());
+        let mut state = crate::state::State::with_committed_notes(unconsumed.into_iter());
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 

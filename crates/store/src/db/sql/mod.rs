@@ -14,11 +14,12 @@ use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAcco
 use miden_objects::{
     Digest, Word,
     account::{
-        AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta, FungibleAssetDelta,
-        NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
+        Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta,
+        FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
+        StorageSlot,
         delta::{AccountUpdateDetails, LexicographicWord},
     },
-    asset::NonFungibleAsset,
+    asset::{Asset, NonFungibleAsset},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, NoteMetadata, NoteType, Nullifier},
@@ -494,7 +495,9 @@ pub fn upsert_accounts(
                     });
                 }
 
-                (Some(Cow::Borrowed(account)), None)
+                let insert_delta = build_insert_delta(account)?;
+
+                (Some(Cow::Borrowed(account)), Some(Cow::Owned(insert_delta)))
             },
             AccountUpdateDetails::Delta(delta) => {
                 let mut rows = select_details_stmt.query(params![account_id.to_bytes()])?;
@@ -531,6 +534,52 @@ pub fn upsert_accounts(
     }
 
     Ok(count)
+}
+
+fn build_insert_delta(account: &Account) -> Result<AccountDelta, DatabaseError> {
+    let mut values = BTreeMap::new();
+    let mut maps = BTreeMap::new();
+    for (slot_idx, slot) in account.storage().clone().into_iter().enumerate() {
+        let slot_idx: u8 = slot_idx.try_into().expect("slot index must fit into `u8`");
+
+        match slot {
+            StorageSlot::Value(value) => {
+                values.insert(slot_idx, value);
+            },
+
+            StorageSlot::Map(map) => {
+                maps.insert(slot_idx, map.into());
+            },
+        }
+    }
+    let storage_delta = AccountStorageDelta::from_parts(values, maps)?;
+
+    let mut fungible = BTreeMap::new();
+    let mut non_fungible = BTreeMap::new();
+    for asset in account.vault().assets() {
+        match asset {
+            Asset::Fungible(asset) => {
+                fungible.insert(
+                    asset.faucet_id(),
+                    asset
+                        .amount()
+                        .try_into()
+                        .expect("asset amount should be at most i64::MAX by construction"),
+                );
+            },
+
+            Asset::NonFungible(asset) => {
+                non_fungible.insert(LexicographicWord::new(asset), NonFungibleDeltaAction::Add);
+            },
+        }
+    }
+
+    let vault_delta = AccountVaultDelta::new(
+        FungibleAssetDelta::new(fungible)?,
+        NonFungibleAssetDelta::new(non_fungible),
+    );
+
+    Ok(AccountDelta::new(account.id(), storage_delta, vault_delta, account.nonce())?)
 }
 
 /// Inserts account delta to the DB using the given [Transaction].

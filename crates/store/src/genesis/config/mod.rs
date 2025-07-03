@@ -47,7 +47,7 @@ pub struct WalletConfig {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    can_be_updated: bool,
+    is_updatable: bool,
     #[serde(default)]
     storage_mode: StorageMode,
     assets: Vec<AssetEntry>,
@@ -237,7 +237,7 @@ impl GenesisConfig {
         // then setup all wallet accounts, which reference the faucet's for their provided assets
         for WalletConfig {
             name,
-            can_be_updated,
+            is_updatable,
             storage_mode,
             assets,
         } in repr_accounts
@@ -257,7 +257,7 @@ impl GenesisConfig {
                     Ok(FungibleAsset::new(*faucet_id, amount)?)
                 },
             ))?;
-            let account_type = if can_be_updated {
+            let account_type = if is_updatable {
                 AccountType::RegularAccountUpdatableCode
             } else {
                 AccountType::RegularAccountImmutableCode

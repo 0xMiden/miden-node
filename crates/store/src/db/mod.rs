@@ -295,7 +295,7 @@ impl Db {
         E: From<rusqlite::Error>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let conn = self.pool.get().await.unwrap(); // FIXME XXX TOODO
+        let conn = self.pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
 
         conn.interact(move |conn| {
             let r = query(conn)?;

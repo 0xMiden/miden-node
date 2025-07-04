@@ -121,7 +121,7 @@ impl NtxBuilderDataStore {
         self.account_cache.evict(account_id);
     }
 
-    /// After a succesful execution, updates the account cache with the new account details.
+    /// After a successful execution, updates the account cache with the new account details.
     pub fn update_account(&self, transaction: &ExecutedTransaction) -> Result<(), AccountError> {
         // SAFETY: datastore impl checks that the account ID is a valid network account
         let account_id_prefix = transaction.account_id().try_into().unwrap();

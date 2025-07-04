@@ -54,8 +54,10 @@ impl NetworkAccountCache {
 mod tests {
     use std::{num::NonZeroUsize, sync::Arc};
 
-    use miden_lib::transaction::TransactionKernel;
-    use miden_objects::{Felt, account::Account};
+    use miden_lib::{account::auth::RpoFalcon512, transaction::TransactionKernel};
+    use miden_objects::{
+        EMPTY_WORD, Felt, account::Account, crypto::dsa::rpo_falcon512::PublicKey,
+    };
 
     use crate::builder::data_store::NetworkAccountCache;
 
@@ -195,6 +197,7 @@ mod tests {
         Account::mock(
             (u128::from(id) << 99) | (storage_mode << 70),
             Felt::new(0),
+            RpoFalcon512::new(PublicKey::new(EMPTY_WORD)),
             TransactionKernel::testing_assembler(),
         )
     }

@@ -189,7 +189,7 @@ message SubmitProvenTransactionResponse {
 // Represents the result of getting notes by IDs.
 message GetNotesByIdResponse {
     // Lists Note's returned by the database.
-    repeated note.Note notes = 1;
+    repeated note.CommittedNote notes = 1;
 }
 
 // Represents the result of getting account details.
@@ -211,9 +211,11 @@ message GetBlockByNumberResponse {
     optional bytes block = 1;
 }
 
-// TODO: comments
+// Current blockchain data based on the requested block number.
 message GetCurrentBlockchainDataResponse {
+    // Commitments that represent the current state according to the MMR.
     repeated digest.Digest current_peaks = 1;
+    // Current block header.
     optional block.BlockHeader current_block_header = 2;
 }
 
@@ -258,7 +260,7 @@ message AccountStateHeader {
     repeated StorageSlotMapProof storage_maps = 4;
 }
 
-// Represents a single storage slot with the reuqested keys and their respective values.
+// Represents a single storage slot with the requested keys and their respective values.
 message StorageSlotMapProof {
     // The storage slot index ([0..255]).
     uint32 storage_slot = 1;

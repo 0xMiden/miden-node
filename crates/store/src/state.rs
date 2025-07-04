@@ -17,7 +17,7 @@ use miden_node_proto::{
     },
     generated::responses::{AccountProofsResponse, AccountStateHeader, StorageSlotMapProof},
 };
-use miden_node_utils::formatting::format_array;
+use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
     AccountError,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
@@ -170,8 +170,13 @@ impl State {
             .await?
             .ok_or(ApplyBlockError::DbBlockHeaderEmpty)?;
 
-        if block_num != prev_block.block_num() + 1 {
-            return Err(InvalidBlockError::NewBlockInvalidBlockNum.into());
+        let expected_block_num = prev_block.block_num().child();
+        if block_num != expected_block_num {
+            return Err(InvalidBlockError::NewBlockInvalidBlockNum {
+                expected: expected_block_num,
+                submitted: block_num,
+            }
+            .into());
         }
         if header.prev_block_commitment() != prev_block.commitment() {
             return Err(InvalidBlockError::NewBlockInvalidPrevCommitment.into());
@@ -340,7 +345,7 @@ impl State {
             // in-memory updates.
             db_update_task
                 .await?
-                .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.to_string()))?;
+                .map_err(|err| ApplyBlockError::DbUpdateTaskFailed(err.as_report()))?;
 
             // Update the in-memory data structures after successful commit of the DB transaction
             inner
@@ -363,7 +368,7 @@ impl State {
     ///
     /// If [None] is given as the value of `block_num`, the data for the latest [BlockHeader] is
     /// returned.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_block_header(
         &self,
         block_num: Option<BlockNumber>,
@@ -399,7 +404,7 @@ impl State {
     /// tree.
     ///
     /// Note: these proofs are invalidated once the nullifier tree is modified, i.e. on a new block.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"))]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret)]
     pub async fn check_nullifiers(&self, nullifiers: &[Nullifier]) -> Vec<SmtProof> {
         let inner = self.inner.read().await;
         nullifiers
@@ -580,7 +585,7 @@ impl State {
     ///   block range.
     /// - `note_tags`: The tags the client is interested in, result is restricted to the first block
     ///   with any matches tags.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_state(
         &self,
         block_num: BlockNumber,
@@ -630,7 +635,7 @@ impl State {
     /// - `block_num`: The last block *known* by the client, updates start from the next block.
     /// - `note_tags`: The tags the client is interested in, resulting notes are restricted to the
     ///   first block containing a matching note.
-    #[instrument(target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_notes(
         &self,
         block_num: BlockNumber,
@@ -766,7 +771,7 @@ impl State {
                 "latest block num should exist and all blocks in set should be < than latest block",
             );
 
-        // Fetch witnesses for all acounts.
+        // Fetch witnesses for all accounts.
         let account_witnesses = account_ids
             .iter()
             .copied()
@@ -969,14 +974,16 @@ impl State {
 // UTILITIES
 // ================================================================================================
 
-#[instrument(target = COMPONENT, skip_all)]
+#[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitializationError> {
     let nullifiers = db.select_all_nullifiers().await?;
     let len = nullifiers.len();
 
     let now = Instant::now();
-    let nullifier_tree = NullifierTree::with_entries(nullifiers)
-        .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
+    let nullifier_tree = NullifierTree::with_entries(
+        nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)),
+    )
+    .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
     let elapsed = now.elapsed().as_secs();
 
     info!(
@@ -988,7 +995,7 @@ async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitiali
     Ok(nullifier_tree)
 }
 
-#[instrument(target = COMPONENT, skip_all)]
+#[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     let block_commitments: Vec<RpoDigest> = db
         .select_all_block_headers()
@@ -1000,7 +1007,7 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     Ok(block_commitments.into())
 }
 
-#[instrument(target = COMPONENT, skip_all)]
+#[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 

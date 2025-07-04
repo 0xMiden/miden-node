@@ -176,10 +176,7 @@ mod tests {
     use miden_objects::{
         Felt,
         crypto::rand::{FeltRng, RpoRandomCoin},
-        note::{
-            Note, NoteAssets, NoteExecutionMode, NoteInputs, NoteMetadata, NoteRecipient,
-            NoteScript,
-        },
+        note::{Note, NoteAssets, NoteInputs, NoteMetadata, NoteRecipient, NoteScript},
         testing::account_id::{ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET, ACCOUNT_ID_PRIVATE_SENDER},
     };
     use rand::{Rng, rng};
@@ -195,9 +192,7 @@ mod tests {
                 (ACCOUNT_ID_NETWORK_FUNGIBLE_FAUCET + (u128::from(account_id_diff) << 99))
                     .try_into()
                     .unwrap(),
-                NoteExecutionMode::Network,
-            )
-            .unwrap(),
+            ),
             miden_objects::note::NoteExecutionHint::Always,
             Felt::new(0),
         )

@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use miden_node_proto::{
+    errors::ConversionError,
     generated::{
         block_producer::api_client as block_producer_client,
         requests::{
@@ -17,11 +18,18 @@ use miden_node_proto::{
             SyncNoteResponse, SyncStateResponse,
         },
         rpc::api_server,
-        store::api_client as store_client,
+        store::rpc_client as store_client,
     },
     try_convert,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_node_utils::{
+    ErrorReport,
+    limiter::{
+        QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
+        QueryParamNullifierLimit,
+    },
+    tracing::grpc::OtelInterceptor,
+};
 use miden_objects::{
     Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
     account::{AccountId, delta::AccountUpdateDetails},
@@ -40,7 +48,7 @@ use crate::COMPONENT;
 // RPC SERVICE
 // ================================================================================================
 
-type StoreClient = store_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+type StoreClient = store_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
 type BlockProducerClient =
     block_producer_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 
@@ -58,7 +66,7 @@ impl RpcService {
             let store_url = format!("http://{store_address}");
             // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
             let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-            let store = store_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            let store = store_client::RpcClient::with_interceptor(channel, OtelInterceptor);
             info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
             store
         };
@@ -85,6 +93,7 @@ impl RpcService {
 #[tonic::async_trait]
 impl api_server::Api for RpcService {
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.check_nullifiers",
         skip_all,
@@ -97,6 +106,8 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<CheckNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
+
         // validate all the nullifiers from the user request
         for nullifier in &request.get_ref().nullifiers {
             let _: Digest = nullifier
@@ -108,6 +119,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.check_nullifiers_by_prefix",
         skip_all,
@@ -120,10 +132,13 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<CheckNullifiersByPrefixResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
+
         self.store.clone().check_nullifiers_by_prefix(request).await
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_header_by_number",
         skip_all,
@@ -140,6 +155,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_state",
         skip_all,
@@ -152,10 +168,14 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<SyncStateResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamAccountIdLimit>(request.get_ref().account_ids.len())?;
+        check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
+
         self.store.clone().sync_state(request).await
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.sync_notes",
         skip_all,
@@ -168,10 +188,13 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<SyncNoteResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
+
         self.store.clone().sync_notes(request).await
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_notes_by_id",
         skip_all,
@@ -184,16 +207,19 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<GetNotesByIdResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
+        check::<QueryParamNoteIdLimit>(request.get_ref().note_ids.len())?;
+
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().note_ids.clone();
 
-        let _: Vec<RpoDigest> = try_convert(note_ids)
-            .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
+        let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err: ConversionError| {
+            Status::invalid_argument(err.as_report_context("invalid NoteId"))
+        })?;
 
         self.store.clone().get_notes_by_id(request).await
     }
 
-    #[instrument(target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
     async fn submit_proven_transaction(
         &self,
         request: Request<SubmitProvenTransactionRequest>,
@@ -208,8 +234,9 @@ impl api_server::Api for RpcService {
 
         let request = request.into_inner();
 
-        let tx = ProvenTransaction::read_from_bytes(&request.transaction)
-            .map_err(|err| Status::invalid_argument(format!("Invalid transaction: {err}")))?;
+        let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
+            Status::invalid_argument(err.as_report_context("invalid transaction"))
+        })?;
 
         // Only allow deployment transactions for new network accounts
         if tx.account_id().is_network()
@@ -223,7 +250,11 @@ impl api_server::Api for RpcService {
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);
 
         tx_verifier.verify(&tx).map_err(|err| {
-            Status::invalid_argument(format!("Invalid proof for transaction {}: {err}", tx.id()))
+            Status::invalid_argument(format!(
+                "Invalid proof for transaction {}: {}",
+                tx.id(),
+                err.as_report()
+            ))
         })?;
 
         block_producer.clone().submit_proven_transaction(request).await
@@ -231,6 +262,7 @@ impl api_server::Api for RpcService {
 
     /// Returns details for public (public) account by id.
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_details",
         skip_all,
@@ -256,6 +288,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_block_by_number",
         skip_all,
@@ -274,6 +307,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_state_delta",
         skip_all,
@@ -292,6 +326,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.get_account_proofs",
         skip_all,
@@ -323,6 +358,7 @@ impl api_server::Api for RpcService {
     }
 
     #[instrument(
+        parent = None,
         target = COMPONENT,
         name = "rpc.server.status",
         skip_all,
@@ -358,4 +394,18 @@ impl api_server::Api for RpcService {
             })),
         }))
     }
+}
+
+// LIMIT HELPERS
+// ================================================================================================
+
+/// Formats an "Out of range" error
+fn out_of_range_error<E: core::fmt::Display>(err: E) -> Status {
+    Status::out_of_range(err.to_string())
+}
+
+/// Check, but don't repeat ourselves mapping the error
+#[allow(clippy::result_large_err)]
+fn check<Q: QueryParamLimiter>(n: usize) -> Result<(), Status> {
+    <Q as QueryParamLimiter>::check(n).map_err(out_of_range_error)
 }

@@ -9,6 +9,7 @@ use miden_node_proto::{
     },
     try_convert,
 };
+use miden_node_utils::ErrorReport;
 use miden_objects::{Digest, note::Nullifier, transaction::TransactionId};
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
@@ -33,7 +34,7 @@ impl NtxBuilderApi {
 
 #[tonic::async_trait]
 impl Api for NtxBuilderApi {
-    #[instrument(target = COMPONENT, name = "ntx_builder.submit_network_notes", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.submit_network_notes", skip_all, err)]
     async fn submit_network_notes(
         &self,
         request: Request<SubmitNetworkNotesRequest>,
@@ -50,7 +51,7 @@ impl Api for NtxBuilderApi {
         Ok(Response::new(()))
     }
 
-    #[instrument(target = COMPONENT, name = "ntx_builder.update_network_notes", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.update_network_notes", skip_all, err)]
     async fn update_network_notes(
         &self,
         request: Request<UpdateNetworkNotesRequest>,
@@ -61,7 +62,9 @@ impl Api for NtxBuilderApi {
             .transaction_id
             .map(TransactionId::try_from)
             .ok_or(Status::not_found("transaction ID not found in request"))?
-            .map_err(|err| Status::invalid_argument(format!("invalid transaction ID: {err}")))?;
+            .map_err(|err| {
+                Status::invalid_argument(err.as_report_context("invalid transaction ID"))
+            })?;
 
         let nullifiers: Vec<Nullifier> = request
             .nullifiers
@@ -70,7 +73,9 @@ impl Api for NtxBuilderApi {
             .map(|res| res.map(Nullifier::from))
             .collect::<Result<_, _>>()
             .map_err(|err| {
-                Status::invalid_argument(format!("error when converting input nullifiers: {err}"))
+                Status::invalid_argument(
+                    err.as_report_context("error when converting input nullifiers"),
+                )
             })?;
 
         let mut state = self.state.lock().await;
@@ -80,7 +85,7 @@ impl Api for NtxBuilderApi {
         Ok(Response::new(()))
     }
 
-    #[instrument(target = COMPONENT, name = "ntx_builder.update_transaction_status", skip_all, err)]
+    #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.update_transaction_status", skip_all, err)]
     async fn update_transaction_status(
         &self,
         request: Request<UpdateTransactionStatusRequest>,

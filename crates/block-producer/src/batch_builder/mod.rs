@@ -7,7 +7,7 @@ use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL,
     batch::{BatchId, ProposedBatch, ProvenBatch},
 };
-use miden_proving_service_client::proving_service::batch_prover::RemoteBatchProver;
+use miden_remote_prover_client::remote_prover::batch_prover::RemoteBatchProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use rand::Rng;
 use tokio::{task::JoinSet, time};
@@ -86,7 +86,7 @@ impl BatchBuilder {
         );
 
         let mut interval = tokio::time::interval(self.batch_interval);
-        // We set the inverval's missed tick behaviour to burst. This means we'll catch up missed
+        // We set the interval's missed tick behaviour to burst. This means we'll catch up missed
         // batches as fast as possible. In other words, we try our best to keep the desired batch
         // interval on average. The other options would result in at least one skipped batch.
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Burst);
@@ -236,9 +236,10 @@ impl BatchJob {
         Span::current().set_attribute("prover.kind", self.batch_prover.kind());
 
         let proven_batch = match &self.batch_prover {
-            BatchProver::Remote(prover) => {
-                prover.prove(proposed_batch).await.map_err(BuildBatchError::RemoteProverError)
-            },
+            BatchProver::Remote(prover) => prover
+                .prove(proposed_batch)
+                .await
+                .map_err(BuildBatchError::RemoteProverClientError),
             BatchProver::Local(prover) => tokio::task::spawn_blocking({
                 let prover = prover.clone();
                 move || prover.prove(proposed_batch).map_err(BuildBatchError::ProveBatchError)

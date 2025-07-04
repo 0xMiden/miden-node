@@ -104,14 +104,6 @@ where
 
     /// Sets a status on `Span` based on an error.
     fn set_error(&self, err: &dyn std::error::Error) {
-        use std::fmt::Write as _;
-        // Include the main error and then append causation report.
-        let mut report = err.to_string();
-
-        std::iter::successors(err.source(), |child| child.source()).for_each(|source| {
-            let _ = write!(&mut report, "\nCaused by: {source}");
-        });
-
         tracing_opentelemetry::OpenTelemetrySpanExt::set_status(
             self,
             Status::Error { description: err.as_report().into() },

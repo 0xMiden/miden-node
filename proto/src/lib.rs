@@ -8,6 +8,13 @@ pub fn rpc_api_descriptor() -> FileDescriptorSet {
         .expect("bytes should be a valid file descriptor created by build.rs")
 }
 
+/// Returns the Protobuf file descriptor for the remote prover API.
+pub fn remote_prover_api_descriptor() -> FileDescriptorSet {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", "remote_prover_file_descriptor.bin"));
+    FileDescriptorSet::decode(&bytes[..])
+        .expect("bytes should be a valid file descriptor created by build.rs")
+}
+
 /// Returns the Protobuf file descriptor for the store API.
 #[cfg(feature = "internal")]
 pub fn store_api_descriptor() -> FileDescriptorSet {

@@ -2,16 +2,16 @@ use std::{
     fs::File,
     io::Write,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
 use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
-use miden_node_store::{DataDirectory, GenesisState, Store};
+use miden_node_store::{GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
-    account::{AccountFile, AccountIdAnchor, AuthSecretKey},
+    account::{Account, AccountFile, AuthSecretKey},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -19,11 +19,11 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use url::Url;
 
-use super::{
-    DEFAULT_MONITOR_INTERVAL_MS, ENV_DATA_DIRECTORY, ENV_ENABLE_OTEL, ENV_STORE_URL,
-    parse_duration_ms,
-};
-use crate::system_monitor::SystemMonitor;
+use super::{ENV_DATA_DIRECTORY, ENV_STORE_URL};
+use crate::commands::ENV_ENABLE_OTEL;
+
+/// The default filepath for the genesis account.
+const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
 
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
@@ -56,17 +56,8 @@ pub enum StoreCommand {
         ///
         /// This can be further configured using environment variables as defined in the official
         /// OpenTelemetry documentation. See our operator manual for further details.
-        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "bool")]
-        open_telemetry: bool,
-
-        /// Interval at which to monitor the system in milliseconds.
-        #[arg(
-            long = "monitor.interval",
-            default_value = DEFAULT_MONITOR_INTERVAL_MS,
-            value_parser = parse_duration_ms,
-            value_name = "MILLISECONDS"
-        )]
-        monitor_interval: Duration,
+        #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
+        enable_otel: bool,
     },
 }
 
@@ -77,41 +68,26 @@ impl StoreCommand {
             StoreCommand::Bootstrap { data_directory, accounts_directory } => {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
-            // Note: open-telemetry is handled in main.
-            StoreCommand::Start {
-                url,
-                data_directory,
-                open_telemetry: _,
-                monitor_interval,
-            } => Self::start(url, data_directory, monitor_interval).await,
+            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
+                Self::start(url, data_directory).await
+            },
         }
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {
-        if let Self::Start { open_telemetry, .. } = self {
-            *open_telemetry
+        if let Self::Start { enable_otel, .. } = self {
+            *enable_otel
         } else {
             false
         }
     }
 
-    async fn start(
-        url: Url,
-        data_directory: PathBuf,
-        monitor_interval: Duration,
-    ) -> anyhow::Result<()> {
+    async fn start(url: Url, data_directory: PathBuf) -> anyhow::Result<()> {
         let listener =
             url.to_socket().context("Failed to extract socket address from store URL")?;
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to store's gRPC URL")?;
-
-        // Start system monitor.
-        let data_dir =
-            DataDirectory::load(data_directory.clone()).context("failed to load data directory")?;
-        SystemMonitor::new(monitor_interval)
-            .with_store_metrics(data_dir)
-            .run_with_supervisor();
 
         Store { listener, data_directory }
             .serve()
@@ -128,7 +104,7 @@ impl StoreCommand {
         //
         // Without this the accounts would be inaccessible by the user.
         // This is not used directly by the node, but rather by the owner / operator of the node.
-        let filepath = accounts_directory.join("account.mac");
+        let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
         File::create_new(&filepath)
             .and_then(|mut file| file.write_all(&account_file.to_bytes()))
             .with_context(|| {
@@ -158,9 +134,8 @@ impl StoreCommand {
         let max_supply = Felt::try_from(max_supply).expect("max supply is less than field modulus");
 
         // Create the faucet.
-        let (mut account, account_seed) = create_basic_fungible_faucet(
+        let (account, account_seed) = create_basic_fungible_faucet(
             rng.random(),
-            AccountIdAnchor::PRE_GENESIS,
             TokenSymbol::try_from("MIDEN").expect("MIDEN is a valid token symbol"),
             decimals,
             max_supply,
@@ -176,12 +151,13 @@ impl StoreCommand {
         //
         // The genesis block is special in that accounts are "deplyed" without transactions and
         // therefore we need bump the nonce manually to uphold this invariant.
-        account.set_nonce(ONE).context("failed to set account nonce to 1")?;
+        let (id, vault, sorage, code, _) = account.into_parts();
+        let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
         Ok(AccountFile::new(
-            account,
+            updated_account,
             Some(account_seed),
-            AuthSecretKey::RpoFalcon512(secret),
+            vec![AuthSecretKey::RpoFalcon512(secret)],
         ))
     }
 }

@@ -7,7 +7,7 @@ use std::{
 };
 
 use metrics::SeedingMetrics;
-use miden_air::{FieldElement, HashFunction};
+use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::{
     account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
@@ -15,14 +15,12 @@ use miden_lib::{
     utils::Serializable,
 };
 use miden_node_block_producer::store::StoreClient;
-use miden_node_proto::{domain::batch::BatchInputs, generated::store::api_client::ApiClient};
+use miden_node_proto::{domain::batch::BatchInputs, generated::store::rpc_client::RpcClient};
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    Felt,
-    account::{
-        Account, AccountBuilder, AccountId, AccountIdAnchor, AccountStorageMode, AccountType,
-    },
+    Digest, Felt, ONE,
+    account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType},
     asset::{Asset, FungibleAsset, TokenSymbol},
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
     block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
@@ -154,7 +152,6 @@ async fn generate_blocks(
         let (pub_accounts, pub_notes) = create_accounts_and_notes(
             num_public_accounts,
             AccountStorageMode::Private,
-            &current_anchor_header,
             &key_pair,
             &rng,
             faucet.id(),
@@ -165,7 +162,6 @@ async fn generate_blocks(
         let (priv_accounts, priv_notes) = create_accounts_and_notes(
             num_private_accounts,
             AccountStorageMode::Private,
-            &current_anchor_header,
             &key_pair,
             &rng,
             faucet.id(),
@@ -258,7 +254,6 @@ async fn apply_block(
 fn create_accounts_and_notes(
     num_accounts: usize,
     storage_mode: AccountStorageMode,
-    anchor_block: &BlockHeader,
     key_pair: &SecretKey,
     rng: &Arc<Mutex<RpoRandomCoin>>,
     faucet_id: AccountId,
@@ -268,7 +263,6 @@ fn create_accounts_and_notes(
         .into_par_iter()
         .map(|account_index| {
             let account = create_account(
-                anchor_block,
                 key_pair.public_key(),
                 ((block_num * num_accounts) + account_index) as u64,
                 storage_mode,
@@ -299,15 +293,9 @@ fn create_note(faucet_id: AccountId, target_id: AccountId, rng: &mut RpoRandomCo
 
 /// Creates a new private account with a given public key and anchor block. Generates the seed from
 /// the given index.
-fn create_account(
-    anchor_block: &BlockHeader,
-    public_key: PublicKey,
-    index: u64,
-    storage_mode: AccountStorageMode,
-) -> Account {
+fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorageMode) -> Account {
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
     let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
-        .anchor(anchor_block.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
         .with_component(RpoFalcon512::new(public_key))
@@ -326,7 +314,6 @@ fn create_faucet() -> Account {
 
     let token_symbol = TokenSymbol::new("TEST").unwrap();
     let (new_faucet, _seed) = AccountBuilder::new(init_seed)
-        .anchor(AccountIdAnchor::PRE_GENESIS)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
         .with_component(RpoFalcon512::new(key_pair.public_key()))
@@ -367,11 +354,11 @@ fn create_consume_note_txs(
     accounts
         .into_iter()
         .zip(notes)
-        .map(|(mut account, note)| {
+        .map(|(account, note)| {
             let inclusion_proof = note_proofs.get(&note.id()).unwrap();
             create_consume_note_tx(
                 block_ref,
-                &mut account,
+                account,
                 InputNote::authenticated(note, inclusion_proof.clone()),
             )
         })
@@ -383,7 +370,7 @@ fn create_consume_note_txs(
 /// The account is updated with the assets from the input note, and the nonce is set to 1.
 fn create_consume_note_tx(
     block_ref: &BlockHeader,
-    account: &mut Account,
+    mut account: Account,
     input_note: InputNote,
 ) -> ProvenTransaction {
     let init_hash = account.init_commitment();
@@ -391,12 +378,15 @@ fn create_consume_note_tx(
     input_note.note().assets().iter().for_each(|asset| {
         account.vault_mut().add_asset(*asset).unwrap();
     });
-    account.set_nonce(Felt::ONE).unwrap();
+
+    let (id, vault, sorage, code, _) = account.into_parts();
+    let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
     ProvenTransactionBuilder::new(
-        account.id(),
+        updated_account.id(),
         init_hash,
-        account.commitment(),
+        updated_account.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
@@ -421,12 +411,15 @@ fn create_emit_note_tx(
         .storage_mut()
         .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)])
         .unwrap();
-    faucet.set_nonce(faucet.nonce() + Felt::ONE).unwrap();
+
+    let (id, vault, sorage, code, nonce) = faucet.clone().into_parts();
+    let updated_faucet = Account::from_parts(id, vault, sorage, code, nonce + ONE);
 
     ProvenTransactionBuilder::new(
-        faucet.id(),
+        updated_faucet.id(),
         initial_account_hash,
-        faucet.commitment(),
+        updated_faucet.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
@@ -489,7 +482,7 @@ async fn get_block_inputs(
 /// - the address of the store
 pub async fn start_store(
     data_directory: PathBuf,
-) -> (ApiClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
+) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
     let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
     let store_addr = grpc_store.local_addr().expect("Failed to get store address");
     let dir = data_directory.clone();
@@ -510,5 +503,5 @@ pub async fn start_store(
         .await
         .expect("Failed to connect to store");
 
-    (ApiClient::with_interceptor(channel, OtelInterceptor), store_addr)
+    (RpcClient::with_interceptor(channel, OtelInterceptor), store_addr)
 }

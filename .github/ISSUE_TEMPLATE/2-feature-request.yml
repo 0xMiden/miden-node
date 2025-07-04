@@ -1,7 +1,6 @@
 name: "Feature request"
 description: "Request new goodies"
-title: "[Feature]: "
-labels: ["enhancement"]
+type: "Feature"
 body:
   - type: markdown
     attributes:
@@ -15,7 +14,7 @@ body:
       options:
         - End user
         - App developer
-        - Rollup operator
+        - Node operator
     validations:
       required: true
   - type: textarea
@@ -38,7 +37,7 @@ body:
     id: extra
     attributes:
       label: "Anything else?"
-      description: "Anything else in your mind and you wnat to share with us?"
+      description: "Anything else in your mind and you want to share with us?"
       placeholder: "Here is why I think this is awesome!"
     validations:
       required: false

@@ -1,8 +1,8 @@
 use miden_objects::{
     Digest, Felt,
     note::{
-        Note, NoteDetails, NoteExecutionHint, NoteExecutionMode, NoteId, NoteInclusionProof,
-        NoteMetadata, NoteTag, NoteType, Nullifier,
+        Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
+        NoteType, Nullifier,
     },
     utils::{Deserializable, Serializable},
 };
@@ -34,6 +34,25 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
 
 impl From<Note> for proto::NetworkNote {
     fn from(note: Note) -> Self {
+        Self {
+            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            details: NoteDetails::from(note).to_bytes(),
+        }
+    }
+}
+
+impl From<Note> for proto::Note {
+    fn from(note: Note) -> Self {
+        Self {
+            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            details: Some(NoteDetails::from(note).to_bytes()),
+        }
+    }
+}
+
+impl From<NetworkNote> for proto::NetworkNote {
+    fn from(note: NetworkNote) -> Self {
+        let note = Note::from(note);
         Self {
             metadata: Some(proto::NoteMetadata::from(*note.metadata())),
             details: NoteDetails::from(note).to_bytes(),
@@ -99,6 +118,25 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
     }
 }
 
+impl TryFrom<proto::Note> for Note {
+    type Error = ConversionError;
+
+    fn try_from(proto_note: proto::Note) -> Result<Self, Self::Error> {
+        let metadata: NoteMetadata = proto_note
+            .metadata
+            .ok_or(proto::Note::missing_field(stringify!(metadata)))?
+            .try_into()?;
+
+        let details = proto_note.details.ok_or(proto::Note::missing_field(stringify!(details)))?;
+
+        let note_details = NoteDetails::read_from_bytes(&details)
+            .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
+
+        let (assets, recipient) = note_details.into_parts();
+        Ok(Note::new(assets, metadata, recipient))
+    }
+}
+
 // NETWORK NOTE
 // ================================================================================================
 
@@ -134,9 +172,7 @@ impl TryFrom<Note> for NetworkNote {
     type Error = NetworkNoteError;
 
     fn try_from(note: Note) -> Result<Self, Self::Error> {
-        if !note.metadata().tag().is_single_target()
-            || note.metadata().tag().execution_mode() != NoteExecutionMode::Network
-        {
+        if !note.is_network_note() {
             return Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()));
         }
         Ok(NetworkNote(note))
@@ -162,6 +198,6 @@ impl TryFrom<proto::NetworkNote> for NetworkNote {
             .try_into()?;
         let note = Note::new(assets, metadata, recipient);
 
-        Ok(NetworkNote::try_from(note)?)
+        NetworkNote::try_from(note).map_err(Into::into)
     }
 }

@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.10.0 (TBD)
+
+### Enhancements
+
+- Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
+- Added support for gRPC server side reflection to all components (#949).
+- Compressed faucet background image (#985).
+- Added support for TLS to `miden-proving-service-client` (#968).
+- Added support for TLS to faucet's connection to node RPC (#976).
+- Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
+- [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
+- Added configurable network id for the faucet (#1016).
+- Support gRPC server relection `v1alpha` (#1036).
+
+### Changes
+
+- Transaction limit per batch is now configurable (default 8) (#1015).
+- Batch limit per block is now configurable (default 8) (#1015).
+- Separated the store API into three separate services (#932).
+- Added a faucet Dockerfile (#933).
+- [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
+- [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
+- [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
+- [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
+- [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
+- Exposed `miden-proving-service` as a library (#956).
+- [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
+- Faucet challenge expiration time is now configurable (#1017).
+- Removed system monitor from node binary (#1019).
+- [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).
+- [BREAKING] Rename `miden-proving-service` to `miden-remote-prover` (#1004).
+- [BREAKING] Rename `miden-proving-service-client` to `miden-remote-prover-client` (#1004).
+- [BREAKING] Rename `RemoteProverError` to `RemoteProverClientError` (#1004).
+- [BREAKING] Rename `ProvingServiceError` to `RemoteProverError` (#1004).
+- [BREAKING] Renamed `Note` to `CommittedNote`, and `NetworkNote` to `Note` in the proto messages (#1022).
+- [BREAKING] Limits of store queries per query parameter enforced (#1028).
+
+### Fixes
+
+- Faucet considers decimals when minting token amounts (#962).
+
 ## v0.9.2 (2025-06-12)
 
 - Refresh Cargo.lock file.
@@ -9,8 +50,6 @@
 - Refresh Cargo.lock file (#944).
 
 ## v0.9.0 (2025-05-30)
-
-### Changes
 
 ### Enhancements
 
@@ -208,7 +247,7 @@
 
 ## 0.3.0 (2024-05-15)
 
-- Added option to mint pulic notes in the faucet (#339).
+- Added option to mint public notes in the faucet (#339).
 - Renamed `note_hash` into `note_id` in the database (#336)
 - Changed `version` and `timestamp` fields in `Block` message to `u32` (#337).
 - [BREAKING] Implemented `NoteMetadata` protobuf message (#338).

@@ -1,14 +1,14 @@
-use std::{collections::HashMap, ops::Not, sync::LazyLock};
+use std::{collections::HashMap, sync::LazyLock};
 
 use miden_objects::{
     Digest, Hasher,
-    account::{AccountId, AccountIdAnchor, AccountIdVersion, AccountStorageMode, AccountType},
+    account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType},
 };
 
 pub static MOCK_ACCOUNTS: LazyLock<std::sync::Mutex<HashMap<u32, (AccountId, Digest)>>> =
     LazyLock::new(Default::default);
 
-/// A mock representation fo private accounts. An account starts in state `states[0]`, is modified
+/// A mock representation for private accounts. An account starts in state `states[0]`, is modified
 /// to state `states[1]`, and so on.
 #[derive(Clone, Copy, Debug)]
 pub struct MockPrivateAccount<const NUM_STATES: usize = 3> {
@@ -39,20 +39,22 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
             AccountIdVersion::Version0,
             Digest::default(),
             Digest::default(),
-            Digest::default(),
         )
         .unwrap();
 
         Self::new(
             AccountId::new(
                 account_seed,
-                AccountIdAnchor::PRE_GENESIS,
                 AccountIdVersion::Version0,
                 Digest::default(),
                 Digest::default(),
             )
             .unwrap(),
-            new_account.not().then(|| Hasher::hash(&init_seed)).unwrap_or_default(),
+            if new_account {
+                Digest::default()
+            } else {
+                Hasher::hash(&init_seed)
+            },
         )
     }
 }

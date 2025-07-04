@@ -7,7 +7,7 @@ use miden_objects::{
     note::{NoteId, Nullifier},
     transaction::TransactionId,
 };
-use miden_proving_service_client::RemoteProverError;
+use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
 
@@ -18,7 +18,7 @@ use tokio::task::JoinError;
 pub enum BlockProducerError {
     /// A block-producer task completed although it should have ran indefinitely.
     #[error("task {task} completed unexpectedly")]
-    TaskFailedSuccesfully { task: &'static str },
+    TaskFailedSuccessfully { task: &'static str },
 
     /// A block-producer task panic'd.
     #[error("error joining {task} task")]
@@ -28,7 +28,7 @@ pub enum BlockProducerError {
     #[error("task {task} had a transport error")]
     TonicTransportError {
         task: &'static str,
-        source: tonic::transport::Error,
+        source: anyhow::Error,
     },
 }
 
@@ -146,7 +146,7 @@ pub enum BuildBatchError {
     ProveBatchError(#[source] ProvenBatchError),
 
     #[error("failed to prove batch with remote prover")]
-    RemoteProverError(#[source] RemoteProverError),
+    RemoteProverClientError(#[source] RemoteProverClientError),
 
     #[error("batch proof security level is too low: {0} < {1}")]
     SecurityLevelTooLow(u32, u32),
@@ -170,7 +170,7 @@ pub enum BuildBlockError {
     #[error("nothing actually went wrong, failure was injected on purpose")]
     InjectedFailure,
     #[error("failed to prove block with remote prover")]
-    RemoteProverError(#[source] RemoteProverError),
+    RemoteProverClientError(#[source] RemoteProverClientError),
     #[error("block proof security level is too low: {0} < {1}")]
     SecurityLevelTooLow(u32, u32),
 }

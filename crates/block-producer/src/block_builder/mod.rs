@@ -12,7 +12,7 @@ use miden_objects::{
     note::{Note, NoteExecutionMode, NoteHeader},
     transaction::{OutputNote, TransactionHeader, TransactionId},
 };
-use miden_proving_service_client::proving_service::block_prover::RemoteBlockProver;
+use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
@@ -92,7 +92,7 @@ impl BlockBuilder {
         );
 
         let mut interval = tokio::time::interval(self.block_interval);
-        // We set the inverval's missed tick behaviour to burst. This means we'll catch up missed
+        // We set the interval's missed tick behaviour to burst. This means we'll catch up missed
         // blocks as fast as possible. In other words, we try our best to keep the desired block
         // interval on average. The other options would result in at least one skipped block.
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Burst);
@@ -252,7 +252,7 @@ impl BlockBuilder {
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        let reverted_transactions = mempool.lock().await.commit_block();
+        let reverted_transactions = mempool.lock().await.commit_block(built_block.header().clone());
         let committed_transactions = built_block
             .transactions()
             .as_slice()
@@ -304,7 +304,6 @@ impl BlockBuilder {
                 ntb_client
                     .clone()
                     .submit_network_notes(
-                        // TODO: using default here until there is a good reason not to
                         TransactionId::new(
                             Digest::default(),
                             Digest::default(),
@@ -356,11 +355,16 @@ struct SelectedBlock {
     batches: Vec<ProvenBatch>,
 }
 
-impl SelectedBlock {
+impl TelemetryInjectorExt for SelectedBlock {
     fn inject_telemetry(&self) {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
         span.set_attribute("block.batches.count", self.batches.len() as u32);
+        let tx_count = self
+            .batches
+            .iter()
+            .fold(0, |acc, batch| acc + batch.transactions().as_slice().len());
+        span.set_attribute("block.transactions.count", tx_count);
     }
 }
 
@@ -371,7 +375,7 @@ struct BlockBatchesAndInputs {
     inputs: BlockInputs,
 }
 
-impl BlockBatchesAndInputs {
+impl TelemetryInjectorExt for BlockBatchesAndInputs {
     fn inject_telemetry(&self) {
         let span = Span::current();
 
@@ -473,17 +477,15 @@ impl BlockProver {
     }
 
     #[instrument(target = COMPONENT, skip_all, err)]
-    pub async fn prove(
-        &self,
-        proposed_block: ProposedBlock,
-    ) -> Result<ProvenBlock, BuildBlockError> {
+    async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
         match self {
             Self::Local(prover) => {
                 prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
             },
-            Self::Remote(prover) => {
-                prover.prove(proposed_block).await.map_err(BuildBlockError::RemoteProverError)
-            },
+            Self::Remote(prover) => prover
+                .prove(proposed_block)
+                .await
+                .map_err(BuildBlockError::RemoteProverClientError),
         }
     }
 }

@@ -80,7 +80,7 @@ impl Delta {
         Self {
             account: tx.account_id(),
             nullifiers: tx.nullifiers().collect(),
-            output_notes: tx.output_notes().collect(),
+            output_notes: tx.output_note_ids().collect(),
         }
     }
 }
@@ -187,7 +187,7 @@ impl InflightState {
 
         // Ensure output notes aren't already present.
         let duplicates = tx
-            .output_notes()
+            .output_note_ids()
             .filter(|note| self.output_notes.contains_key(note))
             .collect::<Vec<_>>();
         if !duplicates.is_empty() {
@@ -223,7 +223,7 @@ impl InflightState {
 
         self.nullifiers.extend(tx.nullifiers());
         self.output_notes
-            .extend(tx.output_notes().map(|note_id| (note_id, OutputNoteState::new(tx.id()))));
+            .extend(tx.output_note_ids().map(|note_id| (note_id, OutputNoteState::new(tx.id()))));
 
         // Authenticated input notes (provably) consume notes that are already committed
         // on chain. They therefore cannot form part of the inflight dependency chain.
@@ -363,6 +363,7 @@ impl OutputNoteState {
 #[cfg(test)]
 mod tests {
     use assert_matches::assert_matches;
+    use miden_node_utils::ErrorReport;
     use miden_objects::Digest;
 
     use super::*;
@@ -604,7 +605,7 @@ mod tests {
         // Reverting txs should be equivalent to them never being inserted.
         //
         // We test this by reverting some txs and equating it to the remaining set.
-        // This is a form of proprty test.
+        // This is a form of property test.
         let states = (1u8..=5).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
         let txs = vec![
             MockProvenTxBuilder::with_account(mock_account_id(1), states[0], states[1]),
@@ -630,7 +631,10 @@ mod tests {
             let mut reverted = InflightState::new(BlockNumber::default(), 1, 0u32);
             for (idx, tx) in txs.iter().enumerate() {
                 reverted.add_transaction(tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
             reverted.revert_transactions(
@@ -640,7 +644,10 @@ mod tests {
             let mut inserted = InflightState::new(BlockNumber::default(), 1, 0u32);
             for (idx, tx) in txs.iter().rev().skip(i).rev().enumerate() {
                 inserted.add_transaction(tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
 
@@ -679,12 +686,15 @@ mod tests {
             // Insert all txs and then commit and prune the first `i` of them.
             //
             // This should match only inserting the final `N-i` transactions.
-            // Note: we force all committed state to immedietely be pruned by setting
+            // Note: we force all committed state to immediately be pruned by setting
             // it to zero.
             let mut committed = InflightState::new(BlockNumber::default(), 0, 0u32);
             for (idx, tx) in txs.iter().enumerate() {
                 committed.add_transaction(tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
             committed.commit_block(txs.iter().take(i).map(AuthenticatedTransaction::id));
@@ -694,7 +704,10 @@ mod tests {
                 // We need to adjust the height since we are effectively at block "1" now.
                 let tx = tx.clone().with_authentication_height(1.into());
                 inserted.add_transaction(&tx).unwrap_or_else(|err| {
-                    panic!("Inserting tx #{idx} in iteration {i} should succeed: {err}")
+                    panic!(
+                        "Inserting tx #{idx} in iteration {i} should succeed: {}",
+                        err.as_report()
+                    )
                 });
             }
 

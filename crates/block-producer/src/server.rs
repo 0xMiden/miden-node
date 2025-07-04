@@ -1,23 +1,29 @@
 use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use anyhow::{Context, Result};
+use futures::StreamExt;
 use miden_node_proto::{
+    domain::mempool::MempoolEvent,
     generated::{
-        block_producer::api_server,
+        block_producer::{
+            MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest, api_server,
+        },
         requests::SubmitProvenTransactionRequest,
         responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
     },
     ntx_builder,
 };
+use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
     tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
 };
 use miden_objects::{
-    note::Nullifier, transaction::ProvenTransaction, utils::serde::Deserializable,
+    block::BlockNumber, note::Nullifier, transaction::ProvenTransaction,
+    utils::serde::Deserializable,
 };
 use tokio::{net::TcpListener, sync::Mutex};
-use tokio_stream::wrappers::TcpListenerStream;
+use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
@@ -55,6 +61,10 @@ pub struct BlockProducer {
     pub batch_interval: Duration,
     /// The interval at which to produce blocks.
     pub block_interval: Duration,
+    /// The maximum number of transactions per batch.
+    pub max_txs_per_batch: usize,
+    /// The maximum number of batches per block.
+    pub max_batches_per_block: usize,
 }
 
 impl BlockProducer {
@@ -62,6 +72,7 @@ impl BlockProducer {
     ///
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
+    #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
         let store = StoreClient::new(self.store_address);
@@ -119,8 +130,11 @@ impl BlockProducer {
         );
         let mempool = Mempool::shared(
             chain_tip,
-            BatchBudget::default(),
-            BlockBudget::default(),
+            BatchBudget {
+                transactions: self.max_txs_per_batch,
+                ..BatchBudget::default()
+            },
+            BlockBudget { batches: self.max_batches_per_block },
             SERVER_MEMPOOL_STATE_RETENTION,
             SERVER_MEMPOOL_EXPIRATION_SLACK,
         );
@@ -184,7 +198,7 @@ impl BlockProducer {
         task_result
             .map_err(|source| BlockProducerError::JoinError { task, source })
             .map(|(_, result)| match result {
-                Ok(_) => Err(BlockProducerError::TaskFailedSuccesfully { task }),
+                Ok(_) => Err(BlockProducerError::TaskFailedSuccessfully { task }),
                 Err(source) => Err(BlockProducerError::TonicTransportError { task, source }),
             })
             .and_then(|x| x)?
@@ -234,6 +248,48 @@ impl api_server::Api for BlockProducerRpcServer {
             status: "connected".to_string(),
         }))
     }
+
+    type MempoolSubscriptionStream = MempoolEventSubscription;
+
+    async fn mempool_subscription(
+        &self,
+        request: tonic::Request<MempoolSubscriptionRequest>,
+    ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
+        let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
+
+        let subscription =
+            self.mempool
+                .lock()
+                .await
+                .lock()
+                .await
+                .subscribe(chain_tip)
+                .map_err(|mempool_tip| {
+                    tonic::Status::invalid_argument(format!(
+                        "Mempool's chain tip {mempool_tip} does not match request's {chain_tip}"
+                    ))
+                })?;
+        let subscription = ReceiverStream::new(subscription);
+
+        Ok(tonic::Response::new(MempoolEventSubscription { inner: subscription }))
+    }
+}
+
+struct MempoolEventSubscription {
+    inner: ReceiverStream<MempoolEvent>,
+}
+
+impl tokio_stream::Stream for MempoolEventSubscription {
+    type Item = Result<ProtoMempoolEvent, tonic::Status>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.inner
+            .poll_next_unpin(cx)
+            .map(|x| x.map(ProtoMempoolEvent::from).map(Result::Ok))
+    }
 }
 
 impl BlockProducerRpcServer {
@@ -245,13 +301,30 @@ impl BlockProducerRpcServer {
         }
     }
 
-    async fn serve(self, listener: TcpListener) -> Result<(), tonic::transport::Error> {
+    async fn serve(self, listener: TcpListener) -> anyhow::Result<()> {
+        let reflection_service = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(block_producer_api_descriptor())
+            .build_v1()
+            .context("failed to build reflection service")?;
+
+        // This is currently required for postman to work properly because
+        // it doesn't support the new version yet.
+        //
+        // See: <https://github.com/postmanlabs/postman-app-support/issues/13120>.
+        let reflection_service_alpha = tonic_reflection::server::Builder::configure()
+            .register_file_descriptor_set(block_producer_api_descriptor())
+            .build_v1alpha()
+            .context("failed to build reflection service")?;
+
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
             .layer(TraceLayer::new_for_grpc().make_span_with(block_producer_trace_fn))
             .add_service(api_server::ApiServer::new(self))
+            .add_service(reflection_service)
+            .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener))
             .await
+            .context("failed to serve block producer API")
     }
 
     #[instrument(
@@ -334,7 +407,7 @@ mod test {
     use tonic::transport::{Channel, Endpoint};
     use winterfell::Proof;
 
-    use crate::BlockProducer;
+    use crate::{BlockProducer, SERVER_MAX_BATCHES_PER_BLOCK, SERVER_MAX_TXS_PER_BATCH};
 
     #[tokio::test]
     async fn block_producer_startup_is_robust_to_network_failures() {
@@ -372,6 +445,8 @@ mod test {
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
+                max_txs_per_batch: SERVER_MAX_TXS_PER_BATCH,
+                max_batches_per_block: SERVER_MAX_BATCHES_PER_BLOCK,
             }
             .serve()
             .await
@@ -459,6 +534,7 @@ mod test {
             ),
             Digest::default(),
             [i; 32].try_into().unwrap(),
+            Digest::default(),
             0.into(),
             Digest::default(),
             u32::MAX.into(),

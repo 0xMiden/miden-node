@@ -4,39 +4,41 @@
 syntax = "proto3";
 package store;
 
-import "requests.proto";
-import "responses.proto";
+import "types/shared.proto";
+import "types/account.proto";
+import "types/blockchain.proto";
+import "types/primitives.proto";
 import "google/protobuf/empty.proto";
 
 // Store API for the RPC component
 service Rpc {
     // Returns a nullifier proof for each of the requested nullifiers.
-    rpc CheckNullifiers(requests.CheckNullifiersRequest) returns (responses.CheckNullifiersResponse) {}
+    rpc CheckNullifiers(shared.CheckNullifiers) returns (shared.CheckNullifiersResult) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //
     // Note that only 16-bit prefixes are supported at this time.
-    rpc CheckNullifiersByPrefix(requests.CheckNullifiersByPrefixRequest) returns (responses.CheckNullifiersByPrefixResponse) {}
+    rpc CheckNullifiersByPrefix(shared.CheckNullifiersByPrefix) returns (shared.CheckNullifiersByPrefixResult) {}
 
     // Returns the latest state of an account with the specified ID.
-    rpc GetAccountDetails(requests.GetAccountDetailsRequest) returns (responses.GetAccountDetailsResponse) {}
+    rpc GetAccountDetails(shared.GetAccountDetails) returns (shared.GetAccountDetailsResult) {}
 
     // Returns the latest state proofs of the specified accounts.
-    rpc GetAccountProofs(requests.GetAccountProofsRequest) returns (responses.GetAccountProofsResponse) {}
+    rpc GetAccountProofs(shared.GetAccountProofs) returns (shared.AccountProofs) {}
 
     // Returns delta of the account states in the range from `from_block_num` (exclusive) to
     // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(requests.GetAccountStateDeltaRequest) returns (responses.GetAccountStateDeltaResponse) {}
+    rpc GetAccountStateDelta(shared.GetAccountStateDelta) returns (shared.GetAccountStateDeltaResult) {}
 
     // Returns raw block data for the specified block number.
-    rpc GetBlockByNumber(requests.GetBlockByNumberRequest) returns (responses.GetBlockByNumberResponse) {}
+    rpc GetBlockByNumber(shared.GetBlockByNumber) returns (shared.GetBlockByNumberResult) {}
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
+    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
 
     // Returns a list of notes matching the provided note IDs.
-    rpc GetNotesById(requests.GetNotesByIdRequest) returns (responses.GetNotesByIdResponse) {}
+    rpc GetNotesById(shared.GetNotesById) returns (shared.GetNotesByIdResult) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -47,7 +49,7 @@ service Rpc {
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
     // tip of the chain. 
-    rpc SyncNotes(requests.SyncNoteRequest) returns (responses.SyncNoteResponse) {}
+    rpc SyncNotes(shared.SyncNote) returns (shared.SyncNoteResult) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
     // for the objects (accounts, notes, nullifiers) the client is interested in.
@@ -64,44 +66,232 @@ service Rpc {
     // For preserving some degree of privacy, note tags and nullifiers filters contain only high
     // part of hashes. Thus, returned data contains excessive notes and nullifiers, client can make
     // additional filtering of that data on its side.
-    rpc SyncState(requests.SyncStateRequest) returns (responses.SyncStateResponse) {}
+    rpc SyncState(shared.SyncState) returns (shared.SyncStateResult) {}
 
     // Returns the status info.
-    rpc Status(google.protobuf.Empty) returns (responses.StoreStatusResponse) {}
+    rpc Status(google.protobuf.Empty) returns (shared.StoreStatus) {}
 }
 
 // Store API for the BlockProducer component
 service BlockProducer {
     // Applies changes of a new block to the DB and in-memory data structures.
-    rpc ApplyBlock(requests.ApplyBlockRequest) returns (responses.ApplyBlockResponse) {}
+    rpc ApplyBlock(ApplyBlock) returns (google.protobuf.Empty) {}
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
+    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
 
     // Returns data required to prove the next block.
-    rpc GetBlockInputs(requests.GetBlockInputsRequest) returns (responses.GetBlockInputsResponse) {}
+    rpc GetBlockInputs(GetBlockInputs) returns (GetBlockInputsResult) {}
 
     // Returns the inputs for a transaction batch.
-    rpc GetBatchInputs(requests.GetBatchInputsRequest) returns (responses.GetBatchInputsResponse) {}
+    rpc GetBatchInputs(GetBatchInputs) returns (GetBatchInputsResult) {}
 
     // Returns data required to validate a new transaction.
-    rpc GetTransactionInputs(requests.GetTransactionInputsRequest) returns (responses.GetTransactionInputsResponse) {}
+    rpc GetTransactionInputs(GetTransactionInputs) returns (GetTransactionInputsResult) {}
 }
 
 // Store API for the network transaction builder component
 service NtxBuilder {
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
+    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
 
     // Returns the list of unconsumed network notes and the next page number to query.
-    rpc GetUnconsumedNetworkNotes(requests.GetUnconsumedNetworkNotesRequest) returns (responses.GetUnconsumedNetworkNotesResponse) {}
+    rpc GetUnconsumedNetworkNotes(GetUnconsumedNetworkNotes) returns (GetUnconsumedNetworkNotesResult) {}
 
     // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this 
     // header for executing network transactions. 
-    rpc GetCurrentBlockchainData(requests.GetCurrentBlockchainDataRequest) returns (responses.GetCurrentBlockchainDataResponse) {}
+    rpc GetCurrentBlockchainData(GetCurrentBlockchainData) returns (GetCurrentBlockchainDataResult) {}
 
     // Returns the latest state of a network account with the specified account prefix.
-    rpc GetNetworkAccountDetailsByPrefix(requests.GetNetworkAccountDetailsByPrefixRequest) returns (responses.GetNetworkAccountDetailsByPrefixResponse) {}
+    rpc GetNetworkAccountDetailsByPrefix(GetNetworkAccountDetailsByPrefix) returns (GetNetworkAccountDetailsByPrefixResult) {}
+}
+
+// Applies changes of a new block to the DB and in-memory data structures.
+message ApplyBlock {
+    // Block data encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::Block].
+    bytes block = 1;
+}
+
+
+// Returns a list of unconsumed network notes using pagination.
+message GetUnconsumedNetworkNotes {
+    // An opaque token used to paginate through the notes.
+    //
+    // This should be null on the first call, and set to the response
+    // token until the response token is null, at which point all data
+    // has been fetched.
+    optional uint64 page_token = 1;
+
+    // Number of notes to retrieve per page.
+    uint64 page_size = 2;
+}
+
+// Returns the latest state of a network account based on the account ID prefix.
+message GetNetworkAccountDetailsByPrefix {
+    // Account ID prefix.
+    fixed32 account_id_prefix = 1;
+}
+
+// Returns data required to prove the next block.
+message GetBlockInputs {
+    // IDs of all accounts updated in the proposed block for which to retrieve account witnesses.
+    repeated account.AccountId account_ids = 1;
+
+    // Nullifiers of all notes consumed by the block for which to retrieve witnesses.
+    //
+    // Due to note erasure it will generally not be possible to know the exact set of nullifiers
+    // a block will create, unless we pre-execute note erasure. So in practice, this set of
+    // nullifiers will be the set of nullifiers of all proven batches in the block, which is a
+    // superset of the nullifiers the block may create.
+    //
+    // However, if it is known that a certain note will be erased, it would not be necessary to
+    // provide a nullifier witness for it.
+    repeated primitives.Digest nullifiers = 2;
+
+    // Array of note IDs for which to retrieve note inclusion proofs, **if they exist in the store**.
+    repeated primitives.Digest unauthenticated_notes = 3;
+
+    // Array of block numbers referenced by all batches in the block.
+    repeated fixed32 reference_blocks = 4;
+}
+
+// Returns the inputs for a transaction batch.
+message GetBatchInputs {
+  // List of unauthenticated notes to be queried from the database.
+  repeated primitives.Digest note_ids = 1;
+  // Set of block numbers referenced by transactions.
+  repeated fixed32 reference_blocks = 2;
+}
+
+
+// Returns data required to validate a new transaction.
+message GetTransactionInputs {
+    // ID of the account against which a transaction is executed.
+    account.AccountId account_id = 1;
+    // Set of nullifiers consumed by this transaction.
+    repeated primitives.Digest nullifiers = 2;
+    // Set of unauthenticated notes to check for existence on-chain.
+    //
+    // These are notes which were not on-chain at the state the transaction was proven,
+    // but could by now be present.
+    repeated primitives.Digest unauthenticated_notes = 3;
+}
+
+// Returns peaks for the given block number, or the chain tip if a block number not provided.
+message GetCurrentBlockchainData {
+    // Last client-known block number. If not specified, the latest header and peaks will be retrieved.
+    optional fixed32 block_num = 1;
+}
+
+
+// Represents the result of getting block inputs.
+message GetBlockInputsResult {
+    // The latest block header.
+    blockchain.BlockHeader latest_block_header = 1;
+
+    // Proof of each requested unauthenticated note's inclusion in a block, **if it existed in
+    // the store**.
+    repeated account.NoteInclusionInBlockProof unauthenticated_note_proofs = 2;
+
+    // The serialized chain MMR which includes proofs for all blocks referenced by the
+    // above note inclusion proofs as well as proofs for inclusion of the requested blocks
+    // referenced by the batches in the block.
+    bytes partial_block_chain = 3;
+
+    // The state commitments of the requested accounts and their authentication paths.
+    repeated shared.AccountWitness account_witnesses = 4;
+
+    // The requested nullifiers and their authentication paths.
+    repeated NullifierWitness nullifier_witnesses = 5;
+}
+
+// Represents the result of getting transaction inputs.
+message GetTransactionInputsResult {
+    // Account state proof.
+    AccountTransactionInputRecord account_state = 1;
+
+    // List of nullifiers that have been consumed.
+    repeated NullifierTransactionInputRecord nullifiers = 2;
+
+    // List of unauthenticated notes that were not found in the database.
+    repeated primitives.Digest found_unauthenticated_notes = 3;
+
+    // The node's current block height.
+    fixed32 block_height = 4;
+}
+
+
+// Represents the result of getting the unconsumed network notes.
+message GetUnconsumedNetworkNotesResult {
+    // An opaque pagination token.
+    //
+    // Use this in your next request to get the next
+    // set of data.
+    //
+    // Will be null once there is no more data remaining.
+    optional uint64 next_token = 1;
+
+    // The list of unconsumed network notes.
+    repeated account.NetworkNote notes = 2;
+}
+
+
+// Current blockchain data based on the requested block number.
+message GetCurrentBlockchainDataResult {
+    // Commitments that represent the current state according to the MMR.
+    repeated primitives.Digest current_peaks = 1;
+    // Current block header.
+    optional blockchain.BlockHeader current_block_header = 2;
+}
+
+
+// Represents the result of getting network account details by prefix.
+message GetNetworkAccountDetailsByPrefixResult {
+    // Account info.
+    optional account.AccountInfo details = 1;
+}
+
+// A nullifier returned as a response to the `GetTransactionInputs`.
+message NullifierTransactionInputRecord {
+    // The nullifier ID.
+    primitives.Digest nullifier = 1;
+
+    // The block at which the nullifier has been consumed, zero if not consumed.
+    fixed32 block_num = 2;
+}
+
+
+// An account returned as a response to the `GetTransactionInputs`.
+message AccountTransactionInputRecord {
+    // The account ID.
+    account.AccountId account_id = 1;
+
+    // The latest account commitment, zero commitment if the account doesn't exist.
+    primitives.Digest account_commitment = 2;
+}
+
+// A nullifier returned as a response to the `GetBlockInputs`.
+message NullifierWitness {
+    // The nullifier.
+    primitives.Digest nullifier = 1;
+
+    // The SMT proof to verify the nullifier's inclusion in the nullifier tree.
+    primitives.SmtOpening opening = 2;
+}
+
+// Represents the result of getting batch inputs.
+message GetBatchInputsResult {
+  // The block header that the transaction batch should reference.
+  blockchain.BlockHeader batch_reference_block_header = 1;
+
+  // Proof of each _found_ unauthenticated note's inclusion in a block.
+  repeated account.NoteInclusionInBlockProof note_proofs = 2;
+
+  // The serialized chain MMR which includes proofs for all blocks referenced by the
+  // above note inclusion proofs as well as proofs for inclusion of the blocks referenced
+  // by the transactions in the batch.
+  bytes partial_block_chain = 3;
 }

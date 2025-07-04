@@ -2,8 +2,9 @@
 syntax = "proto3";
 package ntx_builder;
 
-import "requests.proto";
-import "responses.proto";
+import "types/primitives.proto";
+import "types/account.proto";
+import "types/blockchain.proto";
 import "google/protobuf/empty.proto";
 
 service Api {
@@ -12,18 +13,51 @@ service Api {
     // When a block gets committed in the blockchain, the list of new network notes needs to be 
     // submitted to the NTB through this endpoint in order for it to track them and eventually 
     // consume them.
-    rpc SubmitNetworkNotes(requests.SubmitNetworkNotesRequest) returns (google.protobuf.Empty) {}
+    rpc SubmitNetworkNotes(SubmitNetworkNotes) returns (google.protobuf.Empty) {}
 
     // Update network transaction builder with transaction status changes.
     //
     // Any transaction that has been either committed or reverted is communicated to the NTB so
     // it can track the lifecycle of inflight transactions and notes correctly.
-    rpc UpdateTransactionStatus(requests.UpdateTransactionStatusRequest) returns (google.protobuf.Empty) {}
+    rpc UpdateTransactionStatus(UpdateTransactionStatus) returns (google.protobuf.Empty) {}
 
     // Update the status of network notes that were consumed externally.
     //
     // When a new transaction enters the mempool, the NTB needs to be notified of the nullifiers
     // that this transaction consumes through this endpoint. This way, the NTB can discard
     // nullified notes correctly.
-    rpc UpdateNetworkNotes(requests.UpdateNetworkNotesRequest) returns (google.protobuf.Empty) {}
+    rpc UpdateNetworkNotes(UpdateNetworkNotes) returns (google.protobuf.Empty) {}
+}
+
+// Submit a list of network notes to the network transaction builder.
+message SubmitNetworkNotes {    
+    // Id of the transaction that created the notes.
+    primitives.Digest transaction_id = 1;
+
+    // The network notes to submit.
+    repeated account.NetworkNote note = 2;
+}
+
+// Update network transaction builder with transaction status changes.
+message UpdateTransactionStatus {
+    // Represents the update for a single transaction.
+    message TransactionUpdate {
+        // Id of the transaction to update.
+        primitives.Digest transaction_id = 1;
+
+        // New status of the transaction.
+        blockchain.TransactionStatus status = 2;
+    }
+
+    // The list of updates for each transaction.
+    repeated TransactionUpdate updates = 1;
+}
+
+// Update the status of network notes that were consumed externally.
+message UpdateNetworkNotes {    
+    // Id of the transaction that consumed the notes.
+    primitives.Digest transaction_id = 1;
+
+    // The output nullifiers.
+    repeated primitives.Digest nullifiers = 2;
 }

@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.11.0 (TBD)
+
+### Changes
+
+- [BREAKING] Refactor protobuf messages (#????).
+
 ## v0.10.0 (TBD)
 
 ### Enhancements

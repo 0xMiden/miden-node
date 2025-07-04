@@ -7,7 +7,7 @@ package remote_prover;
 
 service Api {
     // Generates a proof for the requested payload.
-    rpc Prove(ProvingRequest) returns (ProvingResponse) {}
+    rpc Prove(Prove) returns (Proof) {}
 }
 
 // Enumeration of supported proof types.
@@ -23,7 +23,7 @@ enum ProofType {
 }
 
 // Request message for proof generation containing payload and proof type metadata.
-message ProvingRequest {
+message Prove {
     // Type of proof being requested, determines payload interpretation
     ProofType proof_type = 1;
 
@@ -36,7 +36,7 @@ message ProvingRequest {
 }
 
 // Response message containing the generated proof.
-message ProvingResponse {
+message Proof {
     // Serialized proof bytes.
     // - TRANSACTION: Returns an encoded ProvenTransaction.
     // - BATCH: Returns an encoded ProvenBatch.
@@ -49,11 +49,11 @@ message ProvingResponse {
 
 service ProxyStatusApi {
     // Returns the status of the proxy.
-    rpc Status(ProxyStatusRequest) returns (ProxyStatusResponse) {}
+    rpc Status(GetProxyStatus) returns (ProxyStatus) {}
 }
 
 // Request message for the status of the proxy.
-message ProxyStatusRequest {}
+message GetProxyStatus {}
 
 // Status of an individual worker in the proxy.
 message WorkerStatus {
@@ -80,7 +80,7 @@ enum WorkerHealthStatus {
 }
 
 // Response message containing the status of the proxy.
-message ProxyStatusResponse {
+message ProxyStatus {
     // The version of the proxy.
     string version = 1;
     // The proof type supported by this proxy.
@@ -94,14 +94,14 @@ message ProxyStatusResponse {
 
 service WorkerStatusApi {
     // Returns the status of the worker.
-    rpc Status(WorkerStatusRequest) returns (WorkerStatusResponse) {}
+    rpc Status(GetWorkerStatus) returns (WorkerStatus) {}
 }
 
 // Request message for the status of the worker.
-message WorkerStatusRequest {}
+message GetWorkerStatus {}
 
 // Response message containing the status of the worker.
-message WorkerStatusResponse {
+message WorkerStatus {
     // The version of the worker.
     string version = 1;
     // The proof type supported by this worker.

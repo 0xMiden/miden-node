@@ -1,0 +1,339 @@
+syntax = "proto3";
+package shared;
+
+import "types/account.proto";
+import "types/blockchain.proto";
+import "types/primitives.proto";
+
+// Returns the latest state proofs of the specified accounts.
+message GetAccountProofs {
+    // A list of account requests, including map keys + values.
+    repeated AccountRequest account_requests = 1;
+
+    // Optional flag to include account headers and account code in the response. If false, storage
+    // requests are also ignored. False by default.
+    optional bool include_headers = 2;
+
+    // Account code commitments corresponding to the last-known `AccountCode` for requested
+    // accounts. Responses will include only the ones that are not known to the caller.
+    // These are not associated with a specific account but rather, they will be matched against
+    // all requested accounts.
+    repeated primitives.Digest code_commitments = 3;
+}
+
+// Represents per-account requests where each account ID has its own list of
+// (storage_slot_index, map_keys) pairs.
+message AccountRequest {
+    // The account ID for this request.
+    account.AccountId account_id = 1;
+
+    // List of storage requests for this account.
+    repeated StorageRequest storage_requests = 2;
+}
+
+// Represents a storage slot index and the associated map keys.
+message StorageRequest {
+    // Storage slot index ([0..255])
+    uint32 storage_slot_index = 1;
+
+    // A list of map keys (Digests) associated with this storage slot.
+    repeated primitives.Digest map_keys = 2;
+}
+
+// Returns delta of the account states in the range from `from_block_num` (exclusive) to
+// `to_block_num` (inclusive).
+message GetAccountStateDelta {
+    // ID of the account for which the delta is requested.
+    account.AccountId account_id = 1;
+    // Block number from which the delta is requested (exclusive).
+    fixed32 from_block_num = 2;
+    // Block number up to which the delta is requested (inclusive).
+    fixed32 to_block_num = 3;
+}
+
+// Retrieves block data by given block number.
+message GetBlockByNumber {
+    // The block number of the target block.
+    fixed32 block_num = 1;
+}
+
+// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+message CheckNullifiersByPrefix {
+    // Number of bits used for nullifier prefix. Currently the only supported value is 16.
+    uint32 prefix_len = 1;
+    // List of nullifiers to check. Each nullifier is specified by its prefix with length equal
+    // to `prefix_len`.
+    repeated uint32 nullifiers = 2;
+    // Block number from which the nullifiers are requested (inclusive).
+    fixed32 block_num = 3;
+}
+
+// Returns a nullifier proof for each of the requested nullifiers.
+message CheckNullifiers {
+    // List of nullifiers to return proofs for.
+    repeated primitives.Digest nullifiers = 1;
+}
+
+
+// Returns the block header corresponding to the requested block number, as well as the merkle
+// path and current forest which validate the block's inclusion in the chain.
+//
+// The Merkle path is an MMR proof for the block's leaf, based on the current chain length.
+message GetBlockHeaderByNumber {
+    // The target block height, defaults to latest if not provided.
+    optional uint32 block_num = 1;
+    // Whether or not to return authentication data for the block header.
+    optional bool include_mmr_proof = 2;
+}
+
+
+// State synchronization request.
+//
+// Specifies state updates the client is interested in. The server will return the first block which
+// contains a note matching `note_tags` or the chain tip. And the corresponding updates to
+// `account_ids` for that block range.
+message SyncState {
+    // Last block known by the client. The response will contain data starting from the next block,
+    // until the first block which contains a note of matching the requested tag, or the chain tip
+    // if there are no notes.
+    fixed32 block_num = 1;
+
+    // Accounts' commitment to include in the response.
+    //
+    // An account commitment will be included if-and-only-if it is the latest update. Meaning it is
+    // possible there was an update to the account for the given range, but if it is not the latest,
+    // it won't be included in the response.
+    repeated account.AccountId account_ids = 2;
+
+    // Specifies the tags which the client is interested in.
+    repeated fixed32 note_tags = 3;
+}
+
+
+// Note synchronization request.
+//
+// Specifies note tags that client is interested in. The server will return the first block which
+// contains a note matching `note_tags` or the chain tip.
+message SyncNote {
+    // Last block known by the client. The response will contain data starting from the next block,
+    // until the first block which contains a note of matching the requested tag.
+    fixed32 block_num = 1;
+
+    // Specifies the tags which the client is interested in.
+    repeated fixed32 note_tags = 2;
+}
+
+
+// Submits proven transaction to the Miden network.
+message SubmitProvenTransaction {
+    // Transaction encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::transaction::proven_tx::ProvenTransaction].
+    bytes transaction = 1;
+}
+
+// Returns a list of notes matching the provided note IDs.
+message GetNotesById {
+    // List of notes to be queried from the database.
+    repeated primitives.Digest note_ids = 1;
+}
+
+
+
+// Returns the latest state of an account with the specified ID.
+message GetAccountDetails {
+    // Account ID to get details.
+    account.AccountId account_id = 1;
+}
+
+
+// Represents the result of checking nullifiers.
+message CheckNullifiersResult {
+    // Each requested nullifier has its corresponding nullifier proof at the same position.
+    repeated primitives.SmtOpening proofs = 1;
+}
+
+// Represents the result of checking nullifiers by prefix.
+message CheckNullifiersByPrefixResult {
+    // List of nullifiers matching the prefixes specified in the request.
+    repeated NullifierUpdate nullifiers = 1;
+}
+
+// Represents the result of getting a block header by block number.
+message GetBlockHeaderByNumberResult {
+    // The requested block header.
+    blockchain.BlockHeader block_header = 1;
+
+    // Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
+    optional primitives.MerklePath mmr_path = 2;
+
+    // Current chain length.
+    optional fixed32 chain_length = 3;
+}
+
+// Represents a single nullifier update.
+message NullifierUpdate {
+    // Nullifier ID.
+    primitives.Digest nullifier = 1;
+
+    // Block number.
+    fixed32 block_num = 2;
+}
+
+// Represents the result of syncing state request.
+message SyncStateResult {
+    // Number of the latest block in the chain.
+    fixed32 chain_tip = 1;
+
+    // Block header of the block with the first note matching the specified criteria.
+    blockchain.BlockHeader block_header = 2;
+
+    // Data needed to update the partial MMR from `request.block_num + 1` to `response.block_header.block_num`.
+    primitives.MmrDelta mmr_delta = 3;
+
+    // List of account commitments updated after `request.block_num + 1` but not after `response.block_header.block_num`.
+    repeated account.AccountSummary accounts = 5;
+
+    // List of transactions executed against requested accounts between `request.block_num + 1` and
+    // `response.block_header.block_num`.
+    repeated blockchain.TransactionSummary transactions = 6;
+
+    // List of all notes together with the Merkle paths from `response.block_header.note_root`.
+    repeated account.NoteSyncRecord notes = 7;
+}
+
+
+// Represents the result of syncing notes request.
+message SyncNoteResult {
+    // Number of the latest block in the chain.
+    fixed32 chain_tip = 1;
+
+    // Block header of the block with the first note matching the specified criteria.
+    blockchain.BlockHeader block_header = 2;
+
+    // Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
+    //
+    // An MMR proof can be constructed for the leaf of index `block_header.block_num` of
+    // an MMR of forest `chain_tip` with this path.
+    primitives.MerklePath mmr_path = 3;
+
+    // List of all notes together with the Merkle paths from `response.block_header.note_root`.
+    repeated account.NoteSyncRecord notes = 4;
+}
+
+
+// Represents the result of submitting proven transaction.
+message SubmitProvenTransactionResult {
+    // The node's current block height.
+    fixed32 block_height = 1;
+}
+
+
+// Represents the result of getting account proofs.
+message AccountProofs {
+    // Block number at which the state of the accounts is returned.
+    fixed32 block_num = 1;
+
+    // List of account state infos for the requested account keys.
+    repeated AccountProof account_proofs = 2;
+}
+
+// A single account proof returned as a response to `GetAccountProofs`.
+message AccountProof {
+    // The account witness for the current state commitment of one account ID.
+    AccountWitness witness = 1;
+
+    // State header for public accounts. Filled only if `include_headers` flag is set to `true`.
+    optional AccountStateHeader state_header = 2;
+}
+
+// State header for public accounts.
+message AccountStateHeader {
+    // Account header.
+    account.AccountHeader header = 1;
+
+    // Values of all account storage slots (max 255).
+    bytes storage_header = 2;
+
+    // Account code, returned only when none of the request's code commitments match
+    // the current one.
+    optional bytes account_code = 3;
+
+    // Storage slots information for this account
+    repeated StorageSlotMapProof storage_maps = 4;
+}
+
+// Represents a single storage slot with the requested keys and their respective values.
+message StorageSlotMapProof {
+    // The storage slot index ([0..255]).
+    uint32 storage_slot = 1;
+
+    // Merkle proof of the map value
+    bytes smt_proof = 2;
+}
+
+
+// Represents the result of getting account state delta.
+message GetAccountStateDeltaResult {
+    // The calculated account delta encoded using [winter_utils::Serializable] implementation
+    // for [miden_objects::account::delta::AccountDelta].
+    optional bytes delta = 1;
+}
+
+
+// Represents the result of getting block by number.
+message GetBlockByNumberResult {
+    // The requested block data encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::Block].
+    optional bytes block = 1;
+}
+
+
+// Represents the result of getting notes by IDs.
+message GetNotesByIdResult {
+    // Lists Note's returned by the database.
+    repeated account.CommittedNote notes = 1;
+}
+
+// Represents the result of getting account details.
+message GetAccountDetailsResult {
+    // Account info (with details for public accounts).
+    account.AccountInfo details = 1;
+}
+
+// An account witness returned as a response to the `GetBlockInputs`.
+message AccountWitness {
+    // Account ID for which this proof is requested.
+    account.AccountId account_id = 1;
+
+    // The account ID within the proof, which may be different from the above account ID.
+    // This can happen when the requested account ID's prefix matches the prefix of an existing
+    // account ID in the tree. Then the witness will prove inclusion of this witness ID in the tree.
+    account.AccountId witness_id = 2;
+
+    // The state commitment whose inclusion the witness proves.
+    primitives.Digest commitment = 3;
+
+    // The merkle path of the state commitment in the account tree.
+    primitives.MerklePath path = 4;
+}
+
+// Represents the status of the block producer.
+message BlockProducerStatus {
+    // The block producer's running version.
+    string version = 1;
+
+    // The block producer's status.
+    string status = 2;
+}
+
+// Represents the status of the store.
+message StoreStatus {
+    // The store's running version.
+    string version = 1;
+
+    // The store's status.
+    string status = 2;
+
+    // Number of the latest block in the chain.
+    fixed32 chain_tip = 3;
+}

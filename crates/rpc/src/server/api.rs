@@ -260,7 +260,7 @@ impl api_server::Api for RpcService {
     async fn get_account_details(
         &self,
         request: Request<shared_proto::GetAccountDetails>,
-    ) -> std::result::Result<Response<shared_proto::GetAccountDetailsResult>, Status> {
+    ) -> std::result::Result<Response<shared_proto::AccountDetails>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         // Validating account using conversion:

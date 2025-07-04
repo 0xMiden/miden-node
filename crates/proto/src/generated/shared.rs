@@ -309,7 +309,7 @@ pub struct GetNotesByIdResult {
 }
 /// Represents the result of getting account details.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetAccountDetailsResult {
+pub struct AccountDetails {
     /// Account info (with details for public accounts).
     #[prost(message, optional, tag = "1")]
     pub details: ::core::option::Option<super::account::AccountInfo>,

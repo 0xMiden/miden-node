@@ -18,7 +18,7 @@ service Api {
     rpc CheckNullifiersByPrefix(shared.CheckNullifiersByPrefix) returns (shared.NullifiersByPrefix) {}
 
     // Returns the latest state of an account with the specified ID.
-    rpc GetAccountDetails(shared.GetAccountDetails) returns (shared.GetAccountDetailsResult) {}
+    rpc GetAccountDetails(shared.GetAccountDetails) returns (shared.AccountDetails) {}
 
     // Returns the latest state proofs of the specified accounts.
     rpc GetAccountProofs(shared.GetAccountProofs) returns (shared.AccountProofs) {}

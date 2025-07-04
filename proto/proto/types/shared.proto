@@ -295,7 +295,7 @@ message GetNotesByIdResult {
 }
 
 // Represents the result of getting account details.
-message GetAccountDetailsResult {
+message AccountDetails {
     // Account info (with details for public accounts).
     account.AccountInfo details = 1;
 }

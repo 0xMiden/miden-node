@@ -7,8 +7,8 @@ use miden_node_proto::{
         account::AccountSummary,
         blockchain::TransactionSummary,
         shared::{
-            AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
-            CheckNullifiersByPrefix, GetAccountDetails, GetAccountDetailsResult, GetAccountProofs,
+            AccountDetails, AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber,
+            CheckNullifiers, CheckNullifiersByPrefix, GetAccountDetails, GetAccountProofs,
             GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById,
             GetNotesByIdResult, NullifierUpdate, Nullifiers, NullifiersByPrefix, StoreStatus,
             SyncNote, SyncNoteResult, SyncState, SyncStateResult,
@@ -261,12 +261,12 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_account_details(
         &self,
         request: Request<GetAccountDetails>,
-    ) -> Result<Response<GetAccountDetailsResult>, Status> {
+    ) -> Result<Response<AccountDetails>, Status> {
         let request = request.into_inner();
         let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
-        Ok(Response::new(GetAccountDetailsResult { details: Some((&account_info).into()) }))
+        Ok(Response::new(AccountDetails { details: Some((&account_info).into()) }))
     }
 
     #[instrument(

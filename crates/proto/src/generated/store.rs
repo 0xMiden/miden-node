@@ -354,7 +354,7 @@ pub mod rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::shared::GetAccountDetails>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetAccountDetailsResult>,
+            tonic::Response<super::super::shared::AccountDetails>,
             tonic::Status,
         > {
             self.inner
@@ -1046,7 +1046,7 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<super::super::shared::GetAccountDetails>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetAccountDetailsResult>,
+            tonic::Response<super::super::shared::AccountDetails>,
             tonic::Status,
         >;
         /// Returns the latest state proofs of the specified accounts.
@@ -1319,7 +1319,7 @@ pub mod rpc_server {
                     > tonic::server::UnaryService<
                         super::super::shared::GetAccountDetails,
                     > for GetAccountDetailsSvc<T> {
-                        type Response = super::super::shared::GetAccountDetailsResult;
+                        type Response = super::super::shared::AccountDetails;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

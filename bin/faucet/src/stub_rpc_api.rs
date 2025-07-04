@@ -3,8 +3,8 @@ use miden_node_proto::generated::{
     blockchain::BlockHeader,
     rpc::{RpcStatus, api_server},
     shared::{
-        AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
-        CheckNullifiersByPrefix, GetAccountDetails, GetAccountDetailsResult, GetAccountProofs,
+        AccountDetails, AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber,
+        CheckNullifiers, CheckNullifiersByPrefix, GetAccountDetails, GetAccountProofs,
         GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById,
         GetNotesByIdResult, Nullifiers, NullifiersByPrefix, ProvenTransaction,
         SubmitProvenTransaction, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
@@ -83,7 +83,7 @@ impl api_server::Api for StubRpcApi {
     async fn get_account_details(
         &self,
         _request: Request<GetAccountDetails>,
-    ) -> Result<Response<GetAccountDetailsResult>, Status> {
+    ) -> Result<Response<AccountDetails>, Status> {
         Err(Status::not_found("account not found"))
     }
 

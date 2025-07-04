@@ -4,6 +4,7 @@ use std::num::NonZeroUsize;
 pub use builder::NetworkTransactionBuilder;
 mod state;
 mod store;
+mod transaction;
 
 // CONSTANTS
 // =================================================================================================

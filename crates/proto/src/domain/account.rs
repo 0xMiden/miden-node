@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{Debug, Display, Formatter, Pointer};
 
 use miden_node_utils::formatting::format_opt;
 use miden_objects::{
@@ -291,6 +291,12 @@ pub type AccountPrefix = u32;
 /// Provides type safety for accounts that are meant for network execution.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct NetworkAccountPrefix(u32);
+
+impl std::fmt::Display for NetworkAccountPrefix {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Display::fmt(&self.0, f)
+    }
+}
 
 impl NetworkAccountPrefix {
     pub fn inner(&self) -> u32 {

@@ -51,10 +51,11 @@ use crate::{
     store::{StoreClient, StoreError},
 };
 
-mod block_producer;
+pub(crate) mod block_producer;
 mod data_store;
-mod prover;
+pub(crate) mod prover;
 mod server;
+mod store;
 
 type SharedPendingNotes = Arc<Mutex<PendingNotes>>;
 

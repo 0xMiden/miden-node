@@ -189,8 +189,7 @@ impl GenesisConfig {
 
     /// Convert the in memory representation into the new genesis state
     ///
-    /// Notice: Generates keys and returns the secret keys, hence this is not sane to be used
-    /// for production environments. There, you want to generate the keys externally.
+    /// Also returns the set of secrets for the generated accounts.
     pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), Error> {
         let version = self.version;
         let timestamp = self.timestamp;
@@ -203,7 +202,7 @@ impl GenesisConfig {
 
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
-        let mut secrets = Vec::<(Option<String>, Account, SecretKey, Word)>::new();
+        let mut secrets = Vec::new();
 
         // First setup all the faucets
         for FaucetConfig {

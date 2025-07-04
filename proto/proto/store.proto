@@ -105,7 +105,7 @@ service NtxBuilder {
     rpc GetCurrentBlockchainData(GetCurrentBlockchainData) returns (CurrentBlockchainData) {}
 
     // Returns the latest state of a network account with the specified account prefix.
-    rpc GetNetworkAccountDetailsByPrefix(GetNetworkAccountDetailsByPrefix) returns (GetNetworkAccountDetailsByPrefixResult) {}
+    rpc GetNetworkAccountDetailsByPrefix(GetNetworkAccountDetailsByPrefix) returns (NetworkAccountDetailsByPrefix) {}
 }
 
 // Applies changes of a new block to the DB and in-memory data structures.
@@ -249,7 +249,7 @@ message CurrentBlockchainData {
 
 
 // Represents the result of getting network account details by prefix.
-message GetNetworkAccountDetailsByPrefixResult {
+message NetworkAccountDetailsByPrefix {
     // Account info.
     optional account.AccountInfo details = 1;
 }

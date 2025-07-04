@@ -6,8 +6,8 @@ use miden_node_proto::{
         shared::{BlockHeaderByNumber, GetBlockHeaderByNumber},
         store::{
             CurrentBlockchainData, GetCurrentBlockchainData, GetNetworkAccountDetailsByPrefix,
-            GetNetworkAccountDetailsByPrefixResult, GetUnconsumedNetworkNotes,
-            UnconsumedNetworkNotes, ntx_builder_server,
+            GetUnconsumedNetworkNotes, NetworkAccountDetailsByPrefix, UnconsumedNetworkNotes,
+            ntx_builder_server,
         },
     },
 };
@@ -94,7 +94,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     async fn get_network_account_details_by_prefix(
         &self,
         request: Request<GetNetworkAccountDetailsByPrefix>,
-    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResult>, Status> {
+    ) -> Result<Response<NetworkAccountDetailsByPrefix>, Status> {
         let request = request.into_inner();
 
         // Validate that the call is for a valid network account prefix
@@ -106,7 +106,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let account_info: Option<AccountInfo> =
             self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
 
-        Ok(Response::new(GetNetworkAccountDetailsByPrefixResult {
+        Ok(Response::new(NetworkAccountDetailsByPrefix {
             details: account_info.map(|acc| (&acc).into()),
         }))
     }

@@ -152,7 +152,7 @@ pub struct CurrentBlockchainData {
 }
 /// Represents the result of getting network account details by prefix.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetNetworkAccountDetailsByPrefixResult {
+pub struct NetworkAccountDetailsByPrefix {
     /// Account info.
     #[prost(message, optional, tag = "1")]
     pub details: ::core::option::Option<super::account::AccountInfo>,
@@ -983,7 +983,7 @@ pub mod ntx_builder_client {
             &mut self,
             request: impl tonic::IntoRequest<super::GetNetworkAccountDetailsByPrefix>,
         ) -> std::result::Result<
-            tonic::Response<super::GetNetworkAccountDetailsByPrefixResult>,
+            tonic::Response<super::NetworkAccountDetailsByPrefix>,
             tonic::Status,
         > {
             self.inner
@@ -2207,7 +2207,7 @@ pub mod ntx_builder_server {
             &self,
             request: tonic::Request<super::GetNetworkAccountDetailsByPrefix>,
         ) -> std::result::Result<
-            tonic::Response<super::GetNetworkAccountDetailsByPrefixResult>,
+            tonic::Response<super::NetworkAccountDetailsByPrefix>,
             tonic::Status,
         >;
     }
@@ -2448,7 +2448,7 @@ pub mod ntx_builder_server {
                     > tonic::server::UnaryService<
                         super::GetNetworkAccountDetailsByPrefix,
                     > for GetNetworkAccountDetailsByPrefixSvc<T> {
-                        type Response = super::GetNetworkAccountDetailsByPrefixResult;
+                        type Response = super::NetworkAccountDetailsByPrefix;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

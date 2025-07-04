@@ -10,7 +10,7 @@ import "google/protobuf/empty.proto";
 
 service Api {
     // Returns a nullifier proof for each of the requested nullifiers.
-    rpc CheckNullifiers(shared.CheckNullifiers) returns (shared.CheckNullifiersResult) {}
+    rpc CheckNullifiers(shared.CheckNullifiers) returns (shared.Nullifiers) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //

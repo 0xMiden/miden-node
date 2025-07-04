@@ -91,7 +91,7 @@ impl api_server::Api for RpcService {
     async fn check_nullifiers(
         &self,
         request: Request<shared_proto::CheckNullifiers>,
-    ) -> Result<Response<shared_proto::CheckNullifiersResult>, Status> {
+    ) -> Result<Response<shared_proto::Nullifiers>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;

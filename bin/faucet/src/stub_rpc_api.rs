@@ -4,11 +4,10 @@ use miden_node_proto::generated::{
     rpc::{RpcStatus, api_server},
     shared::{
         AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
-        CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, CheckNullifiersResult,
-        GetAccountDetails, GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta,
-        GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult,
-        ProvenTransaction, SubmitProvenTransaction, SyncNote, SyncNoteResult, SyncState,
-        SyncStateResult,
+        CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, GetAccountDetails,
+        GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta, GetBlockByNumber,
+        GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult, Nullifiers, ProvenTransaction,
+        SubmitProvenTransaction, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
     },
 };
 use miden_node_utils::cors::cors_for_grpc_web_layer;
@@ -27,7 +26,7 @@ impl api_server::Api for StubRpcApi {
     async fn check_nullifiers(
         &self,
         _request: Request<CheckNullifiers>,
-    ) -> Result<Response<CheckNullifiersResult>, Status> {
+    ) -> Result<Response<Nullifiers>, Status> {
         unimplemented!();
     }
 

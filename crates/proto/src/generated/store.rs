@@ -301,7 +301,7 @@ pub mod rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::shared::CheckNullifiers>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::CheckNullifiersResult>,
+            tonic::Response<super::super::shared::Nullifiers>,
             tonic::Status,
         > {
             self.inner
@@ -1028,7 +1028,7 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<super::super::shared::CheckNullifiers>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::CheckNullifiersResult>,
+            tonic::Response<super::super::shared::Nullifiers>,
             tonic::Status,
         >;
         /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
@@ -1222,7 +1222,7 @@ pub mod rpc_server {
                         T: Rpc,
                     > tonic::server::UnaryService<super::super::shared::CheckNullifiers>
                     for CheckNullifiersSvc<T> {
-                        type Response = super::super::shared::CheckNullifiersResult;
+                        type Response = super::super::shared::Nullifiers;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

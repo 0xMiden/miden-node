@@ -147,7 +147,7 @@ message GetAccountDetails {
 
 
 // Represents the result of checking nullifiers.
-message CheckNullifiersResult {
+message Nullifiers {
     // Each requested nullifier has its corresponding nullifier proof at the same position.
     repeated primitives.SmtOpening proofs = 1;
 }

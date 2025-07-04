@@ -153,7 +153,7 @@ pub struct GetAccountDetails {
 }
 /// Represents the result of checking nullifiers.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CheckNullifiersResult {
+pub struct Nullifiers {
     /// Each requested nullifier has its corresponding nullifier proof at the same position.
     #[prost(message, repeated, tag = "1")]
     pub proofs: ::prost::alloc::vec::Vec<super::primitives::SmtOpening>,

@@ -8,10 +8,10 @@ use miden_node_proto::{
         blockchain::TransactionSummary,
         shared::{
             AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
-            CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, CheckNullifiersResult,
-            GetAccountDetails, GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta,
-            GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult,
-            NullifierUpdate, StoreStatus, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
+            CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, GetAccountDetails,
+            GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta, GetBlockByNumber,
+            GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult, NullifierUpdate, Nullifiers,
+            StoreStatus, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
         },
         store::rpc_server,
     },
@@ -71,7 +71,7 @@ impl rpc_server::Rpc for StoreApi {
     async fn check_nullifiers(
         &self,
         request: Request<CheckNullifiers>,
-    ) -> Result<Response<CheckNullifiersResult>, Status> {
+    ) -> Result<Response<Nullifiers>, Status> {
         // Validate the nullifiers and convert them to Digest values. Stop on first error.
         let request = request.into_inner();
 
@@ -80,7 +80,7 @@ impl rpc_server::Rpc for StoreApi {
         // Query the state for the request's nullifiers
         let proofs = self.state.check_nullifiers(&nullifiers).await;
 
-        Ok(Response::new(CheckNullifiersResult { proofs: convert(proofs) }))
+        Ok(Response::new(Nullifiers { proofs: convert(proofs) }))
     }
 
     /// Returns nullifiers that match the specified prefixes and have been consumed.

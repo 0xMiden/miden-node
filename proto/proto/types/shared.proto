@@ -281,7 +281,7 @@ message AccountStateDelta {
 
 
 // Represents the result of getting block by number.
-message GetBlockByNumberResult {
+message BlockByNumber {
     // The requested block data encoded using [winter_utils::Serializable] implementation for
     // [miden_objects::block::Block].
     optional bytes block = 1;

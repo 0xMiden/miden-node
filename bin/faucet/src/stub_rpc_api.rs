@@ -3,12 +3,12 @@ use miden_node_proto::generated::{
     blockchain::BlockHeader,
     rpc::{RpcStatus, api_server},
     shared::{
-        AccountProofs, AccountStateDelta, BlockHeaderByNumber, CheckNullifiers,
+        AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
         CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, CheckNullifiersResult,
         GetAccountDetails, GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta,
-        GetBlockByNumber, GetBlockByNumberResult, GetBlockHeaderByNumber, GetNotesById,
-        GetNotesByIdResult, ProvenTransaction, SubmitProvenTransaction, SyncNote, SyncNoteResult,
-        SyncState, SyncStateResult,
+        GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult,
+        ProvenTransaction, SubmitProvenTransaction, SyncNote, SyncNoteResult, SyncState,
+        SyncStateResult,
     },
 };
 use miden_node_utils::cors::cors_for_grpc_web_layer;
@@ -91,7 +91,7 @@ impl api_server::Api for StubRpcApi {
     async fn get_block_by_number(
         &self,
         _request: Request<GetBlockByNumber>,
-    ) -> Result<Response<GetBlockByNumberResult>, Status> {
+    ) -> Result<Response<BlockByNumber>, Status> {
         unimplemented!()
     }
 

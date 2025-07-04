@@ -286,7 +286,7 @@ impl api_server::Api for RpcService {
     async fn get_block_by_number(
         &self,
         request: Request<shared_proto::GetBlockByNumber>,
-    ) -> Result<Response<shared_proto::GetBlockByNumberResult>, Status> {
+    ) -> Result<Response<shared_proto::BlockByNumber>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);

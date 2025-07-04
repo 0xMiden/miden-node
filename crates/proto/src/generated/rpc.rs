@@ -233,7 +233,7 @@ pub mod api_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::shared::GetBlockByNumber>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetBlockByNumberResult>,
+            tonic::Response<super::super::shared::BlockByNumber>,
             tonic::Status,
         > {
             self.inner
@@ -475,7 +475,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::shared::GetBlockByNumber>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetBlockByNumberResult>,
+            tonic::Response<super::super::shared::BlockByNumber>,
             tonic::Status,
         >;
         /// Retrieves block header by given block number. Optionally, it also returns the MMR path
@@ -869,7 +869,7 @@ pub mod api_server {
                         T: Api,
                     > tonic::server::UnaryService<super::super::shared::GetBlockByNumber>
                     for GetBlockByNumberSvc<T> {
-                        type Response = super::super::shared::GetBlockByNumberResult;
+                        type Response = super::super::shared::BlockByNumber;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

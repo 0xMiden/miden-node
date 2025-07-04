@@ -7,12 +7,11 @@ use miden_node_proto::{
         account::AccountSummary,
         blockchain::TransactionSummary,
         shared::{
-            AccountProofs, AccountStateDelta, BlockHeaderByNumber, CheckNullifiers,
+            AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
             CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, CheckNullifiersResult,
             GetAccountDetails, GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta,
-            GetBlockByNumber, GetBlockByNumberResult, GetBlockHeaderByNumber, GetNotesById,
-            GetNotesByIdResult, NullifierUpdate, StoreStatus, SyncNote, SyncNoteResult, SyncState,
-            SyncStateResult,
+            GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult,
+            NullifierUpdate, StoreStatus, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
         },
         store::rpc_server,
     },
@@ -282,14 +281,14 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_block_by_number(
         &self,
         request: Request<GetBlockByNumber>,
-    ) -> Result<Response<GetBlockByNumberResult>, Status> {
+    ) -> Result<Response<BlockByNumber>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
 
         let block = self.state.load_block(request.block_num.into()).await?;
 
-        Ok(Response::new(GetBlockByNumberResult { block }))
+        Ok(Response::new(BlockByNumber { block }))
     }
 
     #[instrument(

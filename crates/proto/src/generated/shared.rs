@@ -294,7 +294,7 @@ pub struct AccountStateDelta {
 }
 /// Represents the result of getting block by number.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetBlockByNumberResult {
+pub struct BlockByNumber {
     /// The requested block data encoded using \[winter_utils::Serializable\] implementation for
     /// \[miden_objects::block::Block\].
     #[prost(bytes = "vec", optional, tag = "1")]

@@ -34,7 +34,7 @@ miden-node bundled bootstrap \
   --accounts-directory .
 ```
 
-You can also configure the account and asset data in the genesis block by passing in toml file.
+You can also configure the account and asset data in the genesis block by passing in a toml configuration file.
 This is particularly useful for setting up test scenarios without requiring multiple rounds of
 transactions to achieve this state.
 

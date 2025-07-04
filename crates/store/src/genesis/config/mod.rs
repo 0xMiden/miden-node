@@ -227,7 +227,7 @@ impl GenesisConfig {
             let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
                 .account_type(account_type)
                 .storage_mode(account_storage_mode)
-                .with_component(auth)
+                .with_auth_component(auth)
                 .with_component(component)
                 .build()?;
 

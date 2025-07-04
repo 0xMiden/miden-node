@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use super::generated::api_client::ApiClient;
 use crate::{
     RemoteProverClientError,
-    remote_prover::generated::{ProofType, ProvingRequest, ProvingResponse},
+    remote_prover::generated::{Proof, ProofType, Prove},
 };
 
 // REMOTE BATCH PROVER
@@ -229,19 +229,19 @@ impl RemoteBatchProver {
 // CONVERSIONS
 // ================================================================================================
 
-impl From<ProposedBatch> for ProvingRequest {
+impl From<ProposedBatch> for Prove {
     fn from(proposed_batch: ProposedBatch) -> Self {
-        ProvingRequest {
+        Prove {
             proof_type: ProofType::Batch.into(),
             payload: proposed_batch.to_bytes(),
         }
     }
 }
 
-impl TryFrom<ProvingResponse> for ProvenBatch {
+impl TryFrom<Proof> for ProvenBatch {
     type Error = DeserializationError;
 
-    fn try_from(response: ProvingResponse) -> Result<Self, Self::Error> {
+    fn try_from(response: Proof) -> Result<Self, Self::Error> {
         ProvenBatch::read_from_bytes(&response.payload)
     }
 }

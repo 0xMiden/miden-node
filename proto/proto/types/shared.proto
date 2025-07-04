@@ -273,7 +273,7 @@ message StorageSlotMapProof {
 
 
 // Represents the result of getting account state delta.
-message GetAccountStateDeltaResult {
+message AccountStateDelta {
     // The calculated account delta encoded using [winter_utils::Serializable] implementation
     // for [miden_objects::account::delta::AccountDelta].
     optional bytes delta = 1;

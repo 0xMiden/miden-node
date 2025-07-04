@@ -6,11 +6,11 @@ use std::{
 use futures::{StreamExt, stream};
 use miden_node_proto::generated::{
     account as account_proto,
-    digest::Digest,
-    requests::{
-        CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
+    primitives::Digest,
+    shared::{
+        CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, GetNotesById, SyncNote, SyncState,
+        SyncStateResult,
     },
-    responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
     store::rpc_client::RpcClient,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
@@ -77,7 +77,7 @@ pub async fn sync_state(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
     block_num: u32,
-) -> (Duration, SyncStateResponse) {
+) -> (Duration, SyncStateResult) {
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
@@ -88,7 +88,7 @@ pub async fn sync_state(
         .map(|id| account_proto::AccountId { id: id.to_bytes() })
         .collect::<Vec<_>>();
 
-    let sync_request = SyncStateRequest { block_num, note_tags, account_ids };
+    let sync_request = SyncState { block_num, note_tags, account_ids };
 
     let start = Instant::now();
     let response = api_client.sync_state(sync_request).await.unwrap();
@@ -142,7 +142,7 @@ pub async fn sync_notes(
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
         .collect::<Vec<_>>();
-    let sync_request = SyncNoteRequest { block_num: 0, note_tags };
+    let sync_request = SyncNote { block_num: 0, note_tags };
 
     let start = Instant::now();
     api_client.sync_notes(sync_request).await.unwrap();
@@ -184,7 +184,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 
         // get the notes nullifiers.
         let notes = store_client
-            .get_notes_by_id(GetNotesByIdRequest { note_ids })
+            .get_notes_by_id(GetNotesById { note_ids })
             .await
             .unwrap()
             .into_inner()
@@ -240,8 +240,8 @@ pub async fn bench_check_nullifiers_by_prefix(
 async fn check_nullifiers_by_prefix(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers_prefixes: Vec<u32>,
-) -> (Duration, CheckNullifiersByPrefixResponse) {
-    let sync_request = CheckNullifiersByPrefixRequest {
+) -> (Duration, CheckNullifiersByPrefixResult) {
+    let sync_request = CheckNullifiersByPrefix {
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,
         block_num: 0,

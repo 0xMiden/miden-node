@@ -3,15 +3,12 @@ use std::num::{NonZero, TryFromIntError};
 use miden_node_proto::{
     domain::account::{AccountInfo, NetworkAccountPrefix},
     generated::{
-        requests::{
-            GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
-            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
+        shared::{GetBlockHeaderByNumber, GetBlockHeaderByNumberResult},
+        store::{
+            GetCurrentBlockchainData, GetCurrentBlockchainDataResult,
+            GetNetworkAccountDetailsByPrefix, GetNetworkAccountDetailsByPrefixResult,
+            GetUnconsumedNetworkNotes, GetUnconsumedNetworkNotesResult, ntx_builder_server,
         },
-        responses::{
-            GetBlockHeaderByNumberResponse, GetCurrentBlockchainDataResponse,
-            GetNetworkAccountDetailsByPrefixResponse, GetUnconsumedNetworkNotesResponse,
-        },
-        store::ntx_builder_server,
     },
 };
 use miden_node_utils::ErrorReport;
@@ -43,8 +40,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<GetBlockHeaderByNumberRequest>,
-    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        request: Request<GetBlockHeaderByNumber>,
+    ) -> Result<Response<GetBlockHeaderByNumberResult>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -63,8 +60,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_current_blockchain_data(
         &self,
-        request: Request<GetCurrentBlockchainDataRequest>,
-    ) -> Result<Response<GetCurrentBlockchainDataResponse>, Status> {
+        request: Request<GetCurrentBlockchainData>,
+    ) -> Result<Response<GetCurrentBlockchainDataResult>, Status> {
         let block_num = request.into_inner().block_num.map(BlockNumber::from);
 
         let response = match self
@@ -73,11 +70,11 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .await
             .map_err(internal_error)?
         {
-            Some((header, peaks)) => GetCurrentBlockchainDataResponse {
+            Some((header, peaks)) => GetCurrentBlockchainDataResult {
                 current_peaks: peaks.peaks().iter().map(Into::into).collect(),
                 current_block_header: Some(header.into()),
             },
-            None => GetCurrentBlockchainDataResponse {
+            None => GetCurrentBlockchainDataResult {
                 current_peaks: vec![],
                 current_block_header: None,
             },
@@ -96,8 +93,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_network_account_details_by_prefix(
         &self,
-        request: Request<GetNetworkAccountDetailsByPrefixRequest>,
-    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResponse>, Status> {
+        request: Request<GetNetworkAccountDetailsByPrefix>,
+    ) -> Result<Response<GetNetworkAccountDetailsByPrefixResult>, Status> {
         let request = request.into_inner();
 
         // Validate that the call is for a valid network account prefix
@@ -109,7 +106,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let account_info: Option<AccountInfo> =
             self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
 
-        Ok(Response::new(GetNetworkAccountDetailsByPrefixResponse {
+        Ok(Response::new(GetNetworkAccountDetailsByPrefixResult {
             details: account_info.map(|acc| (&acc).into()),
         }))
     }
@@ -123,8 +120,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_unconsumed_network_notes(
         &self,
-        request: Request<GetUnconsumedNetworkNotesRequest>,
-    ) -> Result<Response<GetUnconsumedNetworkNotesResponse>, Status> {
+        request: Request<GetUnconsumedNetworkNotes>,
+    ) -> Result<Response<GetUnconsumedNetworkNotesResult>, Status> {
         let request = request.into_inner();
         let state = self.state.clone();
 
@@ -147,7 +144,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             network_notes.push(note.into());
         }
 
-        Ok(Response::new(GetUnconsumedNetworkNotesResponse {
+        Ok(Response::new(GetUnconsumedNetworkNotesResult {
             notes: network_notes,
             next_token: next_page.token,
         }))

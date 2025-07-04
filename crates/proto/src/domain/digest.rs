@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use hex::{FromHex, ToHex};
 use miden_objects::{Digest, Felt, StarkField, note::NoteId};
 
-use crate::{errors::ConversionError, generated::digest as proto};
+use crate::{errors::ConversionError, generated::primitives as proto};
 
 // CONSTANTS
 // ================================================================================================
@@ -207,7 +207,7 @@ mod test {
     use hex::{FromHex, ToHex};
     use proptest::prelude::*;
 
-    use crate::generated::digest as proto;
+    use crate::generated::primitives as proto;
 
     #[test]
     fn hex_digest() {

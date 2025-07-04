@@ -25,7 +25,7 @@ service Api {
 
     // Returns delta of the account states in the range from `from_block_num` (exclusive) to
     // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(shared.GetAccountStateDelta) returns (shared.GetAccountStateDeltaResult) {}
+    rpc GetAccountStateDelta(shared.GetAccountStateDelta) returns (shared.AccountStateDelta) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(shared.GetBlockByNumber) returns (shared.GetBlockByNumberResult) {}

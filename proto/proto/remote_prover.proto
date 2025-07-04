@@ -56,7 +56,7 @@ service ProxyStatusApi {
 message GetProxyStatus {}
 
 // Status of an individual worker in the proxy.
-message WorkerStatus {
+message ProxyWorkerStatus {
     // The address of the worker.
     string address = 1;
     // The version of the worker.
@@ -86,7 +86,7 @@ message ProxyStatus {
     // The proof type supported by this proxy.
     remote_prover.ProofType supported_proof_type = 2;
     // The list of workers managed by this proxy.
-    repeated WorkerStatus workers = 3;
+    repeated ProxyWorkerStatus workers = 3;
 }
 
 // WORKER STATUS SERVICE

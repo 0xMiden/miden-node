@@ -28,7 +28,7 @@ service Rpc {
 
     // Returns delta of the account states in the range from `from_block_num` (exclusive) to
     // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(shared.GetAccountStateDelta) returns (shared.GetAccountStateDeltaResult) {}
+    rpc GetAccountStateDelta(shared.GetAccountStateDelta) returns (shared.AccountStateDelta) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(shared.GetBlockByNumber) returns (shared.GetBlockByNumberResult) {}
@@ -82,13 +82,13 @@ service BlockProducer {
     rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
 
     // Returns data required to prove the next block.
-    rpc GetBlockInputs(GetBlockInputs) returns (GetBlockInputsResult) {}
+    rpc GetBlockInputs(GetBlockInputs) returns (BlockInputs) {}
 
     // Returns the inputs for a transaction batch.
-    rpc GetBatchInputs(GetBatchInputs) returns (GetBatchInputsResult) {}
+    rpc GetBatchInputs(GetBatchInputs) returns (BatchInputs) {}
 
     // Returns data required to validate a new transaction.
-    rpc GetTransactionInputs(GetTransactionInputs) returns (GetTransactionInputsResult) {}
+    rpc GetTransactionInputs(GetTransactionInputs) returns (TransactionInputs) {}
 }
 
 // Store API for the network transaction builder component
@@ -188,7 +188,7 @@ message GetCurrentBlockchainData {
 
 
 // Represents the result of getting block inputs.
-message GetBlockInputsResult {
+message BlockInputs {
     // The latest block header.
     blockchain.BlockHeader latest_block_header = 1;
 
@@ -209,7 +209,7 @@ message GetBlockInputsResult {
 }
 
 // Represents the result of getting transaction inputs.
-message GetTransactionInputsResult {
+message TransactionInputs {
     // Account state proof.
     AccountTransactionInputRecord account_state = 1;
 
@@ -283,7 +283,7 @@ message NullifierWitness {
 }
 
 // Represents the result of getting batch inputs.
-message GetBatchInputsResult {
+message BatchInputs {
   // The block header that the transaction batch should reference.
   blockchain.BlockHeader batch_reference_block_header = 1;
 

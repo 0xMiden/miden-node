@@ -1,11 +1,8 @@
 use miden_node_proto::{
     domain::note::NetworkNote,
     generated::{
+        blockchain as blockchain_proto, ntx_builder as ntx_builder_proto,
         ntx_builder::api_server::Api,
-        requests::{
-            SubmitNetworkNotesRequest, UpdateNetworkNotesRequest, UpdateTransactionStatusRequest,
-        },
-        transaction::TransactionStatus,
     },
     try_convert,
 };
@@ -37,7 +34,7 @@ impl Api for NtxBuilderApi {
     #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.submit_network_notes", skip_all, err)]
     async fn submit_network_notes(
         &self,
-        request: Request<SubmitNetworkNotesRequest>,
+        request: Request<ntx_builder_proto::SubmitNetworkNotes>,
     ) -> Result<Response<()>, Status> {
         let req = request.into_inner();
 
@@ -54,7 +51,7 @@ impl Api for NtxBuilderApi {
     #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.update_network_notes", skip_all, err)]
     async fn update_network_notes(
         &self,
-        request: Request<UpdateNetworkNotesRequest>,
+        request: Request<ntx_builder_proto::UpdateNetworkNotes>,
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
@@ -88,7 +85,7 @@ impl Api for NtxBuilderApi {
     #[instrument(parent = None, target = COMPONENT, name = "ntx_builder.update_transaction_status", skip_all, err)]
     async fn update_transaction_status(
         &self,
-        request: Request<UpdateTransactionStatusRequest>,
+        request: Request<ntx_builder_proto::UpdateTransactionStatus>,
     ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
@@ -106,7 +103,7 @@ impl Api for NtxBuilderApi {
                 })?;
 
             match tx.status() {
-                TransactionStatus::Committed => {
+                blockchain_proto::TransactionStatus::Committed => {
                     let n = state.commit_inflight(tx_id);
                     info!(
                         target: COMPONENT,
@@ -115,7 +112,7 @@ impl Api for NtxBuilderApi {
                         "Committed notes notes for transaction"
                     );
                 },
-                TransactionStatus::Reverted => {
+                blockchain_proto::TransactionStatus::Reverted => {
                     let n = state.rollback_inflight(tx_id);
                     info!(
                         target: COMPONENT,

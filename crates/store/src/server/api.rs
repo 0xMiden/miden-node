@@ -28,7 +28,7 @@ impl StoreApi {
     pub async fn get_block_header_by_number_inner(
         &self,
         request: Request<shared_proto::GetBlockHeaderByNumber>,
-    ) -> Result<Response<shared_proto::GetBlockHeaderByNumberResult>, Status> {
+    ) -> Result<Response<shared_proto::BlockHeaderByNumber>, Status> {
         info!(target: COMPONENT, ?request);
         let request = request.into_inner();
 
@@ -39,7 +39,7 @@ impl StoreApi {
             .await
             .map_err(internal_error)?;
 
-        Ok(Response::new(shared_proto::GetBlockHeaderByNumberResult {
+        Ok(Response::new(shared_proto::BlockHeaderByNumber {
             block_header: block_header.map(Into::into),
             chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
             mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),

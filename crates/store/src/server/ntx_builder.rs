@@ -3,7 +3,7 @@ use std::num::{NonZero, TryFromIntError};
 use miden_node_proto::{
     domain::account::{AccountInfo, NetworkAccountPrefix},
     generated::{
-        shared::{GetBlockHeaderByNumber, GetBlockHeaderByNumberResult},
+        shared::{BlockHeaderByNumber, GetBlockHeaderByNumber},
         store::{
             GetCurrentBlockchainData, GetCurrentBlockchainDataResult,
             GetNetworkAccountDetailsByPrefix, GetNetworkAccountDetailsByPrefixResult,
@@ -41,7 +41,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     async fn get_block_header_by_number(
         &self,
         request: Request<GetBlockHeaderByNumber>,
-    ) -> Result<Response<GetBlockHeaderByNumberResult>, Status> {
+    ) -> Result<Response<BlockHeaderByNumber>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 

@@ -41,7 +41,7 @@ impl block_producer_server::BlockProducer for StoreApi {
     async fn get_block_header_by_number(
         &self,
         request: Request<shared_proto::GetBlockHeaderByNumber>,
-    ) -> Result<Response<shared_proto::GetBlockHeaderByNumberResult>, Status> {
+    ) -> Result<Response<shared_proto::BlockHeaderByNumber>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 

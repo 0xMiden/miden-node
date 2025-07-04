@@ -6,7 +6,10 @@ use miden_node_proto::{
     domain::mempool::MempoolEvent,
     generated::{
         block_producer::{MempoolEvent as ProtoMempoolEvent, MempoolSubscription, api_server},
-        shared::{BlockProducerStatus, SubmitProvenTransaction, ProvenTransaction as ProtoProvenTransaction},
+        shared::{
+            BlockProducerStatus, ProvenTransaction as ProtoProvenTransaction,
+            SubmitProvenTransaction,
+        },
     },
     ntx_builder,
 };
@@ -364,10 +367,14 @@ impl BlockProducerRpcServer {
 
         // Launch a task for updating the mempool, and send the update to the network transaction
         // builder
-        let submit_tx_response =
-            self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-                ProtoProvenTransaction { block_height: block_height.as_u32() }
-            });
+        let submit_tx_response = self
+            .mempool
+            .lock()
+            .await
+            .lock()
+            .await
+            .add_transaction(tx)
+            .map(|block_height| ProtoProvenTransaction { block_height: block_height.as_u32() });
 
         if let Some(mut ntb_client) = self.ntx_builder.clone() {
             if let Err(err) =
@@ -391,7 +398,7 @@ mod test {
     use miden_air::{ExecutionProof, HashFunction};
     use miden_node_proto::generated::{
         block_producer::api_client as block_producer_client,
-        shared::{SubmitProvenTransaction, ProtoProvenTransaction},
+        shared::{ProvenTransaction as ProtoProvenTransaction, SubmitProvenTransaction},
     };
     use miden_node_store::{GenesisState, Store};
     use miden_objects::{

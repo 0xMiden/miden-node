@@ -3,12 +3,12 @@ use miden_node_proto::generated::{
     blockchain::BlockHeader,
     rpc::{RpcStatus, api_server},
     shared::{
-        AccountProofs, AccountStateDelta, CheckNullifiers, CheckNullifiersByPrefix,
-        CheckNullifiersByPrefixResult, CheckNullifiersResult, GetAccountDetails,
-        GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta, GetBlockByNumber,
-        GetBlockByNumberResult, GetBlockHeaderByNumber, GetBlockHeaderByNumberResult, GetNotesById,
-        GetNotesByIdResult, SubmitProvenTransaction, SubmitProvenTransactionResult, SyncNote,
-        SyncNoteResult, SyncState, SyncStateResult,
+        AccountProofs, AccountStateDelta, BlockHeaderByNumber, CheckNullifiers,
+        CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, CheckNullifiersResult,
+        GetAccountDetails, GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta,
+        GetBlockByNumber, GetBlockByNumberResult, GetBlockHeaderByNumber, GetNotesById,
+        GetNotesByIdResult, ProvenTransaction, SubmitProvenTransaction, SyncNote, SyncNoteResult,
+        SyncState, SyncStateResult,
     },
 };
 use miden_node_utils::cors::cors_for_grpc_web_layer;
@@ -41,12 +41,12 @@ impl api_server::Api for StubRpcApi {
     async fn get_block_header_by_number(
         &self,
         _request: Request<GetBlockHeaderByNumber>,
-    ) -> Result<Response<GetBlockHeaderByNumberResult>, Status> {
+    ) -> Result<Response<BlockHeaderByNumber>, Status> {
         let mock_chain = MockChain::new();
 
         let block_header = BlockHeader::from(mock_chain.latest_block_header()).into();
 
-        Ok(Response::new(GetBlockHeaderByNumberResult {
+        Ok(Response::new(BlockHeaderByNumber {
             block_header,
             mmr_path: None,
             chain_length: None,
@@ -77,8 +77,8 @@ impl api_server::Api for StubRpcApi {
     async fn submit_proven_transaction(
         &self,
         _request: Request<SubmitProvenTransaction>,
-    ) -> Result<Response<SubmitProvenTransactionResult>, Status> {
-        Ok(Response::new(SubmitProvenTransactionResult { block_height: 0 }))
+    ) -> Result<Response<ProvenTransaction>, Status> {
+        Ok(Response::new(ProvenTransaction { block_height: 0 }))
     }
 
     async fn get_account_details(

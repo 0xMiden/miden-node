@@ -167,7 +167,7 @@ pub struct CheckNullifiersByPrefixResult {
 }
 /// Represents the result of getting a block header by block number.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetBlockHeaderByNumberResult {
+pub struct BlockHeaderByNumber {
     /// The requested block header.
     #[prost(message, optional, tag = "1")]
     pub block_header: ::core::option::Option<super::blockchain::BlockHeader>,

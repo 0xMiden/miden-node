@@ -136,7 +136,7 @@ impl api_server::Api for RpcService {
     async fn get_block_header_by_number(
         &self,
         request: Request<shared_proto::GetBlockHeaderByNumber>,
-    ) -> Result<Response<shared_proto::GetBlockHeaderByNumberResult>, Status> {
+    ) -> Result<Response<shared_proto::BlockHeaderByNumber>, Status> {
         info!(target: COMPONENT, request = ?request.get_ref());
 
         self.store.clone().get_block_header_by_number(request).await

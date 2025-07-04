@@ -258,7 +258,7 @@ pub mod api_client {
                 super::super::shared::GetBlockHeaderByNumber,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetBlockHeaderByNumberResult>,
+            tonic::Response<super::super::shared::BlockHeaderByNumber>,
             tonic::Status,
         > {
             self.inner
@@ -484,7 +484,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::shared::GetBlockHeaderByNumber>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetBlockHeaderByNumberResult>,
+            tonic::Response<super::super::shared::BlockHeaderByNumber>,
             tonic::Status,
         >;
         /// Returns a list of notes matching the provided note IDs.
@@ -917,7 +917,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::shared::GetBlockHeaderByNumber,
                     > for GetBlockHeaderByNumberSvc<T> {
-                        type Response = super::super::shared::GetBlockHeaderByNumberResult;
+                        type Response = super::super::shared::BlockHeaderByNumber;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

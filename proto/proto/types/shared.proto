@@ -159,7 +159,7 @@ message CheckNullifiersByPrefixResult {
 }
 
 // Represents the result of getting a block header by block number.
-message GetBlockHeaderByNumberResult {
+message BlockHeaderByNumber {
     // The requested block header.
     blockchain.BlockHeader block_header = 1;
 

@@ -35,7 +35,7 @@ service Rpc {
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
+    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.BlockHeaderByNumber) {}
 
     // Returns a list of notes matching the provided note IDs.
     rpc GetNotesById(shared.GetNotesById) returns (shared.GetNotesByIdResult) {}
@@ -79,7 +79,7 @@ service BlockProducer {
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
+    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.BlockHeaderByNumber) {}
 
     // Returns data required to prove the next block.
     rpc GetBlockInputs(GetBlockInputs) returns (BlockInputs) {}
@@ -95,7 +95,7 @@ service BlockProducer {
 service NtxBuilder {
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
+    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.BlockHeaderByNumber) {}
 
     // Returns the list of unconsumed network notes and the next page number to query.
     rpc GetUnconsumedNetworkNotes(GetUnconsumedNetworkNotes) returns (GetUnconsumedNetworkNotesResult) {}

@@ -32,7 +32,7 @@ service Api {
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.GetBlockHeaderByNumberResult) {}
+    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.BlockHeaderByNumber) {}
 
     // Returns a list of notes matching the provided note IDs.
     rpc GetNotesById(shared.GetNotesById) returns (shared.GetNotesByIdResult) {}

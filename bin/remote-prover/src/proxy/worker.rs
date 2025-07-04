@@ -9,9 +9,7 @@ use miden_remote_prover::{
     COMPONENT,
     api::ProofType,
     error::RemoteProverError,
-    generated::remote_prover::{
-        WorkerStatusRequest, worker_status_api_client::WorkerStatusApiClient,
-    },
+    generated::{GetWorkerStatus, remote_prover::worker_status_api_client::WorkerStatusApiClient},
 };
 use pingora::lb::Backend;
 use semver::{Version, VersionReq};
@@ -184,7 +182,7 @@ impl Worker {
         }
 
         let worker_status =
-            match self.status_client.as_mut().unwrap().status(WorkerStatusRequest {}).await {
+            match self.status_client.as_mut().unwrap().status(GetWorkerStatus {}).await {
                 Ok(response) => response.into_inner(),
                 Err(e) => {
                     error!("Failed to check worker status ({}): {}", self.address(), e);

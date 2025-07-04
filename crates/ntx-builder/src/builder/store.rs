@@ -2,10 +2,12 @@ use miden_node_proto::{
     domain::note::NetworkNote,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
-        requests::{
-            GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
-            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
-        },
+        // requests::{
+        //     GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
+        //     GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
+        // },
+        shared as shared_proto,
+        store as store_proto,
         store::ntx_builder_client as store_client,
     },
     try_convert,
@@ -58,12 +60,12 @@ impl StoreClient {
             .inner
             .clone()
             .get_block_header_by_number(tonic::Request::new(
-                GetBlockHeaderByNumberRequest::default(),
+                shared_proto::GetBlockHeaderByNumber::default(),
             ))
             .await?
             .into_inner()
             .block_header
-            .ok_or(miden_node_proto::generated::block::BlockHeader::missing_field(
+            .ok_or(miden_node_proto::generated::blockchain::BlockHeader::missing_field(
                 "block_header",
             ))?;
 
@@ -78,7 +80,7 @@ impl StoreClient {
         &self,
         block_num: Option<BlockNumber>,
     ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
-        let request = tonic::Request::new(GetCurrentBlockchainDataRequest {
+        let request = tonic::Request::new(store_proto::GetCurrentBlockchainData {
             block_num: block_num.as_ref().map(BlockNumber::as_u32),
         });
 
@@ -113,7 +115,7 @@ impl StoreClient {
         let mut page_token: Option<u64> = None;
 
         loop {
-            let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
+            let req = store_proto::GetUnconsumedNetworkNotes { page_token, page_size: 128 };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
             let page: Vec<NetworkNote> = resp
@@ -139,7 +141,8 @@ impl StoreClient {
         note_tag: NoteTag,
     ) -> Result<Option<Account>, StoreError> {
         let tag_inner = note_tag.as_u32();
-        let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
+        let request =
+            store_proto::GetNetworkAccountDetailsByPrefix { account_id_prefix: tag_inner };
 
         let store_response = self
             .inner

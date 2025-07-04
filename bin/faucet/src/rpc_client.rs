@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::generated::requests::{
-    GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
+use miden_node_proto::generated::shared::{
+    GetAccountDetails, GetBlockHeaderByNumber, SubmitProvenTransaction,
 };
 use miden_node_rpc::ApiClient;
 use miden_objects::{
@@ -38,7 +38,7 @@ impl RpcClient {
     }
 
     pub async fn get_genesis_header(&mut self) -> Result<BlockHeader, RpcError> {
-        let request = GetBlockHeaderByNumberRequest {
+        let request = GetBlockHeaderByNumber {
             block_num: BlockNumber::GENESIS.as_u32().into(),
             include_mmr_proof: None,
         };
@@ -64,7 +64,7 @@ impl RpcClient {
     ///
     /// Note that this _does not_ include any uncommitted state in the mempool.
     pub async fn get_faucet_account(&mut self, id: FaucetId) -> Result<Account, RpcError> {
-        let request = GetAccountDetailsRequest { account_id: Some(id.account_id.into()) };
+        let request = GetAccountDetails { account_id: Some(id.account_id.into()) };
 
         let account_info = self
             .inner
@@ -91,7 +91,7 @@ impl RpcClient {
         &mut self,
         tx: ProvenTransaction,
     ) -> Result<BlockNumber, RpcError> {
-        let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+        let request = SubmitProvenTransaction { transaction: tx.to_bytes() };
 
         self.inner
             .submit_proven_transaction(request)

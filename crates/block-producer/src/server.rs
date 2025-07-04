@@ -5,11 +5,11 @@ use futures::StreamExt;
 use miden_node_proto::{
     domain::mempool::MempoolEvent,
     generated::{
-        block_producer::{
-            MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest, api_server,
+        block_producer::{MempoolEvent as ProtoMempoolEvent, MempoolSubscription, api_server},
+        shared::{
+            BlockProducerStatus, ProvenTransaction as ProtoProvenTransaction,
+            SubmitProvenTransaction,
         },
-        requests::SubmitProvenTransactionRequest,
-        responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
     },
     ntx_builder,
 };
@@ -224,8 +224,8 @@ struct BlockProducerRpcServer {
 impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
-        request: tonic::Request<SubmitProvenTransactionRequest>,
-    ) -> Result<tonic::Response<SubmitProvenTransactionResponse>, Status> {
+        request: tonic::Request<SubmitProvenTransaction>,
+    ) -> Result<tonic::Response<ProtoProvenTransaction>, Status> {
         self.submit_proven_transaction(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -242,8 +242,8 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn status(
         &self,
         _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<BlockProducerStatusResponse>, Status> {
-        Ok(tonic::Response::new(BlockProducerStatusResponse {
+    ) -> Result<tonic::Response<BlockProducerStatus>, Status> {
+        Ok(tonic::Response::new(BlockProducerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
         }))
@@ -253,7 +253,7 @@ impl api_server::Api for BlockProducerRpcServer {
 
     async fn mempool_subscription(
         &self,
-        request: tonic::Request<MempoolSubscriptionRequest>,
+        request: tonic::Request<MempoolSubscription>,
     ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
         let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
 
@@ -335,8 +335,8 @@ impl BlockProducerRpcServer {
     )]
     async fn submit_proven_transaction(
         &self,
-        request: SubmitProvenTransactionRequest,
-    ) -> Result<SubmitProvenTransactionResponse, AddTransactionError> {
+        request: SubmitProvenTransaction,
+    ) -> Result<ProtoProvenTransaction, AddTransactionError> {
         debug!(target: COMPONENT, ?request);
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
@@ -367,10 +367,14 @@ impl BlockProducerRpcServer {
 
         // Launch a task for updating the mempool, and send the update to the network transaction
         // builder
-        let submit_tx_response =
-            self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-                SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
-            });
+        let submit_tx_response = self
+            .mempool
+            .lock()
+            .await
+            .lock()
+            .await
+            .add_transaction(tx)
+            .map(|block_height| ProtoProvenTransaction { block_height: block_height.as_u32() });
 
         if let Some(mut ntb_client) = self.ntx_builder.clone() {
             if let Err(err) =
@@ -394,7 +398,7 @@ mod test {
     use miden_air::{ExecutionProof, HashFunction};
     use miden_node_proto::generated::{
         block_producer::api_client as block_producer_client,
-        requests::SubmitProvenTransactionRequest, responses::SubmitProvenTransactionResponse,
+        shared::{ProvenTransaction as ProtoProvenTransaction, SubmitProvenTransaction},
     };
     use miden_node_store::{GenesisState, Store};
     use miden_objects::{
@@ -524,7 +528,7 @@ mod test {
     async fn send_request(
         mut client: block_producer_client::ApiClient<Channel>,
         i: u8,
-    ) -> Result<tonic::Response<SubmitProvenTransactionResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<ProtoProvenTransaction>, tonic::Status> {
         let tx = ProvenTransactionBuilder::new(
             AccountId::dummy(
                 [0; 15],
@@ -542,7 +546,7 @@ mod test {
         )
         .build()
         .unwrap();
-        let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+        let request = SubmitProvenTransaction { transaction: tx.to_bytes() };
         client.submit_proven_transaction(request).await
     }
 }

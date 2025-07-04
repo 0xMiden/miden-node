@@ -3,9 +3,12 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use miden_remote_prover::{
     api::ProofType,
-    generated::remote_prover::{
-        self as proto, ProxyStatusRequest, ProxyStatusResponse, WorkerStatus,
-        proxy_status_api_server::{ProxyStatusApi, ProxyStatusApiServer},
+    generated::{
+        GetProxyStatus, ProxyStatus, ProxyWorkerStatus,
+        remote_prover::{
+            WorkerHealthStatus as ProtoWorkerHealthStatus,
+            proxy_status_api_server::{ProxyStatusApi, ProxyStatusApiServer},
+        },
     },
 };
 use pingora::{server::ListenFds, services::Service};
@@ -40,11 +43,11 @@ pub struct ProxyStatusPingoraService {
     /// The status receiver.
     ///
     /// This is used to receive the status updates from the updater.
-    status_rx: watch::Receiver<ProxyStatusResponse>,
+    status_rx: watch::Receiver<ProxyStatus>,
     /// The status transmitter.
     ///
     /// This is used to send the status updates to the receiver.
-    status_tx: watch::Sender<ProxyStatusResponse>,
+    status_tx: watch::Sender<ProxyStatus>,
     /// The status update interval.
     status_update_interval: Duration,
 }
@@ -63,9 +66,9 @@ impl ProxyStatusPingoraService {
         let initial_status = {
             // Build initial status inline in a scope to release the borrow
             let workers = load_balancer.workers.read().await;
-            let worker_statuses: Vec<WorkerStatus> =
-                workers.iter().map(WorkerStatus::from).collect();
-            ProxyStatusResponse {
+            let worker_statuses: Vec<ProxyWorkerStatus> =
+                workers.iter().map(ProxyWorkerStatus::from).collect();
+            ProxyStatus {
                 version: version.clone(),
                 supported_proof_type,
                 workers: worker_statuses,
@@ -90,8 +93,8 @@ impl ProxyStatusApi for ProxyStatusPingoraService {
     #[instrument(target = COMPONENT, name = "proxy.status", skip(_request))]
     async fn status(
         &self,
-        _request: Request<ProxyStatusRequest>,
-    ) -> Result<Response<ProxyStatusResponse>, Status> {
+        _request: Request<GetProxyStatus>,
+    ) -> Result<Response<ProxyStatus>, Status> {
         // Get the latest status, or wait for it if it hasn't been set yet
         let status = self.status_rx.borrow().clone();
         Ok(Response::new(status))
@@ -184,7 +187,7 @@ pub struct ProxyStatusUpdater {
     /// The status transmitter.
     ///
     /// This is used to send the status updates to the proxy status service.
-    status_tx: watch::Sender<ProxyStatusResponse>,
+    status_tx: watch::Sender<ProxyStatus>,
     /// The interval at which to update the status.
     update_interval: Duration,
     /// The version of the proxy service.
@@ -197,7 +200,7 @@ impl ProxyStatusUpdater {
     /// Creates a new [`ProxyStatusUpdater`].
     pub fn new(
         load_balancer: Arc<LoadBalancerState>,
-        status_tx: watch::Sender<ProxyStatusResponse>,
+        status_tx: watch::Sender<ProxyStatus>,
         update_interval: Duration,
     ) -> Self {
         let version = env!("CARGO_PKG_VERSION").to_string();
@@ -233,11 +236,12 @@ impl ProxyStatusUpdater {
     }
 
     /// Build a new status from the load balancer and returns it as a [`ProxyStatusResponse`].
-    async fn build_status(&self) -> ProxyStatusResponse {
+    async fn build_status(&self) -> ProxyStatus {
         let workers = self.load_balancer.workers.read().await;
-        let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
+        let worker_statuses: Vec<ProxyWorkerStatus> =
+            workers.iter().map(ProxyWorkerStatus::from).collect();
 
-        ProxyStatusResponse {
+        ProxyStatus {
             version: self.version.clone(),
             supported_proof_type: self.supported_proof_type,
             workers: worker_statuses,
@@ -248,22 +252,22 @@ impl ProxyStatusUpdater {
 // UTILS
 // ================================================================================================
 
-impl From<&WorkerHealthStatus> for proto::WorkerHealthStatus {
+impl From<&WorkerHealthStatus> for ProtoWorkerHealthStatus {
     fn from(status: &WorkerHealthStatus) -> Self {
         match status {
-            WorkerHealthStatus::Healthy => proto::WorkerHealthStatus::Healthy,
-            WorkerHealthStatus::Unhealthy { .. } => proto::WorkerHealthStatus::Unhealthy,
-            WorkerHealthStatus::Unknown => proto::WorkerHealthStatus::Unknown,
+            WorkerHealthStatus::Healthy => ProtoWorkerHealthStatus::Healthy,
+            WorkerHealthStatus::Unhealthy { .. } => ProtoWorkerHealthStatus::Unhealthy,
+            WorkerHealthStatus::Unknown => ProtoWorkerHealthStatus::Unknown,
         }
     }
 }
 
-impl From<&Worker> for WorkerStatus {
+impl From<&Worker> for ProxyWorkerStatus {
     fn from(worker: &Worker) -> Self {
         Self {
             address: worker.address(),
             version: worker.version().to_string(),
-            status: proto::WorkerHealthStatus::from(worker.health_status()).into(),
+            status: ProtoWorkerHealthStatus::from(worker.health_status()).into(),
         }
     }
 }

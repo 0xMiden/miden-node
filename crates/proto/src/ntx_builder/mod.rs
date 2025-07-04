@@ -11,13 +11,7 @@ use tonic::{
     transport::{Body, Channel, Endpoint},
 };
 
-use crate::generated::{
-    requests::{
-        SubmitNetworkNotesRequest, UpdateNetworkNotesRequest, UpdateTransactionStatusRequest,
-        update_transaction_status_request::TransactionUpdate,
-    },
-    transaction::TransactionStatus,
-};
+use crate::generated::{blockchain as blockchain_proto, ntx_builder as ntx_builder_proto};
 
 type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 type GeneratedClient<T> = crate::generated::ntx_builder::api_client::ApiClient<T>;
@@ -58,7 +52,7 @@ where
         tx_id: TransactionId,
         notes: impl Iterator<Item = Note>,
     ) -> Result<(), tonic::Status> {
-        let request = SubmitNetworkNotesRequest {
+        let request = ntx_builder_proto::SubmitNetworkNotes {
             transaction_id: Some(tx_id.into()),
             note: notes.map(Into::into).collect(),
         };
@@ -67,13 +61,15 @@ where
 
     pub async fn update_transaction_status(
         &mut self,
-        statuses: impl Iterator<Item = (TransactionId, TransactionStatus)>,
+        statuses: impl Iterator<Item = (TransactionId, blockchain_proto::TransactionStatus)>,
     ) -> Result<(), tonic::Status> {
-        let request = UpdateTransactionStatusRequest {
+        let request = ntx_builder_proto::UpdateTransactionStatus {
             updates: statuses
-                .map(|(id, status)| TransactionUpdate {
-                    transaction_id: Some(id.into()),
-                    status: status.into(),
+                .map(|(id, status)| {
+                    ntx_builder_proto::update_transaction_status::TransactionUpdate {
+                        transaction_id: Some(id.into()),
+                        status: status.into(),
+                    }
                 })
                 .collect(),
         };
@@ -85,7 +81,7 @@ where
         transaction_id: TransactionId,
         nullifiers: impl Iterator<Item = Nullifier>,
     ) -> Result<(), tonic::Status> {
-        let request = UpdateNetworkNotesRequest {
+        let request = ntx_builder_proto::UpdateNetworkNotes {
             transaction_id: Some(transaction_id.into()),
             nullifiers: nullifiers.map(Into::into).collect(),
         };

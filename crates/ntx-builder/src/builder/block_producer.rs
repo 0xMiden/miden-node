@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 
 use miden_node_proto::generated::{
-    block_producer::api_client::ApiClient, requests::SubmitProvenTransactionRequest,
+    block_producer::api_client::ApiClient, shared::SubmitProvenTransaction,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::transaction::ProvenTransaction;
@@ -39,7 +39,7 @@ impl BlockProducerClient {
         &self,
         proven_tx: ProvenTransaction,
     ) -> Result<(), Status> {
-        let request = SubmitProvenTransactionRequest { transaction: proven_tx.to_bytes() };
+        let request = SubmitProvenTransaction { transaction: proven_tx.to_bytes() };
 
         self.inner.clone().submit_proven_transaction(request).await?;
 

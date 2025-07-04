@@ -17,7 +17,7 @@ use crate::{
     RemoteProverClientError,
     remote_prover::{
         generated,
-        generated::{ProofType, ProvingRequest, ProvingResponse},
+        generated::{Proof, ProofType, Prove},
     },
 };
 
@@ -126,17 +126,17 @@ impl TransactionProver for RemoteTransactionProver {
 // CONVERSIONS
 // ================================================================================================
 
-impl TryFrom<ProvingResponse> for ProvenTransaction {
+impl TryFrom<Proof> for ProvenTransaction {
     type Error = DeserializationError;
 
-    fn try_from(response: ProvingResponse) -> Result<Self, Self::Error> {
+    fn try_from(response: Proof) -> Result<Self, Self::Error> {
         ProvenTransaction::read_from_bytes(&response.payload)
     }
 }
 
-impl From<TransactionWitness> for ProvingRequest {
+impl From<TransactionWitness> for Prove {
     fn from(witness: TransactionWitness) -> Self {
-        ProvingRequest {
+        Prove {
             proof_type: ProofType::Transaction.into(),
             payload: witness.to_bytes(),
         }

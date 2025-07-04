@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 use super::generated::api_client::ApiClient;
 use crate::{
     RemoteProverClientError,
-    remote_prover::generated::{ProofType, ProvingRequest, ProvingResponse},
+    remote_prover::generated::{Proof, ProofType, Prove},
 };
 
 // REMOTE BLOCK PROVER
@@ -162,17 +162,17 @@ impl RemoteBlockProver {
 // CONVERSION
 // ================================================================================================
 
-impl TryFrom<ProvingResponse> for ProvenBlock {
+impl TryFrom<Proof> for ProvenBlock {
     type Error = DeserializationError;
 
-    fn try_from(value: ProvingResponse) -> Result<Self, Self::Error> {
+    fn try_from(value: Proof) -> Result<Self, Self::Error> {
         ProvenBlock::read_from_bytes(&value.payload)
     }
 }
 
-impl From<ProposedBlock> for ProvingRequest {
+impl From<ProposedBlock> for Prove {
     fn from(proposed_block: ProposedBlock) -> Self {
-        ProvingRequest {
+        Prove {
             proof_type: ProofType::Block.into(),
             payload: proposed_block.to_bytes(),
         }

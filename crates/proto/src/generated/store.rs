@@ -127,7 +127,7 @@ pub struct TransactionInputs {
 }
 /// Represents the result of getting the unconsumed network notes.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetUnconsumedNetworkNotesResult {
+pub struct UnconsumedNetworkNotes {
     /// An opaque pagination token.
     ///
     /// Use this in your next request to get the next
@@ -930,7 +930,7 @@ pub mod ntx_builder_client {
             &mut self,
             request: impl tonic::IntoRequest<super::GetUnconsumedNetworkNotes>,
         ) -> std::result::Result<
-            tonic::Response<super::GetUnconsumedNetworkNotesResult>,
+            tonic::Response<super::UnconsumedNetworkNotes>,
             tonic::Status,
         > {
             self.inner
@@ -2190,7 +2190,7 @@ pub mod ntx_builder_server {
             &self,
             request: tonic::Request<super::GetUnconsumedNetworkNotes>,
         ) -> std::result::Result<
-            tonic::Response<super::GetUnconsumedNetworkNotesResult>,
+            tonic::Response<super::UnconsumedNetworkNotes>,
             tonic::Status,
         >;
         /// Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
@@ -2347,7 +2347,7 @@ pub mod ntx_builder_server {
                         T: NtxBuilder,
                     > tonic::server::UnaryService<super::GetUnconsumedNetworkNotes>
                     for GetUnconsumedNetworkNotesSvc<T> {
-                        type Response = super::GetUnconsumedNetworkNotesResult;
+                        type Response = super::UnconsumedNetworkNotes;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

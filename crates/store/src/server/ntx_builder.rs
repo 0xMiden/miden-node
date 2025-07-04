@@ -7,7 +7,7 @@ use miden_node_proto::{
         store::{
             GetCurrentBlockchainData, GetCurrentBlockchainDataResult,
             GetNetworkAccountDetailsByPrefix, GetNetworkAccountDetailsByPrefixResult,
-            GetUnconsumedNetworkNotes, GetUnconsumedNetworkNotesResult, ntx_builder_server,
+            GetUnconsumedNetworkNotes, UnconsumedNetworkNotes, ntx_builder_server,
         },
     },
 };
@@ -121,7 +121,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     async fn get_unconsumed_network_notes(
         &self,
         request: Request<GetUnconsumedNetworkNotes>,
-    ) -> Result<Response<GetUnconsumedNetworkNotesResult>, Status> {
+    ) -> Result<Response<UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let state = self.state.clone();
 
@@ -144,7 +144,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             network_notes.push(note.into());
         }
 
-        Ok(Response::new(GetUnconsumedNetworkNotesResult {
+        Ok(Response::new(UnconsumedNetworkNotes {
             notes: network_notes,
             next_token: next_page.token,
         }))

@@ -88,6 +88,40 @@ build: ## Builds all crates and re-builds ptotobuf bindings for proto crates
 
 # --- installing ----------------------------------------------------------------------------------
 
+.PHONY: check-tools
+check-tools: ## Checks if development tools are installed
+	@echo "Checking development tools..."
+	@command -v taplo >/dev/null 2>&1 && echo "[OK] taplo is installed" || echo "[MISSING] taplo is not installed (run: make install-tools)"
+	@command -v typos >/dev/null 2>&1 && echo "[OK] typos is installed" || echo "[MISSING] typos is not installed (run: make install-tools)"
+	@command -v chromedriver >/dev/null 2>&1 && echo "[OK] chromedriver is installed" || echo "[MISSING] chromedriver is not installed (run: make install-tools)"
+
+.PHONY: install-tools
+install-tools: ## Installs development tools required by the Makefile (taplo, typos, chromedriver)
+	@echo "Installing development tools..."
+	cargo install taplo-cli --locked
+	cargo install typos-cli --locked
+	@echo "Installing chromedriver..."
+	@if command -v npm >/dev/null 2>&1; then \
+		npm install -g chromedriver; \
+	elif command -v brew >/dev/null 2>&1; then \
+		brew install chromedriver; \
+	elif command -v apt-get >/dev/null 2>&1; then \
+		sudo apt-get update && sudo apt-get install -y chromium-chromedriver; \
+	elif command -v yum >/dev/null 2>&1; then \
+		sudo yum install -y chromedriver; \
+	elif command -v pacman >/dev/null 2>&1; then \
+		sudo pacman -S chromium; \
+	else \
+		echo "Warning: Could not install chromedriver automatically."; \
+		echo "Please install chromedriver manually for your platform:"; \
+		echo "  - On macOS: brew install chromedriver"; \
+		echo "  - On Ubuntu/Debian: sudo apt-get install chromium-chromedriver"; \
+		echo "  - On Fedora/RHEL: sudo yum install chromedriver"; \
+		echo "  - On Arch: sudo pacman -S chromium"; \
+		echo "  - Or download from: https://chromedriver.chromium.org/"; \
+	fi
+	@echo "Development tools installation complete!"
+
 .PHONY: install-node
 install-node: ## Installs node
 	${BUILD_PROTO} cargo install --path bin/node --locked

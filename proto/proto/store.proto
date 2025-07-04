@@ -102,7 +102,7 @@ service NtxBuilder {
 
     // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this 
     // header for executing network transactions. 
-    rpc GetCurrentBlockchainData(GetCurrentBlockchainData) returns (GetCurrentBlockchainDataResult) {}
+    rpc GetCurrentBlockchainData(GetCurrentBlockchainData) returns (CurrentBlockchainData) {}
 
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(GetNetworkAccountDetailsByPrefix) returns (GetNetworkAccountDetailsByPrefixResult) {}
@@ -240,7 +240,7 @@ message UnconsumedNetworkNotes {
 
 
 // Current blockchain data based on the requested block number.
-message GetCurrentBlockchainDataResult {
+message CurrentBlockchainData {
     // Commitments that represent the current state according to the MMR.
     repeated primitives.Digest current_peaks = 1;
     // Current block header.

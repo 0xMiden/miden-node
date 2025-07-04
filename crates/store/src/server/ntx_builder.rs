@@ -5,9 +5,9 @@ use miden_node_proto::{
     generated::{
         shared::{BlockHeaderByNumber, GetBlockHeaderByNumber},
         store::{
-            GetCurrentBlockchainData, GetCurrentBlockchainDataResult,
-            GetNetworkAccountDetailsByPrefix, GetNetworkAccountDetailsByPrefixResult,
-            GetUnconsumedNetworkNotes, UnconsumedNetworkNotes, ntx_builder_server,
+            CurrentBlockchainData, GetCurrentBlockchainData, GetNetworkAccountDetailsByPrefix,
+            GetNetworkAccountDetailsByPrefixResult, GetUnconsumedNetworkNotes,
+            UnconsumedNetworkNotes, ntx_builder_server,
         },
     },
 };
@@ -61,7 +61,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     async fn get_current_blockchain_data(
         &self,
         request: Request<GetCurrentBlockchainData>,
-    ) -> Result<Response<GetCurrentBlockchainDataResult>, Status> {
+    ) -> Result<Response<CurrentBlockchainData>, Status> {
         let block_num = request.into_inner().block_num.map(BlockNumber::from);
 
         let response = match self
@@ -70,11 +70,11 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .await
             .map_err(internal_error)?
         {
-            Some((header, peaks)) => GetCurrentBlockchainDataResult {
+            Some((header, peaks)) => CurrentBlockchainData {
                 current_peaks: peaks.peaks().iter().map(Into::into).collect(),
                 current_block_header: Some(header.into()),
             },
-            None => GetCurrentBlockchainDataResult {
+            None => CurrentBlockchainData {
                 current_peaks: vec![],
                 current_block_header: None,
             },

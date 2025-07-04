@@ -142,7 +142,7 @@ pub struct UnconsumedNetworkNotes {
 }
 /// Current blockchain data based on the requested block number.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetCurrentBlockchainDataResult {
+pub struct CurrentBlockchainData {
     /// Commitments that represent the current state according to the MMR.
     #[prost(message, repeated, tag = "1")]
     pub current_peaks: ::prost::alloc::vec::Vec<super::primitives::Digest>,
@@ -958,7 +958,7 @@ pub mod ntx_builder_client {
             &mut self,
             request: impl tonic::IntoRequest<super::GetCurrentBlockchainData>,
         ) -> std::result::Result<
-            tonic::Response<super::GetCurrentBlockchainDataResult>,
+            tonic::Response<super::CurrentBlockchainData>,
             tonic::Status,
         > {
             self.inner
@@ -2199,7 +2199,7 @@ pub mod ntx_builder_server {
             &self,
             request: tonic::Request<super::GetCurrentBlockchainData>,
         ) -> std::result::Result<
-            tonic::Response<super::GetCurrentBlockchainDataResult>,
+            tonic::Response<super::CurrentBlockchainData>,
             tonic::Status,
         >;
         /// Returns the latest state of a network account with the specified account prefix.
@@ -2396,7 +2396,7 @@ pub mod ntx_builder_server {
                         T: NtxBuilder,
                     > tonic::server::UnaryService<super::GetCurrentBlockchainData>
                     for GetCurrentBlockchainDataSvc<T> {
-                        type Response = super::GetCurrentBlockchainDataResult;
+                        type Response = super::CurrentBlockchainData;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

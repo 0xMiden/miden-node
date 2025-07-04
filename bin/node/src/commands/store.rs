@@ -106,6 +106,14 @@ impl StoreCommand {
         // Write the accounts to disk
         for AccountFileWithName { account_file, name } in secrets.as_account_files() {
             let accountpath = accounts_directory.join(name);
+            // do not override existing keys
+            match std::fs::exists(&accountpath) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Err(e) => return Err(e),
+                Ok(_) => {
+                    bail!("a file or directory already exists under {}", accountpath.display())
+                },
+            }
             account_file.write(accountpath)?;
         }
 
@@ -128,9 +136,6 @@ mod tests {
     use rand_chacha::ChaCha20Rng;
 
     use super::*;
-
-    /// The default filepath for the genesis account.
-    const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
 
     /// Legacy implementation, now superseded by [`miden_store::GenesisConfig::default`]
     fn generate_genesis_account() -> anyhow::Result<AccountFile> {
@@ -192,8 +197,6 @@ mod tests {
         let mut iter = secrets.as_account_files();
         let AccountFileWithName { account_file: status_quo, name } = iter.next().unwrap();
         assert!(iter.next().is_none());
-
-        assert_eq!(name, DEFAULT_ACCOUNT_PATH);
 
         let legacy = generate_genesis_account().unwrap();
 

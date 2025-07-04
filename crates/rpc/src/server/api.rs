@@ -192,7 +192,7 @@ impl api_server::Api for RpcService {
     async fn get_notes_by_id(
         &self,
         request: Request<shared_proto::GetNotesById>,
-    ) -> Result<Response<shared_proto::GetNotesByIdResult>, Status> {
+    ) -> Result<Response<shared_proto::NotesById>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNoteIdLimit>(request.get_ref().note_ids.len())?;

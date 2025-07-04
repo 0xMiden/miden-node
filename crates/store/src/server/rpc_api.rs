@@ -10,8 +10,8 @@ use miden_node_proto::{
             AccountDetails, AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber,
             CheckNullifiers, CheckNullifiersByPrefix, GetAccountDetails, GetAccountProofs,
             GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById,
-            GetNotesByIdResult, NullifierUpdate, Nullifiers, NullifiersByPrefix, StoreStatus,
-            SyncNote, SyncNoteResult, SyncState, SyncStateResult,
+            NotesById, NullifierUpdate, Nullifiers, NullifiersByPrefix, StoreStatus, SyncNote,
+            SyncNoteResult, SyncState, SyncStateResult,
         },
         store::rpc_server,
     },
@@ -227,7 +227,7 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_notes_by_id(
         &self,
         request: Request<GetNotesById>,
-    ) -> Result<Response<GetNotesByIdResult>, Status> {
+    ) -> Result<Response<NotesById>, Status> {
         info!(target: COMPONENT, ?request);
 
         let note_ids = request.into_inner().note_ids;
@@ -245,7 +245,7 @@ impl rpc_server::Rpc for StoreApi {
             .map(Into::into)
             .collect();
 
-        Ok(Response::new(GetNotesByIdResult { notes }))
+        Ok(Response::new(NotesById { notes }))
     }
 
     /// Returns details for public (public) account by id.

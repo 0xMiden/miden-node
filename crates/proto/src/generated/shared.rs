@@ -302,7 +302,7 @@ pub struct BlockByNumber {
 }
 /// Represents the result of getting notes by IDs.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetNotesByIdResult {
+pub struct NotesById {
     /// Lists Note's returned by the database.
     #[prost(message, repeated, tag = "1")]
     pub notes: ::prost::alloc::vec::Vec<super::account::CommittedNote>,

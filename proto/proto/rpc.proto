@@ -35,7 +35,7 @@ service Api {
     rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.BlockHeaderByNumber) {}
 
     // Returns a list of notes matching the provided note IDs.
-    rpc GetNotesById(shared.GetNotesById) returns (shared.GetNotesByIdResult) {}
+    rpc GetNotesById(shared.GetNotesById) returns (shared.NotesById) {}
 
     // Submits proven transaction to the Miden network.
     rpc SubmitProvenTransaction(shared.SubmitProvenTransaction) returns (shared.ProvenTransaction) {}

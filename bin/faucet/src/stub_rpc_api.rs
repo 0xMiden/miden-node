@@ -5,9 +5,9 @@ use miden_node_proto::generated::{
     shared::{
         AccountDetails, AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber,
         CheckNullifiers, CheckNullifiersByPrefix, GetAccountDetails, GetAccountProofs,
-        GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById,
-        GetNotesByIdResult, Nullifiers, NullifiersByPrefix, ProvenTransaction,
-        SubmitProvenTransaction, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
+        GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById, NotesById,
+        Nullifiers, NullifiersByPrefix, ProvenTransaction, SubmitProvenTransaction, SyncNote,
+        SyncNoteResult, SyncState, SyncStateResult,
     },
 };
 use miden_node_utils::cors::cors_for_grpc_web_layer;
@@ -69,7 +69,7 @@ impl api_server::Api for StubRpcApi {
     async fn get_notes_by_id(
         &self,
         _request: Request<GetNotesById>,
-    ) -> Result<Response<GetNotesByIdResult>, Status> {
+    ) -> Result<Response<NotesById>, Status> {
         unimplemented!();
     }
 

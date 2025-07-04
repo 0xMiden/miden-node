@@ -289,7 +289,7 @@ message BlockByNumber {
 
 
 // Represents the result of getting notes by IDs.
-message GetNotesByIdResult {
+message NotesById {
     // Lists Note's returned by the database.
     repeated account.CommittedNote notes = 1;
 }

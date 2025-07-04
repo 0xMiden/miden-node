@@ -38,7 +38,7 @@ service Rpc {
     rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.BlockHeaderByNumber) {}
 
     // Returns a list of notes matching the provided note IDs.
-    rpc GetNotesById(shared.GetNotesById) returns (shared.GetNotesByIdResult) {}
+    rpc GetNotesById(shared.GetNotesById) returns (shared.NotesById) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //

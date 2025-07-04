@@ -483,7 +483,7 @@ pub mod rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::shared::GetNotesById>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetNotesByIdResult>,
+            tonic::Response<super::super::shared::NotesById>,
             tonic::Status,
         > {
             self.inner
@@ -1088,7 +1088,7 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<super::super::shared::GetNotesById>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::GetNotesByIdResult>,
+            tonic::Response<super::super::shared::NotesById>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -1557,7 +1557,7 @@ pub mod rpc_server {
                         T: Rpc,
                     > tonic::server::UnaryService<super::super::shared::GetNotesById>
                     for GetNotesByIdSvc<T> {
-                        type Response = super::super::shared::GetNotesByIdResult;
+                        type Response = super::super::shared::NotesById;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

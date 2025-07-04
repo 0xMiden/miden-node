@@ -340,7 +340,7 @@ pub mod api_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::shared::SyncNote>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SyncNoteResult>,
+            tonic::Response<super::super::shared::SyncedNotes>,
             tonic::Status,
         > {
             self.inner
@@ -516,7 +516,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::shared::SyncNote>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SyncNoteResult>,
+            tonic::Response<super::super::shared::SyncedNotes>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -1058,7 +1058,7 @@ pub mod api_server {
                         T: Api,
                     > tonic::server::UnaryService<super::super::shared::SyncNote>
                     for SyncNotesSvc<T> {
-                        type Response = super::super::shared::SyncNoteResult;
+                        type Response = super::super::shared::SyncedNotes;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

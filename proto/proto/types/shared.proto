@@ -203,7 +203,7 @@ message SyncStateResult {
 
 
 // Represents the result of syncing notes request.
-message SyncNoteResult {
+message SyncedNotes {
     // Number of the latest block in the chain.
     fixed32 chain_tip = 1;
 

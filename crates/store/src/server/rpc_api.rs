@@ -11,7 +11,7 @@ use miden_node_proto::{
             CheckNullifiers, CheckNullifiersByPrefix, GetAccountDetails, GetAccountProofs,
             GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById,
             NotesById, NullifierUpdate, Nullifiers, NullifiersByPrefix, StoreStatus, SyncNote,
-            SyncNoteResult, SyncState, SyncStateResult,
+            SyncState, SyncStateResult, SyncedNotes,
         },
         store::rpc_server,
     },
@@ -193,7 +193,7 @@ impl rpc_server::Rpc for StoreApi {
     async fn sync_notes(
         &self,
         request: Request<SyncNote>,
-    ) -> Result<Response<SyncNoteResult>, Status> {
+    ) -> Result<Response<SyncedNotes>, Status> {
         let request = request.into_inner();
 
         let (state, mmr_proof) = self
@@ -204,7 +204,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(SyncNoteResult {
+        Ok(Response::new(SyncedNotes {
             chain_tip: self.state.latest_block_num().await.as_u32(),
             block_header: Some(state.block_header.into()),
             mmr_path: Some((&mmr_proof.merkle_path).into()),

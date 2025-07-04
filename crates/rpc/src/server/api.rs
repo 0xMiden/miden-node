@@ -173,7 +173,7 @@ impl api_server::Api for RpcService {
     async fn sync_notes(
         &self,
         request: Request<shared_proto::SyncNote>,
-    ) -> Result<Response<shared_proto::SyncNoteResult>, Status> {
+    ) -> Result<Response<shared_proto::SyncedNotes>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;

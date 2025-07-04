@@ -49,7 +49,7 @@ service Api {
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
     // tip of the chain. 
-    rpc SyncNotes(shared.SyncNote) returns (shared.SyncNoteResult) {}
+    rpc SyncNotes(shared.SyncNote) returns (shared.SyncedNotes) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
     // for the objects (accounts and notes) the client is interested in.

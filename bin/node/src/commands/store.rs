@@ -168,13 +168,11 @@ impl StoreCommand {
         for AccountFileWithName { account_file, name } in secrets.as_account_files() {
             let accountpath = accounts_directory.join(name);
             // do not override existing keys
-            match std::fs::exists(&accountpath) {
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
-                Err(e) => return Err(e),
-                Ok(_) => {
-                    bail!("a file or directory already exists under {}", accountpath.display())
-                },
-            }
+            fs_err::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&accountpath)
+                .context("key file already exists")?;
             account_file.write(accountpath)?;
         }
 
@@ -256,7 +254,7 @@ mod tests {
         let config = GenesisConfig::default();
         let (_state, secrets) = config.into_state().unwrap();
         let mut iter = secrets.as_account_files();
-        let AccountFileWithName { account_file: status_quo, name } = iter.next().unwrap();
+        let AccountFileWithName { account_file: status_quo, .. } = iter.next().unwrap();
         assert!(iter.next().is_none());
 
         let legacy = generate_genesis_account().unwrap();

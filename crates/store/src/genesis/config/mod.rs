@@ -151,7 +151,7 @@ impl Default for GenesisConfig {
             wallet: vec![],
             faucet: vec![FaucetConfig {
                 fungible: true,
-                max_supply: 100_0000_000_000u64,
+                max_supply: 100_000_000_000u64,
                 decimals: 6u8,
                 storage_mode: StorageMode::Public,
                 symbol: "MIDEN".to_owned(),
@@ -172,16 +172,18 @@ impl GenesisConfig {
     /// Convert the in memory representation into the new genesis state
     ///
     /// Also returns the set of secrets for the generated accounts.
+    #[allow(clippy::too_many_lines)]
     pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), Error> {
-        let version = self.version;
-        let timestamp = self.timestamp;
-        let repr_accounts = self.wallet;
-        let repr_faucets = self.faucet;
-        let mut all_accounts = Vec::new();
+        let GenesisConfig {
+            version,
+            timestamp,
+            faucet: faucet_configs,
+            wallet: wallet_configs,
+        } = self;
 
+        let mut all_accounts = Vec::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
         let mut faucets = HashMap::<String, AccountId>::new();
-
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
         let mut secrets = Vec::new();
@@ -193,7 +195,7 @@ impl GenesisConfig {
             max_supply,
             storage_mode,
             fungible,
-        } in repr_faucets
+        } in faucet_configs
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
@@ -243,7 +245,7 @@ impl GenesisConfig {
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
         for (index, WalletConfig { is_updatable, storage_mode, assets }) in
-            repr_accounts.into_iter().enumerate()
+            wallet_configs.into_iter().enumerate()
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));

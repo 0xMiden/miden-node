@@ -33,7 +33,7 @@ miden-tx                   = { default-features = true, workspace = true }
 miden-tx-batch-prover      = { workspace = true }
 rand                       = { version = "0.9" }
 thiserror                  = { workspace = true }
-tokio                      = { features = ["macros", "net", "rt-multi-thread", "sync", "time"], workspace = true }
+tokio                      = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream               = { features = ["net"], workspace = true }
 tonic                      = { features = ["transport"], workspace = true }
 tonic-reflection           = { workspace = true }

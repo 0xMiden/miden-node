@@ -27,7 +27,7 @@ miden-remote-prover-client = { features = ["tx-prover"], workspace = true }
 miden-tx                   = { default-features = true, workspace = true }
 rand                       = { features = ["thread_rng"], workspace = true }
 thiserror                  = { workspace = true }
-tokio                      = { features = ["full"], workspace = true }
+tokio                      = { features = ["rt-multi-thread"], workspace = true }
 tokio-stream               = { workspace = true }
 tonic                      = { workspace = true }
 tonic-reflection           = { workspace = true }

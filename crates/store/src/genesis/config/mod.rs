@@ -62,6 +62,10 @@ pub struct FaucetConfig {
     // TODO eventually directly parse to `TokenSymbol`
     symbol: String,
     decimals: u8,
+    /// Max supply in full token units
+    ///
+    /// It will be converted internally to the smallest representable unit,
+    /// using based `10.powi(decimals)` as a multiplier.
     max_supply: u64,
     #[serde(default)]
     storage_mode: StorageMode,
@@ -97,8 +101,9 @@ impl From<StorageMode> for AccountStorageMode {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct AssetEntry {
-    symbol: String, // TODO move to a wrapper around `TokenSymbol`
-    amount: u64,    // TODO we might want to provide `humantime`-like denominations
+    symbol: String,
+    /// The amount of full token units the given asset is populated with
+    amount: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -154,6 +159,25 @@ pub struct GenesisConfig {
     faucet: Vec<FaucetConfig>,
 }
 
+impl Default for GenesisConfig {
+    fn default() -> Self {
+        Self {
+            version: 1_u32,
+            timestamp: u32::try_from(chrono::Local::now().timestamp())
+                .expect("Timestamp should fit into u32"),
+            wallet: vec![],
+            faucet: vec![FaucetConfig {
+                name: "account.mac".to_owned().into(),
+                fungible: true,
+                max_supply: 100_0000_000_000u64,
+                decimals: 6u8,
+                storage_mode: StorageMode::Public,
+                symbol: "MIDEN".to_owned(),
+            }],
+        }
+    }
+}
+
 impl GenesisConfig {
     /// Read the genesis accounts from a toml formatted string
     ///
@@ -197,9 +221,7 @@ impl GenesisConfig {
             let init_seed: [u8; 32] = rng.random();
 
             let token_symbol = TokenSymbol::new(&symbol)?;
-            let max_supply = Felt::try_from(max_supply).map_err(|_| {
-                Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS }
-            })?;
+            let max_supply = max_supply_in_undividable_units(max_supply, decimals)?;
 
             let account_type = if fungible {
                 AccountType::FungibleFaucet
@@ -211,7 +233,7 @@ impl GenesisConfig {
                 return Err(Error::UnsupportedValue {
                     key: "fungible",
                     value: false.to_string(),
-                    message: "Not supported just yet".to_owned(),
+                    message: "Non-fungible assets are not supported yet".to_owned(),
                 });
             }
 
@@ -266,6 +288,14 @@ impl GenesisConfig {
                 .into_iter()
                 .try_for_each(|fungible_asset| fungible_assets.add(fungible_asset))?;
 
+            // Force the account nonce to 1.
+            //
+            // By convention, a nonce of zero indicates a freshly generated local account that has
+            // yet to be deployed. An account is deployed onchain along with its first
+            // transaction which results in a non-zero nonce onchain.
+            //
+            // The genesis block is special in that accounts are "deplyed" without transactions and
+            // therefore we need bump the nonce manually to uphold this invariant.
             let delta = AccountDelta::new(
                 wallet_account.id(),
                 AccountStorageDelta::default(),
@@ -288,4 +318,22 @@ impl GenesisConfig {
             AccountSecrets { secrets },
         ))
     }
+}
+
+/// Calculate the max supply of the token.
+fn max_supply_in_undividable_units(
+    max_supply_in_token_units: u64,
+    decimals: u8,
+) -> Result<Felt, Error> {
+    let base_unit = 10u64.pow(u32::from(decimals));
+    let max_supply =
+        max_supply_in_token_units
+            .checked_mul(base_unit)
+            .ok_or_else(|| Error::OutOfRange {
+                max_supply: max_supply_in_token_units,
+                decimals,
+            })?;
+    let max_supply = Felt::try_from(max_supply)
+        .map_err(|_| Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS })?;
+    Ok(max_supply)
 }

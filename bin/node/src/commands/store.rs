@@ -1,25 +1,12 @@
-use std::{
-    fs::File,
-    io::Write,
-    path::{Path, PathBuf},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet, utils::Serializable};
 use miden_node_store::{
-    GenesisState, Store,
+    Store,
     genesis::config::{AccountFileWithName, GenesisConfig},
 };
-use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
-use miden_objects::{
-    Felt, ONE,
-    account::{Account, AccountFile, AuthSecretKey},
-    asset::TokenSymbol,
-    crypto::dsa::rpo_falcon512::SecretKey,
-};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaCha20Rng;
+
+use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{
@@ -161,57 +148,52 @@ impl StoreCommand {
         .context("failed while serving store component")
     }
 
-    fn default_genesis_state(accounts_directory: &Path) -> anyhow::Result<GenesisState> {
-        // Generate the genesis accounts.
-        let account_file =
-            Self::generate_genesis_account().context("failed to create genesis account")?;
-
-        // Write account data to disk (including secrets).
-        //
-        // Without this the accounts would be inaccessible by the user.
-        // This is not used directly by the node, but rather by the owner / operator of the
-        // node.
-        let filepath = accounts_directory.join(DEFAULT_ACCOUNT_PATH);
-        File::create_new(&filepath)
-            .and_then(|mut file| file.write_all(&account_file.to_bytes()))
-            .with_context(|| {
-                format!("failed to write data for genesis account to file {}", filepath.display())
-            })?;
-
-        // Bootstrap the store database.
-        let version = 1;
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current timestamp should be greater than unix epoch")
-            .as_secs()
-            .try_into()
-            .expect("timestamp should fit into u32");
-        Ok(GenesisState::new(vec![account_file.account], version, timestamp))
-    }
-
     fn bootstrap(
         data_directory: &Path,
         accounts_directory: &Path,
-        genesis_config: Option<&PathBuf>,
+        maybe_genesis_config: Option<&PathBuf>,
     ) -> anyhow::Result<()> {
-        let genesis_state = if let Some(genesis_config) = genesis_config {
-            let toml_str = fs_err::read_to_string(genesis_config)?;
-            let config = GenesisConfig::read_toml(toml_str.as_str())
-                .context(format!("Read from file: {}", genesis_config.display()))?;
+        let config = maybe_genesis_config
+            .map(|genesis_config| {
+                let toml_str = fs_err::read_to_string(genesis_config)?;
+                let config = GenesisConfig::read_toml(toml_str.as_str())
+                    .context(format!("Read from file: {}", genesis_config.display()))?;
+                Ok::<_, anyhow::Error>(config)
+            })
+            .transpose()?
+            .unwrap_or_default();
 
-            let (state, secrets) = config.into_state()?;
-            // Write the accounts to disk
-            for AccountFileWithName { account_file, name } in secrets.as_account_files() {
-                let accountpath = accounts_directory.join(name);
-                account_file.write(accountpath)?;
-            }
-            state
-        } else {
-            Self::default_genesis_state(accounts_directory)?
-        };
+        let (genesis_state, secrets) = config.into_state()?;
+        // Write the accounts to disk
+        for AccountFileWithName { account_file, name } in secrets.as_account_files() {
+            let accountpath = accounts_directory.join(name);
+            account_file.write(accountpath)?;
+        }
+
         Store::bootstrap(genesis_state, data_directory)
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
+
+    use super::*;
+    use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
+    use miden_node_utils::crypto::get_rpo_random_coin;
+    use miden_objects::{
+        Felt, ONE,
+        account::{AccountFile, AuthSecretKey},
+        asset::TokenSymbol,
+        crypto::dsa::rpo_falcon512::SecretKey,
+    };
+    use rand::{Rng, SeedableRng};
+    use rand_chacha::ChaCha20Rng;
+
+    /// The default filepath for the genesis account.
+    const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
+
+    /// Legacy implementation, now superseded by [`miden_store::GenesisConfig::default`]
     fn generate_genesis_account() -> anyhow::Result<AccountFile> {
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let secret = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
@@ -232,6 +214,7 @@ impl StoreCommand {
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;
 
+<<<<<<< HEAD
         // Force the account nonce to 1.
         //
         // By convention, a nonce of zero indicates a freshly generated local account that has yet
@@ -242,6 +225,19 @@ impl StoreCommand {
         // therefore we need bump the nonce manually to uphold this invariant.
         let (id, vault, sorage, code, _) = account.into_parts();
         let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
+||||||| parent of ef7cf94 (max_supply calculations and review comments)
+        // Force the account nonce to 1.
+        //
+        // By convention, a nonce of zero indicates a freshly generated local account that has yet
+        // to be deployed. An account is deployed onchain along with its first transaction which
+        // results in a non-zero nonce onchain.
+        //
+        // The genesis block is special in that accounts are "deplyed" without transactions and
+        // therefore we need bump the nonce manually to uphold this invariant.
+        account.set_nonce(ONE).context("failed to set account nonce to 1")?;
+=======
+        account.set_nonce(ONE).context("failed to set account nonce to 1")?;
+>>>>>>> ef7cf94 (max_supply calculations and review comments)
 
         Ok(AccountFile::new(
             updated_account,
@@ -249,14 +245,27 @@ impl StoreCommand {
             vec![AuthSecretKey::RpoFalcon512(secret)],
         ))
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::StoreCommand;
 
     #[test]
-    fn generate_genesis_account_no_panic() {
-        let _account = StoreCommand::generate_genesis_account().unwrap();
+    fn generate_genesis_account_is_retains_behaviour() {
+        let config = GenesisConfig::default();
+        let (_state, secrets) = config.into_state().unwrap();
+        let mut iter = secrets.as_account_files();
+        let AccountFileWithName { account_file: status_quo, name } = iter.next().unwrap();
+        assert!(iter.next().is_none());
+
+        assert_eq!(name, DEFAULT_ACCOUNT_PATH);
+
+        let legacy = generate_genesis_account().unwrap();
+
+        assert_eq!(legacy.auth_secret_keys.len(), status_quo.auth_secret_keys.len());
+
+        assert_eq!(legacy.account.account_type(), status_quo.account.account_type());
+
+        let (_, legacy_vault, _, legacy_code, _) = dbg!(legacy.account.into_parts());
+        let (_, status_quo_vault, _, status_quo_code, _) = dbg!(status_quo.account.into_parts());
+
+        assert_eq!(legacy_code, status_quo_code);
+        assert_eq!(legacy_vault, status_quo_vault);
     }
 }

@@ -125,7 +125,7 @@ impl AccountSecrets {
                 Some(*account_seed),
                 vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
             );
-
+            let name = name.to_string();
             AccountFileWithName { name, account_file }
         })
     }
@@ -187,16 +187,13 @@ impl GenesisConfig {
         let mut secrets = Vec::new();
 
         // First setup all the faucets
-        for (
-            index,
-            FaucetConfig {
-                symbol,
-                decimals,
-                max_supply,
-                storage_mode,
-                fungible,
-            },
-        ) in repr_faucets.into_iter().enumerate()
+        for FaucetConfig {
+            symbol,
+            decimals,
+            max_supply,
+            storage_mode,
+            fungible,
+        } in repr_faucets
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
@@ -235,11 +232,7 @@ impl GenesisConfig {
             faucets.insert(symbol.clone(), faucet_account.id());
 
             secrets.push((
-                format!(
-                    "faucet_{symbol}_{index}.mac",
-                    symbol = symbol.to_lowercase(),
-                    index = index
-                ),
+                format!("faucet_{symbol}.mac", symbol = symbol.to_lowercase()),
                 faucet_account.clone(),
                 secret_key,
                 faucet_account_seed,

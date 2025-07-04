@@ -43,9 +43,6 @@ const fn ja() -> bool {
 /// Represents a wallet, containing a set of assets
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WalletConfig {
-    /// Provide a name, that will be used for the keyfile.
-    #[serde(default)]
-    name: Option<String>,
     #[serde(default)]
     is_updatable: bool,
     #[serde(default)]
@@ -56,9 +53,6 @@ pub struct WalletConfig {
 /// Represents a faucet with asset specific properties
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FaucetConfig {
-    /// Provide a name, that will be used for the keyfile.
-    #[serde(default)]
-    name: Option<String>,
     // TODO eventually directly parse to `TokenSymbol`
     symbol: String,
     decimals: u8,
@@ -116,7 +110,7 @@ pub struct AccountFileWithName {
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
     // name, account, private key, account seed
-    pub secrets: Vec<(Option<String>, Account, SecretKey, Word)>,
+    pub secrets: Vec<(String, Account, SecretKey, Word)>,
 }
 
 impl AccountSecrets {
@@ -125,26 +119,15 @@ impl AccountSecrets {
     /// If no name is present, a new one is generated based on the current time
     /// and the index in
     pub fn as_account_files(&self) -> impl Iterator<Item = AccountFileWithName> {
-        self.secrets.iter().enumerate().map(
-            |(idx, (maybe_name, account, secret_key, account_seed))| {
-                let account_file = AccountFile::new(
-                    account.clone(),
-                    Some(*account_seed),
-                    vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
-                );
-                // avoid empty strings and construct a new one based on the account type
-                let name =
-                    maybe_name.clone().filter(|name| !name.is_empty()).unwrap_or_else(|| {
-                        let account_prefix = account.account_type().to_string().to_lowercase();
+        self.secrets.iter().map(|(name, account, secret_key, account_seed)| {
+            let account_file = AccountFile::new(
+                account.clone(),
+                Some(*account_seed),
+                vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
+            );
 
-                        let now = chrono::Local::now();
-                        let now = now.format("%Y%m%d_%H%M%S");
-
-                        format!("{account_prefix}_account{idx:02}__{now}.mac")
-                    });
-                AccountFileWithName { name, account_file }
-            },
-        )
+            AccountFileWithName { name, account_file }
+        })
     }
 }
 
@@ -167,7 +150,6 @@ impl Default for GenesisConfig {
                 .expect("Timestamp should fit into u32"),
             wallet: vec![],
             faucet: vec![FaucetConfig {
-                name: "account.mac".to_owned().into(),
                 fungible: true,
                 max_supply: 100_0000_000_000u64,
                 decimals: 6u8,
@@ -205,14 +187,16 @@ impl GenesisConfig {
         let mut secrets = Vec::new();
 
         // First setup all the faucets
-        for FaucetConfig {
-            name,
-            symbol,
-            decimals,
-            max_supply,
-            storage_mode,
-            fungible,
-        } in repr_faucets
+        for (
+            index,
+            FaucetConfig {
+                symbol,
+                decimals,
+                max_supply,
+                storage_mode,
+                fungible,
+            },
+        ) in repr_faucets.into_iter().enumerate()
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
@@ -248,15 +232,26 @@ impl GenesisConfig {
                 .with_component(component)
                 .build()?;
 
-            faucets.insert(symbol, faucet_account.id());
+            faucets.insert(symbol.clone(), faucet_account.id());
 
-            secrets.push((name, faucet_account.clone(), secret_key, faucet_account_seed));
+            secrets.push((
+                format!(
+                    "faucet_{symbol}_{index}.mac",
+                    symbol = symbol.to_lowercase(),
+                    index = index
+                ),
+                faucet_account.clone(),
+                secret_key,
+                faucet_account_seed,
+            ));
 
             all_accounts.push(faucet_account);
         }
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
-        for WalletConfig { name, is_updatable, storage_mode, assets } in repr_accounts {
+        for (index, WalletConfig { is_updatable, storage_mode, assets }) in
+            repr_accounts.into_iter().enumerate()
+        {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
@@ -303,7 +298,12 @@ impl GenesisConfig {
             )?;
             wallet_account.apply_delta(&delta)?;
 
-            secrets.push((name, wallet_account.clone(), secret_key, wallet_account_seed));
+            secrets.push((
+                format!("wallet_{index:02}.mac"),
+                wallet_account.clone(),
+                secret_key,
+                wallet_account_seed,
+            ));
 
             all_accounts.push(wallet_account);
         }

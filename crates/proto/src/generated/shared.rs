@@ -160,7 +160,7 @@ pub struct Nullifiers {
 }
 /// Represents the result of checking nullifiers by prefix.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CheckNullifiersByPrefixResult {
+pub struct NullifiersByPrefix {
     /// List of nullifiers matching the prefixes specified in the request.
     #[prost(message, repeated, tag = "1")]
     pub nullifiers: ::prost::alloc::vec::Vec<NullifierUpdate>,

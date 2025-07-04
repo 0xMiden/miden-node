@@ -329,7 +329,7 @@ pub mod rpc_client {
                 super::super::shared::CheckNullifiersByPrefix,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::CheckNullifiersByPrefixResult>,
+            tonic::Response<super::super::shared::NullifiersByPrefix>,
             tonic::Status,
         > {
             self.inner
@@ -1038,7 +1038,7 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<super::super::shared::CheckNullifiersByPrefix>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::CheckNullifiersByPrefixResult>,
+            tonic::Response<super::super::shared::NullifiersByPrefix>,
             tonic::Status,
         >;
         /// Returns the latest state of an account with the specified ID.
@@ -1270,7 +1270,7 @@ pub mod rpc_server {
                     > tonic::server::UnaryService<
                         super::super::shared::CheckNullifiersByPrefix,
                     > for CheckNullifiersByPrefixSvc<T> {
-                        type Response = super::super::shared::CheckNullifiersByPrefixResult;
+                        type Response = super::super::shared::NullifiersByPrefix;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

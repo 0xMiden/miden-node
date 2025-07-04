@@ -4,9 +4,9 @@ use miden_node_proto::generated::{
     rpc::{RpcStatus, api_server},
     shared::{
         AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
-        CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, GetAccountDetails,
-        GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta, GetBlockByNumber,
-        GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult, Nullifiers, ProvenTransaction,
+        CheckNullifiersByPrefix, GetAccountDetails, GetAccountDetailsResult, GetAccountProofs,
+        GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById,
+        GetNotesByIdResult, Nullifiers, NullifiersByPrefix, ProvenTransaction,
         SubmitProvenTransaction, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
     },
 };
@@ -33,7 +33,7 @@ impl api_server::Api for StubRpcApi {
     async fn check_nullifiers_by_prefix(
         &self,
         _request: Request<CheckNullifiersByPrefix>,
-    ) -> Result<Response<CheckNullifiersByPrefixResult>, Status> {
+    ) -> Result<Response<NullifiersByPrefix>, Status> {
         unimplemented!();
     }
 

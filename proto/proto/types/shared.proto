@@ -153,7 +153,7 @@ message Nullifiers {
 }
 
 // Represents the result of checking nullifiers by prefix.
-message CheckNullifiersByPrefixResult {
+message NullifiersByPrefix {
     // List of nullifiers matching the prefixes specified in the request.
     repeated NullifierUpdate nullifiers = 1;
 }

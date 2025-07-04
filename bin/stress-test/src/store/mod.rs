@@ -8,7 +8,7 @@ use miden_node_proto::generated::{
     account as account_proto,
     primitives::Digest,
     shared::{
-        CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, GetNotesById, SyncNote, SyncState,
+        CheckNullifiersByPrefix, GetNotesById, NullifiersByPrefix, SyncNote, SyncState,
         SyncStateResult,
     },
     store::rpc_client::RpcClient,
@@ -240,7 +240,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 async fn check_nullifiers_by_prefix(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers_prefixes: Vec<u32>,
-) -> (Duration, CheckNullifiersByPrefixResult) {
+) -> (Duration, NullifiersByPrefix) {
     let sync_request = CheckNullifiersByPrefix {
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,

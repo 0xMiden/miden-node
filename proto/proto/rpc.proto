@@ -15,7 +15,7 @@ service Api {
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //
     // Note that only 16-bit prefixes are supported at this time.
-    rpc CheckNullifiersByPrefix(shared.CheckNullifiersByPrefix) returns (shared.CheckNullifiersByPrefixResult) {}
+    rpc CheckNullifiersByPrefix(shared.CheckNullifiersByPrefix) returns (shared.NullifiersByPrefix) {}
 
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(shared.GetAccountDetails) returns (shared.GetAccountDetailsResult) {}

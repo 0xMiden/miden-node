@@ -8,10 +8,10 @@ use miden_node_proto::{
         blockchain::TransactionSummary,
         shared::{
             AccountProofs, AccountStateDelta, BlockByNumber, BlockHeaderByNumber, CheckNullifiers,
-            CheckNullifiersByPrefix, CheckNullifiersByPrefixResult, GetAccountDetails,
-            GetAccountDetailsResult, GetAccountProofs, GetAccountStateDelta, GetBlockByNumber,
-            GetBlockHeaderByNumber, GetNotesById, GetNotesByIdResult, NullifierUpdate, Nullifiers,
-            StoreStatus, SyncNote, SyncNoteResult, SyncState, SyncStateResult,
+            CheckNullifiersByPrefix, GetAccountDetails, GetAccountDetailsResult, GetAccountProofs,
+            GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById,
+            GetNotesByIdResult, NullifierUpdate, Nullifiers, NullifiersByPrefix, StoreStatus,
+            SyncNote, SyncNoteResult, SyncState, SyncStateResult,
         },
         store::rpc_server,
     },
@@ -98,7 +98,7 @@ impl rpc_server::Rpc for StoreApi {
     async fn check_nullifiers_by_prefix(
         &self,
         request: Request<CheckNullifiersByPrefix>,
-    ) -> Result<Response<CheckNullifiersByPrefixResult>, Status> {
+    ) -> Result<Response<NullifiersByPrefix>, Status> {
         let request = request.into_inner();
 
         if request.prefix_len != 16 {
@@ -120,7 +120,7 @@ impl rpc_server::Rpc for StoreApi {
             })
             .collect();
 
-        Ok(Response::new(CheckNullifiersByPrefixResult { nullifiers }))
+        Ok(Response::new(NullifiersByPrefix { nullifiers }))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain

@@ -2378,7 +2378,6 @@ dependencies = [
  "chrono",
  "deadpool",
  "deadpool-sync",
- "fs-err",
  "hex",
  "miden-lib",
  "miden-node-proto",

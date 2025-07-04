@@ -289,7 +289,7 @@ impl GenesisConfig {
                 wallet_account.id(),
                 AccountStorageDelta::default(),
                 AccountVaultDelta::new(fungible_assets, NonFungibleAssetDelta::default()),
-                Some(Felt::ONE),
+                Felt::ONE,
             )?;
             wallet_account.apply_delta(&delta)?;
 

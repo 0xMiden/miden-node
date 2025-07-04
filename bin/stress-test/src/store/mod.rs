@@ -8,8 +8,7 @@ use miden_node_proto::generated::{
     account as account_proto,
     primitives::Digest,
     shared::{
-        CheckNullifiersByPrefix, GetNotesById, NullifiersByPrefix, SyncNote, SyncState,
-        SyncStateResult,
+        CheckNullifiersByPrefix, GetNotesById, NullifiersByPrefix, SyncNote, SyncState, SyncedState,
     },
     store::rpc_client::RpcClient,
 };
@@ -77,7 +76,7 @@ pub async fn sync_state(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
     block_num: u32,
-) -> (Duration, SyncStateResult) {
+) -> (Duration, SyncedState) {
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))

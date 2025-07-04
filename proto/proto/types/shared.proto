@@ -180,7 +180,7 @@ message NullifierUpdate {
 }
 
 // Represents the result of syncing state request.
-message SyncStateResult {
+message SyncedState {
     // Number of the latest block in the chain.
     fixed32 chain_tip = 1;
 

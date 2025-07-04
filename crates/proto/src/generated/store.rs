@@ -549,7 +549,7 @@ pub mod rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::shared::SyncState>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SyncStateResult>,
+            tonic::Response<super::super::shared::SyncedState>,
             tonic::Status,
         > {
             self.inner
@@ -1126,7 +1126,7 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<super::super::shared::SyncState>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SyncStateResult>,
+            tonic::Response<super::super::shared::SyncedState>,
             tonic::Status,
         >;
         /// Returns the status info.
@@ -1647,7 +1647,7 @@ pub mod rpc_server {
                         T: Rpc,
                     > tonic::server::UnaryService<super::super::shared::SyncState>
                     for SyncStateSvc<T> {
-                        type Response = super::super::shared::SyncStateResult;
+                        type Response = super::super::shared::SyncedState;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

@@ -7,7 +7,7 @@ use miden_node_proto::generated::{
         CheckNullifiers, CheckNullifiersByPrefix, GetAccountDetails, GetAccountProofs,
         GetAccountStateDelta, GetBlockByNumber, GetBlockHeaderByNumber, GetNotesById, NotesById,
         Nullifiers, NullifiersByPrefix, ProvenTransaction, SubmitProvenTransaction, SyncNote,
-        SyncState, SyncStateResult, SyncedNotes,
+        SyncState, SyncedNotes, SyncedState,
     },
 };
 use miden_node_utils::cors::cors_for_grpc_web_layer;
@@ -55,7 +55,7 @@ impl api_server::Api for StubRpcApi {
     async fn sync_state(
         &self,
         _request: Request<SyncState>,
-    ) -> Result<Response<SyncStateResult>, Status> {
+    ) -> Result<Response<SyncedState>, Status> {
         unimplemented!();
     }
 

@@ -66,7 +66,7 @@ service Rpc {
     // For preserving some degree of privacy, note tags and nullifiers filters contain only high
     // part of hashes. Thus, returned data contains excessive notes and nullifiers, client can make
     // additional filtering of that data on its side.
-    rpc SyncState(shared.SyncState) returns (shared.SyncStateResult) {}
+    rpc SyncState(shared.SyncState) returns (shared.SyncedState) {}
 
     // Returns the status info.
     rpc Status(google.protobuf.Empty) returns (shared.StoreStatus) {}

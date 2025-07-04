@@ -190,7 +190,7 @@ pub struct NullifierUpdate {
 }
 /// Represents the result of syncing state request.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SyncStateResult {
+pub struct SyncedState {
     /// Number of the latest block in the chain.
     #[prost(fixed32, tag = "1")]
     pub chain_tip: u32,

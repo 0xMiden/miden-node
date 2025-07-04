@@ -153,7 +153,7 @@ impl api_server::Api for RpcService {
     async fn sync_state(
         &self,
         request: Request<shared_proto::SyncState>,
-    ) -> Result<Response<shared_proto::SyncStateResult>, Status> {
+    ) -> Result<Response<shared_proto::SyncedState>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamAccountIdLimit>(request.get_ref().account_ids.len())?;

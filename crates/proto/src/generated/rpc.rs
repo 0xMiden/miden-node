@@ -376,7 +376,7 @@ pub mod api_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::shared::SyncState>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SyncStateResult>,
+            tonic::Response<super::super::shared::SyncedState>,
             tonic::Status,
         > {
             self.inner
@@ -538,7 +538,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::shared::SyncState>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SyncStateResult>,
+            tonic::Response<super::super::shared::SyncedState>,
             tonic::Status,
         >;
         /// Returns the status info of the node.
@@ -1103,7 +1103,7 @@ pub mod api_server {
                         T: Api,
                     > tonic::server::UnaryService<super::super::shared::SyncState>
                     for SyncStateSvc<T> {
-                        type Response = super::super::shared::SyncStateResult;
+                        type Response = super::super::shared::SyncedState;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

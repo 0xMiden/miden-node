@@ -222,7 +222,7 @@ message SyncNoteResult {
 
 
 // Represents the result of submitting proven transaction.
-message SubmitProvenTransactionResult {
+message ProvenTransaction {
     // The node's current block height.
     fixed32 block_height = 1;
 }

@@ -232,7 +232,7 @@ pub struct SyncNoteResult {
 }
 /// Represents the result of submitting proven transaction.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct SubmitProvenTransactionResult {
+pub struct ProvenTransaction {
     /// The node's current block height.
     #[prost(fixed32, tag = "1")]
     pub block_height: u32,

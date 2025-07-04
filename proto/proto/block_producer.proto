@@ -10,7 +10,7 @@ import "google/protobuf/empty.proto";
 
 service Api {
     // Submits proven transaction to the Miden network
-    rpc SubmitProvenTransaction(shared.SubmitProvenTransaction) returns (shared.SubmitProvenTransactionResult) {}
+    rpc SubmitProvenTransaction(shared.SubmitProvenTransaction) returns (shared.ProvenTransaction) {}
 
     // Returns the status info.
     rpc Status(google.protobuf.Empty) returns (shared.BlockProducerStatus) {}

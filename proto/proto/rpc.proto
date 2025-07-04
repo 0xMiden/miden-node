@@ -38,7 +38,7 @@ service Api {
     rpc GetNotesById(shared.GetNotesById) returns (shared.GetNotesByIdResult) {}
 
     // Submits proven transaction to the Miden network.
-    rpc SubmitProvenTransaction(shared.SubmitProvenTransaction) returns (shared.SubmitProvenTransactionResult) {}
+    rpc SubmitProvenTransaction(shared.SubmitProvenTransaction) returns (shared.ProvenTransaction) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //

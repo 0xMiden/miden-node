@@ -155,7 +155,7 @@ pub mod api_client {
                 super::super::shared::SubmitProvenTransaction,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SubmitProvenTransactionResult>,
+            tonic::Response<super::super::shared::ProvenTransaction>,
             tonic::Status,
         > {
             self.inner
@@ -255,7 +255,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::shared::SubmitProvenTransaction>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SubmitProvenTransactionResult>,
+            tonic::Response<super::super::shared::ProvenTransaction>,
             tonic::Status,
         >;
         /// Returns the status info.
@@ -374,7 +374,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::shared::SubmitProvenTransaction,
                     > for SubmitProvenTransactionSvc<T> {
-                        type Response = super::super::shared::SubmitProvenTransactionResult;
+                        type Response = super::super::shared::ProvenTransaction;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

@@ -211,7 +211,7 @@ impl api_server::Api for RpcService {
     async fn submit_proven_transaction(
         &self,
         request: Request<shared_proto::SubmitProvenTransaction>,
-    ) -> Result<Response<shared_proto::SubmitProvenTransactionResult>, Status> {
+    ) -> Result<Response<shared_proto::ProvenTransaction>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         let Some(block_producer) = &self.block_producer else {

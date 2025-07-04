@@ -307,7 +307,7 @@ pub mod api_client {
                 super::super::shared::SubmitProvenTransaction,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SubmitProvenTransactionResult>,
+            tonic::Response<super::super::shared::ProvenTransaction>,
             tonic::Status,
         > {
             self.inner
@@ -500,7 +500,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::shared::SubmitProvenTransaction>,
         ) -> std::result::Result<
-            tonic::Response<super::super::shared::SubmitProvenTransactionResult>,
+            tonic::Response<super::super::shared::ProvenTransaction>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -1011,7 +1011,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::shared::SubmitProvenTransaction,
                     > for SubmitProvenTransactionSvc<T> {
-                        type Response = super::super::shared::SubmitProvenTransactionResult;
+                        type Response = super::super::shared::ProvenTransaction;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

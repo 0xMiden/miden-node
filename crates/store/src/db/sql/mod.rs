@@ -536,7 +536,12 @@ pub fn upsert_accounts(
     Ok(count)
 }
 
+/// Builds an [`AccountDelta`] from the given [`Account`].
+///
+/// This function should only be used when inserting a new account into the DB.The returned delta
+/// could be thought of as the difference between an "empty transaction" and the it's initial state.
 fn build_insert_delta(account: &Account) -> Result<AccountDelta, DatabaseError> {
+    // Build storage delta
     let mut values = BTreeMap::new();
     let mut maps = BTreeMap::new();
     for (slot_idx, slot) in account.storage().clone().into_iter().enumerate() {
@@ -554,6 +559,7 @@ fn build_insert_delta(account: &Account) -> Result<AccountDelta, DatabaseError> 
     }
     let storage_delta = AccountStorageDelta::from_parts(values, maps)?;
 
+    // Build vault delta
     let mut fungible = BTreeMap::new();
     let mut non_fungible = BTreeMap::new();
     for asset in account.vault().assets() {

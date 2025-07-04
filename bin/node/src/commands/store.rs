@@ -186,14 +186,12 @@ mod tests {
     use miden_node_utils::crypto::get_rpo_random_coin;
     use miden_objects::{
         Felt, ONE,
-        account::{AccountFile, AuthSecretKey},
+        account::{Account, AccountFile, AuthSecretKey},
         asset::TokenSymbol,
         crypto::dsa::rpo_falcon512::SecretKey,
     };
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
-
-    use super::*;
 
     /// Legacy implementation, now superseded by [`miden_store::GenesisConfig::default`]
     fn generate_genesis_account() -> anyhow::Result<AccountFile> {
@@ -216,10 +214,12 @@ mod tests {
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;
 
-        account.set_nonce(set_nonce(ONE).context("failed to set account nonce to 1")?;
+        // Revisit: <https://github.com/0xMiden/miden-base/pull/1492/files#r2186082022>
+        let (id, vault, sorage, code, _) = account.into_parts();
+        let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
         Ok(AccountFile::new(
-            account,
+            updated_account,
             Some(account_seed),
             vec![AuthSecretKey::RpoFalcon512(secret)],
         ))

@@ -176,10 +176,8 @@ impl StoreCommand {
 
 #[cfg(test)]
 mod tests {
-    use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
-
-    use super::*;
     use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
+    use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
     use miden_node_utils::crypto::get_rpo_random_coin;
     use miden_objects::{
         Felt, ONE,
@@ -189,6 +187,8 @@ mod tests {
     };
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
+
+    use super::*;
 
     /// The default filepath for the genesis account.
     const DEFAULT_ACCOUNT_PATH: &str = "account.mac";

@@ -5,7 +5,6 @@ use miden_node_store::{
     Store,
     genesis::config::{AccountFileWithName, GenesisConfig},
 };
-
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
@@ -217,33 +216,10 @@ mod tests {
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;
 
-<<<<<<< HEAD
-        // Force the account nonce to 1.
-        //
-        // By convention, a nonce of zero indicates a freshly generated local account that has yet
-        // to be deployed. An account is deployed onchain along with its first transaction which
-        // results in a non-zero nonce onchain.
-        //
-        // The genesis block is special in that accounts are "deplyed" without transactions and
-        // therefore we need bump the nonce manually to uphold this invariant.
-        let (id, vault, sorage, code, _) = account.into_parts();
-        let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
-||||||| parent of ef7cf94 (max_supply calculations and review comments)
-        // Force the account nonce to 1.
-        //
-        // By convention, a nonce of zero indicates a freshly generated local account that has yet
-        // to be deployed. An account is deployed onchain along with its first transaction which
-        // results in a non-zero nonce onchain.
-        //
-        // The genesis block is special in that accounts are "deplyed" without transactions and
-        // therefore we need bump the nonce manually to uphold this invariant.
-        account.set_nonce(ONE).context("failed to set account nonce to 1")?;
-=======
-        account.set_nonce(ONE).context("failed to set account nonce to 1")?;
->>>>>>> ef7cf94 (max_supply calculations and review comments)
+        account.set_nonce(set_nonce(ONE).context("failed to set account nonce to 1")?;
 
         Ok(AccountFile::new(
-            updated_account,
+            account,
             Some(account_seed),
             vec![AuthSecretKey::RpoFalcon512(secret)],
         ))

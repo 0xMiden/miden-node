@@ -7,7 +7,7 @@ mod network;
 #[cfg(test)]
 mod stub_rpc_api;
 
-use std::{path::PathBuf, time::Duration};
+use std::{num::NonZeroUsize, path::PathBuf, time::Duration};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -28,7 +28,10 @@ use tokio::sync::mpsc;
 use types::AssetOptions;
 use url::Url;
 
-use crate::{network::FaucetNetwork, server::ApiKey};
+use crate::{
+    network::FaucetNetwork,
+    server::{ApiKey, PoWConfig},
+};
 
 // CONSTANTS
 // =================================================================================================
@@ -44,6 +47,8 @@ const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
 const ENV_POW_CHALLENGE_LIFETIME: &str = "MIDEN_FAUCET_POW_CHALLENGE_LIFETIME";
+const ENV_POW_GROWTH_RATE: &str = "MIDEN_FAUCET_POW_GROWTH_RATE";
+const ENV_POW_BASELINE: &str = "MIDEN_FAUCET_POW_BASELINE";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 const ENV_NETWORK: &str = "MIDEN_FAUCET_NETWORK";
@@ -101,6 +106,18 @@ pub enum Command {
         /// challenge is still valid.
         #[arg(long = "pow-challenge-lifetime", value_name = "DURATION", env = ENV_POW_CHALLENGE_LIFETIME, default_value = "30s", value_parser = humantime::parse_duration)]
         pow_challenge_lifetime: Duration,
+
+        /// The number of simultaneous active requests needed to increase the `PoW` challenges
+        /// difficulty. This sets how fast the difficulty increases with requests.
+        #[arg(long = "pow-growth-rate", value_name = "NON_ZERO_USIZE", env = ENV_POW_GROWTH_RATE, default_value = "8")]
+        pow_growth_rate: NonZeroUsize,
+
+        /// The baseline for the `PoW` challenges. This sets the base difficulty for
+        /// all challenges. It must be between 0 and 32. A bigger baseline means higher
+        /// difficulty.
+        #[arg(value_parser = clap::value_parser!(u8).range(0..=32))]
+        #[arg(long = "pow-baseline", value_name = "U8", env = ENV_POW_BASELINE, default_value = "8")]
+        pow_baseline: u8,
 
         /// Comma-separated list of API keys.
         #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
@@ -178,6 +195,8 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             asset_amounts,
             pow_secret,
             pow_challenge_lifetime,
+            pow_growth_rate,
+            pow_baseline,
             api_keys,
             open_telemetry: _,
         } => {
@@ -206,12 +225,17 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 .context("failed to decode API keys")?;
             let asset_options = AssetOptions::new(asset_amounts)
                 .map_err(|e| anyhow::anyhow!("failed to create asset options: {}", e))?;
+            let pow_config = PoWConfig {
+                challenge_lifetime: pow_challenge_lifetime,
+                growth_rate: pow_growth_rate,
+                baseline: pow_baseline,
+            };
             let server = Server::new(
                 faucet.faucet_id(),
                 asset_options,
                 tx_requests,
                 pow_secret.unwrap_or_default().as_str(),
-                pow_challenge_lifetime,
+                pow_config,
                 &api_keys,
             );
 
@@ -314,6 +338,7 @@ fn long_version() -> LongVersion {
 mod test {
     use std::{
         env::temp_dir,
+        num::NonZeroUsize,
         process::Stdio,
         str::FromStr,
         time::{Duration, Instant},
@@ -485,6 +510,8 @@ mod test {
                         api_keys: vec![],
                         pow_secret: None,
                         pow_challenge_lifetime: Duration::from_secs(30),
+                        pow_growth_rate: NonZeroUsize::new(1).unwrap(),
+                        pow_baseline: 0,
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

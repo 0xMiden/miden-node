@@ -55,30 +55,74 @@ pub fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     add_network_attributes(span, request)
 }
 
-/// A [`trace_fn`](tonic::transport::server::Server) implementation for the store which adds
-/// open-telemetry information to the span.
+/// A [`trace_fn`](tonic::transport::server::Server) implementation for the store's RPC API which
+/// adds open-telemetry information to the span.
 ///
-/// Creates an `info` span following the open-telemetry standard: `store.rpc/{method}`. Additionally
-/// also pulls in remote tracing context which allows the server trace to be connected to the
-/// client's origin trace.
-pub fn store_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let span = match request.uri().path().rsplit('/').next() {
-        Some("ApplyBlock") => rpc_span!("store.rpc", "ApplyBlock"),
-        Some("CheckNullifiers") => rpc_span!("store.rpc", "CheckNullifiers"),
-        Some("CheckNullifiersByPrefix") => rpc_span!("store.rpc", "CheckNullifiersByPrefix"),
-        Some("GetAccountDetails") => rpc_span!("store.rpc", "GetAccountDetails"),
-        Some("GetAccountProofs") => rpc_span!("store.rpc", "GetAccountProofs"),
-        Some("GetAccountStateDelta") => rpc_span!("store.rpc", "GetAccountStateDelta"),
-        Some("GetBlockByNumber") => rpc_span!("store.rpc", "GetBlockByNumber"),
-        Some("GetBlockHeaderByNumber") => rpc_span!("store.rpc", "GetBlockHeaderByNumber"),
-        Some("GetBlockInputs") => rpc_span!("store.rpc", "GetBlockInputs"),
-        Some("GetBatchInputs") => rpc_span!("store.rpc", "GetBatchInputs"),
-        Some("GetNotesById") => rpc_span!("store.rpc", "GetNotesById"),
-        Some("GetTransactionInputs") => rpc_span!("store.rpc", "GetTransactionInputs"),
-        Some("SyncNotes") => rpc_span!("store.rpc", "SyncNotes"),
-        Some("SyncState") => rpc_span!("store.rpc", "SyncState"),
-        Some("Status") => rpc_span!("store.rpc", "Status"),
-        _ => rpc_span!("store.rpc", "Unknown"),
+/// Creates an `info` span following the open-telemetry standard: `store.rpc.rpc/{method}`.
+/// Additionally also pulls in remote tracing context which allows the server trace to be connected
+/// to the client's origin trace.
+pub fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
+    let span = match method {
+        "CheckNullifiers" => rpc_span!("store.rpc.rpc", "CheckNullifiers"),
+        "CheckNullifiersByPrefix" => rpc_span!("store.rpc.rpc", "CheckNullifiersByPrefix"),
+        "GetAccountDetails" => rpc_span!("store.rpc.rpc", "GetAccountDetails"),
+        "GetAccountProofs" => rpc_span!("store.rpc.rpc", "GetAccountProofs"),
+        "GetAccountStateDelta" => rpc_span!("store.rpc.rpc", "GetAccountStateDelta"),
+        "GetBlockByNumber" => rpc_span!("store.rpc.rpc", "GetBlockByNumber"),
+        "GetBlockHeaderByNumber" => rpc_span!("store.rpc.rpc", "GetBlockHeaderByNumber"),
+        "GetNotesById" => rpc_span!("store.rpc.rpc", "GetNotesById"),
+        "SyncNotes" => rpc_span!("store.rpc.rpc", "SyncNotes"),
+        "SyncState" => rpc_span!("store.rpc.rpc", "SyncState"),
+        "Status" => rpc_span!("store.rpc.rpc", "Status"),
+        _ => rpc_span!("store.rpc.rpc", "Unknown"),
+    };
+
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
+}
+
+/// A [`trace_fn`](tonic::transport::server::Server) implementation for the store's block-producer
+/// API which adds open-telemetry information to the span.
+///
+/// Creates an `info` span following the open-telemetry standard:
+/// `store.block-producer.rpc/{method}`. Additionally also pulls in remote tracing context which
+/// allows the server trace to be connected to the client's origin trace.
+pub fn store_block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
+    let span = match method {
+        "ApplyBlock" => rpc_span!("store.block-producer.rpc", "ApplyBlock"),
+        "GetBlockHeaderByNumber" => rpc_span!("store.block-producer.rpc", "GetBlockHeaderByNumber"),
+        "GetBlockInputs" => rpc_span!("store.block-producer.rpc", "GetBlockInputs"),
+        "GetBatchInputs" => rpc_span!("store.block-producer.rpc", "GetBatchInputs"),
+        "GetTransactionInputs" => rpc_span!("store.block-producer.rpc", "GetTransactionInputs"),
+        _ => rpc_span!("store.block-producer.rpc", "Unknown"),
+    };
+
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
+}
+
+/// A [`trace_fn`](tonic::transport::server::Server) implementation for the store's ntx-builder API
+/// which adds open-telemetry information to the span.
+///
+/// Creates an `info` span following the open-telemetry standard: `store.ntx-builder.rpc/{method}`.
+/// Additionally also pulls in remote tracing context which allows the server trace to be connected
+/// to the client's origin trace.
+pub fn store_ntx_builder_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
+    let span = match method {
+        "GetBlockHeaderByNumber" => rpc_span!("store.ntx-builder.rpc", "GetBlockHeaderByNumber"),
+        "GetUnconsumedNetworkNotes" => {
+            rpc_span!("store.ntx-builder.rpc", "GetUnconsumedNetworkNotes")
+        },
+        "GetCurrentBlockchainData" => {
+            rpc_span!("store.ntx-builder.rpc", "GetCurrentBlockchainData")
+        },
+        "GetNetworkAccountDetailsByPrefix" => {
+            rpc_span!("store.ntx-builder.rpc", "GetNetworkAccountDetailsByPrefix")
+        },
+        _ => rpc_span!("store.ntx-builder.rpc", "Unknown"),
     };
 
     let span = add_otel_span_attributes(span, request);

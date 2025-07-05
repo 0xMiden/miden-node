@@ -19,12 +19,15 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use url::Url;
 
-use super::{ENV_DATA_DIRECTORY, ENV_STORE_URL};
+use super::{
+    ENV_DATA_DIRECTORY, ENV_STORE_BLOCK_PRODUCER_URL, ENV_STORE_NTX_BUILDER_URL, ENV_STORE_RPC_URL,
+};
 use crate::commands::ENV_ENABLE_OTEL;
 
 /// The default filepath for the genesis account.
 const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
 
+#[allow(clippy::large_enum_variant, reason = "single use enum")]
 #[derive(clap::Subcommand)]
 pub enum StoreCommand {
     /// Bootstraps the blockchain database with the genesis block.
@@ -43,10 +46,21 @@ pub enum StoreCommand {
     },
 
     /// Starts the store component.
+    ///
+    /// The store exposes three separate APIs, each on a different address and with the necessary
+    /// endpoints to be accessed by the node's components.
     Start {
-        /// Url at which to serve the gRPC API.
-        #[arg(long, env = ENV_STORE_URL, value_name = "URL")]
-        url: Url,
+        /// Url at which to serve the store's RPC API.
+        #[arg(long = "rpc.url", env = ENV_STORE_RPC_URL, value_name = "URL")]
+        rpc_url: Url,
+
+        /// Url at which to serve the store's network transaction builder API.
+        #[arg(long = "ntx-builder.url", env = ENV_STORE_NTX_BUILDER_URL, value_name = "URL")]
+        ntx_builder_url: Url,
+
+        /// Url at which to serve the store's block producer API.
+        #[arg(long = "block-producer.url", env = ENV_STORE_BLOCK_PRODUCER_URL, value_name = "URL")]
+        block_producer_url: Url,
 
         /// Directory in which to store the database and raw block data.
         #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
@@ -68,9 +82,13 @@ impl StoreCommand {
             StoreCommand::Bootstrap { data_directory, accounts_directory } => {
                 Self::bootstrap(&data_directory, &accounts_directory)
             },
-            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
-                Self::start(url, data_directory).await
-            },
+            StoreCommand::Start {
+                rpc_url,
+                ntx_builder_url,
+                block_producer_url,
+                data_directory,
+                enable_otel: _,
+            } => Self::start(rpc_url, ntx_builder_url, block_producer_url, data_directory).await,
         }
     }
 
@@ -82,17 +100,42 @@ impl StoreCommand {
         }
     }
 
-    async fn start(url: Url, data_directory: PathBuf) -> anyhow::Result<()> {
-        let listener =
-            url.to_socket().context("Failed to extract socket address from store URL")?;
-        let listener = tokio::net::TcpListener::bind(listener)
+    async fn start(
+        rpc_url: Url,
+        ntx_builder_url: Url,
+        block_producer_url: Url,
+        data_directory: PathBuf,
+    ) -> anyhow::Result<()> {
+        let rpc_listener = rpc_url
+            .to_socket()
+            .context("Failed to extract socket address from store RPC URL")?;
+        let rpc_listener = tokio::net::TcpListener::bind(rpc_listener)
             .await
-            .context("Failed to bind to store's gRPC URL")?;
+            .context("Failed to bind to store's RPC gRPC URL")?;
 
-        Store { listener, data_directory }
-            .serve()
+        let ntx_builder_addr = ntx_builder_url
+            .to_socket()
+            .context("Failed to extract socket address from store ntx-builder URL")?;
+        let ntx_builder_listener = tokio::net::TcpListener::bind(ntx_builder_addr)
             .await
-            .context("failed while serving store component")
+            .context("Failed to bind to store's ntx-builder gRPC URL")?;
+
+        let block_producer_listener = block_producer_url
+            .to_socket()
+            .context("Failed to extract socket address from store block-producer URL")?;
+        let block_producer_listener = tokio::net::TcpListener::bind(block_producer_listener)
+            .await
+            .context("Failed to bind to store's block-producer gRPC URL")?;
+
+        Store {
+            rpc_listener,
+            ntx_builder_listener,
+            block_producer_listener,
+            data_directory,
+        }
+        .serve()
+        .await
+        .context("failed while serving store component")
     }
 
     fn bootstrap(data_directory: &Path, accounts_directory: &Path) -> anyhow::Result<()> {

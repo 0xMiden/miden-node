@@ -3,7 +3,7 @@ use miden_node_rpc::Rpc;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
-use super::{ENV_BLOCK_PRODUCER_URL, ENV_RPC_URL, ENV_STORE_URL};
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_RPC_URL, ENV_STORE_RPC_URL};
 use crate::commands::ENV_ENABLE_OTEL;
 
 #[derive(clap::Subcommand)]
@@ -14,8 +14,8 @@ pub enum RpcCommand {
         #[arg(long = "url", env = ENV_RPC_URL, value_name = "URL")]
         url: Url,
 
-        /// The store's gRPC url.
-        #[arg(long = "store.url", env = ENV_STORE_URL, value_name = "URL")]
+        /// The store's RPC service gRPC url.
+        #[arg(long = "store.url", env = ENV_STORE_RPC_URL, value_name = "URL")]
         store_url: Url,
 
         /// The block-producer's gRPC url. If unset, will run the RPC in read-only mode,

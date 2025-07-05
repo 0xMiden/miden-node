@@ -1,16 +1,13 @@
 use miden_node_proto::{
+    clients::{ClientBuilder, NtxBuilderStoreClient},
     domain::note::NetworkNote,
     errors::{ConversionError, MissingFieldHelper},
-    generated::{
-        requests::{
-            GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
-            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
-        },
-        store::ntx_builder_client as store_client,
+    generated::requests::{
+        GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
+        GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
     },
     try_convert,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
@@ -19,7 +16,6 @@ use miden_objects::{
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{info, instrument};
 use url::Url;
 
@@ -28,26 +24,26 @@ use crate::COMPONENT;
 // STORE CLIENT
 // ================================================================================================
 
-type InnerClient = store_client::NtxBuilderClient<InterceptedService<Channel, OtelInterceptor>>;
-
 /// Interface to the store's gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
 pub struct StoreClient {
-    inner: InnerClient,
+    inner: NtxBuilderStoreClient,
 }
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub fn new(store_url: &Url) -> Self {
-        let channel = tonic::transport::Endpoint::try_from(store_url.to_string())
-            .expect("valid gRPC endpoint URL")
-            .connect_lazy();
-        let store = store_client::NtxBuilderClient::with_interceptor(channel, OtelInterceptor);
+    pub async fn new(store_url: &Url) -> Result<Self, miden_node_proto::clients::ClientError> {
+        let inner = ClientBuilder::new()
+            .with_otel()
+            .with_lazy_connection(true)
+            .build_ntx_builder_store_client(store_url)
+            .await?;
+
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 
-        Self { inner: store }
+        Ok(Self { inner })
     }
 
     /// Returns the latest block's header from the store.
@@ -57,6 +53,7 @@ impl StoreClient {
         let response = self
             .inner
             .clone()
+            .get_mut()
             .get_block_header_by_number(tonic::Request::new(
                 GetBlockHeaderByNumberRequest::default(),
             ))
@@ -82,7 +79,13 @@ impl StoreClient {
             block_num: block_num.as_ref().map(BlockNumber::as_u32),
         });
 
-        let response = self.inner.clone().get_current_blockchain_data(request).await?.into_inner();
+        let response = self
+            .inner
+            .clone()
+            .get_mut()
+            .get_current_blockchain_data(request)
+            .await?
+            .into_inner();
 
         match response.current_block_header {
             // There are new blocks compared to the builder's latest state
@@ -114,7 +117,13 @@ impl StoreClient {
 
         loop {
             let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
-            let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
+            let resp = self
+                .inner
+                .clone()
+                .get_mut()
+                .get_unconsumed_network_notes(req)
+                .await?
+                .into_inner();
 
             let page: Vec<NetworkNote> = resp
                 .notes
@@ -144,6 +153,7 @@ impl StoreClient {
         let store_response = self
             .inner
             .clone()
+            .get_mut()
             .get_network_account_details_by_prefix(request)
             .await?
             .into_inner()

@@ -2155,7 +2155,6 @@ dependencies = [
  "miden-lib",
  "miden-node-block-producer",
  "miden-node-proto",
- "miden-node-rpc",
  "miden-node-utils",
  "miden-objects",
  "miden-remote-prover-client",
@@ -2340,8 +2339,10 @@ dependencies = [
  "prost-build",
  "protox",
  "thiserror 2.0.12",
+ "tokio",
  "tonic",
  "tonic-build",
+ "url",
 ]
 
 [[package]]
@@ -2424,12 +2425,10 @@ dependencies = [
  "miden-node-block-producer",
  "miden-node-proto",
  "miden-node-store",
- "miden-node-utils",
  "miden-objects",
  "rand 0.9.1",
  "rayon",
  "tokio",
- "tonic",
  "winterfell",
 ]
 
@@ -2564,6 +2563,7 @@ version = "0.10.0"
 dependencies = [
  "async-trait",
  "getrandom 0.3.3",
+ "miden-node-proto",
  "miden-node-proto-build",
  "miden-objects",
  "miden-tx",
@@ -2572,7 +2572,6 @@ dependencies = [
  "prost-build",
  "protox",
  "thiserror 2.0.12",
- "tokio",
  "tonic",
  "tonic-build",
  "tonic-web",

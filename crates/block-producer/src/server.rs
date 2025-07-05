@@ -75,7 +75,9 @@ impl BlockProducer {
     #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
-        let store = StoreClient::new(self.store_address);
+        let store = StoreClient::new(self.store_address)
+            .await
+            .context("Failed to create store client")?;
 
         // retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
@@ -118,7 +120,7 @@ impl BlockProducer {
 
         let block_builder = BlockBuilder::new(
             store.clone(),
-            ntx_builder,
+            ntx_builder.clone(),
             self.block_prover_url,
             self.block_interval,
         );
@@ -165,10 +167,6 @@ impl BlockProducer {
                 }
             })
             .id();
-
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
 
         let rpc_id = tasks
             .spawn(async move {

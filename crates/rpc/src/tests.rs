@@ -1,8 +1,11 @@
 use std::{net::SocketAddr, time::Duration};
 
-use miden_node_proto::generated::{
-    requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
-    rpc::api_client::ApiClient as ProtoClient,
+use miden_node_proto::{
+    clients::{ClientBuilder, RpcApiClient},
+    generated::{
+        requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
+        rpc::api_client::ApiClient as ProtoClient,
+    },
 };
 use miden_node_store::{GenesisState, Store};
 use tempfile::TempDir;
@@ -13,7 +16,7 @@ use tokio::{
 };
 use url::Url;
 
-use crate::{ApiClient, Rpc};
+use crate::Rpc;
 
 #[tokio::test]
 async fn rpc_server_accepts_requests_without_accept_header() {
@@ -68,8 +71,13 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         // Recreate the RPC client with an invalid version.
         let url = rpc_addr.to_string();
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-        let mut rpc_client =
-            ApiClient::connect(&url, Duration::from_secs(10), Some(version)).await.unwrap();
+        let mut rpc_client = ClientBuilder::new()
+            .with_tls()
+            .with_timeout(Duration::from_secs(10))
+            .with_rpc_version(version)
+            .build_rpc_api_client(&url)
+            .await
+            .unwrap();
 
         // Send any request to the RPC.
         let response = send_request(&mut rpc_client).await;
@@ -132,7 +140,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
 
 /// Sends an arbitrary / irrelevant request to the RPC.
 async fn send_request(
-    rpc_client: &mut ApiClient,
+    rpc_client: &mut RpcApiClient,
 ) -> std::result::Result<tonic::Response<GetBlockHeaderByNumberResponse>, tonic::Status> {
     let request = GetBlockHeaderByNumberRequest {
         block_num: Some(0),
@@ -143,7 +151,7 @@ async fn send_request(
 
 /// Binds a socket on an available port, runs the RPC server on it, and
 /// returns a client to talk to the server, along with the socket address.
-async fn start_rpc() -> (ApiClient, std::net::SocketAddr, std::net::SocketAddr) {
+async fn start_rpc() -> (RpcApiClient, std::net::SocketAddr, std::net::SocketAddr) {
     let store_addr = {
         let store_listener =
             TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
@@ -172,7 +180,13 @@ async fn start_rpc() -> (ApiClient, std::net::SocketAddr, std::net::SocketAddr) 
     });
     let url = rpc_addr.to_string();
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let rpc_client = ApiClient::connect(&url, Duration::from_secs(10), None).await.unwrap();
+    let rpc_client = ClientBuilder::new()
+        .with_tls()
+        .with_timeout(Duration::from_secs(10))
+        .with_rpc_version(env!("CARGO_PKG_VERSION"))
+        .build_rpc_api_client(&url)
+        .await
+        .unwrap();
 
     (rpc_client, rpc_addr, store_addr)
 }

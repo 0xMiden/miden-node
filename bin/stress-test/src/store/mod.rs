@@ -4,23 +4,23 @@ use std::{
 };
 
 use futures::{StreamExt, stream};
-use miden_node_proto::generated::{
-    account as account_proto,
-    digest::Digest,
-    requests::{
-        CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
+use miden_node_proto::{
+    clients::RpcStoreClient,
+    generated::{
+        account as account_proto,
+        digest::Digest,
+        requests::{
+            CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
+        },
+        responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
     },
-    responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
-    store::rpc_client::RpcClient,
 };
-use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::AccountId,
     note::{NoteDetails, NoteTag},
     utils::{Deserializable, Serializable},
 };
 use tokio::fs;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 
 use crate::{
     seeding::{ACCOUNTS_FILENAME, start_store},
@@ -74,7 +74,7 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
 /// - the elapsed time.
 /// - the response.
 pub async fn sync_state(
-    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
+    api_client: &mut RpcStoreClient,
     account_ids: Vec<AccountId>,
     block_num: u32,
 ) -> (Duration, SyncStateResponse) {
@@ -91,7 +91,7 @@ pub async fn sync_state(
     let sync_request = SyncStateRequest { block_num, note_tags, account_ids };
 
     let start = Instant::now();
-    let response = api_client.sync_state(sync_request).await.unwrap();
+    let response = api_client.get_mut().sync_state(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
 }
 
@@ -134,10 +134,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
 /// Sends a single `sync_notes` request to the store and returns the elapsed time.
 /// The note tags are generated from the account ids, so the request will contain a note tag for
 /// each account id, with a block number of 0.
-pub async fn sync_notes(
-    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
-    account_ids: Vec<AccountId>,
-) -> Duration {
+pub async fn sync_notes(api_client: &mut RpcStoreClient, account_ids: Vec<AccountId>) -> Duration {
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
@@ -145,7 +142,7 @@ pub async fn sync_notes(
     let sync_request = SyncNoteRequest { block_num: 0, note_tags };
 
     let start = Instant::now();
-    api_client.sync_notes(sync_request).await.unwrap();
+    api_client.get_mut().sync_notes(sync_request).await.unwrap();
     start.elapsed()
 }
 
@@ -184,6 +181,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 
         // get the notes nullifiers.
         let notes = store_client
+            .get_mut()
             .get_notes_by_id(GetNotesByIdRequest { note_ids })
             .await
             .unwrap()
@@ -238,7 +236,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 /// - the elapsed time.
 /// - the response.
 async fn check_nullifiers_by_prefix(
-    api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
+    api_client: &mut RpcStoreClient,
     nullifiers_prefixes: Vec<u32>,
 ) -> (Duration, CheckNullifiersByPrefixResponse) {
     let sync_request = CheckNullifiersByPrefixRequest {
@@ -248,6 +246,6 @@ async fn check_nullifiers_by_prefix(
     };
 
     let start = Instant::now();
-    let response = api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
+    let response = api_client.get_mut().check_nullifiers_by_prefix(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
 }

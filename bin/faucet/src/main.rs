@@ -44,6 +44,7 @@ const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
 const ENV_POW_CHALLENGE_LIFETIME: &str = "MIDEN_FAUCET_POW_CHALLENGE_LIFETIME";
+const ENV_POW_CLEANUP_INTERVAL: &str = "MIDEN_FAUCET_POW_CLEANUP_INTERVAL";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
 const ENV_ENABLE_OTEL: &str = "MIDEN_FAUCET_ENABLE_OTEL";
 const ENV_NETWORK: &str = "MIDEN_FAUCET_NETWORK";
@@ -101,6 +102,10 @@ pub enum Command {
         /// challenge is still valid.
         #[arg(long = "pow-challenge-lifetime", value_name = "DURATION", env = ENV_POW_CHALLENGE_LIFETIME, default_value = "30s", value_parser = humantime::parse_duration)]
         pow_challenge_lifetime: Duration,
+
+        /// The interval at which the `PoW` challenge cache is cleaned up.
+        #[arg(long = "pow-cleanup-interval", value_name = "DURATION", env = ENV_POW_CLEANUP_INTERVAL, default_value = "2s", value_parser = humantime::parse_duration)]
+        pow_cleanup_interval: Duration,
 
         /// Comma-separated list of API keys.
         #[arg(long = "api-keys", value_name = "STRING", env = ENV_API_KEYS, num_args = 1.., value_delimiter = ',')]
@@ -178,6 +183,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             asset_amounts,
             pow_secret,
             pow_challenge_lifetime,
+            pow_cleanup_interval,
             api_keys,
             open_telemetry: _,
         } => {
@@ -212,6 +218,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 tx_requests,
                 pow_secret.unwrap_or_default().as_str(),
                 pow_challenge_lifetime,
+                pow_cleanup_interval,
                 &api_keys,
             );
 
@@ -485,6 +492,7 @@ mod test {
                         api_keys: vec![],
                         pow_secret: None,
                         pow_challenge_lifetime: Duration::from_secs(30),
+                        pow_cleanup_interval: Duration::from_secs(1),
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

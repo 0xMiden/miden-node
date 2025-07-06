@@ -35,103 +35,10 @@ pub enum AccountConfig {
     Faucet(FaucetConfig),
 }
 
-/// `false` doesn't pass the `syn::Path` parsing, so we do one level indirection
-const fn ja() -> bool {
-    true
-}
+// GENESIS CONFIG
+// ================================================================================================
 
-/// Represents a wallet, containing a set of assets
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct WalletConfig {
-    #[serde(default)]
-    is_updatable: bool,
-    #[serde(default)]
-    storage_mode: StorageMode,
-    assets: Vec<AssetEntry>,
-}
-
-/// Represents a faucet with asset specific properties
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FaucetConfig {
-    // TODO eventually directly parse to `TokenSymbol`
-    symbol: String,
-    decimals: u8,
-    /// Max supply in full token units
-    ///
-    /// It will be converted internally to the smallest representable unit,
-    /// using based `10.powi(decimals)` as a multiplier.
-    max_supply: u64,
-    #[serde(default)]
-    storage_mode: StorageMode,
-    #[serde(default = "self::ja")]
-    fungible: bool,
-}
-
-/// See the [full description](https://0xmiden.github.io/miden-base/account.html?highlight=Accoun#account-storage-mode)
-/// for details
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
-pub enum StorageMode {
-    /// Monitor for `Notes` related to the account, in addition to being `Public`.
-    #[serde(alias = "network")]
-    #[default]
-    Network,
-    /// A publicly stored account, lives on-chain.
-    #[serde(alias = "public")]
-    Public,
-    /// A private account, which must be known by interactors.
-    #[serde(alias = "private")]
-    Private,
-}
-
-impl From<StorageMode> for AccountStorageMode {
-    fn from(mode: StorageMode) -> AccountStorageMode {
-        match mode {
-            StorageMode::Network => AccountStorageMode::Network,
-            StorageMode::Private => AccountStorageMode::Private,
-            StorageMode::Public => AccountStorageMode::Public,
-        }
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-struct AssetEntry {
-    symbol: String,
-    /// The amount of full token units the given asset is populated with
-    amount: u64,
-}
-
-#[derive(Debug, Clone)]
-pub struct AccountFileWithName {
-    pub name: String,
-    pub account_file: AccountFile,
-}
-
-/// Secrets generated during the state generation
-#[derive(Debug, Clone)]
-pub struct AccountSecrets {
-    // name, account, private key, account seed
-    pub secrets: Vec<(String, Account, SecretKey, Word)>,
-}
-
-impl AccountSecrets {
-    /// Convert the internal tuple into an `AccountFile`
-    ///
-    /// If no name is present, a new one is generated based on the current time
-    /// and the index in
-    pub fn as_account_files(&self) -> impl Iterator<Item = AccountFileWithName> {
-        self.secrets.iter().map(|(name, account, secret_key, account_seed)| {
-            let account_file = AccountFile::new(
-                account.clone(),
-                Some(*account_seed),
-                vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
-            );
-            let name = name.to_string();
-            AccountFileWithName { name, account_file }
-        })
-    }
-}
-
-/// Specify a set of faucets and wallets with assets for easier test depoyments
+/// Specify a set of faucets and wallets with assets for easier test deployments.
 ///
 /// Notice: Any faucet must be declared _before_ it's use in a wallet/regular account.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -314,6 +221,112 @@ impl GenesisConfig {
     }
 }
 
+// FUNGIBLE FAUCET CONFIG
+// ================================================================================================
+
+/// Represents a faucet with asset specific properties
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FaucetConfig {
+    // TODO eventually directly parse to `TokenSymbol`
+    symbol: String,
+    decimals: u8,
+    /// Max supply in full token units
+    ///
+    /// It will be converted internally to the smallest representable unit,
+    /// using based `10.powi(decimals)` as a multiplier.
+    max_supply: u64,
+    #[serde(default)]
+    storage_mode: StorageMode,
+    #[serde(default = "self::ja")]
+    fungible: bool,
+}
+
+// WALLET CONFIG
+// ================================================================================================
+
+/// Represents a wallet, containing a set of assets
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WalletConfig {
+    #[serde(default)]
+    is_updatable: bool,
+    #[serde(default)]
+    storage_mode: StorageMode,
+    assets: Vec<AssetEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct AssetEntry {
+    symbol: String,
+    /// The amount of full token units the given asset is populated with
+    amount: u64,
+}
+
+// STORAGE MODE
+// ================================================================================================
+
+/// See the [full description](https://0xmiden.github.io/miden-base/account.html?highlight=Accoun#account-storage-mode)
+/// for details
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, Default)]
+pub enum StorageMode {
+    /// Monitor for `Notes` related to the account, in addition to being `Public`.
+    #[serde(alias = "network")]
+    #[default]
+    Network,
+    /// A publicly stored account, lives on-chain.
+    #[serde(alias = "public")]
+    Public,
+    /// A private account, which must be known by interactors.
+    #[serde(alias = "private")]
+    Private,
+}
+
+impl From<StorageMode> for AccountStorageMode {
+    fn from(mode: StorageMode) -> AccountStorageMode {
+        match mode {
+            StorageMode::Network => AccountStorageMode::Network,
+            StorageMode::Private => AccountStorageMode::Private,
+            StorageMode::Public => AccountStorageMode::Public,
+        }
+    }
+}
+
+// ACCOUNTS
+// ================================================================================================
+
+#[derive(Debug, Clone)]
+pub struct AccountFileWithName {
+    pub name: String,
+    pub account_file: AccountFile,
+}
+
+/// Secrets generated during the state generation
+#[derive(Debug, Clone)]
+pub struct AccountSecrets {
+    // name, account, private key, account seed
+    pub secrets: Vec<(String, Account, SecretKey, Word)>,
+}
+
+impl AccountSecrets {
+    /// Convert the internal tuple into an `AccountFile`
+    ///
+    /// If no name is present, a new one is generated based on the current time
+    /// and the index in
+    pub fn as_account_files(&self) -> impl Iterator<Item = AccountFileWithName> {
+        self.secrets.iter().map(|(name, account, secret_key, account_seed)| {
+            let account_file = AccountFile::new(
+                account.clone(),
+                Some(*account_seed),
+                vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
+            );
+            let name = name.to_string();
+            AccountFileWithName { name, account_file }
+        })
+    }
+}
+
+// HELPER FUNCTIONS
+// ================================================================================================
+
 /// Calculate the max supply of the token.
 fn max_supply_in_undividable_units(
     max_supply_in_token_units: u64,
@@ -330,4 +343,9 @@ fn max_supply_in_undividable_units(
     let max_supply = Felt::try_from(max_supply)
         .map_err(|_| Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS })?;
     Ok(max_supply)
+}
+
+/// `false` doesn't pass the `syn::Path` parsing, so we do one level indirection
+const fn ja() -> bool {
+    true
 }

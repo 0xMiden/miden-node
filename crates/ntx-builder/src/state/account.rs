@@ -24,21 +24,23 @@ pub struct AccountState {
 }
 
 impl AccountState {
+    /// Creates a new account state using the given value as the committed state.
     pub fn committed(account: Account) -> Self {
         Self {
             committed: Some(account),
-            inflight: Default::default(),
-            available_notes: Default::default(),
-            nullified_notes: Default::default(),
+            inflight: VecDeque::default(),
+            available_notes: BTreeMap::default(),
+            nullified_notes: BTreeMap::default(),
         }
     }
 
+    /// Creates a new account state where the creating transaction is still inflight.
     pub fn uncommitted(account: Account) -> Self {
         Self {
             inflight: VecDeque::from([account]),
-            committed: Default::default(),
-            available_notes: Default::default(),
-            nullified_notes: Default::default(),
+            committed: None,
+            available_notes: BTreeMap::default(),
+            nullified_notes: BTreeMap::default(),
         }
     }
 
@@ -46,7 +48,7 @@ impl AccountState {
     pub fn add_delta(&mut self, delta: &AccountDelta) {
         let mut state = self.account();
         state
-            .apply_delta(&delta)
+            .apply_delta(delta)
             .expect("network account delta should apply since it was accepted by the mempool");
 
         self.inflight.push_back(state);
@@ -129,12 +131,11 @@ impl AccountState {
 
     /// Returns the latest inflight account state.
     pub fn account(&self) -> Account {
-        return self
-            .inflight
+        self.inflight
             .back()
             .or(self.committed.as_ref())
             .expect("account must have either a committed or inflight state")
-            .clone();
+            .clone()
     }
 
     /// Returns `true` if there is no inflight state being tracked.

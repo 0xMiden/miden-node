@@ -69,11 +69,11 @@ impl State {
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
         let mut state = Self {
             store,
-            accounts: Default::default(),
-            queue: Default::default(),
-            in_progress: Default::default(),
-            inflight_txs: Default::default(),
-            nullifier_idx: Default::default(),
+            accounts: HashMap::default(),
+            queue: VecDeque::default(),
+            in_progress: HashSet::default(),
+            inflight_txs: BTreeMap::default(),
+            nullifier_idx: BTreeMap::default(),
         };
 
         let notes = state.store.get_unconsumed_network_notes().await?;
@@ -177,7 +177,7 @@ impl State {
                     self.revert_transaction(tx);
                 }
             },
-        };
+        }
 
         Ok(())
     }
@@ -292,12 +292,9 @@ impl State {
         }
     }
 
-    /// Grants mutable access to the given account state, creating a default entry if none exists.
+    /// Returns the current inflight account, loading it from the store if it isn't present locally.
     ///
-    /// This is effectively a thin wrapper around the entry API, but this also tracks new accounts
-    /// to the queue.
-    ///
-    /// This _must_ be the only way new accounts are added as otherwise they won't be queued.
+    /// Returns `None` if the account is unknown.
     async fn account_or_load(
         &mut self,
         prefix: NetworkAccountPrefix,

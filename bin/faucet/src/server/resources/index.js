@@ -219,15 +219,15 @@ document.addEventListener('DOMContentLoaded', function () {
                 let hash = sha3_256.create();
                 hash.update(challenge);  // Use the hex-encoded challenge string directly
 
-                // Convert nonce to 8-byte little-endian format to match backend
+                // Convert nonce to 8-byte big-endian format to match backend
                 const nonceBytes = new ArrayBuffer(8);
                 const nonceView = new DataView(nonceBytes);
-                nonceView.setBigUint64(0, BigInt(nonce), true); // true = little-endian
+                nonceView.setBigUint64(0, BigInt(nonce), false); // false = big-endian
                 const nonceByteArray = new Uint8Array(nonceBytes);
                 hash.update(nonceByteArray);
 
-                // Take the last 8 bytes of the hash and parse them as u64
-                let digest = BigInt("0x" + hash.hex().slice(-16));
+                // Take the first 8 bytes of the hash and parse them as u64 in big-endian
+                let digest = BigInt("0x" + hash.hex().slice(0, 16));
 
                 // Check if the hash is less than the target
                 if (digest < targetNum) {

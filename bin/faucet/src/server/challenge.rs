@@ -19,7 +19,7 @@ const CHALLENGE_ENCODED_SIZE: usize = 95;
 pub struct Challenge {
     /// The target used to validate the challenge solution. A lower target makes the challenge more
     /// difficult to solve. A solution is valid if the hash `H(challenge, nonce)`, interpreted as a
-    /// little-endian u64 from the first 8 bytes, is less than this target value.
+    /// big-endian u64 from the first 8 bytes, is less than this target value.
     pub(crate) target: u64,
     /// The timestamp of the challenge creation.
     pub(crate) timestamp: u64,
@@ -120,15 +120,17 @@ impl Challenge {
     }
 
     /// Checks whether the provided nonce satisfies the target requirement encoded in the
-    /// challenge. The solution is valid if the hash `H(challenge, nonce)`, interpreted as a
-    /// little-endian u64 from the first 8 bytes, is lower than the target value.
+    /// challenge.
+    ///
+    /// The solution is valid if the hash `H(challenge, nonce)`, interpreted as a
+    /// big-endian u64 from the first 8 bytes, is lower than the target value.
     pub fn validate_pow(&self, nonce: u64) -> bool {
         let mut hasher = Sha3_256::new();
         hasher.update(self.encode());
-        hasher.update(nonce.to_le_bytes());
+        hasher.update(nonce.to_be_bytes());
         let hash = hasher.finalize();
         // take 8 bytes from the hash and parse them as u64
-        let number = u64::from_le_bytes(hash[..8].try_into().unwrap());
+        let number = u64::from_be_bytes(hash[..8].try_into().unwrap());
 
         number < self.target
     }

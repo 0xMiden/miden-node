@@ -519,7 +519,7 @@ mod test {
                         pow_challenge_lifetime: Duration::from_secs(30),
                         pow_cleanup_interval: Duration::from_secs(1),
                         pow_growth_rate: NonZeroUsize::new(1).unwrap(),
-                        pow_baseline: 0,
+                        pow_baseline: 12,
                         faucet_account_path: faucet_account_path.clone(),
                         remote_tx_prover_url: None,
                         open_telemetry: false,

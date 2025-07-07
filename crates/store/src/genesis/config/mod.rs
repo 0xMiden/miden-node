@@ -8,7 +8,7 @@ use miden_lib::{
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
-    Felt, FieldElement, StarkField, Word,
+    Felt, FieldElement, ONE, StarkField, Word,
     account::{
         Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
         AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
@@ -116,12 +116,19 @@ impl GenesisConfig {
             let account_storage_mode = storage_mode.into();
 
             // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases
-            let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
+            let (mut faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
                 .account_type(account_type)
                 .storage_mode(account_storage_mode)
                 .with_auth_component(auth)
                 .with_component(component)
                 .build()?;
+
+            faucet_account.apply_delta(&AccountDelta::new(
+                faucet_account.id(),
+                AccountStorageDelta::new(),
+                AccountVaultDelta::default(),
+                ONE,
+            )?)?;
 
             if faucets.insert(symbol.clone(), faucet_account.id()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol: token_symbol });
@@ -166,6 +173,12 @@ impl GenesisConfig {
             let account_storage_mode = storage_mode.into();
             let (mut wallet_account, wallet_account_seed) =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
+            wallet_account.apply_delta(&AccountDelta::new(
+                wallet_account.id(),
+                AccountStorageDelta::new(),
+                AccountVaultDelta::default(),
+                ONE,
+            )?)?;
 
             // Add fungible assets.
             let mut fungible_assets = FungibleAssetDelta::default();

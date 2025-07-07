@@ -101,7 +101,6 @@ impl GenesisConfig {
             let init_seed: [u8; 32] = rng.random();
 
             let token_symbol = TokenSymbol::new(&symbol)?;
-            let max_supply = max_supply_in_undividable_units(max_supply, decimals)?;
 
             let account_type = AccountType::FungibleFaucet;
 
@@ -301,25 +300,4 @@ impl AccountSecrets {
             AccountFileWithName { name, account_file }
         })
     }
-}
-
-// HELPER FUNCTIONS
-// ================================================================================================
-
-/// Calculate the max supply of the token.
-fn max_supply_in_undividable_units(
-    max_supply_in_token_units: u64,
-    decimals: u8,
-) -> Result<Felt, Error> {
-    let base_unit = 10u64.pow(u32::from(decimals));
-    let max_supply =
-        max_supply_in_token_units
-            .checked_mul(base_unit)
-            .ok_or_else(|| Error::OutOfRange {
-                max_supply: max_supply_in_token_units,
-                decimals,
-            })?;
-    let max_supply = Felt::try_from(max_supply)
-        .map_err(|_| Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS })?;
-    Ok(max_supply)
 }

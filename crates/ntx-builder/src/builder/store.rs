@@ -36,9 +36,10 @@ impl StoreClient {
     /// Creates a new store client with a lazy connection.
     pub async fn new(store_url: &Url) -> Result<Self, miden_node_proto::clients::ClientError> {
         let inner = ClientBuilder::new()
+            .with_address(store_url.as_str())
             .with_otel()
             .with_lazy_connection(true)
-            .build_ntx_builder_store_client(store_url)
+            .build_ntx_builder_store_client()
             .await?;
 
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");

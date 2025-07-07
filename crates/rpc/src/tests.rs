@@ -14,7 +14,6 @@ use tokio::{
     runtime::{self, Runtime},
     task,
 };
-use url::Url;
 
 use crate::Rpc;
 
@@ -69,13 +68,13 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         let (store_runtime, _data_directory) = start_store(store_addr).await;
 
         // Recreate the RPC client with an invalid version.
-        let url = rpc_addr.to_string();
-        let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
+        let url = format!("http://{rpc_addr}");
         let mut rpc_client = ClientBuilder::new()
+            .with_address(&url)
             .with_tls()
             .with_timeout(Duration::from_secs(10))
             .with_rpc_version(version)
-            .build_rpc_api_client(&url)
+            .build_rpc_api_client()
             .await
             .unwrap();
 
@@ -178,13 +177,13 @@ async fn start_rpc() -> (RpcApiClient, std::net::SocketAddr, std::net::SocketAdd
         .await
         .expect("Failed to start serving store");
     });
-    let url = rpc_addr.to_string();
-    let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
+    let url = format!("http://{rpc_addr}");
     let rpc_client = ClientBuilder::new()
+        .with_address(&url)
         .with_tls()
         .with_timeout(Duration::from_secs(10))
         .with_rpc_version(env!("CARGO_PKG_VERSION"))
-        .build_rpc_api_client(&url)
+        .build_rpc_api_client()
         .await
         .unwrap();
 

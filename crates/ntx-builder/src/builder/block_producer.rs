@@ -31,9 +31,10 @@ impl BlockProducerClient {
         block_producer_address: SocketAddr,
     ) -> Result<Self, miden_node_proto::clients::ClientError> {
         let client = ClientBuilder::new()
+            .with_address(format!("http://{block_producer_address}"))
             .with_otel()
             .with_lazy_connection(true)
-            .build_block_producer_api_client(block_producer_address)
+            .build_block_producer_api_client()
             .await?;
 
         info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Block producer client initialized");

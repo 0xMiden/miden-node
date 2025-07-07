@@ -22,6 +22,10 @@ pub enum ClientError {
     /// Invalid metadata.
     #[error("Invalid metadata: {0}")]
     InvalidMetadata(String),
+
+    /// Missing address configuration.
+    #[error("No address configured. Use with_address() to set the endpoint URL.")]
+    MissingAddress,
 }
 
 impl From<tonic::Status> for ClientError {

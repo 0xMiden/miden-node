@@ -63,17 +63,19 @@ impl RpcService {
         block_producer_address: Option<SocketAddr>,
     ) -> Result<Self, miden_node_proto::clients::ClientError> {
         let store = ClientBuilder::new()
+            .with_address(format!("http://{store_address}"))
             .with_otel()
             .with_lazy_connection(true)
-            .build_rpc_store_client(store_address)
+            .build_rpc_store_client()
             .await?;
         info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
 
         let block_producer = if let Some(block_producer_address) = block_producer_address {
             let client = ClientBuilder::new()
+                .with_address(format!("http://{block_producer_address}"))
                 .with_otel()
                 .with_lazy_connection(true)
-                .build_block_producer_api_client(block_producer_address)
+                .build_block_producer_api_client()
                 .await?;
             info!(
                 target: COMPONENT,

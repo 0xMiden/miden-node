@@ -134,9 +134,10 @@ impl StoreClient {
         store_address: SocketAddr,
     ) -> Result<Self, miden_node_proto::clients::ClientError> {
         let inner = ClientBuilder::new()
+            .with_address(format!("http://{store_address}"))
             .with_otel()
             .with_lazy_connection(true)
-            .build_block_producer_store_client(store_address)
+            .build_block_producer_store_client()
             .await?;
 
         info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");

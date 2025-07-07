@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use tonic::{
@@ -29,48 +29,34 @@ mod error;
 ///
 /// ```no_run
 /// use miden_node_proto::clients::ClientBuilder;
-/// use std::net::SocketAddr;
-/// use url::Url;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// // Create an RPC store client with OpenTelemetry tracing enabled
-/// let store_addr: SocketAddr = "127.0.0.1:8080".parse()?;
 /// let rpc_client = ClientBuilder::new()
+///     .with_address("http://127.0.0.1:8080")
 ///     .with_otel()
-///     .build_rpc_store_client(store_addr)
+///     .build_rpc_store_client()
 ///     .await?;
 ///
 /// // Create an NtxBuilder store client with TLS and lazy connection
-/// let store_url: Url = "https://store.example.com".parse()?;
 /// let ntx_client = ClientBuilder::new()
+///     .with_address("http://127.0.0.1:8081")
 ///     .with_tls()
 ///     .with_lazy_connection(true)
-///     .build_ntx_builder_store_client(&store_url)
+///     .build_ntx_builder_store_client()
 ///     .await?;
 /// # Ok(())
 /// # }
 /// ```
 
-
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct ClientBuilder {
     with_otel: bool,
     tls: Option<ClientTlsConfig>,
     timeout: Option<Duration>,
     connect_lazy: bool,
     rpc_version: Option<String>,
-}
-
-impl Default for ClientBuilder {
-    fn default() -> Self {
-        Self {
-            with_otel: false,
-            tls: None,
-            timeout: None,
-            connect_lazy: false,
-            rpc_version: None,
-        }
-    }
+    address: Option<Url>,
 }
 
 impl ClientBuilder {
@@ -125,13 +111,17 @@ impl ClientBuilder {
         self
     }
 
+    /// Set the address for the client.
+    #[must_use]
+    pub fn with_address(mut self, address: impl AsRef<str>) -> Self {
+        self.address = Some(address.as_ref().parse().expect("Invalid URL"));
+        self
+    }
+
     /// Build an RPC store client.
-    pub async fn build_rpc_store_client(
-        &self,
-        addr: SocketAddr,
-    ) -> Result<RpcStoreClient, ClientError> {
-        let endpoint = format!("http://{addr}");
-        let channel = self.create_channel(endpoint).await?;
+    pub async fn build_rpc_store_client(&self) -> Result<RpcStoreClient, ClientError> {
+        let url = self.address.as_ref().ok_or(ClientError::MissingAddress)?;
+        let channel = self.create_channel(url.to_string()).await?;
         let interceptor = ConditionalOtelInterceptor::new(self.with_otel);
         let inner =
             crate::generated::store::rpc_client::RpcClient::with_interceptor(channel, interceptor);
@@ -141,10 +131,9 @@ impl ClientBuilder {
     /// Build a `BlockProducer` store client.
     pub async fn build_block_producer_store_client(
         &self,
-        addr: SocketAddr,
     ) -> Result<BlockProducerStoreClient, ClientError> {
-        let endpoint = format!("http://{addr}");
-        let channel = self.create_channel(endpoint).await?;
+        let url = self.address.as_ref().ok_or(ClientError::MissingAddress)?;
+        let channel = self.create_channel(url.to_string()).await?;
         let interceptor = ConditionalOtelInterceptor::new(self.with_otel);
         let inner =
             crate::generated::store::block_producer_client::BlockProducerClient::with_interceptor(
@@ -157,8 +146,8 @@ impl ClientBuilder {
     /// Build an `NtxBuilder` store client.
     pub async fn build_ntx_builder_store_client(
         &self,
-        url: &Url,
     ) -> Result<NtxBuilderStoreClient, ClientError> {
+        let url = self.address.as_ref().ok_or(ClientError::MissingAddress)?;
         let channel = self.create_channel(url.to_string()).await?;
         let interceptor = ConditionalOtelInterceptor::new(self.with_otel);
         let inner = crate::generated::store::ntx_builder_client::NtxBuilderClient::with_interceptor(
@@ -169,7 +158,9 @@ impl ClientBuilder {
     }
 
     /// Build an RPC API client with a metadata interceptor.
-    pub async fn build_rpc_api_client(&self, url: &Url) -> Result<RpcApiClient, ClientError> {
+    pub async fn build_rpc_api_client(&self) -> Result<RpcApiClient, ClientError> {
+        let url = self.address.as_ref().ok_or(ClientError::MissingAddress)?;
+
         // RPC clients always use TLS with native roots
         let mut builder = self.clone();
         if builder.tls.is_none() {
@@ -191,10 +182,9 @@ impl ClientBuilder {
     /// Build a `BlockProducer` API client.
     pub async fn build_block_producer_api_client(
         &self,
-        addr: SocketAddr,
     ) -> Result<BlockProducerApiClient, ClientError> {
-        let endpoint = format!("http://{addr}");
-        let channel = self.create_channel(endpoint).await?;
+        let url = self.address.as_ref().ok_or(ClientError::MissingAddress)?;
+        let channel = self.create_channel(url.to_string()).await?;
         Ok(crate::generated::block_producer::api_client::ApiClient::with_interceptor(
             channel,
             OtelInterceptor,
@@ -511,6 +501,4 @@ mod tests {
         assert_eq!(builder.timeout, Some(Duration::from_secs(30)));
         assert!(builder.connect_lazy);
     }
-
-
 }

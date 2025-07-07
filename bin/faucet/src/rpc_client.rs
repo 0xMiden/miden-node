@@ -35,11 +35,12 @@ impl RpcClient {
     /// The connection is lazy and will re-establish in the background on disconnection.
     pub async fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
         let client = ClientBuilder::new()
+            .with_address(url.as_str())
             .with_tls()
             .with_timeout(Duration::from_millis(timeout_ms))
             .with_lazy_connection(true)
             .with_rpc_version(env!("CARGO_PKG_VERSION"))
-            .build_rpc_api_client(url)
+            .build_rpc_api_client()
             .await?;
 
         Ok(Self { inner: client })

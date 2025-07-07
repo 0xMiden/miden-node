@@ -491,8 +491,9 @@ pub async fn start_store(data_directory: PathBuf) -> (RpcStoreClient, SocketAddr
     });
 
     let client = ClientBuilder::new()
+        .with_address(format!("http://{store_addr}"))
         .with_otel()
-        .build_rpc_store_client(store_addr)
+        .build_rpc_store_client()
         .await
         .expect("Failed to create store client");
 

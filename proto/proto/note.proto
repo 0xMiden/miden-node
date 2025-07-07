@@ -28,31 +28,31 @@ message NoteMetadata {
     fixed64 aux = 5;
 }
 
+// Represents a committed note.
+//
+// A committed note is a note that has been included in a block.
+message CommittedNote {
+    // Either private, public, or network note.
+    Note note = 1;
+
+    // The data needed to prove that the note is present in the chain.
+    NoteInclusionInBlockProof inclusion_proof = 2;
+}
+
 // Represents a note.
+//
+// The note is composed of the note metadata and its serialized details.
 message Note {
-    // The block number in which the note was created.
-    fixed32 block_num = 1;
-
-    // The index of the note in the block.
-    uint32 note_index = 2;
-
-    // The ID of the note.
-    digest.Digest note_id = 3;
-
     // The note's metadata.
-    NoteMetadata metadata = 4;
+    NoteMetadata metadata = 1;
 
-    // The note's inclusion proof in the block.
-    merkle.MerklePath merkle_path = 5;
-
-    // Serialized details of the public note (empty for private notes).
-    optional bytes details = 6;
+    // Serialized note details (empty for private notes).
+    optional bytes details = 2;
 }
 
 // Represents a network note.
 //
-// The note is composed of the note metadata and its serialized details. The note's tag
-// must express that the note is for network usage instead of local.
+// The note is composed of the note metadata and its serialized details.
 message NetworkNote {
     // The note's metadata.
     NoteMetadata metadata = 1;

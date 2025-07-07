@@ -1,7 +1,9 @@
 use std::io;
 
 use deadpool::managed::PoolError;
+use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
+use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::{
     AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
     account::AccountId,
@@ -46,6 +48,8 @@ pub enum DatabaseError {
     NoteError(#[from] NoteError),
     #[error("SQLite error")]
     SqliteError(#[from] rusqlite::Error),
+    #[error(transparent)]
+    QueryParamLimitExceeded(#[from] QueryLimitError),
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -71,6 +75,23 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
+}
+
+impl DatabaseError {
+    /// Converts from `InteractError`
+    ///
+    /// Note: Required since `InteractError` has at least one enum
+    /// variant that is _not_ `Send + Sync` and hence prevents the
+    /// `Sync` auto implementation.
+    /// This does an internal conversion to string while maintaining
+    /// convenience.
+    ///
+    /// Using `MSG` as const so it can be called as
+    /// `.map_err(DatabaseError::interact::<"Your message">)`
+    pub fn interact(msg: &(impl ToString + ?Sized), e: &InteractError) -> Self {
+        let msg = msg.to_string();
+        Self::InteractError(format!("{msg} failed: {e:?}"))
+    }
 }
 
 impl From<DatabaseError> for Status {
@@ -137,7 +158,10 @@ pub enum InvalidBlockError {
     #[error("received invalid account tree root")]
     NewBlockInvalidAccountRoot,
     #[error("new block number must be 1 greater than the current block number")]
-    NewBlockInvalidBlockNum,
+    NewBlockInvalidBlockNum {
+        expected: BlockNumber,
+        submitted: BlockNumber,
+    },
     #[error("new block chain commitment is not consistent with chain MMR")]
     NewBlockInvalidChainCommitment,
     #[error("received invalid note root")]

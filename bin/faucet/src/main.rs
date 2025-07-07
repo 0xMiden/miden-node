@@ -47,6 +47,7 @@ const ENV_ASSET_AMOUNTS: &str = "MIDEN_FAUCET_ASSET_AMOUNTS";
 const ENV_REMOTE_TX_PROVER_URL: &str = "MIDEN_FAUCET_REMOTE_TX_PROVER_URL";
 const ENV_POW_SECRET: &str = "MIDEN_FAUCET_POW_SECRET";
 const ENV_POW_CHALLENGE_LIFETIME: &str = "MIDEN_FAUCET_POW_CHALLENGE_LIFETIME";
+const ENV_POW_CLEANUP_INTERVAL: &str = "MIDEN_FAUCET_POW_CLEANUP_INTERVAL";
 const ENV_POW_GROWTH_RATE: &str = "MIDEN_FAUCET_POW_GROWTH_RATE";
 const ENV_POW_BASELINE: &str = "MIDEN_FAUCET_POW_BASELINE";
 const ENV_API_KEYS: &str = "MIDEN_FAUCET_API_KEYS";
@@ -111,6 +112,10 @@ pub enum Command {
         /// difficulty. This sets how fast the difficulty increases with requests.
         #[arg(long = "pow-growth-rate", value_name = "NON_ZERO_USIZE", env = ENV_POW_GROWTH_RATE, default_value = "8")]
         pow_growth_rate: NonZeroUsize,
+
+        /// The interval at which the `PoW` challenge cache is cleaned up.
+        #[arg(long = "pow-cleanup-interval", value_name = "DURATION", env = ENV_POW_CLEANUP_INTERVAL, default_value = "2s", value_parser = humantime::parse_duration)]
+        pow_cleanup_interval: Duration,
 
         /// The baseline for the `PoW` challenges. This sets the base difficulty for
         /// all challenges. It must be between 0 and 32. A bigger baseline means higher
@@ -195,6 +200,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             asset_amounts,
             pow_secret,
             pow_challenge_lifetime,
+            pow_cleanup_interval,
             pow_growth_rate,
             pow_baseline,
             api_keys,
@@ -227,6 +233,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("failed to create asset options: {}", e))?;
             let pow_config = PoWConfig {
                 challenge_lifetime: pow_challenge_lifetime,
+                cleanup_interval: pow_cleanup_interval,
                 growth_rate: pow_growth_rate,
                 baseline: pow_baseline,
             };
@@ -510,6 +517,7 @@ mod test {
                         api_keys: vec![],
                         pow_secret: None,
                         pow_challenge_lifetime: Duration::from_secs(30),
+                        pow_cleanup_interval: Duration::from_secs(1),
                         pow_growth_rate: NonZeroUsize::new(1).unwrap(),
                         pow_baseline: 0,
                         faucet_account_path: faucet_account_path.clone(),

@@ -1,4 +1,5 @@
 use miden_block_prover::LocalBlockProver;
+use miden_node_utils::ErrorReport;
 use miden_objects::{
     MIN_PROOF_SECURITY_LEVEL, batch::ProposedBatch, block::ProposedBlock,
     transaction::TransactionWitness, utils::Serializable,
@@ -213,13 +214,12 @@ impl ProverApi for ProverRpcApi {
 // UTILITIES
 // ================================================================================================
 
-/// Formats an error
-fn internal_error<E: core::fmt::Debug>(err: E) -> Status {
-    Status::internal(format!("{err:?}"))
+fn internal_error<E: ErrorReport>(err: E) -> Status {
+    Status::internal(err.as_report())
 }
 
-fn invalid_argument<E: core::fmt::Debug>(err: E) -> Status {
-    Status::invalid_argument(format!("{err:?}"))
+fn invalid_argument<E: ErrorReport>(err: E) -> Status {
+    Status::invalid_argument(err.as_report())
 }
 
 // TESTS
@@ -234,10 +234,7 @@ mod test {
     use miden_objects::{
         asset::{Asset, FungibleAsset},
         note::NoteType,
-        testing::{
-            account_code::DEFAULT_AUTH_SCRIPT,
-            account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
-        },
+        testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
         transaction::{ProvenTransaction, TransactionScript, TransactionWitness},
     };
     use miden_testing::{Auth, MockChain};
@@ -296,11 +293,16 @@ mod test {
             )
             .unwrap();
 
-        let tx_script =
-            TransactionScript::compile(DEFAULT_AUTH_SCRIPT, TransactionKernel::assembler())
-                .unwrap();
+        let tx_script = TransactionScript::compile(
+            "begin
+                call.::miden::contracts::auth::basic::auth__tx_rpo_falcon512
+            end",
+            TransactionKernel::assembler(),
+        )
+        .unwrap();
         let tx_context = mock_chain
             .build_tx_context(account.id(), &[], &[])
+            .unwrap()
             .extend_input_notes(vec![note_1])
             .tx_script(tx_script)
             .build();

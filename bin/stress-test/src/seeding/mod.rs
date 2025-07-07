@@ -7,7 +7,7 @@ use std::{
 };
 
 use metrics::SeedingMetrics;
-use miden_air::{FieldElement, HashFunction};
+use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::{
     account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
@@ -19,7 +19,7 @@ use miden_node_proto::{domain::batch::BatchInputs, generated::store::rpc_client:
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    Felt,
+    Digest, Felt, ONE,
     account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType},
     asset::{Asset, FungibleAsset, TokenSymbol},
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
@@ -354,11 +354,11 @@ fn create_consume_note_txs(
     accounts
         .into_iter()
         .zip(notes)
-        .map(|(mut account, note)| {
+        .map(|(account, note)| {
             let inclusion_proof = note_proofs.get(&note.id()).unwrap();
             create_consume_note_tx(
                 block_ref,
-                &mut account,
+                account,
                 InputNote::authenticated(note, inclusion_proof.clone()),
             )
         })
@@ -370,7 +370,7 @@ fn create_consume_note_txs(
 /// The account is updated with the assets from the input note, and the nonce is set to 1.
 fn create_consume_note_tx(
     block_ref: &BlockHeader,
-    account: &mut Account,
+    mut account: Account,
     input_note: InputNote,
 ) -> ProvenTransaction {
     let init_hash = account.init_commitment();
@@ -378,12 +378,15 @@ fn create_consume_note_tx(
     input_note.note().assets().iter().for_each(|asset| {
         account.vault_mut().add_asset(*asset).unwrap();
     });
-    account.set_nonce(Felt::ONE).unwrap();
+
+    let (id, vault, sorage, code, _) = account.into_parts();
+    let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
     ProvenTransactionBuilder::new(
-        account.id(),
+        updated_account.id(),
         init_hash,
-        account.commitment(),
+        updated_account.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
@@ -408,12 +411,15 @@ fn create_emit_note_tx(
         .storage_mut()
         .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)])
         .unwrap();
-    faucet.set_nonce(faucet.nonce() + Felt::ONE).unwrap();
+
+    let (id, vault, sorage, code, nonce) = faucet.clone().into_parts();
+    let updated_faucet = Account::from_parts(id, vault, sorage, code, nonce + ONE);
 
     ProvenTransactionBuilder::new(
-        faucet.id(),
+        updated_faucet.id(),
         initial_account_hash,
-        faucet.commitment(),
+        updated_faucet.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),

@@ -11,9 +11,6 @@ use tokio::time::{Duration, interval};
 use super::challenge::Challenge;
 use crate::server::{ApiKey, get_pow::PowRequest, get_tokens::MintRequestError};
 
-/// The interval at which the challenge cache is cleaned up.
-const CLEANUP_INTERVAL_SECONDS: u64 = 2;
-
 // POW
 // ================================================================================================
 
@@ -29,6 +26,7 @@ pub struct PoWConfig {
     pub challenge_lifetime: Duration,
     pub growth_rate: NonZeroUsize,
     pub baseline: u8,
+    pub cleanup_interval: Duration,
 }
 
 impl PoW {
@@ -39,7 +37,12 @@ impl PoW {
         // Start the cleanup task
         let cleanup_state = challenge_cache.clone();
         tokio::spawn(async move {
-            ChallengeCache::run_cleanup(cleanup_state, config.challenge_lifetime).await;
+            ChallengeCache::run_cleanup(
+                cleanup_state,
+                config.challenge_lifetime,
+                config.cleanup_interval,
+            )
+            .await;
         });
 
         Self { secret, challenge_cache, config }
@@ -244,8 +247,12 @@ impl ChallengeCache {
     /// The cleanup task is responsible for removing expired challenges from the cache.
     /// It runs every minute and removes challenges that are no longer valid because of their
     /// timestamp.
-    pub async fn run_cleanup(cache: Arc<Mutex<Self>>, challenge_lifetime: Duration) {
-        let mut interval = interval(Duration::from_secs(CLEANUP_INTERVAL_SECONDS));
+    pub async fn run_cleanup(
+        cache: Arc<Mutex<Self>>,
+        challenge_lifetime: Duration,
+        cleanup_interval: Duration,
+    ) {
+        let mut interval = interval(cleanup_interval);
 
         loop {
             interval.tick().await;
@@ -283,6 +290,7 @@ mod tests {
             secret,
             PoWConfig {
                 challenge_lifetime: Duration::from_secs(30),
+                cleanup_interval: Duration::from_millis(500),
                 growth_rate: NonZeroUsize::new(2).unwrap(),
                 baseline: 0,
             },
@@ -356,7 +364,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Try to submit second challenge - should fail because of rate limiting
-        tokio::time::sleep(Duration::from_secs(CLEANUP_INTERVAL_SECONDS)).await;
+        tokio::time::sleep(pow.config.cleanup_interval).await;
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
@@ -398,26 +406,23 @@ mod tests {
         let target = u64::MAX;
 
         // build challenge manually with past timestamp to ensure that expires in 1 second
-        let challenge = Challenge::from_parts(
+        let timestamp = current_time - pow.config.challenge_lifetime.as_secs();
+        let signature = Challenge::compute_signature(
+            pow.secret,
             target,
-            current_time - pow.config.challenge_lifetime.as_secs(),
+            timestamp,
             account_id,
-            api_key.clone(),
-            Challenge::compute_signature(
-                pow.secret,
-                target,
-                current_time - pow.config.challenge_lifetime.as_secs(),
-                account_id,
-                &api_key.inner(),
-            ),
+            &api_key.inner(),
         );
+        let challenge =
+            Challenge::from_parts(target, timestamp, account_id, api_key.clone(), signature);
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
         pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time)
             .unwrap();
 
         // wait for cleanup
-        tokio::time::sleep(Duration::from_secs(CLEANUP_INTERVAL_SECONDS + 1)).await;
+        tokio::time::sleep(pow.config.cleanup_interval + Duration::from_secs(1)).await;
 
         // check that the challenge is removed from the cache
         assert!(!pow.challenge_cache.lock().unwrap().has_challenge_for_account(account_id));

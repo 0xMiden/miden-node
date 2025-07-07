@@ -389,10 +389,22 @@ impl<T: Clone> Clone for Client<T> {
 /// // Create a manager with custom timeout
 /// let manager = RemoteClientManager::with_timeout("https://prover.example.com", Some(Duration::from_secs(30)));
 ///
-/// // Connect and get the client
-/// let client = manager.connect_with(|endpoint, builder| async move {
+/// // Connect and get the client (native)
+/// #[cfg(not(target_arch = "wasm32"))]
+/// let client = manager.connect_with(|endpoint, timeout| async move {
+///     let mut builder = ClientBuilder::new().with_tls();
+///     if let Some(timeout) = timeout {
+///         builder = builder.with_timeout(timeout);
+///     }
 ///     let channel = builder.create_channel(endpoint).await?;
 ///     Ok(ApiClient::new(channel))
+/// }).await?;
+///
+/// // Connect and get the client (WASM)
+/// #[cfg(target_arch = "wasm32")]
+/// let client = manager.connect_with(|endpoint, _timeout| async move {
+///     let web_client = tonic_web_wasm_client::Client::new(endpoint);
+///     Ok(ApiClient::new(web_client))
 /// }).await?;
 /// ```
 #[derive(Clone)]
@@ -433,19 +445,21 @@ where
     ///
     /// This method handles the connection logic, including:
     /// - Checking if already connected (returns existing client)
-    /// - Creating a configured `ClientBuilder` with TLS and timeout
     /// - Calling the factory function to create the specific client type
     /// - Storing the client for reuse
     ///
+    /// The factory function receives the endpoint and timeout configuration and is responsible
+    /// for creating the appropriate transport (e.g., `tonic::transport::Channel` for native,
+    /// `tonic_web_wasm_client::Client` for WASM).
+    ///
     /// # Arguments
-    /// * `factory` - Async function that creates the client given an endpoint and configured
-    ///   `ClientBuilder`
+    /// * `factory` - Async function that creates the client given an endpoint and optional timeout
     ///
     /// # Returns
     /// A clone of the connected client
     pub async fn connect_with<F, Fut, E>(&self, factory: F) -> Result<C, E>
     where
-        F: FnOnce(String, ClientBuilder) -> Fut,
+        F: FnOnce(String, Option<Duration>) -> Fut,
         Fut: std::future::Future<Output = Result<C, E>>,
     {
         let mut client_guard = self.client.lock().await;
@@ -455,16 +469,8 @@ where
             return Ok(client.clone());
         }
 
-        // Create configured builder
-        let mut builder = ClientBuilder::new().with_tls();
-
-        // Apply custom timeout if specified (`ClientBuilder` defaults to 10 seconds)
-        if let Some(timeout) = self.timeout {
-            builder = builder.with_timeout(timeout);
-        }
-
         // Create the client using the factory
-        let new_client = factory(self.endpoint.clone(), builder).await?;
+        let new_client = factory(self.endpoint.clone(), self.timeout).await?;
 
         // Store and return the client
         *client_guard = Some(new_client.clone());
@@ -486,35 +492,6 @@ where
     /// Gets the configured timeout.
     pub fn timeout(&self) -> Option<Duration> {
         self.timeout
-    }
-}
-
-// WASM-specific factory helper for remote prover clients
-#[cfg(target_arch = "wasm32")]
-impl<C> RemoteClientManager<C>
-where
-    C: Clone,
-{
-    /// Connects using a WASM-compatible client factory.
-    ///
-    /// This is a convenience method for WASM targets that don't use `ClientBuilder`.
-    pub async fn connect_wasm_with<F, E>(&self, factory: F) -> Result<C, E>
-    where
-        F: FnOnce(String) -> Result<C, E>,
-    {
-        let mut client_guard = self.client.lock().await;
-
-        // Return existing client if already connected
-        if let Some(client) = client_guard.as_ref() {
-            return Ok(client.clone());
-        }
-
-        // Create the client using the factory
-        let new_client = factory(self.endpoint.clone())?;
-
-        // Store and return the client
-        *client_guard = Some(new_client.clone());
-        Ok(new_client)
     }
 }
 

@@ -104,6 +104,10 @@ impl GenesisConfig {
 
             let account_type = AccountType::FungibleFaucet;
 
+            let max_supply = Felt::try_from(max_supply).map_err(|_| {
+                Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS }
+            })?;
+
             let component = BasicFungibleFaucet::new(token_symbol, decimals, max_supply)?;
 
             let account_storage_mode = storage_mode.into();

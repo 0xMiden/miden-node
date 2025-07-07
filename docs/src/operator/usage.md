@@ -53,15 +53,33 @@ timestamp = 1717344256
 version   = 1
 
 [[faucet]]
-decimals     = 12
-max_supply   = 10000
-storage_mode = "public"
+# The give faucet is a fungible one.
+# Defaults to `true` and is the only mode supported
+# for the time being.
+# fungible = true
+# The token symbol to use for the token
 symbol       = "FUZZY"
+# Number of decimals your token will have,
+# it effectively defines the fixed point accuracy.
+decimals     = 6
+# Total supply, in _base units_
+#
+# Use i.e. a max supply of `1e15` _base untis_ and
+# decimals set to `6`, will yield you a total supply
+# of `1e15/1e6 = 1e9` `FUZZY`s.
+max_supply   = 1_000_000_000_000_000
+# Storage mode of the faucet account.
+storage_mode = "public"
+
 
 [[wallet]]
+# List of all assets the account should hold.
+# Each token type _must_ have a corresponding faucet.
 assets       = [{ amount = 999, symbol = "FUZZY" }]
+# Storage mode of the wallet account.
 storage_mode = "private"
-can_be_updated = false # default value
+# The code of the account can be updated or not.
+# has_updatable_code = false # default value
 ```
 
 ## Operation

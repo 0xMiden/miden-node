@@ -151,7 +151,7 @@ impl GenesisConfig {
         }
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
-        for (index, WalletConfig { is_updatable, storage_mode, assets }) in
+        for (index, WalletConfig { has_updatable_code, storage_mode, assets }) in
             wallet_configs.into_iter().enumerate()
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
@@ -169,7 +169,7 @@ impl GenesisConfig {
                     Ok(FungibleAsset::new(*faucet_id, amount)?)
                 },
             ))?;
-            let account_type = if is_updatable {
+            let account_type = if has_updatable_code {
                 AccountType::RegularAccountUpdatableCode
             } else {
                 AccountType::RegularAccountImmutableCode
@@ -248,7 +248,7 @@ pub struct FaucetConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WalletConfig {
     #[serde(default)]
-    is_updatable: bool,
+    has_updatable_code: bool,
     #[serde(default)]
     storage_mode: StorageMode,
     assets: Vec<AssetEntry>,

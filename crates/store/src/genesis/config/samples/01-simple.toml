@@ -12,4 +12,4 @@ symbol       = "MIDEN"
 assets       = [{ amount = 999, symbol = "MIDEN" }]
 mutable      = false
 storage_mode = "private"
-# is_updatable = false # default value
+# has_updatable_code = false # default value

@@ -64,7 +64,7 @@ impl RemoteBatchProver {
         &self,
     ) -> Result<ApiClient<tonic_web_wasm_client::Client>, RemoteProverClientError> {
         self.manager
-            .connect_with(|endpoint, _timeout| async move {
+            .connect_with(|endpoint| async move {
                 let web_client = tonic_web_wasm_client::Client::new(endpoint);
                 Ok(ApiClient::new(web_client))
             })
@@ -78,8 +78,9 @@ impl RemoteBatchProver {
     async fn connect(
         &self,
     ) -> Result<ApiClient<tonic::transport::Channel>, RemoteProverClientError> {
+        let timeout = self.manager.timeout();
         self.manager
-            .connect_with(|endpoint, timeout| async move {
+            .connect_with(|endpoint| async move {
                 let mut builder = ClientBuilder::new().with_tls();
                 if let Some(timeout) = timeout {
                     builder = builder.with_timeout(timeout);

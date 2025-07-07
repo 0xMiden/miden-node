@@ -50,15 +50,13 @@ mod error;
 /// # Ok(())
 /// # }
 /// ```
-/// Default timeout for gRPC connections (10 seconds).
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
 
 #[derive(Clone)]
 pub struct ClientBuilder {
     with_otel: bool,
     tls: Option<ClientTlsConfig>,
-    timeout: Duration,
-    timeout_disabled: bool,
+    timeout: Option<Duration>,
     connect_lazy: bool,
     rpc_version: Option<String>,
 }
@@ -68,8 +66,7 @@ impl Default for ClientBuilder {
         Self {
             with_otel: false,
             tls: None,
-            timeout: DEFAULT_TIMEOUT,
-            timeout_disabled: false,
+            timeout: None,
             connect_lazy: false,
             rpc_version: None,
         }
@@ -103,18 +100,10 @@ impl ClientBuilder {
         self
     }
 
-    /// Set a custom timeout for requests (overrides the default 10-second timeout).
+    /// Set a custom timeout for requests.
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self.timeout_disabled = false;
-        self
-    }
-
-    /// Disable timeout (no request timeout).
-    #[must_use]
-    pub fn with_no_timeout(mut self) -> Self {
-        self.timeout_disabled = true;
+        self.timeout = Some(timeout);
         self
     }
 
@@ -220,9 +209,9 @@ impl ClientBuilder {
         let mut ep = Endpoint::try_from(endpoint)
             .map_err(|e| ClientError::InvalidEndpoint(e.to_string()))?;
 
-        // Apply timeout unless explicitly disabled
-        if !self.timeout_disabled {
-            ep = ep.timeout(self.timeout);
+        // Apply timeout if configured
+        if let Some(timeout) = self.timeout {
+            ep = ep.timeout(timeout);
         }
 
         if let Some(tls) = &self.tls {
@@ -379,30 +368,28 @@ impl<T: Clone> Clone for Client<T> {
 ///   `ApiClient<tonic_web_wasm_client::Client>`)
 ///
 /// # Example
-/// ```rust
-/// use miden_node_proto::clients::RemoteClientManager;
+/// ```rust,ignore
+/// use miden_node_proto::clients::{RemoteClientManager, ClientBuilder};
 /// use std::time::Duration;
 ///
 /// // Create a manager with default timeout
-/// let manager = RemoteClientManager::new("https://prover.example.com");
+/// let manager: RemoteClientManager<ApiClient<Channel>> = RemoteClientManager::new("https://prover.example.com");
 ///
 /// // Create a manager with custom timeout
 /// let manager = RemoteClientManager::with_timeout("https://prover.example.com", Some(Duration::from_secs(30)));
 ///
-/// // Connect and get the client (native)
+/// // Connect and get the client (native example)
 /// #[cfg(not(target_arch = "wasm32"))]
-/// let client = manager.connect_with(|endpoint, timeout| async move {
+/// let client = manager.connect_with(|endpoint| async move {
 ///     let mut builder = ClientBuilder::new().with_tls();
-///     if let Some(timeout) = timeout {
-///         builder = builder.with_timeout(timeout);
-///     }
+///     // Access timeout from manager if needed: manager.timeout()
 ///     let channel = builder.create_channel(endpoint).await?;
 ///     Ok(ApiClient::new(channel))
 /// }).await?;
 ///
-/// // Connect and get the client (WASM)
+/// // Connect and get the client (WASM example)
 /// #[cfg(target_arch = "wasm32")]
-/// let client = manager.connect_with(|endpoint, _timeout| async move {
+/// let client = manager.connect_with(|endpoint| async move {
 ///     let web_client = tonic_web_wasm_client::Client::new(endpoint);
 ///     Ok(ApiClient::new(web_client))
 /// }).await?;
@@ -420,7 +407,7 @@ where
 {
     /// Creates a new remote client manager with the specified endpoint.
     ///
-    /// Uses the default timeout behavior (`ClientBuilder`'s 10-second default).
+    /// Uses no timeout by default.
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self {
             client: Arc::new(tokio::sync::Mutex::new(None)),
@@ -431,7 +418,7 @@ where
 
     /// Creates a new remote client manager with an optional custom timeout.
     ///
-    /// If `timeout` is `None`, uses the default 10-second timeout.
+    /// If `timeout` is `None`, no timeout is used.
     /// If `timeout` is `Some(duration)`, uses the specified timeout.
     pub fn with_timeout(endpoint: impl Into<String>, timeout: Option<Duration>) -> Self {
         Self {
@@ -448,18 +435,18 @@ where
     /// - Calling the factory function to create the specific client type
     /// - Storing the client for reuse
     ///
-    /// The factory function receives the endpoint and timeout configuration and is responsible
-    /// for creating the appropriate transport (e.g., `tonic::transport::Channel` for native,
-    /// `tonic_web_wasm_client::Client` for WASM).
+    /// The factory function receives only the endpoint and is responsible for creating the
+    /// appropriate transport with any desired configuration (e.g., `tonic::transport::Channel`
+    /// for native, `tonic_web_wasm_client::Client` for WASM).
     ///
     /// # Arguments
-    /// * `factory` - Async function that creates the client given an endpoint and optional timeout
+    /// * `factory` - Async function that creates the client given an endpoint
     ///
     /// # Returns
     /// A clone of the connected client
     pub async fn connect_with<F, Fut, E>(&self, factory: F) -> Result<C, E>
     where
-        F: FnOnce(String, Option<Duration>) -> Fut,
+        F: FnOnce(String) -> Fut,
         Fut: std::future::Future<Output = Result<C, E>>,
     {
         let mut client_guard = self.client.lock().await;
@@ -470,7 +457,7 @@ where
         }
 
         // Create the client using the factory
-        let new_client = factory(self.endpoint.clone(), self.timeout).await?;
+        let new_client = factory(self.endpoint.clone()).await?;
 
         // Store and return the client
         *client_guard = Some(new_client.clone());
@@ -507,8 +494,7 @@ mod tests {
         let builder = ClientBuilder::new();
         assert!(!builder.with_otel);
         assert!(builder.tls.is_none());
-        assert_eq!(builder.timeout, DEFAULT_TIMEOUT);
-        assert!(!builder.timeout_disabled);
+        assert!(builder.timeout.is_none());
         assert!(!builder.connect_lazy);
     }
 
@@ -522,14 +508,9 @@ mod tests {
 
         assert!(builder.with_otel);
         assert!(builder.tls.is_some());
-        assert_eq!(builder.timeout, Duration::from_secs(30));
-        assert!(!builder.timeout_disabled);
+        assert_eq!(builder.timeout, Some(Duration::from_secs(30)));
         assert!(builder.connect_lazy);
     }
 
-    #[test]
-    fn test_client_builder_no_timeout() {
-        let builder = ClientBuilder::new().with_no_timeout();
-        assert!(builder.timeout_disabled);
-    }
+
 }

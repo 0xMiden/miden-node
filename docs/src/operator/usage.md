@@ -50,7 +50,11 @@ The genesis configuration file should contain at least one faucet, and optionall
 with assets, for example:
 
 ```toml
+# The timestamp associated to the genesis block.
+# It will influence the hash of the genesis block.
 timestamp = 1717344256
+# Defines the format of the block protocol to use
+# for the genesis block.
 version   = 1
 
 [[faucet]]

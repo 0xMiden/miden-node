@@ -197,15 +197,6 @@ ORDER BY block.number DESC
 LIMIT 100
 ```
 
-**Mempool size over time**:
-```honeycomb
-VISUALIZE
-MAX(transactions.pending.count)
-WHERE
-name = "mempool.select_block"
-CALCULATE RATE
-```
-
 #### Example triggers
 
 Create triggers in Honeycomb to alert you when important thresholds are crossed:
@@ -225,23 +216,12 @@ name = "block_builder.build_block"
 * Query: 
 ```honeycomb
 VISUALIZE
-COUNT_WHERE(status = "error") / COUNT
+COUNT
 WHERE
-name = "block_builder.build_block"
+name = "block_builder.build_block" AND error = true
 ```
-* Trigger condition: `COUNT_WHERE(status = "error") / COUNT > 0.05`
-* Description: Alert when more than 5% of block builds are failing
-
-**Mempool overflow**:
-* Query:
-```honeycomb
-VISUALIZE
-MAX(transactions.pending.count)
-WHERE
-name = "mempool.select_block"
-```
-* Trigger condition: `MAX(transactions.pending.count) > 1000`
-* Description: Alert when mempool transaction count exceeds 1000
+* Trigger condition: `COUNT > 100 WHERE error = true`
+* Description: Alert when more than 100 block builds are failing
 
 #### Example boards
 
@@ -309,33 +289,35 @@ WHERE
 name = "batch_builder.build_batch"
 ```
 
-**RPC performance board**:
-* RPC request rate
+#### Example queries
+
+Here are some useful Honeycomb queries to help monitor your Miden node:
+
+**RPC request rate by endpoint**:
 ```honeycomb
 VISUALIZE
 COUNT
 WHERE
-name LIKE "%.rpc/%"
-CALCULATE RATE
+name contains "rpc"
 GROUP BY name
 ```
 
-* RPC latency by endpoint
+**RPC latency by endpoint**:
 ```honeycomb
 VISUALIZE
 AVG(duration_ms) P95(duration_ms)
 WHERE
-name LIKE "%.rpc/%"
+name contains "rpc"
 GROUP BY name
 ```
 
-* RPC errors by endpoint
+**RPC errors by status code**:
 ```honeycomb
 VISUALIZE
-COUNT_WHERE(status = "error") / COUNT
+COUNT
 WHERE
-name LIKE "%.rpc/%"
-GROUP BY name
+name contains "rpc"
+GROUP BY status_code
 ```
 
 #### Advanced investigation with BubbleUp

@@ -33,7 +33,7 @@ mod error;
 /// use url::Url;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// // Create an RPC store client with OpenTelemetry tracing
+/// // Create an RPC store client with OpenTelemetry tracing enabled
 /// let store_addr: SocketAddr = "127.0.0.1:8080".parse()?;
 /// let rpc_client = ClientBuilder::new()
 ///     .with_otel()
@@ -43,7 +43,6 @@ mod error;
 /// // Create an NtxBuilder store client with TLS and lazy connection
 /// let store_url: Url = "https://store.example.com".parse()?;
 /// let ntx_client = ClientBuilder::new()
-///     .with_otel()
 ///     .with_tls()
 ///     .with_lazy_connection(true)
 ///     .build_ntx_builder_store_client(&store_url)
@@ -137,36 +136,50 @@ impl ClientBuilder {
         self
     }
 
-    /// Build an RPC store client with OpenTelemetry interceptor.
+    /// Build an RPC store client.
     pub async fn build_rpc_store_client(
         &self,
         addr: SocketAddr,
     ) -> Result<RpcStoreClient, ClientError> {
         let endpoint = format!("http://{addr}");
         let channel = self.create_channel(endpoint).await?;
-        Ok(RpcStoreClient::new(channel))
+        let interceptor = ConditionalOtelInterceptor::new(self.with_otel);
+        let inner =
+            crate::generated::store::rpc_client::RpcClient::with_interceptor(channel, interceptor);
+        Ok(Client::new(inner))
     }
 
-    /// Build a `BlockProducer` store client with OpenTelemetry interceptor.
+    /// Build a `BlockProducer` store client.
     pub async fn build_block_producer_store_client(
         &self,
         addr: SocketAddr,
     ) -> Result<BlockProducerStoreClient, ClientError> {
         let endpoint = format!("http://{addr}");
         let channel = self.create_channel(endpoint).await?;
-        Ok(BlockProducerStoreClient::new(channel))
+        let interceptor = ConditionalOtelInterceptor::new(self.with_otel);
+        let inner =
+            crate::generated::store::block_producer_client::BlockProducerClient::with_interceptor(
+                channel,
+                interceptor,
+            );
+        Ok(Client::new(inner))
     }
 
-    /// Build an `NtxBuilder` store client with OpenTelemetry interceptor.
+    /// Build an `NtxBuilder` store client.
     pub async fn build_ntx_builder_store_client(
         &self,
         url: &Url,
     ) -> Result<NtxBuilderStoreClient, ClientError> {
         let channel = self.create_channel(url.to_string()).await?;
-        Ok(NtxBuilderStoreClient::new(channel))
+        let interceptor = ConditionalOtelInterceptor::new(self.with_otel);
+        let inner = crate::generated::store::ntx_builder_client::NtxBuilderClient::with_interceptor(
+            channel,
+            interceptor,
+        );
+        Ok(Client::new(inner))
     }
 
-    /// Build an RPC API client with metadata interceptor and TLS.
+    /// Build an RPC API client with a metadata interceptor.
     pub async fn build_rpc_api_client(&self, url: &Url) -> Result<RpcApiClient, ClientError> {
         // RPC clients always use TLS with native roots
         let mut builder = self.clone();
@@ -186,7 +199,7 @@ impl ClientBuilder {
         ))
     }
 
-    /// Build a `BlockProducer` API client with OpenTelemetry interceptor.
+    /// Build a `BlockProducer` API client.
     pub async fn build_block_producer_api_client(
         &self,
         addr: SocketAddr,
@@ -257,6 +270,31 @@ impl Interceptor for MetadataInterceptor {
     }
 }
 
+/// Interceptor that conditionally applies OpenTelemetry tracing.
+#[derive(Clone)]
+pub struct ConditionalOtelInterceptor {
+    enabled: bool,
+}
+
+impl ConditionalOtelInterceptor {
+    fn new(enabled: bool) -> Self {
+        Self { enabled }
+    }
+}
+
+impl Interceptor for ConditionalOtelInterceptor {
+    fn call(&mut self, request: tonic::Request<()>) -> Result<tonic::Request<()>, tonic::Status> {
+        if self.enabled {
+            // Apply OTel interceptor logic
+            let mut otel_interceptor = OtelInterceptor;
+            otel_interceptor.call(request)
+        } else {
+            // Pass through unchanged
+            Ok(request)
+        }
+    }
+}
+
 // TYPE ALIASES
 // ================================================================================================
 
@@ -269,145 +307,32 @@ pub type BlockProducerApiClient = crate::generated::block_producer::api_client::
     InterceptedService<Channel, OtelInterceptor>,
 >;
 
+/// Type alias for RPC store client with conditional OpenTelemetry interceptor.
+pub type RpcStoreClient = Client<
+    crate::generated::store::rpc_client::RpcClient<
+        InterceptedService<Channel, ConditionalOtelInterceptor>,
+    >,
+>;
+
+/// Type alias for Block Producer store client with conditional OpenTelemetry interceptor.
+pub type BlockProducerStoreClient = Client<
+    crate::generated::store::block_producer_client::BlockProducerClient<
+        InterceptedService<Channel, ConditionalOtelInterceptor>,
+    >,
+>;
+
+/// Type alias for `NtxBuilder` store client with conditional OpenTelemetry interceptor.
+pub type NtxBuilderStoreClient = Client<
+    crate::generated::store::ntx_builder_client::NtxBuilderClient<
+        InterceptedService<Channel, ConditionalOtelInterceptor>,
+    >,
+>;
+
 // CLIENT WRAPPERS
 // ================================================================================================
 
-/// RPC store client wrapper with OpenTelemetry tracing.
-///
-/// This wrapper provides access to all RPC methods like `check_nullifiers`,
-/// `get_account_details`, `sync_notes`, etc.
-#[derive(Debug)]
-pub struct RpcStoreClient {
-    inner: crate::generated::store::rpc_client::RpcClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    >,
-}
-
-impl RpcStoreClient {
-    fn new(channel: Channel) -> Self {
-        let inner = crate::generated::store::rpc_client::RpcClient::with_interceptor(
-            channel,
-            OtelInterceptor,
-        );
-        Self { inner }
-    }
-
-    /// Get a mutable reference to the underlying client.
-    pub fn get_mut(
-        &mut self,
-    ) -> &mut crate::generated::store::rpc_client::RpcClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    > {
-        &mut self.inner
-    }
-
-    /// Get the underlying client.
-    pub fn into_inner(
-        self,
-    ) -> crate::generated::store::rpc_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>
-    {
-        self.inner
-    }
-}
-
-impl Clone for RpcStoreClient {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
-    }
-}
-
-/// `BlockProducer` store client wrapper with OpenTelemetry tracing.
-///
-/// This wrapper provides access to all `BlockProducer` methods like `get_transaction_inputs`,
-/// `get_block_inputs`, `apply_block`, etc.
-#[derive(Debug)]
-pub struct BlockProducerStoreClient {
-    inner: crate::generated::store::block_producer_client::BlockProducerClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    >,
-}
-
-impl BlockProducerStoreClient {
-    fn new(channel: Channel) -> Self {
-        let inner =
-            crate::generated::store::block_producer_client::BlockProducerClient::with_interceptor(
-                channel,
-                OtelInterceptor,
-            );
-        Self { inner }
-    }
-
-    /// Get a mutable reference to the underlying client.
-    pub fn get_mut(
-        &mut self,
-    ) -> &mut crate::generated::store::block_producer_client::BlockProducerClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    > {
-        &mut self.inner
-    }
-
-    /// Get the underlying client.
-    pub fn into_inner(
-        self,
-    ) -> crate::generated::store::block_producer_client::BlockProducerClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    > {
-        self.inner
-    }
-}
-
-impl Clone for BlockProducerStoreClient {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
-    }
-}
-
-/// `NtxBuilder` store client wrapper with OpenTelemetry tracing.
-///
-/// This wrapper provides access to all `NtxBuilder` methods like `get_current_blockchain_data`,
-/// `get_unconsumed_network_notes`, etc.
-#[derive(Debug)]
-pub struct NtxBuilderStoreClient {
-    inner: crate::generated::store::ntx_builder_client::NtxBuilderClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    >,
-}
-
-impl NtxBuilderStoreClient {
-    fn new(channel: Channel) -> Self {
-        let inner = crate::generated::store::ntx_builder_client::NtxBuilderClient::with_interceptor(
-            channel,
-            OtelInterceptor,
-        );
-        Self { inner }
-    }
-
-    /// Get a mutable reference to the underlying client.
-    pub fn get_mut(
-        &mut self,
-    ) -> &mut crate::generated::store::ntx_builder_client::NtxBuilderClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    > {
-        &mut self.inner
-    }
-
-    /// Get the underlying client.
-    pub fn into_inner(
-        self,
-    ) -> crate::generated::store::ntx_builder_client::NtxBuilderClient<
-        InterceptedService<Channel, OtelInterceptor>,
-    > {
-        self.inner
-    }
-}
-
-impl Clone for NtxBuilderStoreClient {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
-    }
-}
-
 /// Generic client wrapper for cases where specific wrappers are not available.
+#[derive(Debug)]
 pub struct Client<T> {
     /// The underlying gRPC client.
     pub inner: T,

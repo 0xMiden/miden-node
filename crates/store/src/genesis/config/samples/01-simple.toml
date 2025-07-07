@@ -1,7 +1,7 @@
 timestamp = 1717344256
 version   = 1
 
-[[faucet]]
+[[fungible_faucet]]
 decimals     = 12
 max_supply   = 1000000
 storage_mode = "public"

@@ -39,7 +39,7 @@ pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
     wallet: Vec<WalletConfig>,
-    faucet: Vec<FaucetConfig>,
+    fungible_faucet: Vec<FungibleFaucetConfig>,
 }
 
 impl Default for GenesisConfig {
@@ -49,8 +49,7 @@ impl Default for GenesisConfig {
             timestamp: u32::try_from(chrono::Local::now().timestamp())
                 .expect("Timestamp should fit into u32"),
             wallet: vec![],
-            faucet: vec![FaucetConfig {
-                fungible: true,
+            fungible_faucet: vec![FungibleFaucetConfig {
                 max_supply: 100_000_000_000u64,
                 decimals: 6u8,
                 storage_mode: StorageMode::Public,
@@ -77,7 +76,7 @@ impl GenesisConfig {
         let GenesisConfig {
             version,
             timestamp,
-            faucet: faucet_configs,
+            fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
         } = self;
 
@@ -89,13 +88,12 @@ impl GenesisConfig {
         let mut secrets = Vec::new();
 
         // First setup all the faucets
-        for FaucetConfig {
+        for FungibleFaucetConfig {
             symbol,
             decimals,
             max_supply,
             storage_mode,
-            fungible,
-        } in faucet_configs
+        } in fungible_faucet_configs
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
@@ -105,19 +103,7 @@ impl GenesisConfig {
             let token_symbol = TokenSymbol::new(&symbol)?;
             let max_supply = max_supply_in_undividable_units(max_supply, decimals)?;
 
-            let account_type = if fungible {
-                AccountType::FungibleFaucet
-            } else {
-                AccountType::NonFungibleFaucet
-            };
-
-            if !fungible {
-                return Err(Error::UnsupportedValue {
-                    key: "fungible",
-                    value: false.to_string(),
-                    message: "Non-fungible assets are not supported yet".to_owned(),
-                });
-            }
+            let account_type = AccountType::FungibleFaucet;
 
             let component = BasicFungibleFaucet::new(token_symbol, decimals, max_supply)?;
 
@@ -219,7 +205,7 @@ impl GenesisConfig {
 
 /// Represents a faucet with asset specific properties
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FaucetConfig {
+pub struct FungibleFaucetConfig {
     // TODO eventually directly parse to `TokenSymbol`
     symbol: String,
     decimals: u8,
@@ -230,8 +216,6 @@ pub struct FaucetConfig {
     max_supply: u64,
     #[serde(default)]
     storage_mode: StorageMode,
-    #[serde(default = "self::ja")]
-    fungible: bool,
 }
 
 // WALLET CONFIG
@@ -336,9 +320,4 @@ fn max_supply_in_undividable_units(
     let max_supply = Felt::try_from(max_supply)
         .map_err(|_| Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS })?;
     Ok(max_supply)
-}
-
-/// `false` doesn't pass the `syn::Path` parsing, so we do one level indirection
-const fn ja() -> bool {
-    true
 }

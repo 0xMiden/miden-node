@@ -57,7 +57,7 @@ timestamp = 1717344256
 # for the genesis block.
 version   = 1
 
-[[faucet]]
+[[fungible_faucet]]
 # The give faucet is a fungible one.
 # Defaults to `true` and is the only mode supported
 # for the time being.

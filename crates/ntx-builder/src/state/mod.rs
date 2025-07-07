@@ -15,8 +15,8 @@ mod account;
 
 /// A candidate network transaction.
 ///
-/// Contains the data pertaining to a specific network account
-/// which can be used to build a network transaction.
+/// Contains the data pertaining to a specific network account which can be used to build a network
+/// transaction.
 pub struct TransactionCandidate {
     /// The account ID prefix of this network account.
     pub reference: NetworkAccountPrefix,
@@ -42,19 +42,19 @@ pub struct State {
     ///
     /// This is used to select the next transaction's account.
     ///
-    /// Note that this _always_ includes _all_ network accounts. Filtering out
-    /// accounts that aren't viable is handled within the select method itself.
+    /// Note that this _always_ includes _all_ network accounts. Filtering out accounts that aren't
+    /// viable is handled within the select method itself.
     queue: VecDeque<NetworkAccountPrefix>,
 
-    /// Network accounts which have been selected but whose transaction has not yet
-    /// completed.
+    /// Network accounts which have been selected but whose transaction has not yet completed.
     ///
     /// This locks these accounts so they cannot be selected.
     in_progress: HashSet<NetworkAccountPrefix>,
 
     /// Uncommitted transactions which have a some impact on the network state.
     ///
-    /// This is tracked so we can commit or revert such transaction effects. Transactions _without_ an impact are ignored.
+    /// This is tracked so we can commit or revert such transaction effects. Transactions _without_
+    /// an impact are ignored.
     inflight_txs: BTreeMap<TransactionId, TransactionImpact>,
 
     /// A mapping of network note's to their account.
@@ -74,8 +74,8 @@ impl State {
 
     /// Selects the next candidate network transaction.
     ///
-    /// Note that this marks the candidate account as in-progress and that it cannot
-    /// be selected again until either:
+    /// Note that this marks the candidate account as in-progress and that it cannot be selected
+    /// again until either:
     ///
     ///   - it has been marked as failed if the transaction failed, or
     ///   - the transaction was submitted successfully, indicated by the associated mempool event
@@ -83,11 +83,11 @@ impl State {
     pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
         // Loop through the account queue until we find one that is selectable.
         //
-        // Since the queue contains _all_ accounts, including unselectable accounts, we
-        // limit our search to once through the entire queue.
+        // Since the queue contains _all_ accounts, including unselectable accounts, we limit our
+        // search to once through the entire queue.
         //
-        // There are smarter ways of doing this, but this should scale more than well enough
-        // for a long time.
+        // There are smarter ways of doing this, but this should scale more than well enough for a
+        // long time.
         for _ in 0..self.queue.len() {
             // This is a rotating queue.
             let candidate = self.queue.pop_front().unwrap();
@@ -118,8 +118,8 @@ impl State {
         None
     }
 
-    /// Marks a previously selected candidate account as failed, allowing it to be
-    /// available for selection again.
+    /// Marks a previously selected candidate account as failed, allowing it to be available for
+    /// selection again.
     pub fn candidate_failed(&mut self, candidate: NetworkAccountPrefix) {
         self.in_progress.remove(&candidate);
     }
@@ -127,7 +127,8 @@ impl State {
     /// Updates state with the mempool event.
     pub fn mempool_update(&mut self, update: MempoolEvent) {
         match update {
-            // Note: this event will get triggered by normal user transactions, as well as our network transactions. The mempool does not distinguish between the two.
+            // Note: this event will get triggered by normal user transactions, as well as our
+            // network transactions. The mempool does not distinguish between the two.
             MempoolEvent::TransactionAdded {
                 id,
                 nullifiers,
@@ -151,7 +152,8 @@ impl State {
 
     /// Handles a [`MempoolEvent::TransactionAdded`] event.
     ///
-    /// Note that this will include our own network transactions as well as user submitted transactions.
+    /// Note that this will include our own network transactions as well as user submitted
+    /// transactions.
     fn add_transaction(
         &mut self,
         id: TransactionId,
@@ -161,9 +163,8 @@ impl State {
     ) {
         // Skip transactions we already know about.
         //
-        // This can occur since both ntx builder and the mempool might
-        // inform us of the same transaction. Once when it was submitted to
-        // the mempool, and once by the mempool event.
+        // This can occur since both ntx builder and the mempool might inform us of the same
+        // transaction. Once when it was submitted to the mempool, and once by the mempool event.
         if self.inflight_txs.contains_key(&id) {
             return;
         }
@@ -198,8 +199,8 @@ impl State {
 
     /// Grants mutable access to the given account state, creating a default entry if none exists.
     ///
-    /// This is effectively a thin wrapper around the entry API, but this also tracks new
-    /// accounts to the queue.
+    /// This is effectively a thin wrapper around the entry API, but this also tracks new accounts
+    /// to the queue.
     ///
     /// This _must_ be the only way new accounts are added as otherwise they won't be queued.
     fn account_or_default(&mut self, prefix: NetworkAccountPrefix) -> &mut AccountState {

@@ -91,8 +91,8 @@ pub struct NetworkTransactionBuilder {
     pub store_url: Url,
     /// Address of the block producer gRPC server.
     pub block_producer_address: SocketAddr,
-    /// Address of the remote prover. If `None`, transactions will be proven locally,
-    /// which is undesirable due to the perofmrance impact.
+    /// Address of the remote prover. If `None`, transactions will be proven locally, which is
+    /// undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
     pub ticker_interval: Duration,
@@ -128,8 +128,8 @@ impl NetworkTransactionBuilder {
 
         // Tracks network transaction tasks until they are submitted to the mempool.
         //
-        // We also map the task ID to the network account so we can mark it as failed if
-        // it doesn't get submitted.
+        // We also map the task ID to the network account so we can mark it as failed if it doesn't
+        // get submitted.
         let mut inflight = JoinSet::new();
         let mut inflight_idx = HashMap::new();
 
@@ -569,8 +569,8 @@ pub enum NtxBuilderError {
     ProofSubmissionFailed(#[source] tonic::Status),
 }
 
-/// A wrapper arounnd tokio's [`JoinSet`](tokio::task::JoinSet) which returns pending
-/// instead of [`None`] if its empty.
+/// A wrapper arounnd tokio's [`JoinSet`](tokio::task::JoinSet) which returns pending instead of
+/// [`None`] if its empty.
 ///
 /// This makes it much more convenient to use in a `select!`.
 struct JoinSet<T>(tokio::task::JoinSet<T>);

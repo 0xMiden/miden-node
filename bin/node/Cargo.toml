@@ -22,15 +22,12 @@ anyhow                    = { workspace = true }
 clap                      = { features = ["derive", "env", "string"], version = "4.5" }
 fs-err                    = { workspace = true }
 humantime                 = { workspace = true }
-miden-lib                 = { workspace = true }
 miden-node-block-producer = { workspace = true }
 miden-node-ntx-builder    = { workspace = true }
 miden-node-rpc            = { workspace = true }
 miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }
 miden-objects             = { workspace = true }
-rand                      = { workspace = true }
-rand_chacha               = { version = "0.9" }
 tokio                     = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 url                       = { workspace = true }
 

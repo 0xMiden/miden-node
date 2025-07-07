@@ -7,10 +7,14 @@ use miden_objects::{
 };
 
 /// Tracks the state of a network account and its notes.
-#[derive(Default)]
 pub struct AccountState {
+    /// The committed account state, if any.
+    ///
+    /// Its possible this is `None` if the account creation transaction is still inflight.
+    committed: Option<Account>,
+
     /// Inflight account updates in chronological order.
-    deltas: VecDeque<NetworkAccountUpdate>,
+    inflight: VecDeque<Account>,
 
     /// Unconsumed notes of this account.
     available_notes: BTreeMap<Nullifier, NetworkNote>,
@@ -20,9 +24,32 @@ pub struct AccountState {
 }
 
 impl AccountState {
+    pub fn committed(account: Account) -> Self {
+        Self {
+            committed: Some(account),
+            inflight: Default::default(),
+            available_notes: Default::default(),
+            nullified_notes: Default::default(),
+        }
+    }
+
+    pub fn uncommitted(account: Account) -> Self {
+        Self {
+            inflight: VecDeque::from([account]),
+            committed: Default::default(),
+            available_notes: Default::default(),
+            nullified_notes: Default::default(),
+        }
+    }
+
     /// Appends a delta to the set of inflight account updates.
-    pub fn add_delta(&mut self, delta: NetworkAccountUpdate) {
-        self.deltas.push_back(delta);
+    pub fn add_delta(&mut self, delta: &AccountDelta) {
+        let mut state = self.account();
+        state
+            .apply_delta(&delta)
+            .expect("network account delta should apply since it was accepted by the mempool");
+
+        self.inflight.push_back(state);
     }
 
     /// Commits the oldest account state delta.
@@ -30,9 +57,8 @@ impl AccountState {
     /// # Panics
     ///
     /// Panics if there are no deltas to commit.
-    pub fn commit_delta(&mut self) -> Status {
-        self.deltas.pop_front().expect("must have a delta to commit");
-        self.status()
+    pub fn commit_delta(&mut self) {
+        self.committed = self.inflight.pop_front().expect("must have a delta to commit").into();
     }
 
     /// Reverts the newest account state delta.
@@ -40,9 +66,8 @@ impl AccountState {
     /// # Panics
     ///
     /// Panics if there are no deltas to revert.
-    pub fn revert_delta(&mut self) -> Status {
-        self.deltas.pop_back().expect("must have a delta to revert");
-        self.status()
+    pub fn revert_delta(&mut self) {
+        self.inflight.pop_back().expect("must have a delta to revert");
     }
 
     /// Adds a new network note making it available for consumption.
@@ -51,14 +76,13 @@ impl AccountState {
     }
 
     /// Removes the note completely.
-    pub fn revert_note(&mut self, note: Nullifier) -> Status {
+    pub fn revert_note(&mut self, note: Nullifier) {
         // Transactions can be reverted out of order.
         //
         // This means the tx which nullified the note might not have been reverted yet, and the note
         // might still be in the nullified
         self.available_notes.remove(&note);
         self.nullified_notes.remove(&note);
-        self.status()
     }
 
     /// Marks a note as being consumed.
@@ -82,12 +106,10 @@ impl AccountState {
     /// # Panics
     ///
     /// Panics if the associated note is not marked as nullified.
-    pub fn commit_nullifier(&mut self, nullifier: Nullifier) -> Status {
+    pub fn commit_nullifier(&mut self, nullifier: Nullifier) {
         self.nullified_notes
             .remove(&nullifier)
             .expect("committed nullified note should be in the nullified set");
-
-        self.status()
     }
 
     /// Reverts a nullifier, marking the associated note as available again.
@@ -105,39 +127,23 @@ impl AccountState {
         self.available_notes.values()
     }
 
-    pub fn deltas(&self) -> &VecDeque<NetworkAccountUpdate> {
-        &self.deltas
+    /// Returns the latest inflight account state.
+    pub fn account(&self) -> Account {
+        return self
+            .inflight
+            .back()
+            .or(self.committed.as_ref())
+            .expect("account must have either a committed or inflight state")
+            .clone();
     }
 
-    fn status(&self) -> Status {
-        if self.deltas.is_empty()
+    /// Returns `true` if there is no inflight state being tracked.
+    ///
+    /// This implies this state is safe to remove without losing uncommitted data.
+    pub fn is_empty(&self) -> bool {
+        self.inflight.is_empty()
             && self.available_notes.is_empty()
             && self.nullified_notes.is_empty()
-        {
-            Status::Empty
-        } else {
-            Status::NotEmpty
-        }
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq)]
-#[must_use]
-pub enum Status {
-    /// The account state is completely empty.
-    ///
-    /// This means there are no notes or account deltas being tracked and this account can be safely
-    /// removed.
-    Empty,
-    /// The state contains some active data.
-    ///
-    /// At least one account delta, note or nullifier is still being tracked.
-    NotEmpty,
-}
-
-impl Status {
-    pub fn is_empty(self) -> bool {
-        self == Status::Empty
     }
 }
 

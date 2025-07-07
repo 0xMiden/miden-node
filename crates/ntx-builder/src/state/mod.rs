@@ -4,12 +4,17 @@ use std::{
 };
 
 use account::{AccountState, NetworkAccountUpdate};
+use anyhow::Context;
 use miden_node_proto::domain::{
     account::NetworkAccountPrefix, mempool::MempoolEvent, note::NetworkNote,
 };
 use miden_objects::{
-    account::delta::AccountUpdateDetails, note::Nullifier, transaction::TransactionId,
+    account::{Account, delta::AccountUpdateDetails},
+    note::Nullifier,
+    transaction::TransactionId,
 };
+
+use crate::store::{StoreClient, StoreError};
 
 mod account;
 
@@ -18,12 +23,8 @@ mod account;
 /// Contains the data pertaining to a specific network account which can be used to build a network
 /// transaction.
 pub struct TransactionCandidate {
-    /// The account ID prefix of this network account.
-    pub reference: NetworkAccountPrefix,
-    /// The current inflight deltas which should be applied to this account.
-    ///
-    /// Note that the first item _might_ be an account creation update.
-    pub _account_deltas: VecDeque<NetworkAccountUpdate>,
+    /// The current inflight state of the account.
+    pub account: Account,
     /// A set of notes addressed to this network account.
     pub _notes: Vec<NetworkNote>,
 }
@@ -31,7 +32,6 @@ pub struct TransactionCandidate {
 /// Holds the state of the network transaction builder.
 ///
 /// It tracks inflight transactions, and their impact on network-related state.
-#[derive(Default)]
 pub struct State {
     /// Tracks all network accounts with inflight state.
     ///
@@ -59,17 +59,35 @@ pub struct State {
 
     /// A mapping of network note's to their account.
     nullifier_idx: BTreeMap<Nullifier, NetworkAccountPrefix>,
+
+    /// gRPC client used to retrieve the network account state from the store.
+    store: StoreClient,
 }
 
 impl State {
-    pub fn with_committed_notes(notes: impl Iterator<Item = NetworkNote>) -> Self {
-        let mut state = Self::default();
+    /// Load's all available network notes from the store, along with the required account states.
+    pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
+        let mut state = Self {
+            store,
+            accounts: Default::default(),
+            queue: Default::default(),
+            in_progress: Default::default(),
+            inflight_txs: Default::default(),
+            nullifier_idx: Default::default(),
+        };
+
+        let notes = state.store.get_unconsumed_network_notes().await?;
         for note in notes {
-            state.nullifier_idx.insert(note.nullifier(), note.account_prefix());
-            state.account_or_default(note.account_prefix()).add_note(note);
+            let prefix = note.account_prefix();
+
+            // Ignore notes which don't target an existing account.
+            let Some(account) = state.account_or_load(prefix).await? else {
+                continue;
+            };
+            account.add_note(note);
         }
 
-        state
+        Ok(state)
     }
 
     /// Selects the next candidate network transaction.
@@ -99,6 +117,19 @@ impl State {
             }
 
             let account = self.accounts.get(&candidate).expect("queue account must be tracked");
+
+            // Skip empty accounts, and prune them.
+            //
+            // This is how we keep the number of accounts bounded.
+            if account.is_empty() {
+                // We don't need to prune the inflight transactions because if the account is empty,
+                // then it would have no inflight txs.
+                self.accounts.remove(&candidate);
+                // We know this account is the backmost one since we just rotated it there.
+                self.queue.pop_back();
+                continue;
+            }
+
             let notes = account.notes().take(limit.get()).cloned().collect::<Vec<_>>();
 
             // Skip accounts with no available notes.
@@ -108,8 +139,7 @@ impl State {
 
             self.in_progress.insert(candidate);
             return TransactionCandidate {
-                reference: candidate,
-                _account_deltas: account.deltas().clone(),
+                account: account.account(),
                 _notes: notes,
             }
             .into();
@@ -125,7 +155,7 @@ impl State {
     }
 
     /// Updates state with the mempool event.
-    pub fn mempool_update(&mut self, update: MempoolEvent) {
+    pub async fn mempool_update(&mut self, update: MempoolEvent) -> anyhow::Result<()> {
         match update {
             // Note: this event will get triggered by normal user transactions, as well as our
             // network transactions. The mempool does not distinguish between the two.
@@ -135,7 +165,7 @@ impl State {
                 network_notes,
                 account_delta,
             } => {
-                self.add_transaction(id, nullifiers, network_notes, account_delta);
+                self.add_transaction(id, nullifiers, network_notes, account_delta).await?;
             },
             MempoolEvent::BlockCommitted { header: _, txs } => {
                 for tx in txs {
@@ -147,37 +177,61 @@ impl State {
                     self.revert_transaction(tx);
                 }
             },
-        }
+        };
+
+        Ok(())
     }
 
     /// Handles a [`MempoolEvent::TransactionAdded`] event.
     ///
     /// Note that this will include our own network transactions as well as user submitted
     /// transactions.
-    fn add_transaction(
+    async fn add_transaction(
         &mut self,
         id: TransactionId,
         nullifiers: Vec<Nullifier>,
         network_notes: Vec<NetworkNote>,
         account_delta: Option<AccountUpdateDetails>,
-    ) {
+    ) -> anyhow::Result<()> {
         // Skip transactions we already know about.
         //
         // This can occur since both ntx builder and the mempool might inform us of the same
         // transaction. Once when it was submitted to the mempool, and once by the mempool event.
         if self.inflight_txs.contains_key(&id) {
-            return;
+            return Ok(());
         }
 
         let mut tx_impact = TransactionImpact::default();
         if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
-            tx_impact.account_delta = Some(update.prefix());
-            self.account_or_default(update.prefix()).add_delta(update);
+            let prefix = update.prefix();
+            match update {
+                NetworkAccountUpdate::New(account) => {
+                    let account_state = AccountState::uncommitted(account);
+                    self.accounts.insert(prefix, account_state);
+                    self.queue.push_back(prefix);
+                },
+                NetworkAccountUpdate::Delta(account_delta) => {
+                    self.account_or_load(prefix)
+                        .await
+                        .context("failed to load account")?
+                        .context("account with delta not found")?
+                        .add_delta(&account_delta);
+                },
+            }
+
+            tx_impact.account_delta = Some(prefix);
         }
         for note in network_notes {
             tx_impact.notes.insert(note.nullifier());
             self.nullifier_idx.insert(note.nullifier(), note.account_prefix());
-            self.account_or_default(note.account_prefix()).add_note(note);
+            // Skip notes which target a non-existent network account.
+            if let Some(account) = self
+                .account_or_load(note.account_prefix())
+                .await
+                .context("failed to load account")?
+            {
+                account.add_note(note);
+            }
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.
@@ -195,22 +249,8 @@ impl State {
         if !tx_impact.is_empty() {
             self.inflight_txs.insert(id, tx_impact);
         }
-    }
 
-    /// Grants mutable access to the given account state, creating a default entry if none exists.
-    ///
-    /// This is effectively a thin wrapper around the entry API, but this also tracks new accounts
-    /// to the queue.
-    ///
-    /// This _must_ be the only way new accounts are added as otherwise they won't be queued.
-    fn account_or_default(&mut self, prefix: NetworkAccountPrefix) -> &mut AccountState {
-        match self.accounts.entry(prefix) {
-            Entry::Occupied(occupied_entry) => occupied_entry.into_mut(),
-            Entry::Vacant(vacant_entry) => {
-                self.queue.push_back(prefix);
-                vacant_entry.insert(AccountState::default())
-            },
-        }
+        Ok(())
     }
 
     /// Handles [`MempoolEvent::BlockCommitted`] events.
@@ -221,16 +261,12 @@ impl State {
         };
 
         if let Some(prefix) = impact.account_delta {
-            if self.accounts.get_mut(&prefix).unwrap().commit_delta().is_empty() {
-                self.remove_account(prefix);
-            }
+            self.accounts.get_mut(&prefix).unwrap().commit_delta();
         }
 
         for nullifier in impact.nullifiers {
             let prefix = self.nullifier_idx.remove(&nullifier).unwrap();
-            if self.accounts.get_mut(&prefix).unwrap().commit_nullifier(nullifier).is_empty() {
-                self.remove_account(prefix);
-            }
+            self.accounts.get_mut(&prefix).unwrap().commit_nullifier(nullifier);
         }
     }
 
@@ -242,16 +278,12 @@ impl State {
         };
 
         if let Some(prefix) = impact.account_delta {
-            if self.accounts.get_mut(&prefix).unwrap().revert_delta().is_empty() {
-                self.remove_account(prefix);
-            }
+            self.accounts.get_mut(&prefix).unwrap().revert_delta();
         }
 
         for note in impact.notes {
             let prefix = self.nullifier_idx.remove(&note).unwrap();
-            if self.accounts.get_mut(&prefix).unwrap().revert_note(note).is_empty() {
-                self.remove_account(prefix);
-            }
+            self.accounts.get_mut(&prefix).unwrap().revert_note(note);
         }
 
         for nullifier in impact.nullifiers {
@@ -260,12 +292,29 @@ impl State {
         }
     }
 
-    /// Removes the account from tracking under the assumption that it is empty.
-    fn remove_account(&mut self, prefix: NetworkAccountPrefix) {
-        // We don't need to prune the inflight transactions because if the account is empty, then it
-        // would have no inflight txs.
-        self.accounts.remove(&prefix);
-        self.queue.retain(|x| x != &prefix);
+    /// Grants mutable access to the given account state, creating a default entry if none exists.
+    ///
+    /// This is effectively a thin wrapper around the entry API, but this also tracks new accounts
+    /// to the queue.
+    ///
+    /// This _must_ be the only way new accounts are added as otherwise they won't be queued.
+    async fn account_or_load(
+        &mut self,
+        prefix: NetworkAccountPrefix,
+    ) -> Result<Option<&mut AccountState>, StoreError> {
+        match self.accounts.entry(prefix) {
+            Entry::Occupied(occupied_entry) => Ok(Some(occupied_entry.into_mut())),
+            Entry::Vacant(vacant_entry) => {
+                let Some(account) = self.store.get_network_account(prefix).await? else {
+                    return Ok(None);
+                };
+
+                self.queue.push_back(prefix);
+                let entry = vacant_entry.insert(AccountState::committed(account));
+
+                Ok(Some(entry))
+            },
+        }
     }
 }
 

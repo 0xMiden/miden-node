@@ -151,7 +151,7 @@ miden-node bundled start --enable-otel
 
 ### Honeycomb queries, triggers and board examples
 
-#### Example queries
+#### Example Queries
 
 Here are some useful Honeycomb queries to help monitor your Miden node:
 
@@ -196,103 +196,6 @@ GROUP BY block.number
 ORDER BY block.number DESC
 LIMIT 100
 ```
-
-#### Example triggers
-
-Create triggers in Honeycomb to alert you when important thresholds are crossed:
-
-**Slow block building**:
-* Query: 
-```honeycomb
-VISUALIZE
-AVG(duration_ms)
-WHERE
-name = "block_builder.build_block"
-```
-* Trigger condition: `AVG(duration_ms) > 30000` (adjust based on your expected block time)
-* Description: Alert when blocks take too long to build (more than 30 seconds on average)
-
-**High failure rate**:
-* Query: 
-```honeycomb
-VISUALIZE
-COUNT
-WHERE
-name = "block_builder.build_block" AND error = true
-```
-* Trigger condition: `COUNT > 100 WHERE error = true`
-* Description: Alert when more than 100 block builds are failing
-
-#### Example boards
-
-Create Honeycomb boards to monitor different aspects of your Miden node:
-
-**Block production board**:
-* Block production rate
-```honeycomb
-VISUALIZE
-COUNT
-WHERE
-name = "block_builder.build_block" 
-AND status != "error"
-CALCULATE RATE
-```
-
-* Block production errors
-```honeycomb
-VISUALIZE
-COUNT_WHERE(status = "error") / COUNT
-WHERE
-name = "block_builder.build_block"
-```
-
-* Block latency
-```honeycomb
-VISUALIZE
-AVG(duration_ms) P95(duration_ms)
-WHERE
-name = "block_builder.build_block"
-```
-
-* Block size
-```honeycomb
-VISUALIZE
-AVG(block.batches.count)
-WHERE
-name = "block_builder.build_block"
-```
-
-**Batch processing board**:
-* Batch processing rate
-```honeycomb
-VISUALIZE
-COUNT
-WHERE
-name = "batch_builder.build_batch"
-AND status != "error"
-CALCULATE RATE
-```
-
-* Batch processing latency
-```honeycomb
-VISUALIZE
-AVG(duration_ms) P95(duration_ms)
-WHERE
-name = "batch_builder.build_batch"
-```
-
-* Batch size (transactions)
-```honeycomb
-VISUALIZE
-AVG(transactions.count)
-WHERE
-name = "batch_builder.build_batch"
-```
-
-#### Example queries
-
-Here are some useful Honeycomb queries to help monitor your Miden node:
-
 **RPC request rate by endpoint**:
 ```honeycomb
 VISUALIZE
@@ -319,6 +222,32 @@ WHERE
 name contains "rpc"
 GROUP BY status_code
 ```
+
+#### Example Triggers
+
+Create triggers in Honeycomb to alert you when important thresholds are crossed:
+
+**Slow block building**:
+* Query: 
+```honeycomb
+VISUALIZE
+AVG(duration_ms)
+WHERE
+name = "block_builder.build_block"
+```
+* Trigger condition: `AVG(duration_ms) > 30000` (adjust based on your expected block time)
+* Description: Alert when blocks take too long to build (more than 30 seconds on average)
+
+**High failure rate**:
+* Query: 
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name = "block_builder.build_block" AND error = true
+```
+* Trigger condition: `COUNT > 100 WHERE error = true`
+* Description: Alert when more than 100 block builds are failing
 
 #### Advanced investigation with BubbleUp
 

@@ -11,7 +11,7 @@ use miden_node_store::{GenesisState, Store};
 use miden_node_utils::{crypto::get_rpo_random_coin, grpc::UrlExt};
 use miden_objects::{
     Felt, ONE,
-    account::{AccountFile, AuthSecretKey},
+    account::{Account, AccountFile, AuthSecretKey},
     asset::TokenSymbol,
     crypto::dsa::rpo_falcon512::SecretKey,
 };
@@ -177,7 +177,7 @@ impl StoreCommand {
         let max_supply = Felt::try_from(max_supply).expect("max supply is less than field modulus");
 
         // Create the faucet.
-        let (mut account, account_seed) = create_basic_fungible_faucet(
+        let (account, account_seed) = create_basic_fungible_faucet(
             rng.random(),
             TokenSymbol::try_from("MIDEN").expect("MIDEN is a valid token symbol"),
             decimals,
@@ -194,10 +194,11 @@ impl StoreCommand {
         //
         // The genesis block is special in that accounts are "deplyed" without transactions and
         // therefore we need bump the nonce manually to uphold this invariant.
-        account.set_nonce(ONE).context("failed to set account nonce to 1")?;
+        let (id, vault, sorage, code, _) = account.into_parts();
+        let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
         Ok(AccountFile::new(
-            account,
+            updated_account,
             Some(account_seed),
             vec![AuthSecretKey::RpoFalcon512(secret)],
         ))

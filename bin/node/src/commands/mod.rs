@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use miden_node_block_producer::{SERVER_MAX_BATCHES_PER_BLOCK, SERVER_MAX_TXS_PER_BATCH};
 use url::Url;
 
 pub mod block_producer;
@@ -80,4 +81,12 @@ pub struct BlockProducerConfig {
     /// in-process which is expensive.
     #[arg(long = "block-prover.url", env = ENV_BLOCK_PROVER_URL, value_name = "URL")]
     pub block_prover_url: Option<Url>,
+
+    /// The number of transactions per batch.
+    #[arg(long = "max-txs-per-batch", default_value_t = SERVER_MAX_TXS_PER_BATCH)]
+    max_txs_per_batch: usize,
+
+    /// Maximum number of batches per block.
+    #[arg(long = "max-batches-per-block", default_value_t = SERVER_MAX_BATCHES_PER_BLOCK)]
+    max_batches_per_block: usize,
 }

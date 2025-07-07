@@ -8,6 +8,7 @@ use miden_objects::{
 };
 use thiserror::Error;
 
+use super::account::NetworkAccountPrefix;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
     generated::note as proto,
@@ -37,6 +38,15 @@ impl From<Note> for proto::NetworkNote {
         Self {
             metadata: Some(proto::NoteMetadata::from(*note.metadata())),
             details: NoteDetails::from(note).to_bytes(),
+        }
+    }
+}
+
+impl From<Note> for proto::Note {
+    fn from(note: Note) -> Self {
+        Self {
+            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            details: Some(NoteDetails::from(note).to_bytes()),
         }
     }
 }
@@ -109,6 +119,25 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
     }
 }
 
+impl TryFrom<proto::Note> for Note {
+    type Error = ConversionError;
+
+    fn try_from(proto_note: proto::Note) -> Result<Self, Self::Error> {
+        let metadata: NoteMetadata = proto_note
+            .metadata
+            .ok_or(proto::Note::missing_field(stringify!(metadata)))?
+            .try_into()?;
+
+        let details = proto_note.details.ok_or(proto::Note::missing_field(stringify!(details)))?;
+
+        let note_details = NoteDetails::read_from_bytes(&details)
+            .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
+
+        let (assets, recipient) = note_details.into_parts();
+        Ok(Note::new(assets, metadata, recipient))
+    }
+}
+
 // NETWORK NOTE
 // ================================================================================================
 
@@ -131,6 +160,11 @@ impl NetworkNote {
 
     pub fn id(&self) -> NoteId {
         self.inner().id()
+    }
+
+    pub fn account_prefix(&self) -> NetworkAccountPrefix {
+        // SAFETY: This must succeed because this is a network note.
+        self.metadata().tag().try_into().unwrap()
     }
 }
 

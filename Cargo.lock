@@ -1164,6 +1164,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs-err"
+version = "3.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88d7be93788013f265201256d58f04936a8079ad5dc898743aa20525f503b683"
+dependencies = [
+ "autocfg",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2083,7 +2092,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#c4249183a790b0b0cfc7d44e5e31500533712d33"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#b6e08dbb64282f31718f1e5400887ed69db4c599"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2180,7 +2189,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#c4249183a790b0b0cfc7d44e5e31500533712d33"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#b6e08dbb64282f31718f1e5400887ed69db4c599"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2407,6 +2416,7 @@ name = "miden-node-stress-test"
 version = "0.10.0"
 dependencies = [
  "clap 4.5.40",
+ "fs-err",
  "futures",
  "miden-air",
  "miden-block-prover",
@@ -2445,6 +2455,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rand 0.9.1",
  "serde",
+ "thiserror 2.0.12",
  "tokio",
  "tonic",
  "tower-http",
@@ -2460,7 +2471,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#c4249183a790b0b0cfc7d44e5e31500533712d33"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#b6e08dbb64282f31718f1e5400887ed69db4c599"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2509,6 +2520,7 @@ dependencies = [
 name = "miden-remote-prover"
 version = "0.10.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "axum",
  "bytes",
@@ -2580,7 +2592,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#c4249183a790b0b0cfc7d44e5e31500533712d33"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#b6e08dbb64282f31718f1e5400887ed69db4c599"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2591,6 +2603,7 @@ dependencies = [
  "miden-tx",
  "rand 0.9.1",
  "rand_chacha 0.9.0",
+ "thiserror 2.0.12",
  "winter-maybe-async",
  "winterfell",
 ]
@@ -2598,7 +2611,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#c4249183a790b0b0cfc7d44e5e31500533712d33"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#b6e08dbb64282f31718f1e5400887ed69db4c599"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2614,7 +2627,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.10.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#c4249183a790b0b0cfc7d44e5e31500533712d33"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#b6e08dbb64282f31718f1e5400887ed69db4c599"
 dependencies = [
  "miden-objects",
  "miden-tx",

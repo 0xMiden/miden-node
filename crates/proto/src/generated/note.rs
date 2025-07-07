@@ -22,32 +22,33 @@ pub struct NoteMetadata {
     #[prost(fixed64, tag = "5")]
     pub aux: u64,
 }
+/// Represents a committed note.
+///
+/// A committed note is a note that has been included in a block.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CommittedNote {
+    /// Either private, public, or network note.
+    #[prost(message, optional, tag = "1")]
+    pub note: ::core::option::Option<Note>,
+    /// The data needed to prove that the note is present in the chain.
+    #[prost(message, optional, tag = "2")]
+    pub inclusion_proof: ::core::option::Option<NoteInclusionInBlockProof>,
+}
 /// Represents a note.
+///
+/// The note is composed of the note metadata and its serialized details.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Note {
-    /// The block number in which the note was created.
-    #[prost(fixed32, tag = "1")]
-    pub block_num: u32,
-    /// The index of the note in the block.
-    #[prost(uint32, tag = "2")]
-    pub note_index: u32,
-    /// The ID of the note.
-    #[prost(message, optional, tag = "3")]
-    pub note_id: ::core::option::Option<super::digest::Digest>,
     /// The note's metadata.
-    #[prost(message, optional, tag = "4")]
+    #[prost(message, optional, tag = "1")]
     pub metadata: ::core::option::Option<NoteMetadata>,
-    /// The note's inclusion proof in the block.
-    #[prost(message, optional, tag = "5")]
-    pub merkle_path: ::core::option::Option<super::merkle::MerklePath>,
-    /// Serialized details of the public note (empty for private notes).
-    #[prost(bytes = "vec", optional, tag = "6")]
+    /// Serialized note details (empty for private notes).
+    #[prost(bytes = "vec", optional, tag = "2")]
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// Represents a network note.
 ///
-/// The note is composed of the note metadata and its serialized details. The note's tag
-/// must express that the note is for network usage instead of local.
+/// The note is composed of the note metadata and its serialized details.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NetworkNote {
     /// The note's metadata.

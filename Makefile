@@ -33,6 +33,11 @@ format-check: ## Runs Format using nightly toolchain but only in check mode
 	cargo +nightly fmt --all --check
 
 
+.PHONY: machete
+toml: ## Runs machete to find unused dependencies
+	cargo machete
+
+
 .PHONY: toml
 toml: ## Runs Format for all TOML files
 	taplo fmt
@@ -52,7 +57,7 @@ workspace-check: ## Runs a check that all packages have `lints.workspace = true`
 
 
 .PHONY: lint
-lint: typos-check format fix clippy toml workspace-check ## Runs all linting tasks at once (Clippy, fixing, formatting, workspace)
+lint: typos-check format fix clippy toml workspace-check machete ## Runs all linting tasks at once (Clippy, fixing, formatting, workspace, machete)
 
 # --- docs ----------------------------------------------------------------------------------------
 

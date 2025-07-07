@@ -23,6 +23,7 @@ default    = ["concurrent"]
 workspace = true
 
 [dependencies]
+anyhow                = { workspace = true }
 async-trait           = { version = "0.1" }
 axum                  = { version = "0.8" }
 bytes                 = { version = "1.0" }

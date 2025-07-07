@@ -16,6 +16,8 @@
 
 ### Changes
 
+- Transaction limit per batch is now configurable (default 8) (#1015).
+- Batch limit per block is now configurable (default 8) (#1015).
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
 - [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
@@ -32,6 +34,8 @@
 - [BREAKING] Rename `miden-proving-service-client` to `miden-remote-prover-client` (#1004).
 - [BREAKING] Rename `RemoteProverError` to `RemoteProverClientError` (#1004).
 - [BREAKING] Rename `ProvingServiceError` to `RemoteProverError` (#1004).
+- [BREAKING] Renamed `Note` to `CommittedNote`, and `NetworkNote` to `Note` in the proto messages (#1022).
+- [BREAKING] Limits of store queries per query parameter enforced (#1028).
 
 ### Fixes
 

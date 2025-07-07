@@ -25,10 +25,10 @@ pub use server::BlockProducer;
 pub const COMPONENT: &str = "miden-block-producer";
 
 /// The number of transactions per batch.
-const SERVER_MAX_TXS_PER_BATCH: usize = 2;
+pub const SERVER_MAX_TXS_PER_BATCH: usize = 8;
 
 /// Maximum number of batches per block.
-const SERVER_MAX_BATCHES_PER_BLOCK: usize = 4;
+pub const SERVER_MAX_BATCHES_PER_BLOCK: usize = 8;
 
 /// Size of the batch building worker pool.
 const SERVER_NUM_BATCH_BUILDERS: NonZeroUsize = NonZeroUsize::new(2).unwrap();

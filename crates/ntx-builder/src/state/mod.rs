@@ -266,7 +266,11 @@ impl State {
 
         for nullifier in impact.nullifiers {
             let prefix = self.nullifier_idx.remove(&nullifier).unwrap();
-            self.accounts.get_mut(&prefix).unwrap().commit_nullifier(nullifier);
+            // Its possible for the account to no longer exist if the transaction creating it was
+            // reverted.
+            if let Some(account) = self.accounts.get_mut(&prefix) {
+                account.commit_nullifier(nullifier);
+            }
         }
     }
 
@@ -278,17 +282,28 @@ impl State {
         };
 
         if let Some(prefix) = impact.account_delta {
-            self.accounts.get_mut(&prefix).unwrap().revert_delta();
+            // We need to remove the account if this transaction created the account.
+            if self.accounts.get_mut(&prefix).unwrap().revert_delta() {
+                self.accounts.remove(&prefix);
+            }
         }
 
         for note in impact.notes {
             let prefix = self.nullifier_idx.remove(&note).unwrap();
-            self.accounts.get_mut(&prefix).unwrap().revert_note(note);
+            // Its possible for the account to no longer exist if the transaction creating it was
+            // reverted.
+            if let Some(account) = self.accounts.get_mut(&prefix) {
+                account.revert_note(note);
+            }
         }
 
         for nullifier in impact.nullifiers {
             let prefix = self.nullifier_idx.get(&nullifier).unwrap();
-            self.accounts.get_mut(prefix).unwrap().revert_nullifier(nullifier);
+            // Its possible for the account to no longer exist if the transaction creating it was
+            // reverted.
+            if let Some(account) = self.accounts.get_mut(prefix) {
+                account.revert_nullifier(nullifier);
+            }
         }
     }
 

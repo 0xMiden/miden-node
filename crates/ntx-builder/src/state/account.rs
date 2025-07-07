@@ -65,11 +65,18 @@ impl AccountState {
 
     /// Reverts the newest account state delta.
     ///
+    /// # Returns
+    ///
+    /// Returns `true` if this reverted the account creation delta. The caller _must_ remove this
+    /// account and associated notes as calls to `account` will panic.
+    ///
     /// # Panics
     ///
     /// Panics if there are no deltas to revert.
-    pub fn revert_delta(&mut self) {
+    #[must_use = "must remove this account and its notes"]
+    pub fn revert_delta(&mut self) -> bool {
         self.inflight.pop_back().expect("must have a delta to revert");
+        self.committed.is_none() && self.inflight.is_empty()
     }
 
     /// Adds a new network note making it available for consumption.

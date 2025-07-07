@@ -61,6 +61,10 @@ pub struct BlockProducer {
     pub batch_interval: Duration,
     /// The interval at which to produce blocks.
     pub block_interval: Duration,
+    /// The maximum number of transactions per batch.
+    pub max_txs_per_batch: usize,
+    /// The maximum number of batches per block.
+    pub max_batches_per_block: usize,
 }
 
 impl BlockProducer {
@@ -68,6 +72,7 @@ impl BlockProducer {
     ///
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
+    #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
         let store = StoreClient::new(self.store_address);
@@ -125,8 +130,11 @@ impl BlockProducer {
         );
         let mempool = Mempool::shared(
             chain_tip,
-            BatchBudget::default(),
-            BlockBudget::default(),
+            BatchBudget {
+                transactions: self.max_txs_per_batch,
+                ..BatchBudget::default()
+            },
+            BlockBudget { batches: self.max_batches_per_block },
             SERVER_MEMPOOL_STATE_RETENTION,
             SERVER_MEMPOOL_EXPIRATION_SLACK,
         );
@@ -399,7 +407,7 @@ mod test {
     use tonic::transport::{Channel, Endpoint};
     use winterfell::Proof;
 
-    use crate::BlockProducer;
+    use crate::{BlockProducer, SERVER_MAX_BATCHES_PER_BLOCK, SERVER_MAX_TXS_PER_BATCH};
 
     #[tokio::test]
     async fn block_producer_startup_is_robust_to_network_failures() {
@@ -437,6 +445,8 @@ mod test {
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),
                 block_interval: Duration::from_millis(500),
+                max_txs_per_batch: SERVER_MAX_TXS_PER_BATCH,
+                max_batches_per_block: SERVER_MAX_BATCHES_PER_BLOCK,
             }
             .serve()
             .await
@@ -524,6 +534,7 @@ mod test {
             ),
             Digest::default(),
             [i; 32].try_into().unwrap(),
+            Digest::default(),
             0.into(),
             Digest::default(),
             u32::MAX.into(),

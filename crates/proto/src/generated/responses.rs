@@ -196,7 +196,7 @@ pub struct SubmitProvenTransactionResponse {
 pub struct GetNotesByIdResponse {
     /// Lists Note's returned by the database.
     #[prost(message, repeated, tag = "1")]
-    pub notes: ::prost::alloc::vec::Vec<super::note::Note>,
+    pub notes: ::prost::alloc::vec::Vec<super::note::CommittedNote>,
 }
 /// Represents the result of getting account details.
 #[derive(Clone, PartialEq, ::prost::Message)]

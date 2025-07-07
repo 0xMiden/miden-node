@@ -6,10 +6,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
+use miden_lib::{
+    account::auth::RpoFalcon512, note::create_p2id_note, transaction::TransactionKernel,
+};
 use miden_node_proto::domain::account::AccountSummary;
 use miden_objects::{
-    Felt, FieldElement, Word, ZERO,
+    EMPTY_WORD, Felt, FieldElement, Word, ZERO,
     account::{
         Account, AccountBuilder, AccountComponent, AccountDelta, AccountId, AccountIdVersion,
         AccountStorageDelta, AccountStorageMode, AccountType, AccountVaultDelta, StorageSlot,
@@ -17,7 +19,10 @@ use miden_objects::{
     },
     asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath, rand::RpoRandomCoin},
+    crypto::{
+        dsa::rpo_falcon512::PublicKey, hash::rpo::RpoDigest, merkle::MerklePath,
+        rand::RpoRandomCoin,
+    },
     note::{
         Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
     },
@@ -606,7 +611,7 @@ fn sql_public_account_details() {
     let vault_delta = AccountVaultDelta::from_iters([nft2], [nft1]);
 
     let mut delta2 =
-        AccountDelta::new(account.id(), storage_delta, vault_delta, Some(Felt::new(2))).unwrap();
+        AccountDelta::new(account.id(), storage_delta, vault_delta, Felt::new(2)).unwrap();
 
     account.apply_delta(&delta2).unwrap();
 
@@ -650,7 +655,7 @@ fn sql_public_account_details() {
         account.id(),
         storage_delta3,
         AccountVaultDelta::from_iters([nft1], []),
-        Some(Felt::new(3)),
+        Felt::new(3),
     )
     .unwrap();
 
@@ -1239,6 +1244,7 @@ fn mock_account_code_and_storage(
         .storage_mode(storage_mode)
         .with_assets(assets)
         .with_component(component)
+        .with_auth_component(RpoFalcon512::new(PublicKey::new(EMPTY_WORD)))
         .build_existing()
         .unwrap()
 }

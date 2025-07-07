@@ -189,7 +189,7 @@ message SubmitProvenTransactionResponse {
 // Represents the result of getting notes by IDs.
 message GetNotesByIdResponse {
     // Lists Note's returned by the database.
-    repeated note.Note notes = 1;
+    repeated note.CommittedNote notes = 1;
 }
 
 // Represents the result of getting account details.

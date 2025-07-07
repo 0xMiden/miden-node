@@ -42,6 +42,15 @@ impl From<Note> for proto::NetworkNote {
     }
 }
 
+impl From<Note> for proto::Note {
+    fn from(note: Note) -> Self {
+        Self {
+            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            details: Some(NoteDetails::from(note).to_bytes()),
+        }
+    }
+}
+
 impl From<NetworkNote> for proto::NetworkNote {
     fn from(note: NetworkNote) -> Self {
         let note = Note::from(note);
@@ -107,6 +116,25 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
                     .try_into()?,
             )?,
         ))
+    }
+}
+
+impl TryFrom<proto::Note> for Note {
+    type Error = ConversionError;
+
+    fn try_from(proto_note: proto::Note) -> Result<Self, Self::Error> {
+        let metadata: NoteMetadata = proto_note
+            .metadata
+            .ok_or(proto::Note::missing_field(stringify!(metadata)))?
+            .try_into()?;
+
+        let details = proto_note.details.ok_or(proto::Note::missing_field(stringify!(details)))?;
+
+        let note_details = NoteDetails::read_from_bytes(&details)
+            .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
+
+        let (assets, recipient) = note_details.into_parts();
+        Ok(Note::new(assets, metadata, recipient))
     }
 }
 

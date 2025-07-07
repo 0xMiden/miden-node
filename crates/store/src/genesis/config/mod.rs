@@ -129,6 +129,8 @@ impl GenesisConfig {
             all_accounts.push(faucet_account);
         }
 
+        let zero_padding_width = usize::ilog10(wallet_configs.len()) as usize;
+
         // then setup all wallet accounts, which reference the faucet's for their provided assets
         for (index, WalletConfig { has_updatable_code, storage_mode, assets }) in
             wallet_configs.into_iter().enumerate()
@@ -180,7 +182,7 @@ impl GenesisConfig {
             wallet_account.apply_delta(&delta)?;
 
             secrets.push((
-                format!("wallet_{index:02}.mac"),
+                format!("wallet_{index:0zero_padding_width$}.mac"),
                 wallet_account.clone(),
                 secret_key,
                 wallet_account_seed,

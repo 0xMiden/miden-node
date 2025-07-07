@@ -3,7 +3,7 @@ use miden_objects::{AccountError, AssetError, TokenSymbolError, asset::TokenSymb
 
 #[allow(missing_docs, reason = "Error variants must be descriptive by themselves")]
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum GenesisConfigError {
     #[error(transparent)]
     Toml(#[from] toml::de::Error),
     #[error("account translation from config to state failed")]
@@ -29,4 +29,6 @@ pub enum Error {
 
     #[error(r#"incompatible combination of `max_supply` ({max_supply})" and `decimals` ({decimals}) exceeding the allowed value range of an `u64`"#)]
     OutOfRange { max_supply: u64, decimals: u8 },
+    #[error("Found duplicate faucet definition for token symbol {symbol:?}")]
+    DuplicateFaucetDefinition { symbol: TokenSymbol },
 }

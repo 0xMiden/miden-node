@@ -11,7 +11,7 @@ which can be accessed by appending `--help` to any of the commands.
 ## Bootstrapping
 
 The first step in starting a new Miden network is to initialize the genesis block data. This is a
-one-off operation using the `bootstrap` command and by default the genesis block contains a single
+one-off operation using the `bootstrap` command and by default the genesis block will contain a single
 faucet account.
 
 ```sh

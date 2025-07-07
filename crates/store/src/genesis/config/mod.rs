@@ -23,7 +23,7 @@ use rand_chacha::ChaCha20Rng;
 use crate::GenesisState;
 
 mod errors;
-use self::errors::Error;
+use self::errors::GenesisConfigError;
 
 #[cfg(test)]
 mod tests;
@@ -63,7 +63,7 @@ impl GenesisConfig {
     /// Read the genesis accounts from a toml formatted string
     ///
     /// Notice: It will generate the specified case during [`fn into_state`].
-    pub fn read_toml(toml_str: &str) -> Result<Self, Error> {
+    pub fn read_toml(toml_str: &str) -> Result<Self, GenesisConfigError> {
         let me = toml::from_str::<Self>(toml_str)?;
         Ok(me)
     }
@@ -72,7 +72,7 @@ impl GenesisConfig {
     ///
     /// Also returns the set of secrets for the generated accounts.
     #[allow(clippy::too_many_lines)]
-    pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), Error> {
+    pub fn into_state(self) -> Result<(GenesisState, AccountSecrets), GenesisConfigError> {
         let GenesisConfig {
             version,
             timestamp,
@@ -105,7 +105,10 @@ impl GenesisConfig {
             let account_type = AccountType::FungibleFaucet;
 
             let max_supply = Felt::try_from(max_supply).map_err(|_| {
-                Error::MaxSupplyExceedsFieldModulus { max_supply, modulus: Felt::MODULUS }
+                GenesisConfigError::MaxSupplyExceedsFieldModulus {
+                    max_supply,
+                    modulus: Felt::MODULUS,
+                }
             })?;
 
             let component = BasicFungibleFaucet::new(token_symbol, decimals, max_supply)?;
@@ -120,7 +123,9 @@ impl GenesisConfig {
                 .with_component(component)
                 .build()?;
 
-            faucets.insert(symbol.clone(), faucet_account.id());
+            if faucets.insert(symbol.clone(), faucet_account.id()).is_some() {
+                return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol: token_symbol });
+            }
 
             secrets.push((
                 format!("faucet_{symbol}.mac", symbol = symbol.to_lowercase()),
@@ -143,12 +148,12 @@ impl GenesisConfig {
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
             let init_seed: [u8; 32] = rng.random();
 
-            let assets = Result::<Vec<_>, Error>::from_iter(assets.into_iter().map(
+            let assets = Result::<Vec<_>, GenesisConfigError>::from_iter(assets.into_iter().map(
                 |AssetEntry { amount, symbol }: AssetEntry| {
                     let token_symbol = TokenSymbol::new(&symbol)?;
-                    let faucet_id = faucets
-                        .get(&symbol)
-                        .ok_or_else(|| Error::MissingFaucetDefinition { symbol: token_symbol })?;
+                    let faucet_id = faucets.get(&symbol).ok_or_else(|| {
+                        GenesisConfigError::MissingFaucetDefinition { symbol: token_symbol }
+                    })?;
 
                     Ok(FungibleAsset::new(*faucet_id, amount)?)
                 },

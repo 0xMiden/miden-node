@@ -17,7 +17,7 @@ mod account;
 ///
 /// Contains the data pertaining to a specific network account
 /// which can be used to build a network transaction.
-pub struct Candidate {
+pub struct TransactionCandidate {
     /// The account ID prefix of this network account.
     pub reference: NetworkAccountPrefix,
     /// The current inflight deltas which should be applied to this account.
@@ -48,12 +48,14 @@ pub struct State {
 
     /// Network accounts which have been selected but whose transaction has not yet
     /// completed.
+    ///
+    /// This locks these accounts so they cannot be selected.
     in_progress: HashSet<NetworkAccountPrefix>,
 
-    /// Uncommitted transactions and their impact on the state.
+    /// Uncommitted transactions which have a some impact on the network state.
     ///
-    /// This is tracked so we can commit or revert such transaction effects.
-    inflight_txs: BTreeMap<TransactionId, Impact>,
+    /// This is tracked so we can commit or revert such transaction effects. Transactions _without_ an impact are ignored.
+    inflight_txs: BTreeMap<TransactionId, TransactionImpact>,
 
     /// A mapping of network note's to their account.
     nullifier_idx: BTreeMap<Nullifier, NetworkAccountPrefix>,
@@ -78,7 +80,7 @@ impl State {
     ///   - it has been marked as failed if the transaction failed, or
     ///   - the transaction was submitted successfully, indicated by the associated mempool event
     ///     being submitted
-    pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<Candidate> {
+    pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
         // Loop through the account queue until we find one that is selectable.
         //
         // Since the queue contains _all_ accounts, including unselectable accounts, we
@@ -104,7 +106,8 @@ impl State {
                 continue;
             }
 
-            return Candidate {
+            self.in_progress.insert(candidate);
+            return TransactionCandidate {
                 reference: candidate,
                 _account_deltas: account.deltas().clone(),
                 _notes: notes,
@@ -124,6 +127,7 @@ impl State {
     /// Updates state with the mempool event.
     pub fn mempool_update(&mut self, update: MempoolEvent) {
         match update {
+            // Note: this event will get triggered by normal user transactions, as well as our network transactions. The mempool does not distinguish between the two.
             MempoolEvent::TransactionAdded {
                 id,
                 nullifiers,
@@ -146,6 +150,8 @@ impl State {
     }
 
     /// Handles a [`MempoolEvent::TransactionAdded`] event.
+    ///
+    /// Note that this will include our own network transactions as well as user submitted transactions.
     fn add_transaction(
         &mut self,
         id: TransactionId,
@@ -162,7 +168,7 @@ impl State {
             return;
         }
 
-        let mut tx_impact = Impact::default();
+        let mut tx_impact = TransactionImpact::default();
         if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
             tx_impact.account_delta = Some(update.prefix());
             self.account_or_default(update.prefix()).add_delta(update);
@@ -208,16 +214,18 @@ impl State {
 
     /// Handles [`MempoolEvent::BlockCommitted`] events.
     fn commit_transaction(&mut self, tx: TransactionId) {
-        let Impact { account_delta, notes: _, nullifiers } =
-            self.inflight_txs.remove(&tx).unwrap_or_default();
+        // We only track transactions which have an impact on the network state.
+        let Some(impact) = self.inflight_txs.remove(&tx) else {
+            return;
+        };
 
-        if let Some(prefix) = account_delta {
+        if let Some(prefix) = impact.account_delta {
             if self.accounts.get_mut(&prefix).unwrap().commit_delta().is_empty() {
                 self.remove_account(prefix);
             }
         }
 
-        for nullifier in nullifiers {
+        for nullifier in impact.nullifiers {
             let prefix = self.nullifier_idx.remove(&nullifier).unwrap();
             if self.accounts.get_mut(&prefix).unwrap().commit_nullifier(nullifier).is_empty() {
                 self.remove_account(prefix);
@@ -227,23 +235,25 @@ impl State {
 
     /// Handles [`MempoolEvent::TransactionsReverted`] events.
     fn revert_transaction(&mut self, tx: TransactionId) {
-        let Impact { account_delta, notes, nullifiers } =
-            self.inflight_txs.remove(&tx).unwrap_or_default();
+        // We only track transactions which have an impact on the network state.
+        let Some(impact) = self.inflight_txs.remove(&tx) else {
+            return;
+        };
 
-        if let Some(prefix) = account_delta {
+        if let Some(prefix) = impact.account_delta {
             if self.accounts.get_mut(&prefix).unwrap().revert_delta().is_empty() {
                 self.remove_account(prefix);
             }
         }
 
-        for note in notes {
+        for note in impact.notes {
             let prefix = self.nullifier_idx.remove(&note).unwrap();
             if self.accounts.get_mut(&prefix).unwrap().revert_note(note).is_empty() {
                 self.remove_account(prefix);
             }
         }
 
-        for nullifier in nullifiers {
+        for nullifier in impact.nullifiers {
             let prefix = self.nullifier_idx.get(&nullifier).unwrap();
             self.accounts.get_mut(prefix).unwrap().revert_nullifier(nullifier);
         }
@@ -260,7 +270,7 @@ impl State {
 
 /// The impact a transaction has on the state.
 #[derive(Default)]
-struct Impact {
+struct TransactionImpact {
     /// The network account this transaction added an account delta to.
     account_delta: Option<NetworkAccountPrefix>,
 
@@ -271,7 +281,7 @@ struct Impact {
     nullifiers: BTreeSet<Nullifier>,
 }
 
-impl Impact {
+impl TransactionImpact {
     fn is_empty(&self) -> bool {
         self.account_delta.is_none() && self.notes.is_empty() && self.nullifiers.is_empty()
     }

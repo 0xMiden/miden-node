@@ -98,6 +98,8 @@ batch_builder.build_batch
    ┕━ mempool.commit_batch
 ```
 
+</details>
+
 ## Verbosity
 
 We log important spans and events at `info` level or higher, which is also the default log level.
@@ -181,7 +183,7 @@ LIMIT 100
 VISUALIZE
 COUNT
 WHERE
-name = "block_builder.build_block" 
+name = "block_builder.build_block"
 AND status = "error"
 CALCULATE RATE
 ```
@@ -228,7 +230,7 @@ GROUP BY status_code
 Create triggers in Honeycomb to alert you when important thresholds are crossed:
 
 **Slow block building**:
-* Query: 
+* Query:
 ```honeycomb
 VISUALIZE
 AVG(duration_ms)
@@ -239,7 +241,7 @@ name = "block_builder.build_block"
 * Description: Alert when blocks take too long to build (more than 30 seconds on average)
 
 **High failure rate**:
-* Query: 
+* Query:
 ```honeycomb
 VISUALIZE
 COUNT

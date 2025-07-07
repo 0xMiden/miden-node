@@ -28,13 +28,6 @@ use self::errors::Error;
 #[cfg(test)]
 mod tests;
 
-/// Represents an account, either a wallet or a faucet
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum AccountConfig {
-    Wallet(WalletConfig),
-    Faucet(FaucetConfig),
-}
-
 // GENESIS CONFIG
 // ================================================================================================
 

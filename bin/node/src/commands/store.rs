@@ -214,9 +214,8 @@ mod tests {
             AuthScheme::RpoFalcon512 { pub_key: secret.public_key() },
         )?;
 
-        // Revisit: <https://github.com/0xMiden/miden-base/pull/1492/files#r2186082022>
-        let (id, vault, sorage, code, _) = account.into_parts();
-        let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
+        let (id, vault, storage, code, _) = account.into_parts();
+        let updated_account = Account::from_parts(id, vault, storage, code, ONE);
 
         Ok(AccountFile::new(
             updated_account,

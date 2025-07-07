@@ -137,7 +137,7 @@ impl GenesisConfig {
             all_accounts.push(faucet_account);
         }
 
-        let zero_padding_width = usize::ilog10(wallet_configs.len()) as usize;
+        let zero_padding_width = usize::ilog10(std::cmp::max(10, wallet_configs.len())) as usize;
 
         // then setup all wallet accounts, which reference the faucet's for their provided assets
         for (index, WalletConfig { has_updatable_code, storage_mode, assets }) in

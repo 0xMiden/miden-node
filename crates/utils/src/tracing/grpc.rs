@@ -1,3 +1,31 @@
+use std::{fmt::Display, time::Duration};
+
+/// A [`tower_http::trace::OnFailure`] implementation which creates events of level dependant on the
+/// failure classification.
+#[derive(Clone)]
+pub struct OnFailure {}
+
+impl<F: Display> tower_http::trace::OnFailure<F> for OnFailure {
+    fn on_failure(&mut self, failure_class: F, latency: Duration, _span: &tracing::Span) {
+        let latency = format!("{} ms", latency.as_millis());
+        if failure_class.to_string().as_str() == "Code: 12" {
+            // Unimplemented failure classifications occur for example when
+            // external load balancers send healthchecks (expecting status code 12).
+            tracing::debug!(
+                classification = %failure_class,
+                latency = %latency,
+                "unimplemented"
+            );
+        } else {
+            tracing::error!(
+                classification = %failure_class,
+                latency = %latency,
+                "response failed"
+            );
+        }
+    }
+}
+
 /// Creates a [`tracing::Span`] based on RPC service and method name.
 macro_rules! rpc_span {
     ($service:literal, $method:literal) => {

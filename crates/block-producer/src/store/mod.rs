@@ -121,7 +121,7 @@ impl TryFrom<store_proto::TransactionInputs> for TransactionInputs {
 
 type InnerClient = store_client::BlockProducerClient<InterceptedService<Channel, OtelInterceptor>>;
 
-/// Interface to the store's gRPC API.
+/// Interface to the store's block-producer gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]

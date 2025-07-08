@@ -1,5 +1,5 @@
 use miden_node_proto::{
-    domain::note::NetworkNote,
+    domain::{account::NetworkAccountPrefix, note::NetworkNote},
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         // requests::{
@@ -17,7 +17,6 @@ use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
     crypto::merkle::{MmrPeaks, PartialMmr},
-    note::NoteTag,
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -32,7 +31,7 @@ use crate::COMPONENT;
 
 type InnerClient = store_client::NtxBuilderClient<InterceptedService<Channel, OtelInterceptor>>;
 
-/// Interface to the store's gRPC API.
+/// Interface to the store's ntx-builder gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
@@ -136,13 +135,11 @@ impl StoreClient {
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
-    pub async fn get_network_account_by_tag(
+    pub async fn get_network_account(
         &self,
-        note_tag: NoteTag,
+        prefix: NetworkAccountPrefix,
     ) -> Result<Option<Account>, StoreError> {
-        let tag_inner = note_tag.as_u32();
-        let request =
-            store_proto::GetNetworkAccountDetailsByPrefix { account_id_prefix: tag_inner };
+        let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: prefix.inner() };
 
         let store_response = self
             .inner

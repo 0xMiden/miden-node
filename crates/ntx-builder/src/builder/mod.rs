@@ -11,7 +11,10 @@ use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
 use futures::{TryFutureExt, TryStreamExt};
 use miden_node_proto::{
-    domain::{account::NetworkAccountError, note::NetworkNote},
+    domain::{
+        account::{NetworkAccountError, NetworkAccountPrefix},
+        note::NetworkNote,
+    },
     generated::ntx_builder::api_server,
 };
 use miden_node_proto_build::ntx_builder_api_descriptor;
@@ -107,10 +110,10 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(&self.store_url);
         let block_prod = BlockProducerClient::new(self.block_producer_address);
 
-        let unconsumed = store
-            .get_unconsumed_network_notes()
+        let mut state = crate::state::State::load(store.clone())
             .await
-            .context("failed to fetch unconsumed notes from the store")?;
+            .context("failed to load ntx state")?;
+
         let (chain_tip, _mmr) = store
             .get_current_blockchain_data(None)
             .await
@@ -122,7 +125,6 @@ impl NetworkTransactionBuilder {
             .await
             .context("failed to subscribe to mempool events")?;
 
-        let mut state = crate::state::State::with_committed_notes(unconsumed.into_iter());
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
@@ -145,22 +147,20 @@ impl NetworkTransactionBuilder {
                         tracing::info!("No candidate network transaction available");
                         continue;
                     };
-                    let account = candidate.reference;
 
                     let task_id = inflight.spawn(async move {
-                        // TODO:
-                        //
-                        // 1. Fetch account from store.
-                        // 2. The rest of the owl.
+                        // TODO: Run the actual tx.
 
                         Result::<_, ()>::Ok(())
                     }).id();
 
-                    inflight_idx.insert(task_id, account);
+                    // SAFETY: This is definitely a network account.
+                    let prefix = NetworkAccountPrefix::try_from(candidate.account.id()).unwrap();
+                    inflight_idx.insert(task_id, prefix);
                 },
                 event = mempool_events.try_next() => {
                     let event = event.context("mempool event stream ended")?.context("mempool event stream failed")?;
-                    state.mempool_update(event);
+                    state.mempool_update(event).await.context("failed to update state")?;
                 },
                 completed = inflight.join_next_with_id() => {
                     // Grab the task ID and associated network account reference.

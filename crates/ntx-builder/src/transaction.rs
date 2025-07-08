@@ -16,7 +16,8 @@ use miden_objects::{
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::{
     DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
-    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionProverError,
+    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
+    TransactionProverError,
 };
 use tracing::instrument;
 
@@ -70,9 +71,16 @@ impl NtxContext {
                     .map(|note| InputNote::Unauthenticated { note: note.into() })
                     .collect();
                 let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
+
+                let mast_store = TransactionMastStore::new();
+                for note in &notes {
+                    mast_store.insert(note.note().script().mast());
+                }
+
                 let data_store = NtxDataStore {
                     account,
                     genesis_header: self.genesis_header.clone(),
+                    mast_store,
                 };
 
                 self.filter_notes(&data_store, notes)
@@ -169,6 +177,7 @@ impl NtxContext {
 struct NtxDataStore {
     account: Account,
     genesis_header: BlockHeader,
+    mast_store: TransactionMastStore,
 }
 
 #[async_trait::async_trait(?Send)]
@@ -200,7 +209,10 @@ impl DataStore for NtxDataStore {
 }
 
 impl MastForestStore for NtxDataStore {
-    fn get(&self, _: &miden_objects::Digest) -> Option<std::sync::Arc<miden_objects::MastForest>> {
-        None
+    fn get(
+        &self,
+        procedure_hash: &miden_objects::Digest,
+    ) -> Option<std::sync::Arc<miden_objects::MastForest>> {
+        self.mast_store.get(procedure_hash)
     }
 }

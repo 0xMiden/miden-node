@@ -3,7 +3,7 @@ use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
-use super::{ENV_BLOCK_PRODUCER_URL, ENV_NTX_BUILDER_URL, ENV_STORE_URL};
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_STORE_URL};
 use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL};
 
 #[derive(clap::Subcommand)]
@@ -17,10 +17,6 @@ pub enum BlockProducerCommand {
         /// The store's gRPC url.
         #[arg(long = "store.url", env = ENV_STORE_URL)]
         store_url: Url,
-
-        /// The network transaction builder's gRPC url.
-        #[arg(long = "ntx-builder.url", env = ENV_NTX_BUILDER_URL)]
-        ntx_builder_url: Option<Url>,
 
         #[command(flatten)]
         block_producer: BlockProducerConfig,
@@ -39,7 +35,6 @@ impl BlockProducerCommand {
         let Self::Start {
             url,
             store_url,
-            ntx_builder_url,
             block_producer,
             enable_otel: _,
         } = self;
@@ -47,13 +42,6 @@ impl BlockProducerCommand {
         let store_address = store_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
-        let ntx_builder_address = ntx_builder_url
-            .map(|url| {
-                url.to_socket().context(
-                    "Failed to extract socket address from network transaction builder URL",
-                )
-            })
-            .transpose()?;
 
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
@@ -75,7 +63,6 @@ impl BlockProducerCommand {
         BlockProducer {
             block_producer_address,
             store_address,
-            ntx_builder_address,
             batch_prover_url: block_producer.batch_prover_url,
             block_prover_url: block_producer.block_prover_url,
             batch_interval: block_producer.batch_interval,
@@ -109,7 +96,6 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
-            ntx_builder_url: None,
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,
@@ -131,7 +117,6 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
-            ntx_builder_url: None,
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,

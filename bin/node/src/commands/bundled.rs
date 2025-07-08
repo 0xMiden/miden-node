@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -109,11 +109,6 @@ impl BundledCommand {
             .context("Failed to bind to block-producer gRPC endpoint")?
             .local_addr()
             .context("Failed to retrieve the block-producer's gRPC address")?;
-        let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to network transaction builder gRPC endpoint")?
-            .local_addr()
-            .context("Failed to retrieve the network transaction builder's gRPC address")?;
 
         let mut join_set = JoinSet::new();
         // Start store. The store endpoint is available after loading completes.
@@ -130,7 +125,6 @@ impl BundledCommand {
             })
             .id();
 
-        // Start network transaction builder. The endpoint is available after loading completes.
         // SAFETY: socket addr yields valid URLs
         let store_url =
             Url::parse(&format!("http://{}:{}/", store_address.ip(), store_address.port()))
@@ -142,7 +136,6 @@ impl BundledCommand {
                 BlockProducer {
                     block_producer_address,
                     store_address,
-                    ntx_builder_address: should_start_ntb.then_some(ntx_builder_address),
                     batch_prover_url: block_producer.batch_prover_url,
                     block_prover_url: block_producer.block_prover_url,
                     batch_interval: block_producer.batch_interval,
@@ -181,12 +174,10 @@ impl BundledCommand {
             let id = join_set
                 .spawn(async move {
                     NetworkTransactionBuilder {
-                        ntx_builder_address,
                         store_url,
                         block_producer_address,
                         tx_prover_url: ntx_builder.tx_prover_url,
                         ticker_interval: ntx_builder.ticker_interval,
-                        account_cache_capacity: NonZeroUsize::new(128).unwrap(),
                     }
                     .serve_new()
                     .await

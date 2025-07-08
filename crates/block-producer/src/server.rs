@@ -49,8 +49,6 @@ pub struct BlockProducer {
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_address: SocketAddr,
-    /// The address of the network transaction builder.
-    pub ntx_builder_address: Option<SocketAddr>,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -392,19 +390,11 @@ mod test {
                 .expect("Failed to get block-producer address")
         };
 
-        let ntx_builder_addr = {
-            let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
-                .await
-                .expect("failed to bind the ntx builder address");
-            ntx_builder_address.local_addr().expect("failed to get ntx builder address")
-        };
-
         // start the block producer
         task::spawn(async move {
             BlockProducer {
                 block_producer_address: block_producer_addr,
                 store_address: store_addr,
-                ntx_builder_address: Some(ntx_builder_addr),
                 batch_prover_url: None,
                 block_prover_url: None,
                 batch_interval: Duration::from_millis(500),

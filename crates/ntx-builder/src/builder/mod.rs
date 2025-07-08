@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, time::Duration};
 
 use anyhow::Context;
 use futures::TryStreamExt;
@@ -19,8 +19,6 @@ use crate::{MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, store::Sto
 /// The service maintains a list of unconsumed notes and periodically executes and proves
 /// transactions that consume them (reaching out to the store to retrieve state as necessary).
 pub struct NetworkTransactionBuilder {
-    /// The address for the network transaction builder gRPC server.
-    pub ntx_builder_address: SocketAddr,
     /// Address of the store gRPC server.
     pub store_url: Url,
     /// Address of the block producer gRPC server.
@@ -30,8 +28,6 @@ pub struct NetworkTransactionBuilder {
     pub tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
     pub ticker_interval: Duration,
-    /// Capacity of the in-memory account cache for the executor's data store.
-    pub account_cache_capacity: NonZeroUsize,
 }
 
 impl NetworkTransactionBuilder {

@@ -62,7 +62,7 @@ symbol       = "FUZZY"
 decimals     = 6
 # Total supply, in _base units_
 #
-# Use i.e. a max supply of `1e15` _base untis_ and decimals set to `6`, will yield you a total supply of
+# e.g. a max supply of `1e15` _base units_ and decimals set to `6`, will yield you a total supply of
 # `1e15/1e6 = 1e9` `FUZZY`s.
 max_supply   = 1_000_000_000_000_000
 # Storage mode of the faucet account.

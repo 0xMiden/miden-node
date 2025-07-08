@@ -356,14 +356,9 @@ impl BlockProducerRpcServer {
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
         let tx = AuthenticatedTransaction::new(tx, inputs)?;
 
-        // Launch a task for updating the mempool, and send the update to the network transaction
-        // builder
-        let submit_tx_response =
-            self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-                SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
-            });
-
-        submit_tx_response
+        self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
+            SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
+        })
     }
 }
 

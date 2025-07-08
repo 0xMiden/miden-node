@@ -77,7 +77,7 @@ impl NtxBuilderDataStore {
         // Look in cache, try the store otherwise
         let account = if let Some(acc) = self.account_cache.get(account_prefix) {
             Some(acc)
-        } else if let Some(acc) = self.store_client.get_network_account_by_tag(note_tag).await? {
+        } else if let Some(acc) = self.store_client.get_network_account(account_prefix).await? {
             // Insert to cache
             self.account_cache.put(&acc)?;
             Some(acc)

@@ -15,7 +15,6 @@ use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
     crypto::merkle::{MmrPeaks, PartialMmr},
-    note::NoteTag,
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -131,36 +130,6 @@ impl StoreClient {
         }
 
         Ok(all_notes)
-    }
-
-    #[instrument(target = COMPONENT, name = "store.client.get_network_account_by_tag", skip_all, err)]
-    pub async fn get_network_account_by_tag(
-        &self,
-        note_tag: NoteTag,
-    ) -> Result<Option<Account>, StoreError> {
-        let tag_inner = note_tag.as_u32();
-        let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: tag_inner };
-
-        let store_response = self
-            .inner
-            .clone()
-            .get_network_account_details_by_prefix(request)
-            .await?
-            .into_inner()
-            .details;
-
-        // we only care about the case where the account returns and is actually a network account,
-        // which implies details being public, so OK to error otherwise
-        let account = match store_response.map(|acc| acc.details) {
-            Some(Some(details)) => Some(Account::read_from_bytes(&details).map_err(|err| {
-                StoreError::DeserializationError(ConversionError::deserialization_error(
-                    "account", err,
-                ))
-            })?),
-            _ => None,
-        };
-
-        Ok(account)
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]

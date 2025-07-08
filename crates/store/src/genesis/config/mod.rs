@@ -8,7 +8,7 @@ use miden_lib::{
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
-    Felt, FieldElement, ONE, Word,
+    Felt, FieldElement, Word,
     account::{
         Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
         AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
@@ -123,7 +123,7 @@ impl GenesisConfig {
                 faucet_account.id(),
                 AccountStorageDelta::new(),
                 AccountVaultDelta::default(),
-                ONE,
+                Felt::ONE,
             )?)?;
 
             if faucets.insert(symbol.clone(), faucet_account.id()).is_some() {

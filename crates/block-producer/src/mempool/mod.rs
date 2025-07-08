@@ -233,7 +233,7 @@ impl Mempool {
             transactions: TransactionGraph::default(),
             batches: BatchGraph::default(),
             expirations: TransactionExpirations::default(),
-            subscription: SubscriptionProvider::default(),
+            subscription: SubscriptionProvider::new(chain_tip),
         }
     }
 

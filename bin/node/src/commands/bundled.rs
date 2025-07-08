@@ -188,7 +188,7 @@ impl BundledCommand {
                         ticker_interval: ntx_builder.ticker_interval,
                         account_cache_capacity: NonZeroUsize::new(128).unwrap(),
                     }
-                    .serve_once()
+                    .serve_new()
                     .await
                     .context("failed while serving ntx builder component")
                 })

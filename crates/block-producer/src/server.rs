@@ -369,7 +369,7 @@ impl BlockProducerRpcServer {
 
 #[cfg(test)]
 mod test {
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     use miden_air::{ExecutionProof, HashFunction};
     use miden_node_proto::generated::{
@@ -419,7 +419,7 @@ mod test {
                 block_interval: Duration::from_millis(500),
                 max_txs_per_batch: SERVER_MAX_TXS_PER_BATCH,
                 max_batches_per_block: SERVER_MAX_BATCHES_PER_BLOCK,
-                production_checkpoint: Barrier::new(1),
+                production_checkpoint: Arc::new(Barrier::new(1)),
             }
             .serve()
             .await

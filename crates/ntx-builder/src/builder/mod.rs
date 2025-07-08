@@ -37,13 +37,14 @@ pub struct NetworkTransactionBuilder {
 
 impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
-        // TODO: separate out the startup stuff so it can loop and repeat and wait on the network
-        // etc.
         let store = StoreClient::new(&self.store_url);
         let block_producer = BlockProducerClient::new(self.block_producer_address);
 
-        let genesis_header =
-            store.genesis_header().await.context("failed to fetch genesis header")?;
+        // Retry until the store is up and running. After this we expect all requests to pass.
+        let genesis_header = store
+            .genesis_header_with_retry()
+            .await
+            .context("failed to fetch genesis header")?;
 
         let mut state = crate::state::State::load(store.clone())
             .await
@@ -56,7 +57,7 @@ impl NetworkTransactionBuilder {
             .context("chain tip data was None")?;
 
         let mut mempool_events = block_producer
-            .subscribe_to_mempool(chain_tip.block_num())
+            .subscribe_to_mempool_with_retry(chain_tip.block_num())
             .await
             .context("failed to subscribe to mempool events")?;
 

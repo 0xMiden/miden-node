@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
 use futures::{TryStream, TryStreamExt};
 use miden_node_proto::{
@@ -53,7 +53,35 @@ impl BlockProducerClient {
     }
 
     #[instrument(target = COMPONENT, name = "block_producer.client.subscribe_to_mempool", skip_all, err)]
-    pub async fn subscribe_to_mempool(
+    pub async fn subscribe_to_mempool_with_retry(
+        &self,
+        chain_tip: BlockNumber,
+    ) -> Result<impl TryStream<Ok = MempoolEvent, Error = Status>, Status> {
+        let mut retry_counter = 0;
+        loop {
+            match self.subscribe_to_mempool(chain_tip).await {
+                Err(err) if err.code() == tonic::Code::Unavailable => {
+                    // exponential backoff with base 500ms and max 30s
+                    let backoff = Duration::from_millis(500)
+                        .saturating_mul(1 << retry_counter)
+                        .min(Duration::from_secs(30));
+
+                    tracing::warn!(
+                        ?backoff,
+                        %retry_counter,
+                        %err,
+                        "store connection failed while fetching genesis header, retrying"
+                    );
+
+                    retry_counter += 1;
+                    tokio::time::sleep(backoff).await;
+                },
+                result => return result,
+            }
+        }
+    }
+
+    async fn subscribe_to_mempool(
         &self,
         chain_tip: BlockNumber,
     ) -> Result<impl TryStream<Ok = MempoolEvent, Error = Status>, Status> {

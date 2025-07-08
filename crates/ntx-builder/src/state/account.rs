@@ -25,7 +25,7 @@ pub struct AccountState {
 
 impl AccountState {
     /// Creates a new account state using the given value as the committed state.
-    pub fn committed(account: Account) -> Self {
+    pub fn from_committed_account(account: Account) -> Self {
         Self {
             committed: Some(account),
             inflight: VecDeque::default(),
@@ -35,7 +35,7 @@ impl AccountState {
     }
 
     /// Creates a new account state where the creating transaction is still inflight.
-    pub fn uncommitted(account: Account) -> Self {
+    pub fn from_uncommitted_account(account: Account) -> Self {
         Self {
             inflight: VecDeque::from([account]),
             committed: None,
@@ -46,7 +46,7 @@ impl AccountState {
 
     /// Appends a delta to the set of inflight account updates.
     pub fn add_delta(&mut self, delta: &AccountDelta) {
-        let mut state = self.account();
+        let mut state = self.latest_account();
         state
             .apply_delta(delta)
             .expect("network account delta should apply since it was accepted by the mempool");
@@ -137,7 +137,7 @@ impl AccountState {
     }
 
     /// Returns the latest inflight account state.
-    pub fn account(&self) -> Account {
+    pub fn latest_account(&self) -> Account {
         self.inflight
             .back()
             .or(self.committed.as_ref())

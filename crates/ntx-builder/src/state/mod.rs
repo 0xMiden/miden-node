@@ -81,7 +81,7 @@ impl State {
             let prefix = note.account_prefix();
 
             // Ignore notes which don't target an existing account.
-            let Some(account) = state.account_or_load(prefix).await? else {
+            let Some(account) = state.fetch_account(prefix).await? else {
                 continue;
             };
             account.add_note(note);
@@ -139,7 +139,7 @@ impl State {
 
             self.in_progress.insert(candidate);
             return TransactionCandidate {
-                account: account.account(),
+                account: account.latest_account(),
                 _notes: notes,
             }
             .into();
@@ -186,6 +186,10 @@ impl State {
     ///
     /// Note that this will include our own network transactions as well as user submitted
     /// transactions.
+    ///
+    /// This updates the state of network accounts affected by this transaction. Account state
+    /// may be loaded from the store if it isn't already known locally. This would be the case if
+    /// the network account has no inflight state changes.
     async fn add_transaction(
         &mut self,
         id: TransactionId,
@@ -206,12 +210,12 @@ impl State {
             let prefix = update.prefix();
             match update {
                 NetworkAccountUpdate::New(account) => {
-                    let account_state = AccountState::uncommitted(account);
+                    let account_state = AccountState::from_uncommitted_account(account);
                     self.accounts.insert(prefix, account_state);
                     self.queue.push_back(prefix);
                 },
                 NetworkAccountUpdate::Delta(account_delta) => {
-                    self.account_or_load(prefix)
+                    self.fetch_account(prefix)
                         .await
                         .context("failed to load account")?
                         .context("account with delta not found")?
@@ -226,7 +230,7 @@ impl State {
             self.nullifier_idx.insert(note.nullifier(), note.account_prefix());
             // Skip notes which target a non-existent network account.
             if let Some(account) = self
-                .account_or_load(note.account_prefix())
+                .fetch_account(note.account_prefix())
                 .await
                 .context("failed to load account")?
             {
@@ -310,7 +314,7 @@ impl State {
     /// Returns the current inflight account, loading it from the store if it isn't present locally.
     ///
     /// Returns `None` if the account is unknown.
-    async fn account_or_load(
+    async fn fetch_account(
         &mut self,
         prefix: NetworkAccountPrefix,
     ) -> Result<Option<&mut AccountState>, StoreError> {
@@ -322,7 +326,7 @@ impl State {
                 };
 
                 self.queue.push_back(prefix);
-                let entry = vacant_entry.insert(AccountState::committed(account));
+                let entry = vacant_entry.insert(AccountState::from_committed_account(account));
 
                 Ok(Some(entry))
             },

@@ -215,36 +215,3 @@ message GetUnconsumedNetworkNotesRequest {
     // Number of notes to retrieve per page.
     uint64 page_size = 2;
 }
-
-// Submit a list of network notes to the network transaction builder.
-message SubmitNetworkNotesRequest {    
-    // Id of the transaction that created the notes.
-    digest.Digest transaction_id = 1;
-
-    // The network notes to submit.
-    repeated note.NetworkNote note = 2;
-}
-
-// Update the status of network notes that were consumed externally.
-message UpdateNetworkNotesRequest {    
-    // Id of the transaction that consumed the notes.
-    digest.Digest transaction_id = 1;
-
-    // The output nullifiers.
-    repeated digest.Digest nullifiers = 2;
-}
-
-// Update network transaction builder with transaction status changes.
-message UpdateTransactionStatusRequest {
-    // Represents the update for a single transaction.
-    message TransactionUpdate {
-        // Id of the transaction to update.
-        digest.Digest transaction_id = 1;
-
-        // New status of the transaction.
-        transaction.TransactionStatus status = 2;
-    }
-
-    // The list of updates for each transaction.
-    repeated TransactionUpdate updates = 1;
-}

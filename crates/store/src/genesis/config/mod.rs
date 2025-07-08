@@ -8,7 +8,7 @@ use miden_lib::{
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
-    Felt, FieldElement, ONE, StarkField, Word,
+    Felt, FieldElement, ONE, Word,
     account::{
         Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
         AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
@@ -104,12 +104,8 @@ impl GenesisConfig {
 
             let account_type = AccountType::FungibleFaucet;
 
-            let max_supply = Felt::try_from(max_supply).map_err(|_| {
-                GenesisConfigError::MaxSupplyExceedsFieldModulus {
-                    max_supply,
-                    modulus: Felt::MODULUS,
-                }
-            })?;
+            let max_supply = Felt::try_from(max_supply)
+                .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
 
             let component = BasicFungibleFaucet::new(token_symbol, decimals, max_supply)?;
 
@@ -173,12 +169,6 @@ impl GenesisConfig {
             let account_storage_mode = storage_mode.into();
             let (mut wallet_account, wallet_account_seed) =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
-            wallet_account.apply_delta(&AccountDelta::new(
-                wallet_account.id(),
-                AccountStorageDelta::new(),
-                AccountVaultDelta::default(),
-                ONE,
-            )?)?;
 
             // Add fungible assets.
             let mut fungible_assets = FungibleAssetDelta::default();
@@ -200,6 +190,7 @@ impl GenesisConfig {
                 AccountVaultDelta::new(fungible_assets, NonFungibleAssetDelta::default()),
                 Felt::ONE,
             )?;
+
             wallet_account.apply_delta(&delta)?;
 
             secrets.push((

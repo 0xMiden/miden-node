@@ -10,14 +10,12 @@ pub enum GenesisConfigError {
     Account(#[from] AccountError),
     #[error("asset translation from config to state failed")]
     Asset(#[from] AssetError),
-    #[error("applying assets to account failed")]
+    #[error("adding assets to account failed")]
     AccountDelta(#[from] miden_objects::AccountDeltaError),
     #[error("the defined asset {symbol:?} has no corresponding faucet")]
     MissingFaucetDefinition { symbol: TokenSymbol },
     #[error(transparent)]
     TokenSymbol(#[from] TokenSymbolError),
-    #[error("the provided max supply {max_supply} exceeds the field modulus {modulus}")]
-    MaxSupplyExceedsFieldModulus { max_supply: u64, modulus: u64 },
     #[error("unsupported value for key {key} : {value}")]
     UnsupportedValue {
         key: &'static str,

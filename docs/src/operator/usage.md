@@ -50,36 +50,27 @@ The genesis configuration file should contain at least one faucet, and optionall
 with assets, for example:
 
 ```toml
-# The timestamp associated to the genesis block.
-# It will influence the hash of the genesis block.
+# The timestamp associated to the genesis block. It will influence the hash of the genesis block.
 timestamp = 1717344256
-# Defines the format of the block protocol to use
-# for the genesis block.
+# Defines the format of the block protocol to use for the genesis block.
 version   = 1
 
 [[fungible_faucet]]
-# The give faucet is a fungible one.
-# Defaults to `true` and is the only mode supported
-# for the time being.
-# fungible = true
 # The token symbol to use for the token
 symbol       = "FUZZY"
-# Number of decimals your token will have,
-# it effectively defines the fixed point accuracy.
+# Number of decimals your token will have, it effectively defines the fixed point accuracy.
 decimals     = 6
 # Total supply, in _base units_
 #
-# Use i.e. a max supply of `1e15` _base untis_ and
-# decimals set to `6`, will yield you a total supply
-# of `1e15/1e6 = 1e9` `FUZZY`s.
+# Use i.e. a max supply of `1e15` _base untis_ and decimals set to `6`, will yield you a total supply of
+# `1e15/1e6 = 1e9` `FUZZY`s.
 max_supply   = 1_000_000_000_000_000
 # Storage mode of the faucet account.
 storage_mode = "public"
 
 
 [[wallet]]
-# List of all assets the account should hold.
-# Each token type _must_ have a corresponding faucet.
+# List of all assets the account should hold. Each token type _must_ have a corresponding faucet.
 assets       = [{ amount = 999, symbol = "FUZZY" }]
 # Storage mode of the wallet account.
 storage_mode = "private"

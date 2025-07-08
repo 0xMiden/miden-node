@@ -30,6 +30,5 @@ fn generate_genesis_account_is_retains_behaviour() -> TestResult {
     assert_eq!(status_quo.account.nonce(), ONE);
 
     let block = state.into_block()?;
-    dbg!(block.inner().header());
     Ok(())
 }

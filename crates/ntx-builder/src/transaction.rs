@@ -4,13 +4,12 @@ use futures::TryFutureExt;
 use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
 use miden_objects::{
     AccountError, TransactionInputError, Word,
-    account::{Account, AccountId, delta::AccountUpdateDetails},
+    account::{Account, AccountId},
     assembly::DefaultSourceManager,
     block::{BlockHeader, BlockNumber},
-    note::NoteTag,
     transaction::{
         ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
-        TransactionArgs, TxAccountUpdate,
+        TransactionArgs,
     },
 };
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
@@ -19,8 +18,8 @@ use miden_tx::{
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionProverError,
 };
 
-use crate::builder::{
-    block_producer::BlockProducerClient,
+use crate::{
+    builder::block_producer::BlockProducerClient,
     store::{StoreClient, StoreError},
 };
 
@@ -59,12 +58,9 @@ type NtxResult<T> = Result<T, NtxError>;
 impl NtxContext {
     pub async fn execute_transaction(
         self,
-        account: NetworkAccountPrefix,
-        deltas: Vec<TxAccountUpdate>,
+        account: Account,
         notes: Vec<NetworkNote>,
     ) -> NtxResult<()> {
-        let account = self.provision_account(account, deltas).await?;
-
         let notes = notes
             .into_iter()
             .map(|note| InputNote::Unauthenticated { note: note.into() })
@@ -80,48 +76,6 @@ impl NtxContext {
             .and_then(|tx| self.prove(tx))
             .and_then(|tx| self.submit(tx))
             .await
-    }
-
-    async fn provision_account(
-        &self,
-        account: NetworkAccountPrefix,
-        mut deltas: Vec<TxAccountUpdate>,
-    ) -> NtxResult<Account> {
-        // The account might be created as part of the deltas in which case we don't need to hit the store.
-        //
-        // Its a bit difficult to both match and return the inner value, so this feels awkward.
-        let mut account = match deltas.first().map(TxAccountUpdate::details) {
-            Some(AccountUpdateDetails::New(account)) => {
-                let account = account.clone();
-                deltas.pop();
-                account
-            },
-            _ => {
-                let note_tag = NoteTag::NetworkAccount(account.inner());
-                self.store
-                    .get_network_account_by_tag(note_tag)
-                    .await
-                    .map_err(NtxError::Store)?
-                    .ok_or(NtxError::UnknownAccount(account))?
-            },
-        };
-        let init_commitment = account.commitment();
-
-        // Its possible for deltas to already be committed at the store.
-        let deltas = deltas
-            .into_iter()
-            .skip_while(|delta| delta.initial_state_commitment() != init_commitment);
-
-        for delta in deltas {
-            match delta.details() {
-                AccountUpdateDetails::Delta(delta) => {
-                    account.apply_delta(delta).map_err(NtxError::ApplyDeltas)?
-                },
-                _ => unreachable!("Handle this error"),
-            };
-        }
-
-        Ok(account)
     }
 
     async fn filter_notes(

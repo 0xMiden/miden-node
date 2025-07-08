@@ -98,6 +98,8 @@ batch_builder.build_batch
    ┕━ mempool.commit_batch
 ```
 
+</details>
+
 ## Verbosity
 
 We log important spans and events at `info` level or higher, which is also the default log level.
@@ -149,4 +151,117 @@ OTEL_EXPORTER_OTLP_HEADERS="x-honeycomb-team=your-api-key" \
 miden-node bundled start --enable-otel
 ```
 
-TODO: honeycomb queries, triggers and board examples.
+### Honeycomb queries, triggers and board examples
+
+#### Example Queries
+
+Here are some useful Honeycomb queries to help monitor your Miden node:
+
+**Block building performance**:
+```honeycomb
+VISUALIZE
+HEATMAP(duration_ms) AVG(duration_ms)
+WHERE
+name = "block_builder.build_block"
+GROUP BY block.number
+ORDER BY block.number DESC
+LIMIT 100
+```
+
+**Batch processing latency**:
+```honeycomb
+VISUALIZE
+HEATMAP(duration_ms) AVG(duration_ms) P95(duration_ms)
+WHERE
+name = "batch_builder.build_batch"
+GROUP BY batch.id
+LIMIT 100
+```
+
+**Block proving failures**:
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name = "block_builder.build_block"
+AND status = "error"
+CALCULATE RATE
+```
+
+**Transaction volume by block**:
+```honeycomb
+VISUALIZE
+MAX(transactions.count)
+WHERE
+name = "block_builder.build_block"
+GROUP BY block.number
+ORDER BY block.number DESC
+LIMIT 100
+```
+**RPC request rate by endpoint**:
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name contains "rpc"
+GROUP BY name
+```
+
+**RPC latency by endpoint**:
+```honeycomb
+VISUALIZE
+AVG(duration_ms) P95(duration_ms)
+WHERE
+name contains "rpc"
+GROUP BY name
+```
+
+**RPC errors by status code**:
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name contains "rpc"
+GROUP BY status_code
+```
+
+#### Example Triggers
+
+Create triggers in Honeycomb to alert you when important thresholds are crossed:
+
+**Slow block building**:
+* Query:
+```honeycomb
+VISUALIZE
+AVG(duration_ms)
+WHERE
+name = "block_builder.build_block"
+```
+* Trigger condition: `AVG(duration_ms) > 30000` (adjust based on your expected block time)
+* Description: Alert when blocks take too long to build (more than 30 seconds on average)
+
+**High failure rate**:
+* Query:
+```honeycomb
+VISUALIZE
+COUNT
+WHERE
+name = "block_builder.build_block" AND error = true
+```
+* Trigger condition: `COUNT > 100 WHERE error = true`
+* Description: Alert when more than 100 block builds are failing
+
+#### Advanced investigation with BubbleUp
+
+To identify the root cause of performance issues or errors, use Honeycomb's BubbleUp feature:
+
+1. Create a query for a specific issue (e.g., high latency for block building)
+2. Click on a specific high-latency point in the visualization
+3. Use BubbleUp to see which attributes differ significantly between normal and slow operations
+4. Inspect the related spans in the trace to pinpoint the exact step causing problems
+
+This approach helps identify patterns like:
+- Which types of transactions are causing slow blocks
+- Which specific operations within block/batch processing take the most time
+- Correlations between resource usage and performance
+- Common patterns in error cases

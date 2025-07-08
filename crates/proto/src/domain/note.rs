@@ -8,6 +8,7 @@ use miden_objects::{
 };
 use thiserror::Error;
 
+use super::account::NetworkAccountPrefix;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
     generated::account as account_proto,
@@ -158,6 +159,11 @@ impl NetworkNote {
 
     pub fn id(&self) -> NoteId {
         self.inner().id()
+    }
+
+    pub fn account_prefix(&self) -> NetworkAccountPrefix {
+        // SAFETY: This must succeed because this is a network note.
+        self.metadata().tag().try_into().unwrap()
     }
 }
 

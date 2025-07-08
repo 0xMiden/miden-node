@@ -1,9 +1,15 @@
-use std::{collections::BTreeSet, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
+use std::{
+    collections::{BTreeSet, HashMap},
+    net::SocketAddr,
+    num::NonZeroUsize,
+    sync::Arc,
+    time::Duration,
+};
 
 use anyhow::Context;
 use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
-use futures::TryFutureExt;
+use futures::{TryFutureExt, TryStreamExt};
 use miden_node_proto::{
     domain::{account::NetworkAccountError, note::NetworkNote},
     generated::ntx_builder::api_server,
@@ -24,7 +30,6 @@ use miden_tx::{
 };
 use prover::NtbTransactionProver;
 use server::{NtxBuilderApi, PendingNotes};
-use store::{StoreClient, StoreError};
 use thiserror::Error;
 use tokio::{
     net::TcpListener,
@@ -38,13 +43,15 @@ use tower_http::trace::TraceLayer;
 use tracing::{Instrument, Span, debug, error, info, info_span, instrument, warn};
 use url::Url;
 
-use crate::COMPONENT;
+use crate::{
+    COMPONENT, MAX_IN_PROGRESS_TXS,
+    store::{StoreClient, StoreError},
+};
 
 mod block_producer;
 mod data_store;
 mod prover;
 mod server;
-mod store;
 
 type SharedPendingNotes = Arc<Mutex<PendingNotes>>;
 
@@ -84,8 +91,8 @@ pub struct NetworkTransactionBuilder {
     pub store_url: Url,
     /// Address of the block producer gRPC server.
     pub block_producer_address: SocketAddr,
-    /// Address of the remote prover. If `None`, transactions will be proven locally,
-    /// which is undesirable due to the perofmrance impact.
+    /// Address of the remote prover. If `None`, transactions will be proven locally, which is
+    /// undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
     pub ticker_interval: Duration,
@@ -94,6 +101,87 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
+    pub async fn serve_new(self) -> anyhow::Result<()> {
+        // TODO: separate out the startup stuff so it can loop and repeat and wait on the network
+        // etc.
+        let store = StoreClient::new(&self.store_url);
+        let block_prod = BlockProducerClient::new(self.block_producer_address);
+
+        let unconsumed = store
+            .get_unconsumed_network_notes()
+            .await
+            .context("failed to fetch unconsumed notes from the store")?;
+        let (chain_tip, _mmr) = store
+            .get_current_blockchain_data(None)
+            .await
+            .context("failed to fetch the chain tip data from the store")?
+            .context("chain tip data was None")?;
+
+        let mut mempool_events = block_prod
+            .subscribe_to_mempool(chain_tip.block_num())
+            .await
+            .context("failed to subscribe to mempool events")?;
+
+        let mut state = crate::state::State::with_committed_notes(unconsumed.into_iter());
+        let mut interval = tokio::time::interval(self.ticker_interval);
+        interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
+
+        // Tracks network transaction tasks until they are submitted to the mempool.
+        //
+        // We also map the task ID to the network account so we can mark it as failed if it doesn't
+        // get submitted.
+        let mut inflight = JoinSet::new();
+        let mut inflight_idx = HashMap::new();
+
+        loop {
+            tokio::select! {
+                _next = interval.tick() => {
+                    if inflight.len() > MAX_IN_PROGRESS_TXS {
+                        tracing::info!("At maximum network tx capacity, skipping");
+                        continue;
+                    }
+
+                    let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
+                        tracing::info!("No candidate network transaction available");
+                        continue;
+                    };
+                    let account = candidate.reference;
+
+                    let task_id = inflight.spawn(async move {
+                        // TODO:
+                        //
+                        // 1. Fetch account from store.
+                        // 2. The rest of the owl.
+
+                        Result::<_, ()>::Ok(())
+                    }).id();
+
+                    inflight_idx.insert(task_id, account);
+                },
+                event = mempool_events.try_next() => {
+                    let event = event.context("mempool event stream ended")?.context("mempool event stream failed")?;
+                    state.mempool_update(event);
+                },
+                completed = inflight.join_next_with_id() => {
+                    // Grab the task ID and associated network account reference.
+                    let task_id = match &completed {
+                        Ok((task_id, _)) => *task_id,
+                        Err(join_handle) => join_handle.id(),
+                    };
+                    // SAFETY: both inflights should have the same set.
+                    let candidate = inflight_idx.remove(&task_id).unwrap();
+
+                    match completed {
+                        // Nothing to do. State will be updated by the eventual mempool event.
+                        Ok((_, Ok(_))) => {},
+                        // Inform state if the tx failed.
+                        Ok((_, Err(_))) | Err(_) => state.candidate_failed(candidate),
+                    }
+                }
+            }
+        }
+    }
+
     /// Serves the transaction builder service.
     ///
     /// If for any reason the service errors, it gets restarted.
@@ -479,4 +567,41 @@ pub enum NtxBuilderError {
     ProverError(#[from] TransactionProverError),
     #[error("error while proving transaction")]
     ProofSubmissionFailed(#[source] tonic::Status),
+}
+
+/// A wrapper arounnd tokio's [`JoinSet`](tokio::task::JoinSet) which returns pending instead of
+/// [`None`] if its empty.
+///
+/// This makes it much more convenient to use in a `select!`.
+struct JoinSet<T>(tokio::task::JoinSet<T>);
+
+impl<T> JoinSet<T>
+where
+    T: 'static,
+{
+    fn new() -> Self {
+        Self(tokio::task::JoinSet::new())
+    }
+
+    fn spawn<F>(&mut self, task: F) -> tokio::task::AbortHandle
+    where
+        F: Future<Output = T>,
+        F: Send + 'static,
+        T: Send,
+    {
+        self.0.spawn(task)
+    }
+
+    async fn join_next_with_id(&mut self) -> Result<(tokio::task::Id, T), tokio::task::JoinError> {
+        if self.0.is_empty() {
+            std::future::pending().await
+        } else {
+            // Cannot be None as its not empty.
+            self.0.join_next_with_id().await.unwrap()
+        }
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
 }

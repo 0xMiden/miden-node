@@ -7,7 +7,6 @@ use std::{
 };
 
 use anyhow::Context;
-use block_producer::BlockProducerClient;
 use data_store::NtxBuilderDataStore;
 use futures::{TryFutureExt, TryStreamExt};
 use miden_node_proto::{
@@ -48,10 +47,10 @@ use url::Url;
 
 use crate::{
     COMPONENT, MAX_IN_PROGRESS_TXS,
+    block_producer::BlockProducerClient,
     store::{StoreClient, StoreError},
 };
 
-pub(crate) mod block_producer;
 mod data_store;
 pub(crate) mod prover;
 mod server;

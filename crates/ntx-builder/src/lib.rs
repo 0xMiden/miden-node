@@ -2,6 +2,7 @@ mod builder;
 use std::num::NonZeroUsize;
 
 pub use builder::NetworkTransactionBuilder;
+mod block_producer;
 mod state;
 mod store;
 mod transaction;

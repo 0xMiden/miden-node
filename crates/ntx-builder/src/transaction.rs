@@ -19,7 +19,7 @@ use miden_tx::{
 };
 
 use crate::{
-    builder::block_producer::BlockProducerClient,
+    block_producer::BlockProducerClient,
     store::{StoreClient, StoreError},
 };
 

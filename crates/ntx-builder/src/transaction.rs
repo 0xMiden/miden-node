@@ -72,16 +72,7 @@ impl NtxContext {
                     .collect();
                 let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                let mast_store = TransactionMastStore::new();
-                for note in &notes {
-                    mast_store.insert(note.note().script().mast());
-                }
-
-                let data_store = NtxDataStore {
-                    account,
-                    genesis_header: self.genesis_header.clone(),
-                    mast_store,
-                };
+                let data_store = NtxDataStore::new(account, self.genesis_header.clone());
 
                 self.filter_notes(&data_store, notes)
                     .and_then(|notes| self.execute(&data_store, notes))
@@ -184,6 +175,14 @@ struct NtxDataStore {
     account: Account,
     genesis_header: BlockHeader,
     mast_store: TransactionMastStore,
+}
+
+impl NtxDataStore {
+    fn new(account: Account, genesis_header: BlockHeader) -> Self {
+        let mast_store = TransactionMastStore::new();
+        mast_store.load_account_code(account.code());
+        Self { account, genesis_header, mast_store }
+    }
 }
 
 #[async_trait::async_trait(?Send)]

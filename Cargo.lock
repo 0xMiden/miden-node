@@ -2372,7 +2372,6 @@ version = "0.10.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "chrono",
  "deadpool",
  "deadpool-sync",
  "hex",

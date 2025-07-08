@@ -46,8 +46,13 @@ impl Default for GenesisConfig {
     fn default() -> Self {
         Self {
             version: 1_u32,
-            timestamp: u32::try_from(chrono::Local::now().timestamp())
-                .expect("Timestamp should fit into u32"),
+            timestamp: u32::try_from(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .expect("Time does not go backwards")
+                    .as_secs(),
+            )
+            .expect("Timestamp should fit into u32"),
             wallet: vec![],
             fungible_faucet: vec![FungibleFaucetConfig {
                 max_supply: 100_000_000_000u64,

@@ -3,6 +3,7 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::{sync::Barrier, time};
 use url::Url;
@@ -94,7 +95,7 @@ impl NetworkTransactionBuilder {
                     }
 
                     let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
-                        tracing::info!("No candidate network transaction available");
+                        tracing::debug!("No candidate network transaction available");
                         continue;
                     };
 
@@ -126,7 +127,14 @@ impl NetworkTransactionBuilder {
                         // Nothing to do. State will be updated by the eventual mempool event.
                         Ok((_, Ok(_))) => {},
                         // Inform state if the tx failed.
-                        Ok((_, Err(_))) | Err(_) => state.candidate_failed(candidate),
+                        Ok((_, Err(err))) => {
+                            tracing::warn!(err=err.as_report(), "network transaction failed");
+                            state.candidate_failed(candidate);
+                        },
+                        Err(err) => {
+                            tracing::warn!(err=err.as_report(), "network transaction panic'd");
+                            state.candidate_failed(candidate);
+                        }
                     }
                 }
             }

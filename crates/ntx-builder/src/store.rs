@@ -49,16 +49,15 @@ impl StoreClient {
         Self { inner: store }
     }
 
-    /// Returns the latest block's header from the store.
-    #[allow(dead_code)]
-    #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
-    pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
+    #[instrument(target = COMPONENT, name = "store.client.genesis_header", skip_all, err)]
+    pub async fn genesis_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
             .inner
             .clone()
-            .get_block_header_by_number(tonic::Request::new(
-                GetBlockHeaderByNumberRequest::default(),
-            ))
+            .get_block_header_by_number(tonic::Request::new(GetBlockHeaderByNumberRequest {
+                block_num: Some(BlockNumber::GENESIS.as_u32()),
+                include_mmr_proof: None,
+            }))
             .await?
             .into_inner()
             .block_header

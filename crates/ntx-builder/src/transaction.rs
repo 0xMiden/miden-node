@@ -1,9 +1,9 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
-use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
+use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::{
-    AccountError, TransactionInputError, Word,
+    TransactionInputError, Word,
     account::{Account, AccountId},
     assembly::DefaultSourceManager,
     block::{BlockHeader, BlockNumber},
@@ -18,27 +18,17 @@ use miden_tx::{
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionProverError,
 };
 
-use crate::{
-    block_producer::BlockProducerClient,
-    store::{StoreClient, StoreError},
-};
+use crate::block_producer::BlockProducerClient;
 
 #[derive(Clone)]
 pub struct NtxContext {
-    store: StoreClient,
-    block_producer: BlockProducerClient,
-    genesis_header: BlockHeader,
-    prover: Option<RemoteTransactionProver>,
+    pub block_producer: BlockProducerClient,
+    pub genesis_header: BlockHeader,
+    pub prover: Option<RemoteTransactionProver>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {
-    #[error(transparent)]
-    Store(StoreError),
-    #[error("the network account prefix {0} has no associated account")]
-    UnknownAccount(NetworkAccountPrefix),
-    #[error("failed to apply account deltas")]
-    ApplyDeltas(#[source] AccountError),
     #[error("note inputs were invalid")]
     InputNotes(#[source] TransactionInputError),
     #[error("failed to filter notes")]
@@ -61,21 +51,33 @@ impl NtxContext {
         account: Account,
         notes: Vec<NetworkNote>,
     ) -> NtxResult<()> {
-        let notes = notes
-            .into_iter()
-            .map(|note| InputNote::Unauthenticated { note: note.into() })
-            .collect();
-        let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
-        let data_store = NtxDataStore {
-            account,
-            genesis_header: self.genesis_header.clone(),
-        };
+        // Work-around for `TransactionExecutor` not being `Send`.
+        tokio::task::spawn_blocking(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("runtime should be built");
 
-        self.filter_notes(&data_store, notes)
-            .and_then(|notes| self.execute(&data_store, notes))
-            .and_then(|tx| self.prove(tx))
-            .and_then(|tx| self.submit(tx))
-            .await
+            rt.block_on(async move {
+                let notes = notes
+                    .into_iter()
+                    .map(|note| InputNote::Unauthenticated { note: note.into() })
+                    .collect();
+                let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
+                let data_store = NtxDataStore {
+                    account,
+                    genesis_header: self.genesis_header.clone(),
+                };
+
+                self.filter_notes(&data_store, notes)
+                    .and_then(|notes| self.execute(&data_store, notes))
+                    .and_then(|tx| self.prove(tx))
+                    .and_then(|tx| self.submit(tx))
+                    .await
+            })
+        })
+        .await
+        .expect("transaction task panic'd")
     }
 
     async fn filter_notes(

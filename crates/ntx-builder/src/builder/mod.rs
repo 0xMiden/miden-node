@@ -3,6 +3,7 @@ use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Durati
 use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::time;
 use url::Url;
 
@@ -38,7 +39,10 @@ impl NetworkTransactionBuilder {
         // TODO: separate out the startup stuff so it can loop and repeat and wait on the network
         // etc.
         let store = StoreClient::new(&self.store_url);
-        let block_prod = BlockProducerClient::new(self.block_producer_address);
+        let block_producer = BlockProducerClient::new(self.block_producer_address);
+
+        let genesis_header =
+            store.genesis_header().await.context("failed to fetch genesis header")?;
 
         let mut state = crate::state::State::load(store.clone())
             .await
@@ -50,10 +54,12 @@ impl NetworkTransactionBuilder {
             .context("failed to fetch the chain tip data from the store")?
             .context("chain tip data was None")?;
 
-        let mut mempool_events = block_prod
+        let mut mempool_events = block_producer
             .subscribe_to_mempool(chain_tip.block_num())
             .await
             .context("failed to subscribe to mempool events")?;
+
+        let prover = self.tx_prover_url.map(RemoteTransactionProver::new);
 
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -64,6 +70,12 @@ impl NetworkTransactionBuilder {
         // get submitted.
         let mut inflight = JoinSet::new();
         let mut inflight_idx = HashMap::new();
+
+        let context = crate::transaction::NtxContext {
+            block_producer: block_producer.clone(),
+            genesis_header,
+            prover,
+        };
 
         loop {
             tokio::select! {
@@ -78,18 +90,19 @@ impl NetworkTransactionBuilder {
                         continue;
                     };
 
-                    let task_id = inflight.spawn(async move {
-                        // TODO: Run the actual tx.
-
-                        Result::<_, ()>::Ok(())
+                    let prefix = NetworkAccountPrefix::try_from(candidate.account.id()).unwrap();
+                    let task_id = inflight.spawn({
+                        let context = context.clone();
+                        context.execute_transaction(candidate.account, candidate.notes)
                     }).id();
 
                     // SAFETY: This is definitely a network account.
-                    let prefix = NetworkAccountPrefix::try_from(candidate.account.id()).unwrap();
                     inflight_idx.insert(task_id, prefix);
                 },
                 event = mempool_events.try_next() => {
-                    let event = event.context("mempool event stream ended")?.context("mempool event stream failed")?;
+                    let event = event
+                        .context("mempool event stream ended")?
+                        .context("mempool event stream failed")?;
                     state.mempool_update(event).await.context("failed to update state")?;
                 },
                 completed = inflight.join_next_with_id() => {

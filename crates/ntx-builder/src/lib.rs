@@ -1,11 +1,12 @@
 use std::num::NonZeroUsize;
 
-mod builder;
-pub use builder::NetworkTransactionBuilder;
 mod block_producer;
+mod builder;
 mod state;
 mod store;
 mod transaction;
+
+pub use builder::NetworkTransactionBuilder;
 
 // CONSTANTS
 // =================================================================================================

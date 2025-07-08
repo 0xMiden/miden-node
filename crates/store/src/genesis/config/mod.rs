@@ -146,16 +146,6 @@ impl GenesisConfig {
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
             let init_seed: [u8; 32] = rng.random();
 
-            let assets = Result::<Vec<_>, GenesisConfigError>::from_iter(assets.into_iter().map(
-                |AssetEntry { amount, symbol }: AssetEntry| {
-                    let token_symbol = TokenSymbol::new(&symbol)?;
-                    let faucet_id = faucets.get(&symbol).ok_or_else(|| {
-                        GenesisConfigError::MissingFaucetDefinition { symbol: token_symbol }
-                    })?;
-
-                    Ok(FungibleAsset::new(*faucet_id, amount)?)
-                },
-            ))?;
             let account_type = if has_updatable_code {
                 AccountType::RegularAccountUpdatableCode
             } else {
@@ -166,10 +156,7 @@ impl GenesisConfig {
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
 
             // Add fungible assets.
-            let mut fungible_assets = FungibleAssetDelta::default();
-            assets
-                .into_iter()
-                .try_for_each(|fungible_asset| fungible_assets.add(fungible_asset))?;
+            let fungible_assets = prepare_asset_update(assets, &faucets)?;
 
             // Force the account nonce to 1.
             //
@@ -308,4 +295,28 @@ impl AccountSecrets {
             AccountFileWithName { name, account_file }
         })
     }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Process wallet assets and return them as a list of fungible assets
+fn prepare_asset_update(
+    assets: impl IntoIterator<Item = AssetEntry>,
+    faucets: &HashMap<String, AccountId>,
+) -> Result<FungibleAssetDelta, GenesisConfigError> {
+    let assets =
+        Result::<Vec<_>, _>::from_iter(assets.into_iter().map(|AssetEntry { amount, symbol }| {
+            let token_symbol = TokenSymbol::new(&symbol)?;
+            let faucet_id = faucets.get(&symbol).ok_or_else(|| {
+                GenesisConfigError::MissingFaucetDefinition { symbol: token_symbol }
+            })?;
+            Ok::<_, GenesisConfigError>(FungibleAsset::new(*faucet_id, amount)?)
+        }))?;
+
+    let mut fungible_asset_delta = FungibleAssetDelta::default();
+    assets
+        .into_iter()
+        .try_for_each(|fungible_asset| fungible_asset_delta.add(fungible_asset))?;
+    Ok(fungible_asset_delta)
 }

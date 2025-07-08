@@ -55,9 +55,11 @@ impl Rpc {
 
         info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
 
-        // Initialize tracing layer.
+        // Initialize trace layer.
         let trace_layer =
             TraceLayer::new_for_grpc().make_span_with(rpc_trace_fn).on_failure(OnFailure {});
+
+        // Build the server.
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(trace_layer)

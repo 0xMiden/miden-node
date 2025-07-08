@@ -2,6 +2,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
 use miden_node_proto::domain::note::NetworkNote;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     TransactionInputError, Word,
     account::{Account, AccountId},
@@ -17,8 +18,9 @@ use miden_tx::{
     DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionProverError,
 };
+use tracing::instrument;
 
-use crate::block_producer::BlockProducerClient;
+use crate::{COMPONENT, block_producer::BlockProducerClient};
 
 #[derive(Clone)]
 pub struct NtxContext {
@@ -46,11 +48,15 @@ pub enum NtxError {
 type NtxResult<T> = Result<T, NtxError>;
 
 impl NtxContext {
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub async fn execute_transaction(
         self,
         account: Account,
         notes: Vec<NetworkNote>,
     ) -> NtxResult<()> {
+        tracing::Span::current().set_attribute("account.id", account.id());
+        tracing::Span::current().set_attribute("notes.count", notes.len());
+
         // Work-around for `TransactionExecutor` not being `Send`.
         tokio::task::spawn_blocking(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
@@ -80,6 +86,7 @@ impl NtxContext {
         .expect("transaction task panic'd")
     }
 
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.filter_notes", skip_all, err)]
     async fn filter_notes(
         &self,
         data_store: &NtxDataStore,
@@ -118,6 +125,7 @@ impl NtxContext {
         }
     }
 
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.execute", skip_all, err)]
     async fn execute(
         &self,
         data_store: &NtxDataStore,
@@ -137,6 +145,7 @@ impl NtxContext {
             .map_err(NtxError::Execution)
     }
 
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
     async fn prove(&self, tx: ExecutedTransaction) -> NtxResult<ProvenTransaction> {
         use miden_tx::TransactionProver;
 
@@ -148,6 +157,7 @@ impl NtxContext {
         .map_err(NtxError::Proving)
     }
 
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
     async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
         self.block_producer
             .submit_proven_transaction(tx)

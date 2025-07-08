@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
 use miden_objects::{
     TransactionInputError, Word,
     account::{Account, AccountId},
@@ -114,12 +114,18 @@ impl NtxContext {
             .await
         {
             Ok(NoteAccountExecution::Success) => notes,
-            Ok(NoteAccountExecution::Failure { successful_notes, .. }) => {
+            Ok(NoteAccountExecution::Failure { successful_notes, error, .. }) => {
                 let notes = successful_notes
                     .into_iter()
                     .map(|id| notes.iter().find(|note| note.id() == id).unwrap())
                     .cloned()
-                    .collect();
+                    .collect::<Vec<InputNote>>();
+
+                if notes.is_empty() {
+                    let err =
+                        error.map(|err| err.as_report()).unwrap_or_else(|| "None".to_string());
+                    tracing::warn!(%err, "all network notes failed");
+                }
 
                 InputNotes::new_unchecked(notes)
             },

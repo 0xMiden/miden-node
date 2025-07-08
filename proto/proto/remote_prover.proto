@@ -2,12 +2,14 @@
 syntax = "proto3";
 package remote_prover;
 
+import "google/protobuf/empty.proto";
+
 // PROVER SERVICE
 // ================================================================================================
 
 service Api {
     // Generates a proof for the requested payload.
-    rpc Prove(Prove) returns (Proof) {}
+    rpc Prove(ProofRequest) returns (Proof) {}
 }
 
 // Enumeration of supported proof types.
@@ -23,7 +25,7 @@ enum ProofType {
 }
 
 // Request message for proof generation containing payload and proof type metadata.
-message Prove {
+message ProofRequest {
     // Type of proof being requested, determines payload interpretation
     ProofType proof_type = 1;
 
@@ -49,11 +51,8 @@ message Proof {
 
 service ProxyStatusApi {
     // Returns the status of the proxy.
-    rpc Status(GetProxyStatus) returns (ProxyStatus) {}
+    rpc Status(google.protobuf.Empty) returns (ProxyStatus) {}
 }
-
-// Request message for the status of the proxy.
-message GetProxyStatus {}
 
 // Status of an individual worker in the proxy.
 message ProxyWorkerStatus {
@@ -84,7 +83,7 @@ message ProxyStatus {
     // The version of the proxy.
     string version = 1;
     // The proof type supported by this proxy.
-    remote_prover.ProofType supported_proof_type = 2;
+    ProofType supported_proof_type = 2;
     // The list of workers managed by this proxy.
     repeated ProxyWorkerStatus workers = 3;
 }
@@ -94,16 +93,13 @@ message ProxyStatus {
 
 service WorkerStatusApi {
     // Returns the status of the worker.
-    rpc Status(GetWorkerStatus) returns (WorkerStatus) {}
+    rpc Status(google.protobuf.Empty) returns (WorkerStatus) {}
 }
-
-// Request message for the status of the worker.
-message GetWorkerStatus {}
 
 // Response message containing the status of the worker.
 message WorkerStatus {
     // The version of the worker.
     string version = 1;
     // The proof type supported by this worker.
-    remote_prover.ProofType supported_proof_type = 2;
+    ProofType supported_proof_type = 2;
 }

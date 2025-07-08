@@ -2,43 +2,50 @@
 syntax = "proto3";
 package rpc;
 
-import "types/shared.proto";
 import "types/account.proto";
 import "types/blockchain.proto";
+import "types/note.proto";
 import "types/primitives.proto";
+import "types/transaction.proto";
+import "block_producer.proto";
+import "store.proto";
 import "google/protobuf/empty.proto";
 
+// RPC API
+// ================================================================================================
+
+// RPC API for the RPC component
 service Api {
     // Returns a nullifier proof for each of the requested nullifiers.
-    rpc CheckNullifiers(shared.CheckNullifiers) returns (shared.Nullifiers) {}
+    rpc CheckNullifiers(store.Nullifiers) returns (store.CheckNullifiersResponse) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //
     // Note that only 16-bit prefixes are supported at this time.
-    rpc CheckNullifiersByPrefix(shared.CheckNullifiersByPrefix) returns (shared.NullifiersByPrefix) {}
+    rpc CheckNullifiersByPrefix(store.CheckNullifiersByPrefixRequest) returns (store.CheckNullifiersByPrefixResponse) {}
 
     // Returns the latest state of an account with the specified ID.
-    rpc GetAccountDetails(shared.GetAccountDetails) returns (shared.AccountDetails) {}
+    rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
     // Returns the latest state proofs of the specified accounts.
-    rpc GetAccountProofs(shared.GetAccountProofs) returns (shared.AccountProofs) {}
+    rpc GetAccountProofs(store.GetAccountProofsRequest) returns (store.AccountProofs) {}
 
     // Returns delta of the account states in the range from `from_block_num` (exclusive) to
     // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(shared.GetAccountStateDelta) returns (shared.AccountStateDelta) {}
+    rpc GetAccountStateDelta(store.GetAccountStateDeltaRequest) returns (store.AccountStateDelta) {}
 
     // Returns raw block data for the specified block number.
-    rpc GetBlockByNumber(shared.GetBlockByNumber) returns (shared.BlockByNumber) {}
+    rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(shared.GetBlockHeaderByNumber) returns (shared.BlockHeaderByNumber) {}
+    rpc GetBlockHeaderByNumber(store.BlockHeaderByNumberRequest) returns (store.BlockHeaderByNumberResponse) {}
 
     // Returns a list of notes matching the provided note IDs.
-    rpc GetNotesById(shared.GetNotesById) returns (shared.NotesById) {}
+    rpc GetNotesById(note.NoteIds) returns (note.CommittedNotes) {}
 
     // Submits proven transaction to the Miden network.
-    rpc SubmitProvenTransaction(shared.SubmitProvenTransaction) returns (shared.ProvenTransaction) {}
+    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (block_producer.SubmitProvenTransactionResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -49,7 +56,7 @@ service Api {
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
     // tip of the chain. 
-    rpc SyncNotes(shared.SyncNote) returns (shared.SyncedNotes) {}
+    rpc SyncNotes(store.NoteTags) returns (store.SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
     // for the objects (accounts and notes) the client is interested in.
@@ -66,11 +73,14 @@ service Api {
     // For preserving some degree of privacy, note tags contain only high
     // part of hashes. Thus, returned data contains excessive notes, client can make
     // additional filtering of that data on its side.
-    rpc SyncState(shared.SyncState) returns (shared.SyncedState) {}
+    rpc SyncState(store.SyncStateRequest) returns (store.SyncStateResponse) {}
 
     // Returns the status info of the node.
     rpc Status(google.protobuf.Empty) returns (RpcStatus) {}
 }
+
+// RPC STATUS
+// ================================================================================================
 
 // Represents the status of the node.
 message RpcStatus {
@@ -78,8 +88,8 @@ message RpcStatus {
     string version = 1;
 
     // The store status.
-    shared.StoreStatus store_status = 3;
+    store.StoreStatus store_status = 3;
 
     // The block producer status.
-    shared.BlockProducerStatus block_producer_status = 4;
+    block_producer.BlockProducerStatus block_producer_status = 4;
 }

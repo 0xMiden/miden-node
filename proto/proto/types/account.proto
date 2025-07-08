@@ -28,8 +28,8 @@ message AccountSummary {
     uint32 block_num = 3;
 }
 
-// An account info.
-message AccountInfo {
+// An account details.
+message AccountDetails {
     // Account summary.
     AccountSummary summary = 1;
 
@@ -53,92 +53,19 @@ message AccountHeader {
     uint64 nonce = 4;
 }
 
-// NOTES
-// ================================================================================================
+// An account witness.
+message AccountWitness {
+    // Account ID for which this proof is requested.
+    account.AccountId account_id = 1;
 
-// Represents a note's metadata.
-message NoteMetadata {
-    // The account which sent the note.
-    AccountId sender = 1;
+    // The account ID within the proof, which may be different from the above account ID.
+    // This can happen when the requested account ID's prefix matches the prefix of an existing
+    // account ID in the tree. Then the witness will prove inclusion of this witness ID in the tree.
+    account.AccountId witness_id = 2;
 
-    // The type of the note (0b01 = public, 0b10 = private, 0b11 = encrypted).
-    uint32 note_type = 2;
+    // The state commitment whose inclusion the witness proves.
+    primitives.Digest commitment = 3;
 
-    // A value which can be used by the recipient(s) to identify notes intended for them.
-    //
-    // See `miden_objects::note::note_tag` for more info.
-    fixed32 tag = 3;
-
-    // Specifies when a note is ready to be consumed.
-    //
-    // See `miden_objects::note::execution_hint` for more info.
-    fixed64 execution_hint = 4;
-
-    // An arbitrary user-defined value.
-    fixed64 aux = 5;
-}
-
-// Represents a committed note.
-//
-// A committed note is a note that has been included in a block.
-message CommittedNote {
-    // Either private, public, or network note.
-    Note note = 1;
-
-    // The data needed to prove that the note is present in the chain.
-    NoteInclusionInBlockProof inclusion_proof = 2;
-}
-
-// Represents a note.
-//
-// The note is composed of the note metadata and its serialized details.
-message Note {
-    // The note's metadata.
-    NoteMetadata metadata = 1;
-
-    // Serialized note details (empty for private notes).
-    optional bytes details = 2;
-}
-
-// Represents a network note.
-//
-// The note is composed of the note metadata and its serialized details.
-message NetworkNote {
-    // The note's metadata.
-    NoteMetadata metadata = 1;
-
-    // Serialized note details (i.e., assets and recipient).
-    bytes details = 2;
-}
-
-// Represents a proof of note's inclusion in a block.
-//
-// Does not include proof of the block's inclusion in the chain.
-message NoteInclusionInBlockProof {
-    // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    primitives.Digest note_id = 1;
-
-    // The block number in which the note was created.
-    fixed32 block_num = 2;
-
-    // The index of the note in the block.
-    uint32 note_index_in_block = 3;
-
-    // The note's inclusion proof in the block.
-    primitives.MerklePath merkle_path = 4;
-}
-
-// Represents proof of a note inclusion in the block.
-message NoteSyncRecord {
-    // The index of the note.
-    uint32 note_index = 1;
-
-    // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    primitives.Digest note_id = 2;
-
-    // The note's metadata.
-    NoteMetadata metadata = 3;
-
-    // The note's inclusion proof in the block.
-    primitives.MerklePath merkle_path = 4;
+    // The merkle path of the state commitment in the account tree.
+    primitives.MerklePath path = 4;
 }

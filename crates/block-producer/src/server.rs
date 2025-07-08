@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
@@ -20,7 +20,10 @@ use miden_node_utils::{
 use miden_objects::{
     block::BlockNumber, transaction::ProvenTransaction, utils::serde::Deserializable,
 };
-use tokio::{net::TcpListener, sync::Mutex};
+use tokio::{
+    net::TcpListener,
+    sync::{Barrier, Mutex},
+};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
@@ -61,6 +64,11 @@ pub struct BlockProducer {
     pub max_txs_per_batch: usize,
     /// The maximum number of batches per block.
     pub max_batches_per_block: usize,
+    /// Block production only begins after this checkpoint barrier completes.
+    ///
+    /// The block-producers gRPC endpoint will be available before this point, so this lets the
+    /// mempool synchronize its event stream without risking a race condition.
+    pub production_checkpoint: Arc<Barrier>,
 }
 
 impl BlockProducer {
@@ -135,6 +143,20 @@ impl BlockProducer {
         // any complete or fail, we can shutdown the rest (somewhat) gracefully.
         let mut tasks = tokio::task::JoinSet::new();
 
+        // Launch the gRPC server and wait at the checkpoint for any other components to be in sync.
+        //
+        // This is used to ensure the ntb can subscribe to the mempool events without playing catch
+        // up caused by block-production.
+        //
+        // This is a temporary work-around until the ntb can resync on the fly.
+        let rpc_id = tasks
+            .spawn({
+                let mempool = mempool.clone();
+                async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await }
+            })
+            .id();
+        self.production_checkpoint.wait().await;
+
         let batch_builder_id = tasks
             .spawn({
                 let mempool = mempool.clone();
@@ -152,10 +174,6 @@ impl BlockProducer {
                     Ok(())
                 }
             })
-            .id();
-
-        let rpc_id = tasks
-            .spawn(async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await })
             .id();
 
         let task_ids = HashMap::from([
@@ -365,7 +383,7 @@ mod test {
         transaction::ProvenTransactionBuilder,
     };
     use miden_tx::utils::Serializable;
-    use tokio::{net::TcpListener, runtime, task, time::sleep};
+    use tokio::{net::TcpListener, runtime, sync::Barrier, task, time::sleep};
     use tonic::transport::{Channel, Endpoint};
     use winterfell::Proof;
 
@@ -401,6 +419,7 @@ mod test {
                 block_interval: Duration::from_millis(500),
                 max_txs_per_batch: SERVER_MAX_TXS_PER_BATCH,
                 max_batches_per_block: SERVER_MAX_BATCHES_PER_BLOCK,
+                production_checkpoint: Barrier::new(1),
             }
             .serve()
             .await

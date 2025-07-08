@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -6,7 +6,7 @@ use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
-use tokio::{net::TcpListener, task::JoinSet};
+use tokio::{net::TcpListener, sync::Barrier, task::JoinSet};
 use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
@@ -130,22 +130,34 @@ impl BundledCommand {
             Url::parse(&format!("http://{}:{}/", store_address.ip(), store_address.port()))
                 .unwrap();
 
+        // A sync point between the ntb and block-producer components.
+        let checkpoint = if should_start_ntb {
+            Barrier::new(2)
+        } else {
+            Barrier::new(1)
+        };
+        let checkpoint = Arc::new(checkpoint);
+
         // Start block-producer. The block-producer's endpoint is available after loading completes.
         let block_producer_id = join_set
-            .spawn(async move {
-                BlockProducer {
-                    block_producer_address,
-                    store_address,
-                    batch_prover_url: block_producer.batch_prover_url,
-                    block_prover_url: block_producer.block_prover_url,
-                    batch_interval: block_producer.batch_interval,
-                    block_interval: block_producer.block_interval,
-                    max_batches_per_block: block_producer.max_batches_per_block,
-                    max_txs_per_batch: block_producer.max_txs_per_batch,
+            .spawn({
+                let checkpoint = Arc::clone(&checkpoint);
+                async move {
+                    BlockProducer {
+                        block_producer_address,
+                        store_address,
+                        batch_prover_url: block_producer.batch_prover_url,
+                        block_prover_url: block_producer.block_prover_url,
+                        batch_interval: block_producer.batch_interval,
+                        block_interval: block_producer.block_interval,
+                        max_batches_per_block: block_producer.max_batches_per_block,
+                        max_txs_per_batch: block_producer.max_txs_per_batch,
+                        production_checkpoint: checkpoint,
+                    }
+                    .serve()
+                    .await
+                    .context("failed while serving block-producer component")
                 }
-                .serve()
-                .await
-                .context("failed while serving block-producer component")
             })
             .id();
 
@@ -178,6 +190,7 @@ impl BundledCommand {
                         block_producer_address,
                         tx_prover_url: ntx_builder.tx_prover_url,
                         ticker_interval: ntx_builder.ticker_interval,
+                        bp_checkpoint: checkpoint,
                     }
                     .serve_new()
                     .await

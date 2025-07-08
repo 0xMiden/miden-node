@@ -1,10 +1,10 @@
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::time;
+use tokio::{sync::Barrier, time};
 use url::Url;
 
 use crate::{MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, store::StoreClient};
@@ -28,6 +28,11 @@ pub struct NetworkTransactionBuilder {
     pub tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
     pub ticker_interval: Duration,
+    /// A checkpoint used to sync start-up process with the block-producer.
+    ///
+    /// This informs the block-producer when we have subscribed to mempool events and that it is
+    /// safe to begin block-production.
+    pub bp_checkpoint: Arc<Barrier>,
 }
 
 impl NetworkTransactionBuilder {
@@ -54,6 +59,12 @@ impl NetworkTransactionBuilder {
             .subscribe_to_mempool(chain_tip.block_num())
             .await
             .context("failed to subscribe to mempool events")?;
+
+        // Unlock the block-producer's block production. The block-producer is prevented from
+        // producing blocks until we have subscribed to mempool events.
+        //
+        // This is a temporary work-around until the ntb can resync on the fly.
+        self.bp_checkpoint.wait().await;
 
         let prover = self.tx_prover_url.map(RemoteTransactionProver::new);
 

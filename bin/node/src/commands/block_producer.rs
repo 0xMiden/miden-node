@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
+use tokio::sync::Barrier;
 use url::Url;
 
 use super::{ENV_BLOCK_PRODUCER_URL, ENV_STORE_URL};
@@ -69,6 +72,7 @@ impl BlockProducerCommand {
             block_interval: block_producer.block_interval,
             max_txs_per_batch: block_producer.max_txs_per_batch,
             max_batches_per_block: block_producer.max_batches_per_block,
+            production_checkpoint: Arc::new(Barrier::new(1)),
         }
         .serve()
         .await

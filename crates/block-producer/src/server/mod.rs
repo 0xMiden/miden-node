@@ -113,15 +113,11 @@ impl BlockProducer {
             .await
             .context("failed to bind to block producer address")?;
 
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
-
         info!(target: COMPONENT, "Server initialized");
 
         let block_builder = BlockBuilder::new(
             store.clone(),
-            ntx_builder,
+            self.ntx_builder_address.map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor)),
             self.block_prover_url,
             self.block_interval,
         );
@@ -169,13 +165,9 @@ impl BlockProducer {
             })
             .id();
 
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
-
         let rpc_id = tasks
             .spawn(async move {
-                BlockProducerRpcServer::new(mempool, store, ntx_builder).serve(listener).await
+                BlockProducerRpcServer::new(mempool, store).serve(listener).await
             })
             .id();
 
@@ -219,8 +211,6 @@ struct BlockProducerRpcServer {
     mempool: Mutex<SharedMempool>,
 
     store: StoreClient,
-
-    ntx_builder: Option<NtxClient>,
 }
 
 #[tonic::async_trait]
@@ -296,11 +286,10 @@ impl tokio_stream::Stream for MempoolEventSubscription {
 }
 
 impl BlockProducerRpcServer {
-    pub fn new(mempool: SharedMempool, store: StoreClient, ntx_client: Option<NtxClient>) -> Self {
+    pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
         Self {
             mempool: Mutex::new(mempool),
             store,
-            ntx_builder: ntx_client,
         }
     }
 
@@ -375,17 +364,6 @@ impl BlockProducerRpcServer {
                 SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
             });
 
-        if let Some(mut ntb_client) = self.ntx_builder.clone() {
-            if let Err(err) =
-                ntb_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await
-            {
-                error!(
-                    target: COMPONENT,
-                    message = %err,
-                    "error submitting network notes updates to ntx builder"
-                );
-            }
-        }
         submit_tx_response
     }
 }

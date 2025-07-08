@@ -305,8 +305,7 @@ mod test {
             .unwrap()
             .extend_input_notes(vec![note_1])
             .tx_script(tx_script)
-            .build()
-            .unwrap();
+            .build();
 
         let executed_transaction = tx_context.execute().unwrap();
 

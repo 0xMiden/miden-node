@@ -645,7 +645,7 @@ fn insert_account_delta(
     insert_acc_delta_stmt.execute(params![
         account_id.to_bytes(),
         block_number.as_u32(),
-        u64::from(delta.nonce_delta())
+        u64::from(delta.nonce_increment())
     ])?;
 
     for (&slot, value) in delta.storage().values() {

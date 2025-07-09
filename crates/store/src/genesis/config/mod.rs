@@ -87,7 +87,7 @@ impl GenesisConfig {
 
         let mut all_accounts = Vec::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
-        let mut faucets = HashMap::<String, AccountId>::new();
+        let mut faucet_accounts = HashMap::<String, Account>::new();
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
         let mut secrets = Vec::new();
@@ -116,22 +116,15 @@ impl GenesisConfig {
 
             let account_storage_mode = storage_mode.into();
 
-            // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases
-            let (mut faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
+            // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
+            let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
                 .account_type(account_type)
                 .storage_mode(account_storage_mode)
                 .with_auth_component(auth)
                 .with_component(component)
                 .build()?;
 
-            faucet_account.apply_delta(&AccountDelta::new(
-                faucet_account.id(),
-                AccountStorageDelta::new(),
-                AccountVaultDelta::default(),
-                Felt::ONE,
-            )?)?;
-
-            if faucets.insert(symbol.clone(), faucet_account.id()).is_some() {
+            if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol: token_symbol });
             }
 
@@ -141,9 +134,12 @@ impl GenesisConfig {
                 secret_key,
                 faucet_account_seed,
             ));
-
-            all_accounts.push(faucet_account);
+            // Do _not_ collect the account just yet, only after we know all wallet assets
+            // we know the remaining supply in the faucets.
         }
+
+        // Track all adjustments, one per faucet account id
+        let mut faucet_adjustments = HashMap::<AccountId, FungibleAssetDelta>::new();
 
         let zero_padding_width = usize::ilog10(std::cmp::max(10, wallet_configs.len())) as usize;
 
@@ -165,8 +161,9 @@ impl GenesisConfig {
             let (mut wallet_account, wallet_account_seed) =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
 
-            // Add fungible assets.
-            let fungible_assets = prepare_asset_update(assets, &faucets)?;
+            // Add fungible assets and track the faucet adjustments per faucet/asset.
+            let fungible_asset_update =
+                prepare_fungible_asset_update(assets, &faucet_accounts, &mut faucet_adjustments)?;
 
             // Force the account nonce to 1.
             //
@@ -179,7 +176,7 @@ impl GenesisConfig {
             let delta = AccountDelta::new(
                 wallet_account.id(),
                 AccountStorageDelta::default(),
-                AccountVaultDelta::new(fungible_assets, NonFungibleAssetDelta::default()),
+                AccountVaultDelta::new(fungible_asset_update, NonFungibleAssetDelta::default()),
                 Felt::ONE,
             )?;
 
@@ -193,6 +190,21 @@ impl GenesisConfig {
             ));
 
             all_accounts.push(wallet_account);
+        }
+
+        // Apply all fungible faucet adjustments to the respective faucet
+        for (_, mut faucet_account) in faucet_accounts {
+            let faucet_id = faucet_account.id();
+            let fungible_delta = faucet_adjustments.get(&faucet_id).cloned().unwrap_or_default();
+
+            faucet_account.apply_delta(&AccountDelta::new(
+                faucet_id,
+                AccountStorageDelta::new(),
+                AccountVaultDelta::new(dbg!(fungible_delta), NonFungibleAssetDelta::default()),
+                Felt::ONE,
+            )?)?;
+
+            all_accounts.push(faucet_account);
         }
 
         Ok((
@@ -310,23 +322,40 @@ impl AccountSecrets {
 // HELPERS
 // ================================================================================================
 
-/// Process wallet assets and return them as a list of fungible assets
-fn prepare_asset_update(
+/// Process wallet assets and return them as a fungible asset delta.
+/// Track the negative adjustments for the respective faucets.
+fn prepare_fungible_asset_update(
     assets: impl IntoIterator<Item = AssetEntry>,
-    faucets: &HashMap<String, AccountId>,
+    faucets: &HashMap<String, Account>,
+    faucet_asset_adjustments: &mut HashMap<AccountId, FungibleAssetDelta>,
 ) -> Result<FungibleAssetDelta, GenesisConfigError> {
     let assets =
         Result::<Vec<_>, _>::from_iter(assets.into_iter().map(|AssetEntry { amount, symbol }| {
             let token_symbol = TokenSymbol::new(&symbol)?;
-            let faucet_id = faucets.get(&symbol).ok_or_else(|| {
+            let faucet_account = faucets.get(&symbol).ok_or_else(|| {
                 GenesisConfigError::MissingFaucetDefinition { symbol: token_symbol }
             })?;
-            Ok::<_, GenesisConfigError>(FungibleAsset::new(*faucet_id, amount)?)
+            Ok::<_, GenesisConfigError>(FungibleAsset::new(faucet_account.id(), amount)?)
         }))?;
 
-    let mut fungible_asset_delta = FungibleAssetDelta::default();
+    let mut wallet_asset_delta = FungibleAssetDelta::default();
     assets
         .into_iter()
-        .try_for_each(|fungible_asset| fungible_asset_delta.add(fungible_asset))?;
-    Ok(fungible_asset_delta)
+        .try_for_each(|fungible_asset| wallet_asset_delta.add(fungible_asset))?;
+
+    wallet_asset_delta.iter().try_for_each(|(faucet_id, _amount)| {
+        let delta: &mut FungibleAssetDelta =
+            faucet_asset_adjustments.entry(*faucet_id).or_default();
+        delta.remove(FungibleAsset::new(
+            *faucet_id,
+            delta
+                .amount(faucet_id)
+                .unwrap_or_default()
+                .try_into()
+                .expect("Amount is too high"),
+        )?)?;
+        Ok::<_, GenesisConfigError>(())
+    })?;
+
+    Ok(wallet_asset_delta)
 }

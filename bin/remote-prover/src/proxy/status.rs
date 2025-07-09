@@ -1,6 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use miden_remote_prover::{
     api::ProofType,
     generated::remote_prover::{
@@ -12,6 +13,7 @@ use pingora::{server::ListenFds, services::Service};
 use tokio::{net::TcpListener, sync::watch, time::interval};
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::{Request, Response, Status, transport::Server};
+use tower_http::trace::TraceLayer;
 use tracing::{error, info, instrument};
 
 use super::worker::WorkerHealthStatus;
@@ -138,13 +140,16 @@ impl Service for ProxyStatusPingoraService {
         // Build the tonic server with self as the gRPC API implementation
         let status_server = ProxyStatusApiServer::new(self.clone());
         let mut server_shutdown = shutdown.clone();
-        let server = Server::builder().add_service(status_server).serve_with_incoming_shutdown(
-            TcpListenerStream::new(listener),
-            async move {
+        let server = Server::builder()
+            .layer(
+                TraceLayer::new_for_grpc()
+                    .make_span_with(traced_span_fn(TracedComponent::RemoteProverProxy)),
+            )
+            .add_service(status_server)
+            .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
                 let _ = server_shutdown.changed().await;
                 info!("gRPC status service received shutdown signal");
-            },
-        );
+            });
 
         // Run both the server and updater concurrently, if either fails, the whole service stops
         tokio::select! {

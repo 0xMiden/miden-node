@@ -7,9 +7,7 @@ use std::{
 use anyhow::Context;
 use miden_node_proto::generated::store;
 use miden_node_proto_build::store_api_descriptor;
-use miden_node_utils::tracing::grpc::{
-    store_block_producer_trace_fn, store_ntx_builder_trace_fn, store_rpc_trace_fn,
-};
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use tokio::{net::TcpListener, task::JoinSet};
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
@@ -134,7 +132,10 @@ impl Store {
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(
             tonic::transport::Server::builder()
-                .layer(TraceLayer::new_for_grpc().make_span_with(store_rpc_trace_fn))
+                .layer(
+                    TraceLayer::new_for_grpc()
+                        .make_span_with(traced_span_fn(TracedComponent::StoreRpc)),
+                )
                 .add_service(rpc_service)
                 .add_service(reflection_service.clone())
                 .add_service(reflection_service_alpha.clone())
@@ -143,7 +144,10 @@ impl Store {
 
         join_set.spawn(
             tonic::transport::Server::builder()
-                .layer(TraceLayer::new_for_grpc().make_span_with(store_ntx_builder_trace_fn))
+                .layer(
+                    TraceLayer::new_for_grpc()
+                        .make_span_with(traced_span_fn(TracedComponent::StoreNtxBuilder)),
+                )
                 .add_service(ntx_builder_service)
                 .add_service(reflection_service.clone())
                 .add_service(reflection_service_alpha.clone())
@@ -152,7 +156,10 @@ impl Store {
 
         join_set.spawn(
             tonic::transport::Server::builder()
-                .layer(TraceLayer::new_for_grpc().make_span_with(store_block_producer_trace_fn))
+                .layer(
+                    TraceLayer::new_for_grpc()
+                        .make_span_with(traced_span_fn(TracedComponent::BlockProducer)),
+                )
                 .add_service(block_producer_service)
                 .add_service(reflection_service)
                 .add_service(reflection_service_alpha)

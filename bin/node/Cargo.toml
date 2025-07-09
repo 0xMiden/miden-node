@@ -30,7 +30,7 @@ miden-node-utils          = { workspace = true }
 miden-objects             = { workspace = true }
 rand                      = { workspace = true }
 rand_chacha               = { version = "0.9" }
-tokio                     = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
+tokio                     = { features = ["rt-multi-thread"], workspace = true }
 url                       = { workspace = true }
 
 [dev-dependencies]

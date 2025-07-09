@@ -27,7 +27,7 @@ miden-objects          = { default-features = true, workspace = true }
 rusqlite               = { features = ["array", "buildtime_bindgen", "bundled"], version = "0.36" }
 rusqlite_migration     = { version = "2.2" }
 thiserror              = { workspace = true }
-tokio                  = { features = ["fs", "macros", "net", "rt-multi-thread"], workspace = true }
+tokio                  = { features = ["fs", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
 tonic                  = { workspace = true }
 tonic-reflection       = { workspace = true }

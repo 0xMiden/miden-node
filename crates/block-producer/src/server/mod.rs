@@ -15,7 +15,7 @@ use miden_node_proto::{
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::{OtelInterceptor, TracedComponent, block_producer_trace_fn, traced_span_fn},
+    tracing::grpc::{TracedComponent, traced_span_fn},
 };
 use miden_objects::{
     block::BlockNumber, transaction::ProvenTransaction, utils::serde::Deserializable,

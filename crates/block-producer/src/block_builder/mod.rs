@@ -318,28 +318,18 @@ impl TelemetryInjectorExt for ProposedBlock {
     fn inject_telemetry(&self) {
         let span = Span::current();
 
-        span.set_attribute(
-            "block.nullifiers.count",
-            u32::try_from(self.created_nullifiers().len())
-                .expect("should have less than u32::MAX created nullifiers"),
-        );
-        let num_block_created_notes = self.batches().num_created_notes();
-        span.set_attribute(
-            "block.output_notes.count",
-            u32::try_from(num_block_created_notes)
-                .expect("should have less than u32::MAX block output notes"),
-        );
+        span.set_attribute("block.nullifiers.count", self.created_nullifiers().len());
 
-        let num_batch_created_notes: usize = self.output_note_batches().iter().map(Vec::len).sum();
+        let num_block_created_notes: usize = self.output_note_batches().iter().map(Vec::len).sum();
+        span.set_attribute("block.output_notes.count", num_block_created_notes);
+
+        let num_batch_created_notes = self.batches().num_created_notes();
         span.set_attribute("block.batches.output_notes.count", num_batch_created_notes);
 
         let num_erased_notes = num_batch_created_notes
             .checked_sub(num_block_created_notes)
             .expect("all batches in the block should not create fewer notes than the block itself");
-        span.set_attribute(
-            "block.erased_notes.count",
-            u32::try_from(num_erased_notes).expect("should have less than u32::MAX erased notes"),
-        );
+        span.set_attribute("block.erased_notes.count", num_erased_notes);
     }
 }
 

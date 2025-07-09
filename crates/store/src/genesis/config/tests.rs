@@ -5,6 +5,7 @@ use super::*;
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[test]
+#[miden_node_test_macro::enable_logging]
 fn parsing_yields_expected_default_values() -> TestResult {
     let s = include_str!("./samples/01-simple.toml");
     let gcfg = GenesisConfig::read_toml(s)?;
@@ -24,6 +25,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
 }
 
 #[test]
+#[miden_node_test_macro::enable_logging]
 fn genesis_accounts_have_nonce_one() -> TestResult {
     let gcfg = GenesisConfig::default();
     let (state, secrets) = gcfg.into_state().unwrap();

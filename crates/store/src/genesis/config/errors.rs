@@ -28,7 +28,6 @@ pub enum GenesisConfigError {
     },
     #[error("failed to create fungible faucet account")]
     FungibleFaucet(#[from] FungibleFaucetError),
-
     #[error(r#"incompatible combination of `max_supply` ({max_supply})" and `decimals` ({decimals}) exceeding the allowed value range of an `u64`"#)]
     OutOfRange { max_supply: u64, decimals: u8 },
     #[error("Found duplicate faucet definition for token symbol {symbol:?}")]

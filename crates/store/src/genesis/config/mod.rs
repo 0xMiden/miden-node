@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use miden_lib::{
     AuthScheme,
     account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::create_basic_wallet},
+    transaction::memory,
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
-    Felt, FieldElement, Word,
+    Felt, FieldElement, ONE, Word, ZERO,
     account::{
         Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
         AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
@@ -17,7 +18,7 @@ use miden_objects::{
     asset::{FungibleAsset, TokenSymbol},
     crypto::dsa::rpo_falcon512::SecretKey,
 };
-use rand::{Rng, SeedableRng};
+use rand::{Rng, SeedableRng, distr::weighted::Weight};
 use rand_chacha::ChaCha20Rng;
 
 use crate::GenesisState;
@@ -143,11 +144,11 @@ impl GenesisConfig {
         }
 
         // Track all adjustments, one per faucet account id
-        let mut faucet_adjustments = HashMap::<AccountId, FungibleAssetDelta>::new();
+        let mut faucet_issuance = HashMap::<AccountId, u64>::new();
 
         let zero_padding_width = usize::ilog10(std::cmp::max(10, wallet_configs.len())) as usize;
 
-        // then setup all wallet accounts, which reference the faucet's for their provided assets
+        // Setup all wallet accounts, which reference the faucet's for their provided assets.
         for (index, WalletConfig { has_updatable_code, storage_mode, assets }) in
             wallet_configs.into_iter().enumerate()
         {
@@ -168,8 +169,8 @@ impl GenesisConfig {
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
 
             // Add fungible assets and track the faucet adjustments per faucet/asset.
-            let fungible_asset_update =
-                prepare_fungible_asset_update(assets, &faucet_accounts, &mut faucet_adjustments)?;
+            let wallet_fungible_asset_update =
+                prepare_fungible_asset_update(assets, &faucet_accounts, &mut faucet_issuance)?;
 
             // Force the account nonce to 1.
             //
@@ -182,13 +183,16 @@ impl GenesisConfig {
             let wallet_delta = AccountDelta::new(
                 wallet_account.id(),
                 AccountStorageDelta::default(),
-                AccountVaultDelta::new(fungible_asset_update, NonFungibleAssetDelta::default()),
-                Felt::ONE,
+                AccountVaultDelta::new(
+                    wallet_fungible_asset_update,
+                    NonFungibleAssetDelta::default(),
+                ),
+                ONE,
             )?;
 
             wallet_account.apply_delta(&wallet_delta)?;
 
-            debug_assert_eq!(wallet_account.nonce(), Felt::ONE);
+            debug_assert_eq!(wallet_account.nonce(), ONE);
 
             secrets.push((
                 format!("wallet_{index:0zero_padding_width$}.mac"),
@@ -204,16 +208,23 @@ impl GenesisConfig {
         // Apply all fungible faucet adjustments to the respective faucet
         for (symbol, mut faucet_account) in faucet_accounts {
             let faucet_id = faucet_account.id();
-            // Even if there is no account using the asset, we use an empty delta to set the
-            // nonce to `Felt::ONE`.
-            let fungible_delta = faucet_adjustments.get(&faucet_id).cloned().unwrap_or_default();
+            // If there is no account using the asset, we use an empty delta to set the
+            // nonce to `ONE`.
+            let total_issuance = faucet_issuance.get(&faucet_id).copied().unwrap_or_default();
 
-            if let Some(amount) = fungible_delta.amount(&faucet_id) {
+            let mut storage_delta = AccountStorageDelta::default();
+
+            if total_issuance != 0 {
+                // slot 0
+                storage_delta.set_item(
+                    memory::FAUCET_STORAGE_DATA_SLOT,
+                    [ZERO, ZERO, ZERO, Felt::new(total_issuance)],
+                );
                 tracing::debug!(
                     "Reducing faucet account {faucet} for {symbol} by {amount}",
                     faucet = faucet_id.to_hex(),
                     symbol = symbol,
-                    amount = amount
+                    amount = total_issuance
                 );
             } else {
                 tracing::debug!(
@@ -225,12 +236,23 @@ impl GenesisConfig {
 
             faucet_account.apply_delta(&AccountDelta::new(
                 faucet_id,
-                AccountStorageDelta::new(),
-                AccountVaultDelta::new(fungible_delta, NonFungibleAssetDelta::default()),
-                Felt::ONE,
+                storage_delta,
+                AccountVaultDelta::default(),
+                ONE,
             )?)?;
 
-            debug_assert_eq!(faucet_account.nonce(), Felt::ONE);
+            debug_assert_eq!(faucet_account.nonce(), ONE);
+
+            // sanity check the total issuance against
+            let basic = BasicFungibleFaucet::try_from(&faucet_account)?;
+            let max_supply = basic.max_supply().inner();
+            if max_supply < total_issuance {
+                return Err(GenesisConfigError::MaxIssuanceExceeded {
+                    max_supply,
+                    symbol: TokenSymbol::new(&symbol)?,
+                    total_issuance,
+                });
+            }
 
             all_accounts.push(faucet_account);
         }
@@ -366,7 +388,7 @@ impl AccountSecrets {
 fn prepare_fungible_asset_update(
     assets: impl IntoIterator<Item = AssetEntry>,
     faucets: &HashMap<String, Account>,
-    faucet_asset_adjustments: &mut HashMap<AccountId, FungibleAssetDelta>,
+    faucet_issuance: &mut HashMap<AccountId, u64>,
 ) -> Result<FungibleAssetDelta, GenesisConfigError> {
     let assets =
         Result::<Vec<_>, _>::from_iter(assets.into_iter().map(|AssetEntry { amount, symbol }| {
@@ -384,19 +406,20 @@ fn prepare_fungible_asset_update(
         .try_for_each(|fungible_asset| wallet_asset_delta.add(fungible_asset))?;
 
     wallet_asset_delta.iter().try_for_each(|(faucet_id, amount)| {
-        let delta: &mut FungibleAssetDelta =
-            faucet_asset_adjustments.entry(*faucet_id).or_default();
-        let reduction = delta
-            .amount(faucet_id)
-            .unwrap_or_default()
-            .try_into()
-            .expect("Amount is too high");
+        let issuance: &mut u64 = faucet_issuance.entry(*faucet_id).or_default();
         tracing::debug!(
-            "Updating faucet account {faucet} with {amount} by {reduction}",
+            "Updating faucet issuance {faucet} with {issuance} += {amount}",
             faucet = faucet_id.to_hex()
         );
 
-        delta.remove(FungibleAsset::new(*faucet_id, reduction)?)?;
+        // check against total supply is deferred
+        issuance
+            .checked_add_assign(
+                &u64::try_from(*amount)
+                    .expect("Issuance must always be positive in the scope of genesis config"),
+            )
+            .map_err(|_| GenesisConfigError::IssuanceOverflow)?;
+
         Ok::<_, GenesisConfigError>(())
     })?;
 

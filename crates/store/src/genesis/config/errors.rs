@@ -32,4 +32,14 @@ pub enum GenesisConfigError {
     OutOfRange { max_supply: u64, decimals: u8 },
     #[error("Found duplicate faucet definition for token symbol {symbol:?}")]
     DuplicateFaucetDefinition { symbol: TokenSymbol },
+    #[error(
+        "Total issuance {total_issuance} of {symbol:?} exceeds faucet's maximum issuance of {max_supply}"
+    )]
+    MaxIssuanceExceeded {
+        symbol: TokenSymbol,
+        total_issuance: u64,
+        max_supply: u64,
+    },
+    #[error("Total issuance overflowed u64")]
+    IssuanceOverflow,
 }

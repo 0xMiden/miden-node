@@ -1,3 +1,5 @@
+use assert_matches::assert_matches;
+use miden_lib::transaction::memory;
 use miden_objects::ONE;
 
 use super::*;
@@ -12,14 +14,33 @@ fn parsing_yields_expected_default_values() -> TestResult {
     let (state, _secrets) = gcfg.into_state()?;
     let _ = state;
     // faucets always precede wallet accounts
-    assert!(state.accounts[0].is_faucet());
-    assert!(state.accounts[1].is_regular_account());
+    let faucet = state.accounts[0].clone();
+    let wallet = state.accounts[1].clone();
+    assert!(faucet.is_faucet());
+    assert!(wallet.is_regular_account());
 
-    assert_matches::assert_matches!(state.accounts[1].vault().get_balance(state.accounts[0].id()), Ok(val) => {
+    assert_eq!(faucet.nonce(), ONE);
+    assert_eq!(wallet.nonce(), ONE);
+
+    {
+        let faucet = BasicFungibleFaucet::try_from(faucet.clone()).unwrap();
+
+        assert_eq!(faucet.max_supply(), Felt::new(100_000_000));
+        assert_eq!(faucet.decimals(), 3);
+        assert_eq!(faucet.symbol(), TokenSymbol::new("MIDEN").unwrap());
+    }
+
+    // check account balance
+    assert_matches!(wallet.vault().get_balance(state.accounts[0].id()), Ok(val) => {
         assert_eq!(val, 999_000);
     });
-    assert_eq!(state.accounts[0].nonce(), ONE);
-    assert_eq!(state.accounts[1].nonce(), ONE);
+
+    // check total issuance of the faucet
+    assert_eq!(
+        faucet.storage().get_item(memory::FAUCET_STORAGE_DATA_SLOT).unwrap()[3],
+        Felt::new(999_000),
+        "Issuance mismatch"
+    );
 
     Ok(())
 }

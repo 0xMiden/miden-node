@@ -133,10 +133,10 @@ fn store_ntx_builder_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
 
 fn remote_prover_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
-    let span = if method == "Prove" {
-        rpc_span!("remote-prover.rpc", "Prove")
-    } else {
-        rpc_span!("remote-prover.rpc", "Unknown")
+    let span = match method {
+        "Prove" => rpc_span!("remote-prover.rpc", "Prove"),
+        "Status" => rpc_span!("remote-prover.rpc", "Status"),
+        _ => rpc_span!("remote-prover.rpc", "Unknown"),
     };
 
     let span = add_otel_span_attributes(span, request);

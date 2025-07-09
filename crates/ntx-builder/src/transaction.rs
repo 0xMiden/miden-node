@@ -1,7 +1,6 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
-use miden_node_proto::domain::note::NetworkNote;
 use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
 use miden_objects::{
     TransactionInputError, Word,
@@ -21,12 +20,11 @@ use miden_tx::{
 };
 use tracing::instrument;
 
-use crate::{COMPONENT, block_producer::BlockProducerClient};
+use crate::{COMPONENT, block_producer::BlockProducerClient, state::TransactionCandidate};
 
 #[derive(Clone)]
 pub struct NtxContext {
     pub block_producer: BlockProducerClient,
-    pub genesis_header: BlockHeader,
     pub prover: Option<RemoteTransactionProver>,
 }
 
@@ -50,13 +48,12 @@ type NtxResult<T> = Result<T, NtxError>;
 
 impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
-    pub async fn execute_transaction(
-        self,
-        account: Account,
-        notes: Vec<NetworkNote>,
-    ) -> NtxResult<()> {
+    pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
+        let TransactionCandidate { account, notes, chain_tip, chain_mmr } = tx;
+
         tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current().set_attribute("notes.count", notes.len());
+        tracing::Span::current().set_attribute("reference_block.number", chain_tip.block_num());
 
         // Work-around for `TransactionExecutor` not being `Send`.
         tokio::task::spawn_blocking(move || {
@@ -72,7 +69,7 @@ impl NtxContext {
                     .collect();
                 let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                let data_store = NtxDataStore::new(account, self.genesis_header.clone());
+                let data_store = NtxDataStore::new(account, chain_tip, chain_mmr);
 
                 self.filter_notes(&data_store, notes)
                     .and_then(|notes| self.execute(&data_store, notes))
@@ -97,7 +94,7 @@ impl NtxContext {
         let notes = match checker
             .check_notes_consumability(
                 data_store.account.id(),
-                BlockNumber::GENESIS,
+                data_store.reference_header.block_num(),
                 notes.clone(),
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),
@@ -141,7 +138,7 @@ impl NtxContext {
         executor
             .execute_transaction(
                 data_store.account.id(),
-                BlockNumber::GENESIS,
+                data_store.reference_header.block_num(),
                 notes,
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),
@@ -173,15 +170,22 @@ impl NtxContext {
 
 struct NtxDataStore {
     account: Account,
-    genesis_header: BlockHeader,
+    reference_header: BlockHeader,
+    chain_mmr: PartialBlockchain,
     mast_store: TransactionMastStore,
 }
 
 impl NtxDataStore {
-    fn new(account: Account, genesis_header: BlockHeader) -> Self {
+    fn new(account: Account, reference_header: BlockHeader, chain_mmr: PartialBlockchain) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
-        Self { account, genesis_header, mast_store }
+
+        Self {
+            account,
+            reference_header,
+            mast_store,
+            chain_mmr,
+        }
     }
 }
 
@@ -197,18 +201,16 @@ impl DataStore for NtxDataStore {
         }
 
         match ref_blocks.last().copied() {
-            Some(BlockNumber::GENESIS) => {},
+            Some(reference) if reference == self.reference_header.block_num() => {},
             Some(other) => return Err(DataStoreError::BlockNotFound(other)),
-            // TODO: is this fine to do?
             None => return Err(DataStoreError::other("no reference block requested")),
         }
 
         Ok((
             self.account.clone(),
             None,
-            self.genesis_header.clone(),
-            // TODO: is this correct or should one actually construct it from the genesis header
-            PartialBlockchain::default(),
+            self.reference_header.clone(),
+            self.chain_mmr.clone(),
         ))
     }
 }

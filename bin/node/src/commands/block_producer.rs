@@ -6,7 +6,7 @@ use miden_node_utils::grpc::UrlExt;
 use tokio::sync::Barrier;
 use url::Url;
 
-use super::{ENV_BLOCK_PRODUCER_URL, ENV_STORE_URL};
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_STORE_BLOCK_PRODUCER_URL};
 use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL};
 
 #[derive(clap::Subcommand)]
@@ -17,8 +17,8 @@ pub enum BlockProducerCommand {
         #[arg(env = ENV_BLOCK_PRODUCER_URL)]
         url: Url,
 
-        /// The store's gRPC url.
-        #[arg(long = "store.url", env = ENV_STORE_URL)]
+        /// The store's block-producer service gRPC url.
+        #[arg(long = "store.url", env = ENV_STORE_BLOCK_PRODUCER_URL)]
         store_url: Url,
 
         #[command(flatten)]

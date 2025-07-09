@@ -81,7 +81,6 @@ impl BundledCommand {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     #[allow(clippy::too_many_lines)]
     async fn start(
         rpc_url: Url,
@@ -99,16 +98,32 @@ impl BundledCommand {
         let grpc_rpc = TcpListener::bind(grpc_rpc)
             .await
             .context("Failed to bind to RPC gRPC endpoint")?;
-        let grpc_store = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to store gRPC endpoint")?;
-        let store_address =
-            grpc_store.local_addr().context("Failed to retrieve the store's gRPC address")?;
+
         let block_producer_address = TcpListener::bind("127.0.0.1:0")
             .await
             .context("Failed to bind to block-producer gRPC endpoint")?
             .local_addr()
             .context("Failed to retrieve the block-producer's gRPC address")?;
+
+        // Store addresses for each exposed API
+        let store_rpc_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to store RPC gRPC endpoint")?;
+        let store_ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to store ntx-builder gRPC endpoint")?;
+        let store_block_producer_listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .context("Failed to bind to store block-producer gRPC endpoint")?;
+        let store_rpc_address = store_rpc_listener
+            .local_addr()
+            .context("Failed to retrieve the store's RPC gRPC address")?;
+        let store_block_producer_address = store_block_producer_listener
+            .local_addr()
+            .context("Failed to retrieve the store's block-producer gRPC address")?;
+        let store_ntx_builder_address = store_ntx_builder_listener
+            .local_addr()
+            .context("Failed to retrieve the store's ntx-builder gRPC address")?;
 
         let mut join_set = JoinSet::new();
         // Start store. The store endpoint is available after loading completes.
@@ -116,7 +131,9 @@ impl BundledCommand {
         let store_id = join_set
             .spawn(async move {
                 Store {
-                    listener: grpc_store,
+                    rpc_listener: store_rpc_listener,
+                    block_producer_listener: store_block_producer_listener,
+                    ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
                 }
                 .serve()
@@ -124,11 +141,6 @@ impl BundledCommand {
                 .context("failed while serving store component")
             })
             .id();
-
-        // SAFETY: socket addr yields valid URLs
-        let store_url =
-            Url::parse(&format!("http://{}:{}/", store_address.ip(), store_address.port()))
-                .unwrap();
 
         // A sync point between the ntb and block-producer components.
         let checkpoint = if should_start_ntb {
@@ -145,7 +157,7 @@ impl BundledCommand {
                 async move {
                     BlockProducer {
                         block_producer_address,
-                        store_address,
+                        store_address: store_block_producer_address,
                         batch_prover_url: block_producer.batch_prover_url,
                         block_prover_url: block_producer.block_prover_url,
                         batch_interval: block_producer.batch_interval,
@@ -166,7 +178,7 @@ impl BundledCommand {
             .spawn(async move {
                 Rpc {
                     listener: grpc_rpc,
-                    store: store_address,
+                    store: store_rpc_address,
                     block_producer: Some(block_producer_address),
                 }
                 .serve()
@@ -182,11 +194,16 @@ impl BundledCommand {
             (rpc_id, "rpc"),
         ]);
 
+        // Start network transaction builder. The endpoint is available after loading completes.
+        // SAFETY: socket addr yields valid URLs
+        let store_ntx_builder_url =
+            Url::parse(&format!("http://{store_ntx_builder_address}")).unwrap();
+
         if should_start_ntb {
             let id = join_set
                 .spawn(async move {
                     NetworkTransactionBuilder {
-                        store_url,
+                        store_url: store_ntx_builder_url,
                         block_producer_address,
                         tx_prover_url: ntx_builder.tx_prover_url,
                         ticker_interval: ntx_builder.ticker_interval,

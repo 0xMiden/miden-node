@@ -116,10 +116,17 @@ async fn rpc_startup_is_robust_to_network_failures() {
     assert!(response.is_err());
 
     // Test: restart the store and request should succeed
-    let listener = TcpListener::bind(store_addr).await.expect("Failed to bind store");
+    let rpc_listener = TcpListener::bind(store_addr).await.expect("Failed to bind store");
+    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store ntx-builder gRPC endpoint");
+    let block_producer_listener =
+        TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
     task::spawn(async move {
         Store {
-            listener,
+            rpc_listener,
+            ntx_builder_listener,
+            block_producer_listener,
             data_directory: data_directory.path().to_path_buf(),
         }
         .serve()
@@ -183,7 +190,12 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
     let genesis_state = GenesisState::new(vec![], 1, 1);
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();
-    let store_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
+    let rpc_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");
+    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store ntx-builder gRPC endpoint");
+    let block_producer_listener =
+        TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
     // In order to later kill the store, we need to spawn a new runtime and run the store on
     // it. That allows us to kill all the tasks spawned by the store when we
     // kill the runtime.
@@ -191,7 +203,9 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
         runtime::Builder::new_multi_thread().enable_time().enable_io().build().unwrap();
     store_runtime.spawn(async move {
         Store {
-            listener: store_listener,
+            rpc_listener,
+            ntx_builder_listener,
+            block_producer_listener,
             data_directory: dir,
         }
         .serve()

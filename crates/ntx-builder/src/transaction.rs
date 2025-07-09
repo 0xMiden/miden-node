@@ -110,8 +110,7 @@ impl NtxContext {
                     .collect::<Vec<InputNote>>();
 
                 if notes.is_empty() {
-                    let err =
-                        error.map(|err| err.as_report()).unwrap_or_else(|| "None".to_string());
+                    let err = error.map_or_else(|| "None".to_string(), |err| err.as_report());
                     tracing::warn!(%err, "all network notes failed");
                 }
 
@@ -183,8 +182,8 @@ impl NtxDataStore {
         Self {
             account,
             reference_header,
-            mast_store,
             chain_mmr,
+            mast_store,
         }
     }
 }

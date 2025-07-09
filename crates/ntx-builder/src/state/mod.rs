@@ -30,10 +30,11 @@ pub struct TransactionCandidate {
     pub notes: Vec<NetworkNote>,
     /// The latest locally committed block header.
     ///
-    /// This should be used as the reference block during transaction execution. It is guaranteed
-    /// to be tracked by `chain_mmr`.
+    /// This should be used as the reference block during transaction execution. This block's
+    /// parent is guaranteed to be tracked by `chain_mmr` and therefore these can be used
+    /// together during execution.
     pub chain_tip: BlockHeader,
-    /// The chain MMR, which includes the `chain_tip`'s block.
+    /// The latest chain MMR.
     pub chain_mmr: PartialBlockchain,
 }
 
@@ -44,7 +45,7 @@ pub struct State {
     /// The latest committed block header.
     chain_tip: BlockHeader,
 
-    /// The chain MMR including the latest block header.
+    /// The latest chain MMR.
     chain_mmr: PartialBlockchain,
 
     /// Tracks all network accounts with inflight state.
@@ -206,7 +207,7 @@ impl State {
                     self.chain_tip.commitment()
                 );
 
-                // Chain MMR always lags by one block.
+                // Chain MMR always lags by one block. This is defined as part of the protocol.
                 self.chain_mmr.add_block(self.chain_tip.clone(), true);
                 self.chain_tip = header;
                 for tx in txs {

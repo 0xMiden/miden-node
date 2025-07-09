@@ -70,7 +70,7 @@ impl BlockProducerClient {
                         ?backoff,
                         %retry_counter,
                         %err,
-                        "store connection failed while fetching genesis header, retrying"
+                        "connection failed while subscribing to the mempool, retrying"
                     );
 
                     retry_counter += 1;

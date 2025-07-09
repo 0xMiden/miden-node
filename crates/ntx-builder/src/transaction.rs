@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
-use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
+use miden_node_utils::{ErrorReport, FlattenResult, tracing::OpenTelemetrySpanExt};
 use miden_objects::{
     TransactionInputError, Word,
     account::{Account, AccountId},
@@ -18,15 +18,13 @@ use miden_tx::{
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
     TransactionProverError,
 };
+use tokio::task::JoinError;
 use tracing::instrument;
 
 use crate::{COMPONENT, block_producer::BlockProducerClient, state::TransactionCandidate};
 
-#[derive(Clone)]
-pub struct NtxContext {
-    pub block_producer: BlockProducerClient,
-    pub prover: Option<RemoteTransactionProver>,
-}
+// Network transaction errors
+// ================================================================================================
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {
@@ -42,12 +40,37 @@ pub enum NtxError {
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
     Submission(#[source] tonic::Status),
+    #[error("the ntx task panic'd")]
+    Panic(#[source] JoinError),
 }
 
 type NtxResult<T> = Result<T, NtxError>;
 
+// Context and execution of network transactions
+// ================================================================================================
+
+/// Provides the context for execution [network transaction candidates](TransactionCandidate).
+#[derive(Clone)]
+pub struct NtxContext {
+    pub block_producer: BlockProducerClient,
+
+    /// The prover to delegate proofs to.
+    ///
+    /// Defaults to local proving if unset. This should be avoided in production as this is
+    /// computationally intensive.
+    pub prover: Option<RemoteTransactionProver>,
+}
+
 impl NtxContext {
-    #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
+    /// Executes a [candidate network transaction](TransactionCandidate).
+    ///
+    /// This involves several steps:
+    ///
+    /// 1. Filtering the network notes into a set that can be executed successfully.
+    /// 2. Executing a transaction which consumes these notes.
+    /// 3. Proving this transaction, ideally via a delegated prover.
+    /// 4. Submitting this proven transaction to the block-producer.
+    #[instrument(parent = None, target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
         let TransactionCandidate { account, notes, chain_tip, chain_mmr } = tx;
 
@@ -78,10 +101,21 @@ impl NtxContext {
                     .await
             })
         })
+        .map_err(NtxError::Panic)
         .await
-        .expect("transaction task panic'd")
+        .flatten_result()
+        .inspect_err(|err| tracing::Span::current().set_error(err))
     }
 
+    /// Returns a set of input notes which can be successfully executed against the network account.
+    ///
+    /// The returned set is guaranteed to be non-empty.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if
+    /// - execution fails unexpectedly
+    /// - no notes are viable
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.filter_notes", skip_all, err)]
     async fn filter_notes(
         &self,
@@ -126,6 +160,7 @@ impl NtxContext {
         }
     }
 
+    /// Creates an executes a transaction with the network account and the given set of notes.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.execute", skip_all, err)]
     async fn execute(
         &self,
@@ -146,6 +181,8 @@ impl NtxContext {
             .map_err(NtxError::Execution)
     }
 
+    /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
+    /// proof locally.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
     async fn prove(&self, tx: ExecutedTransaction) -> NtxResult<ProvenTransaction> {
         use miden_tx::TransactionProver;
@@ -158,6 +195,7 @@ impl NtxContext {
         .map_err(NtxError::Proving)
     }
 
+    /// Submits the transaction to the block producer.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
     async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
         self.block_producer
@@ -167,6 +205,13 @@ impl NtxContext {
     }
 }
 
+// Data store implementation for the transaction execution
+// ================================================================================================
+
+/// A [`DataStore`] implementation which provides transaction inputs for a single account and
+/// reference block.
+///
+/// This is sufficient for executing a network transaction.
 struct NtxDataStore {
     account: Account,
     reference_header: BlockHeader,

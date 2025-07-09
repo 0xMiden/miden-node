@@ -85,9 +85,11 @@ impl GenesisConfig {
             wallet: wallet_configs,
         } = self;
 
-        let mut all_accounts = Vec::new();
+        let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
         let mut faucet_accounts = HashMap::<String, Account>::new();
+        let mut faucet_temporary_secrets = HashMap::<AccountId, (SecretKey, [Felt; 4])>::new();
+
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
         let mut secrets = Vec::new();
@@ -124,17 +126,15 @@ impl GenesisConfig {
                 .with_component(component)
                 .build()?;
 
+            debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
+
             if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol: token_symbol });
             }
+            let _ = faucet_temporary_secrets
+                .insert(faucet_account.id(), (secret_key, faucet_account_seed));
 
-            secrets.push((
-                format!("faucet_{symbol}.mac", symbol = symbol.to_lowercase()),
-                faucet_account.clone(),
-                secret_key,
-                faucet_account_seed,
-            ));
-            // Do _not_ collect the account just yet, only after we know all wallet assets
+            // Do _not_ collect the account nor the secret just yet, only after we know all wallet assets
             // we know the remaining supply in the faucets.
         }
 
@@ -147,6 +147,8 @@ impl GenesisConfig {
         for (index, WalletConfig { has_updatable_code, storage_mode, assets }) in
             wallet_configs.into_iter().enumerate()
         {
+            tracing::info!("Adding wallet account {index} with {assets:?}");
+
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
             let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
@@ -173,14 +175,16 @@ impl GenesisConfig {
             //
             // The genesis block is special in that accounts are "deplyed" without transactions and
             // therefore we need bump the nonce manually to uphold this invariant.
-            let delta = AccountDelta::new(
+            let wallet_delta = AccountDelta::new(
                 wallet_account.id(),
                 AccountStorageDelta::default(),
                 AccountVaultDelta::new(fungible_asset_update, NonFungibleAssetDelta::default()),
                 Felt::ONE,
             )?;
 
-            wallet_account.apply_delta(&delta)?;
+            wallet_account.apply_delta(&wallet_delta)?;
+
+            debug_assert_eq!(wallet_account.nonce(), Felt::ONE);
 
             secrets.push((
                 format!("wallet_{index:0zero_padding_width$}.mac"),
@@ -189,23 +193,59 @@ impl GenesisConfig {
                 wallet_account_seed,
             ));
 
-            all_accounts.push(wallet_account);
+            wallet_accounts.push(wallet_account);
         }
 
+        let mut all_accounts = Vec::<Account>::new();
         // Apply all fungible faucet adjustments to the respective faucet
-        for (_, mut faucet_account) in faucet_accounts {
+        for (symbol, mut faucet_account, secret_key, faucet_account_seed) in
+            faucet_accounts.into_iter().map(|(symbol, faucet_account)| {
+                let (secret_key, account_seed) = faucet_temporary_secrets
+                    .remove(&faucet_account.id())
+                    .expect("Every faucet must have a secret key and seed associated to its ID");
+                (symbol, faucet_account, secret_key, account_seed)
+            })
+        {
             let faucet_id = faucet_account.id();
+            // Even if there is no account using the asset, we use an empty delta to set the
+            // nonce to `Felt::ONE`.
             let fungible_delta = faucet_adjustments.get(&faucet_id).cloned().unwrap_or_default();
+
+            if let Some(amount) = fungible_delta.amount(&faucet_id) {
+                tracing::info!(
+                    "Reducing faucet account {faucet} for {symbol} by {amount}",
+                    faucet = faucet_id.to_hex(),
+                    symbol = symbol,
+                    amount = amount
+                );
+            } else {
+                tracing::info!(
+                    "No wallet is referencing {faucet} for {symbol}",
+                    faucet = faucet_id.to_hex(),
+                    symbol = symbol,
+                );
+            }
 
             faucet_account.apply_delta(&AccountDelta::new(
                 faucet_id,
                 AccountStorageDelta::new(),
-                AccountVaultDelta::new(dbg!(fungible_delta), NonFungibleAssetDelta::default()),
+                AccountVaultDelta::new(fungible_delta, NonFungibleAssetDelta::default()),
                 Felt::ONE,
             )?)?;
 
+            debug_assert_eq!(faucet_account.nonce(), Felt::ONE);
+
+            secrets.push((
+                format!("faucet_{symbol}.mac", symbol = symbol.to_lowercase()),
+                faucet_account.clone(),
+                secret_key,
+                faucet_account_seed,
+            ));
+
             all_accounts.push(faucet_account);
         }
+        // Ensure the faucets always preceed the wallets referencing them
+        all_accounts.extend(wallet_accounts);
 
         Ok((
             GenesisState {
@@ -335,6 +375,7 @@ fn prepare_fungible_asset_update(
             let faucet_account = faucets.get(&symbol).ok_or_else(|| {
                 GenesisConfigError::MissingFaucetDefinition { symbol: token_symbol }
             })?;
+
             Ok::<_, GenesisConfigError>(FungibleAsset::new(faucet_account.id(), amount)?)
         }))?;
 
@@ -343,17 +384,17 @@ fn prepare_fungible_asset_update(
         .into_iter()
         .try_for_each(|fungible_asset| wallet_asset_delta.add(fungible_asset))?;
 
-    wallet_asset_delta.iter().try_for_each(|(faucet_id, _amount)| {
+    wallet_asset_delta.iter().try_for_each(|(faucet_id, amount)| {
         let delta: &mut FungibleAssetDelta =
             faucet_asset_adjustments.entry(*faucet_id).or_default();
-        delta.remove(FungibleAsset::new(
-            *faucet_id,
-            delta
-                .amount(faucet_id)
-                .unwrap_or_default()
-                .try_into()
-                .expect("Amount is too high"),
-        )?)?;
+        let reduction = delta
+            .amount(faucet_id)
+            .unwrap_or_default()
+            .try_into()
+            .expect("Amount is too high");
+        tracing::info!("Updating faucet account {faucet_id:?} @ {amount} by {reduction}");
+
+        delta.remove(FungibleAsset::new(*faucet_id, reduction)?)?;
         Ok::<_, GenesisConfigError>(())
     })?;
 

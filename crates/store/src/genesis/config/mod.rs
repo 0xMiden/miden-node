@@ -234,7 +234,7 @@ impl GenesisConfig {
 
             all_accounts.push(faucet_account);
         }
-        // Ensure the faucets always preceed the wallets referencing them
+        // Ensure the faucets always precede the wallets referencing them
         all_accounts.extend(wallet_accounts);
 
         Ok((

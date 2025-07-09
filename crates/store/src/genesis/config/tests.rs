@@ -11,7 +11,7 @@ fn parsing_yields_expected_default_values() -> TestResult {
     let gcfg = GenesisConfig::read_toml(s)?;
     let (state, _secrets) = gcfg.into_state()?;
     let _ = state;
-    // faucets always preceed wallet accounts
+    // faucets always precede wallet accounts
     assert!(state.accounts[0].is_faucet());
     assert!(state.accounts[1].is_regular_account());
 

@@ -16,7 +16,7 @@ use miden_node_proto::{
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
+    tracing::grpc::{OtelInterceptor, TracedComponent, traced_span_fn},
 };
 use miden_objects::{
     block::BlockNumber, note::Nullifier, transaction::ProvenTransaction,
@@ -321,7 +321,10 @@ impl BlockProducerRpcServer {
 
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
-            .layer(TraceLayer::new_for_grpc().make_span_with(block_producer_trace_fn))
+            .layer(
+                TraceLayer::new_for_grpc()
+                    .make_span_with(traced_span_fn(TracedComponent::StoreBlockProducer)),
+            )
             .add_service(api_server::ApiServer::new(self))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)

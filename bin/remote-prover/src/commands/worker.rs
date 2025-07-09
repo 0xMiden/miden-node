@@ -1,5 +1,5 @@
 use clap::Parser;
-use miden_node_utils::cors::cors_for_grpc_web_layer;
+use miden_node_utils::{cors::cors_for_grpc_web_layer, tracing::grpc::remote_prover_trace_fn};
 use miden_remote_prover::{
     COMPONENT,
     api::{ProofType, RpcListener},
@@ -9,6 +9,7 @@ use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_health::server::health_reporter;
 use tonic_web::GrpcWebLayer;
+use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
 
 /// Starts a worker.
@@ -61,6 +62,7 @@ impl StartWorker {
 
         tonic::transport::Server::builder()
             .accept_http1(true)
+            .layer(TraceLayer::new_for_grpc().make_span_with(remote_prover_trace_fn))
             .layer(cors_for_grpc_web_layer())
             .layer(GrpcWebLayer::new())
             .add_service(rpc.api_service)

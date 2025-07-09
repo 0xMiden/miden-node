@@ -25,6 +25,7 @@ workspace = true
 [dependencies]
 anyhow                = { workspace = true }
 async-trait           = { version = "0.1" }
+tower-http             = { features = ["trace"], workspace = true }
 axum                  = { version = "0.8" }
 bytes                 = { version = "1.0" }
 clap                  = { features = ["derive", "env"], version = "4.5" }

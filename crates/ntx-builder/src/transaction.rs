@@ -18,6 +18,7 @@ use miden_tx::{
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
     TransactionProverError,
 };
+use rand::seq::SliceRandom;
 use tokio::task::JoinError;
 use tracing::instrument;
 
@@ -76,10 +77,12 @@ impl NtxContext {
                 .expect("runtime should be built");
 
             rt.block_on(async move {
-                let notes = notes
+                let mut notes = notes
                     .into_iter()
                     .map(|note| InputNote::Unauthenticated { note: note.into() })
-                    .collect();
+                    .collect::<Vec<_>>();
+                // We shuffle the notes here to prevent having a failing note always in front.
+                notes.shuffle(&mut rand::rng());
                 let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
                 let data_store = NtxDataStore::new(account, self.genesis_header.clone());

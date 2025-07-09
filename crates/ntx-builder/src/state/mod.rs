@@ -10,9 +10,8 @@ use miden_node_proto::domain::{
 };
 use miden_objects::{
     account::{Account, delta::AccountUpdateDetails},
-    block::{BlockHeader, BlockNumber},
     note::Nullifier,
-    transaction::{PartialBlockchain, TransactionId},
+    transaction::TransactionId,
 };
 
 use crate::store::{StoreClient, StoreError};
@@ -28,26 +27,12 @@ pub struct TransactionCandidate {
     pub account: Account,
     /// A set of notes addressed to this network account.
     pub notes: Vec<NetworkNote>,
-    /// The latest locally committed block header.
-    ///
-    /// This should be used as the reference block during transaction execution. This block's
-    /// parent is guaranteed to be tracked by `chain_mmr` and therefore these can be used
-    /// together during execution.
-    pub chain_tip: BlockHeader,
-    /// The latest chain MMR.
-    pub chain_mmr: PartialBlockchain,
 }
 
 /// Holds the state of the network transaction builder.
 ///
 /// It tracks inflight transactions, and their impact on network-related state.
 pub struct State {
-    /// The latest committed block header.
-    chain_tip: BlockHeader,
-
-    /// The latest chain MMR.
-    chain_mmr: PartialBlockchain,
-
     /// Tracks all network accounts with inflight state.
     ///
     /// This is network account deltas, network notes and their nullifiers.
@@ -82,17 +67,7 @@ pub struct State {
 impl State {
     /// Load's all available network notes from the store, along with the required account states.
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
-        let (chain_tip, chain_mmr) = store
-            .get_latest_blockchain_data_with_retry()
-            .await?
-            .expect("store should contain a latest block");
-
-        let chain_mmr = PartialBlockchain::new(chain_mmr, [])
-            .expect("PartialBlockchain should build from latest partial MMR");
-
         let mut state = Self {
-            chain_tip,
-            chain_mmr,
             store,
             accounts: HashMap::default(),
             queue: VecDeque::default(),
@@ -163,21 +138,10 @@ impl State {
             }
 
             self.in_progress.insert(candidate);
-            return TransactionCandidate {
-                account: account.latest_account(),
-                notes,
-                chain_tip: self.chain_tip.clone(),
-                chain_mmr: self.chain_mmr.clone(),
-            }
-            .into();
+            return TransactionCandidate { account: account.latest_account(), notes }.into();
         }
 
         None
-    }
-
-    /// The latest block number the state knows of.
-    pub fn chain_tip(&self) -> BlockNumber {
-        self.chain_tip.block_num()
     }
 
     /// Marks a previously selected candidate account as failed, allowing it to be available for
@@ -199,17 +163,7 @@ impl State {
             } => {
                 self.add_transaction(id, nullifiers, network_notes, account_delta).await?;
             },
-            MempoolEvent::BlockCommitted { header, txs } => {
-                anyhow::ensure!(
-                    header.prev_block_commitment() == self.chain_tip.commitment(),
-                    "New block's parent commitment {} does not match local chain tip {}",
-                    header.prev_block_commitment(),
-                    self.chain_tip.commitment()
-                );
-
-                // Chain MMR always lags by one block. This is defined as part of the protocol.
-                self.chain_mmr.add_block(self.chain_tip.clone(), true);
-                self.chain_tip = header;
+            MempoolEvent::BlockCommitted { header: _, txs } => {
                 for tx in txs {
                     self.commit_transaction(tx);
                 }

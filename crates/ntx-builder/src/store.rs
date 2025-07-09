@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use miden_node_proto::{
     domain::{account::NetworkAccountPrefix, note::NetworkNote},
-    errors::ConversionError,
+    errors::{ConversionError, MissingFieldHelper},
     generated::{
         requests::{
-            GetCurrentBlockchainDataRequest, GetNetworkAccountDetailsByPrefixRequest,
-            GetUnconsumedNetworkNotesRequest,
+            GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
+            GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
         },
         store::ntx_builder_client as store_client,
     },
@@ -15,7 +15,7 @@ use miden_node_proto::{
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::Account,
-    block::BlockHeader,
+    block::{BlockHeader, BlockNumber},
     crypto::merkle::{MmrPeaks, PartialMmr},
 };
 use miden_tx::utils::Deserializable;
@@ -51,16 +51,11 @@ impl StoreClient {
         Self { inner: store }
     }
 
-    /// Returns the block header and MMR peaks at the chain tip if the input `block_num` is either
-    /// `None` or an outdated block number. If the input `block_num` is equal to the current
-    /// chain tip, this function returns `None`.
-    #[instrument(target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
-    pub async fn get_latest_blockchain_data_with_retry(
-        &self,
-    ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
+    #[instrument(target = COMPONENT, name = "store.client.genesis_header", skip_all, err)]
+    pub async fn genesis_header_with_retry(&self) -> Result<BlockHeader, StoreError> {
         let mut retry_counter = 0;
         loop {
-            match self.get_latest_blockchain_data().await {
+            match self.genesis_header().await {
                 Err(StoreError::GrpcClientError(err)) => {
                     // exponential backoff with base 500ms and max 30s
                     let backoff = Duration::from_millis(500)
@@ -71,7 +66,7 @@ impl StoreClient {
                         ?backoff,
                         %retry_counter,
                         %err,
-                        "store connection failed while fetching latest blockchain data, retrying"
+                        "store connection failed while fetching genesis header, retrying"
                     );
 
                     retry_counter += 1;
@@ -82,11 +77,35 @@ impl StoreClient {
         }
     }
 
+    async fn genesis_header(&self) -> Result<BlockHeader, StoreError> {
+        let response = self
+            .inner
+            .clone()
+            .get_block_header_by_number(tonic::Request::new(GetBlockHeaderByNumberRequest {
+                block_num: Some(BlockNumber::GENESIS.as_u32()),
+                include_mmr_proof: None,
+            }))
+            .await?
+            .into_inner()
+            .block_header
+            .ok_or(miden_node_proto::generated::block::BlockHeader::missing_field(
+                "block_header",
+            ))?;
+
+        BlockHeader::try_from(response).map_err(Into::into)
+    }
+
+    /// Returns the block header and MMR peaks at the chain tip if the input `block_num` is either
+    /// `None` or an outdated block number. If the input `block_num` is equal to the current
+    /// chain tip, this function returns `None`.
     #[instrument(target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
-    async fn get_latest_blockchain_data(
+    pub async fn get_current_blockchain_data(
         &self,
+        block_num: Option<BlockNumber>,
     ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
-        let request = tonic::Request::new(GetCurrentBlockchainDataRequest::default());
+        let request = tonic::Request::new(GetCurrentBlockchainDataRequest {
+            block_num: block_num.as_ref().map(BlockNumber::as_u32),
+        });
 
         let response = self.inner.clone().get_current_blockchain_data(request).await?.into_inner();
 

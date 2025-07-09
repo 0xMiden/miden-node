@@ -23,9 +23,6 @@ use tracing::instrument;
 
 use crate::{COMPONENT, block_producer::BlockProducerClient, state::TransactionCandidate};
 
-// Network transaction errors
-// ================================================================================================
-
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {
     #[error("note inputs were invalid")]
@@ -59,24 +56,17 @@ pub struct NtxContext {
     /// Defaults to local proving if unset. This should be avoided in production as this is
     /// computationally intensive.
     pub prover: Option<RemoteTransactionProver>,
+
+    pub genesis_header: BlockHeader,
 }
 
 impl NtxContext {
-    /// Executes a [candidate network transaction](TransactionCandidate).
-    ///
-    /// This involves several steps:
-    ///
-    /// 1. Filtering the network notes into a set that can be executed successfully.
-    /// 2. Executing a transaction which consumes these notes.
-    /// 3. Proving this transaction, ideally via a delegated prover.
-    /// 4. Submitting this proven transaction to the block-producer.
-    #[instrument(parent = None, target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
-        let TransactionCandidate { account, notes, chain_tip, chain_mmr } = tx;
+        let TransactionCandidate { account, notes } = tx;
 
         tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current().set_attribute("notes.count", notes.len());
-        tracing::Span::current().set_attribute("reference_block.number", chain_tip.block_num());
 
         // Work-around for `TransactionExecutor` not being `Send`.
         tokio::task::spawn_blocking(move || {
@@ -92,7 +82,7 @@ impl NtxContext {
                     .collect();
                 let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                let data_store = NtxDataStore::new(account, chain_tip, chain_mmr);
+                let data_store = NtxDataStore::new(account, self.genesis_header.clone());
 
                 self.filter_notes(&data_store, notes)
                     .and_then(|notes| self.execute(&data_store, notes))
@@ -128,7 +118,7 @@ impl NtxContext {
         let notes = match checker
             .check_notes_consumability(
                 data_store.account.id(),
-                data_store.reference_header.block_num(),
+                BlockNumber::GENESIS,
                 notes.clone(),
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),
@@ -172,7 +162,7 @@ impl NtxContext {
         executor
             .execute_transaction(
                 data_store.account.id(),
-                data_store.reference_header.block_num(),
+                BlockNumber::GENESIS,
                 notes,
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),
@@ -214,22 +204,16 @@ impl NtxContext {
 /// This is sufficient for executing a network transaction.
 struct NtxDataStore {
     account: Account,
-    reference_header: BlockHeader,
-    chain_mmr: PartialBlockchain,
+    genesis_header: BlockHeader,
     mast_store: TransactionMastStore,
 }
 
 impl NtxDataStore {
-    fn new(account: Account, reference_header: BlockHeader, chain_mmr: PartialBlockchain) -> Self {
+    fn new(account: Account, genesis_header: BlockHeader) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
 
-        Self {
-            account,
-            reference_header,
-            chain_mmr,
-            mast_store,
-        }
+        Self { account, genesis_header, mast_store }
     }
 }
 
@@ -245,7 +229,7 @@ impl DataStore for NtxDataStore {
         }
 
         match ref_blocks.last().copied() {
-            Some(reference) if reference == self.reference_header.block_num() => {},
+            Some(BlockNumber::GENESIS) => {},
             Some(other) => return Err(DataStoreError::BlockNotFound(other)),
             None => return Err(DataStoreError::other("no reference block requested")),
         }
@@ -253,8 +237,8 @@ impl DataStore for NtxDataStore {
         Ok((
             self.account.clone(),
             None,
-            self.reference_header.clone(),
-            self.chain_mmr.clone(),
+            self.genesis_header.clone(),
+            PartialBlockchain::default(),
         ))
     }
 }

@@ -13,6 +13,7 @@
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
 - Added configurable network id for the faucet (#1016).
 - Support gRPC server relection `v1alpha` (#1036).
+- Add Otel trace layers to `miden-remote-prover` and `miden-remote-prover-proxy` (#1061).
 
 ### Changes
 

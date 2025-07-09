@@ -151,7 +151,7 @@ impl GenesisConfig {
         for (index, WalletConfig { has_updatable_code, storage_mode, assets }) in
             wallet_configs.into_iter().enumerate()
         {
-            tracing::info!("Adding wallet account {index} with {assets:?}");
+            tracing::debug!("Adding wallet account {index} with {assets:?}");
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
@@ -209,14 +209,14 @@ impl GenesisConfig {
             let fungible_delta = faucet_adjustments.get(&faucet_id).cloned().unwrap_or_default();
 
             if let Some(amount) = fungible_delta.amount(&faucet_id) {
-                tracing::info!(
+                tracing::debug!(
                     "Reducing faucet account {faucet} for {symbol} by {amount}",
                     faucet = faucet_id.to_hex(),
                     symbol = symbol,
                     amount = amount
                 );
             } else {
-                tracing::info!(
+                tracing::debug!(
                     "No wallet is referencing {faucet} for {symbol}",
                     faucet = faucet_id.to_hex(),
                     symbol = symbol,
@@ -391,7 +391,10 @@ fn prepare_fungible_asset_update(
             .unwrap_or_default()
             .try_into()
             .expect("Amount is too high");
-        tracing::info!("Updating faucet account {faucet_id:?} @ {amount} by {reduction}");
+        tracing::debug!(
+            "Updating faucet account {faucet} with {amount} by {reduction}",
+            faucet = faucet_id.to_hex()
+        );
 
         delta.remove(FungibleAsset::new(*faucet_id, reduction)?)?;
         Ok::<_, GenesisConfigError>(())

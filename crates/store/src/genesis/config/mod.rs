@@ -340,15 +340,15 @@ impl AccountSecrets {
         &self,
         genesis_state: &GenesisState,
     ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_> {
-        let mut account_lut = HashMap::<AccountId, Account>::from_iter(
+        let account_lut = HashMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );
         self.secrets.iter().map(move |(name, account_id, secret_key, account_seed)| {
             let account = account_lut
-                .remove(&account_id)
+                .get(account_id)
                 .ok_or(GenesisConfigError::MissingGenesisAccount { account_id: *account_id })?;
             let account_file = AccountFile::new(
-                account,
+                account.clone(),
                 Some(*account_seed),
                 vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
             );

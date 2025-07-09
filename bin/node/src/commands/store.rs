@@ -148,7 +148,8 @@ impl StoreCommand {
 
         let (genesis_state, secrets) = config.into_state()?;
         // Write the accounts to disk
-        for AccountFileWithName { account_file, name } in secrets.as_account_files() {
+        for item in secrets.as_account_files(&genesis_state) {
+            let AccountFileWithName { account_file, name } = item?;
             let accountpath = accounts_directory.join(name);
             // do not override existing keys
             fs_err::OpenOptions::new()

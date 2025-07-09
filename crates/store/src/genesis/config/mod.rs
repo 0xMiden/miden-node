@@ -88,7 +88,6 @@ impl GenesisConfig {
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
         let mut faucet_accounts = HashMap::<String, Account>::new();
-        let mut faucet_temporary_secrets = HashMap::<AccountId, (SecretKey, [Felt; 4])>::new();
 
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
@@ -131,10 +130,15 @@ impl GenesisConfig {
             if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol: token_symbol });
             }
-            let _ = faucet_temporary_secrets
-                .insert(faucet_account.id(), (secret_key, faucet_account_seed));
 
-            // Do _not_ collect the account nor the secret just yet, only after we know all wallet assets
+            secrets.push((
+                format!("faucet_{symbol}.mac", symbol = symbol.to_lowercase()),
+                faucet_account.id(),
+                secret_key,
+                faucet_account_seed,
+            ));
+
+            // Do _not_ collect the account, only after we know all wallet assets
             // we know the remaining supply in the faucets.
         }
 
@@ -188,7 +192,7 @@ impl GenesisConfig {
 
             secrets.push((
                 format!("wallet_{index:0zero_padding_width$}.mac"),
-                wallet_account.clone(),
+                wallet_account.id(),
                 secret_key,
                 wallet_account_seed,
             ));
@@ -198,14 +202,7 @@ impl GenesisConfig {
 
         let mut all_accounts = Vec::<Account>::new();
         // Apply all fungible faucet adjustments to the respective faucet
-        for (symbol, mut faucet_account, secret_key, faucet_account_seed) in
-            faucet_accounts.into_iter().map(|(symbol, faucet_account)| {
-                let (secret_key, account_seed) = faucet_temporary_secrets
-                    .remove(&faucet_account.id())
-                    .expect("Every faucet must have a secret key and seed associated to its ID");
-                (symbol, faucet_account, secret_key, account_seed)
-            })
-        {
+        for (symbol, mut faucet_account) in faucet_accounts {
             let faucet_id = faucet_account.id();
             // Even if there is no account using the asset, we use an empty delta to set the
             // nonce to `Felt::ONE`.
@@ -234,13 +231,6 @@ impl GenesisConfig {
             )?)?;
 
             debug_assert_eq!(faucet_account.nonce(), Felt::ONE);
-
-            secrets.push((
-                format!("faucet_{symbol}.mac", symbol = symbol.to_lowercase()),
-                faucet_account.clone(),
-                secret_key,
-                faucet_account_seed,
-            ));
 
             all_accounts.push(faucet_account);
         }
@@ -338,7 +328,7 @@ pub struct AccountFileWithName {
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
     // name, account, private key, account seed
-    pub secrets: Vec<(String, Account, SecretKey, Word)>,
+    pub secrets: Vec<(String, AccountId, SecretKey, Word)>,
 }
 
 impl AccountSecrets {
@@ -346,15 +336,24 @@ impl AccountSecrets {
     ///
     /// If no name is present, a new one is generated based on the current time
     /// and the index in
-    pub fn as_account_files(&self) -> impl Iterator<Item = AccountFileWithName> {
-        self.secrets.iter().map(|(name, account, secret_key, account_seed)| {
+    pub fn as_account_files(
+        &self,
+        genesis_state: &GenesisState,
+    ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_> {
+        let mut account_lut = HashMap::<AccountId, Account>::from_iter(
+            genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
+        );
+        self.secrets.iter().map(move |(name, account_id, secret_key, account_seed)| {
+            let account = account_lut
+                .remove(&account_id)
+                .ok_or(GenesisConfigError::MissingGenesisAccount { account_id: *account_id })?;
             let account_file = AccountFile::new(
-                account.clone(),
+                account,
                 Some(*account_seed),
                 vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
             );
             let name = name.to_string();
-            AccountFileWithName { name, account_file }
+            Ok(AccountFileWithName { name, account_file })
         })
     }
 }

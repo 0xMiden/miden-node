@@ -1,5 +1,7 @@
 use miden_lib::account::faucets::FungibleFaucetError;
-use miden_objects::{AccountError, AssetError, TokenSymbolError, asset::TokenSymbol};
+use miden_objects::{
+    AccountError, AssetError, TokenSymbolError, account::AccountId, asset::TokenSymbol,
+};
 
 #[allow(missing_docs, reason = "Error variants must be descriptive by themselves")]
 #[derive(Debug, thiserror::Error)]
@@ -14,6 +16,8 @@ pub enum GenesisConfigError {
     AccountDelta(#[from] miden_objects::AccountDeltaError),
     #[error("the defined asset {symbol:?} has no corresponding faucet")]
     MissingFaucetDefinition { symbol: TokenSymbol },
+    #[error("account with id {account_id} was referenced but is not part of given genesis state")]
+    MissingGenesisAccount { account_id: AccountId },
     #[error(transparent)]
     TokenSymbol(#[from] TokenSymbolError),
     #[error("unsupported value for key {key} : {value}")]

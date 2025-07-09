@@ -29,8 +29,8 @@ pub enum TracedComponent {
 /// Creates an `info` span following the open-telemetry standard: `{service}.rpc/{method}`.
 /// Additionally also pulls in remote tracing context which allows the server trace to be connected
 /// to the client's origin trace.
-pub fn traced_span_fn<T>(svc: TracedComponent) -> fn(&http::Request<T>) -> tracing::Span {
-    match svc {
+pub fn traced_span_fn<T>(component: TracedComponent) -> fn(&http::Request<T>) -> tracing::Span {
+    match component {
         TracedComponent::Rpc => rpc_trace_fn,
         TracedComponent::BlockProducer => block_producer_trace_fn,
         TracedComponent::StoreRpc => store_rpc_trace_fn,

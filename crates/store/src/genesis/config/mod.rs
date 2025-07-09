@@ -275,6 +275,7 @@ impl GenesisConfig {
 
 /// Represents a faucet with asset specific properties
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FungibleFaucetConfig {
     // TODO eventually directly parse to `TokenSymbol`
     symbol: String,
@@ -293,6 +294,7 @@ pub struct FungibleFaucetConfig {
 
 /// Represents a wallet, containing a set of assets
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct WalletConfig {
     #[serde(default)]
     has_updatable_code: bool,

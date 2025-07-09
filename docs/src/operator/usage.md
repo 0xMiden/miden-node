@@ -71,7 +71,7 @@ storage_mode = "public"
 
 [[wallet]]
 # List of all assets the account should hold. Each token type _must_ have a corresponding faucet.
-# The number is in _base units_, e.g. specifing `999 FUZZY` at 6 decimals would become
+# The number is in _base units_, e.g. specifying `999 FUZZY` at 6 decimals would become
 # `999_000_000`.
 assets       = [{ amount = 999_000_000, symbol = "FUZZY" }]
 # Storage mode of the wallet account.

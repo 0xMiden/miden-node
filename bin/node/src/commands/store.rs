@@ -11,9 +11,7 @@ use url::Url;
 use super::{
     ENV_DATA_DIRECTORY, ENV_STORE_BLOCK_PRODUCER_URL, ENV_STORE_NTX_BUILDER_URL, ENV_STORE_RPC_URL,
 };
-
-/// The default filepath for the genesis account.
-const DEFAULT_ACCOUNT_PATH: &str = "account.mac";
+use crate::commands::{ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE};
 
 #[allow(clippy::large_enum_variant, reason = "single use enum")]
 #[derive(clap::Subcommand)]
@@ -70,9 +68,12 @@ impl StoreCommand {
     /// Executes the subcommand as described by each variants documentation.
     pub async fn handle(self) -> anyhow::Result<()> {
         match self {
-<<<<<<< HEAD
-            StoreCommand::Bootstrap { data_directory, accounts_directory } => {
-                Self::bootstrap(&data_directory, &accounts_directory)
+            StoreCommand::Bootstrap {
+                data_directory,
+                accounts_directory,
+                genesis_config_file,
+            } => {
+                Self::bootstrap(&data_directory, &accounts_directory, genesis_config_file.as_ref())
             },
             StoreCommand::Start {
                 rpc_url,
@@ -81,23 +82,6 @@ impl StoreCommand {
                 data_directory,
                 enable_otel: _,
             } => Self::start(rpc_url, ntx_builder_url, block_producer_url, data_directory).await,
-||||||| parent of fa62ab7 (integrate into bootstrap command and doc)
-            StoreCommand::Bootstrap { data_directory, accounts_directory } => {
-                Self::bootstrap(&data_directory, &accounts_directory)
-            },
-            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
-                Self::start(url, data_directory).await
-            },
-=======
-            StoreCommand::Bootstrap {
-                data_directory,
-                accounts_directory,
-                genesis_config_file: config_path,
-            } => Self::bootstrap(&data_directory, &accounts_directory, config_path.as_ref()),
-            StoreCommand::Start { url, data_directory, enable_otel: _ } => {
-                Self::start(url, data_directory).await
-            },
->>>>>>> fa62ab7 (integrate into bootstrap command and doc)
         }
     }
 

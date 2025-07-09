@@ -9,7 +9,7 @@ macro_rules! rpc_span {
     };
 }
 
-/// Represents an Otel compatible, traced Miden compoent.
+/// Represents an Otel compatible, traced Miden component.
 ///
 /// Used to select an appropriate [`tracing::Span`] for the tonic server to use.
 #[derive(Copy, Clone)]

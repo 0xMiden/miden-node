@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use miden_node_utils::tracing::grpc::remote_prover_proxy_trace_fn;
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use miden_remote_prover::{
     api::ProofType,
     generated::remote_prover::{
@@ -141,7 +141,10 @@ impl Service for ProxyStatusPingoraService {
         let status_server = ProxyStatusApiServer::new(self.clone());
         let mut server_shutdown = shutdown.clone();
         let server = Server::builder()
-            .layer(TraceLayer::new_for_grpc().make_span_with(remote_prover_proxy_trace_fn))
+            .layer(
+                TraceLayer::new_for_grpc()
+                    .make_span_with(traced_span_fn(TracedComponent::RemoteProverProxy)),
+            )
             .add_service(status_server)
             .serve_with_incoming_shutdown(TcpListenerStream::new(listener), async move {
                 let _ = server_shutdown.changed().await;

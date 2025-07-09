@@ -25,7 +25,6 @@ workspace = true
 [dependencies]
 anyhow                = { workspace = true }
 async-trait           = { version = "0.1" }
-tower-http             = { features = ["trace"], workspace = true }
 axum                  = { version = "0.8" }
 bytes                 = { version = "1.0" }
 clap                  = { features = ["derive", "env"], version = "4.5" }
@@ -52,6 +51,7 @@ tokio-stream          = { features = ["net"], version = "0.1" }
 tonic                 = { default-features = false, features = ["codegen", "prost", "router", "transport"], version = "0.13" }
 tonic-health          = { version = "0.13" }
 tonic-web             = { version = "0.13" }
+tower-http            = { features = ["trace"], workspace = true }
 tracing               = { version = "0.1" }
 uuid                  = { features = ["v4"], version = "1.16" }
 

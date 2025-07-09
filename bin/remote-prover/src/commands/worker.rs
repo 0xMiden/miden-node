@@ -1,5 +1,8 @@
 use clap::Parser;
-use miden_node_utils::{cors::cors_for_grpc_web_layer, tracing::grpc::remote_prover_trace_fn};
+use miden_node_utils::{
+    cors::cors_for_grpc_web_layer,
+    tracing::grpc::{TracedComponent, traced_span_fn},
+};
 use miden_remote_prover::{
     COMPONENT,
     api::{ProofType, RpcListener},
@@ -62,7 +65,10 @@ impl StartWorker {
 
         tonic::transport::Server::builder()
             .accept_http1(true)
-            .layer(TraceLayer::new_for_grpc().make_span_with(remote_prover_trace_fn))
+            .layer(
+                TraceLayer::new_for_grpc()
+                    .make_span_with(traced_span_fn(TracedComponent::RemoteProver)),
+            )
             .layer(cors_for_grpc_web_layer())
             .layer(GrpcWebLayer::new())
             .add_service(rpc.api_service)

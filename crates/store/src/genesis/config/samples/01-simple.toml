@@ -8,7 +8,7 @@ storage_mode = "public"
 symbol       = "MIDEN"
 
 [[wallet]]
-assets       = [{ amount = 999, symbol = "MIDEN" }]
+assets       = [{ amount = 999_000, symbol = "MIDEN" }]
 mutable      = false
 storage_mode = "private"
 # has_updatable_code = false # default value

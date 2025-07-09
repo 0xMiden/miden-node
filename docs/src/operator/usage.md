@@ -62,8 +62,8 @@ symbol       = "FUZZY"
 decimals     = 6
 # Total supply, in _base units_
 #
-# e.g. a max supply of `1e15` _base units_ and decimals set to `6`, will yield you a total supply of
-# `1e15/1e6 = 1e9` `FUZZY`s.
+# e.g. a max supply of `1e15` _base units_ and decimals set to `6`, will yield you a total supply
+# of `1e15/1e6 = 1e9` `FUZZY`s.
 max_supply   = 1_000_000_000_000_000
 # Storage mode of the faucet account.
 storage_mode = "public"
@@ -71,7 +71,9 @@ storage_mode = "public"
 
 [[wallet]]
 # List of all assets the account should hold. Each token type _must_ have a corresponding faucet.
-assets       = [{ amount = 999, symbol = "FUZZY" }]
+# The number is in _base units_, e.g. specifing `999 FUZZY` at 6 decimals would become
+# `999_000_000`.
+assets       = [{ amount = 999_000_000, symbol = "FUZZY" }]
 # Storage mode of the wallet account.
 storage_mode = "private"
 # The code of the account can be updated or not.
@@ -96,7 +98,8 @@ existing one e.g. one created as part of the genesis block.
 
 Create a faucet account for the faucet app to use - or skip this step if you already have an account file.
 
-Note that we specify a distinct account filename (`faucet.mac`) to avoid collision with the account file that the node bootstrap command generates.
+Note that we specify a distinct account filename (`faucet.mac`) to avoid collision with the account file that the node
+bootstrap command generates.
 
 ```sh
 miden-faucet create-faucet-account \

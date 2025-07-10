@@ -2338,6 +2338,8 @@ dependencies = [
  "miden-node-store",
  "miden-node-utils",
  "miden-objects",
+ "rand 0.9.1",
+ "rand_chacha 0.9.0",
  "tokio",
  "url",
 ]

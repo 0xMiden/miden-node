@@ -1,21 +1,17 @@
-use std::{collections::BTreeSet, ops::Range};
+use std::ops::Range;
 
-use anyhow::Context;
 use futures::{FutureExt, never::Never};
 use miden_block_prover::LocalBlockProver;
-use miden_node_proto::generated::transaction::TransactionStatus;
-use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
-    Digest, MIN_PROOF_SECURITY_LEVEL,
+    MIN_PROOF_SECURITY_LEVEL,
     batch::ProvenBatch,
     block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::{Note, NoteExecutionMode, NoteHeader},
-    transaction::{OutputNote, TransactionHeader, TransactionId},
+    note::NoteHeader,
 };
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{Span, info, instrument};
 use url::Url;
 
@@ -26,9 +22,6 @@ use crate::{
 
 // BLOCK BUILDER
 // =================================================================================================
-
-pub type NtxClient =
-    miden_node_proto::ntx_builder::Client<InterceptedService<Channel, OtelInterceptor>>;
 
 pub struct BlockBuilder {
     pub block_interval: Duration,
@@ -44,12 +37,6 @@ pub struct BlockBuilder {
 
     /// The prover used to prove a proposed block into a proven block.
     pub block_prover: BlockProver,
-
-    // Client to the network transaction builder.
-    //
-    // This client is used to submit network notes and transaction updates to the network
-    // transaction builder.
-    pub ntx_builder: Option<NtxClient>,
 }
 
 impl BlockBuilder {
@@ -58,7 +45,6 @@ impl BlockBuilder {
     /// If the block prover URL is not set, the block builder will use the local block prover.
     pub fn new(
         store: StoreClient,
-        ntx_builder: Option<NtxClient>,
         block_prover_url: Option<Url>,
         block_interval: Duration,
     ) -> Self {
@@ -74,7 +60,6 @@ impl BlockBuilder {
             failure_rate: 0.0,
             block_prover,
             store,
-            ntx_builder,
         }
     }
     /// Starts the [`BlockBuilder`], infinitely producing blocks at the configured interval.
@@ -100,13 +85,8 @@ impl BlockBuilder {
         loop {
             interval.tick().await;
 
-            // Non-fatal errors are handled internally by the block building process.
-            //
-            // As such, any error returned here should be treated as fatal.
-            if let Err(err) = self.build_block(&mempool).await {
-                tracing::error!(%err, "fatal error while building a block, aborting block production");
-                return;
-            }
+            // Errors are handled internally by the block building process.
+            self.build_block(&mempool).await;
         }
     }
 
@@ -122,7 +102,7 @@ impl BlockBuilder {
     /// - A failed stage will emit an error event, and both its own span and the root span will be
     ///   marked as errors.
     #[instrument(parent = None, target = COMPONENT, name = "block_builder.build_block", skip_all)]
-    async fn build_block(&self, mempool: &SharedMempool) -> anyhow::Result<()> {
+    async fn build_block(&self, mempool: &SharedMempool) {
         use futures::TryFutureExt;
 
         Self::select_block(mempool)
@@ -142,8 +122,7 @@ impl BlockBuilder {
             .or_else(|_err| self.rollback_block(mempool).never_error())
             // All errors were handled and discarded above, so this is just type juggling
             // to drop the result.
-            .unwrap_or_else(|_: Never| StateDelta::default())
-            .then(|delta| self.update_ntx_builder(delta))
+            .unwrap_or_else(|_: Never| ())
             .await
     }
 
@@ -246,80 +225,20 @@ impl BlockBuilder {
         &self,
         mempool: &SharedMempool,
         built_block: ProvenBlock,
-    ) -> Result<StateDelta, BuildBlockError> {
+    ) -> Result<(), BuildBlockError> {
         self.store
             .apply_block(&built_block)
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        let reverted_transactions = mempool.lock().await.commit_block(built_block.header().clone());
-        let committed_transactions = built_block
-            .transactions()
-            .as_slice()
-            .iter()
-            .map(TransactionHeader::id)
-            .collect();
+        mempool.lock().await.commit_block(built_block.header().clone());
 
-        let committed_network_notes = get_network_notes(&built_block);
-
-        Ok(StateDelta {
-            committed_transactions,
-            reverted_transactions,
-            committed_network_notes,
-        })
+        Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.rollback_block", skip_all)]
-    async fn rollback_block(&self, mempool: &SharedMempool) -> StateDelta {
-        let reverted_transactions = mempool.lock().await.rollback_block();
-
-        StateDelta {
-            reverted_transactions,
-            ..Default::default()
-        }
-    }
-
-    #[instrument(target = COMPONENT, name = "block_builder.update_ntx_builder", skip_all, err)]
-    async fn update_ntx_builder(&self, delta: StateDelta) -> anyhow::Result<()> {
-        if !(delta.committed_transactions.is_empty() && delta.reverted_transactions.is_empty()) {
-            let committed = delta
-                .committed_transactions
-                .into_iter()
-                .map(|tx| (tx, TransactionStatus::Committed));
-
-            let reverted = delta
-                .reverted_transactions
-                .into_iter()
-                .map(|tx| (tx, TransactionStatus::Reverted));
-
-            if let Some(mut ntb_client) = self.ntx_builder.clone() {
-                ntb_client.update_transaction_status(committed.chain(reverted)).await.context(
-                    "submitting transaction status updates to network transaction builder",
-                )?;
-            }
-        }
-
-        if !delta.committed_network_notes.is_empty() {
-            if let Some(ntb_client) = self.ntx_builder.clone() {
-                ntb_client
-                    .clone()
-                    .submit_network_notes(
-                        TransactionId::new(
-                            Digest::default(),
-                            Digest::default(),
-                            Digest::default(),
-                            Digest::default(),
-                        ),
-                        delta.committed_network_notes.into_iter(),
-                    )
-                    .await
-                    .context(
-                        "failed to submit newly committed notes to the network transaction builder",
-                    )?;
-            }
-        }
-
-        Ok(())
+    async fn rollback_block(&self, mempool: &SharedMempool) {
+        mempool.lock().await.rollback_block();
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.simulate_proving", skip_all)]
@@ -399,32 +318,18 @@ impl TelemetryInjectorExt for ProposedBlock {
     fn inject_telemetry(&self) {
         let span = Span::current();
 
-        span.set_attribute(
-            "block.nullifiers.count",
-            u32::try_from(self.created_nullifiers().len())
-                .expect("should have less than u32::MAX created nullifiers"),
-        );
-        let num_block_created_notes = self.batches().num_created_notes();
-        span.set_attribute(
-            "block.output_notes.count",
-            u32::try_from(num_block_created_notes)
-                .expect("should have less than u32::MAX block output notes"),
-        );
+        span.set_attribute("block.nullifiers.count", self.created_nullifiers().len());
 
-        let num_batch_created_notes = self.output_note_batches().len();
-        span.set_attribute(
-            "block.batches.output_notes.count",
-            u32::try_from(num_batch_created_notes)
-                .expect("should have less than u32::MAX batch output notes"),
-        );
+        let num_block_created_notes: usize = self.output_note_batches().iter().map(Vec::len).sum();
+        span.set_attribute("block.output_notes.count", num_block_created_notes);
+
+        let num_batch_created_notes = self.batches().num_created_notes();
+        span.set_attribute("block.batches.output_notes.count", num_batch_created_notes);
 
         let num_erased_notes = num_batch_created_notes
             .checked_sub(num_block_created_notes)
             .expect("all batches in the block should not create fewer notes than the block itself");
-        span.set_attribute(
-            "block.erased_notes.count",
-            u32::try_from(num_erased_notes).expect("should have less than u32::MAX erased notes"),
-        );
+        span.set_attribute("block.erased_notes.count", num_erased_notes);
     }
 }
 
@@ -447,14 +352,6 @@ impl TelemetryInjectorExt for ProvenBlock {
         span.set_attribute("block.commitments.note", header.note_root());
         span.set_attribute("block.commitments.transaction", header.tx_commitment());
     }
-}
-
-/// Change in transaction and note state as a result of the block building process.
-#[derive(Default)]
-struct StateDelta {
-    committed_transactions: Vec<TransactionId>,
-    reverted_transactions: BTreeSet<TransactionId>,
-    committed_network_notes: Vec<Note>,
 }
 
 // BLOCK PROVER
@@ -488,21 +385,4 @@ impl BlockProver {
                 .map_err(BuildBlockError::RemoteProverClientError),
         }
     }
-}
-
-// HELPER
-// ================================================================================================
-
-fn get_network_notes(proven_block: &ProvenBlock) -> Vec<Note> {
-    proven_block
-        .output_notes()
-        .filter_map(|(_idx, note)| match note {
-            OutputNote::Full(inner)
-                if inner.metadata().tag().execution_mode() == NoteExecutionMode::Network =>
-            {
-                Some(inner.clone())
-            },
-            _ => None,
-        })
-        .collect()
 }

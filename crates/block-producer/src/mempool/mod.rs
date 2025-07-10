@@ -233,7 +233,7 @@ impl Mempool {
             transactions: TransactionGraph::default(),
             batches: BatchGraph::default(),
             expirations: TransactionExpirations::default(),
-            subscription: SubscriptionProvider::default(),
+            subscription: SubscriptionProvider::new(chain_tip),
         }
     }
 
@@ -392,7 +392,7 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.rollback_block", skip_all)]
-    pub fn rollback_block(&mut self) -> BTreeSet<TransactionId> {
+    pub fn rollback_block(&mut self) {
         let batches = self.block_in_progress.take().expect("No block in progress to be failed");
 
         // Revert all transactions. This is the nuclear (but simplest) solution.
@@ -412,7 +412,7 @@ impl Mempool {
             .copied()
             .collect();
         self.revert_transactions(txs)
-            .expect("transactions from a block must be part of the mempool")
+            .expect("transactions from a block must be part of the mempool");
     }
 
     /// Gets all transactions that expire at the new chain tip and reverts them (and their

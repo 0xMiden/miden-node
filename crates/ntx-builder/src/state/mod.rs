@@ -26,7 +26,7 @@ pub struct TransactionCandidate {
     /// The current inflight state of the account.
     pub account: Account,
     /// A set of notes addressed to this network account.
-    pub _notes: Vec<NetworkNote>,
+    pub notes: Vec<NetworkNote>,
 }
 
 /// Holds the state of the network transaction builder.
@@ -138,11 +138,7 @@ impl State {
             }
 
             self.in_progress.insert(candidate);
-            return TransactionCandidate {
-                account: account.latest_account(),
-                _notes: notes,
-            }
-            .into();
+            return TransactionCandidate { account: account.latest_account(), notes }.into();
         }
 
         None

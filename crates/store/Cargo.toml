@@ -30,7 +30,7 @@ rusqlite               = { features = ["array", "buildtime_bindgen", "bundled"],
 rusqlite_migration     = { version = "2.2" }
 serde                  = { features = ["derive"], version = "1" }
 thiserror              = { workspace = true }
-tokio                  = { features = ["fs", "macros", "net", "rt-multi-thread"], workspace = true }
+tokio                  = { features = ["fs", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
 toml                   = { version = "0.8" }
 tonic                  = { workspace = true }

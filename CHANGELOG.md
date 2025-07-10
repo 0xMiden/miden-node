@@ -11,9 +11,11 @@
 - Added support for TLS to faucet's connection to node RPC (#976).
 - Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
+- Genesis state is now configurable during bootstrapping (#1000)
 - Added configurable network id for the faucet (#1016).
 - Support gRPC server relection `v1alpha` (#1036).
-- Genesis state is now configurable during bootstrapping (#1000)
+- Network transaction builder now tracks inflight txs instead of only committed ones (#1051).
+- Add Otel trace layers to `miden-remote-prover` and `miden-remote-prover-proxy` (#1061).
 
 ### Changes
 

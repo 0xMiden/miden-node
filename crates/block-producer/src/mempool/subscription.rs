@@ -12,7 +12,7 @@ use tokio::sync::mpsc;
 
 use crate::domain::transaction::AuthenticatedTransaction;
 
-#[derive(Default, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct SubscriptionProvider {
     /// The latest event subscription, if any.
     ///
@@ -35,6 +35,14 @@ pub(crate) struct SubscriptionProvider {
 }
 
 impl SubscriptionProvider {
+    pub fn new(chain_tip: BlockNumber) -> Self {
+        Self {
+            chain_tip,
+            subscription: None,
+            inflight_txs: InflightTransactions::default(),
+        }
+    }
+
     /// Creates a new [`MempoolEvent`] subscription.
     ///
     /// This replaces any existing subscription.

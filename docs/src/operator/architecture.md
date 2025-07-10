@@ -1,6 +1,6 @@
 # Node architecture
 
-The node itself consists of four distributed components: store, block-producer, network transaction builder and RPC.
+The node itself consists of four distributed components: store, block-producer, network transaction builder, and RPC.
 We also provide a reference faucet implementation which we use to distribute testnet and devnet tokens.
 
 The components can be run on separate instances when optimised for performance, but can also be run as a single process

@@ -130,8 +130,8 @@ impl State {
             //
             // This is how we keep the number of accounts bounded.
             if account.is_empty() {
-                // We don't mempool_event.kindune update.kind()inflight transactions because if the
-                // account is empty, then it would have no inflight txs.
+                // We don't need to prune the inflight transactions because if the account is empty,
+                // then it would have no inflight txs.
                 self.accounts.remove(&candidate);
                 // We know this account is the backmost one since we just rotated it there.
                 self.queue.pop_back();

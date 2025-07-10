@@ -4,35 +4,39 @@
 
 ### Changes
 
-- [BREAKING] Refactor protobuf messages (#????).
+- [BREAKING] Refactor protobuf messages (#1045).
 
-## v0.10.0 (TBD)
+## v0.10.0 (2025-07-10)
 
 ### Enhancements
 
 - Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
 - Added support for gRPC server side reflection to all components (#949).
-- Compressed faucet background image (#985).
 - Added support for TLS to `miden-proving-service-client` (#968).
 - Added support for TLS to faucet's connection to node RPC (#976).
 - Replaced integer-based duration args with human-readable duration strings (#998 & #1014).
 - [BREAKING] Refactor the `miden-proving-service` proxy status service to use gRPC instead of HTTP (#953).
+- Genesis state is now configurable during bootstrapping (#1000)
 - Added configurable network id for the faucet (#1016).
-- Support gRPC server relection `v1alpha` (#1036).
+- Network transaction builder now tracks inflight txs instead of only committed ones (#1051).
+- Add Otel trace layers to `miden-remote-prover` and `miden-remote-prover-proxy` (#1061).
 
 ### Changes
 
-- Transaction limit per batch is now configurable (default 8) (#1015).
-- Batch limit per block is now configurable (default 8) (#1015).
+- Faucet `PoW` difficulty is now configurable (#924).
 - Separated the store API into three separate services (#932).
 - Added a faucet Dockerfile (#933).
+- Exposed `miden-proving-service` as a library (#956).
 - [BREAKING] Update `RemoteProverError::ConnectionFailed` variant to contain `Error` instead of `String` (#968).
 - [BREAKING] Replace faucet TOML configuration file with flags and env vars (#976).
 - [BREAKING] Replace faucet Init command with CreateApiKeys command (#976).
 - [BREAKING] Consolidate default account filepath for bundled bootstrap and faucet start commands to `account.mac` (#976).
 - [BREAKING] Remove default value account filepath for faucet commands and rename --output-path to --output (#976).
-- Exposed `miden-proving-service` as a library (#956).
 - [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
+- Compressed faucet background image (#985).
+- Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
+- Transaction limit per batch is now configurable (default 8) (#1015).
+- Batch limit per block is now configurable (default 8) (#1015).
 - Faucet challenge expiration time is now configurable (#1017).
 - Removed system monitor from node binary (#1019).
 - [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).
@@ -42,6 +46,7 @@
 - [BREAKING] Rename `ProvingServiceError` to `RemoteProverError` (#1004).
 - [BREAKING] Renamed `Note` to `CommittedNote`, and `NetworkNote` to `Note` in the proto messages (#1022).
 - [BREAKING] Limits of store queries per query parameter enforced (#1028).
+- Support gRPC server reflection `v1alpha` (#1036).
 
 ### Fixes
 

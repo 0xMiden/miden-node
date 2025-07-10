@@ -127,7 +127,7 @@ document.addEventListener('DOMContentLoaded', function () {
         // Search for a nonce that satisfies the proof of work
         status.textContent = "Solving Proof of Work...";
 
-        const nonce = await findValidNonce(powData.challenge, powData.difficulty);
+        const nonce = await findValidNonce(powData.challenge, powData.target);
 
         // Build query parameters for the request using new challenge format
         const params = {
@@ -200,21 +200,17 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Function to find a valid nonce for proof of work using the new challenge format
-    async function findValidNonce(challenge, difficulty) {
+    async function findValidNonce(challenge, target) {
         // Check again if SHA3 is available
         if (typeof sha3_256 === 'undefined') {
             console.error("SHA3 library not properly loaded. SHA3 object:", sha3_256);
             throw new Error('SHA3 library not properly loaded. Please refresh the page.');
         }
 
-        // Parse difficulty (number of required leading zero BYTES, each byte = 2 hex digits)
-        const requiredZeros = parseInt(difficulty);
-        const requiredPattern = '00'.repeat(requiredZeros); // Each zero byte = "00" in hex
-
         let nonce = 0;
-        let validNonceFound = false;
+        let targetNum = BigInt(target);
 
-        while (!validNonceFound) {
+        while (true) {
             // Generate a random nonce
             nonce = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
 
@@ -223,19 +219,18 @@ document.addEventListener('DOMContentLoaded', function () {
                 let hash = sha3_256.create();
                 hash.update(challenge);  // Use the hex-encoded challenge string directly
 
-                // Convert nonce to 8-byte little-endian format to match backend
+                // Convert nonce to 8-byte big-endian format to match backend
                 const nonceBytes = new ArrayBuffer(8);
                 const nonceView = new DataView(nonceBytes);
-                nonceView.setBigUint64(0, BigInt(nonce), true); // true = little-endian
+                nonceView.setBigUint64(0, BigInt(nonce), false); // false = big-endian
                 const nonceByteArray = new Uint8Array(nonceBytes);
                 hash.update(nonceByteArray);
 
-                // Get the hex digest
-                let digest = hash.hex().toString();
+                // Take the first 8 bytes of the hash and parse them as u64 in big-endian
+                let digest = BigInt("0x" + hash.hex().slice(0, 16));
 
-                // Check if the hash starts with the required number of zeros
-                if (digest.startsWith(requiredPattern)) {
-                    validNonceFound = true;
+                // Check if the hash is less than the target
+                if (digest < targetNum) {
                     return nonce;
                 }
             } catch (error) {

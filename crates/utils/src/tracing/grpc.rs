@@ -9,13 +9,39 @@ macro_rules! rpc_span {
     };
 }
 
-/// A [`trace_fn`](tonic::transport::server::Server) implementation for the RPC which
+/// Represents an Otel compatible, traced Miden component.
+///
+/// Used to select an appropriate [`tracing::Span`] for the tonic server to use.
+#[derive(Copy, Clone)]
+pub enum TracedComponent {
+    Rpc,
+    BlockProducer,
+    StoreRpc,
+    StoreBlockProducer,
+    StoreNtxBuilder,
+    RemoteProver,
+    RemoteProverProxy,
+}
+
+/// Returns a [`trace_fn`](tonic::transport::server::Server) implementation for the RPC which
 /// adds open-telemetry information to the span.
 ///
-/// Creates an `info` span following the open-telemetry standard: `rpc.rpc/{method}`.
+/// Creates an `info` span following the open-telemetry standard: `{service}.rpc/{method}`.
 /// Additionally also pulls in remote tracing context which allows the server trace to be connected
 /// to the client's origin trace.
-pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+pub fn traced_span_fn<T>(component: TracedComponent) -> fn(&http::Request<T>) -> tracing::Span {
+    match component {
+        TracedComponent::Rpc => rpc_trace_fn,
+        TracedComponent::BlockProducer => block_producer_trace_fn,
+        TracedComponent::StoreRpc => store_rpc_trace_fn,
+        TracedComponent::StoreBlockProducer => store_block_producer_trace_fn,
+        TracedComponent::StoreNtxBuilder => store_ntx_builder_trace_fn,
+        TracedComponent::RemoteProver => remote_prover_trace_fn,
+        TracedComponent::RemoteProverProxy => remote_prover_proxy_trace_fn,
+    }
+}
+
+fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let span = match request.uri().path().rsplit('/').next() {
         Some("CheckNullifiers") => rpc_span!("rpc.rpc", "CheckNullifiers"),
         Some("CheckNullifiersByPrefix") => rpc_span!("rpc.rpc", "CheckNullifiersByPrefix"),
@@ -34,13 +60,7 @@ pub fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     add_network_attributes(span, request)
 }
 
-/// A [`trace_fn`](tonic::transport::server::Server) implementation for the block producer which
-/// adds open-telemetry information to the span.
-///
-/// Creates an `info` span following the open-telemetry standard: `block-producer.rpc/{method}`.
-/// Additionally also pulls in remote tracing context which allows the server trace to be connected
-/// to the client's origin trace.
-pub fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let span = match request.uri().path().rsplit('/').next() {
         Some("SubmitProvenTransaction") => {
             rpc_span!("block-producer.rpc", "SubmitProvenTransaction")
@@ -55,13 +75,7 @@ pub fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     add_network_attributes(span, request)
 }
 
-/// A [`trace_fn`](tonic::transport::server::Server) implementation for the store's RPC API which
-/// adds open-telemetry information to the span.
-///
-/// Creates an `info` span following the open-telemetry standard: `store.rpc.rpc/{method}`.
-/// Additionally also pulls in remote tracing context which allows the server trace to be connected
-/// to the client's origin trace.
-pub fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
     let span = match method {
         "CheckNullifiers" => rpc_span!("store.rpc.rpc", "CheckNullifiers"),
@@ -82,13 +96,7 @@ pub fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     add_network_attributes(span, request)
 }
 
-/// A [`trace_fn`](tonic::transport::server::Server) implementation for the store's block-producer
-/// API which adds open-telemetry information to the span.
-///
-/// Creates an `info` span following the open-telemetry standard:
-/// `store.block-producer.rpc/{method}`. Additionally also pulls in remote tracing context which
-/// allows the server trace to be connected to the client's origin trace.
-pub fn store_block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+fn store_block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
     let span = match method {
         "ApplyBlock" => rpc_span!("store.block-producer.rpc", "ApplyBlock"),
@@ -103,13 +111,7 @@ pub fn store_block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::
     add_network_attributes(span, request)
 }
 
-/// A [`trace_fn`](tonic::transport::server::Server) implementation for the store's ntx-builder API
-/// which adds open-telemetry information to the span.
-///
-/// Creates an `info` span following the open-telemetry standard: `store.ntx-builder.rpc/{method}`.
-/// Additionally also pulls in remote tracing context which allows the server trace to be connected
-/// to the client's origin trace.
-pub fn store_ntx_builder_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+fn store_ntx_builder_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
     let span = match method {
         "GetBlockHeaderByNumber" => rpc_span!("store.ntx-builder.rpc", "GetBlockHeaderByNumber"),
@@ -123,6 +125,30 @@ pub fn store_ntx_builder_trace_fn<T>(request: &http::Request<T>) -> tracing::Spa
             rpc_span!("store.ntx-builder.rpc", "GetNetworkAccountDetailsByPrefix")
         },
         _ => rpc_span!("store.ntx-builder.rpc", "Unknown"),
+    };
+
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
+}
+
+fn remote_prover_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
+    let span = match method {
+        "Prove" => rpc_span!("remote-prover.rpc", "Prove"),
+        "Status" => rpc_span!("remote-prover.rpc", "Status"),
+        _ => rpc_span!("remote-prover.rpc", "Unknown"),
+    };
+
+    let span = add_otel_span_attributes(span, request);
+    add_network_attributes(span, request)
+}
+
+fn remote_prover_proxy_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
+    let span = if method == "Status" {
+        rpc_span!("remote-prover-proxy.rpc", "Status")
+    } else {
+        rpc_span!("remote-prover-proxy.rpc", "Unknown")
     };
 
     let span = add_otel_span_attributes(span, request);

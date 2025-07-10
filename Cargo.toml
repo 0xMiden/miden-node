@@ -45,12 +45,12 @@ miden-node-utils           = { path = "crates/utils", version = "0.10" }
 miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.10" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { version = "0.10" }
+miden-lib             = { version = "0.10" }
+miden-objects         = { default-features = false, version = "0.10" }
+miden-testing         = { version = "0.10" }
+miden-tx              = { default-features = false, version = "0.10" }
+miden-tx-batch-prover = { version = "0.10" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { version = "0.15" }
@@ -61,14 +61,18 @@ assert_matches     = { version = "1.5" }
 async-trait        = { version = "0.1" }
 fs-err             = { version = "3" }
 futures            = { version = "0.3" }
+hex                = { version = "0.4" }
 http               = { version = "1.3" }
 humantime          = { version = "2.2" }
 itertools          = { version = "0.14" }
 prost              = { version = "0.13" }
 rand               = { version = "0.9" }
+rand_chacha        = { version = "0.9" }
+serde              = { features = ["derive"], version = "1" }
 thiserror          = { default-features = false, version = "2.0" }
-tokio              = { features = ["rt-multi-thread"], version = "1.45" }
+tokio              = { features = ["rt-multi-thread"], version = "1.46" }
 tokio-stream       = { version = "0.1" }
+toml               = { version = "0.8" }
 tonic              = { version = "0.13" }
 tonic-reflection   = { version = "0.13" }
 tower              = { version = "0.5" }
@@ -82,12 +86,13 @@ url                = { features = ["serde"], version = "2.5" }
 # Pedantic lints are set to a lower priority which allows lints in the group to be selectively enabled.
 pedantic = { level = "warn", priority = -1 }
 
-cast_possible_truncation    = "allow" # Overly many instances especially regarding indices.
-ignored_unit_patterns       = "allow" # Stylistic choice.
-large_types_passed_by_value = "allow" # Triggered by BlockHeader being Copy + 334 bytes.
-missing_errors_doc          = "allow" # TODO: fixup and enable this.
-missing_panics_doc          = "allow" # TODO: fixup and enable this.
-module_name_repetitions     = "allow" # Many triggers, and is a stylistic choice.
-must_use_candidate          = "allow" # This marks many fn's which isn't helpful.
-should_panic_without_expect = "allow" # We don't care about the specific panic message.
+cast_possible_truncation     = "allow" # Overly many instances especially regarding indices.
+from_iter_instead_of_collect = "allow" # at times `FromIter` is much more readable
+ignored_unit_patterns        = "allow" # Stylistic choice.
+large_types_passed_by_value  = "allow" # Triggered by BlockHeader being Copy + 334 bytes.
+missing_errors_doc           = "allow" # TODO: fixup and enable this.
+missing_panics_doc           = "allow" # TODO: fixup and enable this.
+module_name_repetitions      = "allow" # Many triggers, and is a stylistic choice.
+must_use_candidate           = "allow" # This marks many fn's which isn't helpful.
+should_panic_without_expect  = "allow" # We don't care about the specific panic message.
 # End of pedantic lints.

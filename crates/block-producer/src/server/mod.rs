@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
@@ -11,18 +11,19 @@ use miden_node_proto::{
         },
         transaction::ProvenTransaction as ProtoProvenTransaction,
     },
-    ntx_builder,
 };
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::{
     formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::{OtelInterceptor, block_producer_trace_fn},
+    tracing::grpc::{TracedComponent, traced_span_fn},
 };
 use miden_objects::{
-    block::BlockNumber, note::Nullifier, transaction::ProvenTransaction,
-    utils::serde::Deserializable,
+    block::BlockNumber, transaction::ProvenTransaction, utils::serde::Deserializable,
 };
-use tokio::{net::TcpListener, sync::Mutex};
+use tokio::{
+    net::TcpListener,
+    sync::{Barrier, Mutex},
+};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
@@ -33,15 +34,12 @@ use crate::{
     COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION,
     SERVER_NUM_BATCH_BUILDERS,
     batch_builder::BatchBuilder,
-    block_builder::{BlockBuilder, NtxClient},
+    block_builder::BlockBuilder,
     domain::transaction::AuthenticatedTransaction,
     errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
     mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
     store::StoreClient,
 };
-
-#[cfg(test)]
-mod tests;
 
 /// The block producer server.
 ///
@@ -54,8 +52,6 @@ pub struct BlockProducer {
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
     pub store_address: SocketAddr,
-    /// The address of the network transaction builder.
-    pub ntx_builder_address: Option<SocketAddr>,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -68,6 +64,11 @@ pub struct BlockProducer {
     pub max_txs_per_batch: usize,
     /// The maximum number of batches per block.
     pub max_batches_per_block: usize,
+    /// Block production only begins after this checkpoint barrier completes.
+    ///
+    /// The block-producers gRPC endpoint will be available before this point, so this lets the
+    /// mempool synchronize its event stream without risking a race condition.
+    pub production_checkpoint: Arc<Barrier>,
 }
 
 impl BlockProducer {
@@ -113,18 +114,10 @@ impl BlockProducer {
             .await
             .context("failed to bind to block producer address")?;
 
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
-
         info!(target: COMPONENT, "Server initialized");
 
-        let block_builder = BlockBuilder::new(
-            store.clone(),
-            ntx_builder,
-            self.block_prover_url,
-            self.block_interval,
-        );
+        let block_builder =
+            BlockBuilder::new(store.clone(), self.block_prover_url, self.block_interval);
         let batch_builder = BatchBuilder::new(
             store.clone(),
             SERVER_NUM_BATCH_BUILDERS,
@@ -150,6 +143,20 @@ impl BlockProducer {
         // any complete or fail, we can shutdown the rest (somewhat) gracefully.
         let mut tasks = tokio::task::JoinSet::new();
 
+        // Launch the gRPC server and wait at the checkpoint for any other components to be in sync.
+        //
+        // This is used to ensure the ntb can subscribe to the mempool events without playing catch
+        // up caused by block-production.
+        //
+        // This is a temporary work-around until the ntb can resync on the fly.
+        let rpc_id = tasks
+            .spawn({
+                let mempool = mempool.clone();
+                async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await }
+            })
+            .id();
+        self.production_checkpoint.wait().await;
+
         let batch_builder_id = tasks
             .spawn({
                 let mempool = mempool.clone();
@@ -166,16 +173,6 @@ impl BlockProducer {
                     block_builder.run(mempool).await;
                     Ok(())
                 }
-            })
-            .id();
-
-        let ntx_builder = self
-            .ntx_builder_address
-            .map(|socket| ntx_builder::Client::connect_lazy(socket, OtelInterceptor));
-
-        let rpc_id = tasks
-            .spawn(async move {
-                BlockProducerRpcServer::new(mempool, store, ntx_builder).serve(listener).await
             })
             .id();
 
@@ -219,8 +216,6 @@ struct BlockProducerRpcServer {
     mempool: Mutex<SharedMempool>,
 
     store: StoreClient,
-
-    ntx_builder: Option<NtxClient>,
 }
 
 #[tonic::async_trait]
@@ -230,18 +225,18 @@ impl api_server::Api for BlockProducerRpcServer {
         request: tonic::Request<ProtoProvenTransaction>,
     ) -> Result<tonic::Response<SubmitProvenTransactionResponse>, Status> {
         self.submit_proven_transaction(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            // This Status::from mapping takes care of hiding internal errors.
-            .map_err(Into::into)
+             .await
+             .map(tonic::Response::new)
+             // This Status::from mapping takes care of hiding internal errors.
+             .map_err(Into::into)
     }
 
     #[instrument(
-        target = COMPONENT,
-        name = "block_producer.server.status",
-        skip_all,
-        err
-    )]
+         target = COMPONENT,
+         name = "block_producer.server.status",
+         skip_all,
+         err
+     )]
     async fn status(
         &self,
         _request: tonic::Request<()>,
@@ -296,12 +291,8 @@ impl tokio_stream::Stream for MempoolEventSubscription {
 }
 
 impl BlockProducerRpcServer {
-    pub fn new(mempool: SharedMempool, store: StoreClient, ntx_client: Option<NtxClient>) -> Self {
-        Self {
-            mempool: Mutex::new(mempool),
-            store,
-            ntx_builder: ntx_client,
-        }
+    pub fn new(mempool: SharedMempool, store: StoreClient) -> Self {
+        Self { mempool: Mutex::new(mempool), store }
     }
 
     async fn serve(self, listener: TcpListener) -> anyhow::Result<()> {
@@ -321,7 +312,10 @@ impl BlockProducerRpcServer {
 
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
-            .layer(TraceLayer::new_for_grpc().make_span_with(block_producer_trace_fn))
+            .layer(
+                TraceLayer::new_for_grpc()
+                    .make_span_with(traced_span_fn(TracedComponent::StoreBlockProducer)),
+            )
             .add_service(api_server::ApiServer::new(self))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
@@ -331,11 +325,11 @@ impl BlockProducerRpcServer {
     }
 
     #[instrument(
-        target = COMPONENT,
-        name = "block_producer.server.submit_proven_transaction",
-        skip_all,
-        err
-    )]
+         target = COMPONENT,
+         name = "block_producer.server.submit_proven_transaction",
+         skip_all,
+         err
+     )]
     async fn submit_proven_transaction(
         &self,
         request: ProtoProvenTransaction,
@@ -363,29 +357,10 @@ impl BlockProducerRpcServer {
         let inputs = self.store.get_tx_inputs(&tx).await.map_err(VerifyTxError::from)?;
 
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
-        let tx_id = tx.id();
-        let tx_nullifiers: Vec<Nullifier> = tx.nullifiers().collect();
-
         let tx = AuthenticatedTransaction::new(tx, inputs)?;
 
-        // Launch a task for updating the mempool, and send the update to the network transaction
-        // builder
-        let submit_tx_response =
-            self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-                SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
-            });
-
-        if let Some(mut ntb_client) = self.ntx_builder.clone() {
-            if let Err(err) =
-                ntb_client.update_network_notes(tx_id, tx_nullifiers.into_iter()).await
-            {
-                error!(
-                    target: COMPONENT,
-                    message = %err,
-                    "error submitting network notes updates to ntx builder"
-                );
-            }
-        }
-        submit_tx_response
+        self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
+            SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
+        })
     }
 }

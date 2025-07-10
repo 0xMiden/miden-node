@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     convert::Infallible,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::Context;
@@ -37,6 +37,7 @@ mod get_pow;
 mod get_tokens;
 mod pow;
 pub use api_key::ApiKey;
+pub use pow::PoWConfig;
 
 // FAUCET STATE
 // ================================================================================================
@@ -58,8 +59,7 @@ impl Server {
         asset_options: AssetOptions,
         request_sender: RequestSender,
         pow_secret: &str,
-        pow_challenge_lifetime: Duration,
-        pow_cleanup_interval: Duration,
+        pow_config: PoWConfig,
         api_keys: &[ApiKey],
     ) -> Self {
         let mint_state = GetTokensState::new(request_sender, asset_options.clone());
@@ -75,7 +75,7 @@ impl Server {
         hasher.update(pow_secret.as_bytes());
         let secret_bytes: [u8; 32] = hasher.finalize().into();
 
-        let pow = PoW::new(secret_bytes, pow_challenge_lifetime, pow_cleanup_interval);
+        let pow = PoW::new(secret_bytes, pow_config);
 
         Server {
             mint_state,

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, num::NonZeroUsize, path::PathBuf};
+use std::{collections::HashMap, path::PathBuf, sync::Arc};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -6,11 +6,13 @@ use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
-use tokio::{net::TcpListener, task::JoinSet};
+use tokio::{net::TcpListener, sync::Barrier, task::JoinSet};
 use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
-use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL, NtxBuilderConfig};
+use crate::commands::{
+    BlockProducerConfig, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE, NtxBuilderConfig,
+};
 
 #[derive(clap::Subcommand)]
 #[expect(clippy::large_enum_variant, reason = "This is a single use enum")]
@@ -28,6 +30,9 @@ pub enum BundledCommand {
         // Directory to write the account data to.
         #[arg(long, value_name = "DIR")]
         accounts_directory: PathBuf,
+        /// Constructs the genesis block from the given toml file.
+        #[arg(long, env = ENV_GENESIS_CONFIG_FILE, value_name = "FILE")]
+        genesis_config_file: Option<PathBuf>,
     },
 
     /// Runs all three node components in the same process.
@@ -61,11 +66,16 @@ pub enum BundledCommand {
 impl BundledCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
         match self {
-            BundledCommand::Bootstrap { data_directory, accounts_directory } => {
+            BundledCommand::Bootstrap {
+                data_directory,
+                accounts_directory,
+                genesis_config_file,
+            } => {
                 // Currently the bundled bootstrap is identical to the store's bootstrap.
                 crate::commands::store::StoreCommand::Bootstrap {
                     data_directory,
                     accounts_directory,
+                    genesis_config_file,
                 }
                 .handle()
                 .await
@@ -104,11 +114,7 @@ impl BundledCommand {
             .context("Failed to bind to block-producer gRPC endpoint")?
             .local_addr()
             .context("Failed to retrieve the block-producer's gRPC address")?;
-        let ntx_builder_address = TcpListener::bind("127.0.0.1:0")
-            .await
-            .context("Failed to bind to ntx-builder gRPC endpoint")?
-            .local_addr()
-            .context("Failed to retrieve the ntx-builder's gRPC address")?;
+
         // Store addresses for each exposed API
         let store_rpc_listener = TcpListener::bind("127.0.0.1:0")
             .await
@@ -146,23 +152,34 @@ impl BundledCommand {
             })
             .id();
 
+        // A sync point between the ntb and block-producer components.
+        let checkpoint = if should_start_ntb {
+            Barrier::new(2)
+        } else {
+            Barrier::new(1)
+        };
+        let checkpoint = Arc::new(checkpoint);
+
         // Start block-producer. The block-producer's endpoint is available after loading completes.
         let block_producer_id = join_set
-            .spawn(async move {
-                BlockProducer {
-                    block_producer_address,
-                    store_address: store_block_producer_address,
-                    ntx_builder_address: should_start_ntb.then_some(ntx_builder_address),
-                    batch_prover_url: block_producer.batch_prover_url,
-                    block_prover_url: block_producer.block_prover_url,
-                    batch_interval: block_producer.batch_interval,
-                    block_interval: block_producer.block_interval,
-                    max_batches_per_block: block_producer.max_batches_per_block,
-                    max_txs_per_batch: block_producer.max_txs_per_batch,
+            .spawn({
+                let checkpoint = Arc::clone(&checkpoint);
+                async move {
+                    BlockProducer {
+                        block_producer_address,
+                        store_address: store_block_producer_address,
+                        batch_prover_url: block_producer.batch_prover_url,
+                        block_prover_url: block_producer.block_prover_url,
+                        batch_interval: block_producer.batch_interval,
+                        block_interval: block_producer.block_interval,
+                        max_batches_per_block: block_producer.max_batches_per_block,
+                        max_txs_per_batch: block_producer.max_txs_per_batch,
+                        production_checkpoint: checkpoint,
+                    }
+                    .serve()
+                    .await
+                    .context("failed while serving block-producer component")
                 }
-                .serve()
-                .await
-                .context("failed while serving block-producer component")
             })
             .id();
 
@@ -196,14 +213,13 @@ impl BundledCommand {
             let id = join_set
                 .spawn(async move {
                     NetworkTransactionBuilder {
-                        ntx_builder_address,
                         store_url: store_ntx_builder_url,
                         block_producer_address,
                         tx_prover_url: ntx_builder.tx_prover_url,
                         ticker_interval: ntx_builder.ticker_interval,
-                        account_cache_capacity: NonZeroUsize::new(128).unwrap(),
+                        bp_checkpoint: checkpoint,
                     }
-                    .serve_once()
+                    .serve_new()
                     .await
                     .context("failed while serving ntx builder component")
                 })

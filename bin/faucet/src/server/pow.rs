@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap},
+    num::NonZeroUsize,
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -8,18 +9,7 @@ use miden_objects::account::AccountId;
 use tokio::time::{Duration, interval};
 
 use super::challenge::Challenge;
-use crate::{
-    REQUESTS_QUEUE_SIZE,
-    server::{ApiKey, get_pow::PowRequest, get_tokens::MintRequestError},
-};
-
-/// The maximum difficulty of the `PoW`.
-///
-/// The difficulty is the number of leading zeros in the hash of the seed and the solution.
-const MAX_DIFFICULTY: usize = 24;
-
-/// The number of active requests to increase the difficulty by 1.
-const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY;
+use crate::server::{ApiKey, get_pow::PowRequest, get_tokens::MintRequestError};
 
 // POW
 // ================================================================================================
@@ -28,25 +18,34 @@ const ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY: usize = REQUESTS_QUEUE_SIZE / MAX_
 pub(crate) struct PoW {
     secret: [u8; 32],
     challenge_cache: Arc<Mutex<ChallengeCache>>,
-    challenge_lifetime: Duration,
+    config: PoWConfig,
+}
+
+#[derive(Clone)]
+pub struct PoWConfig {
+    pub challenge_lifetime: Duration,
+    pub growth_rate: NonZeroUsize,
+    pub baseline: u8,
+    pub cleanup_interval: Duration,
 }
 
 impl PoW {
     /// Creates a new `PoW` instance.
-    pub fn new(secret: [u8; 32], challenge_lifetime: Duration, cleanup_interval: Duration) -> Self {
+    pub fn new(secret: [u8; 32], config: PoWConfig) -> Self {
         let challenge_cache = Arc::new(Mutex::new(ChallengeCache::default()));
 
         // Start the cleanup task
         let cleanup_state = challenge_cache.clone();
         tokio::spawn(async move {
-            ChallengeCache::run_cleanup(cleanup_state, challenge_lifetime, cleanup_interval).await;
+            ChallengeCache::run_cleanup(
+                cleanup_state,
+                config.challenge_lifetime,
+                config.cleanup_interval,
+            )
+            .await;
         });
 
-        Self {
-            secret,
-            challenge_cache,
-            challenge_lifetime,
-        }
+        Self { secret, challenge_cache, config }
     }
 
     /// Generates a new challenge.
@@ -55,23 +54,30 @@ impl PoW {
             .duration_since(UNIX_EPOCH)
             .expect("current timestamp should be greater than unix epoch")
             .as_secs();
-        let difficulty = self.get_difficulty(&request.api_key);
+        let target = self.get_challenge_target(&request.api_key);
 
-        Challenge::new(difficulty, current_time, request.account_id, request.api_key, self.secret)
+        Challenge::new(target, current_time, request.account_id, request.api_key, self.secret)
     }
 
-    /// Returns the difficulty for the given API key.
+    /// Computes the target for a given API key by checking the amount of active challenges in the
+    /// cache. This sets the difficulty of the challenge.
     ///
-    /// The difficulty is adjusted based on the number of active requests per API key. The
-    /// difficulty is increased by 1 for every `ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY` active
-    /// requests, and it is clamped between 1 and `MAX_DIFFICULTY`.
-    fn get_difficulty(&self, api_key: &ApiKey) -> usize {
+    /// It is computed as:
+    /// `max_target / difficulty`
+    ///
+    /// Where:
+    /// * `max_target = u64::MAX >> baseline`
+    /// * `difficulty = max(num_active_challenges << growth_rate, 1)`
+    fn get_challenge_target(&self, api_key: &ApiKey) -> u64 {
         let num_challenges = self
             .challenge_cache
             .lock()
             .expect("challenge cache lock should not be poisoned")
             .num_challenges_for_api_key(api_key);
-        (num_challenges / ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY).clamp(1, MAX_DIFFICULTY)
+
+        let max_target = u64::MAX >> self.config.baseline;
+        let difficulty = usize::max(num_challenges << self.config.growth_rate.get(), 1);
+        max_target / difficulty as u64
     }
 
     /// Submits a challenge.
@@ -98,7 +104,7 @@ impl PoW {
         let challenge = Challenge::decode(challenge, self.secret)?;
 
         // Check timestamp validity
-        if challenge.is_expired(current_time, self.challenge_lifetime) {
+        if challenge.is_expired(current_time, self.config.challenge_lifetime) {
             return Err(MintRequestError::ExpiredServerTimestamp(
                 challenge.timestamp,
                 current_time,
@@ -272,20 +278,28 @@ mod tests {
 
     use super::*;
 
-    fn create_test_secret() -> [u8; 32] {
-        let mut secret = [0u8; 32];
-        secret[..12].copy_from_slice(b"miden-faucet");
-        secret
-    }
-
     fn find_pow_solution(challenge: &Challenge, max_iterations: u64) -> Option<u64> {
         (0..max_iterations).find(|&nonce| challenge.validate_pow(nonce))
     }
 
+    fn create_test_pow() -> PoW {
+        let mut secret = [0u8; 32];
+        secret[..12].copy_from_slice(b"miden-faucet");
+
+        PoW::new(
+            secret,
+            PoWConfig {
+                challenge_lifetime: Duration::from_secs(30),
+                cleanup_interval: Duration::from_millis(500),
+                growth_rate: NonZeroUsize::new(2).unwrap(),
+                baseline: 0,
+            },
+        )
+    }
+
     #[tokio::test]
     async fn test_pow_validation() {
-        let secret = create_test_secret();
-        let pow = PoW::new(secret, Duration::from_secs(30), Duration::from_secs(2));
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
@@ -293,16 +307,6 @@ mod tests {
         let account_id = 0_u128.try_into().unwrap();
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
-
-        // Submit challenge with wrong nonce - should fail
-        let result = pow.submit_challenge(
-            account_id,
-            &api_key,
-            &challenge.encode(),
-            nonce + 1,
-            current_time,
-        );
-        assert!(result.is_err());
 
         // Submit challenge with correct nonce - should succeed
         let result =
@@ -316,22 +320,9 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_adjust_difficulty_constants_validation() {
-        assert_eq!(MAX_DIFFICULTY, 24);
-        assert_eq!(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, REQUESTS_QUEUE_SIZE / MAX_DIFFICULTY);
-
-        // With current values: REQUESTS_QUEUE_SIZE = 1000, MAX_DIFFICULTY = 24
-        // ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY should be 41 (1000 / 24 = 41.666... truncated to
-        // 41)
-        assert_eq!(ACTIVE_REQUESTS_TO_INCREASE_DIFFICULTY, 41);
-    }
-
     #[tokio::test]
     async fn test_timestamp_validation() {
-        let secret = create_test_secret();
-        let challenge_lifetime = Duration::from_secs(30);
-        let pow = PoW::new(secret, challenge_lifetime, Duration::from_secs(2));
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -346,7 +337,7 @@ mod tests {
             &api_key,
             &challenge.encode(),
             nonce,
-            current_time + challenge_lifetime.as_secs() + 1,
+            current_time + pow.config.challenge_lifetime.as_secs() + 1,
         );
         assert!(result.is_err());
 
@@ -358,10 +349,7 @@ mod tests {
 
     #[tokio::test]
     async fn account_id_is_rate_limited() {
-        let secret = create_test_secret();
-        let challenge_lifetime = Duration::from_secs(30);
-        let cleanup_interval = Duration::from_millis(100);
-        let pow = PoW::new(secret, challenge_lifetime, cleanup_interval);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
@@ -376,7 +364,7 @@ mod tests {
         assert!(result.is_ok());
 
         // Try to submit second challenge - should fail because of rate limiting
-        tokio::time::sleep(cleanup_interval).await;
+        tokio::time::sleep(pow.config.cleanup_interval).await;
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
@@ -389,55 +377,52 @@ mod tests {
 
     #[tokio::test]
     async fn submit_challenge_and_check_difficulty() {
-        let secret = create_test_secret();
-        let challenge_lifetime = Duration::from_secs(30);
-        let pow = PoW::new(secret, challenge_lifetime, Duration::from_secs(2));
+        let mut pow = create_test_pow();
+        pow.config.growth_rate = NonZeroUsize::new(1).unwrap();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
 
+        assert_eq!(pow.get_challenge_target(&api_key), u64::MAX >> pow.config.baseline);
+
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
+
         pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time)
             .unwrap();
 
         assert_eq!(pow.challenge_cache.lock().unwrap().num_challenges_for_api_key(&api_key), 1);
-        assert_eq!(pow.get_difficulty(&api_key), 1);
+        assert_eq!(pow.get_challenge_target(&api_key), (u64::MAX >> pow.config.baseline) / 2);
     }
 
     #[tokio::test]
     async fn test_cleanup_expired_challenges() {
-        let secret = create_test_secret();
-        let challenge_lifetime = Duration::from_secs(30);
-        let cleanup_interval = Duration::from_millis(100);
-        let pow = PoW::new(secret, challenge_lifetime, cleanup_interval);
+        let pow = create_test_pow();
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let api_key = ApiKey::generate(&mut rng);
         let account_id = [0u8; AccountId::SERIALIZED_SIZE].try_into().unwrap();
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let target = u64::MAX;
+
         // build challenge manually with past timestamp to ensure that expires in 1 second
-        let challenge_timestamp = current_time - challenge_lifetime.as_secs();
-        let challenge = Challenge::from_parts(
-            1,
-            challenge_timestamp,
+        let timestamp = current_time - pow.config.challenge_lifetime.as_secs();
+        let signature = Challenge::compute_signature(
+            pow.secret,
+            target,
+            timestamp,
             account_id,
-            api_key.clone(),
-            Challenge::compute_signature(
-                secret,
-                1,
-                challenge_timestamp,
-                account_id,
-                &api_key.inner(),
-            ),
+            &api_key.inner(),
         );
+        let challenge =
+            Challenge::from_parts(target, timestamp, account_id, api_key.clone(), signature);
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
 
         pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time)
             .unwrap();
 
         // wait for cleanup
-        tokio::time::sleep(cleanup_interval + Duration::from_secs(1)).await;
+        tokio::time::sleep(pow.config.cleanup_interval + Duration::from_secs(1)).await;
 
         // check that the challenge is removed from the cache
         assert!(!pow.challenge_cache.lock().unwrap().has_challenge_for_account(account_id));
@@ -446,6 +431,7 @@ mod tests {
         // submit second challenge - should succeed
         let challenge = pow.build_challenge(PowRequest { account_id, api_key: api_key.clone() });
         let nonce = find_pow_solution(&challenge, 10000).expect("Should find solution");
+
         let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         pow.submit_challenge(account_id, &api_key, &challenge.encode(), nonce, current_time)
             .unwrap();

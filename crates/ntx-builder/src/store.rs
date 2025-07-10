@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use miden_node_proto::{
     domain::{account::NetworkAccountPrefix, note::NetworkNote},
     errors::{ConversionError, MissingFieldHelper},
@@ -46,15 +48,41 @@ impl StoreClient {
         Self { inner: store }
     }
 
-    /// Returns the latest block's header from the store.
-    #[allow(dead_code)]
-    #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
-    pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
+    #[instrument(target = COMPONENT, name = "store.client.genesis_header", skip_all, err)]
+    pub async fn genesis_header_with_retry(&self) -> Result<BlockHeader, StoreError> {
+        let mut retry_counter = 0;
+        loop {
+            match self.genesis_header().await {
+                Err(StoreError::GrpcClientError(err)) => {
+                    // exponential backoff with base 500ms and max 30s
+                    let backoff = Duration::from_millis(500)
+                        .saturating_mul(1 << retry_counter)
+                        .min(Duration::from_secs(30));
+
+                    tracing::warn!(
+                        ?backoff,
+                        %retry_counter,
+                        %err,
+                        "store connection failed while fetching genesis header, retrying"
+                    );
+
+                    retry_counter += 1;
+                    tokio::time::sleep(backoff).await;
+                },
+                result => return result,
+            }
+        }
+    }
+
+    async fn genesis_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
             .inner
             .clone()
             .get_block_header_by_number(tonic::Request::new(
-                store_proto::BlockHeaderByNumberRequest::default(),
+                store_proto::BlockHeaderByNumberRequest {
+                    block_num: Some(BlockNumber::GENESIS.as_u32()),
+                    include_mmr_proof: None,
+                },
             ))
             .await?
             .into_inner()

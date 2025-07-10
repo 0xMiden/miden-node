@@ -4,8 +4,9 @@
 pub mod account;
 pub mod block_producer;
 pub mod blockchain;
+pub mod note;
 pub mod ntx_builder;
 pub mod primitives;
 pub mod rpc;
-pub mod shared;
 pub mod store;
+pub mod transaction;

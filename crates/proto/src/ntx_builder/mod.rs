@@ -11,7 +11,7 @@ use tonic::{
     transport::{Body, Channel, Endpoint},
 };
 
-use crate::generated::{blockchain as blockchain_proto, ntx_builder as ntx_builder_proto};
+use crate::generated::ntx_builder as ntx_builder_proto;
 
 type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 type GeneratedClient<T> = crate::generated::ntx_builder::api_client::ApiClient<T>;
@@ -52,7 +52,7 @@ where
         tx_id: TransactionId,
         notes: impl Iterator<Item = Note>,
     ) -> Result<(), tonic::Status> {
-        let request = ntx_builder_proto::SubmitNetworkNotes {
+        let request = ntx_builder_proto::TransactionNetworkNotes {
             transaction_id: Some(tx_id.into()),
             note: notes.map(Into::into).collect(),
         };
@@ -61,15 +61,15 @@ where
 
     pub async fn update_transaction_status(
         &mut self,
-        statuses: impl Iterator<Item = (TransactionId, blockchain_proto::TransactionStatus)>,
+        statuses: impl Iterator<
+            Item = (TransactionId, ntx_builder_proto::transaction_status::TransactionStatus),
+        >,
     ) -> Result<(), tonic::Status> {
-        let request = ntx_builder_proto::UpdateTransactionStatus {
+        let request = ntx_builder_proto::TransactionStatus {
             updates: statuses
-                .map(|(id, status)| {
-                    ntx_builder_proto::update_transaction_status::TransactionUpdate {
-                        transaction_id: Some(id.into()),
-                        status: status.into(),
-                    }
+                .map(|(id, status)| ntx_builder_proto::transaction_status::TransactionUpdate {
+                    transaction_id: Some(id.into()),
+                    status: status.into(),
                 })
                 .collect(),
         };
@@ -81,7 +81,7 @@ where
         transaction_id: TransactionId,
         nullifiers: impl Iterator<Item = Nullifier>,
     ) -> Result<(), tonic::Status> {
-        let request = ntx_builder_proto::UpdateNetworkNotes {
+        let request = ntx_builder_proto::NetworkNotes {
             transaction_id: Some(transaction_id.into()),
             nullifiers: nullifiers.map(Into::into).collect(),
         };

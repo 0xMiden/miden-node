@@ -10,7 +10,7 @@ use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
 use crate::{
     api::ProofType,
-    generated::{Proof, Prove, remote_prover::ProofType as ProtoProofType},
+    generated::{Proof, ProofRequest, remote_prover::ProofType as ProtoProofType},
 };
 
 impl From<ProvenTransaction> for Proof {
@@ -27,26 +27,26 @@ impl TryFrom<Proof> for ProvenTransaction {
     }
 }
 
-impl TryFrom<Prove> for TransactionWitness {
+impl TryFrom<ProofRequest> for TransactionWitness {
     type Error = DeserializationError;
 
-    fn try_from(request: Prove) -> Result<Self, Self::Error> {
+    fn try_from(request: ProofRequest) -> Result<Self, Self::Error> {
         TransactionWitness::read_from_bytes(&request.payload)
     }
 }
 
-impl TryFrom<Prove> for ProposedBatch {
+impl TryFrom<ProofRequest> for ProposedBatch {
     type Error = DeserializationError;
 
-    fn try_from(request: Prove) -> Result<Self, Self::Error> {
+    fn try_from(request: ProofRequest) -> Result<Self, Self::Error> {
         ProposedBatch::read_from_bytes(&request.payload)
     }
 }
 
-impl TryFrom<Prove> for ProposedBlock {
+impl TryFrom<ProofRequest> for ProposedBlock {
     type Error = DeserializationError;
 
-    fn try_from(request: Prove) -> Result<Self, Self::Error> {
+    fn try_from(request: ProofRequest) -> Result<Self, Self::Error> {
         ProposedBlock::read_from_bytes(&request.payload)
     }
 }

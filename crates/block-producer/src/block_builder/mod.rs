@@ -3,7 +3,7 @@ use std::{collections::BTreeSet, ops::Range};
 use anyhow::Context;
 use futures::{FutureExt, never::Never};
 use miden_block_prover::LocalBlockProver;
-use miden_node_proto::generated::blockchain::TransactionStatus;
+use miden_node_proto::generated::ntx_builder::transaction_status::TransactionStatus;
 use miden_node_utils::tracing::{OpenTelemetrySpanExt, grpc::OtelInterceptor};
 use miden_objects::{
     Digest, MIN_PROOF_SECURITY_LEVEL,

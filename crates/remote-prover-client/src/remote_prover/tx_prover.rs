@@ -17,7 +17,7 @@ use crate::{
     RemoteProverClientError,
     remote_prover::{
         generated,
-        generated::{Proof, ProofType, Prove},
+        generated::{Proof, ProofRequest, ProofType},
     },
 };
 
@@ -134,9 +134,9 @@ impl TryFrom<Proof> for ProvenTransaction {
     }
 }
 
-impl From<TransactionWitness> for Prove {
+impl From<TransactionWitness> for ProofRequest {
     fn from(witness: TransactionWitness) -> Self {
-        Prove {
+        ProofRequest {
             proof_type: ProofType::Transaction.into(),
             payload: witness.to_bytes(),
         }

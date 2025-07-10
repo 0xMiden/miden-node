@@ -2,7 +2,7 @@ use miden_objects::{crypto::hash::rpo::RpoDigest, transaction::TransactionId};
 
 use crate::{
     errors::ConversionError,
-    generated::{blockchain as proto_blockchain, primitives as proto_primitives},
+    generated::{primitives as proto_primitives, transaction as proto_transaction},
 };
 
 // FROM TRANSACTION ID
@@ -20,13 +20,13 @@ impl From<TransactionId> for proto_primitives::Digest {
     }
 }
 
-impl From<&TransactionId> for proto_blockchain::TransactionId {
+impl From<&TransactionId> for proto_transaction::TransactionId {
     fn from(value: &TransactionId) -> Self {
-        proto_blockchain::TransactionId { id: Some(value.into()) }
+        proto_transaction::TransactionId { id: Some(value.into()) }
     }
 }
 
-impl From<TransactionId> for proto_blockchain::TransactionId {
+impl From<TransactionId> for proto_transaction::TransactionId {
     fn from(value: TransactionId) -> Self {
         (&value).into()
     }
@@ -44,10 +44,10 @@ impl TryFrom<proto_primitives::Digest> for TransactionId {
     }
 }
 
-impl TryFrom<proto_blockchain::TransactionId> for TransactionId {
+impl TryFrom<proto_transaction::TransactionId> for TransactionId {
     type Error = ConversionError;
 
-    fn try_from(value: proto_blockchain::TransactionId) -> Result<Self, Self::Error> {
+    fn try_from(value: proto_transaction::TransactionId) -> Result<Self, Self::Error> {
         value
             .id
             .ok_or(ConversionError::MissingFieldInProtobufRepresentation {

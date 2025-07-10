@@ -1,13 +1,11 @@
 use std::net::SocketAddr;
 
-use miden_node_proto::generated::{
-    block_producer::api_client::ApiClient, shared::SubmitProvenTransaction,
 use futures::{TryStream, TryStreamExt};
 use miden_node_proto::{
     domain::mempool::MempoolEvent,
     generated::{
         block_producer::{MempoolSubscriptionRequest, api_client::ApiClient},
-        requests::SubmitProvenTransactionRequest,
+        transaction::ProvenTransaction as ProtoProvenTransaction,
     },
 };
 use miden_node_utils::{FlattenResult, tracing::grpc::OtelInterceptor};
@@ -47,7 +45,7 @@ impl BlockProducerClient {
         &self,
         proven_tx: ProvenTransaction,
     ) -> Result<(), Status> {
-        let request = SubmitProvenTransaction { transaction: proven_tx.to_bytes() };
+        let request = ProtoProvenTransaction { transaction: proven_tx.to_bytes() };
 
         self.inner.clone().submit_proven_transaction(request).await?;
 

@@ -5,11 +5,11 @@ use futures::StreamExt;
 use miden_node_proto::{
     domain::mempool::MempoolEvent,
     generated::{
-        block_producer::{MempoolEvent as ProtoMempoolEvent, MempoolSubscription, api_server},
-        shared::{
-            BlockProducerStatus, ProvenTransaction as ProtoProvenTransaction,
-            SubmitProvenTransaction,
+        block_producer::{
+            BlockProducerStatus, MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest,
+            SubmitProvenTransactionResponse, api_server,
         },
+        transaction::ProvenTransaction as ProtoProvenTransaction,
     },
     ntx_builder,
 };
@@ -227,8 +227,8 @@ struct BlockProducerRpcServer {
 impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
-        request: tonic::Request<SubmitProvenTransaction>,
-    ) -> Result<tonic::Response<ProtoProvenTransaction>, Status> {
+        request: tonic::Request<ProtoProvenTransaction>,
+    ) -> Result<tonic::Response<SubmitProvenTransactionResponse>, Status> {
         self.submit_proven_transaction(request.into_inner())
             .await
             .map(tonic::Response::new)
@@ -256,7 +256,7 @@ impl api_server::Api for BlockProducerRpcServer {
 
     async fn mempool_subscription(
         &self,
-        request: tonic::Request<MempoolSubscription>,
+        request: tonic::Request<MempoolSubscriptionRequest>,
     ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
         let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
 
@@ -338,8 +338,8 @@ impl BlockProducerRpcServer {
     )]
     async fn submit_proven_transaction(
         &self,
-        request: SubmitProvenTransaction,
-    ) -> Result<ProtoProvenTransaction, AddTransactionError> {
+        request: ProtoProvenTransaction,
+    ) -> Result<SubmitProvenTransactionResponse, AddTransactionError> {
         debug!(target: COMPONENT, ?request);
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
@@ -370,14 +370,10 @@ impl BlockProducerRpcServer {
 
         // Launch a task for updating the mempool, and send the update to the network transaction
         // builder
-        let submit_tx_response = self
-            .mempool
-            .lock()
-            .await
-            .lock()
-            .await
-            .add_transaction(tx)
-            .map(|block_height| ProtoProvenTransaction { block_height: block_height.as_u32() });
+        let submit_tx_response =
+            self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
+                SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
+            });
 
         if let Some(mut ntb_client) = self.ntx_builder.clone() {
             if let Err(err) =

@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use miden_node_proto::{
     errors::ConversionError,
-    generated::{account as account_proto, primitives as primitives_proto, shared as shared_proto},
+    generated::{account as account_proto, primitives as primitives_proto, store as store_proto},
 };
 use miden_node_utils::ErrorReport;
 use miden_objects::{
@@ -27,8 +27,8 @@ impl StoreApi {
     /// Shared implementation for all `get_block_header_by_number` endpoints.
     pub async fn get_block_header_by_number_inner(
         &self,
-        request: Request<shared_proto::GetBlockHeaderByNumber>,
-    ) -> Result<Response<shared_proto::BlockHeaderByNumber>, Status> {
+        request: Request<store_proto::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<store_proto::BlockHeaderByNumberResponse>, Status> {
         info!(target: COMPONENT, ?request);
         let request = request.into_inner();
 
@@ -39,7 +39,7 @@ impl StoreApi {
             .await
             .map_err(internal_error)?;
 
-        Ok(Response::new(shared_proto::BlockHeaderByNumber {
+        Ok(Response::new(store_proto::BlockHeaderByNumberResponse {
             block_header: block_header.map(Into::into),
             chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
             mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),

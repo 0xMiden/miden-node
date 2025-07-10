@@ -3,11 +3,11 @@ use std::num::{NonZero, TryFromIntError};
 use miden_node_proto::{
     domain::account::{AccountInfo, NetworkAccountPrefix},
     generated::{
-        shared::{BlockHeaderByNumber, GetBlockHeaderByNumber},
+        blockchain as blockchain_proto,
         store::{
-            CurrentBlockchainData, GetCurrentBlockchainData, GetNetworkAccountDetailsByPrefix,
-            GetUnconsumedNetworkNotes, NetworkAccountDetailsByPrefix, UnconsumedNetworkNotes,
-            ntx_builder_server,
+            AccountIdPrefix, BlockHeaderByNumberRequest, BlockHeaderByNumberResponse,
+            CurrentBlockchainData, GetUnconsumedNetworkNotesRequest, MaybeAccountDetails,
+            UnconsumedNetworkNotes, ntx_builder_server,
         },
     },
 };
@@ -40,8 +40,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<GetBlockHeaderByNumber>,
-    ) -> Result<Response<BlockHeaderByNumber>, Status> {
+        request: Request<BlockHeaderByNumberRequest>,
+    ) -> Result<Response<BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -60,7 +60,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_current_blockchain_data(
         &self,
-        request: Request<GetCurrentBlockchainData>,
+        request: Request<blockchain_proto::MaybeBlockNumber>,
     ) -> Result<Response<CurrentBlockchainData>, Status> {
         let block_num = request.into_inner().block_num.map(BlockNumber::from);
 
@@ -93,8 +93,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_network_account_details_by_prefix(
         &self,
-        request: Request<GetNetworkAccountDetailsByPrefix>,
-    ) -> Result<Response<NetworkAccountDetailsByPrefix>, Status> {
+        request: Request<AccountIdPrefix>,
+    ) -> Result<Response<MaybeAccountDetails>, Status> {
         let request = request.into_inner();
 
         // Validate that the call is for a valid network account prefix
@@ -106,7 +106,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let account_info: Option<AccountInfo> =
             self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
 
-        Ok(Response::new(NetworkAccountDetailsByPrefix {
+        Ok(Response::new(MaybeAccountDetails {
             details: account_info.map(|acc| (&acc).into()),
         }))
     }
@@ -120,7 +120,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_unconsumed_network_notes(
         &self,
-        request: Request<GetUnconsumedNetworkNotes>,
+        request: Request<GetUnconsumedNetworkNotesRequest>,
     ) -> Result<Response<UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let state = self.state.clone();

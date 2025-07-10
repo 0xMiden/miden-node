@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use miden_remote_prover::{
     api::ProofType,
     generated::{
-        GetProxyStatus, ProxyStatus, ProxyWorkerStatus,
+        ProxyStatus, ProxyWorkerStatus,
         remote_prover::{
             WorkerHealthStatus as ProtoWorkerHealthStatus,
             proxy_status_api_server::{ProxyStatusApi, ProxyStatusApiServer},
@@ -91,10 +91,7 @@ impl ProxyStatusPingoraService {
 impl ProxyStatusApi for ProxyStatusPingoraService {
     /// Returns the current status of the proxy.
     #[instrument(target = COMPONENT, name = "proxy.status", skip(_request))]
-    async fn status(
-        &self,
-        _request: Request<GetProxyStatus>,
-    ) -> Result<Response<ProxyStatus>, Status> {
+    async fn status(&self, _request: Request<()>) -> Result<Response<ProxyStatus>, Status> {
         // Get the latest status, or wait for it if it hasn't been set yet
         let status = self.status_rx.borrow().clone();
         Ok(Response::new(status))

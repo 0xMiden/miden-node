@@ -2,13 +2,8 @@ use miden_node_proto::{
     domain::{account::NetworkAccountPrefix, note::NetworkNote},
     errors::{ConversionError, MissingFieldHelper},
     generated::{
-        // requests::{
-        //     GetBlockHeaderByNumberRequest, GetCurrentBlockchainDataRequest,
-        //     GetNetworkAccountDetailsByPrefixRequest, GetUnconsumedNetworkNotesRequest,
-        // },
-        shared as shared_proto,
-        store as store_proto,
-        store::ntx_builder_client as store_client,
+        blockchain,
+        store::{self as store_proto, ntx_builder_client as store_client},
     },
     try_convert,
 };
@@ -59,7 +54,7 @@ impl StoreClient {
             .inner
             .clone()
             .get_block_header_by_number(tonic::Request::new(
-                shared_proto::GetBlockHeaderByNumber::default(),
+                store_proto::BlockHeaderByNumberRequest::default(),
             ))
             .await?
             .into_inner()
@@ -79,7 +74,7 @@ impl StoreClient {
         &self,
         block_num: Option<BlockNumber>,
     ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
-        let request = tonic::Request::new(store_proto::GetCurrentBlockchainData {
+        let request = tonic::Request::new(blockchain::MaybeBlockNumber {
             block_num: block_num.as_ref().map(BlockNumber::as_u32),
         });
 
@@ -114,7 +109,7 @@ impl StoreClient {
         let mut page_token: Option<u64> = None;
 
         loop {
-            let req = store_proto::GetUnconsumedNetworkNotes { page_token, page_size: 128 };
+            let req = store_proto::GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
             let page: Vec<NetworkNote> = resp
@@ -139,7 +134,7 @@ impl StoreClient {
         &self,
         prefix: NetworkAccountPrefix,
     ) -> Result<Option<Account>, StoreError> {
-        let request = GetNetworkAccountDetailsByPrefixRequest { account_id_prefix: prefix.inner() };
+        let request = store_proto::AccountIdPrefix { account_id_prefix: prefix.inner() };
 
         let store_response = self
             .inner

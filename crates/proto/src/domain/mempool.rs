@@ -12,9 +12,11 @@ use super::note::NetworkNote;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
     generated::block_producer::{
-        BlockCommitted as ProtoBlockCommitted, MempoolEvent as ProtoMempoolEvent,
-        TransactionAdded as ProtoTransactionAdded,
-        TransactionsReverted as ProtoTransactionsReverted, mempool_event,
+        MempoolEvent as ProtoMempoolEvent,
+        mempool_event::{
+            self, BlockCommitted as ProtoBlockCommitted, TransactionAdded as ProtoTransactionAdded,
+            TransactionsReverted as ProtoTransactionsReverted,
+        },
     },
 };
 

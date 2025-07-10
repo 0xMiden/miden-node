@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use miden_air::{ExecutionProof, HashFunction};
 use miden_node_proto::generated::{
-    block_producer::api_client as block_producer_client, requests::SubmitProvenTransactionRequest,
-    responses::SubmitProvenTransactionResponse,
+    block_producer::{SubmitProvenTransactionResponse, api_client as block_producer_client},
+    transaction::ProvenTransaction as ProtoProvenTransaction,
 };
 use miden_node_store::{GenesisState, Store};
 use miden_objects::{
@@ -167,6 +167,6 @@ async fn send_request(
     )
     .build()
     .unwrap();
-    let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+    let request = ProtoProvenTransaction { transaction: tx.to_bytes() };
     client.submit_proven_transaction(request).await
 }

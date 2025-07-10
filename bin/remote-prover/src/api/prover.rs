@@ -14,7 +14,8 @@ use tracing::{info, instrument};
 use crate::{
     COMPONENT,
     generated::{
-        Proof, Prove, api_server::Api as ProverApi, remote_prover::ProofType as ProtoProofType,
+        Proof, ProofRequest, api_server::Api as ProverApi,
+        remote_prover::ProofType as ProtoProofType,
     },
 };
 
@@ -192,7 +193,10 @@ impl ProverApi for ProverRpcApi {
         fields(id = tracing::field::Empty),
         err
     )]
-    async fn prove(&self, request: Request<Prove>) -> Result<Response<Proof>, tonic::Status> {
+    async fn prove(
+        &self,
+        request: Request<ProofRequest>,
+    ) -> Result<Response<Proof>, tonic::Status> {
         match request.get_ref().proof_type() {
             ProtoProofType::Transaction => {
                 let tx_witness = request.into_inner().try_into().map_err(invalid_argument)?;
@@ -244,7 +248,7 @@ mod test {
 
     use crate::{
         api::ProverRpcApi,
-        generated::{ProofType, Prove, api_client::ApiClient, api_server::ApiServer},
+        generated::{ProofRequest, ProofType, api_client::ApiClient, api_server::ApiServer},
     };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -310,12 +314,12 @@ mod test {
 
         let transaction_witness = TransactionWitness::from(executed_transaction);
 
-        let request_1 = Request::new(Prove {
+        let request_1 = Request::new(ProofRequest {
             proof_type: ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });
 
-        let request_2 = Request::new(Prove {
+        let request_2 = Request::new(ProofRequest {
             proof_type: ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });

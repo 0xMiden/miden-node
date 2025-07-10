@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 use super::generated::api_client::ApiClient;
 use crate::{
     RemoteProverClientError,
-    remote_prover::generated::{Proof, ProofType, Prove},
+    remote_prover::generated::{Proof, ProofRequest, ProofType},
 };
 
 // REMOTE BLOCK PROVER
@@ -170,9 +170,9 @@ impl TryFrom<Proof> for ProvenBlock {
     }
 }
 
-impl From<ProposedBlock> for Prove {
+impl From<ProposedBlock> for ProofRequest {
     fn from(proposed_block: ProposedBlock) -> Self {
-        Prove {
+        ProofRequest {
             proof_type: ProofType::Block.into(),
             payload: proposed_block.to_bytes(),
         }

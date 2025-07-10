@@ -6,10 +6,8 @@ use std::{
 use anyhow::Context;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover::{
-    COMPONENT,
-    api::ProofType,
-    error::RemoteProverError,
-    generated::{GetWorkerStatus, remote_prover::worker_status_api_client::WorkerStatusApiClient},
+    COMPONENT, api::ProofType, error::RemoteProverError,
+    generated::remote_prover::worker_status_api_client::WorkerStatusApiClient,
 };
 use pingora::lb::Backend;
 use semver::{Version, VersionReq};
@@ -181,14 +179,13 @@ impl Worker {
             }
         }
 
-        let worker_status =
-            match self.status_client.as_mut().unwrap().status(GetWorkerStatus {}).await {
-                Ok(response) => response.into_inner(),
-                Err(e) => {
-                    error!("Failed to check worker status ({}): {}", self.address(), e);
-                    return Err(e.message().to_string());
-                },
-            };
+        let worker_status = match self.status_client.as_mut().unwrap().status(()).await {
+            Ok(response) => response.into_inner(),
+            Err(e) => {
+                error!("Failed to check worker status ({}): {}", self.address(), e);
+                return Err(e.message().to_string());
+            },
+        };
 
         if worker_status.version.is_empty() {
             return Err("Worker version is empty".to_string());

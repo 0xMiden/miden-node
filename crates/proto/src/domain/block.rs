@@ -10,7 +10,7 @@ use miden_objects::{
 use crate::{
     AccountWitnessRecord, NullifierWitnessRecord,
     errors::{ConversionError, MissingFieldHelper},
-    generated::{account as account_proto, blockchain as blockchain_proto, store as store_proto},
+    generated::{blockchain as blockchain_proto, note as note_proto, store as store_proto},
 };
 
 // BLOCK HEADER
@@ -125,7 +125,7 @@ impl From<BlockInputs> for store_proto::BlockInputs {
             partial_block_chain: partial_block_chain.to_bytes(),
             unauthenticated_note_proofs: unauthenticated_note_proofs
                 .iter()
-                .map(account_proto::NoteInclusionInBlockProof::from)
+                .map(note_proto::NoteInclusionInBlockProof::from)
                 .collect(),
         }
     }

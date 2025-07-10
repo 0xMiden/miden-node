@@ -14,7 +14,8 @@
 - Added configurable network id for the faucet (#1016).
 - Network transaction builder now tracks inflight txs instead of only committed ones (#1051).
 - Add OTel trace layers to `miden-remote-prover` and `miden-remote-prover-proxy` (#1061).
-- add otel stats for the mempool (#1073).
+- Add otel stats for the mempool (#1073).
+- Add otel stats for the network transaction builder state (#1073).
 
 ### Changes
 

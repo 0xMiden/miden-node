@@ -15,6 +15,7 @@ version.workspace      = true
 workspace = true
 
 [dependencies]
+anyhow           = { workspace = true }
 hex              = { version = "0.4" }
 http             = { workspace = true }
 miden-node-utils = { workspace = true }

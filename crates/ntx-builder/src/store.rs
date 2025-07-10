@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use miden_node_proto::{
+    clients::Builder,
     domain::{account::NetworkAccountPrefix, note::NetworkNote},
     errors::{ConversionError, MissingFieldHelper},
     generated::{
@@ -41,11 +42,14 @@ pub struct StoreClient {
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub fn new(store_url: &Url) -> Self {
-        let channel = tonic::transport::Endpoint::try_from(store_url.to_string())
-            .expect("valid gRPC endpoint URL")
-            .connect_lazy();
-        let store = store_client::NtxBuilderClient::with_interceptor(channel, OtelInterceptor);
+    pub async fn new(store_url: &Url) -> Self {
+        let store = Builder::new()
+            .with_address(store_url.to_string())
+            .with_lazy_connection()
+            .build()
+            .await
+            .unwrap();
+
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 
         Self { inner: store }

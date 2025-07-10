@@ -2,6 +2,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use futures::{TryStream, TryStreamExt};
 use miden_node_proto::{
+    clients::Builder,
     domain::mempool::MempoolEvent,
     generated::{
         block_producer::{MempoolSubscriptionRequest, api_client::ApiClient},
@@ -29,12 +30,14 @@ pub struct BlockProducerClient {
 
 impl BlockProducerClient {
     /// Creates a new block producer client with a lazy connection.
-    pub fn new(block_producer_address: SocketAddr) -> Self {
-        // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
-        let block_producer_url = format!("http://{block_producer_address}");
-        let channel =
-            tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
-        let block_producer = ApiClient::with_interceptor(channel, OtelInterceptor);
+    pub async fn new(block_producer_address: SocketAddr) -> Self {
+        let block_producer = Builder::new()
+            .with_address(format!("http://{block_producer_address}"))
+            .with_lazy_connection()
+            .build()
+            .await
+            .unwrap();
+
         info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Store client initialized");
 
         Self { inner: block_producer }

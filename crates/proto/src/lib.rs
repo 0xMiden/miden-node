@@ -1,3 +1,4 @@
+pub mod clients;
 pub mod domain;
 pub mod errors;
 

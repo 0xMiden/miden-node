@@ -8,6 +8,7 @@ use std::{
 use itertools::Itertools;
 use miden_node_proto::{
     AccountState,
+    clients::Builder,
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
@@ -133,11 +134,15 @@ pub struct StoreClient {
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub fn new(store_address: SocketAddr) -> Self {
+    pub async fn new(store_address: SocketAddr) -> Self {
         let store_url = format!("http://{store_address}");
-        // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-        let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-        let store = store_client::BlockProducerClient::with_interceptor(channel, OtelInterceptor);
+        let store = Builder::new()
+            .with_address(store_url)
+            .with_lazy_connection()
+            .build()
+            .await
+            .unwrap();
+
         info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
 
         Self { inner: store }

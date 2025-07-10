@@ -27,6 +27,7 @@
   - [RPC](./developer/rpc.md)
   - [Store](./developer/store.md)
   - [Block producer](./developer/block-producer.md)
+  - [Network transaction builder](./developer/ntx-builder.md)
 - [Common issues other oddities](./developer/oddities.md)
 
 ---

@@ -1,13 +1,14 @@
 # Node architecture
 
-The node itself consists of three distributed components: store, block-producer and RPC. We also provide a reference
-faucet implementation which we use to distribute testnet and devnet tokens.
+The node itself consists of four distributed components: store, block-producer, network transaction builder and RPC.
+We also provide a reference faucet implementation which we use to distribute testnet and devnet tokens.
 
 The components can be run on separate instances when optimised for performance, but can also be run as a single process
-for convenience. At the moment both of Miden's public networks (testnet and devnet) are operating in single process
+for convenience. The exception to this is the network transaction builder which can currently only be run as part of
+the single process. At the moment both of Miden's public networks (testnet and devnet) are operating in single process
 mode.
 
-The inter-component communication is done using a gRPC API wnich is assumed trusted. In other words this _must not_ be
+The inter-component communication is done using a gRPC API which is assumed trusted. In other words this _must not_ be
 public. External communication is handled by the RPC component with a separate external-only gRPC API.
 
 ![node architecture](../resources/operator_architecture.svg)
@@ -39,6 +40,15 @@ proved, and then periodically aggregated into a block. This block is then proved
 
 Proof generation in production is typically outsourced to a remote machine with appropriate resources. For convenience,
 it is also possible to perform proving in-process. This is useful when running a local node for test purposes.
+
+## Network transaction builder
+
+The network transaction builder monitors the mempool for network notes, and creates transactions consuming these.
+We call these network transactions and at present this is the only entity that is allowed to create such transactions.
+This restriction is will be lifted in the future, but for now this component _must_ be enabled to have support for
+network transactions.
+
+The mempool is monitored via a gRPC event stream served by the block-producer.
 
 ## Faucet
 

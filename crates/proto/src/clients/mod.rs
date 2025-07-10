@@ -6,15 +6,15 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use miden_node_proto::clients::{Builder, GrpcClientBuilder};
-//! use miden_node_proto::generated::store::ntx_builder_client::NtxBuilderClient;
+//! use miden_node_proto::clients::{Builder, GrpcClientBuilder, StoreNtxBuilderClient};
+//! use miden_node_utils::tracing::grpc::OtelInterceptor;
+//! use tonic::service::interceptor::InterceptedService;
 //! use tonic::transport::Channel;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Create a store client with OTEL and TLS
-//! let client: NtxBuilderClient<Channel> = Builder::new()
+//! let client: StoreNtxBuilderClient<InterceptedService<Channel, OtelInterceptor>> = Builder::new()
 //!     .with_address("https://store.example.com".to_string())
-//!     .with_otel()
 //!     .with_tls()
 //!     .build()
 //!     .await?;
@@ -22,13 +22,14 @@
 //! # }
 //! ```
 
+use std::time::Duration;
+
 use anyhow::{Context, Result};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use tonic::transport::{Channel, Endpoint};
 
 // RE-EXPORTS FOR CONVENIENCE
 // ================================================================================================
-
 pub use crate::generated::{
     block_producer::api_client::ApiClient as BlockProducerApiClient,
     rpc::{api_client::ApiClient as RpcApiClient, api_server::Api},
@@ -47,6 +48,8 @@ pub struct Builder {
     pub with_tls: bool,
     pub with_lazy_connection: bool,
     pub address: String,
+    pub with_timeout: Option<Duration>,
+    pub metadata_version: Option<String>,
 }
 
 impl Builder {
@@ -66,6 +69,19 @@ impl Builder {
         self
     }
 
+    #[must_use]
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.with_timeout = Some(timeout);
+        self
+    }
+
+    #[must_use]
+    pub fn with_metadata_version(mut self, version: String) -> Self {
+        self.metadata_version = Some(version);
+        self
+    }
+
+    #[must_use]
     pub fn with_address(mut self, address: String) -> Self {
         self.address = address;
         self
@@ -93,7 +109,7 @@ pub trait GrpcClientBuilder: Sized {
     ///
     /// Returns an error if the client cannot be created due to invalid configuration,
     /// network issues, or other initialization problems.
-    #[allow(async_fn_in_trait)] 
+    #[allow(async_fn_in_trait)]
     async fn from_builder(builder: Builder) -> Result<Self>;
 }
 
@@ -101,10 +117,16 @@ pub trait GrpcClientBuilder: Sized {
 // ================================================================================================
 
 // Note: This implementation always uses OtelInterceptor, matching existing patterns
-impl GrpcClientBuilder for RpcApiClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>> {
+impl GrpcClientBuilder
+    for RpcApiClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>>
+{
     async fn from_builder(builder: Builder) -> Result<Self> {
         let mut endpoint = Endpoint::from_shared(builder.address)
             .context("Failed to create endpoint from address")?;
+
+        if let Some(timeout) = builder.with_timeout {
+            endpoint = endpoint.timeout(timeout);
+        }
 
         if builder.with_tls {
             endpoint = endpoint
@@ -124,10 +146,18 @@ impl GrpcClientBuilder for RpcApiClient<tonic::service::interceptor::Intercepted
 }
 
 // Note: All implementations use OtelInterceptor by default, matching existing patterns
-impl GrpcClientBuilder for BlockProducerApiClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>> {
+impl GrpcClientBuilder
+    for BlockProducerApiClient<
+        tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>,
+    >
+{
     async fn from_builder(builder: Builder) -> Result<Self> {
         let mut endpoint = Endpoint::from_shared(builder.address)
             .context("Failed to create endpoint from address")?;
+
+        if let Some(timeout) = builder.with_timeout {
+            endpoint = endpoint.timeout(timeout);
+        }
 
         if builder.with_tls {
             endpoint = endpoint
@@ -146,10 +176,18 @@ impl GrpcClientBuilder for BlockProducerApiClient<tonic::service::interceptor::I
     }
 }
 
-impl GrpcClientBuilder for StoreNtxBuilderClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>> {
+impl GrpcClientBuilder
+    for StoreNtxBuilderClient<
+        tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>,
+    >
+{
     async fn from_builder(builder: Builder) -> Result<Self> {
         let mut endpoint = Endpoint::from_shared(builder.address)
             .context("Failed to create endpoint from address")?;
+
+        if let Some(timeout) = builder.with_timeout {
+            endpoint = endpoint.timeout(timeout);
+        }
 
         if builder.with_tls {
             endpoint = endpoint
@@ -168,10 +206,18 @@ impl GrpcClientBuilder for StoreNtxBuilderClient<tonic::service::interceptor::In
     }
 }
 
-impl GrpcClientBuilder for StoreBlockProducerClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>> {
+impl GrpcClientBuilder
+    for StoreBlockProducerClient<
+        tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>,
+    >
+{
     async fn from_builder(builder: Builder) -> Result<Self> {
         let mut endpoint = Endpoint::from_shared(builder.address)
             .context("Failed to create endpoint from address")?;
+
+        if let Some(timeout) = builder.with_timeout {
+            endpoint = endpoint.timeout(timeout);
+        }
 
         if builder.with_tls {
             endpoint = endpoint
@@ -190,10 +236,16 @@ impl GrpcClientBuilder for StoreBlockProducerClient<tonic::service::interceptor:
     }
 }
 
-impl GrpcClientBuilder for StoreRpcClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>> {
+impl GrpcClientBuilder
+    for StoreRpcClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>>
+{
     async fn from_builder(builder: Builder) -> Result<Self> {
         let mut endpoint = Endpoint::from_shared(builder.address)
             .context("Failed to create endpoint from address")?;
+
+        if let Some(timeout) = builder.with_timeout {
+            endpoint = endpoint.timeout(timeout);
+        }
 
         if builder.with_tls {
             endpoint = endpoint

@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
 use miden_node_utils::grpc::UrlExt;
+use tokio::sync::Barrier;
 use url::Url;
 
-use super::{ENV_BLOCK_PRODUCER_URL, ENV_NTX_BUILDER_URL, ENV_STORE_URL};
+use super::{ENV_BLOCK_PRODUCER_URL, ENV_STORE_BLOCK_PRODUCER_URL};
 use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL};
 
 #[derive(clap::Subcommand)]
@@ -14,13 +17,9 @@ pub enum BlockProducerCommand {
         #[arg(env = ENV_BLOCK_PRODUCER_URL)]
         url: Url,
 
-        /// The store's gRPC url.
-        #[arg(long = "store.url", env = ENV_STORE_URL)]
+        /// The store's block-producer service gRPC url.
+        #[arg(long = "store.url", env = ENV_STORE_BLOCK_PRODUCER_URL)]
         store_url: Url,
-
-        /// The network transaction builder's gRPC url.
-        #[arg(long = "ntx-builder.url", env = ENV_NTX_BUILDER_URL)]
-        ntx_builder_url: Option<Url>,
 
         #[command(flatten)]
         block_producer: BlockProducerConfig,
@@ -39,7 +38,6 @@ impl BlockProducerCommand {
         let Self::Start {
             url,
             store_url,
-            ntx_builder_url,
             block_producer,
             enable_otel: _,
         } = self;
@@ -47,13 +45,6 @@ impl BlockProducerCommand {
         let store_address = store_url
             .to_socket()
             .context("Failed to extract socket address from store URL")?;
-        let ntx_builder_address = ntx_builder_url
-            .map(|url| {
-                url.to_socket().context(
-                    "Failed to extract socket address from network transaction builder URL",
-                )
-            })
-            .transpose()?;
 
         let block_producer_address =
             url.to_socket().context("Failed to extract socket address from store URL")?;
@@ -75,13 +66,13 @@ impl BlockProducerCommand {
         BlockProducer {
             block_producer_address,
             store_address,
-            ntx_builder_address,
             batch_prover_url: block_producer.batch_prover_url,
             block_prover_url: block_producer.block_prover_url,
             batch_interval: block_producer.batch_interval,
             block_interval: block_producer.block_interval,
             max_txs_per_batch: block_producer.max_txs_per_batch,
             max_batches_per_block: block_producer.max_batches_per_block,
+            production_checkpoint: Arc::new(Barrier::new(1)),
         }
         .serve()
         .await
@@ -109,7 +100,6 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
-            ntx_builder_url: None,
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,
@@ -131,7 +121,6 @@ mod tests {
         let cmd = BlockProducerCommand::Start {
             url: dummy_url(),
             store_url: dummy_url(),
-            ntx_builder_url: None,
             block_producer: BlockProducerConfig {
                 batch_prover_url: None,
                 block_prover_url: None,

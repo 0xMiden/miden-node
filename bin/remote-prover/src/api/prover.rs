@@ -234,10 +234,7 @@ mod test {
     use miden_objects::{
         asset::{Asset, FungibleAsset},
         note::NoteType,
-        testing::{
-            account_code::DEFAULT_AUTH_SCRIPT,
-            account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
-        },
+        testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
         transaction::{ProvenTransaction, TransactionScript, TransactionWitness},
     };
     use miden_testing::{Auth, MockChain};
@@ -296,14 +293,20 @@ mod test {
             )
             .unwrap();
 
-        let tx_script =
-            TransactionScript::compile(DEFAULT_AUTH_SCRIPT, TransactionKernel::assembler())
-                .unwrap();
+        let tx_script = TransactionScript::compile(
+            "begin
+                call.::miden::contracts::auth::basic::auth__tx_rpo_falcon512
+            end",
+            TransactionKernel::assembler(),
+        )
+        .unwrap();
         let tx_context = mock_chain
             .build_tx_context(account.id(), &[], &[])
+            .unwrap()
             .extend_input_notes(vec![note_1])
             .tx_script(tx_script)
-            .build();
+            .build()
+            .unwrap();
 
         let executed_transaction = tx_context.execute().unwrap();
 

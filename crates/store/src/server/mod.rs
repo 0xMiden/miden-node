@@ -7,8 +7,8 @@ use std::{
 use anyhow::Context;
 use miden_node_proto::generated::store;
 use miden_node_proto_build::store_api_descriptor;
-use miden_node_utils::tracing::grpc::store_trace_fn;
-use tokio::net::TcpListener;
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
+use tokio::{net::TcpListener, task::JoinSet};
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
@@ -26,7 +26,9 @@ mod rpc_api;
 
 /// The store server.
 pub struct Store {
-    pub listener: TcpListener,
+    pub rpc_listener: TcpListener,
+    pub ntx_builder_listener: TcpListener,
+    pub block_producer_listener: TcpListener,
     pub data_directory: PathBuf,
 }
 
@@ -70,7 +72,10 @@ impl Store {
     ///
     /// Note: this blocks until the server dies.
     pub async fn serve(self) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?self.listener, ?self.data_directory, "Loading database");
+        let rpc_address = self.rpc_listener.local_addr()?;
+        let ntx_builder_address = self.ntx_builder_listener.local_addr()?;
+        let block_producer_address = self.block_producer_listener.local_addr()?;
+        info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address, block_producer_endpoint=?block_producer_address, ?self.data_directory, "Loading database");
 
         let data_directory =
             DataDirectory::load(self.data_directory.clone()).with_context(|| {
@@ -117,18 +122,52 @@ impl Store {
 
         info!(target: COMPONENT, "Database loaded");
 
-        tokio::spawn(db_maintenance_service.run());
+        let mut join_set = JoinSet::new();
+
+        join_set.spawn(async move {
+            db_maintenance_service.run().await;
+            Ok(())
+        });
+
         // Build the gRPC server with the API services and trace layer.
-        tonic::transport::Server::builder()
-            .layer(TraceLayer::new_for_grpc().make_span_with(store_trace_fn))
-            .add_service(rpc_service)
-            .add_service(ntx_builder_service)
-            .add_service(block_producer_service)
-            .add_service(reflection_service)
-            .add_service(reflection_service_alpha)
-            .serve_with_incoming(TcpListenerStream::new(self.listener))
-            .await
-            .context("failed to serve store API")
+        join_set.spawn(
+            tonic::transport::Server::builder()
+                .layer(
+                    TraceLayer::new_for_grpc()
+                        .make_span_with(traced_span_fn(TracedComponent::StoreRpc)),
+                )
+                .add_service(rpc_service)
+                .add_service(reflection_service.clone())
+                .add_service(reflection_service_alpha.clone())
+                .serve_with_incoming(TcpListenerStream::new(self.rpc_listener)),
+        );
+
+        join_set.spawn(
+            tonic::transport::Server::builder()
+                .layer(
+                    TraceLayer::new_for_grpc()
+                        .make_span_with(traced_span_fn(TracedComponent::StoreNtxBuilder)),
+                )
+                .add_service(ntx_builder_service)
+                .add_service(reflection_service.clone())
+                .add_service(reflection_service_alpha.clone())
+                .serve_with_incoming(TcpListenerStream::new(self.ntx_builder_listener)),
+        );
+
+        join_set.spawn(
+            tonic::transport::Server::builder()
+                .layer(
+                    TraceLayer::new_for_grpc()
+                        .make_span_with(traced_span_fn(TracedComponent::BlockProducer)),
+                )
+                .add_service(block_producer_service)
+                .add_service(reflection_service)
+                .add_service(reflection_service_alpha)
+                .serve_with_incoming(TcpListenerStream::new(self.block_producer_listener)),
+        );
+
+        // SAFETY: The joinset is definitely not empty.
+        join_set.join_next().await.unwrap()?.map_err(Into::into)
     }
 }
 

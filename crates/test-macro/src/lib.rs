@@ -10,15 +10,17 @@ pub fn enable_logging(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let stmts = function.block.stmts;
     let block: Block = parse_quote! {{
         if ::std::env::args().any(|e| e == "--nocapture") {
-            ::miden_node_utils::logging::setup_tracing(
+            if let Err(err) = ::miden_node_utils::logging::setup_tracing(
                 ::miden_node_utils::logging::OpenTelemetry::Disabled
-            ).expect("logging setup should succeed");
+            ) {
+                eprintln!("failed to setup tracing for tests using `enable_logging` proc-macro");
+            }
             let span = ::tracing::span!(::tracing::Level::INFO, #name).entered();
 
             #(#stmts)*
         } else {
             #(#stmts)*
-        };
+        }
     }};
     function.block = Box::new(block);
 

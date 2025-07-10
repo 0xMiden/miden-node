@@ -21,8 +21,3 @@ message TransactionSummary {
     // The ID of the account affected by the transaction.
     account.AccountId account_id = 3;
 }
-
-enum TransactionStatus {
-    COMMITTED = 0;
-    REVERTED = 1;
-}

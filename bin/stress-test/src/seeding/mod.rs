@@ -7,7 +7,7 @@ use std::{
 };
 
 use metrics::SeedingMetrics;
-use miden_air::{FieldElement, HashFunction};
+use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::{
     account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
@@ -21,7 +21,7 @@ use miden_node_proto::{
 };
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_objects::{
-    Felt,
+    Digest, Felt, ONE,
     account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType},
     asset::{Asset, FungibleAsset, TokenSymbol},
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
@@ -69,8 +69,8 @@ pub async fn seed_store(
     // Recreate the data directory (it should be empty for store bootstrapping).
     //
     // Ignore the error since it will also error if it does not exist.
-    let _ = std::fs::remove_dir_all(&data_directory);
-    std::fs::create_dir_all(&data_directory).expect("created data directory");
+    let _ = fs_err::remove_dir_all(&data_directory);
+    fs_err::create_dir_all(&data_directory).expect("created data directory");
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
@@ -355,11 +355,11 @@ fn create_consume_note_txs(
     accounts
         .into_iter()
         .zip(notes)
-        .map(|(mut account, note)| {
+        .map(|(account, note)| {
             let inclusion_proof = note_proofs.get(&note.id()).unwrap();
             create_consume_note_tx(
                 block_ref,
-                &mut account,
+                account,
                 InputNote::authenticated(note, inclusion_proof.clone()),
             )
         })
@@ -371,7 +371,7 @@ fn create_consume_note_txs(
 /// The account is updated with the assets from the input note, and the nonce is set to 1.
 fn create_consume_note_tx(
     block_ref: &BlockHeader,
-    account: &mut Account,
+    mut account: Account,
     input_note: InputNote,
 ) -> ProvenTransaction {
     let init_hash = account.init_commitment();
@@ -379,12 +379,15 @@ fn create_consume_note_tx(
     input_note.note().assets().iter().for_each(|asset| {
         account.vault_mut().add_asset(*asset).unwrap();
     });
-    account.set_nonce(Felt::ONE).unwrap();
+
+    let (id, vault, sorage, code, _) = account.into_parts();
+    let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
 
     ProvenTransactionBuilder::new(
-        account.id(),
+        updated_account.id(),
         init_hash,
-        account.commitment(),
+        updated_account.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
@@ -409,12 +412,15 @@ fn create_emit_note_tx(
         .storage_mut()
         .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)])
         .unwrap();
-    faucet.set_nonce(faucet.nonce() + Felt::ONE).unwrap();
+
+    let (id, vault, sorage, code, nonce) = faucet.clone().into_parts();
+    let updated_faucet = Account::from_parts(id, vault, sorage, code, nonce + ONE);
 
     ProvenTransactionBuilder::new(
-        faucet.id(),
+        updated_faucet.id(),
         initial_account_hash,
-        faucet.commitment(),
+        updated_faucet.commitment(),
+        Digest::default(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
@@ -476,13 +482,26 @@ async fn get_block_inputs(
 /// - a gRPC client to access the store
 /// - the address of the store
 pub async fn start_store(data_directory: PathBuf) -> (RpcStoreClient, SocketAddr) {
-    let grpc_store = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind store");
-    let store_addr = grpc_store.local_addr().expect("Failed to get store address");
+    let rpc_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store RPC gRPC endpoint");
+    let block_producer_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store block-producer gRPC endpoint");
+    let store_addr = rpc_listener.local_addr().expect("Failed to get store RPC address");
+    let ntx_builder_listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("Failed to bind store ntx-builder gRPC endpoint");
+    let store_block_producer_addr = block_producer_listener
+        .local_addr()
+        .expect("Failed to get store block-producer address");
     let dir = data_directory.clone();
 
     task::spawn(async move {
         Store {
-            listener: grpc_store,
+            rpc_listener,
+            ntx_builder_listener,
+            block_producer_listener,
             data_directory: dir,
         }
         .serve()
@@ -497,5 +516,5 @@ pub async fn start_store(data_directory: PathBuf) -> (RpcStoreClient, SocketAddr
         .await
         .expect("Failed to create store client");
 
-    (client, store_addr)
+    (client, store_block_producer_addr)
 }

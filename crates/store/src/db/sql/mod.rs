@@ -21,11 +21,12 @@ use miden_node_utils::{
 use miden_objects::{
     Digest, Word,
     account::{
-        AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta, FungibleAssetDelta,
-        NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
-        delta::AccountUpdateDetails,
+        Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta,
+        FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
+        StorageSlot,
+        delta::{AccountUpdateDetails, LexicographicWord},
     },
-    asset::NonFungibleAsset,
+    asset::{Asset, NonFungibleAsset},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, NoteMetadata, NoteType, Nullifier},
@@ -405,6 +406,7 @@ pub fn select_account_delta(
 
         match storage_maps.entry(slot) {
             Entry::Vacant(entry) => {
+                let key = LexicographicWord::new(key);
                 entry.insert(StorageMapDelta::new(BTreeMap::from([(key, value)])));
             },
             Entry::Occupied(mut entry) => {
@@ -450,7 +452,7 @@ pub fn select_account_delta(
     let storage = AccountStorageDelta::from_parts(storage_scalars, storage_maps)?;
     let vault = AccountVaultDelta::new(FungibleAssetDelta::new(fungible)?, non_fungible_delta);
 
-    Ok(Some(AccountDelta::new(account_id, storage, vault, Some(nonce))?))
+    Ok(Some(AccountDelta::new(account_id, storage, vault, nonce)?))
 }
 
 /// Inserts or updates accounts to the DB using the given [Transaction].
@@ -504,7 +506,7 @@ pub fn upsert_accounts(
                     });
                 }
 
-                let insert_delta = AccountDelta::from(account.clone());
+                let insert_delta = build_insert_delta(account)?;
 
                 (Some(Cow::Borrowed(account)), Some(Cow::Owned(insert_delta)))
             },
@@ -543,6 +545,58 @@ pub fn upsert_accounts(
     }
 
     Ok(count)
+}
+
+/// Builds an [`AccountDelta`] from the given [`Account`].
+///
+/// This function should only be used when inserting a new account into the DB.The returned delta
+/// could be thought of as the difference between an "empty transaction" and the it's initial state.
+fn build_insert_delta(account: &Account) -> Result<AccountDelta, DatabaseError> {
+    // Build storage delta
+    let mut values = BTreeMap::new();
+    let mut maps = BTreeMap::new();
+    for (slot_idx, slot) in account.storage().clone().into_iter().enumerate() {
+        let slot_idx: u8 = slot_idx.try_into().expect("slot index must fit into `u8`");
+
+        match slot {
+            StorageSlot::Value(value) => {
+                values.insert(slot_idx, value);
+            },
+
+            StorageSlot::Map(map) => {
+                maps.insert(slot_idx, map.into());
+            },
+        }
+    }
+    let storage_delta = AccountStorageDelta::from_parts(values, maps)?;
+
+    // Build vault delta
+    let mut fungible = BTreeMap::new();
+    let mut non_fungible = BTreeMap::new();
+    for asset in account.vault().assets() {
+        match asset {
+            Asset::Fungible(asset) => {
+                fungible.insert(
+                    asset.faucet_id(),
+                    asset
+                        .amount()
+                        .try_into()
+                        .expect("asset amount should be at most i64::MAX by construction"),
+                );
+            },
+
+            Asset::NonFungible(asset) => {
+                non_fungible.insert(LexicographicWord::new(asset), NonFungibleDeltaAction::Add);
+            },
+        }
+    }
+
+    let vault_delta = AccountVaultDelta::new(
+        FungibleAssetDelta::new(fungible)?,
+        NonFungibleAssetDelta::new(non_fungible),
+    );
+
+    Ok(AccountDelta::new(account.id(), storage_delta, vault_delta, account.nonce())?)
 }
 
 /// Inserts account delta to the DB using the given [Transaction].
@@ -591,7 +645,7 @@ fn insert_account_delta(
     insert_acc_delta_stmt.execute(params![
         account_id.to_bytes(),
         block_number.as_u32(),
-        delta.nonce().map(Into::<u64>::into).unwrap_or_default()
+        delta.nonce_delta().as_int()
     ])?;
 
     for (&slot, value) in delta.storage().values() {

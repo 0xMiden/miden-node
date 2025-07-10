@@ -10,7 +10,9 @@ which can be accessed by appending `--help` to any of the commands.
 
 ## Bootstrapping
 
-The first step in starting a new Miden network is to initialize the genesis block data. This is a once-off operation.
+The first step in starting a new Miden network is to initialize the genesis block data. This is a
+one-off operation using the `bootstrap` command and by default the genesis block will contain a single
+faucet account.
 
 ```sh
 # Create a folder to store the node's data.
@@ -32,6 +34,52 @@ miden-node bundled bootstrap \
   --accounts-directory .
 ```
 
+You can also configure the account and asset data in the genesis block by passing in a toml configuration file.
+This is particularly useful for setting up test scenarios without requiring multiple rounds of
+transactions to achieve the desired state. Any account secrets will be written to disk inside the
+the provided `--accounts-directory` path in the process.
+
+```sh
+miden-node bundled bootstrap \
+  --data-directory data \
+  --accounts-directory . \
+  --genesis-config-file genesis.toml
+```
+
+The genesis configuration file should contain at least one faucet, and optionally, wallet definitions
+with assets, for example:
+
+```toml
+# The UNIX timestamp of the genesis block. It will influence the hash of the genesis block.
+timestamp = 1717344256
+# Defines the format of the block protocol to use for the genesis block.
+version   = 1
+
+[[fungible_faucet]]
+# The token symbol to use for the token
+symbol       = "FUZZY"
+# Number of decimals your token will have, it effectively defines the fixed point accuracy.
+decimals     = 6
+# Total supply, in _base units_
+#
+# e.g. a max supply of `1e15` _base units_ and decimals set to `6`, will yield you a total supply
+# of `1e15/1e6 = 1e9` `FUZZY`s.
+max_supply   = 1_000_000_000_000_000
+# Storage mode of the faucet account.
+storage_mode = "public"
+
+
+[[wallet]]
+# List of all assets the account should hold. Each token type _must_ have a corresponding faucet.
+# The number is in _base units_, e.g. specifying `999 FUZZY` at 6 decimals would become
+# `999_000_000`.
+assets       = [{ amount = 999_000_000, symbol = "FUZZY" }]
+# Storage mode of the wallet account.
+storage_mode = "private"
+# The code of the account can be updated or not.
+# has_updatable_code = false # default value
+```
+
 ## Operation
 
 Start the node with the desired public gRPC server address.
@@ -50,7 +98,8 @@ existing one e.g. one created as part of the genesis block.
 
 Create a faucet account for the faucet app to use - or skip this step if you already have an account file.
 
-Note that we specify a distinct account filename (`faucet.mac`) to avoid collision with the account file that the node bootstrap command generates.
+Note that we specify a distinct account filename (`faucet.mac`) to avoid collision with the account file that the node
+bootstrap command generates.
 
 ```sh
 miden-faucet create-faucet-account \

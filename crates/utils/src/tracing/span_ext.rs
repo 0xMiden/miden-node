@@ -1,7 +1,7 @@
 use core::time::Duration;
 use std::net::IpAddr;
 
-use miden_objects::{Digest, batch::BatchId, block::BlockNumber};
+use miden_objects::{Digest, account::AccountId, batch::BatchId, block::BlockNumber};
 use opentelemetry::{Key, Value, trace::Status};
 
 use crate::ErrorReport;
@@ -18,6 +18,12 @@ impl ToValue for Duration {
 }
 
 impl ToValue for Digest {
+    fn to_value(&self) -> Value {
+        self.to_hex().into()
+    }
+}
+
+impl ToValue for AccountId {
     fn to_value(&self) -> Value {
         self.to_hex().into()
     }

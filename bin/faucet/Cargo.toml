@@ -48,7 +48,7 @@ url                        = { workspace = true }
 miden-node-utils = { features = ["vergen"], workspace = true }
 
 [dev-dependencies]
-fantoccini                = { version = "0.21" }
+fantoccini                = { version = "0.22" }
 miden-node-block-producer = { features = ["testing"], workspace = true }
 miden-objects             = { features = ["testing"], workspace = true }
 miden-testing             = { features = ["async"], workspace = true }

@@ -8,13 +8,18 @@ use anyhow::Context;
 use miden_node_proto::domain::{
     account::NetworkAccountPrefix, mempool::MempoolEvent, note::NetworkNote,
 };
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     account::{Account, delta::AccountUpdateDetails},
     note::Nullifier,
     transaction::TransactionId,
 };
+use tracing::instrument;
 
-use crate::store::{StoreClient, StoreError};
+use crate::{
+    COMPONENT,
+    store::{StoreClient, StoreError},
+};
 
 mod account;
 
@@ -66,6 +71,7 @@ pub struct State {
 
 impl State {
     /// Load's all available network notes from the store, along with the required account states.
+    #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
         let mut state = Self {
             store,
@@ -86,6 +92,7 @@ impl State {
             };
             account.add_note(note);
         }
+        state.inject_telemetry();
 
         Ok(state)
     }
@@ -98,6 +105,7 @@ impl State {
     ///   - it has been marked as failed if the transaction failed, or
     ///   - the transaction was submitted successfully, indicated by the associated mempool event
     ///     being submitted
+    #[instrument(target = COMPONENT, name = "ntx.state.select_candidate", skip_all)]
     pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
         // Loop through the account queue until we find one that is selectable.
         //
@@ -140,18 +148,25 @@ impl State {
             self.in_progress.insert(candidate);
             return TransactionCandidate { account: account.latest_account(), notes }.into();
         }
+        self.inject_telemetry();
 
         None
     }
 
     /// Marks a previously selected candidate account as failed, allowing it to be available for
     /// selection again.
+    #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
     pub fn candidate_failed(&mut self, candidate: NetworkAccountPrefix) {
         self.in_progress.remove(&candidate);
+        self.inject_telemetry();
     }
 
     /// Updates state with the mempool event.
+    #[instrument(target = COMPONENT, name = "ntx.state.mempool_update", skip_all)]
     pub async fn mempool_update(&mut self, update: MempoolEvent) -> anyhow::Result<()> {
+        let span = tracing::Span::current();
+        span.set_attribute("mempool_event.kind", update.kind());
+
         match update {
             // Note: this event will get triggered by normal user transactions, as well as our
             // network transactions. The mempool does not distinguish between the two.
@@ -174,6 +189,7 @@ impl State {
                 }
             },
         }
+        self.inject_telemetry();
 
         Ok(())
     }
@@ -327,6 +343,19 @@ impl State {
                 Ok(Some(entry))
             },
         }
+    }
+
+    /// Adds stats to the current tracing span.
+    ///
+    /// Note that these are only visible in the OpenTelemetry context, as conventional tracing
+    /// does not track fields added dynamically.
+    fn inject_telemetry(&self) {
+        let span = tracing::Span::current();
+
+        span.set_attribute("ntx.state.accounts.total", self.accounts.len());
+        span.set_attribute("ntx.state.accounts.in_progress", self.in_progress.len());
+        span.set_attribute("ntx.state.transactions", self.inflight_txs.len());
+        span.set_attribute("ntx.state.notes.total", self.nullifier_idx.len());
     }
 }
 

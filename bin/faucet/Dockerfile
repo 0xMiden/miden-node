@@ -1,4 +1,4 @@
-FROM rust:1.87-slim-bullseye AS builder
+FROM rust:1.88-slim-bullseye AS builder
 
 WORKDIR /app
 COPY ./Cargo.toml .

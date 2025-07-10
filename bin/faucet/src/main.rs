@@ -108,20 +108,20 @@ pub enum Command {
         #[arg(long = "pow-challenge-lifetime", value_name = "DURATION", env = ENV_POW_CHALLENGE_LIFETIME, default_value = "30s", value_parser = humantime::parse_duration)]
         pow_challenge_lifetime: Duration,
 
-        /// The number of simultaneous active requests needed to increase the `PoW` challenges
-        /// difficulty. This sets how fast the difficulty increases with requests.
-        #[arg(long = "pow-growth-rate", value_name = "NON_ZERO_USIZE", env = ENV_POW_GROWTH_RATE, default_value = "8")]
+        /// A measure of how quickly the `PoW` difficult grows with the number of requests. When
+        /// set to 1, the difficulty will roughly double when the number of requests doubles.
+        #[arg(long = "pow-growth-rate", value_name = "NON_ZERO_USIZE", env = ENV_POW_GROWTH_RATE, default_value = "1")]
         pow_growth_rate: NonZeroUsize,
 
         /// The interval at which the `PoW` challenge cache is cleaned up.
         #[arg(long = "pow-cleanup-interval", value_name = "DURATION", env = ENV_POW_CLEANUP_INTERVAL, default_value = "2s", value_parser = humantime::parse_duration)]
         pow_cleanup_interval: Duration,
 
-        /// The baseline for the `PoW` challenges. This sets the base difficulty for
-        /// all challenges. It must be between 0 and 32. A bigger baseline means higher
-        /// difficulty.
+        /// The baseline for the `PoW` challenges. This sets the `PoW` difficulty (in bits) that a
+        /// a challenge will have when there are no requests against the faucet. It must be between
+        /// 0 and 32.
         #[arg(value_parser = clap::value_parser!(u8).range(0..=32))]
-        #[arg(long = "pow-baseline", value_name = "U8", env = ENV_POW_BASELINE, default_value = "8")]
+        #[arg(long = "pow-baseline", value_name = "U8", env = ENV_POW_BASELINE, default_value = "12")]
         pow_baseline: u8,
 
         /// Comma-separated list of API keys.

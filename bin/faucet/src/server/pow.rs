@@ -63,11 +63,11 @@ impl PoW {
     /// cache. This sets the difficulty of the challenge.
     ///
     /// It is computed as:
-    /// `max_target / (difficulty + 1)`
+    /// `max_target / difficulty`
     ///
     /// Where:
     /// * `max_target = u64::MAX >> baseline`
-    /// * `difficulty = num_active_challenges / growth_rate`
+    /// * `difficulty = max(num_active_challenges << growth_rate, 1)`
     fn get_challenge_target(&self, api_key: &ApiKey) -> u64 {
         let num_challenges = self
             .challenge_cache
@@ -75,9 +75,9 @@ impl PoW {
             .expect("challenge cache lock should not be poisoned")
             .num_challenges_for_api_key(api_key);
 
-        let difficulty = num_challenges / self.config.growth_rate.get();
         let max_target = u64::MAX >> self.config.baseline;
-        max_target / (difficulty as u64 + 1)
+        let difficulty = usize::max(num_challenges << self.config.growth_rate.get(), 1);
+        max_target / difficulty as u64
     }
 
     /// Submits a challenge.

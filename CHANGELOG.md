@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.0 (TBD)
+
+- [BREAKING] Updated MSRV to 1.88.
+
 ## v0.10.0 (2025-07-10)
 
 ### Enhancements
@@ -81,7 +85,7 @@
 - Added an optional API key request parameter to skip PoW in faucet (#839).
 - Proof-of-Work difficulty is now adjusted based on the number of concurrent requests (#865).
 - Added options for configuring NTB in `bundled` command (#884).
-- [BREAKING] Updated MSRV to 1.87
+- [BREAKING] Updated MSRV to 1.87.
 
 ### Fixes
 

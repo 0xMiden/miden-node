@@ -38,7 +38,7 @@ pub struct NetworkTransactionBuilder {
 
 impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
-        let store = StoreClient::new(&self.store_url);
+        let store = StoreClient::new(&self.store_url).await?;
         let block_producer = BlockProducerClient::new(self.block_producer_address);
 
         // Retry until the store is up and running. After this we expect all requests to pass.

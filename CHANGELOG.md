@@ -2,7 +2,10 @@
 
 ## v0.11.0 (TBD)
 
+### Changes
+
 - [BREAKING] Updated MSRV to 1.88.
+- Adds a client builder for the node's components (#1041).
 
 ## v0.10.0 (2025-07-10)
 

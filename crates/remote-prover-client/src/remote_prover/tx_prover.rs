@@ -5,12 +5,12 @@ use alloc::{
 };
 use core::time::Duration;
 
+use miden_node_proto::clients::{ClientBuilder, RemoteClientManager};
 use miden_objects::{
     transaction::{ProvenTransaction, TransactionWitness},
     utils::{Deserializable, DeserializationError, Serializable},
 };
 use miden_tx::{TransactionProver, TransactionProverError};
-use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
 use crate::{
@@ -34,56 +34,68 @@ use crate::{
 #[derive(Clone)]
 pub struct RemoteTransactionProver {
     #[cfg(target_arch = "wasm32")]
-    client: Arc<Mutex<Option<ApiClient<tonic_web_wasm_client::Client>>>>,
+    manager: RemoteClientManager<ApiClient<tonic_web_wasm_client::Client>>,
 
     #[cfg(not(target_arch = "wasm32"))]
-    client: Arc<Mutex<Option<ApiClient<tonic::transport::Channel>>>>,
-
-    endpoint: String,
+    manager: RemoteClientManager<ApiClient<tonic::transport::Channel>>,
 }
 
 impl RemoteTransactionProver {
-    /// Creates a new [`RemoteTransactionProver`] with the specified gRPC server endpoint. The
-    /// endpoint should be in the format `{protocol}://{hostname}:{port}`.
+    /// Creates a new [`RemoteTransactionProver`] with the specified gRPC server endpoint.
+    ///
+    /// The endpoint should be in the format `{protocol}://{hostname}:{port}`.
+    /// Uses a default timeout of 10 seconds.
     pub fn new(endpoint: impl Into<String>) -> Self {
+        Self::with_timeout(endpoint, None)
+    }
+
+    /// Creates a new [`RemoteTransactionProver`] with an optional custom timeout.
+    ///
+    /// If `timeout` is `None`, uses the default 10-second timeout.
+    /// If `timeout` is `Some(duration)`, uses the specified timeout.
+    pub fn with_timeout(endpoint: impl Into<String>, timeout: Option<Duration>) -> Self {
         RemoteTransactionProver {
-            endpoint: endpoint.into(),
-            client: Arc::new(Mutex::new(None)),
+            manager: RemoteClientManager::with_timeout(endpoint, timeout),
         }
     }
 
     /// Establishes a connection to the remote transaction prover server. The connection is
     /// maintained for the lifetime of the prover. If the connection is already established, this
     /// method does nothing.
-    async fn connect(&self) -> Result<(), RemoteProverClientError> {
-        let mut client = self.client.lock().await;
-        if client.is_some() {
-            return Ok(());
-        }
+    #[cfg(target_arch = "wasm32")]
+    async fn connect(
+        &self,
+    ) -> Result<ApiClient<tonic_web_wasm_client::Client>, RemoteProverClientError> {
+        self.manager
+            .connect_with(|endpoint| async move {
+                let web_client = tonic_web_wasm_client::Client::new(endpoint);
+                Ok(ApiClient::new(web_client))
+            })
+            .await
+    }
 
-        #[cfg(target_arch = "wasm32")]
-        let new_client = {
-            let web_client = tonic_web_wasm_client::Client::new(self.endpoint.clone());
-            ApiClient::new(web_client)
-        };
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let new_client = {
-            let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
-                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .timeout(Duration::from_millis(10000));
-            let channel = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .connect()
-                .await
-                .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?;
-            ApiClient::new(channel)
-        };
-
-        *client = Some(new_client);
-
-        Ok(())
+    /// Establishes a connection to the remote transaction prover server. The connection is
+    /// maintained for the lifetime of the prover. If the connection is already established, this
+    /// method does nothing.
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn connect(
+        &self,
+    ) -> Result<ApiClient<tonic::transport::Channel>, RemoteProverClientError> {
+        let timeout = self.manager.timeout();
+        self.manager
+            .connect_with(|endpoint| async move {
+                let mut builder = ClientBuilder::new().with_tls();
+                if let Some(timeout) = timeout {
+                    builder = builder.with_timeout(timeout);
+                }
+                let channel = builder.create_channel(endpoint).await.map_err(|e| {
+                    RemoteProverClientError::ConnectionFailed(
+                        format!("Failed to create channel: {e}").into(),
+                    )
+                })?;
+                Ok(ApiClient::new(channel))
+            })
+            .await
     }
 }
 
@@ -94,17 +106,10 @@ impl TransactionProver for RemoteTransactionProver {
         tx_witness: TransactionWitness,
     ) -> Result<ProvenTransaction, TransactionProverError> {
         use miden_objects::utils::Serializable;
-        self.connect().await.map_err(|err| {
+
+        let mut client = self.connect().await.map_err(|err| {
             TransactionProverError::other_with_source("failed to connect to the remote prover", err)
         })?;
-
-        let mut client = self
-            .client
-            .lock()
-            .await
-            .as_ref()
-            .ok_or_else(|| TransactionProverError::other("client should be connected"))?
-            .clone();
 
         let request = tonic::Request::new(tx_witness.into());
 

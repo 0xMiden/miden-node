@@ -1,6 +1,7 @@
 use std::net::SocketAddr;
 
 use miden_node_proto::{
+    clients::ClientBuilder,
     errors::ConversionError,
     generated::{
         block_producer::api_client as block_producer_client,
@@ -18,7 +19,6 @@ use miden_node_proto::{
             SyncNoteResponse, SyncStateResponse,
         },
         rpc::api_server,
-        store::rpc_client as store_client,
     },
     try_convert,
 };
@@ -48,7 +48,7 @@ use crate::COMPONENT;
 // RPC SERVICE
 // ================================================================================================
 
-type StoreClient = store_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
+type StoreClient = miden_node_proto::clients::RpcStoreClient;
 type BlockProducerClient =
     block_producer_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 
@@ -58,35 +58,36 @@ pub struct RpcService {
 }
 
 impl RpcService {
-    pub(super) fn new(
+    pub(super) async fn new(
         store_address: SocketAddr,
         block_producer_address: Option<SocketAddr>,
-    ) -> Self {
-        let store = {
-            let store_url = format!("http://{store_address}");
-            // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-            let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-            let store = store_client::RpcClient::with_interceptor(channel, OtelInterceptor);
-            info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
-            store
-        };
+    ) -> Result<Self, miden_node_proto::clients::ClientError> {
+        let store = ClientBuilder::new()
+            .with_address(format!("http://{store_address}"))
+            .with_otel()
+            .with_lazy_connection(true)
+            .build_rpc_store_client()
+            .await?;
+        info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
 
-        let block_producer = block_producer_address.map(|block_producer_address| {
-            let block_producer_url = format!("http://{block_producer_address}");
-            // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
-            let channel =
-                tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
-            let block_producer =
-                block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+        let block_producer = if let Some(block_producer_address) = block_producer_address {
+            let client = ClientBuilder::new()
+                .with_address(format!("http://{block_producer_address}"))
+                .with_otel()
+                .with_lazy_connection(true)
+                .build_block_producer_api_client()
+                .await?;
             info!(
                 target: COMPONENT,
                 block_producer_endpoint = %block_producer_address,
                 "Block producer client initialized",
             );
-            block_producer
-        });
+            Some(client)
+        } else {
+            None
+        };
 
-        Self { store, block_producer }
+        Ok(Self { store, block_producer })
     }
 }
 
@@ -115,7 +116,7 @@ impl api_server::Api for RpcService {
                 .or(Err(Status::invalid_argument("Digest field is not in the modulus range")))?;
         }
 
-        self.store.clone().check_nullifiers(request).await
+        self.store.clone().into_inner().check_nullifiers(request).await
     }
 
     #[instrument(
@@ -134,7 +135,7 @@ impl api_server::Api for RpcService {
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
 
-        self.store.clone().check_nullifiers_by_prefix(request).await
+        self.store.clone().into_inner().check_nullifiers_by_prefix(request).await
     }
 
     #[instrument(
@@ -151,7 +152,7 @@ impl api_server::Api for RpcService {
     ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
         info!(target: COMPONENT, request = ?request.get_ref());
 
-        self.store.clone().get_block_header_by_number(request).await
+        self.store.clone().into_inner().get_block_header_by_number(request).await
     }
 
     #[instrument(
@@ -171,7 +172,7 @@ impl api_server::Api for RpcService {
         check::<QueryParamAccountIdLimit>(request.get_ref().account_ids.len())?;
         check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
 
-        self.store.clone().sync_state(request).await
+        self.store.clone().into_inner().sync_state(request).await
     }
 
     #[instrument(
@@ -190,7 +191,7 @@ impl api_server::Api for RpcService {
 
         check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
 
-        self.store.clone().sync_notes(request).await
+        self.store.clone().into_inner().sync_notes(request).await
     }
 
     #[instrument(
@@ -216,7 +217,7 @@ impl api_server::Api for RpcService {
             Status::invalid_argument(err.as_report_context("invalid NoteId"))
         })?;
 
-        self.store.clone().get_notes_by_id(request).await
+        self.store.clone().into_inner().get_notes_by_id(request).await
     }
 
     #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
@@ -284,7 +285,7 @@ impl api_server::Api for RpcService {
             .try_into()
             .map_err(|err| Status::invalid_argument(format!("Invalid account id: {err}")))?;
 
-        self.store.clone().get_account_details(request).await
+        self.store.clone().into_inner().get_account_details(request).await
     }
 
     #[instrument(
@@ -303,7 +304,7 @@ impl api_server::Api for RpcService {
 
         debug!(target: COMPONENT, ?request);
 
-        self.store.clone().get_block_by_number(request).await
+        self.store.clone().into_inner().get_block_by_number(request).await
     }
 
     #[instrument(
@@ -322,7 +323,7 @@ impl api_server::Api for RpcService {
 
         debug!(target: COMPONENT, ?request);
 
-        self.store.clone().get_account_state_delta(request).await
+        self.store.clone().into_inner().get_account_state_delta(request).await
     }
 
     #[instrument(
@@ -354,7 +355,7 @@ impl api_server::Api for RpcService {
             ));
         }
 
-        self.store.clone().get_account_proofs(request).await
+        self.store.clone().into_inner().get_account_proofs(request).await
     }
 
     #[instrument(
@@ -368,8 +369,14 @@ impl api_server::Api for RpcService {
     async fn status(&self, request: Request<()>) -> Result<Response<RpcStatusResponse>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
-        let store_status =
-            self.store.clone().status(Request::new(())).await.map(Response::into_inner).ok();
+        let store_status = self
+            .store
+            .clone()
+            .into_inner()
+            .status(Request::new(()))
+            .await
+            .map(Response::into_inner)
+            .ok();
         let block_producer_status = if let Some(block_producer) = &self.block_producer {
             block_producer
                 .clone()

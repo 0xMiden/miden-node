@@ -79,6 +79,30 @@ impl From<NoteMetadata> for note_proto::NoteMetadata {
     }
 }
 
+impl From<Digest> for note_proto::NoteId {
+    fn from(digest: Digest) -> Self {
+        Self { id: Some(digest.into()) }
+    }
+}
+
+impl TryFrom<note_proto::NoteId> for Digest {
+    type Error = ConversionError;
+
+    fn try_from(note_id: note_proto::NoteId) -> Result<Self, Self::Error> {
+        note_id
+            .id
+            .as_ref()
+            .ok_or(note_proto::NoteId::missing_field(stringify!(id)))?
+            .try_into()
+    }
+}
+
+impl From<&NoteId> for note_proto::NoteId {
+    fn from(note_id: &NoteId) -> Self {
+        Self { id: Some(note_id.into()) }
+    }
+}
+
 impl From<(&NoteId, &NoteInclusionProof)> for note_proto::NoteInclusionInBlockProof {
     fn from((note_id, proof): (&NoteId, &NoteInclusionProof)) -> Self {
         Self {
@@ -97,9 +121,17 @@ impl TryFrom<&note_proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionP
         proof: &note_proto::NoteInclusionInBlockProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
         Ok((
-            Digest::try_from(proof.note_id.as_ref().ok_or(
-                note_proto::NoteInclusionInBlockProof::missing_field(stringify!(note_id)),
-            )?)?
+            Digest::try_from(
+                proof
+                    .note_id
+                    .as_ref()
+                    .ok_or(note_proto::NoteInclusionInBlockProof::missing_field(stringify!(
+                        note_id
+                    )))?
+                    .id
+                    .as_ref()
+                    .ok_or(note_proto::NoteId::missing_field(stringify!(id)))?,
+            )?
             .into(),
             NoteInclusionProof::new(
                 proof.block_num.into(),

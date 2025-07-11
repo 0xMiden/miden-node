@@ -67,7 +67,7 @@ message NetworkNote {
 // Does not include proof of the block's inclusion in the chain.
 message NoteInclusionInBlockProof {
     // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    primitives.Digest note_id = 1;
+    NoteId note_id = 1;
 
     // The block number in which the note was created.
     fixed32 block_num = 2;
@@ -85,7 +85,7 @@ message NoteSyncRecord {
     uint32 note_index = 1;
 
     // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    primitives.Digest note_id = 2;
+    NoteId note_id = 2;
 
     // The note's metadata.
     NoteMetadata metadata = 3;
@@ -94,10 +94,16 @@ message NoteSyncRecord {
     primitives.MerklePath merkle_path = 4;
 }
 
+// Represents a note's ID.
+message NoteId {
+    // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
+    primitives.Digest id = 1;
+}
+
 // List of note IDs.
 message NoteIdList {
     // List of note IDs to be queried from the database.
-    repeated primitives.Digest ids = 1;
+    repeated NoteId ids = 1;
 }
 
 // Represents the result of getting committed notes.

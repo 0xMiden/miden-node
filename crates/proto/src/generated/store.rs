@@ -586,6 +586,25 @@ pub mod rpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
+        /// Returns the status info.
+        pub async fn status(
+            &mut self,
+            request: impl tonic::IntoRequest<()>,
+        ) -> std::result::Result<tonic::Response<super::StoreStatus>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/store.Rpc/Status");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "Status"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Returns a nullifier proof for each of the requested nullifiers.
         pub async fn check_nullifiers(
             &mut self,
@@ -847,25 +866,6 @@ pub mod rpc_client {
             let path = http::uri::PathAndQuery::from_static("/store.Rpc/SyncState");
             let mut req = request.into_request();
             req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "SyncState"));
-            self.inner.unary(req, path, codec).await
-        }
-        /// Returns the status info.
-        pub async fn status(
-            &mut self,
-            request: impl tonic::IntoRequest<()>,
-        ) -> std::result::Result<tonic::Response<super::StoreStatus>, tonic::Status> {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/store.Rpc/Status");
-            let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("store.Rpc", "Status"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -1300,6 +1300,11 @@ pub mod rpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with RpcServer.
     #[async_trait]
     pub trait Rpc: std::marker::Send + std::marker::Sync + 'static {
+        /// Returns the status info.
+        async fn status(
+            &self,
+            request: tonic::Request<()>,
+        ) -> std::result::Result<tonic::Response<super::StoreStatus>, tonic::Status>;
         /// Returns a nullifier proof for each of the requested nullifiers.
         async fn check_nullifiers(
             &self,
@@ -1403,11 +1408,6 @@ pub mod rpc_server {
             tonic::Response<super::SyncStateResponse>,
             tonic::Status,
         >;
-        /// Returns the status info.
-        async fn status(
-            &self,
-            request: tonic::Request<()>,
-        ) -> std::result::Result<tonic::Response<super::StoreStatus>, tonic::Status>;
     }
     /// Store API for the RPC component
     #[derive(Debug)]
@@ -1486,6 +1486,45 @@ pub mod rpc_server {
         }
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             match req.uri().path() {
+                "/store.Rpc/Status" => {
+                    #[allow(non_camel_case_types)]
+                    struct StatusSvc<T: Rpc>(pub Arc<T>);
+                    impl<T: Rpc> tonic::server::UnaryService<()> for StatusSvc<T> {
+                        type Response = super::StoreStatus;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(&mut self, request: tonic::Request<()>) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Rpc>::status(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = StatusSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/store.Rpc/CheckNullifiers" => {
                     #[allow(non_camel_case_types)]
                     struct CheckNullifiersSvc<T: Rpc>(pub Arc<T>);
@@ -1919,45 +1958,6 @@ pub mod rpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SyncStateSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/store.Rpc/Status" => {
-                    #[allow(non_camel_case_types)]
-                    struct StatusSvc<T: Rpc>(pub Arc<T>);
-                    impl<T: Rpc> tonic::server::UnaryService<()> for StatusSvc<T> {
-                        type Response = super::StoreStatus;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(&mut self, request: tonic::Request<()>) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Rpc>::status(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = StatusSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

@@ -16,6 +16,9 @@ import "google/protobuf/empty.proto";
 
 // Store API for the RPC component
 service Rpc {
+    // Returns the status info.
+    rpc Status(google.protobuf.Empty) returns (StoreStatus) {}
+
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(Nullifiers) returns (CheckNullifiersResponse) {}
 
@@ -71,9 +74,6 @@ service Rpc {
     // part of hashes. Thus, returned data contains excessive notes and nullifiers, client can make
     // additional filtering of that data on its side.
     rpc SyncState(SyncStateRequest) returns (SyncStateResponse) {}
-
-    // Returns the status info.
-    rpc Status(google.protobuf.Empty) returns (StoreStatus) {}
 }
 
 // BLOCK PRODUCER API

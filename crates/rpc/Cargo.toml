@@ -25,6 +25,7 @@ miden-objects          = { default-features = true, workspace = true }
 miden-tx               = { default-features = true, workspace = true }
 nom                    = { version = "8.0" }
 semver                 = { version = "1.0" }
+thiserror              = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
 tonic                  = { features = ["tls-native-roots", "tls-ring"], workspace = true }

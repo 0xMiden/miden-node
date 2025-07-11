@@ -2446,6 +2446,7 @@ dependencies = [
  "reqwest",
  "semver 1.0.26",
  "tempfile",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tonic",

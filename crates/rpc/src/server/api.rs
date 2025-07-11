@@ -372,12 +372,12 @@ impl api_server::Api for RpcService {
 
         Ok(Response::new(RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            store_status: store_status.or(Some(store_proto::StoreStatus {
+            store: store_status.or(Some(store_proto::StoreStatus {
                 status: "unreachable".to_string(),
                 chain_tip: 0,
                 version: "-".to_string(),
             })),
-            block_producer_status: block_producer_status.or(Some(
+            block_producer: block_producer_status.or(Some(
                 block_producer_proto::BlockProducerStatus {
                     status: "unreachable".to_string(),
                     version: "-".to_string(),

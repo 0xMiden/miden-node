@@ -88,8 +88,8 @@ message RpcStatus {
     string version = 1;
 
     // The store status.
-    store.StoreStatus store_status = 3;
+    store.StoreStatus store = 3;
 
     // The block producer status.
-    block_producer.BlockProducerStatus block_producer_status = 4;
+    block_producer.BlockProducerStatus block_producer = 4;
 }

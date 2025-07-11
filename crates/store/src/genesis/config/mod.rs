@@ -178,7 +178,7 @@ impl GenesisConfig {
             // yet to be deployed. An account is deployed onchain along with its first
             // transaction which results in a non-zero nonce onchain.
             //
-            // The genesis block is special in that accounts are "deplyed" without transactions and
+            // The genesis block is special in that accounts are "deployed" without transactions and
             // therefore we need bump the nonce manually to uphold this invariant.
             let wallet_delta = AccountDelta::new(
                 wallet_account.id(),

@@ -4,6 +4,7 @@
 
 ### Changes
 
+- [BREAKING] Updated MSRV to 1.88.
 - [BREAKING] Refactor protobuf messages (#1045).
 
 ## v0.10.0 (2025-07-10)
@@ -19,7 +20,9 @@
 - Genesis state is now configurable during bootstrapping (#1000)
 - Added configurable network id for the faucet (#1016).
 - Network transaction builder now tracks inflight txs instead of only committed ones (#1051).
-- Add Otel trace layers to `miden-remote-prover` and `miden-remote-prover-proxy` (#1061).
+- Add open-telemetry trace layers to `miden-remote-prover` and `miden-remote-prover-proxy` (#1061).
+- Add open-telemetry stats for the mempool (#1073).
+- Add open-telemetry stats for the network transaction builder state (#1073).
 
 ### Changes
 
@@ -85,7 +88,7 @@
 - Added an optional API key request parameter to skip PoW in faucet (#839).
 - Proof-of-Work difficulty is now adjusted based on the number of concurrent requests (#865).
 - Added options for configuring NTB in `bundled` command (#884).
-- [BREAKING] Updated MSRV to 1.87
+- [BREAKING] Updated MSRV to 1.87.
 
 ### Fixes
 

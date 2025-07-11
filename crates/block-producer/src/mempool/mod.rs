@@ -4,6 +4,7 @@ use batch_graph::BatchGraph;
 use graph::GraphError;
 use inflight_state::InflightState;
 use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH,
     batch::{BatchId, ProvenBatch},
@@ -260,6 +261,7 @@ impl Mempool {
         self.transactions
             .insert(transaction, parents)
             .expect("Transaction should insert after passing inflight state");
+        self.inject_telemetry();
 
         Ok(self.chain_tip)
     }
@@ -278,6 +280,7 @@ impl Mempool {
         let tx_ids = batch.iter().map(|tx| (tx.id(), tx.account_id())).collect::<Vec<_>>();
 
         let batch_id = self.batches.insert(tx_ids, parents).expect("Selected batch should insert");
+        self.inject_telemetry();
 
         Some((batch_id, batch))
     }
@@ -306,6 +309,7 @@ impl Mempool {
             descendents=?removed_batches.keys(),
             "Batch failed, dropping all inflight descendent batches, impacted transactions are back in queue."
         );
+        self.inject_telemetry();
     }
 
     /// Marks a batch as proven if it exists.
@@ -317,6 +321,7 @@ impl Mempool {
         }
 
         self.batches.submit_proof(batch).expect("Batch proof should submit");
+        self.inject_telemetry();
     }
 
     /// Select batches for the next block.
@@ -334,6 +339,7 @@ impl Mempool {
 
         let batches = self.batches.select_block(self.block_budget);
         self.block_in_progress = Some(batches.iter().map(ProvenBatch::id).collect());
+        self.inject_telemetry();
 
         (self.chain_tip.child(), batches)
     }
@@ -355,7 +361,7 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self, header: BlockHeader) -> BTreeSet<TransactionId> {
+    pub fn commit_block(&mut self, header: BlockHeader) {
         // Remove committed batches and transactions from graphs.
         let batches = self.block_in_progress.take().expect("No block in progress to commit");
         let transactions =
@@ -374,7 +380,8 @@ impl Mempool {
         self.subscription.block_committed(header, transactions);
 
         // Revert expired transactions and their descendents.
-        self.revert_expired_transactions()
+        self.revert_expired_transactions();
+        self.inject_telemetry();
     }
 
     /// Notify the pool that construction of the in flight block failed.
@@ -413,6 +420,7 @@ impl Mempool {
             .collect();
         self.revert_transactions(txs)
             .expect("transactions from a block must be part of the mempool");
+        self.inject_telemetry();
     }
 
     /// Gets all transactions that expire at the new chain tip and reverts them (and their
@@ -484,5 +492,23 @@ impl Mempool {
         chain_tip: BlockNumber,
     ) -> Result<mpsc::Receiver<MempoolEvent>, BlockNumber> {
         self.subscription.subscribe(chain_tip)
+    }
+
+    /// Adds mempool stats to the current tracing span.
+    ///
+    /// Note that these are only visible in the OpenTelemetry context, as conventional tracing
+    /// does not track fields added dynamically.
+    fn inject_telemetry(&self) {
+        let span = tracing::Span::current();
+
+        span.set_attribute("mempool.transactions.total", self.transactions.len());
+        span.set_attribute("mempool.transactions.roots", self.transactions.num_roots());
+        span.set_attribute("mempool.accounts", self.state.num_accounts());
+        span.set_attribute("mempool.nullifiers", self.state.num_nullifiers());
+        span.set_attribute("mempool.output_notes", self.state.num_notes_created());
+        span.set_attribute("mempool.batches.pending", self.batches.num_pending());
+        span.set_attribute("mempool.batches.proven", self.batches.num_proven());
+        span.set_attribute("mempool.batches.total", self.batches.len());
+        span.set_attribute("mempool.batches.roots", self.batches.num_roots());
     }
 }

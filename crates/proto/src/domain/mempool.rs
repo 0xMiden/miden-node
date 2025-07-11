@@ -35,6 +35,16 @@ pub enum MempoolEvent {
     TransactionsReverted(BTreeSet<TransactionId>),
 }
 
+impl MempoolEvent {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            MempoolEvent::TransactionAdded { .. } => "TransactionAdded",
+            MempoolEvent::BlockCommitted { .. } => "BlockCommitted",
+            MempoolEvent::TransactionsReverted(_) => "TransactionsReverted",
+        }
+    }
+}
+
 impl From<MempoolEvent> for ProtoMempoolEvent {
     fn from(event: MempoolEvent) -> Self {
         let event = match event {

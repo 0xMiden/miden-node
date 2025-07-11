@@ -328,6 +328,24 @@ impl InflightState {
             }
         }
     }
+
+    /// The number of accounts affected by inflight transactions _and_ transactions in recently
+    /// committed blocks.
+    pub fn num_accounts(&self) -> usize {
+        self.accounts.len()
+    }
+
+    /// The number of nullifiers produced by inflight transactions _and_ transactions in recently
+    /// committed blocks.
+    pub fn num_nullifiers(&self) -> usize {
+        self.nullifiers.len()
+    }
+
+    /// The number of notes produced by inflight transactions _and_ transactions in recently
+    /// committed blocks.
+    pub fn num_notes_created(&self) -> usize {
+        self.output_notes.len()
+    }
 }
 
 /// Describes the state of an inflight output note.

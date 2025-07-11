@@ -147,6 +147,16 @@ impl TransactionGraph {
         let transactions = transactions.into_iter().collect();
         self.inner.purge_subgraphs(transactions)
     }
+
+    /// The total number of transactions in the graph.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// The amount of transactions which are root nodes.
+    pub fn num_roots(&self) -> usize {
+        self.inner.num_roots()
+    }
 }
 
 #[cfg(test)]

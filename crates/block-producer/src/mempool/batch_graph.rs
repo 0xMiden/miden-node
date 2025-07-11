@@ -280,6 +280,26 @@ impl BatchGraph {
     pub fn get_transactions(&self, id: &BatchId) -> Option<&[TransactionId]> {
         self.batches.get(id).map(Vec::as_slice)
     }
+
+    // Amount of inflight batches without a submitted proof.
+    pub fn num_pending(&self) -> usize {
+        self.inner.num_pending()
+    }
+
+    // Amount of inflight batches with a submitted proof.
+    pub fn num_proven(&self) -> usize {
+        self.inner.num_processed()
+    }
+
+    // The total number of batches in the graph.
+    pub fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// The amount of batches which are root nodes.
+    pub fn num_roots(&self) -> usize {
+        self.inner.num_roots()
+    }
 }
 
 #[cfg(any(test, doctest))]

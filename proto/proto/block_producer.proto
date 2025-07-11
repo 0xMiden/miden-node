@@ -8,12 +8,15 @@ import "types/primitives.proto";
 import "types/transaction.proto";
 import "google/protobuf/empty.proto";
 
-service Api {
-    // Submits proven transaction to the Miden network
-    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (SubmitProvenTransactionResponse) {}
+// BLOCK PRODUCER SERVICE
+// ================================================================================================
 
+service Api {
     // Returns the status info.
     rpc Status(google.protobuf.Empty) returns (BlockProducerStatus) {}
+
+    // Submits proven transaction to the Miden network
+    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (SubmitProvenTransactionResponse) {}
 
     // Subscribe to mempool events.
     //
@@ -26,6 +29,27 @@ service Api {
     // Currently only a single active subscription is supported. Subscription requests will cancel the active
     // subscription, if any.
     rpc MempoolSubscription(MempoolSubscriptionRequest) returns (stream MempoolEvent) {}
+}
+
+// STATUS
+// ================================================================================================
+
+// Represents the status of the block producer.
+message BlockProducerStatus {
+    // The block producer's running version.
+    string version = 1;
+
+    // The block producer's status.
+    string status = 2;
+}
+
+// SUBMIT PROVEN TRANSACTION
+// ================================================================================================
+
+// Represents the result of submitting proven transaction.
+message SubmitProvenTransactionResponse {
+    // The node's current block height.
+    fixed32 block_height = 1;
 }
 
 // MEMPOOL SUBSCRIPTION
@@ -78,25 +102,4 @@ message MempoolEvent {
         BlockCommitted block_committed = 2;
         TransactionsReverted transactions_reverted = 3;
     };
-}
-
-// SUBMIT PROVEN TRANSACTION
-// ================================================================================================
-
-// Represents the result of submitting proven transaction.
-message SubmitProvenTransactionResponse {
-    // The node's current block height.
-    fixed32 block_height = 1;
-}
-
-// BLOCK PRODUCER STATUS
-// ================================================================================================
-
-// Represents the status of the block producer.
-message BlockProducerStatus {
-    // The block producer's running version.
-    string version = 1;
-
-    // The block producer's status.
-    string status = 2;
 }

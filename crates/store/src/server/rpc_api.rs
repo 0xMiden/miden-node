@@ -225,7 +225,7 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_notes_by_id(
         &self,
-        request: Request<note_proto::NoteIds>,
+        request: Request<note_proto::NoteIdList>,
     ) -> Result<Response<note_proto::CommittedNotes>, Status> {
         info!(target: COMPONENT, ?request);
 

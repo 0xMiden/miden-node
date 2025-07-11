@@ -194,7 +194,7 @@ impl api_server::Api for RpcService {
     )]
     async fn get_notes_by_id(
         &self,
-        request: Request<note_proto::NoteIds>,
+        request: Request<note_proto::NoteIdList>,
     ) -> Result<Response<note_proto::CommittedNotes>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 

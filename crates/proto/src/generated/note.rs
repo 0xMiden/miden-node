@@ -94,7 +94,7 @@ pub struct NoteSyncRecord {
 }
 /// List of note IDs.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NoteIds {
+pub struct NoteIdList {
     /// List of note IDs to be queried from the database.
     #[prost(message, repeated, tag = "1")]
     pub ids: ::prost::alloc::vec::Vec<super::primitives::Digest>,

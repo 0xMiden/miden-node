@@ -783,7 +783,7 @@ pub mod rpc_client {
         /// Returns a list of committed notes matching the provided note IDs.
         pub async fn get_notes_by_id(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::note::NoteIds>,
+            request: impl tonic::IntoRequest<super::super::note::NoteIdList>,
         ) -> std::result::Result<
             tonic::Response<super::super::note::CommittedNotes>,
             tonic::Status,
@@ -1365,7 +1365,7 @@ pub mod rpc_server {
         /// Returns a list of committed notes matching the provided note IDs.
         async fn get_notes_by_id(
             &self,
-            request: tonic::Request<super::super::note::NoteIds>,
+            request: tonic::Request<super::super::note::NoteIdList>,
         ) -> std::result::Result<
             tonic::Response<super::super::note::CommittedNotes>,
             tonic::Status,
@@ -1847,7 +1847,9 @@ pub mod rpc_server {
                 "/store.Rpc/GetNotesById" => {
                     #[allow(non_camel_case_types)]
                     struct GetNotesByIdSvc<T: Rpc>(pub Arc<T>);
-                    impl<T: Rpc> tonic::server::UnaryService<super::super::note::NoteIds>
+                    impl<
+                        T: Rpc,
+                    > tonic::server::UnaryService<super::super::note::NoteIdList>
                     for GetNotesByIdSvc<T> {
                         type Response = super::super::note::CommittedNotes;
                         type Future = BoxFuture<
@@ -1856,7 +1858,7 @@ pub mod rpc_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::super::note::NoteIds>,
+                            request: tonic::Request<super::super::note::NoteIdList>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

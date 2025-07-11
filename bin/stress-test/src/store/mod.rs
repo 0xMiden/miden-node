@@ -179,7 +179,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 
         // get the notes nullifiers.
         let notes = store_client
-            .get_notes_by_id(note_proto::NoteIds { ids: note_ids })
+            .get_notes_by_id(note_proto::NoteIdList { ids: note_ids })
             .await
             .unwrap()
             .into_inner()

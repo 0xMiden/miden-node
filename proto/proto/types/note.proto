@@ -95,7 +95,7 @@ message NoteSyncRecord {
 }
 
 // List of note IDs.
-message NoteIds {
+message NoteIdList {
     // List of note IDs to be queried from the database.
     repeated primitives.Digest ids = 1;
 }

@@ -45,7 +45,7 @@ service Api {
     rpc GetBlockHeaderByNumber(store.BlockHeaderByNumberRequest) returns (store.BlockHeaderByNumberResponse) {}
 
     // Returns a list of notes matching the provided note IDs.
-    rpc GetNotesById(note.NoteIds) returns (note.CommittedNotes) {}
+    rpc GetNotesById(note.NoteIdList) returns (note.CommittedNotes) {}
 
     // Submits proven transaction to the Miden network.
     rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (block_producer.SubmitProvenTransactionResponse) {}

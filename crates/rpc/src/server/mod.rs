@@ -38,6 +38,12 @@ impl Rpc {
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
         let api = api::RpcService::new(self.store, self.block_producer);
+
+        let genesis = api
+            .get_genesis_header_with_retry()
+            .await
+            .context("Fetching genesis header from store")?;
+
         let api_service = api_server::ApiServer::new(api);
         let reflection_service = server::Builder::configure()
             .register_file_descriptor_set(rpc_api_descriptor())
@@ -58,7 +64,7 @@ impl Rpc {
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
-            .layer(HeaderVerificationLayer::new()?)
+            .layer(HeaderVerificationLayer::new(genesis.commitment())?)
             .layer(cors_for_grpc_web_layer())
             // Enables gRPC-web support.
             .layer(GrpcWebLayer::new())

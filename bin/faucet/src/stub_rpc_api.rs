@@ -58,7 +58,7 @@ impl api_server::Api for StubRpcApi {
 
     async fn sync_notes(
         &self,
-        _request: Request<store_proto::NoteTags>,
+        _request: Request<store_proto::SyncNotesRequest>,
     ) -> Result<Response<store_proto::SyncNotesResponse>, Status> {
         unimplemented!();
     }

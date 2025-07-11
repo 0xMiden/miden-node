@@ -191,7 +191,7 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_notes(
         &self,
-        request: Request<store_proto::NoteTags>,
+        request: Request<store_proto::SyncNotesRequest>,
     ) -> Result<Response<store_proto::SyncNotesResponse>, Status> {
         let request = request.into_inner();
 

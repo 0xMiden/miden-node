@@ -364,7 +364,7 @@ pub mod api_client {
         /// tip of the chain.
         pub async fn sync_notes(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::store::NoteTags>,
+            request: impl tonic::IntoRequest<super::super::store::SyncNotesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::store::SyncNotesResponse>,
             tonic::Status,
@@ -528,7 +528,7 @@ pub mod api_server {
         /// tip of the chain.
         async fn sync_notes(
             &self,
-            request: tonic::Request<super::super::store::NoteTags>,
+            request: tonic::Request<super::super::store::SyncNotesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::store::SyncNotesResponse>,
             tonic::Status,
@@ -1099,7 +1099,7 @@ pub mod api_server {
                     struct SyncNotesSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<super::super::store::NoteTags>
+                    > tonic::server::UnaryService<super::super::store::SyncNotesRequest>
                     for SyncNotesSvc<T> {
                         type Response = super::super::store::SyncNotesResponse;
                         type Future = BoxFuture<
@@ -1108,7 +1108,9 @@ pub mod api_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::super::store::NoteTags>,
+                            request: tonic::Request<
+                                super::super::store::SyncNotesRequest,
+                            >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

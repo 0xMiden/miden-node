@@ -175,7 +175,7 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_notes(
         &self,
-        request: Request<store_proto::NoteTags>,
+        request: Request<store_proto::SyncNotesRequest>,
     ) -> Result<Response<store_proto::SyncNotesResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 

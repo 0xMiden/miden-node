@@ -466,7 +466,7 @@ pub struct SyncStateResponse {
 /// Specifies note tags that client is interested in. The server will return the first block which
 /// contains a note matching `note_tags` or the chain tip.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NoteTags {
+pub struct SyncNotesRequest {
     /// Last block known by the client. The response will contain data starting from the next block,
     /// until the first block which contains a note of matching the requested tag.
     #[prost(fixed32, tag = "1")]
@@ -813,7 +813,7 @@ pub mod rpc_client {
         /// tip of the chain.
         pub async fn sync_notes(
             &mut self,
-            request: impl tonic::IntoRequest<super::NoteTags>,
+            request: impl tonic::IntoRequest<super::SyncNotesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SyncNotesResponse>,
             tonic::Status,
@@ -1381,7 +1381,7 @@ pub mod rpc_server {
         /// tip of the chain.
         async fn sync_notes(
             &self,
-            request: tonic::Request<super::NoteTags>,
+            request: tonic::Request<super::SyncNotesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SyncNotesResponse>,
             tonic::Status,
@@ -1890,7 +1890,7 @@ pub mod rpc_server {
                 "/store.Rpc/SyncNotes" => {
                     #[allow(non_camel_case_types)]
                     struct SyncNotesSvc<T: Rpc>(pub Arc<T>);
-                    impl<T: Rpc> tonic::server::UnaryService<super::NoteTags>
+                    impl<T: Rpc> tonic::server::UnaryService<super::SyncNotesRequest>
                     for SyncNotesSvc<T> {
                         type Response = super::SyncNotesResponse;
                         type Future = BoxFuture<
@@ -1899,7 +1899,7 @@ pub mod rpc_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::NoteTags>,
+                            request: tonic::Request<super::SyncNotesRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

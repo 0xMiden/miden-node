@@ -56,7 +56,7 @@ service Rpc {
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
     // tip of the chain. 
-    rpc SyncNotes(NoteTags) returns (SyncNotesResponse) {}
+    rpc SyncNotes(SyncNotesRequest) returns (SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
     // for the objects (accounts, notes, nullifiers) the client is interested in.
@@ -546,7 +546,7 @@ message SyncStateResponse {
 //
 // Specifies note tags that client is interested in. The server will return the first block which
 // contains a note matching `note_tags` or the chain tip.
-message NoteTags {
+message SyncNotesRequest {
     // Last block known by the client. The response will contain data starting from the next block,
     // until the first block which contains a note of matching the requested tag.
     fixed32 block_num = 1;

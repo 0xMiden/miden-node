@@ -36,31 +36,32 @@ pub struct ApiClient(RpcInnerClient);
 
 // Implement GrpcClientBuilder for the RpcInnerClient type
 impl GrpcClientBuilder for RpcInnerClient {
-    async fn from_builder(builder: Builder) -> anyhow::Result<Self> {
-        let mut endpoint = tonic::transport::Endpoint::from_shared(builder.address)
-            .context("Failed to create endpoint from address")?;
-
-        if let Some(timeout) = builder.with_timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-
-        if builder.with_tls {
-            endpoint = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-
-        let channel = if builder.with_lazy_connection {
-            endpoint.connect_lazy()
-        } else {
-            endpoint.connect().await.context("Failed to connect to endpoint")?
-        };
+    fn connect_lazy(builder: Builder) -> anyhow::Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect_lazy")?
+            .connect_lazy();
 
         // Create MetadataInterceptor with version from builder or default
         let version = builder.metadata_version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
         let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
 
-        Ok(RpcInnerClient(ProtoClient::with_interceptor(channel, interceptor)))
+        Ok(Self(ProtoClient::with_interceptor(channel, interceptor)))
+    }
+
+    async fn connect(builder: Builder) -> anyhow::Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect")?
+            .connect()
+            .await
+            .context("Failed to connect to endpoint")?;
+
+        // Create MetadataInterceptor with version from builder or default
+        let version = builder.metadata_version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
+        let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
+
+        Ok(Self(ProtoClient::with_interceptor(channel, interceptor)))
     }
 }
 
@@ -81,7 +82,7 @@ impl ApiClient {
             .with_tls()
             .with_timeout(timeout)
             .with_metadata_version(version.unwrap_or(env!("CARGO_PKG_VERSION")).to_string())
-            .build()
+            .connect()
             .await
             .context("Failed to create gRPC client")?;
 
@@ -96,7 +97,7 @@ impl ApiClient {
     ///
     /// If a version is not specified, the version found in the `Cargo.toml` of the workspace is
     /// used.
-    pub async fn connect_lazy(
+    pub fn connect_lazy(
         url: &Url,
         timeout: Duration,
         version: Option<&'static str>,
@@ -105,10 +106,8 @@ impl ApiClient {
             .with_address(url.to_string())
             .with_tls()
             .with_timeout(timeout)
-            .with_lazy_connection()
             .with_metadata_version(version.unwrap_or(env!("CARGO_PKG_VERSION")).to_string())
-            .build()
-            .await
+            .connect_lazy()
             .context("Failed to create gRPC client")?;
 
         Ok(ApiClient(client))

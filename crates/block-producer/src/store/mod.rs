@@ -134,14 +134,12 @@ pub struct StoreClient {
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub async fn new(store_address: SocketAddr) -> Self {
+    pub fn new(store_address: SocketAddr) -> Self {
         let store_url = format!("http://{store_address}");
         let store = Builder::new()
             .with_address(store_url)
-            .with_lazy_connection()
-            .build()
-            .await
-            .unwrap();
+            .connect_lazy()
+            .expect("failed to connect to store"); // TODO: handle error
 
         info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
 

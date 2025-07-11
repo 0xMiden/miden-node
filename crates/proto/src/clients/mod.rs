@@ -26,7 +26,10 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
-use tonic::transport::{Channel, Endpoint};
+use tonic::{
+    service::interceptor::InterceptedService,
+    transport::{Channel, Endpoint},
+};
 
 // RE-EXPORTS FOR CONVENIENCE
 // ================================================================================================
@@ -46,10 +49,10 @@ pub use crate::generated::{
 #[derive(Default, Clone)]
 pub struct Builder {
     pub with_tls: bool,
-    pub with_lazy_connection: bool,
     pub address: String,
     pub with_timeout: Option<Duration>,
     pub metadata_version: Option<String>,
+    pub endpoint: Option<Endpoint>,
 }
 
 impl Builder {
@@ -60,12 +63,6 @@ impl Builder {
     #[must_use]
     pub fn with_tls(mut self) -> Self {
         self.with_tls = true;
-        self
-    }
-
-    #[must_use]
-    pub fn with_lazy_connection(mut self) -> Self {
-        self.with_lazy_connection = true;
         self
     }
 
@@ -87,11 +84,39 @@ impl Builder {
         self
     }
 
-    pub async fn build<T>(self) -> Result<T>
+    pub async fn connect<T>(mut self) -> Result<T>
     where
         T: GrpcClientBuilder,
     {
-        T::from_builder(self).await
+        self.configure_endpoint()?;
+        T::connect(self).await
+    }
+
+    pub fn connect_lazy<T>(mut self) -> Result<T>
+    where
+        T: GrpcClientBuilder,
+    {
+        self.configure_endpoint()?;
+        T::connect_lazy(self)
+    }
+
+    fn configure_endpoint(&mut self) -> Result<()> {
+        let mut endpoint = Endpoint::from_shared(self.address.clone())
+            .context("Failed to create endpoint from address")?;
+
+        if let Some(timeout) = self.with_timeout {
+            endpoint = endpoint.timeout(timeout);
+        }
+
+        if self.with_tls {
+            endpoint = endpoint
+                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
+                .context("Failed to configure TLS")?;
+        }
+
+        self.endpoint = Some(endpoint);
+
+        Ok(())
     }
 }
 
@@ -103,162 +128,120 @@ impl Builder {
 /// This trait provides a standardized way to create different gRPC clients with
 /// consistent configuration options like TLS, OTEL interceptors, and connection types.
 pub trait GrpcClientBuilder: Sized {
-    /// Creates a new client instance from the builder configuration.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the client cannot be created due to invalid configuration,
-    /// network issues, or other initialization problems.
+    fn connect_lazy(builder: Builder) -> Result<Self>;
+
     #[allow(async_fn_in_trait)]
-    async fn from_builder(builder: Builder) -> Result<Self>;
+    async fn connect(builder: Builder) -> Result<Self>;
 }
 
 // IMPLEMENTATIONS
 // ================================================================================================
 
 // Note: This implementation always uses OtelInterceptor, matching existing patterns
-impl GrpcClientBuilder
-    for RpcApiClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>>
-{
-    async fn from_builder(builder: Builder) -> Result<Self> {
-        let mut endpoint = Endpoint::from_shared(builder.address)
-            .context("Failed to create endpoint from address")?;
+impl GrpcClientBuilder for RpcApiClient<InterceptedService<Channel, OtelInterceptor>> {
+    fn connect_lazy(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect_lazy")?
+            .connect_lazy();
+        let client = RpcApiClient::with_interceptor(channel, OtelInterceptor);
+        Ok(client)
+    }
 
-        if let Some(timeout) = builder.with_timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-
-        if builder.with_tls {
-            endpoint = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-
-        let channel = if builder.with_lazy_connection {
-            endpoint.connect_lazy()
-        } else {
-            endpoint.connect().await.context("Failed to connect to endpoint")?
-        };
-
+    async fn connect(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect")?
+            .connect()
+            .await?;
         let client = RpcApiClient::with_interceptor(channel, OtelInterceptor);
         Ok(client)
     }
 }
 
 // Note: All implementations use OtelInterceptor by default, matching existing patterns
-impl GrpcClientBuilder
-    for BlockProducerApiClient<
-        tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>,
-    >
-{
-    async fn from_builder(builder: Builder) -> Result<Self> {
-        let mut endpoint = Endpoint::from_shared(builder.address)
-            .context("Failed to create endpoint from address")?;
+impl GrpcClientBuilder for BlockProducerApiClient<InterceptedService<Channel, OtelInterceptor>> {
+    fn connect_lazy(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect_lazy")?
+            .connect_lazy();
+        let client = BlockProducerApiClient::with_interceptor(channel, OtelInterceptor);
+        Ok(client)
+    }
 
-        if let Some(timeout) = builder.with_timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-
-        if builder.with_tls {
-            endpoint = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-
-        let channel = if builder.with_lazy_connection {
-            endpoint.connect_lazy()
-        } else {
-            endpoint.connect().await.context("Failed to connect to endpoint")?
-        };
-
+    async fn connect(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect")?
+            .connect()
+            .await
+            .context("Failed to connect to endpoint")?;
         let client = BlockProducerApiClient::with_interceptor(channel, OtelInterceptor);
         Ok(client)
     }
 }
 
-impl GrpcClientBuilder
-    for StoreNtxBuilderClient<
-        tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>,
-    >
-{
-    async fn from_builder(builder: Builder) -> Result<Self> {
-        let mut endpoint = Endpoint::from_shared(builder.address)
-            .context("Failed to create endpoint from address")?;
+impl GrpcClientBuilder for StoreNtxBuilderClient<InterceptedService<Channel, OtelInterceptor>> {
+    fn connect_lazy(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect_lazy")?
+            .connect_lazy();
+        let client = StoreNtxBuilderClient::with_interceptor(channel, OtelInterceptor);
+        Ok(client)
+    }
 
-        if let Some(timeout) = builder.with_timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-
-        if builder.with_tls {
-            endpoint = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-
-        let channel = if builder.with_lazy_connection {
-            endpoint.connect_lazy()
-        } else {
-            endpoint.connect().await.context("Failed to connect to endpoint")?
-        };
-
+    async fn connect(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect")?
+            .connect()
+            .await?;
         let client = StoreNtxBuilderClient::with_interceptor(channel, OtelInterceptor);
         Ok(client)
     }
 }
 
-impl GrpcClientBuilder
-    for StoreBlockProducerClient<
-        tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>,
-    >
-{
-    async fn from_builder(builder: Builder) -> Result<Self> {
-        let mut endpoint = Endpoint::from_shared(builder.address)
-            .context("Failed to create endpoint from address")?;
+impl GrpcClientBuilder for StoreBlockProducerClient<InterceptedService<Channel, OtelInterceptor>> {
+    fn connect_lazy(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect_lazy")?
+            .connect_lazy();
+        let client = StoreBlockProducerClient::with_interceptor(channel, OtelInterceptor);
+        Ok(client)
+    }
 
-        if let Some(timeout) = builder.with_timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-
-        if builder.with_tls {
-            endpoint = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-
-        let channel = if builder.with_lazy_connection {
-            endpoint.connect_lazy()
-        } else {
-            endpoint.connect().await.context("Failed to connect to endpoint")?
-        };
-
+    async fn connect(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect")?
+            .connect()
+            .await
+            .context("Failed to connect to endpoint")?;
         let client = StoreBlockProducerClient::with_interceptor(channel, OtelInterceptor);
         Ok(client)
     }
 }
 
-impl GrpcClientBuilder
-    for StoreRpcClient<tonic::service::interceptor::InterceptedService<Channel, OtelInterceptor>>
-{
-    async fn from_builder(builder: Builder) -> Result<Self> {
-        let mut endpoint = Endpoint::from_shared(builder.address)
-            .context("Failed to create endpoint from address")?;
+impl GrpcClientBuilder for StoreRpcClient<InterceptedService<Channel, OtelInterceptor>> {
+    fn connect_lazy(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect_lazy")?
+            .connect_lazy();
+        let client = StoreRpcClient::with_interceptor(channel, OtelInterceptor);
+        Ok(client)
+    }
 
-        if let Some(timeout) = builder.with_timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-
-        if builder.with_tls {
-            endpoint = endpoint
-                .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-
-        let channel = if builder.with_lazy_connection {
-            endpoint.connect_lazy()
-        } else {
-            endpoint.connect().await.context("Failed to connect to endpoint")?
-        };
-
+    async fn connect(builder: Builder) -> Result<Self> {
+        let channel = builder
+            .endpoint
+            .context("should be called through Builder::connect")?
+            .connect()
+            .await
+            .context("Failed to connect to endpoint")?;
         let client = StoreRpcClient::with_interceptor(channel, OtelInterceptor);
         Ok(client)
     }

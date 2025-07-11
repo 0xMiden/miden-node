@@ -31,8 +31,8 @@ impl RpcClient {
     /// Creates an RPC client to the given address.
     ///
     /// The connection is lazy and will re-establish in the background on disconnection.
-    pub async fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
-        let client = ApiClient::connect_lazy(url, Duration::from_millis(timeout_ms), None).await?;
+    pub fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
+        let client = ApiClient::connect_lazy(url, Duration::from_millis(timeout_ms), None)?;
 
         Ok(Self { inner: client })
     }

@@ -2,13 +2,13 @@
 
 ## v0.11.0 (TBD)
 
+- Added environment variable support for batch and block size CLI arguments (#1081).
 - [BREAKING] Updated MSRV to 1.88.
 
 ## v0.10.0 (2025-07-10)
 
 ### Enhancements
 
-- Added environment variable support for batch and block size CLI arguments (#1081).
 - Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
 - Added support for gRPC server side reflection to all components (#949).
 - Added support for TLS to `miden-proving-service-client` (#968).

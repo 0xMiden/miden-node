@@ -8,6 +8,8 @@
 
 ### Enhancements
 
+- Transaction limit per batch is now configurable (default 8) (#1018).
+- Batch limit per block is now configurable (default 8) (#1018).
 - Added `miden-proving-service` and `miden-proving-service-client` crates (#926).
 - Added support for gRPC server side reflection to all components (#949).
 - Added support for TLS to `miden-proving-service-client` (#968).

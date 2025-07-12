@@ -2,7 +2,10 @@
 
 ## v0.11.0 (TBD)
 
+### Changes
+
 - [BREAKING] Updated MSRV to 1.88.
+- [BREAKING] Refactor protobuf messages (#1045).
 
 ## v0.10.0 (2025-07-10)
 

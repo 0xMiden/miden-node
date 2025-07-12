@@ -2,22 +2,21 @@
 syntax = "proto3";
 package block_producer;
 
-import "requests.proto";
-import "responses.proto";
-
-import "block.proto";
-import "digest.proto";
-import "note.proto";
-import "transaction.proto";
-
+import "types/note.proto";
+import "types/blockchain.proto";
+import "types/primitives.proto";
+import "types/transaction.proto";
 import "google/protobuf/empty.proto";
 
-service Api {
-    // Submits proven transaction to the Miden network
-    rpc SubmitProvenTransaction(requests.SubmitProvenTransactionRequest) returns (responses.SubmitProvenTransactionResponse) {}
+// BLOCK PRODUCER SERVICE
+// ================================================================================================
 
+service Api {
     // Returns the status info.
-    rpc Status(google.protobuf.Empty) returns (responses.BlockProducerStatusResponse) {}
+    rpc Status(google.protobuf.Empty) returns (BlockProducerStatus) {}
+
+    // Submits proven transaction to the Miden network
+    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (SubmitProvenTransactionResponse) {}
 
     // Subscribe to mempool events.
     //
@@ -32,6 +31,31 @@ service Api {
     rpc MempoolSubscription(MempoolSubscriptionRequest) returns (stream MempoolEvent) {}
 }
 
+// STATUS
+// ================================================================================================
+
+// Represents the status of the block producer.
+message BlockProducerStatus {
+    // The block producer's running version.
+    string version = 1;
+
+    // The block producer's status.
+    string status = 2;
+}
+
+// SUBMIT PROVEN TRANSACTION
+// ================================================================================================
+
+// Represents the result of submitting proven transaction.
+message SubmitProvenTransactionResponse {
+    // The node's current block height.
+    fixed32 block_height = 1;
+}
+
+// MEMPOOL SUBSCRIPTION
+// ================================================================================================
+
+// Request to subscribe to mempool events.
 message MempoolSubscriptionRequest {
     // The caller's current chain height.
     //
@@ -39,36 +63,43 @@ message MempoolSubscriptionRequest {
     fixed32 chain_tip = 1;
 }
 
+// Event from the mempool.
 message MempoolEvent {
+    // A block was committed.
+    //
+    // This event is sent when a block is committed to the chain.
+    message BlockCommitted {
+        blockchain.BlockHeader block_header = 1;
+        repeated transaction.TransactionId transactions = 2;
+    }
+
+    // A transaction was added to the mempool.
+    //
+    // This event is sent when a transaction is added to the mempool.
+    message TransactionAdded {
+        // The ID of the transaction.
+        transaction.TransactionId id = 1;
+        // Nullifiers consumed by the transaction.
+        repeated primitives.Digest nullifiers = 2;
+        // Network notes created by the transaction.
+        repeated note.NetworkNote network_notes = 3;
+        // Changes to a network account, if any. This includes creation of new network accounts.
+        //
+        // The account delta is encoded using [winter_utils::Serializable] implementation
+        // for [miden_objects::account::delta::AccountDelta].
+        optional bytes network_account_delta = 4;
+    }
+
+    // A set of transactions was reverted and dropped from the mempool.
+    //
+    // This event is sent when a set of transactions are reverted and dropped from the mempool.
+    message TransactionsReverted {
+        repeated transaction.TransactionId reverted = 1;
+    }
+
     oneof event {
         TransactionAdded transaction_added = 1;
         BlockCommitted block_committed = 2;
         TransactionsReverted transactions_reverted = 3;
     };
-}
-
-// A transaction was added to the mempool.
-message TransactionAdded {
-    // The ID of the transaction.
-    transaction.TransactionId id = 1;
-    // Nullifiers consumed by the transaction.
-    repeated digest.Digest nullifiers = 2;
-    // Network notes created by the transaction.
-    repeated note.NetworkNote network_notes = 3;
-    // Changes to a network account, if any. This includes creation of new network accounts.
-    //
-    // The account delta is encoded using [winter_utils::Serializable] implementation
-    // for [miden_objects::account::delta::AccountDelta].
-    optional bytes network_account_delta = 4;
-}
-
-// A block was committed.
-message BlockCommitted {
-    block.BlockHeader block_header = 1;   
-    repeated transaction.TransactionId transactions = 2;
-}
-
-// A set of transactions was reverted and dropped from the mempool.
-message TransactionsReverted {
-    repeated transaction.TransactionId reverted = 1;
 }

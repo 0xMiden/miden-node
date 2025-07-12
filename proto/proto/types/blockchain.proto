@@ -1,0 +1,70 @@
+syntax = "proto3";
+package blockchain;
+
+import "types/account.proto";
+import "types/primitives.proto";
+
+// BLOCK
+// ================================================================================================
+
+// Represents a block.
+message Block {
+    // Block data encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::Block].
+    bytes block = 1;
+}
+
+// Represents a block or nothing.
+message MaybeBlock {
+    // The requested block data encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::Block].
+    optional bytes block = 1;
+}
+
+// Represents a block number.
+message BlockNumber {
+    // The block number of the target block.
+    fixed32 block_num = 1;
+}
+
+// Represents a block number or nothing.
+message MaybeBlockNumber {
+    // The block number of the target block.
+    optional fixed32 block_num = 1;
+}
+
+// Represents a block header.
+message BlockHeader {
+    // Specifies the version of the protocol.
+    uint32 version = 1;
+
+    // The commitment of the previous blocks header.
+    primitives.Digest prev_block_commitment = 2;
+
+    // A unique sequential number of the current block.
+    fixed32 block_num = 3;
+
+    // A commitment to an MMR of the entire chain where each block is a leaf.
+    primitives.Digest chain_commitment = 4;
+
+    // A commitment to account database.
+    primitives.Digest account_root = 5;
+
+    // A commitment to the nullifier database.
+    primitives.Digest nullifier_root = 6;
+
+    // A commitment to all notes created in the current block.
+    primitives.Digest note_root = 7;
+
+    // A commitment to a set of IDs of transactions which affected accounts in this block.
+    primitives.Digest tx_commitment = 8;
+
+    // A commitment to a STARK proof attesting to the correct state transition.
+    primitives.Digest proof_commitment = 9;
+
+    // A commitment to all transaction kernels supported by this block.
+    primitives.Digest tx_kernel_commitment = 10;
+
+    // The time when the block was created.
+    fixed32 timestamp = 11;
+}

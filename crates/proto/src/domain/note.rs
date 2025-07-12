@@ -11,16 +11,16 @@ use thiserror::Error;
 use super::account::NetworkAccountPrefix;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
-    generated::note as proto,
+    generated::note as note_proto,
 };
 
-impl TryFrom<proto::NoteMetadata> for NoteMetadata {
+impl TryFrom<note_proto::NoteMetadata> for NoteMetadata {
     type Error = ConversionError;
 
-    fn try_from(value: proto::NoteMetadata) -> Result<Self, Self::Error> {
+    fn try_from(value: note_proto::NoteMetadata) -> Result<Self, Self::Error> {
         let sender = value
             .sender
-            .ok_or_else(|| proto::NoteMetadata::missing_field(stringify!(sender)))?
+            .ok_or_else(|| note_proto::NoteMetadata::missing_field(stringify!(sender)))?
             .try_into()?;
         let note_type = NoteType::try_from(u64::from(value.note_type))?;
         let tag = NoteTag::from(value.tag);
@@ -33,35 +33,35 @@ impl TryFrom<proto::NoteMetadata> for NoteMetadata {
     }
 }
 
-impl From<Note> for proto::NetworkNote {
+impl From<Note> for note_proto::NetworkNote {
     fn from(note: Note) -> Self {
         Self {
-            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            metadata: Some(note_proto::NoteMetadata::from(*note.metadata())),
             details: NoteDetails::from(note).to_bytes(),
         }
     }
 }
 
-impl From<Note> for proto::Note {
+impl From<Note> for note_proto::Note {
     fn from(note: Note) -> Self {
         Self {
-            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            metadata: Some(note_proto::NoteMetadata::from(*note.metadata())),
             details: Some(NoteDetails::from(note).to_bytes()),
         }
     }
 }
 
-impl From<NetworkNote> for proto::NetworkNote {
+impl From<NetworkNote> for note_proto::NetworkNote {
     fn from(note: NetworkNote) -> Self {
         let note = Note::from(note);
         Self {
-            metadata: Some(proto::NoteMetadata::from(*note.metadata())),
+            metadata: Some(note_proto::NoteMetadata::from(*note.metadata())),
             details: NoteDetails::from(note).to_bytes(),
         }
     }
 }
 
-impl From<NoteMetadata> for proto::NoteMetadata {
+impl From<NoteMetadata> for note_proto::NoteMetadata {
     fn from(val: NoteMetadata) -> Self {
         let sender = Some(val.sender().into());
         let note_type = val.note_type() as u32;
@@ -69,7 +69,7 @@ impl From<NoteMetadata> for proto::NoteMetadata {
         let execution_hint: u64 = val.execution_hint().into();
         let aux = val.aux().into();
 
-        proto::NoteMetadata {
+        note_proto::NoteMetadata {
             sender,
             note_type,
             tag,
@@ -79,7 +79,31 @@ impl From<NoteMetadata> for proto::NoteMetadata {
     }
 }
 
-impl From<(&NoteId, &NoteInclusionProof)> for proto::NoteInclusionInBlockProof {
+impl From<Digest> for note_proto::NoteId {
+    fn from(digest: Digest) -> Self {
+        Self { id: Some(digest.into()) }
+    }
+}
+
+impl TryFrom<note_proto::NoteId> for Digest {
+    type Error = ConversionError;
+
+    fn try_from(note_id: note_proto::NoteId) -> Result<Self, Self::Error> {
+        note_id
+            .id
+            .as_ref()
+            .ok_or(note_proto::NoteId::missing_field(stringify!(id)))?
+            .try_into()
+    }
+}
+
+impl From<&NoteId> for note_proto::NoteId {
+    fn from(note_id: &NoteId) -> Self {
+        Self { id: Some(note_id.into()) }
+    }
+}
+
+impl From<(&NoteId, &NoteInclusionProof)> for note_proto::NoteInclusionInBlockProof {
     fn from((note_id, proof): (&NoteId, &NoteInclusionProof)) -> Self {
         Self {
             note_id: Some(note_id.into()),
@@ -90,18 +114,23 @@ impl From<(&NoteId, &NoteInclusionProof)> for proto::NoteInclusionInBlockProof {
     }
 }
 
-impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof) {
+impl TryFrom<&note_proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof) {
     type Error = ConversionError;
 
     fn try_from(
-        proof: &proto::NoteInclusionInBlockProof,
+        proof: &note_proto::NoteInclusionInBlockProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
         Ok((
             Digest::try_from(
                 proof
                     .note_id
                     .as_ref()
-                    .ok_or(proto::NoteInclusionInBlockProof::missing_field(stringify!(note_id)))?,
+                    .ok_or(note_proto::NoteInclusionInBlockProof::missing_field(stringify!(
+                        note_id
+                    )))?
+                    .id
+                    .as_ref()
+                    .ok_or(note_proto::NoteId::missing_field(stringify!(id)))?,
             )?
             .into(),
             NoteInclusionProof::new(
@@ -110,7 +139,7 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
                 proof
                     .merkle_path
                     .as_ref()
-                    .ok_or(proto::NoteInclusionInBlockProof::missing_field(stringify!(
+                    .ok_or(note_proto::NoteInclusionInBlockProof::missing_field(stringify!(
                         merkle_path
                     )))?
                     .try_into()?,
@@ -119,16 +148,17 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
     }
 }
 
-impl TryFrom<proto::Note> for Note {
+impl TryFrom<note_proto::Note> for Note {
     type Error = ConversionError;
 
-    fn try_from(proto_note: proto::Note) -> Result<Self, Self::Error> {
+    fn try_from(proto_note: note_proto::Note) -> Result<Self, Self::Error> {
         let metadata: NoteMetadata = proto_note
             .metadata
-            .ok_or(proto::Note::missing_field(stringify!(metadata)))?
+            .ok_or(note_proto::Note::missing_field(stringify!(metadata)))?
             .try_into()?;
 
-        let details = proto_note.details.ok_or(proto::Note::missing_field(stringify!(details)))?;
+        let details =
+            proto_note.details.ok_or(note_proto::Note::missing_field(stringify!(details)))?;
 
         let note_details = NoteDetails::read_from_bytes(&details)
             .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
@@ -191,16 +221,16 @@ pub enum NetworkNoteError {
     InvalidExecutionMode(NoteTag),
 }
 
-impl TryFrom<proto::NetworkNote> for NetworkNote {
+impl TryFrom<note_proto::NetworkNote> for NetworkNote {
     type Error = ConversionError;
 
-    fn try_from(proto_note: proto::NetworkNote) -> Result<Self, Self::Error> {
+    fn try_from(proto_note: note_proto::NetworkNote) -> Result<Self, Self::Error> {
         let details = NoteDetails::read_from_bytes(&proto_note.details)
             .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
         let (assets, recipient) = details.into_parts();
         let metadata: NoteMetadata = proto_note
             .metadata
-            .ok_or_else(|| proto::NetworkNote::missing_field(stringify!(metadata)))?
+            .ok_or_else(|| note_proto::NetworkNote::missing_field(stringify!(metadata)))?
             .try_into()?;
         let note = Note::new(assets, metadata, recipient);
 

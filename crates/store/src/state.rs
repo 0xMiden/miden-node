@@ -15,7 +15,10 @@ use miden_node_proto::{
         account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
         batch::BatchInputs,
     },
-    generated::responses::{AccountProofsResponse, AccountStateHeader, StorageSlotMapProof},
+    generated::store::account_proofs::{
+        AccountProof,
+        account_proof::{AccountStateHeader, account_state_header::StorageSlotMapProof},
+    },
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
@@ -840,7 +843,7 @@ impl State {
         account_requests: Vec<AccountProofRequest>,
         known_code_commitments: BTreeSet<RpoDigest>,
         include_headers: bool,
-    ) -> Result<(BlockNumber, Vec<AccountProofsResponse>), DatabaseError> {
+    ) -> Result<(BlockNumber, Vec<AccountProof>), DatabaseError> {
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
@@ -920,7 +923,7 @@ impl State {
 
                 let witness_record = AccountWitnessRecord { account_id, witness };
 
-                AccountProofsResponse {
+                AccountProof {
                     witness: Some(witness_record.into()),
                     state_header,
                 }

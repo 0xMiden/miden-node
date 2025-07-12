@@ -65,7 +65,7 @@ pub struct NetworkNote {
 pub struct NoteInclusionInBlockProof {
     /// A unique identifier of the note which is a 32-byte commitment to the underlying note data.
     #[prost(message, optional, tag = "1")]
-    pub note_id: ::core::option::Option<super::digest::Digest>,
+    pub note_id: ::core::option::Option<NoteId>,
     /// The block number in which the note was created.
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
@@ -74,7 +74,7 @@ pub struct NoteInclusionInBlockProof {
     pub note_index_in_block: u32,
     /// The note's inclusion proof in the block.
     #[prost(message, optional, tag = "4")]
-    pub merkle_path: ::core::option::Option<super::merkle::MerklePath>,
+    pub merkle_path: ::core::option::Option<super::primitives::MerklePath>,
 }
 /// Represents proof of a note inclusion in the block.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -84,11 +84,32 @@ pub struct NoteSyncRecord {
     pub note_index: u32,
     /// A unique identifier of the note which is a 32-byte commitment to the underlying note data.
     #[prost(message, optional, tag = "2")]
-    pub note_id: ::core::option::Option<super::digest::Digest>,
+    pub note_id: ::core::option::Option<NoteId>,
     /// The note's metadata.
     #[prost(message, optional, tag = "3")]
     pub metadata: ::core::option::Option<NoteMetadata>,
     /// The note's inclusion proof in the block.
     #[prost(message, optional, tag = "4")]
-    pub merkle_path: ::core::option::Option<super::merkle::MerklePath>,
+    pub merkle_path: ::core::option::Option<super::primitives::MerklePath>,
+}
+/// Represents a note's ID.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct NoteId {
+    /// A unique identifier of the note which is a 32-byte commitment to the underlying note data.
+    #[prost(message, optional, tag = "1")]
+    pub id: ::core::option::Option<super::primitives::Digest>,
+}
+/// List of note IDs.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NoteIdList {
+    /// List of note IDs to be queried from the database.
+    #[prost(message, repeated, tag = "1")]
+    pub ids: ::prost::alloc::vec::Vec<NoteId>,
+}
+/// Represents the result of getting committed notes.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CommittedNotes {
+    /// List of committed notes.
+    #[prost(message, repeated, tag = "1")]
+    pub notes: ::prost::alloc::vec::Vec<CommittedNote>,
 }

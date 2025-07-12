@@ -14,13 +14,16 @@ use thiserror::Error;
 use super::try_convert;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
+    generated::{
+        account as proto_account,
+        store::{self as proto_store, get_account_proofs_request::account_request},
+    },
 };
 
 // ACCOUNT ID
 // ================================================================================================
 
-impl Display for proto::account::AccountId {
+impl Display for proto_account::AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "0x")?;
         for byte in &self.id {
@@ -30,7 +33,7 @@ impl Display for proto::account::AccountId {
     }
 }
 
-impl Debug for proto::account::AccountId {
+impl Debug for proto_account::AccountId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
     }
@@ -39,13 +42,13 @@ impl Debug for proto::account::AccountId {
 // INTO PROTO ACCOUNT ID
 // ------------------------------------------------------------------------------------------------
 
-impl From<&AccountId> for proto::account::AccountId {
+impl From<&AccountId> for proto_account::AccountId {
     fn from(account_id: &AccountId) -> Self {
         (*account_id).into()
     }
 }
 
-impl From<AccountId> for proto::account::AccountId {
+impl From<AccountId> for proto_account::AccountId {
     fn from(account_id: AccountId) -> Self {
         Self { id: account_id.to_bytes() }
     }
@@ -54,10 +57,10 @@ impl From<AccountId> for proto::account::AccountId {
 // FROM PROTO ACCOUNT ID
 // ------------------------------------------------------------------------------------------------
 
-impl TryFrom<proto::account::AccountId> for AccountId {
+impl TryFrom<proto_account::AccountId> for AccountId {
     type Error = ConversionError;
 
-    fn try_from(account_id: proto::account::AccountId) -> Result<Self, Self::Error> {
+    fn try_from(account_id: proto_account::AccountId) -> Result<Self, Self::Error> {
         AccountId::read_from_bytes(&account_id.id).map_err(|_| ConversionError::NotAValidFelt)
     }
 }
@@ -72,7 +75,7 @@ pub struct AccountSummary {
     pub block_num: BlockNumber,
 }
 
-impl From<&AccountSummary> for proto::account::AccountSummary {
+impl From<&AccountSummary> for proto_account::AccountSummary {
     fn from(update: &AccountSummary) -> Self {
         Self {
             account_id: Some(update.account_id.into()),
@@ -88,7 +91,7 @@ pub struct AccountInfo {
     pub details: Option<Account>,
 }
 
-impl From<&AccountInfo> for proto::account::AccountInfo {
+impl From<&AccountInfo> for proto_account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
@@ -106,11 +109,11 @@ pub struct AccountProofRequest {
     pub storage_requests: Vec<StorageMapKeysProof>,
 }
 
-impl TryInto<AccountProofRequest> for proto::requests::get_account_proofs_request::AccountRequest {
+impl TryInto<AccountProofRequest> for proto_store::get_account_proofs_request::AccountRequest {
     type Error = ConversionError;
 
     fn try_into(self) -> Result<AccountProofRequest, Self::Error> {
-        let proto::requests::get_account_proofs_request::AccountRequest {
+        let proto_store::get_account_proofs_request::AccountRequest {
             account_id,
             storage_requests,
         } = self;
@@ -118,7 +121,7 @@ impl TryInto<AccountProofRequest> for proto::requests::get_account_proofs_reques
         Ok(AccountProofRequest {
             account_id: account_id
                 .clone()
-                .ok_or(proto::requests::get_account_proofs_request::AccountRequest::missing_field(
+                .ok_or(proto_store::get_account_proofs_request::AccountRequest::missing_field(
                     stringify!(account_id),
                 ))?
                 .try_into()?,
@@ -135,14 +138,11 @@ pub struct StorageMapKeysProof {
     pub storage_keys: Vec<Digest>,
 }
 
-impl TryInto<StorageMapKeysProof> for proto::requests::get_account_proofs_request::StorageRequest {
+impl TryInto<StorageMapKeysProof> for account_request::StorageRequest {
     type Error = ConversionError;
 
     fn try_into(self) -> Result<StorageMapKeysProof, Self::Error> {
-        let proto::requests::get_account_proofs_request::StorageRequest {
-            storage_slot_index,
-            map_keys,
-        } = self;
+        let account_request::StorageRequest { storage_slot_index, map_keys } = self;
 
         Ok(StorageMapKeysProof {
             storage_index: storage_slot_index.try_into()?,
@@ -160,7 +160,7 @@ pub struct AccountWitnessRecord {
     pub witness: AccountWitness,
 }
 
-impl From<AccountWitnessRecord> for proto::responses::AccountWitness {
+impl From<AccountWitnessRecord> for proto_account::AccountWitness {
     fn from(from: AccountWitnessRecord) -> Self {
         Self {
             account_id: Some(from.account_id.into()),
@@ -171,24 +171,24 @@ impl From<AccountWitnessRecord> for proto::responses::AccountWitness {
     }
 }
 
-impl TryFrom<proto::responses::AccountWitness> for AccountWitnessRecord {
+impl TryFrom<proto_account::AccountWitness> for AccountWitnessRecord {
     type Error = ConversionError;
 
     fn try_from(
-        account_witness_record: proto::responses::AccountWitness,
+        account_witness_record: proto_account::AccountWitness,
     ) -> Result<Self, Self::Error> {
         let witness_id = account_witness_record
             .witness_id
-            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(witness_id)))?
+            .ok_or(proto_account::AccountWitness::missing_field(stringify!(witness_id)))?
             .try_into()?;
         let commitment = account_witness_record
             .commitment
-            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(commitment)))?
+            .ok_or(proto_account::AccountWitness::missing_field(stringify!(commitment)))?
             .try_into()?;
         let path = account_witness_record
             .path
             .as_ref()
-            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(path)))?
+            .ok_or(proto_account::AccountWitness::missing_field(stringify!(path)))?
             .try_into()?;
 
         let witness = AccountWitness::new(witness_id, commitment, path).map_err(|err| {
@@ -201,7 +201,7 @@ impl TryFrom<proto::responses::AccountWitness> for AccountWitnessRecord {
         Ok(Self {
             account_id: account_witness_record
                 .account_id
-                .ok_or(proto::responses::AccountWitness::missing_field(stringify!(account_id)))?
+                .ok_or(proto_account::AccountWitness::missing_field(stringify!(account_id)))?
                 .try_into()?,
             witness,
         })
@@ -230,7 +230,7 @@ impl Display for AccountState {
     }
 }
 
-impl From<AccountState> for proto::responses::AccountTransactionInputRecord {
+impl From<AccountState> for proto_store::transaction_inputs::AccountTransactionInputRecord {
     fn from(from: AccountState) -> Self {
         Self {
             account_id: Some(from.account_id.into()),
@@ -239,7 +239,7 @@ impl From<AccountState> for proto::responses::AccountTransactionInputRecord {
     }
 }
 
-impl From<AccountHeader> for proto::account::AccountHeader {
+impl From<AccountHeader> for proto_account::AccountHeader {
     fn from(from: AccountHeader) -> Self {
         Self {
             vault_root: Some(from.vault_root().into()),
@@ -250,24 +250,24 @@ impl From<AccountHeader> for proto::account::AccountHeader {
     }
 }
 
-impl TryFrom<proto::responses::AccountTransactionInputRecord> for AccountState {
+impl TryFrom<proto_store::transaction_inputs::AccountTransactionInputRecord> for AccountState {
     type Error = ConversionError;
 
     fn try_from(
-        from: proto::responses::AccountTransactionInputRecord,
+        from: proto_store::transaction_inputs::AccountTransactionInputRecord,
     ) -> Result<Self, Self::Error> {
         let account_id = from
             .account_id
-            .ok_or(proto::responses::AccountTransactionInputRecord::missing_field(stringify!(
-                account_id
-            )))?
+            .ok_or(proto_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+                stringify!(account_id),
+            ))?
             .try_into()?;
 
         let account_commitment = from
             .account_commitment
-            .ok_or(proto::responses::AccountTransactionInputRecord::missing_field(stringify!(
-                account_commitment
-            )))?
+            .ok_or(proto_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+                stringify!(account_commitment),
+            ))?
             .try_into()?;
 
         // If the commitment is equal to `Digest::default()`, it signifies that this is a new

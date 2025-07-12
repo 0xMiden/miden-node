@@ -2,16 +2,7 @@ use std::convert::Infallible;
 
 use miden_node_proto::{
     generated::{
-        requests::{
-            ApplyBlockRequest, GetBatchInputsRequest, GetBlockHeaderByNumberRequest,
-            GetBlockInputsRequest, GetTransactionInputsRequest,
-        },
-        responses::{
-            AccountTransactionInputRecord, ApplyBlockResponse, GetBatchInputsResponse,
-            GetBlockHeaderByNumberResponse, GetBlockInputsResponse, GetTransactionInputsResponse,
-            NullifierTransactionInputRecord,
-        },
-        store::block_producer_server,
+        blockchain as blockchain_proto, store as store_proto, store::block_producer_server,
     },
     try_convert,
 };
@@ -51,8 +42,8 @@ impl block_producer_server::BlockProducer for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<GetBlockHeaderByNumberRequest>,
-    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        request: Request<store_proto::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<store_proto::BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -67,8 +58,8 @@ impl block_producer_server::BlockProducer for StoreApi {
     )]
     async fn apply_block(
         &self,
-        request: Request<ApplyBlockRequest>,
-    ) -> Result<Response<ApplyBlockResponse>, Status> {
+        request: Request<blockchain_proto::Block>,
+    ) -> Result<Response<()>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -90,7 +81,7 @@ impl block_producer_server::BlockProducer for StoreApi {
 
         self.state.apply_block(block).await?;
 
-        Ok(Response::new(ApplyBlockResponse {}))
+        Ok(Response::new(()))
     }
 
     /// Returns data needed by the block producer to construct and prove the next block.
@@ -104,8 +95,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_block_inputs(
         &self,
-        request: Request<GetBlockInputsRequest>,
-    ) -> Result<Response<GetBlockInputsResponse>, Status> {
+        request: Request<store_proto::GetBlockInputsRequest>,
+    ) -> Result<Response<store_proto::BlockInputs>, Status> {
         let request = request.into_inner();
 
         let account_ids = read_account_ids(&request.account_ids)?;
@@ -117,7 +108,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         self.state
             .get_block_inputs(account_ids, nullifiers, unauthenticated_notes, reference_blocks)
             .await
-            .map(GetBlockInputsResponse::from)
+            .map(store_proto::BlockInputs::from)
             .map(Response::new)
             .map_err(internal_error)
     }
@@ -135,8 +126,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_batch_inputs(
         &self,
-        request: Request<GetBatchInputsRequest>,
-    ) -> Result<Response<GetBatchInputsResponse>, Status> {
+        request: Request<store_proto::GetBatchInputsRequest>,
+    ) -> Result<Response<store_proto::BatchInputs>, Status> {
         let request = request.into_inner();
 
         let note_ids: Vec<RpoDigest> = try_convert(request.note_ids)
@@ -166,8 +157,8 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_transaction_inputs(
         &self,
-        request: Request<GetTransactionInputsRequest>,
-    ) -> Result<Response<GetTransactionInputsResponse>, Status> {
+        request: Request<store_proto::GetTransactionInputsRequest>,
+    ) -> Result<Response<store_proto::TransactionInputs>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -183,15 +174,15 @@ impl block_producer_server::BlockProducer for StoreApi {
 
         let block_height = self.state.latest_block_num().await.as_u32();
 
-        Ok(Response::new(GetTransactionInputsResponse {
-            account_state: Some(AccountTransactionInputRecord {
+        Ok(Response::new(store_proto::TransactionInputs {
+            account_state: Some(store_proto::transaction_inputs::AccountTransactionInputRecord {
                 account_id: Some(account_id.into()),
                 account_commitment: Some(tx_inputs.account_commitment.into()),
             }),
             nullifiers: tx_inputs
                 .nullifiers
                 .into_iter()
-                .map(|nullifier| NullifierTransactionInputRecord {
+                .map(|nullifier| store_proto::transaction_inputs::NullifierTransactionInputRecord {
                     nullifier: Some(nullifier.nullifier.into()),
                     block_num: nullifier.block_num.as_u32(),
                 })

@@ -1,8 +1,7 @@
 use std::{net::SocketAddr, time::Duration};
 
 use miden_node_proto::generated::{
-    requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
-    rpc::api_client::ApiClient as ProtoClient,
+    rpc::api_client::ApiClient as ProtoClient, store as store_proto,
 };
 use miden_node_store::{GenesisState, Store};
 use tempfile::TempDir;
@@ -29,7 +28,7 @@ async fn rpc_server_accepts_requests_without_accept_header() {
     };
 
     // Send any request to the RPC.
-    let request = GetBlockHeaderByNumberRequest {
+    let request = store_proto::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };
@@ -140,8 +139,8 @@ async fn rpc_startup_is_robust_to_network_failures() {
 /// Sends an arbitrary / irrelevant request to the RPC.
 async fn send_request(
     rpc_client: &mut ApiClient,
-) -> std::result::Result<tonic::Response<GetBlockHeaderByNumberResponse>, tonic::Status> {
-    let request = GetBlockHeaderByNumberRequest {
+) -> std::result::Result<tonic::Response<store_proto::BlockHeaderByNumberResponse>, tonic::Status> {
+    let request = store_proto::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };

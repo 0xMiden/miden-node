@@ -6,10 +6,10 @@ use miden_node_proto::{
     domain::mempool::MempoolEvent,
     generated::{
         block_producer::{
-            MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest, api_server,
+            BlockProducerStatus, MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest,
+            SubmitProvenTransactionResponse, api_server,
         },
-        requests::SubmitProvenTransactionRequest,
-        responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
+        transaction::ProvenTransaction as ProtoProvenTransaction,
     },
 };
 use miden_node_proto_build::block_producer_api_descriptor;
@@ -222,7 +222,7 @@ struct BlockProducerRpcServer {
 impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
-        request: tonic::Request<SubmitProvenTransactionRequest>,
+        request: tonic::Request<ProtoProvenTransaction>,
     ) -> Result<tonic::Response<SubmitProvenTransactionResponse>, Status> {
         self.submit_proven_transaction(request.into_inner())
              .await
@@ -240,8 +240,8 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn status(
         &self,
         _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<BlockProducerStatusResponse>, Status> {
-        Ok(tonic::Response::new(BlockProducerStatusResponse {
+    ) -> Result<tonic::Response<BlockProducerStatus>, Status> {
+        Ok(tonic::Response::new(BlockProducerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
         }))
@@ -332,7 +332,7 @@ impl BlockProducerRpcServer {
      )]
     async fn submit_proven_transaction(
         &self,
-        request: SubmitProvenTransactionRequest,
+        request: ProtoProvenTransaction,
     ) -> Result<SubmitProvenTransactionResponse, AddTransactionError> {
         debug!(target: COMPONENT, ?request);
 

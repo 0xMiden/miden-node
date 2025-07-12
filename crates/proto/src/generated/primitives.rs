@@ -4,10 +4,10 @@
 pub struct SmtLeafEntry {
     /// The key of the entry.
     #[prost(message, optional, tag = "1")]
-    pub key: ::core::option::Option<super::digest::Digest>,
+    pub key: ::core::option::Option<Digest>,
     /// The value of the entry.
     #[prost(message, optional, tag = "2")]
-    pub value: ::core::option::Option<super::digest::Digest>,
+    pub value: ::core::option::Option<Digest>,
 }
 /// Represents multiple leaf entries in an SMT.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -42,8 +42,38 @@ pub mod smt_leaf {
 pub struct SmtOpening {
     /// The merkle path to the leaf.
     #[prost(message, optional, tag = "1")]
-    pub path: ::core::option::Option<super::merkle::MerklePath>,
+    pub path: ::core::option::Option<MerklePath>,
     /// The leaf itself.
     #[prost(message, optional, tag = "2")]
     pub leaf: ::core::option::Option<SmtLeaf>,
+}
+/// Represents an MMR delta.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MmrDelta {
+    /// The number of leaf nodes in the MMR.
+    #[prost(uint64, tag = "1")]
+    pub forest: u64,
+    /// New and changed MMR peaks.
+    #[prost(message, repeated, tag = "2")]
+    pub data: ::prost::alloc::vec::Vec<Digest>,
+}
+/// Represents a Merkle path.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MerklePath {
+    /// List of sibling node hashes, in order from the root to the leaf.
+    #[prost(message, repeated, tag = "1")]
+    pub siblings: ::prost::alloc::vec::Vec<Digest>,
+}
+/// A hash digest, the result of a hash function.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[prost(skip_debug)]
+pub struct Digest {
+    #[prost(fixed64, tag = "1")]
+    pub d0: u64,
+    #[prost(fixed64, tag = "2")]
+    pub d1: u64,
+    #[prost(fixed64, tag = "3")]
+    pub d2: u64,
+    #[prost(fixed64, tag = "4")]
+    pub d3: u64,
 }

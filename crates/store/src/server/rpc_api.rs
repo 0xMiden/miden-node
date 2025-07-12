@@ -4,19 +4,12 @@ use miden_node_proto::{
     convert,
     domain::account::{AccountInfo, AccountProofRequest},
     generated::{
-        account::AccountSummary,
-        requests::{
-            CheckNullifiersByPrefixRequest, CheckNullifiersRequest, GetAccountDetailsRequest,
-            GetAccountProofsRequest, GetAccountStateDeltaRequest, GetBlockByNumberRequest,
-            GetBlockHeaderByNumberRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
+        account::{self as account_proto, AccountSummary},
+        blockchain as blockchain_proto, note as note_proto,
+        store::{
+            self as store_proto, BlockHeaderByNumberRequest, BlockHeaderByNumberResponse,
+            CheckNullifiersResponse, rpc_server,
         },
-        responses::{
-            CheckNullifiersByPrefixResponse, CheckNullifiersResponse, GetAccountDetailsResponse,
-            GetAccountProofsResponse, GetAccountStateDeltaResponse, GetBlockByNumberResponse,
-            GetBlockHeaderByNumberResponse, GetNotesByIdResponse, NullifierUpdate,
-            StoreStatusResponse, SyncNoteResponse, SyncStateResponse,
-        },
-        store::rpc_server,
         transaction::TransactionSummary,
     },
     try_convert,
@@ -54,8 +47,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<GetBlockHeaderByNumberRequest>,
-    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        request: Request<BlockHeaderByNumberRequest>,
+    ) -> Result<Response<BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -74,7 +67,7 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn check_nullifiers(
         &self,
-        request: Request<CheckNullifiersRequest>,
+        request: Request<store_proto::Nullifiers>,
     ) -> Result<Response<CheckNullifiersResponse>, Status> {
         // Validate the nullifiers and convert them to Digest values. Stop on first error.
         let request = request.into_inner();
@@ -101,8 +94,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn check_nullifiers_by_prefix(
         &self,
-        request: Request<CheckNullifiersByPrefixRequest>,
-    ) -> Result<Response<CheckNullifiersByPrefixResponse>, Status> {
+        request: Request<store_proto::CheckNullifiersByPrefixRequest>,
+    ) -> Result<Response<store_proto::CheckNullifiersByPrefixResponse>, Status> {
         let request = request.into_inner();
 
         if request.prefix_len != 16 {
@@ -118,13 +111,15 @@ impl rpc_server::Rpc for StoreApi {
             )
             .await?
             .into_iter()
-            .map(|nullifier_info| NullifierUpdate {
-                nullifier: Some(nullifier_info.nullifier.into()),
-                block_num: nullifier_info.block_num.as_u32(),
+            .map(|nullifier_info| {
+                store_proto::check_nullifiers_by_prefix_response::NullifierUpdate {
+                    nullifier: Some(nullifier_info.nullifier.into()),
+                    block_num: nullifier_info.block_num.as_u32(),
+                }
             })
             .collect();
 
-        Ok(Response::new(CheckNullifiersByPrefixResponse { nullifiers }))
+        Ok(Response::new(store_proto::CheckNullifiersByPrefixResponse { nullifiers }))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -140,8 +135,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_state(
         &self,
-        request: Request<SyncStateRequest>,
-    ) -> Result<Response<SyncStateResponse>, Status> {
+        request: Request<store_proto::SyncStateRequest>,
+    ) -> Result<Response<store_proto::SyncStateResponse>, Status> {
         let request = request.into_inner();
 
         let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
@@ -174,7 +169,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(SyncStateResponse {
+        Ok(Response::new(store_proto::SyncStateResponse {
             chain_tip: self.state.latest_block_num().await.as_u32(),
             block_header: Some(state.block_header.into()),
             mmr_delta: Some(delta.into()),
@@ -196,8 +191,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn sync_notes(
         &self,
-        request: Request<SyncNoteRequest>,
-    ) -> Result<Response<SyncNoteResponse>, Status> {
+        request: Request<store_proto::SyncNotesRequest>,
+    ) -> Result<Response<store_proto::SyncNotesResponse>, Status> {
         let request = request.into_inner();
 
         let (state, mmr_proof) = self
@@ -208,7 +203,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(SyncNoteResponse {
+        Ok(Response::new(store_proto::SyncNotesResponse {
             chain_tip: self.state.latest_block_num().await.as_u32(),
             block_header: Some(state.block_header.into()),
             mmr_path: Some((&mmr_proof.merkle_path).into()),
@@ -230,11 +225,11 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_notes_by_id(
         &self,
-        request: Request<GetNotesByIdRequest>,
-    ) -> Result<Response<GetNotesByIdResponse>, Status> {
+        request: Request<note_proto::NoteIdList>,
+    ) -> Result<Response<note_proto::CommittedNotes>, Status> {
         info!(target: COMPONENT, ?request);
 
-        let note_ids = request.into_inner().note_ids;
+        let note_ids = request.into_inner().ids;
 
         let note_ids: Vec<RpoDigest> = try_convert(note_ids)
             .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
@@ -249,7 +244,7 @@ impl rpc_server::Rpc for StoreApi {
             .map(Into::into)
             .collect();
 
-        Ok(Response::new(GetNotesByIdResponse { notes }))
+        Ok(Response::new(note_proto::CommittedNotes { notes }))
     }
 
     /// Returns details for public (public) account by id.
@@ -264,15 +259,15 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_account_details(
         &self,
-        request: Request<GetAccountDetailsRequest>,
-    ) -> Result<Response<GetAccountDetailsResponse>, Status> {
+        request: Request<account_proto::AccountId>,
+    ) -> Result<Response<account_proto::AccountDetails>, Status> {
         let request = request.into_inner();
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
+        let account_id = read_account_id(Some(request)).map_err(|err| *err)?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
-        Ok(Response::new(GetAccountDetailsResponse {
-            details: Some((&account_info).into()),
-        }))
+        // TODO: revisit this, previous implementation was just returning only the summary, but it
+        // is weird since the details are not empty.
+        Ok(Response::new((&account_info).into()))
     }
 
     #[instrument(
@@ -286,15 +281,15 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_block_by_number(
         &self,
-        request: Request<GetBlockByNumberRequest>,
-    ) -> Result<Response<GetBlockByNumberResponse>, Status> {
+        request: Request<blockchain_proto::BlockNumber>,
+    ) -> Result<Response<blockchain_proto::MaybeBlock>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
 
         let block = self.state.load_block(request.block_num.into()).await?;
 
-        Ok(Response::new(GetBlockByNumberResponse { block }))
+        Ok(Response::new(blockchain_proto::MaybeBlock { block }))
     }
 
     #[instrument(
@@ -308,10 +303,10 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_account_proofs(
         &self,
-        request: Request<GetAccountProofsRequest>,
-    ) -> Result<Response<GetAccountProofsResponse>, Status> {
+        request: Request<store_proto::GetAccountProofsRequest>,
+    ) -> Result<Response<store_proto::AccountProofs>, Status> {
         debug!(target: COMPONENT, ?request);
-        let GetAccountProofsRequest {
+        let store_proto::GetAccountProofsRequest {
             account_requests,
             include_headers,
             code_commitments,
@@ -331,7 +326,7 @@ impl rpc_server::Rpc for StoreApi {
             .get_account_proofs(account_requests, request_code_commitments, include_headers)
             .await?;
 
-        Ok(Response::new(GetAccountProofsResponse {
+        Ok(Response::new(store_proto::AccountProofs {
             block_num: block_num.as_u32(),
             account_proofs: infos,
         }))
@@ -348,8 +343,8 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_account_state_delta(
         &self,
-        request: Request<GetAccountStateDeltaRequest>,
-    ) -> Result<Response<GetAccountStateDeltaResponse>, Status> {
+        request: Request<store_proto::GetAccountStateDeltaRequest>,
+    ) -> Result<Response<store_proto::AccountStateDelta>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -365,7 +360,7 @@ impl rpc_server::Rpc for StoreApi {
             .await?
             .map(|delta| delta.to_bytes());
 
-        Ok(Response::new(GetAccountStateDeltaResponse { delta }))
+        Ok(Response::new(store_proto::AccountStateDelta { delta }))
     }
 
     #[instrument(
@@ -377,8 +372,11 @@ impl rpc_server::Rpc for StoreApi {
         ret(level = "debug"),
         err
     )]
-    async fn status(&self, _request: Request<()>) -> Result<Response<StoreStatusResponse>, Status> {
-        Ok(Response::new(StoreStatusResponse {
+    async fn status(
+        &self,
+        _request: Request<()>,
+    ) -> Result<Response<store_proto::StoreStatus>, Status> {
+        Ok(Response::new(store_proto::StoreStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
             chain_tip: self.state.latest_block_num().await.as_u32(),

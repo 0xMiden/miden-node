@@ -35,8 +35,8 @@
 - [BREAKING] Enforce `PoW` on all faucet API key-authenticated requests (#974).
 - Compressed faucet background image (#985).
 - Remove faucet rate limiter by IP and API Key, this has been superseded by PoW (#1011).
-- Transaction limit per batch is now configurable (default 8) (#1018).
-- Batch limit per block is now configurable (default 8) (#1018).
+- Transaction limit per batch is now configurable (default 8) (#1081).
+- Batch limit per block is now configurable (default 8) (#1081).
 - Faucet challenge expiration time is now configurable (#1017).
 - Removed system monitor from node binary (#1019).
 - [BREAKING] Renamed `open_telemetry` to `enable_otel` in all node's commands (#1019).

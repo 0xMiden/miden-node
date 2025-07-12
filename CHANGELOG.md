@@ -2,6 +2,7 @@
 
 ## v0.11.0 (TBD)
 
+- Added environment variable support for batch and block size CLI arguments (#1081).
 - [BREAKING] Updated MSRV to 1.88.
 
 ## v0.10.0 (2025-07-10)

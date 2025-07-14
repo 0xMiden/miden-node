@@ -97,7 +97,7 @@ impl Builder {
         T: GrpcClientBuilder,
     {
         let channel = self.build_endpoint()?.connect().await?;
-        Ok(T::with_interceptor(channel))
+        Ok(T::with_interceptor(channel, &self))
     }
 
     pub fn connect_lazy<T>(self) -> Result<T::Service>
@@ -105,11 +105,11 @@ impl Builder {
         T: GrpcClientBuilder,
     {
         let channel = self.build_endpoint()?.connect_lazy();
-        Ok(T::with_interceptor(channel))
+        Ok(T::with_interceptor(channel, &self))
     }
 
-    fn build_endpoint(self) -> Result<Endpoint> {
-        let mut endpoint = Endpoint::from_shared(self.address)
+    fn build_endpoint(&self) -> Result<Endpoint> {
+        let mut endpoint = Endpoint::from_shared(self.address.clone())
             .context("Failed to create endpoint from address")?;
 
         if let Some(timeout) = self.with_timeout {
@@ -136,7 +136,7 @@ impl Builder {
 pub trait GrpcClientBuilder {
     type Service;
 
-    fn with_interceptor(channel: Channel) -> Self::Service;
+    fn with_interceptor(channel: Channel, builder: &Builder) -> Self::Service;
 }
 
 // CLIENT BUILDER MARKERS
@@ -163,7 +163,7 @@ pub struct StoreRpc;
 impl GrpcClientBuilder for Rpc {
     type Service = InstrumentedRpcApiClient;
 
-    fn with_interceptor(channel: Channel) -> Self::Service {
+    fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
         RpcApiClient::with_interceptor(channel, OtelInterceptor)
     }
 }
@@ -171,7 +171,7 @@ impl GrpcClientBuilder for Rpc {
 impl GrpcClientBuilder for BlockProducer {
     type Service = InstrumentedBlockProducerApiClient;
 
-    fn with_interceptor(channel: Channel) -> Self::Service {
+    fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
         BlockProducerApiClient::with_interceptor(channel, OtelInterceptor)
     }
 }
@@ -179,7 +179,7 @@ impl GrpcClientBuilder for BlockProducer {
 impl GrpcClientBuilder for StoreNtxBuilder {
     type Service = InstrumentedStoreNtxBuilderClient;
 
-    fn with_interceptor(channel: Channel) -> Self::Service {
+    fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
         StoreNtxBuilderClient::with_interceptor(channel, OtelInterceptor)
     }
 }
@@ -187,7 +187,7 @@ impl GrpcClientBuilder for StoreNtxBuilder {
 impl GrpcClientBuilder for StoreBlockProducer {
     type Service = InstrumentedStoreBlockProducerClient;
 
-    fn with_interceptor(channel: Channel) -> Self::Service {
+    fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
         StoreBlockProducerClient::with_interceptor(channel, OtelInterceptor)
     }
 }
@@ -195,7 +195,7 @@ impl GrpcClientBuilder for StoreBlockProducer {
 impl GrpcClientBuilder for StoreRpc {
     type Service = InstrumentedStoreRpcClient;
 
-    fn with_interceptor(channel: Channel) -> Self::Service {
+    fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
         StoreRpcClient::with_interceptor(channel, OtelInterceptor)
     }
 }

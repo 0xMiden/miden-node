@@ -38,9 +38,9 @@ pub struct ApiClient(RpcInnerClient);
 impl GrpcClientBuilder for RpcInnerClient {
     type Service = Self;
 
-    fn with_interceptor(channel: Channel) -> Self::Service {
-        // Use default version if not specified
-        let version = env!("CARGO_PKG_VERSION");
+    fn with_interceptor(channel: Channel, builder: &Builder) -> Self::Service {
+        // Use version from builder or default
+        let version = builder.metadata_version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
         let interceptor = MetadataInterceptor::default()
             .with_accept_metadata(version)
             .expect("Failed to create metadata interceptor");

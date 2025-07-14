@@ -6473,3 +6473,7 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "miden-tx"
+version = "0.11.0"

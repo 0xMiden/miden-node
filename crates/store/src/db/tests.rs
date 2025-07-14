@@ -587,6 +587,7 @@ fn sql_public_account_details() {
 
     let account_read = accounts_in_db.pop().unwrap().details.unwrap();
     assert_eq!(account_read, account);
+    assert_eq!(account_read.nonce(), Felt::try_from(1_u64).unwrap());
 
     create_block(conn, 2.into());
 
@@ -610,6 +611,8 @@ fn sql_public_account_details() {
         AccountDelta::new(account.id(), storage_delta, vault_delta, Felt::new(2)).unwrap();
 
     account.apply_delta(&delta2).unwrap();
+
+    assert_eq!(dbg!(account.nonce()), Felt::try_from(3_u64).unwrap());
 
     let inserted = queries::upsert_accounts(
         conn,

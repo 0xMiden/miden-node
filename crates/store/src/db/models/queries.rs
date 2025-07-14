@@ -390,7 +390,7 @@ pub(crate) fn insert_account_delta(
         dbg!(
             delta
                 .nonce()
-                .map(|felt: miden_objects::Felt| -> u64 {  dbg!(felt).into() }) // TODO verify this is the right representation!
+                .map(|felt: miden_objects::Felt| -> u64 { dbg!(felt).into() })
                 .unwrap_or_default()
         ),
     )?;

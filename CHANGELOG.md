@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.10.1 (2025-07-14)
+
+### Fixes
+
+- Network accounts are disabled after one transaction (#1086).
+
 ## v0.10.0 (2025-07-10)
 
 ### Enhancements

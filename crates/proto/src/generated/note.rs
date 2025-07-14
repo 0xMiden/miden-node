@@ -65,7 +65,7 @@ pub struct NetworkNote {
 pub struct NoteInclusionInBlockProof {
     /// A unique identifier of the note which is a 32-byte commitment to the underlying note data.
     #[prost(message, optional, tag = "1")]
-    pub note_id: ::core::option::Option<super::digest::Digest>,
+    pub note_id: ::core::option::Option<super::word::Word>,
     /// The block number in which the note was created.
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
@@ -84,7 +84,7 @@ pub struct NoteSyncRecord {
     pub note_index: u32,
     /// A unique identifier of the note which is a 32-byte commitment to the underlying note data.
     #[prost(message, optional, tag = "2")]
-    pub note_id: ::core::option::Option<super::digest::Digest>,
+    pub note_id: ::core::option::Option<super::word::Word>,
     /// The note's metadata.
     #[prost(message, optional, tag = "3")]
     pub metadata: ::core::option::Option<NoteMetadata>,

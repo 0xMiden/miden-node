@@ -11,18 +11,18 @@ use miden_node_proto::{
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
-        digest,
         requests::{
             ApplyBlockRequest, GetBatchInputsRequest, GetBlockHeaderByNumberRequest,
             GetBlockInputsRequest, GetTransactionInputsRequest,
         },
         responses::{GetTransactionInputsResponse, NullifierTransactionInputRecord},
         store::block_producer_client as store_client,
+        word,
     },
 };
 use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};
 use miden_objects::{
-    Digest,
+    Word,
     account::AccountId,
     block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock},
     note::{NoteId, Nullifier},
@@ -43,7 +43,7 @@ pub struct TransactionInputs {
     /// Account ID
     pub account_id: AccountId,
     /// The account commitment in the store corresponding to tx's account ID
-    pub account_commitment: Option<Digest>,
+    pub account_commitment: Option<Word>,
     /// Maps each consumed notes' nullifier to block number, where the note is consumed.
     ///
     /// We use `NonZeroU32` as the wire format uses 0 to encode none.
@@ -103,7 +103,7 @@ impl TryFrom<GetTransactionInputsResponse> for TransactionInputs {
         let found_unauthenticated_notes = response
             .found_unauthenticated_notes
             .into_iter()
-            .map(|digest| Ok(Digest::try_from(digest)?.into()))
+            .map(|word| Ok(Word::try_from(word)?.into()))
             .collect::<Result<_, ConversionError>>()?;
 
         let current_block_height = response.block_height.into();
@@ -209,8 +209,8 @@ impl StoreClient {
     ) -> Result<BlockInputs, StoreError> {
         let request = tonic::Request::new(GetBlockInputsRequest {
             account_ids: updated_accounts.map(Into::into).collect(),
-            nullifiers: created_nullifiers.map(digest::Digest::from).collect(),
-            unauthenticated_notes: unauthenticated_notes.map(digest::Digest::from).collect(),
+            nullifiers: created_nullifiers.map(word::Word::from).collect(),
+            unauthenticated_notes: unauthenticated_notes.map(word::Word::from).collect(),
             reference_blocks: reference_blocks.map(|block_num| block_num.as_u32()).collect(),
         });
 
@@ -222,12 +222,12 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.get_batch_inputs", skip_all, err)]
     pub async fn get_batch_inputs(
         &self,
-        block_references: impl Iterator<Item = (BlockNumber, Digest)> + Send,
+        block_references: impl Iterator<Item = (BlockNumber, Word)> + Send,
         notes: impl Iterator<Item = NoteId> + Send,
     ) -> Result<BatchInputs, StoreError> {
         let request = tonic::Request::new(GetBatchInputsRequest {
             reference_blocks: block_references.map(|(block_num, _)| block_num.as_u32()).collect(),
-            note_ids: notes.map(digest::Digest::from).collect(),
+            note_ids: notes.map(word::Word::from).collect(),
         });
 
         let store_response = self.inner.clone().get_batch_inputs(request).await?.into_inner();

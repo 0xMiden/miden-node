@@ -4,7 +4,6 @@
 pub mod account;
 pub mod block;
 pub mod block_producer;
-pub mod digest;
 pub mod merkle;
 pub mod mmr;
 pub mod note;
@@ -14,3 +13,4 @@ pub mod rpc;
 pub mod smt;
 pub mod store;
 pub mod transaction;
+pub mod word;

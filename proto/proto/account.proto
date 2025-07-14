@@ -1,7 +1,7 @@
 syntax = "proto3";
 package account;
 
-import "digest.proto";
+import "word.proto";
 
 // Uniquely identifies a specific account.
 //
@@ -19,7 +19,7 @@ message AccountSummary {
     AccountId account_id = 1;
 
     // The current account commitment or zero if the account does not exist.
-    digest.Digest account_commitment = 2;
+    word.Word account_commitment = 2;
 
     // Block number at which the summary was made.
     uint32 block_num = 3;
@@ -38,13 +38,13 @@ message AccountInfo {
 // An account header.
 message AccountHeader {
     // Vault root hash.
-    digest.Digest vault_root = 1;
+    word.Word vault_root = 1;
 
     // Storage root hash.
-    digest.Digest storage_commitment = 2;
+    word.Word storage_commitment = 2;
 
     // Code root hash.
-    digest.Digest code_commitment = 3;
+    word.Word code_commitment = 3;
 
     // Account nonce.
     uint64 nonce = 4;

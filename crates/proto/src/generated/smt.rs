@@ -4,10 +4,10 @@
 pub struct SmtLeafEntry {
     /// The key of the entry.
     #[prost(message, optional, tag = "1")]
-    pub key: ::core::option::Option<super::digest::Digest>,
+    pub key: ::core::option::Option<super::word::Word>,
     /// The value of the entry.
     #[prost(message, optional, tag = "2")]
-    pub value: ::core::option::Option<super::digest::Digest>,
+    pub value: ::core::option::Option<super::word::Word>,
 }
 /// Represents multiple leaf entries in an SMT.
 #[derive(Clone, PartialEq, ::prost::Message)]

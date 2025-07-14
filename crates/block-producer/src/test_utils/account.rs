@@ -1,11 +1,11 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use miden_objects::{
-    Digest, Hasher,
+    Hasher, Word,
     account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType},
 };
 
-pub static MOCK_ACCOUNTS: LazyLock<std::sync::Mutex<HashMap<u32, (AccountId, Digest)>>> =
+pub static MOCK_ACCOUNTS: LazyLock<std::sync::Mutex<HashMap<u32, (AccountId, Word)>>> =
     LazyLock::new(Default::default);
 
 /// A mock representation for private accounts. An account starts in state `states[0]`, is modified
@@ -15,12 +15,12 @@ pub struct MockPrivateAccount<const NUM_STATES: usize = 3> {
     pub id: AccountId,
 
     // Sequence states that the account goes into.
-    pub states: [Digest; NUM_STATES],
+    pub states: [Word; NUM_STATES],
 }
 
 impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
-    fn new(id: AccountId, initial_state: Digest) -> Self {
-        let mut states = [Digest::default(); NUM_STATES];
+    fn new(id: AccountId, initial_state: Word) -> Self {
+        let mut states = [Word::default(); NUM_STATES];
 
         states[0] = initial_state;
 
@@ -37,8 +37,8 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
             AccountType::RegularAccountUpdatableCode,
             AccountStorageMode::Private,
             AccountIdVersion::Version0,
-            Digest::default(),
-            Digest::default(),
+            Word::default(),
+            Word::default(),
         )
         .unwrap();
 
@@ -46,12 +46,12 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
             AccountId::new(
                 account_seed,
                 AccountIdVersion::Version0,
-                Digest::default(),
-                Digest::default(),
+                Word::default(),
+                Word::default(),
             )
             .unwrap(),
             if new_account {
-                Digest::default()
+                Word::default()
             } else {
                 Hasher::hash(&init_seed)
             },

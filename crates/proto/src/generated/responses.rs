@@ -34,7 +34,7 @@ pub struct GetBlockHeaderByNumberResponse {
 pub struct NullifierUpdate {
     /// Nullifier ID.
     #[prost(message, optional, tag = "1")]
-    pub nullifier: ::core::option::Option<super::digest::Digest>,
+    pub nullifier: ::core::option::Option<super::word::Word>,
     /// Block number.
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
@@ -94,7 +94,7 @@ pub struct AccountWitness {
     pub witness_id: ::core::option::Option<super::account::AccountId>,
     /// The state commitment whose inclusion the witness proves.
     #[prost(message, optional, tag = "3")]
-    pub commitment: ::core::option::Option<super::digest::Digest>,
+    pub commitment: ::core::option::Option<super::word::Word>,
     /// The merkle path of the state commitment in the account tree.
     #[prost(message, optional, tag = "4")]
     pub path: ::core::option::Option<super::merkle::MerklePath>,
@@ -104,7 +104,7 @@ pub struct AccountWitness {
 pub struct NullifierWitness {
     /// The nullifier.
     #[prost(message, optional, tag = "1")]
-    pub nullifier: ::core::option::Option<super::digest::Digest>,
+    pub nullifier: ::core::option::Option<super::word::Word>,
     /// The SMT proof to verify the nullifier's inclusion in the nullifier tree.
     #[prost(message, optional, tag = "2")]
     pub opening: ::core::option::Option<super::smt::SmtOpening>,
@@ -156,14 +156,14 @@ pub struct AccountTransactionInputRecord {
     pub account_id: ::core::option::Option<super::account::AccountId>,
     /// The latest account commitment, zero commitment if the account doesn't exist.
     #[prost(message, optional, tag = "2")]
-    pub account_commitment: ::core::option::Option<super::digest::Digest>,
+    pub account_commitment: ::core::option::Option<super::word::Word>,
 }
 /// A nullifier returned as a response to the `GetTransactionInputs`.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct NullifierTransactionInputRecord {
     /// The nullifier ID.
     #[prost(message, optional, tag = "1")]
-    pub nullifier: ::core::option::Option<super::digest::Digest>,
+    pub nullifier: ::core::option::Option<super::word::Word>,
     /// The block at which the nullifier has been consumed, zero if not consumed.
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
@@ -179,7 +179,7 @@ pub struct GetTransactionInputsResponse {
     pub nullifiers: ::prost::alloc::vec::Vec<NullifierTransactionInputRecord>,
     /// List of unauthenticated notes that were not found in the database.
     #[prost(message, repeated, tag = "3")]
-    pub found_unauthenticated_notes: ::prost::alloc::vec::Vec<super::digest::Digest>,
+    pub found_unauthenticated_notes: ::prost::alloc::vec::Vec<super::word::Word>,
     /// The node's current block height.
     #[prost(fixed32, tag = "4")]
     pub block_height: u32,
@@ -225,7 +225,7 @@ pub struct GetBlockByNumberResponse {
 pub struct GetCurrentBlockchainDataResponse {
     /// Commitments that represent the current state according to the MMR.
     #[prost(message, repeated, tag = "1")]
-    pub current_peaks: ::prost::alloc::vec::Vec<super::digest::Digest>,
+    pub current_peaks: ::prost::alloc::vec::Vec<super::word::Word>,
     /// Current block header.
     #[prost(message, optional, tag = "2")]
     pub current_block_header: ::core::option::Option<super::block::BlockHeader>,

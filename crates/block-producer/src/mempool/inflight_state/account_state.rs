@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use miden_objects::{Digest, transaction::TransactionId};
+use miden_objects::{Word, transaction::TransactionId};
 
 // IN-FLIGHT ACCOUNT STATE
 // ================================================================================================
@@ -11,7 +11,7 @@ pub struct InflightAccountState {
     /// This account's state transitions due to inflight transactions.
     ///
     /// Ordering is chronological from front (oldest) to back (newest).
-    states: VecDeque<(Digest, TransactionId)>,
+    states: VecDeque<(Word, TransactionId)>,
 
     /// The number of inflight states that have been committed.
     ///
@@ -23,7 +23,7 @@ pub struct InflightAccountState {
 impl InflightAccountState {
     /// Appends the new state, returning the previous state's transaction ID __IFF__ it is
     /// uncommitted.
-    pub fn insert(&mut self, state: Digest, tx: TransactionId) -> Option<TransactionId> {
+    pub fn insert(&mut self, state: Word, tx: TransactionId) -> Option<TransactionId> {
         let mut parent = self.states.back().map(|(_, tx)| tx).copied();
 
         // Only return uncommitted parent ID.
@@ -39,7 +39,7 @@ impl InflightAccountState {
     }
 
     /// The latest state of this account.
-    pub fn current_state(&self) -> Option<&Digest> {
+    pub fn current_state(&self) -> Option<&Word> {
         self.states.back().map(|(state, _)| state)
     }
 
@@ -147,11 +147,11 @@ mod tests {
     fn current_state_is_the_most_recently_inserted() {
         let mut rng = Random::with_random_seed();
         let mut uut = InflightAccountState::default();
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
 
-        let expected = rng.draw_digest();
+        let expected = rng.draw_word();
         uut.insert(expected, rng.draw_tx_id());
 
         assert_eq!(uut.current_state(), Some(&expected));
@@ -161,14 +161,14 @@ mod tests {
     fn parent_is_the_most_recently_inserted() {
         let mut rng = Random::with_random_seed();
         let mut uut = InflightAccountState::default();
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
 
         let expected = rng.draw_tx_id();
-        uut.insert(rng.draw_digest(), expected);
+        uut.insert(rng.draw_word(), expected);
 
-        let parent = uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        let parent = uut.insert(rng.draw_word(), rng.draw_tx_id());
 
         assert_eq!(parent, Some(expected));
     }
@@ -177,7 +177,7 @@ mod tests {
     fn empty_account_has_no_parent() {
         let mut rng = Random::with_random_seed();
         let mut uut = InflightAccountState::default();
-        let parent = uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        let parent = uut.insert(rng.draw_word(), rng.draw_tx_id());
 
         assert!(parent.is_none());
     }
@@ -186,9 +186,9 @@ mod tests {
     fn fully_committed_account_has_no_parent() {
         let mut rng = Random::with_random_seed();
         let mut uut = InflightAccountState::default();
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
         uut.commit(1);
-        let parent = uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        let parent = uut.insert(rng.draw_word(), rng.draw_tx_id());
 
         assert!(parent.is_none());
     }
@@ -199,9 +199,9 @@ mod tests {
         let expected_parent = rng.draw_tx_id();
 
         let mut uut = InflightAccountState::default();
-        uut.insert(rng.draw_digest(), expected_parent);
+        uut.insert(rng.draw_word(), expected_parent);
 
-        let parent = uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        let parent = uut.insert(rng.draw_word(), rng.draw_tx_id());
 
         assert_eq!(parent, Some(expected_parent));
     }
@@ -212,11 +212,11 @@ mod tests {
         let expected_parent = rng.draw_tx_id();
 
         let mut uut = InflightAccountState::default();
-        uut.insert(rng.draw_digest(), rng.draw_tx_id());
-        uut.insert(rng.draw_digest(), expected_parent);
+        uut.insert(rng.draw_word(), rng.draw_tx_id());
+        uut.insert(rng.draw_word(), expected_parent);
         uut.commit(1);
 
-        let parent = uut.insert(rng.draw_digest(), rng.draw_tx_id());
+        let parent = uut.insert(rng.draw_word(), rng.draw_tx_id());
 
         assert_eq!(parent, Some(expected_parent));
     }
@@ -227,7 +227,7 @@ mod tests {
         const REVERT: usize = 2;
         let mut rng = Random::with_random_seed();
 
-        let states = (0..N).map(|_| (rng.draw_digest(), rng.draw_tx_id())).collect::<Vec<_>>();
+        let states = (0..N).map(|_| (rng.draw_word(), rng.draw_tx_id())).collect::<Vec<_>>();
 
         let mut uut = InflightAccountState::default();
         for (state, tx) in &states {
@@ -249,7 +249,7 @@ mod tests {
         const PRUNE: usize = 2;
         let mut rng = Random::with_random_seed();
 
-        let states = (0..N).map(|_| (rng.draw_digest(), rng.draw_tx_id())).collect::<Vec<_>>();
+        let states = (0..N).map(|_| (rng.draw_word(), rng.draw_tx_id())).collect::<Vec<_>>();
 
         let mut uut = InflightAccountState::default();
         for (state, tx) in &states {
@@ -272,7 +272,7 @@ mod tests {
         let mut rng = Random::with_random_seed();
         let mut uut = InflightAccountState::default();
         for _ in 0..N {
-            uut.insert(rng.draw_digest(), rng.draw_tx_id());
+            uut.insert(rng.draw_word(), rng.draw_tx_id());
         }
 
         uut.commit(N);
@@ -287,7 +287,7 @@ mod tests {
         let mut uut = InflightAccountState::default();
         let mut rng = Random::with_random_seed();
         for _ in 0..N {
-            uut.insert(rng.draw_digest(), rng.draw_tx_id());
+            uut.insert(rng.draw_word(), rng.draw_tx_id());
         }
 
         let _ = uut.revert(N);
@@ -302,7 +302,7 @@ mod tests {
         let mut rng = Random::with_random_seed();
         let mut uut = InflightAccountState::default();
         for _ in 0..N {
-            uut.insert(rng.draw_digest(), rng.draw_tx_id());
+            uut.insert(rng.draw_word(), rng.draw_tx_id());
         }
 
         uut.commit(1);
@@ -316,7 +316,7 @@ mod tests {
         let mut rng = Random::with_random_seed();
         let mut uut = InflightAccountState::default();
         for _ in 0..N {
-            uut.insert(rng.draw_digest(), rng.draw_tx_id());
+            uut.insert(rng.draw_word(), rng.draw_tx_id());
         }
 
         uut.commit(N + 1);

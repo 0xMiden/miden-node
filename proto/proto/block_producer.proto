@@ -6,7 +6,7 @@ import "requests.proto";
 import "responses.proto";
 
 import "block.proto";
-import "digest.proto";
+import "word.proto";
 import "note.proto";
 import "transaction.proto";
 
@@ -52,7 +52,7 @@ message TransactionAdded {
     // The ID of the transaction.
     transaction.TransactionId id = 1;
     // Nullifiers consumed by the transaction.
-    repeated digest.Digest nullifiers = 2;
+    repeated word.Word nullifiers = 2;
     // Network notes created by the transaction.
     repeated note.NetworkNote network_notes = 3;
     // Changes to a network account, if any. This includes creation of new network accounts.

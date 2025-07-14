@@ -4,5 +4,5 @@
 pub struct MerklePath {
     /// List of sibling node hashes, in order from the root to the leaf.
     #[prost(message, repeated, tag = "1")]
-    pub siblings: ::prost::alloc::vec::Vec<super::digest::Digest>,
+    pub siblings: ::prost::alloc::vec::Vec<super::word::Word>,
 }

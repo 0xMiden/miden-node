@@ -1,7 +1,4 @@
-use miden_objects::{
-    crypto::{hash::rpo::RpoDigest, merkle::SmtProof},
-    note::Nullifier,
-};
+use miden_objects::{Word, crypto::merkle::SmtProof, note::Nullifier};
 
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
@@ -11,27 +8,27 @@ use crate::{
 // FROM NULLIFIER
 // ================================================================================================
 
-impl From<&Nullifier> for proto::digest::Digest {
+impl From<&Nullifier> for proto::word::Word {
     fn from(value: &Nullifier) -> Self {
-        (*value).inner().into()
+        value.as_word().into()
     }
 }
 
-impl From<Nullifier> for proto::digest::Digest {
+impl From<Nullifier> for proto::word::Word {
     fn from(value: Nullifier) -> Self {
-        value.inner().into()
+        value.as_word().into()
     }
 }
 
 // INTO NULLIFIER
 // ================================================================================================
 
-impl TryFrom<proto::digest::Digest> for Nullifier {
+impl TryFrom<proto::word::Word> for Nullifier {
     type Error = ConversionError;
 
-    fn try_from(value: proto::digest::Digest) -> Result<Self, Self::Error> {
-        let digest: RpoDigest = value.try_into()?;
-        Ok(digest.into())
+    fn try_from(value: proto::word::Word) -> Result<Self, Self::Error> {
+        let word: Word = value.try_into()?;
+        Ok(word.into())
     }
 }
 

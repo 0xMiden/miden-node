@@ -3,7 +3,7 @@ use std::ops::Range;
 use itertools::Itertools;
 use miden_air::HashFunction;
 use miden_objects::{
-    Digest, Felt, Hasher, ONE,
+    Felt, Hasher, ONE, Word,
     account::AccountId,
     block::BlockNumber,
     note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier},
@@ -18,8 +18,8 @@ use crate::domain::transaction::AuthenticatedTransaction;
 
 pub struct MockProvenTxBuilder {
     account_id: AccountId,
-    initial_account_commitment: Digest,
-    final_account_commitment: Digest,
+    initial_account_commitment: Word,
+    final_account_commitment: Word,
     expiration_block_num: BlockNumber,
     output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
@@ -54,8 +54,8 @@ impl MockProvenTxBuilder {
 
     pub fn with_account(
         account_id: AccountId,
-        initial_account_commitment: Digest,
-        final_account_commitment: Digest,
+        initial_account_commitment: Word,
+        final_account_commitment: Word,
     ) -> Self {
         Self {
             account_id,
@@ -100,7 +100,7 @@ impl MockProvenTxBuilder {
     pub fn nullifiers_range(self, range: Range<u64>) -> Self {
         let nullifiers = range
             .map(|index| {
-                let nullifier = Digest::from([ONE, ONE, ONE, Felt::new(index)]);
+                let nullifier = Word::from([ONE, ONE, ONE, Felt::new(index)]);
 
                 Nullifier::from(nullifier)
             })
@@ -135,9 +135,9 @@ impl MockProvenTxBuilder {
             self.account_id,
             self.initial_account_commitment,
             self.final_account_commitment,
-            Digest::default(),
+            Word::default(),
             BlockNumber::from(0),
-            Digest::default(),
+            Word::default(),
             self.expiration_block_num,
             ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
         )

@@ -3,16 +3,16 @@
 syntax = "proto3";
 package smt;
 
-import "digest.proto";
+import "word.proto";
 import "merkle.proto";
 
 // Represents a single SMT leaf entry.
 message SmtLeafEntry {
     // The key of the entry.
-    digest.Digest key = 1;
+    word.Word key = 1;
 
     // The value of the entry.
-    digest.Digest value = 2;
+    word.Word value = 2;
 }
 
 // Represents multiple leaf entries in an SMT.

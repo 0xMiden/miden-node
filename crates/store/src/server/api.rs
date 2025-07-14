@@ -8,9 +8,9 @@ use miden_node_proto::{
 };
 use miden_node_utils::ErrorReport;
 use miden_objects::{
+    Word,
     account::AccountId,
     block::BlockNumber,
-    crypto::hash::rpo::RpoDigest,
     note::{NoteId, Nullifier},
 };
 use tonic::{Request, Response, Status};
@@ -43,7 +43,7 @@ impl StoreApi {
 
         Ok(Response::new(GetBlockHeaderByNumberResponse {
             block_header: block_header.map(Into::into),
-            chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
+            chain_length: mmr_proof.as_ref().map(|p| p.forest.num_leaves() as u32),
             mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
         }))
     }
@@ -87,25 +87,23 @@ pub fn read_account_ids(
 
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn validate_nullifiers(
-    nullifiers: &[generated::digest::Digest],
-) -> Result<Vec<Nullifier>, Status> {
+pub fn validate_nullifiers(nullifiers: &[generated::word::Word]) -> Result<Vec<Nullifier>, Status> {
     nullifiers
         .iter()
         .copied()
         .map(TryInto::try_into)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
+        .map_err(|_| invalid_argument("Word field is not in the modulus range"))
 }
 
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
+pub fn validate_notes(notes: &[generated::word::Word]) -> Result<Vec<NoteId>, Status> {
     notes
         .iter()
-        .map(|digest| Ok(RpoDigest::try_from(digest)?.into()))
+        .map(|word| Ok(Word::try_from(word)?.into()))
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
+        .map_err(|_| invalid_argument("Word field is not in the modulus range"))
 }
 
 #[instrument(level = "debug",target = COMPONENT, skip_all)]

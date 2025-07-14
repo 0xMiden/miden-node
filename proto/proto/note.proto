@@ -3,7 +3,7 @@ package note;
 
 import "account.proto";
 import "block.proto";
-import "digest.proto";
+import "word.proto";
 import "merkle.proto";
 
 // Represents a note's metadata.
@@ -66,7 +66,7 @@ message NetworkNote {
 // Does not include proof of the block's inclusion in the chain.
 message NoteInclusionInBlockProof {
     // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    digest.Digest note_id = 1;
+    word.Word note_id = 1;
 
     // The block number in which the note was created.
     fixed32 block_num = 2;
@@ -84,7 +84,7 @@ message NoteSyncRecord {
     uint32 note_index = 1;
 
     // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    digest.Digest note_id = 2;
+    word.Word note_id = 2;
 
     // The note's metadata.
     NoteMetadata metadata = 3;

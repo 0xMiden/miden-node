@@ -1,10 +1,10 @@
 syntax = "proto3";
 package merkle;
 
-import "digest.proto";
+import "word.proto";
 
 // Represents a Merkle path.
 message MerklePath {
     // List of sibling node hashes, in order from the root to the leaf.
-    repeated digest.Digest siblings = 1;
+    repeated word.Word siblings = 1;
 }

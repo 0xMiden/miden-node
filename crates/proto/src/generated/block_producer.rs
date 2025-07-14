@@ -32,7 +32,7 @@ pub struct TransactionAdded {
     pub id: ::core::option::Option<super::transaction::TransactionId>,
     /// Nullifiers consumed by the transaction.
     #[prost(message, repeated, tag = "2")]
-    pub nullifiers: ::prost::alloc::vec::Vec<super::digest::Digest>,
+    pub nullifiers: ::prost::alloc::vec::Vec<super::word::Word>,
     /// Network notes created by the transaction.
     #[prost(message, repeated, tag = "3")]
     pub network_notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,

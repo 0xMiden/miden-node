@@ -9,13 +9,13 @@ use miden_lib::{
     note::create_p2id_note,
 };
 use miden_objects::{
-    AccountError, Digest, Felt, NoteError,
+    AccountError, Felt, NoteError, Word,
     account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey, NetworkId},
     assembly::DefaultSourceManager,
     asset::FungibleAsset,
     block::BlockNumber,
     crypto::{
-        merkle::{MmrPeaks, PartialMmr},
+        merkle::{Forest, MmrPeaks, PartialMmr},
         rand::RpoRandomCoin,
     },
     note::Note,
@@ -211,7 +211,7 @@ impl Faucet {
         // SAFETY: An empty Partial Blockchain should be valid.
         let genesis_chain_mmr = PartialBlockchain::new(
             PartialMmr::from_peaks(
-                MmrPeaks::new(0, Vec::new()).expect("Empty MmrPeak should be valid"),
+                MmrPeaks::new(Forest::empty(), Vec::new()).expect("Empty MmrPeak should be valid"),
             ),
             Vec::new(),
         )
@@ -384,7 +384,7 @@ impl Faucet {
         let mut thread_rng = rng();
         let coin_seed: [u64; 4] = thread_rng.random();
 
-        let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
+        let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new).into());
 
         let p2id_notes = P2IdNotes::build(self.faucet_id(), self.decimals, requests, &mut rng)?;
 
@@ -463,7 +463,7 @@ impl Faucet {
 // HELPER FUNCTIONS
 // ================================================================================================
 
-fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
+fn parse_desync_error(err: &str) -> Result<Word, anyhow::Error> {
     let onchain_state = err
         .split_once("current value of ")
         .map(|(_prefix, suffix)| suffix)
@@ -472,7 +472,7 @@ fn parse_desync_error(err: &str) -> Result<Digest, anyhow::Error> {
 
     // This is used to represent the empty account state.
     if onchain_state.eq_ignore_ascii_case("none") {
-        return Ok(Digest::default());
+        return Ok(Word::default());
     }
 
     parse_hex_string_as_word(onchain_state)
@@ -528,6 +528,7 @@ mod tests {
     use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
     use miden_node_utils::crypto::get_rpo_random_coin;
     use miden_objects::{
+        Word,
         account::{AccountIdVersion, AccountStorageMode, AccountType},
         asset::TokenSymbol,
         crypto::dsa::rpo_falcon512::SecretKey,
@@ -548,8 +549,8 @@ mod tests {
     #[test]
     fn desync_error_parsing() {
         // TODO: This would be better as an integration test.
-        let tx_state = Digest::from([0u32, 1, 2, 3]);
-        let actual = Digest::from([11u32, 12, 13, 14]);
+        let tx_state = Word::from([0u32, 1, 2, 3]);
+        let actual = Word::from([11u32, 12, 13, 14]);
         let err = AddTransactionError::VerificationFailed(
             VerifyTxError::IncorrectAccountInitialCommitment {
                 tx_initial_account_commitment: tx_state,
@@ -621,7 +622,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         let coin_seed: [u64; 4] = rand::rng().random();
-        let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
+        let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new).into())));
         let mut rng = *rng.lock().unwrap();
 
         // Build and execute the transaction

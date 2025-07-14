@@ -1,19 +1,19 @@
-use miden_objects::{crypto::hash::rpo::RpoDigest, transaction::TransactionId};
+use miden_objects::{Word, transaction::TransactionId};
 
 use crate::{errors::ConversionError, generated as proto};
 
 // FROM TRANSACTION ID
 // ================================================================================================
 
-impl From<&TransactionId> for proto::digest::Digest {
+impl From<&TransactionId> for proto::word::Word {
     fn from(value: &TransactionId) -> Self {
-        (*value).inner().into()
+        value.as_word().into()
     }
 }
 
-impl From<TransactionId> for proto::digest::Digest {
+impl From<TransactionId> for proto::word::Word {
     fn from(value: TransactionId) -> Self {
-        value.inner().into()
+        value.as_word().into()
     }
 }
 
@@ -32,12 +32,12 @@ impl From<TransactionId> for proto::transaction::TransactionId {
 // INTO TRANSACTION ID
 // ================================================================================================
 
-impl TryFrom<proto::digest::Digest> for TransactionId {
+impl TryFrom<proto::word::Word> for TransactionId {
     type Error = ConversionError;
 
-    fn try_from(value: proto::digest::Digest) -> Result<Self, Self::Error> {
-        let digest: RpoDigest = value.try_into()?;
-        Ok(digest.into())
+    fn try_from(value: proto::word::Word) -> Result<Self, Self::Error> {
+        let word: Word = value.try_into()?;
+        Ok(word.into())
     }
 }
 

@@ -1,11 +1,11 @@
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::{
-    Digest,
+    Word,
     account::{Account, delta::AccountUpdateDetails},
     block::{
         AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock,
     },
-    crypto::merkle::{MmrPeaks, Smt},
+    crypto::merkle::{Forest, MmrPeaks, Smt},
     note::Nullifier,
     transaction::OrderedTransactionHeaders,
     utils::serde::{ByteReader, Deserializable, DeserializationError},
@@ -78,15 +78,15 @@ impl GenesisState {
 
         let header = BlockHeader::new(
             self.version,
-            Digest::default(),
+            Word::default(),
             BlockNumber::GENESIS,
-            MmrPeaks::new(0, Vec::new()).unwrap().hash_peaks(),
+            MmrPeaks::new(Forest::empty(), Vec::new()).unwrap().hash_peaks(),
             account_smt.root(),
             empty_nullifier_tree.root(),
             empty_block_note_tree.root(),
-            Digest::default(),
+            Word::default(),
             TransactionKernel::kernel_commitment(),
-            Digest::default(),
+            Word::default(),
             self.timestamp,
         );
 

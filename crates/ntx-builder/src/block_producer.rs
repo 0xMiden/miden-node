@@ -5,8 +5,7 @@ use miden_node_proto::{
     clients::{BlockProducer, Builder, InstrumentedBlockProducerApiClient},
     domain::mempool::MempoolEvent,
     generated::{
-        block_producer::MempoolSubscriptionRequest,
-        requests::SubmitProvenTransactionRequest,
+        block_producer::MempoolSubscriptionRequest, requests::SubmitProvenTransactionRequest,
     },
 };
 use miden_node_utils::FlattenResult;

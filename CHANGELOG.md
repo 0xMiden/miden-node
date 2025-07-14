@@ -3,6 +3,7 @@
 ## v0.11.0 (TBD)
 
 - [BREAKING] Updated MSRV to 1.88.
+- RPC requests can now verify their network by setting the `miden-network` header to the genesis commitment (#1084).
 
 ## v0.10.0 (2025-07-10)
 
@@ -20,7 +21,6 @@
 - Add open-telemetry trace layers to `miden-remote-prover` and `miden-remote-prover-proxy` (#1061).
 - Add open-telemetry stats for the mempool (#1073).
 - Add open-telemetry stats for the network transaction builder state (#1073).
-- RPC requests can now verify their network by setting the `miden-network` header to the genesis commitment (#1084).
 
 ### Changes
 

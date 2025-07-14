@@ -77,14 +77,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         // Assert the server does not reject our request on the basis of missing accept header.
         assert!(response.is_err());
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
-        assert!(
-            response
-                .as_ref()
-                .err()
-                .unwrap()
-                .message()
-                .contains("Client / server version mismatch"),
-        );
+        assert!(response.as_ref().err().unwrap().message().contains("is not supported"),);
 
         // Shutdown to avoid runtime drop error.
         store_runtime.shutdown_background();

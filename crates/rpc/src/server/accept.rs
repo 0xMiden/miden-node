@@ -11,11 +11,15 @@ use miden_tx::utils::HexParseError;
 use nom::bytes::complete::{tag, take_until};
 use semver::{Version, VersionReq};
 use tower::{Layer, Service};
-use tracing::debug;
 
-use crate::COMPONENT;
-
-/// Layer responsible for handling HTTP ACCEPT headers.
+/// Rejects requests whose headers indicate a mismatch in RPC version or the network.
+///
+/// The former is taken from the `accept` header with the expected format
+/// `application/vnd.miden.<major>.<minor>.<patch>+grpc`.
+///
+/// The latter expects the network's genesis block's commitment in the `miden-network` header.
+///
+/// Missing values are ignored.
 #[derive(Clone)]
 pub struct HeaderVerificationLayer {
     version_req: VersionReq,
@@ -59,24 +63,11 @@ enum NetworkError {
 }
 
 impl HeaderVerificationLayer {
-    /// Create a new accept layer that validates version values specified in the HTTP ACCEPT header.
-    ///
-    /// The version requirement is based on the version field found in the workspace's Cargo.toml.
-    ///
-    /// # Panics:
-    ///
-    /// Panics if the version string in Cargo.toml is not valid semver. The version string is made
-    /// into an env var at compile time which means that the unit tests prove this cannot panic
-    /// in practice.
-    pub fn new(genesis_commitment: Digest) -> anyhow::Result<Self> {
-        // Parse the full version string (e.g. "0.8.0").
-        let version = env!("CARGO_PKG_VERSION");
-        let version = Version::parse(version)?;
-
+    pub fn new(rpc_version: &Version, genesis_commitment: Digest) -> Self {
         // Form a version requirement from the major and minor version numbers.
-        let version_req = format!("={}.{}", version.major, version.minor);
+        let version_req = format!("={}.{}", rpc_version.major, rpc_version.minor);
         let version_req = VersionReq::parse(&version_req).expect("valid version requirement");
-        Ok(HeaderVerificationLayer { version_req, genesis_commitment })
+        HeaderVerificationLayer { version_req, genesis_commitment }
     }
 }
 
@@ -170,16 +161,10 @@ where
     /// specified by the server.
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         if let Err(err) = self.verifier.verify(request.headers()) {
-            let response = http::Response::builder()
-                    .status(http::StatusCode::BAD_REQUEST)
-                    .header("content-type", "application/grpc")
-                    .header("grpc-status", "3") // INVALID_ARGUMENT
-                    .header("grpc-message", err.as_report())
-                    .body(B::default())
-                    .expect("response should build as all parts are valid");
+            let response = tonic::Status::invalid_argument(err.as_report()).into_http();
 
             return futures::future::ready(Ok(response)).boxed();
-        };
+        }
 
         self.inner.call(request).boxed()
     }
@@ -213,56 +198,83 @@ impl<'a> TryFrom<&'a str> for AcceptHeaderValue<'a> {
 
 #[cfg(test)]
 mod tests {
+    use http::{HeaderMap, HeaderName, HeaderValue};
+    use miden_objects::Digest;
     use semver::Version;
 
-    use super::{AcceptHeaderValue, HeaderVerificationLayer};
+    use super::HeaderVerificationLayer;
 
-    #[test]
-    fn current_version_is_parsed_and_matches() {
-        let a = HeaderVerificationLayer::new().unwrap();
-        let version = env!("CARGO_PKG_VERSION");
-        let version = Version::parse(version).unwrap();
-        assert!(a.version_req.matches(&version));
+    const TEST_GENESIS_COMMITMENT: &str =
+        "0x00000000000000000000000000000000000000000000000000000000deadbeef";
+    const TEST_RPC_VERSION: Version = Version::new(1, 2, 3);
+
+    impl HeaderVerificationLayer {
+        fn for_tests() -> Self {
+            Self::new(&TEST_RPC_VERSION, Digest::try_from(TEST_GENESIS_COMMITMENT).unwrap())
+        }
     }
 
+    #[rstest::rstest]
+    #[case::without_headers(&[])]
+    #[case::with_matching_version(&[
+        ("accept", "application/vnd.miden.1.2.3+grpc")
+    ])]
+    #[case::with_newer_patch(&[
+        ("accept", "application/vnd.miden.1.2.4+grpc")
+    ])]
+    #[case::with_older_patch_version(&[
+        ("accept", "application/vnd.miden.1.2.2+grpc")
+    ])]
+    #[case::with_matching_network(&[
+        ("miden-network", TEST_GENESIS_COMMITMENT)
+    ])]
+    #[case::with_matching_network_and_version(&[
+        ("miden-network", TEST_GENESIS_COMMITMENT),
+        ("accept", "application/vnd.miden.1.2.3+grpc")
+    ])]
     #[test]
-    fn same_minor_different_patch_matches() {
-        let a = HeaderVerificationLayer::new().unwrap();
-        let version = env!("CARGO_PKG_VERSION");
-        let mut version = Version::parse(version).unwrap();
-        version.patch += 1;
-        assert!(a.version_req.matches(&version));
+    fn request_should_pass(#[case] headers: &[(&'static str, &'static str)]) {
+        let headers = headers
+            .iter()
+            .map(|(k, v)| (HeaderName::from_static(k), HeaderValue::from_static(v)));
+        let headers = HeaderMap::from_iter(headers);
+
+        let uut = HeaderVerificationLayer::for_tests();
+        uut.verify(&headers).unwrap();
     }
 
+    #[rstest::rstest]
+    #[case::with_older_minor_version(&[
+        ("accept", "application/vnd.miden.1.1.100+grpc")
+    ])]
+    #[case::with_newer_minor_version(&[
+        ("accept", "application/vnd.miden.1.3.0+grpc")
+    ])]
+    #[case::with_older_minor_version_and_matching_network(&[
+        ("accept", "application/vnd.miden.1.1.100+grpc"),
+        ("miden-network", TEST_GENESIS_COMMITMENT),
+    ])]
+    #[case::with_network_mismatch(&[
+        ("miden-network", "0x00000000000000000000000000000000000000000000000000000000dead1234"),
+    ])]
+    #[case::with_network_mismatch_but_matching_version(&[
+        ("accept", "application/vnd.miden.1.2.3+grpc"),
+        ("miden-network", "0x00000000000000000000000000000000000000000000000000000000dead1234"),
+    ])]
+    #[case::invalid_version(&[
+        ("accept", "application/vnd.miden.x.y.z+grpc"),
+    ])]
+    #[case::without_grpc_version_suffix(&[
+        ("accept", "application/vnd.miden.1.2.3"),
+    ])]
     #[test]
-    fn greater_minor_does_not_match() {
-        let a = HeaderVerificationLayer::new().unwrap();
-        let version = Version::parse("0.99.0").unwrap();
-        assert!(!a.version_req.matches(&version));
-    }
+    fn request_should_be_rejected(#[case] headers: &[(&'static str, &'static str)]) {
+        let headers = headers
+            .iter()
+            .map(|(k, v)| (HeaderName::from_static(k), HeaderValue::from_static(v)));
+        let headers = HeaderMap::from_iter(headers);
 
-    #[test]
-    fn lower_minor_does_not_match() {
-        let a = HeaderVerificationLayer::new().unwrap();
-        let version = Version::parse("0.1.0").unwrap();
-        assert!(!a.version_req.matches(&version));
-    }
-
-    #[test]
-    fn greater_major_does_not_match() {
-        let a = HeaderVerificationLayer::new().unwrap();
-        let version = Version::parse("9.9.0").unwrap();
-        assert!(!a.version_req.matches(&version));
-    }
-
-    #[test]
-    fn valid_accept_header_is_parsed() {
-        let input = "application/vnd.miden.1.0.0+grpc";
-        let expected = AcceptHeaderValue {
-            app_name: "miden",
-            version: "1.0.0",
-            response_type: "grpc",
-        };
-        assert_eq!(AcceptHeaderValue::try_from(input), Ok(expected));
+        let uut = HeaderVerificationLayer::for_tests();
+        uut.verify(&headers).unwrap_err();
     }
 }

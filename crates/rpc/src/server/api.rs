@@ -135,7 +135,7 @@ impl RpcService {
                     retry_counter += 1;
                     tokio::time::sleep(backoff).await;
                 },
-                Err(other) => return Err(other).map_err(Into::into),
+                Err(other) => return Err(other.into()),
             }
         }
     }

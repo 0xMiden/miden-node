@@ -3,6 +3,7 @@
 ## v0.11.0 (TBD)
 
 - [BREAKING] Updated MSRV to 1.88.
+- Add client builders for all components (#1075).
 
 ## v0.10.0 (2025-07-10)
 

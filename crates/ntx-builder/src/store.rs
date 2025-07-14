@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use miden_node_proto::{
-    clients::Builder,
+    clients::{Builder, StoreNtxBuilder},
     domain::{account::NetworkAccountPrefix, note::NetworkNote},
     errors::{ConversionError, MissingFieldHelper},
     generated::{
@@ -45,7 +45,7 @@ impl StoreClient {
     pub fn new(store_url: &Url) -> Self {
         let store = Builder::new()
             .with_address(store_url.to_string())
-            .connect_lazy()
+            .connect_lazy::<StoreNtxBuilder>()
             .expect("failed to connect to store"); // TODO: handle error
 
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");

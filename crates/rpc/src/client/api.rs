@@ -36,32 +36,16 @@ pub struct ApiClient(RpcInnerClient);
 
 // Implement GrpcClientBuilder for the RpcInnerClient type
 impl GrpcClientBuilder for RpcInnerClient {
-    fn connect_lazy(builder: Builder) -> anyhow::Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect_lazy")?
-            .connect_lazy();
+    type Service = Self;
 
-        // Create MetadataInterceptor with version from builder or default
-        let version = builder.metadata_version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
-        let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
+    fn with_interceptor(channel: Channel) -> Self::Service {
+        // Use default version if not specified
+        let version = env!("CARGO_PKG_VERSION");
+        let interceptor = MetadataInterceptor::default()
+            .with_accept_metadata(version)
+            .expect("Failed to create metadata interceptor");
 
-        Ok(Self(ProtoClient::with_interceptor(channel, interceptor)))
-    }
-
-    async fn connect(builder: Builder) -> anyhow::Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect")?
-            .connect()
-            .await
-            .context("Failed to connect to endpoint")?;
-
-        // Create MetadataInterceptor with version from builder or default
-        let version = builder.metadata_version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
-        let interceptor = MetadataInterceptor::default().with_accept_metadata(version)?;
-
-        Ok(Self(ProtoClient::with_interceptor(channel, interceptor)))
+        Self(ProtoClient::with_interceptor(channel, interceptor))
     }
 }
 
@@ -82,7 +66,7 @@ impl ApiClient {
             .with_tls()
             .with_timeout(timeout)
             .with_metadata_version(version.unwrap_or(env!("CARGO_PKG_VERSION")).to_string())
-            .connect()
+            .connect::<RpcInnerClient>()
             .await
             .context("Failed to create gRPC client")?;
 
@@ -107,7 +91,7 @@ impl ApiClient {
             .with_tls()
             .with_timeout(timeout)
             .with_metadata_version(version.unwrap_or(env!("CARGO_PKG_VERSION")).to_string())
-            .connect_lazy()
+            .connect_lazy::<RpcInnerClient>()
             .context("Failed to create gRPC client")?;
 
         Ok(ApiClient(client))

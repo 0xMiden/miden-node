@@ -6,17 +6,14 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use miden_node_proto::clients::{Builder, GrpcClientBuilder, StoreNtxBuilderClient};
-//! use miden_node_utils::tracing::grpc::OtelInterceptor;
-//! use tonic::service::interceptor::InterceptedService;
-//! use tonic::transport::Channel;
+//! use miden_node_proto::clients::{Builder, InstrumentedStoreNtxBuilderClient, StoreNtxBuilder};
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Create a store client with OTEL and TLS
-//! let client: StoreNtxBuilderClient<InterceptedService<Channel, OtelInterceptor>> = Builder::new()
+//! let client: InstrumentedStoreNtxBuilderClient = Builder::new()
 //!     .with_address("https://store.example.com".to_string())
 //!     .with_tls()
-//!     .build()
+//!     .connect::<StoreNtxBuilder>()
 //!     .await?;
 //! # Ok(())
 //! # }
@@ -43,6 +40,18 @@ pub use crate::generated::{
     },
 };
 
+// TYPE ALIASES FOR INSTRUMENTED CLIENTS
+// ================================================================================================
+
+pub type InstrumentedRpcApiClient = RpcApiClient<InterceptedService<Channel, OtelInterceptor>>;
+pub type InstrumentedBlockProducerApiClient =
+    BlockProducerApiClient<InterceptedService<Channel, OtelInterceptor>>;
+pub type InstrumentedStoreNtxBuilderClient =
+    StoreNtxBuilderClient<InterceptedService<Channel, OtelInterceptor>>;
+pub type InstrumentedStoreBlockProducerClient =
+    StoreBlockProducerClient<InterceptedService<Channel, OtelInterceptor>>;
+pub type InstrumentedStoreRpcClient = StoreRpcClient<InterceptedService<Channel, OtelInterceptor>>;
+
 // BUILDER CONFIGURATION
 // ================================================================================================
 
@@ -52,7 +61,6 @@ pub struct Builder {
     pub address: String,
     pub with_timeout: Option<Duration>,
     pub metadata_version: Option<String>,
-    pub endpoint: Option<Endpoint>,
 }
 
 impl Builder {
@@ -84,24 +92,24 @@ impl Builder {
         self
     }
 
-    pub async fn connect<T>(mut self) -> Result<T>
+    pub async fn connect<T>(self) -> Result<T::Service>
     where
         T: GrpcClientBuilder,
     {
-        self.configure_endpoint()?;
-        T::connect(self).await
+        let channel = self.build_endpoint()?.connect().await?;
+        Ok(T::with_interceptor(channel))
     }
 
-    pub fn connect_lazy<T>(mut self) -> Result<T>
+    pub fn connect_lazy<T>(self) -> Result<T::Service>
     where
         T: GrpcClientBuilder,
     {
-        self.configure_endpoint()?;
-        T::connect_lazy(self)
+        let channel = self.build_endpoint()?.connect_lazy();
+        Ok(T::with_interceptor(channel))
     }
 
-    fn configure_endpoint(&mut self) -> Result<()> {
-        let mut endpoint = Endpoint::from_shared(self.address.clone())
+    fn build_endpoint(self) -> Result<Endpoint> {
+        let mut endpoint = Endpoint::from_shared(self.address)
             .context("Failed to create endpoint from address")?;
 
         if let Some(timeout) = self.with_timeout {
@@ -114,9 +122,7 @@ impl Builder {
                 .context("Failed to configure TLS")?;
         }
 
-        self.endpoint = Some(endpoint);
-
-        Ok(())
+        Ok(endpoint)
     }
 }
 
@@ -127,122 +133,69 @@ impl Builder {
 ///
 /// This trait provides a standardized way to create different gRPC clients with
 /// consistent configuration options like TLS, OTEL interceptors, and connection types.
-pub trait GrpcClientBuilder: Sized {
-    fn connect_lazy(builder: Builder) -> Result<Self>;
+pub trait GrpcClientBuilder {
+    type Service;
 
-    #[allow(async_fn_in_trait)]
-    async fn connect(builder: Builder) -> Result<Self>;
+    fn with_interceptor(channel: Channel) -> Self::Service;
 }
 
-// IMPLEMENTATIONS
+// CLIENT BUILDER MARKERS
 // ================================================================================================
 
-// Note: This implementation always uses OtelInterceptor, matching existing patterns
-impl GrpcClientBuilder for RpcApiClient<InterceptedService<Channel, OtelInterceptor>> {
-    fn connect_lazy(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect_lazy")?
-            .connect_lazy();
-        let client = RpcApiClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
-    }
+#[derive(Copy, Clone, Debug)]
+pub struct Rpc;
 
-    async fn connect(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect")?
-            .connect()
-            .await?;
-        let client = RpcApiClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
-    }
-}
+#[derive(Copy, Clone, Debug)]
+pub struct BlockProducer;
 
-// Note: All implementations use OtelInterceptor by default, matching existing patterns
-impl GrpcClientBuilder for BlockProducerApiClient<InterceptedService<Channel, OtelInterceptor>> {
-    fn connect_lazy(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect_lazy")?
-            .connect_lazy();
-        let client = BlockProducerApiClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
-    }
+#[derive(Copy, Clone, Debug)]
+pub struct StoreNtxBuilder;
 
-    async fn connect(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect")?
-            .connect()
-            .await
-            .context("Failed to connect to endpoint")?;
-        let client = BlockProducerApiClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
+#[derive(Copy, Clone, Debug)]
+pub struct StoreBlockProducer;
+
+#[derive(Copy, Clone, Debug)]
+pub struct StoreRpc;
+
+// CLIENT BUILDER IMPLEMENTATIONS
+// ================================================================================================
+
+impl GrpcClientBuilder for Rpc {
+    type Service = InstrumentedRpcApiClient;
+
+    fn with_interceptor(channel: Channel) -> Self::Service {
+        RpcApiClient::with_interceptor(channel, OtelInterceptor)
     }
 }
 
-impl GrpcClientBuilder for StoreNtxBuilderClient<InterceptedService<Channel, OtelInterceptor>> {
-    fn connect_lazy(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect_lazy")?
-            .connect_lazy();
-        let client = StoreNtxBuilderClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
-    }
+impl GrpcClientBuilder for BlockProducer {
+    type Service = InstrumentedBlockProducerApiClient;
 
-    async fn connect(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect")?
-            .connect()
-            .await?;
-        let client = StoreNtxBuilderClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
+    fn with_interceptor(channel: Channel) -> Self::Service {
+        BlockProducerApiClient::with_interceptor(channel, OtelInterceptor)
     }
 }
 
-impl GrpcClientBuilder for StoreBlockProducerClient<InterceptedService<Channel, OtelInterceptor>> {
-    fn connect_lazy(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect_lazy")?
-            .connect_lazy();
-        let client = StoreBlockProducerClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
-    }
+impl GrpcClientBuilder for StoreNtxBuilder {
+    type Service = InstrumentedStoreNtxBuilderClient;
 
-    async fn connect(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect")?
-            .connect()
-            .await
-            .context("Failed to connect to endpoint")?;
-        let client = StoreBlockProducerClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
+    fn with_interceptor(channel: Channel) -> Self::Service {
+        StoreNtxBuilderClient::with_interceptor(channel, OtelInterceptor)
     }
 }
 
-impl GrpcClientBuilder for StoreRpcClient<InterceptedService<Channel, OtelInterceptor>> {
-    fn connect_lazy(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect_lazy")?
-            .connect_lazy();
-        let client = StoreRpcClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
-    }
+impl GrpcClientBuilder for StoreBlockProducer {
+    type Service = InstrumentedStoreBlockProducerClient;
 
-    async fn connect(builder: Builder) -> Result<Self> {
-        let channel = builder
-            .endpoint
-            .context("should be called through Builder::connect")?
-            .connect()
-            .await
-            .context("Failed to connect to endpoint")?;
-        let client = StoreRpcClient::with_interceptor(channel, OtelInterceptor);
-        Ok(client)
+    fn with_interceptor(channel: Channel) -> Self::Service {
+        StoreBlockProducerClient::with_interceptor(channel, OtelInterceptor)
+    }
+}
+
+impl GrpcClientBuilder for StoreRpc {
+    type Service = InstrumentedStoreRpcClient;
+
+    fn with_interceptor(channel: Channel) -> Self::Service {
+        StoreRpcClient::with_interceptor(channel, OtelInterceptor)
     }
 }

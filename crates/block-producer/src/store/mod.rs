@@ -8,7 +8,7 @@ use std::{
 use itertools::Itertools;
 use miden_node_proto::{
     AccountState,
-    clients::Builder,
+    clients::{Builder, InstrumentedStoreBlockProducerClient, StoreBlockProducer},
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
@@ -18,10 +18,9 @@ use miden_node_proto::{
             GetBlockInputsRequest, GetTransactionInputsRequest,
         },
         responses::{GetTransactionInputsResponse, NullifierTransactionInputRecord},
-        store::block_producer_client as store_client,
     },
 };
-use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};
+use miden_node_utils::formatting::format_opt;
 use miden_objects::{
     Digest,
     account::AccountId,
@@ -30,7 +29,6 @@ use miden_objects::{
     transaction::ProvenTransaction,
     utils::Serializable,
 };
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{debug, info, instrument};
 
 use crate::{COMPONENT, errors::StoreError};
@@ -122,14 +120,12 @@ impl TryFrom<GetTransactionInputsResponse> for TransactionInputs {
 // STORE CLIENT
 // ================================================================================================
 
-type InnerClient = store_client::BlockProducerClient<InterceptedService<Channel, OtelInterceptor>>;
-
 /// Interface to the store's block-producer gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
 pub struct StoreClient {
-    inner: InnerClient,
+    client: InstrumentedStoreBlockProducerClient,
 }
 
 impl StoreClient {
@@ -138,19 +134,19 @@ impl StoreClient {
         let store_url = format!("http://{store_address}");
         let store = Builder::new()
             .with_address(store_url)
-            .connect_lazy()
+            .connect_lazy::<StoreBlockProducer>()
             .expect("failed to connect to store"); // TODO: handle error
 
         info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
 
-        Self { inner: store }
+        Self { client: store }
     }
 
     /// Returns the latest block's header from the store.
     #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
     pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
-            .inner
+            .client
             .clone()
             .get_block_header_by_number(tonic::Request::new(
                 GetBlockHeaderByNumberRequest::default(),
@@ -183,7 +179,7 @@ impl StoreClient {
         debug!(target: COMPONENT, ?message);
 
         let request = tonic::Request::new(message);
-        let response = self.inner.clone().get_transaction_inputs(request).await?.into_inner();
+        let response = self.client.clone().get_transaction_inputs(request).await?.into_inner();
 
         debug!(target: COMPONENT, ?response);
 
@@ -217,7 +213,7 @@ impl StoreClient {
             reference_blocks: reference_blocks.map(|block_num| block_num.as_u32()).collect(),
         });
 
-        let store_response = self.inner.clone().get_block_inputs(request).await?.into_inner();
+        let store_response = self.client.clone().get_block_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -233,7 +229,7 @@ impl StoreClient {
             note_ids: notes.map(digest::Digest::from).collect(),
         });
 
-        let store_response = self.inner.clone().get_batch_inputs(request).await?.into_inner();
+        let store_response = self.client.clone().get_batch_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -242,6 +238,6 @@ impl StoreClient {
     pub async fn apply_block(&self, block: &ProvenBlock) -> Result<(), StoreError> {
         let request = tonic::Request::new(ApplyBlockRequest { block: block.to_bytes() });
 
-        self.inner.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)
+        self.client.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)
     }
 }

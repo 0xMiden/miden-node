@@ -342,7 +342,7 @@ pub(crate) fn insert_account_delta(
         account_id: AccountId,
         block_num: BlockNumber,
         faucet_id: Vec<u8>,
-        delta: i64,
+        delta: i32,
     ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_fungible_asset_deltas::table)
             .values(&[(
@@ -400,7 +400,7 @@ pub(crate) fn insert_account_delta(
             account_id,
             block_number,
             faucet_id.to_bytes(),
-            *delta,
+            delta as i32, // FIXME TODO, types don't align
         )?;
     }
 

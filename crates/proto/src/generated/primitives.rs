@@ -11,7 +11,7 @@ pub struct SmtLeafEntry {
 }
 /// Represents multiple leaf entries in an SMT.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SmtLeafEntries {
+pub struct SmtLeafEntryList {
     /// The entries list.
     #[prost(message, repeated, tag = "1")]
     pub entries: ::prost::alloc::vec::Vec<SmtLeafEntry>,
@@ -34,7 +34,7 @@ pub mod smt_leaf {
         Single(super::SmtLeafEntry),
         /// Multiple leaf entries.
         #[prost(message, tag = "3")]
-        Multiple(super::SmtLeafEntries),
+        Multiple(super::SmtLeafEntryList),
     }
 }
 /// The opening of a leaf in an SMT.

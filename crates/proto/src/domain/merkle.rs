@@ -95,7 +95,7 @@ impl From<SmtLeaf> for proto_primitives::SmtLeaf {
             SmtLeaf::Empty(leaf_index) => Leaf::Empty(leaf_index.value()),
             SmtLeaf::Single(entry) => Leaf::Single(entry.into()),
             SmtLeaf::Multiple(entries) => {
-                Leaf::Multiple(proto_primitives::SmtLeafEntries { entries: convert(entries) })
+                Leaf::Multiple(proto_primitives::SmtLeafEntryList { entries: convert(entries) })
             },
         };
 

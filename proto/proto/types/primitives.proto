@@ -14,7 +14,7 @@ message SmtLeafEntry {
 }
 
 // Represents multiple leaf entries in an SMT.
-message SmtLeafEntries {
+message SmtLeafEntryList {
     // The entries list.
     repeated SmtLeafEntry entries = 1;
 }
@@ -29,7 +29,7 @@ message SmtLeaf {
         SmtLeafEntry single = 2;
 
         // Multiple leaf entries.
-        SmtLeafEntries multiple = 3;
+        SmtLeafEntryList multiple = 3;
     }
 }
 

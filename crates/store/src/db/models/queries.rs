@@ -23,9 +23,10 @@ use miden_objects::{
     account::{
         Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta,
         FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
-        delta::AccountUpdateDetails,
+        StorageSlot,
+        delta::{AccountUpdateDetails, LexicographicWord},
     },
-    asset::NonFungibleAsset,
+    asset::{Asset, NonFungibleAsset},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier},
@@ -383,17 +384,7 @@ pub(crate) fn insert_account_delta(
         Ok(count)
     }
 
-    insert_acc_delta_stmt(
-        conn,
-        account_id,
-        block_number,
-        dbg!(
-            delta
-                .nonce()
-                .map(|felt: miden_objects::Felt| -> u64 { dbg!(felt).into() })
-                .unwrap_or_default()
-        ),
-    )?;
+    insert_acc_delta_stmt(conn, account_id, block_number, delta.nonce_delta().into())?;
 
     for (&slot, value) in delta.storage().values() {
         insert_slot_update_stmt(conn, account_id, block_number, slot, value.to_bytes())?;
@@ -441,6 +432,58 @@ pub(crate) fn insert_account_delta(
     Ok(())
 }
 
+/// Builds an [`AccountDelta`] from the given [`Account`].
+///
+/// This function should only be used when inserting a new account into the DB.The returned delta
+/// could be thought of as the difference between an "empty transaction" and the it's initial state.
+fn build_insert_delta(account: &Account) -> Result<AccountDelta, DatabaseError> {
+    // Build storage delta
+    let mut values = BTreeMap::new();
+    let mut maps = BTreeMap::new();
+    for (slot_idx, slot) in account.storage().clone().into_iter().enumerate() {
+        let slot_idx: u8 = slot_idx.try_into().expect("slot index must fit into `u8`");
+
+        match slot {
+            StorageSlot::Value(value) => {
+                values.insert(slot_idx, value);
+            },
+
+            StorageSlot::Map(map) => {
+                maps.insert(slot_idx, map.into());
+            },
+        }
+    }
+    let storage_delta = AccountStorageDelta::from_parts(values, maps)?;
+
+    // Build vault delta
+    let mut fungible = BTreeMap::new();
+    let mut non_fungible = BTreeMap::new();
+    for asset in account.vault().assets() {
+        match asset {
+            Asset::Fungible(asset) => {
+                fungible.insert(
+                    asset.faucet_id(),
+                    asset
+                        .amount()
+                        .try_into()
+                        .expect("asset amount should be at most i64::MAX by construction"),
+                );
+            },
+
+            Asset::NonFungible(asset) => {
+                non_fungible.insert(LexicographicWord::new(asset), NonFungibleDeltaAction::Add);
+            },
+        }
+    }
+
+    let vault_delta = AccountVaultDelta::new(
+        FungibleAssetDelta::new(fungible)?,
+        NonFungibleAssetDelta::new(non_fungible),
+    );
+
+    Ok(AccountDelta::new(account.id(), storage_delta, vault_delta, account.nonce())?)
+}
+
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
 #[allow(clippy::too_many_lines)]
 pub(crate) fn upsert_accounts(
@@ -484,7 +527,7 @@ pub(crate) fn upsert_accounts(
                     });
                 }
 
-                let insert_delta = AccountDelta::from(account.clone());
+                let insert_delta = build_insert_delta(account)?;
 
                 (Some(Cow::Borrowed(account)), Some(Cow::Owned(insert_delta)))
             },
@@ -1159,7 +1202,7 @@ pub(crate) fn select_account_delta(
     let storage = AccountStorageDelta::from_parts(storage_scalars, storage_maps)?;
     let vault = AccountVaultDelta::new(FungibleAssetDelta::new(fungible)?, non_fungible_delta);
 
-    Ok(Some(AccountDelta::new(account_id, storage, vault, Some(nonce))?))
+    Ok(Some(AccountDelta::new(account_id, storage, vault, nonce)?))
 }
 
 pub(crate) fn select_nonce_stmt(

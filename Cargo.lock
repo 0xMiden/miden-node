@@ -348,6 +348,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a8241f3ebb85c056b509d4327ad0358fbbba6ffb340bf388f26350aeda225b1"
 
 [[package]]
+name = "bigdecimal"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1a22f228ab7a1b23027ccc6c350b72868017af7ea8356fbdf19f8d991c690013"
+dependencies = [
+ "autocfg",
+ "libm",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -925,8 +938,12 @@ version = "2.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229850a212cd9b84d4f0290ad9d294afc0ae70fccaa8949dbe8b43ffafa1e20c"
 dependencies = [
+ "bigdecimal",
  "diesel_derives",
  "libsqlite3-sys",
+ "num-bigint",
+ "num-integer",
+ "num-traits",
  "time",
 ]
 
@@ -2535,6 +2552,7 @@ version = "0.11.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "bigdecimal",
  "deadpool",
  "deadpool-diesel",
  "deadpool-sync",

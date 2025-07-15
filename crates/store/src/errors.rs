@@ -52,6 +52,14 @@ pub enum DatabaseError {
     DeadpoolDiesel(#[from] deadpool_diesel::Error),
     #[error(transparent)]
     PoolRecycle(#[from] deadpool::managed::RecycleError<deadpool_diesel::Error>),
+    #[error("Summing over column {column} of table {table} exceeded {limit}")]
+    ColumnSumExceedsLimit {
+        table: &'static str,
+        column: &'static str,
+        limit: &'static str,
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync + 'static>,
+    },
     #[error(transparent)]
     QueryParamLimit(#[from] QueryLimitError),
 

@@ -77,11 +77,11 @@ pub(crate) fn slot_to_raw_sql(slot: u8) -> i32 {
 }
 
 #[inline(always)]
-pub(crate) fn raw_sql_to_delta(raw: i64) -> i64 {
+pub(crate) fn raw_sql_to_delta(raw: i32) -> i32 {
     raw
 }
 #[inline(always)]
-pub(crate) fn delta_to_raw_sql(slot: i64) -> i64 {
+pub(crate) fn delta_to_raw_sql(slot: i32) -> i32 {
     slot
 }
 

@@ -76,7 +76,7 @@ message CommittedNote {
 }
 
 // Represents the result of getting committed notes.
-message CommittedNotes {
+message CommittedNoteList {
     // List of committed notes.
     repeated CommittedNote notes = 1;
 }

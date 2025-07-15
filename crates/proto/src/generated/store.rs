@@ -785,7 +785,7 @@ pub mod rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::note::NoteIdList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::note::CommittedNotes>,
+            tonic::Response<super::super::note::CommittedNoteList>,
             tonic::Status,
         > {
             self.inner
@@ -1367,7 +1367,7 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<super::super::note::NoteIdList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::note::CommittedNotes>,
+            tonic::Response<super::super::note::CommittedNoteList>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -1851,7 +1851,7 @@ pub mod rpc_server {
                         T: Rpc,
                     > tonic::server::UnaryService<super::super::note::NoteIdList>
                     for GetNotesByIdSvc<T> {
-                        type Response = super::super::note::CommittedNotes;
+                        type Response = super::super::note::CommittedNoteList;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

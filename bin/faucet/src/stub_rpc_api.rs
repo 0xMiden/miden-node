@@ -66,7 +66,7 @@ impl api_server::Api for StubRpcApi {
     async fn get_notes_by_id(
         &self,
         _request: Request<note_proto::NoteIdList>,
-    ) -> Result<Response<note_proto::CommittedNotes>, Status> {
+    ) -> Result<Response<note_proto::CommittedNoteList>, Status> {
         unimplemented!();
     }
 

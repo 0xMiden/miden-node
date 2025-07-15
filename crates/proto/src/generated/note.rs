@@ -75,7 +75,7 @@ pub struct CommittedNote {
 }
 /// Represents the result of getting committed notes.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CommittedNotes {
+pub struct CommittedNoteList {
     /// List of committed notes.
     #[prost(message, repeated, tag = "1")]
     pub notes: ::prost::alloc::vec::Vec<CommittedNote>,

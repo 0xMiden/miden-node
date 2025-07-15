@@ -307,7 +307,7 @@ pub mod api_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::note::NoteIdList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::note::CommittedNotes>,
+            tonic::Response<super::super::note::CommittedNoteList>,
             tonic::Status,
         > {
             self.inner
@@ -504,7 +504,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::note::NoteIdList>,
         ) -> std::result::Result<
-            tonic::Response<super::super::note::CommittedNotes>,
+            tonic::Response<super::super::note::CommittedNoteList>,
             tonic::Status,
         >;
         /// Submits proven transaction to the Miden network.
@@ -1010,7 +1010,7 @@ pub mod api_server {
                         T: Api,
                     > tonic::server::UnaryService<super::super::note::NoteIdList>
                     for GetNotesByIdSvc<T> {
-                        type Response = super::super::note::CommittedNotes;
+                        type Response = super::super::note::CommittedNoteList;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

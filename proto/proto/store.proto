@@ -45,7 +45,7 @@ service Rpc {
     rpc GetBlockHeaderByNumber(BlockHeaderByNumberRequest) returns (BlockHeaderByNumberResponse) {}
 
     // Returns a list of committed notes matching the provided note IDs.
-    rpc GetNotesById(note.NoteIdList) returns (note.CommittedNotes) {}
+    rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //

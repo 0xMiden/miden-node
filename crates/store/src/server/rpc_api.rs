@@ -226,7 +226,7 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_notes_by_id(
         &self,
         request: Request<note_proto::NoteIdList>,
-    ) -> Result<Response<note_proto::CommittedNotes>, Status> {
+    ) -> Result<Response<note_proto::CommittedNoteList>, Status> {
         info!(target: COMPONENT, ?request);
 
         let note_ids = request.into_inner().ids;
@@ -244,7 +244,7 @@ impl rpc_server::Rpc for StoreApi {
             .map(Into::into)
             .collect();
 
-        Ok(Response::new(note_proto::CommittedNotes { notes }))
+        Ok(Response::new(note_proto::CommittedNoteList { notes }))
     }
 
     /// Returns details for public (public) account by id.

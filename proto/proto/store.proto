@@ -1,6 +1,6 @@
 // Specification of the store RPC.
 //
-// This provided access to the rollup data to the other nodes.
+// This provided access to the blockchain data to the other nodes.
 syntax = "proto3";
 package store;
 

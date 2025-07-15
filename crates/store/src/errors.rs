@@ -1,6 +1,5 @@
 use std::io;
 
-use deadpool::managed::PoolError;
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_utils::limiter::QueryLimitError;
@@ -43,6 +42,8 @@ pub enum DatabaseError {
     NoteError(#[from] NoteError),
     #[error("Setup deadpool connection pool failed")]
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
+    #[error("Setup deadpool connection pool failed")]
+    ConnectionPoolObtainError(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     Diesel(#[from] diesel::result::Error),
     #[error("Sqlite FFI boundary NUL termination error (not much you can do, file an issue)")]

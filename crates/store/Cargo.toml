@@ -29,8 +29,6 @@ miden-node-utils       = { workspace = true }
 miden-objects          = { workspace = true }
 rand                   = { version = "0.9" }
 rand_chacha            = { version = "0.9" }
-rusqlite               = { features = ["array", "buildtime_bindgen", "bundled"], version = "0.36" }
-rusqlite_migration     = { version = "2.2" }
 serde                  = { features = ["derive"], version = "1" }
 thiserror              = { workspace = true }
 tokio                  = { features = ["fs", "rt-multi-thread"], workspace = true }

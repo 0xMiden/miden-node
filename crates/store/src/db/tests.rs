@@ -10,7 +10,6 @@ use diesel::{Connection, SqliteConnection};
 use miden_lib::{
     account::auth::AuthRpoFalcon512, note::create_p2id_note, transaction::TransactionKernel,
 };
-use miden_lib::{note::create_p2id_note, transaction::TransactionKernel};
 use miden_node_proto::domain::account::AccountSummary;
 use miden_objects::{
     EMPTY_WORD, Felt, FieldElement, Word, ZERO,

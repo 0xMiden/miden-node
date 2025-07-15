@@ -201,57 +201,43 @@ impl Db {
         Ok(())
     }
 
-    /// Avoid repeated boilerplate, frame the query in a transaction
+    /// Create and commit a transaction with the queries added in the provided closure
     pub(crate) async fn transact<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
-        Q: Send + FnOnce(&mut SqliteConnection) -> std::result::Result<R, E> + 'static,
+        Q: Send
+            + for<'a, 't> FnOnce(&'a mut SqliteConnection) -> std::result::Result<R, E>
+            + 'static,
         R: Send + 'static,
         M: Send + ToString,
-        E: From<DatabaseError>,
         E: From<diesel::result::Error>,
+        E: From<DatabaseError>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let conn = self.pool.get().await.unwrap(); // FIXME XXX TOODO
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| DatabaseError::ConnectionPoolObtainError(Box::new(e)))?;
 
         conn.interact(|conn| <_ as diesel::Connection>::transaction::<R, E, Q>(conn, query))
             .await
             .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
     }
 
-    /// Create and commit a transaction with the queries added in the provided closure
-    pub(crate) async fn transact<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
-    where
-        Q: Send
-            + for<'a, 't> FnOnce(&'a mut Transaction<'t>) -> std::result::Result<R, E>
-            + 'static,
-        R: Send + 'static,
-        M: Send + ToString,
-        E: From<DatabaseError>,
-        E: std::error::Error + Send + Sync + 'static,
-    {
-        let conn = self.pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
-
-        conn.interact(|conn| {
-            let mut db_tx = conn.transaction().map_err(DatabaseError::SqliteError)?;
-            let r = query(&mut db_tx)?;
-            db_tx.commit().map_err(DatabaseError::SqliteError)?;
-            Ok(r)
-        })
-        .await
-        .map_err(|err| E::from(DatabaseError::interact(&msg.to_string(), &err)))?
-    }
-
     /// Run the query _without_ a transaction
     pub(crate) async fn query<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
-        Q: Send + FnOnce(&mut Connection) -> std::result::Result<R, E> + 'static,
+        Q: Send + FnOnce(&mut SqliteConnection) -> std::result::Result<R, E> + 'static,
         R: Send + 'static,
         M: Send + ToString,
         E: From<DatabaseError>,
-        E: From<rusqlite::Error>,
         E: std::error::Error + Send + Sync + 'static,
     {
-        let conn = self.pool.get().await.map_err(DatabaseError::MissingDbConnection)?;
+        let conn = self
+            .pool
+            .get()
+            .await
+            .map_err(|e| DatabaseError::ConnectionPoolObtainError(Box::new(e)))?;
 
         conn.interact(move |conn| {
             let r = query(conn)?;

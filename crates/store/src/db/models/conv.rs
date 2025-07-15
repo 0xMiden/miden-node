@@ -22,6 +22,10 @@
     dead_code,
     reason = "Not all converters are used bidirectionally, however, keeping them is a good thing"
 )]
+#![allow(
+    clippy::cast_sign_loss,
+    reason = "This is the one file where we map the signed database types to the working types"
+)]
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_objects::{Felt, note::NoteTag};
@@ -77,12 +81,12 @@ pub(crate) fn slot_to_raw_sql(slot: u8) -> i32 {
 }
 
 #[inline(always)]
-pub(crate) fn raw_sql_to_delta(raw: i32) -> i32 {
+pub(crate) fn raw_sql_to_fungible_delta(raw: i64) -> i64 {
     raw
 }
 #[inline(always)]
-pub(crate) fn delta_to_raw_sql(slot: i32) -> i32 {
-    slot
+pub(crate) fn fungible_delta_to_raw_sql(delta: i64) -> i64 {
+    delta
 }
 
 #[inline(always)]

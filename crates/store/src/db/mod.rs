@@ -1,13 +1,3 @@
-// The module contains transitions for database representations
-// to in memory representations, where it is _often_ require to
-// convert from the database _signed_ representation to the
-// in-memory _unsigned_ representations, and hence we'd sprinkle
-// the clippy exception around in quite a few places.
-// TODO moving away from the `TryInto` implementations
-// TODO we should be able to isolate the signed to unsigned and
-// TODO vice versa such that this can be removed again.
-#![allow(clippy::cast_sign_loss)]
-
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::PathBuf,

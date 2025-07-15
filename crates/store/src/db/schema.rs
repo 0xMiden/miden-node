@@ -13,7 +13,7 @@ diesel::table! {
         account_id -> Binary,
         block_num -> BigInt,
         faucet_id -> Binary,
-        delta -> Integer,
+        delta -> BigInt,
     }
 }
 

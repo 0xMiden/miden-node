@@ -93,7 +93,7 @@ impl api_server::Api for RpcService {
     )]
     async fn check_nullifiers(
         &self,
-        request: Request<store_proto::Nullifiers>,
+        request: Request<store_proto::NullifierList>,
     ) -> Result<Response<store_proto::CheckNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 

@@ -128,7 +128,7 @@ pub mod api_client {
         /// Returns a nullifier proof for each of the requested nullifiers.
         pub async fn check_nullifiers(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::store::Nullifiers>,
+            request: impl tonic::IntoRequest<super::super::store::NullifierList>,
         ) -> std::result::Result<
             tonic::Response<super::super::store::CheckNullifiersResponse>,
             tonic::Status,
@@ -442,7 +442,7 @@ pub mod api_server {
         /// Returns a nullifier proof for each of the requested nullifiers.
         async fn check_nullifiers(
             &self,
-            request: tonic::Request<super::super::store::Nullifiers>,
+            request: tonic::Request<super::super::store::NullifierList>,
         ) -> std::result::Result<
             tonic::Response<super::super::store::CheckNullifiersResponse>,
             tonic::Status,
@@ -677,7 +677,7 @@ pub mod api_server {
                     struct CheckNullifiersSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
-                    > tonic::server::UnaryService<super::super::store::Nullifiers>
+                    > tonic::server::UnaryService<super::super::store::NullifierList>
                     for CheckNullifiersSvc<T> {
                         type Response = super::super::store::CheckNullifiersResponse;
                         type Future = BoxFuture<
@@ -686,7 +686,7 @@ pub mod api_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::super::store::Nullifiers>,
+                            request: tonic::Request<super::super::store::NullifierList>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

@@ -67,7 +67,7 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn check_nullifiers(
         &self,
-        request: Request<store_proto::Nullifiers>,
+        request: Request<store_proto::NullifierList>,
     ) -> Result<Response<CheckNullifiersResponse>, Status> {
         // Validate the nullifiers and convert them to Digest values. Stop on first error.
         let request = request.into_inner();

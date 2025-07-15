@@ -20,7 +20,7 @@ service Api {
     rpc Status(google.protobuf.Empty) returns (RpcStatus) {}
 
     // Returns a nullifier proof for each of the requested nullifiers.
-    rpc CheckNullifiers(store.Nullifiers) returns (store.CheckNullifiersResponse) {}
+    rpc CheckNullifiers(store.NullifierList) returns (store.CheckNullifiersResponse) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //

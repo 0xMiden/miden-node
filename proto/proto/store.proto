@@ -20,7 +20,7 @@ service Rpc {
     rpc Status(google.protobuf.Empty) returns (StoreStatus) {}
 
     // Returns a nullifier proof for each of the requested nullifiers.
-    rpc CheckNullifiers(Nullifiers) returns (CheckNullifiersResponse) {}
+    rpc CheckNullifiers(NullifierList) returns (CheckNullifiersResponse) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //
@@ -454,7 +454,7 @@ message CheckNullifiersByPrefixResponse {
 // ================================================================================================
 
 // List of nullifiers to return proofs for.
-message Nullifiers {
+message NullifierList {
     // List of nullifiers to return proofs for.
     repeated primitives.Digest nullifiers = 1;
 }

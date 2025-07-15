@@ -377,7 +377,7 @@ pub mod check_nullifiers_by_prefix_response {
 }
 /// List of nullifiers to return proofs for.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct Nullifiers {
+pub struct NullifierList {
     /// List of nullifiers to return proofs for.
     #[prost(message, repeated, tag = "1")]
     pub nullifiers: ::prost::alloc::vec::Vec<super::primitives::Digest>,
@@ -608,7 +608,7 @@ pub mod rpc_client {
         /// Returns a nullifier proof for each of the requested nullifiers.
         pub async fn check_nullifiers(
             &mut self,
-            request: impl tonic::IntoRequest<super::Nullifiers>,
+            request: impl tonic::IntoRequest<super::NullifierList>,
         ) -> std::result::Result<
             tonic::Response<super::CheckNullifiersResponse>,
             tonic::Status,
@@ -1308,7 +1308,7 @@ pub mod rpc_server {
         /// Returns a nullifier proof for each of the requested nullifiers.
         async fn check_nullifiers(
             &self,
-            request: tonic::Request<super::Nullifiers>,
+            request: tonic::Request<super::NullifierList>,
         ) -> std::result::Result<
             tonic::Response<super::CheckNullifiersResponse>,
             tonic::Status,
@@ -1528,7 +1528,7 @@ pub mod rpc_server {
                 "/store.Rpc/CheckNullifiers" => {
                     #[allow(non_camel_case_types)]
                     struct CheckNullifiersSvc<T: Rpc>(pub Arc<T>);
-                    impl<T: Rpc> tonic::server::UnaryService<super::Nullifiers>
+                    impl<T: Rpc> tonic::server::UnaryService<super::NullifierList>
                     for CheckNullifiersSvc<T> {
                         type Response = super::CheckNullifiersResponse;
                         type Future = BoxFuture<
@@ -1537,7 +1537,7 @@ pub mod rpc_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::Nullifiers>,
+                            request: tonic::Request<super::NullifierList>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

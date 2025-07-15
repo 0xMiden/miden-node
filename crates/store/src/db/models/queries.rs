@@ -42,16 +42,17 @@ use crate::{
         NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
         TransactionSummary,
         models::{
-            AccountRaw, AccountSummaryRaw, ExpressionMethods, NoteRecordRaw, TransactionSummaryRaw,
-            block_number_to_raw_sql,
+            AccountRaw, AccountSummaryRaw, BigIntSum, ExpressionMethods, NoteRecordRaw,
+            TransactionSummaryRaw, block_number_to_raw_sql,
             conv::{
-                aux_to_raw_sql, consumed_to_raw_sql, delta_to_raw_sql, execution_hint_to_raw_sql,
-                execution_mode_to_raw_sql, idx_to_raw_sql, network_account_prefix_to_raw_sql,
-                nonce_to_raw_sql, note_type_to_raw_sql, nullifier_prefix_to_raw_sql,
-                raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql, tag_to_raw_sql,
+                aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
+                execution_mode_to_raw_sql, fungible_delta_to_raw_sql, idx_to_raw_sql,
+                network_account_prefix_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
+                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot,
+                slot_to_raw_sql, tag_to_raw_sql,
             },
             deserialize_raw_vec, get_nullifier_prefix, raw_sql_to_block_number, serialize_vec,
-            vec_raw_try_into,
+            sql_sum_into, vec_raw_try_into,
         },
         schema,
     },
@@ -342,7 +343,7 @@ pub(crate) fn insert_account_delta(
         account_id: AccountId,
         block_num: BlockNumber,
         faucet_id: Vec<u8>,
-        delta: i32,
+        delta: i64,
     ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_fungible_asset_deltas::table)
             .values(&[(
@@ -350,7 +351,7 @@ pub(crate) fn insert_account_delta(
                 schema::account_fungible_asset_deltas::block_num
                     .eq(block_number_to_raw_sql(block_num)),
                 schema::account_fungible_asset_deltas::faucet_id.eq(faucet_id),
-                schema::account_fungible_asset_deltas::delta.eq(delta_to_raw_sql(delta)),
+                schema::account_fungible_asset_deltas::delta.eq(fungible_delta_to_raw_sql(delta)),
             )])
             .execute(conn2)?;
         Ok(count)
@@ -400,7 +401,7 @@ pub(crate) fn insert_account_delta(
             account_id,
             block_number,
             faucet_id.to_bytes(),
-            delta as i32, // FIXME TODO, types don't align
+            delta,
         )?;
     }
 
@@ -963,6 +964,10 @@ pub(crate) fn select_all_account_commitments(
 //
 // Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
 // statements
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "We need custom SQL statements which has given types that we need to convert"
+)]
 pub(crate) fn unconsumed_network_notes(
     conn: &mut SqliteConnection,
     mut page: Page,
@@ -1130,6 +1135,10 @@ pub(crate) fn select_accounts_by_id(
 /// # Returns
 ///
 /// The resulting account delta, or an error.
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "Slot types have a DB representation of i32, in memory they are u8"
+)]
 pub(crate) fn select_account_delta(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -1228,24 +1237,14 @@ pub(crate) fn select_nonce_stmt(
             .and(schema::account_deltas::block_num.gt(start_block_num))
             .and(schema::account_deltas::block_num.le(end_block_num)),
     )
-    .get_result::<Option<bigdecimal::BigDecimal>>(conn)
+    .get_result::<Option<BigIntSum>>(conn)
     .optional()?
     .flatten();
 
     maybe_nonce
-        .map(|nonce| {
-            let (nonce, exponent) = nonce.as_bigint_and_exponent();
-            debug_assert_eq!(
-                exponent, 0,
-                "We only sum(integers), hence there must never be a decimal result"
-            );
-            let nonce = u64::try_from(nonce).map_err(|e| DatabaseError::ColumnSumExceedsLimit {
-                table: "account_deltas",
-                column: "nonce",
-                limit: "u64::MAX",
-                source: Box::new(e),
-            })?;
-            Ok(raw_sql_to_nonce(nonce as i64))
+        .map(|nonce_delta_sum| {
+            let nonce = sql_sum_into::<i64, _>(&nonce_delta_sum, "account_deltas", "nonce")?;
+            Ok::<_, DatabaseError>(raw_sql_to_nonce(nonce))
         })
         .transpose()
 }
@@ -1391,7 +1390,7 @@ pub(crate) fn select_fungible_asset_deltas_stmt(
     let start_block_num = block_number_to_raw_sql(start_block_num);
     let end_block_num = block_number_to_raw_sql(end_block_num);
 
-    let values: Vec<(Vec<u8>, Option<i64>)> = SelectDsl::select(
+    let values: Vec<(Vec<u8>, Option<BigIntSum>)> = SelectDsl::select(
         schema::account_fungible_asset_deltas::table
             .filter(
                 schema::account_fungible_asset_deltas::account_id
@@ -1402,15 +1401,19 @@ pub(crate) fn select_fungible_asset_deltas_stmt(
             .group_by(schema::account_fungible_asset_deltas::faucet_id),
         (
             schema::account_fungible_asset_deltas::faucet_id,
-            diesel::dsl::sum(schema::account_fungible_asset_deltas::delta),
+            diesel::dsl::sum::<diesel::sql_types::BigInt, _>(
+                schema::account_fungible_asset_deltas::delta,
+            ),
         ),
     )
     .load(conn)?;
-    let values =
-        Vec::from_iter(values.into_iter().map(|(faucet_id, value)| FungibleAssetDeltaEntry {
-            faucet_id,
-            value: value.unwrap_or_default(),
-        }));
+    let values = Result::<Vec<_>, _>::from_iter(values.into_iter().map(|(faucet_id, value)| {
+        let value = value
+            .map(|value| sql_sum_into::<i64, _>(&value, "fungible_asset_deltas", "delta"))
+            .transpose()?
+            .unwrap_or_default();
+        Ok::<_, DatabaseError>(FungibleAssetDeltaEntry { faucet_id, value })
+    }))?;
     Ok(values)
 }
 

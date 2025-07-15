@@ -12,7 +12,6 @@ use crate::{
     errors::DatabaseError,
 };
 
-// TODO XXX breaking change, type fields are now BLOB! NOT "ANY" ANYMORE
 pub struct Settings;
 
 impl Settings {
@@ -20,7 +19,6 @@ impl Settings {
         table_exists(conn, "settings")
     }
 
-    /// XXX TODO FIXME breaking change!!
     pub fn get_value<T: Deserializable>(
         conn: &mut SqliteConnection,
         name: &str,

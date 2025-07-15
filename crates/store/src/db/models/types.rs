@@ -1,3 +1,4 @@
+use bigdecimal::BigDecimal;
 use miden_lib::utils::Deserializable;
 use miden_node_proto::{self as proto, domain::account::AccountSummary};
 use miden_objects::{
@@ -132,11 +133,12 @@ pub struct BlockNoteIndexRaw {
     pub note_index: i32, // index within batch
 }
 
+#[allow(clippy::cast_sign_loss, reason = "Indices are cast to usize for ease of use")]
 impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockNoteIndex, Self::Error> {
         Ok(BlockNoteIndex::new(self.batch_index as usize, self.note_index as usize)
-            .expect("XXX TODO"))
+            .expect("The database content is sane at all times and should not exceed the limits for batch or note index"))
     }
 }
 
@@ -153,6 +155,7 @@ pub struct NoteSyncRecordRawRow {
     pub merkle_path: Vec<u8>, // MerklePath
 }
 
+#[allow(clippy::cast_sign_loss, reason = "Indices are cast to usize for ease of use")]
 impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteSyncRecord, Self::Error> {
@@ -306,4 +309,33 @@ impl TryInto<NoteRecord> for NoteRecordRaw {
             merkle_path,
         })
     }
+}
+
+/// A type to represent a `sum(BigInt)`
+// TODO: make this a type, but it's unclear how that should work
+// See: <https://github.com/diesel-rs/diesel/discussions/4684>
+pub type BigIntSum = BigDecimal;
+
+/// Impractical conversion required for `diesel-rs` `sum(BigInt)` results.
+pub fn sql_sum_into<T, E>(
+    sum: &BigIntSum,
+    table: &'static str,
+    column: &'static str,
+) -> Result<T, DatabaseError>
+where
+    E: std::error::Error + Send + Sync + 'static,
+    T: TryFrom<bigdecimal::num_bigint::BigInt, Error = E>,
+{
+    let (val, exponent) = sum.as_bigint_and_exponent();
+    debug_assert_eq!(
+        exponent, 0,
+        "We only sum(integers), hence there must never be a decimal result"
+    );
+    let val = T::try_from(val).map_err(|e| DatabaseError::ColumnSumExceedsLimit {
+        table,
+        column,
+        limit: "<T>::MAX",
+        source: Box::new(e),
+    })?;
+    Ok::<_, DatabaseError>(val)
 }

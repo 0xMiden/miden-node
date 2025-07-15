@@ -103,6 +103,10 @@ pub struct PragmaSchemaVersion {
 
 /// Returns the schema version of the database.
 #[allow(dead_code)]
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "schema version is always positive and we will never reach 0xEFFF_..._FFFF"
+)]
 pub fn schema_version(conn: &mut SqliteConnection) -> Result<u32, DatabaseError> {
     let schema_version = conn.transaction(|conn| {
         let res = diesel::sql_query("SELECT schema_version FROM pragma_schema_version")

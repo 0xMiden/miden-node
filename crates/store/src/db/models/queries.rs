@@ -528,8 +528,7 @@ pub(crate) fn upsert_accounts(
                     return Err(DatabaseError::AccountNotFoundInDb(account_id));
                 };
 
-                let account =
-                    apply_delta(account_id, account, delta, &update.final_state_commitment())?;
+                let account = apply_delta(account, delta, &update.final_state_commitment())?;
 
                 (Some(Cow::Owned(account)), Some(Cow::Borrowed(delta)))
             },
@@ -1203,31 +1202,52 @@ pub(crate) fn select_nonce_stmt(
     end_block_num: BlockNumber,
 ) -> Result<Option<u64>, DatabaseError> {
     // SELECT
-    //     nonce
+    //     SUM(nonce)
     // FROM
     //     account_deltas
     // WHERE
     //     account_id = ?1 AND block_num > ?2 AND block_num <= ?3
-    // ORDER BY
-    //     block_num DESC
-    // LIMIT 1
     let desired_account_id = account_id.to_bytes();
     let start_block_num = block_number_to_raw_sql(start_block_num);
     let end_block_num = block_number_to_raw_sql(end_block_num);
 
-    let maybe_nonce =
-        SelectDsl::select(schema::account_deltas::table, schema::account_deltas::nonce)
-            .filter(
-                schema::account_deltas::account_id
-                    .eq(desired_account_id)
-                    .and(schema::account_deltas::block_num.gt(start_block_num))
-                    .and(schema::account_deltas::block_num.le(end_block_num)),
-            )
-            .order(schema::account_deltas::block_num.desc())
-            .limit(1)
-            .get_result::<i64>(conn)
-            .optional()?;
-    Ok(maybe_nonce.map(raw_sql_to_nonce))
+    // Note: The following does not work as anticipated for `BigInt` columns,
+    // since `Foldable` for `BigInt` requires `Numeric`, which is only supported
+    // with `numeric` and using `bigdecimal::BigDecimal`. It's a quite painful
+    // to figure that out from the scattered comments and bits from the documentation.
+    // Related <https://github.com/diesel-rs/diesel/discussions/4000>
+    let maybe_nonce = SelectDsl::select(
+        schema::account_deltas::table,
+        // add type annotation for better error messages next time around someone tries to move to
+        // `BigInt`
+        diesel::dsl::sum::<diesel::sql_types::BigInt, _>(schema::account_deltas::nonce),
+    )
+    .filter(
+        schema::account_deltas::account_id
+            .eq(desired_account_id)
+            .and(schema::account_deltas::block_num.gt(start_block_num))
+            .and(schema::account_deltas::block_num.le(end_block_num)),
+    )
+    .get_result::<Option<bigdecimal::BigDecimal>>(conn)
+    .optional()?
+    .flatten();
+
+    maybe_nonce
+        .map(|nonce| {
+            let (nonce, exponent) = nonce.as_bigint_and_exponent();
+            debug_assert_eq!(
+                exponent, 0,
+                "We only sum(integers), hence there must never be a decimal result"
+            );
+            let nonce = u64::try_from(nonce).map_err(|e| DatabaseError::ColumnSumExceedsLimit {
+                table: "account_deltas",
+                column: "nonce",
+                limit: "u64::MAX",
+                source: Box::new(e),
+            })?;
+            Ok(raw_sql_to_nonce(nonce as i64))
+        })
+        .transpose()
 }
 
 // Attention: A more complex query, utilizing aliases for nested queries

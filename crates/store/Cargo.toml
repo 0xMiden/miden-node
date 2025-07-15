@@ -16,10 +16,11 @@ workspace = true
 
 [dependencies]
 anyhow                 = { workspace = true }
+bigdecimal             = { version = "0.4" }
 deadpool               = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
 deadpool-diesel        = { features = ["sqlite"], version = "0.6" }
 deadpool-sync          = { version = "0.1" }
-diesel                 = { features = ["sqlite"], version = "2.2" }
+diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
 diesel_migrations      = { features = ["sqlite"], version = "2.2" }
 hex                    = { version = "0.4" }
 miden-lib              = { workspace = true }

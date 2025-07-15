@@ -1,23 +1,23 @@
-// Specification of the user facing gRPC API.
+// Specification of the store RPC.
+//
+// This provided access to the blockchain data to the other nodes.
 syntax = "proto3";
-package rpc;
+package rpc_store;
 
+import "google/protobuf/empty.proto";
 import "types/account.proto";
 import "types/blockchain.proto";
 import "types/note.proto";
 import "types/primitives.proto";
-import "types/transaction.proto";
-import "block_producer.proto";
 import "store/shared.proto";
-import "google/protobuf/empty.proto";
 
-// RPC API
+// RPC STORE API
 // ================================================================================================
 
-// RPC API for the RPC component
-service Api {
-    // Returns the status info of the node.
-    rpc Status(google.protobuf.Empty) returns (RpcStatus) {}
+// Store API for the RPC component
+service Rpc {
+    // Returns the status info.
+    rpc Status(google.protobuf.Empty) returns (shared.StoreStatus) {}
 
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(shared.NullifierList) returns (shared.CheckNullifiersResponse) {}
@@ -44,11 +44,8 @@ service Api {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
-    // Returns a list of notes matching the provided note IDs.
+    // Returns a list of committed notes matching the provided note IDs.
     rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
-
-    // Submits proven transaction to the Miden network.
-    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (block_producer.SubmitProvenTransactionResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -62,34 +59,19 @@ service Api {
     rpc SyncNotes(shared.SyncNotesRequest) returns (shared.SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
-    // for the objects (accounts and notes) the client is interested in.
+    // for the objects (accounts, notes, nullifiers) the client is interested in.
     //
     // This request returns the next block containing requested data. It also returns `chain_tip`
     // which is the latest block number in the chain. Client is expected to repeat these requests
     // in a loop until `response.block_header.block_num == response.chain_tip`, at which point
     // the client is fully synchronized with the chain.
     //
-    // Each update response also contains info about new notes, accounts etc. created. It also returns
+    // Each request also returns info about new notes, nullifiers etc. created. It also returns
     // Chain MMR delta that can be used to update the state of Chain MMR. This includes both chain
     // MMR peaks and chain MMR nodes.
     //
-    // For preserving some degree of privacy, note tags contain only high
-    // part of hashes. Thus, returned data contains excessive notes, client can make
+    // For preserving some degree of privacy, note tags and nullifiers filters contain only high
+    // part of hashes. Thus, returned data contains excessive notes and nullifiers, client can make
     // additional filtering of that data on its side.
     rpc SyncState(shared.SyncStateRequest) returns (shared.SyncStateResponse) {}
-}
-
-// RPC STATUS
-// ================================================================================================
-
-// Represents the status of the node.
-message RpcStatus {
-    // The rpc component's running version.
-    string version = 1;
-
-    // The store status.
-    shared.StoreStatus store = 3;
-
-    // The block producer status.
-    block_producer.BlockProducerStatus block_producer = 4;
 }

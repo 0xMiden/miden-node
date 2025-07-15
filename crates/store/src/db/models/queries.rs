@@ -19,7 +19,7 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
 };
 use miden_objects::{
-    Word,
+    Felt, Word,
     account::{
         Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta,
         FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
@@ -257,19 +257,10 @@ pub(crate) fn insert_block_header(
 
 /// Deserializes account and applies account delta.
 pub(crate) fn apply_delta(
-    _account_id: AccountId, // TODO error handline shifted _outside_
     mut account: Account,
     delta: &AccountDelta,
     final_state_commitment: &RpoDigest,
 ) -> crate::db::Result<Account, DatabaseError> {
-    // TODO former error handling
-    // let account = value.as_blob_or_null()?;
-    // let account = account.map(Account::read_from_bytes).transpose()?;
-
-    // let Some(mut account) = account else {
-    //     return Err(DatabaseError::AccountNotpub(crate)lic(account_id));
-    // };
-
     account.apply_delta(delta)?;
 
     let actual_commitment = account.commitment();
@@ -294,7 +285,7 @@ pub(crate) fn insert_account_delta(
         conn: &mut SqliteConnection,
         account_id: AccountId,
         block_num: BlockNumber,
-        nonce: u64,
+        nonce: Felt,
     ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_deltas::table)
             .values(&[(
@@ -384,7 +375,7 @@ pub(crate) fn insert_account_delta(
         Ok(count)
     }
 
-    insert_acc_delta_stmt(conn, account_id, block_number, delta.nonce_delta().into())?;
+    insert_acc_delta_stmt(conn, account_id, block_number, delta.nonce_delta())?;
 
     for (&slot, value) in delta.storage().values() {
         insert_slot_update_stmt(conn, account_id, block_number, slot, value.to_bytes())?;

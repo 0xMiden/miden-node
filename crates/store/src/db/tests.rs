@@ -543,6 +543,7 @@ fn sql_select_accounts() {
 fn sql_public_account_details() {
     let mut conn = create_db();
     let conn = &mut conn;
+
     create_block(conn, 1.into());
 
     let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();

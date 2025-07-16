@@ -4,11 +4,11 @@ use miden_node_proto::{
     domain::account::{AccountInfo, NetworkAccountPrefix},
     generated::{
         blockchain as blockchain_proto,
-        store::{
-            AccountIdPrefix, BlockHeaderByNumberRequest, BlockHeaderByNumberResponse,
-            CurrentBlockchainData, GetUnconsumedNetworkNotesRequest, MaybeAccountDetails,
-            UnconsumedNetworkNotes, ntx_builder_server,
+        ntx_builder_store::{
+            AccountIdPrefix, CurrentBlockchainData, GetUnconsumedNetworkNotesRequest,
+            MaybeAccountDetails, UnconsumedNetworkNotes, ntx_builder_server,
         },
+        shared::{BlockHeaderByNumberRequest, BlockHeaderByNumberResponse},
     },
 };
 use miden_node_utils::ErrorReport;

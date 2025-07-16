@@ -1,7 +1,7 @@
 use std::{net::SocketAddr, time::Duration};
 
 use miden_node_proto::generated::{
-    rpc::api_client::ApiClient as ProtoClient, store as store_proto,
+    rpc::api_client::ApiClient as ProtoClient, shared as store_proto,
 };
 use miden_node_store::{GenesisState, Store};
 use tempfile::TempDir;

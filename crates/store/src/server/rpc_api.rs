@@ -6,9 +6,10 @@ use miden_node_proto::{
     generated::{
         account::{self as account_proto, AccountSummary},
         blockchain as blockchain_proto, note as note_proto,
-        store::{
+        rpc_store::rpc_server,
+        shared::{
             self as store_proto, BlockHeaderByNumberRequest, BlockHeaderByNumberResponse,
-            CheckNullifiersResponse, rpc_server,
+            CheckNullifiersResponse,
         },
         transaction::TransactionSummary,
     },

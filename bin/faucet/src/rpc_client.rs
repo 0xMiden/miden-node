@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::generated::{
-    account::AccountId as ProtoAccountId, store as store_proto,
+    account::AccountId as ProtoAccountId, shared as store_proto,
     transaction::ProvenTransaction as ProtoProvenTransaction,
 };
 use miden_node_rpc::ApiClient;

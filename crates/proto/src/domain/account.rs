@@ -15,8 +15,8 @@ use super::try_convert;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
-        account as proto_account,
-        store::{self as proto_store, get_account_proofs_request::account_request},
+        account as proto_account, block_producer_store as proto_store,
+        shared::{self as proto_shared, get_account_proofs_request::account_request},
     },
 };
 
@@ -109,11 +109,11 @@ pub struct AccountProofRequest {
     pub storage_requests: Vec<StorageMapKeysProof>,
 }
 
-impl TryInto<AccountProofRequest> for proto_store::get_account_proofs_request::AccountRequest {
+impl TryInto<AccountProofRequest> for proto_shared::get_account_proofs_request::AccountRequest {
     type Error = ConversionError;
 
     fn try_into(self) -> Result<AccountProofRequest, Self::Error> {
-        let proto_store::get_account_proofs_request::AccountRequest {
+        let proto_shared::get_account_proofs_request::AccountRequest {
             account_id,
             storage_requests,
         } = self;
@@ -121,7 +121,7 @@ impl TryInto<AccountProofRequest> for proto_store::get_account_proofs_request::A
         Ok(AccountProofRequest {
             account_id: account_id
                 .clone()
-                .ok_or(proto_store::get_account_proofs_request::AccountRequest::missing_field(
+                .ok_or(proto_shared::get_account_proofs_request::AccountRequest::missing_field(
                     stringify!(account_id),
                 ))?
                 .try_into()?,

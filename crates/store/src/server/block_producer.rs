@@ -2,7 +2,8 @@ use std::convert::Infallible;
 
 use miden_node_proto::{
     generated::{
-        blockchain as blockchain_proto, store as store_proto, store::block_producer_server,
+        block_producer_store as store_proto, block_producer_store::block_producer_server,
+        blockchain as blockchain_proto, shared as shared_proto,
     },
     try_convert,
 };
@@ -42,8 +43,8 @@ impl block_producer_server::BlockProducer for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<store_proto::BlockHeaderByNumberRequest>,
-    ) -> Result<Response<store_proto::BlockHeaderByNumberResponse>, Status> {
+        request: Request<shared_proto::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<shared_proto::BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 

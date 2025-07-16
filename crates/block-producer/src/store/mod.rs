@@ -11,10 +11,9 @@ use miden_node_proto::{
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
+        block_producer_store::{self as store_proto, block_producer_client as store_client},
         blockchain as blockchain_proto, primitives,
-        store::{
-            self as store_proto, BlockHeaderByNumberRequest, block_producer_client as store_client,
-        },
+        shared::BlockHeaderByNumberRequest,
     },
 };
 use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};

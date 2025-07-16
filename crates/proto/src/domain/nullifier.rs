@@ -5,7 +5,7 @@ use miden_objects::{
 
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
-    generated::{primitives as proto_primitives, store as proto_store},
+    generated::{block_producer_store as proto_store, primitives as proto_primitives},
 };
 
 // FROM NULLIFIER

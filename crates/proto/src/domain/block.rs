@@ -10,7 +10,9 @@ use miden_objects::{
 use crate::{
     AccountWitnessRecord, NullifierWitnessRecord,
     errors::{ConversionError, MissingFieldHelper},
-    generated::{blockchain as blockchain_proto, note as note_proto, store as store_proto},
+    generated::{
+        block_producer_store as store_proto, blockchain as blockchain_proto, note as note_proto,
+    },
 };
 
 // BLOCK HEADER

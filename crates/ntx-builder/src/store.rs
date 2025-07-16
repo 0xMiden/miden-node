@@ -5,7 +5,8 @@ use miden_node_proto::{
     errors::{ConversionError, MissingFieldHelper},
     generated::{
         blockchain,
-        store::{self as store_proto, ntx_builder_client as store_client},
+        ntx_builder_store::{self as store_proto, ntx_builder_client as store_client},
+        shared as shared_proto,
     },
     try_convert,
 };
@@ -79,7 +80,7 @@ impl StoreClient {
             .inner
             .clone()
             .get_block_header_by_number(tonic::Request::new(
-                store_proto::BlockHeaderByNumberRequest {
+                shared_proto::BlockHeaderByNumberRequest {
                     block_num: Some(BlockNumber::GENESIS.as_u32()),
                     include_mmr_proof: None,
                 },

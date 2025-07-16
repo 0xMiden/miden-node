@@ -7,7 +7,8 @@ use futures::{StreamExt, stream};
 use miden_node_proto::generated::{
     account as account_proto,
     note::{self as note_proto, NoteId},
-    store::{self as store_proto, rpc_client::RpcClient},
+    rpc_store::rpc_client::RpcClient,
+    shared as store_proto,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{

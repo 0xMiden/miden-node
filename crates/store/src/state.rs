@@ -15,7 +15,7 @@ use miden_node_proto::{
         account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
         batch::BatchInputs,
     },
-    generated::store::account_proofs::{
+    generated::shared::account_proofs::{
         AccountProof,
         account_proof::{AccountStateHeader, account_state_header::StorageSlotMapProof},
     },

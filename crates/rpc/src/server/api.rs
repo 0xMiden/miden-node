@@ -7,9 +7,8 @@ use miden_node_proto::{
         block_producer::api_client as block_producer_client,
         blockchain as blockchain_proto, note as note_proto,
         rpc::{RpcStatus, api_server},
-        store as store_proto,
-        store::rpc_client as store_client,
-        transaction as transaction_proto,
+        rpc_store::rpc_client as store_client,
+        shared as store_proto, transaction as transaction_proto,
     },
     try_convert,
 };

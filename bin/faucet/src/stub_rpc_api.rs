@@ -5,7 +5,7 @@ use miden_node_proto::generated::{
     blockchain::BlockHeader,
     note as note_proto,
     rpc::{RpcStatus, api_server},
-    store as store_proto, transaction as transaction_proto,
+    shared as store_proto, transaction as transaction_proto,
 };
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_testing::MockChain;
@@ -22,7 +22,7 @@ pub struct StubRpcApi;
 impl api_server::Api for StubRpcApi {
     async fn check_nullifiers(
         &self,
-        _request: Request<store_proto::Nullifiers>,
+        _request: Request<store_proto::NullifierList>,
     ) -> Result<Response<store_proto::CheckNullifiersResponse>, Status> {
         unimplemented!();
     }

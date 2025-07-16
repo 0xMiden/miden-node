@@ -9,7 +9,7 @@ use miden_objects::{
 
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
-    generated::store as proto_store,
+    generated::block_producer_store as proto_store,
 };
 
 /// Data required for a transaction batch.

@@ -2,7 +2,7 @@ use std::{collections::BTreeSet, sync::Arc};
 
 use miden_node_proto::{
     errors::ConversionError,
-    generated::{account as account_proto, primitives as primitives_proto, store as store_proto},
+    generated::{account as account_proto, primitives as primitives_proto, shared as store_proto},
 };
 use miden_node_utils::ErrorReport;
 use miden_objects::{

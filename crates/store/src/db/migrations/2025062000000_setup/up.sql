@@ -6,7 +6,7 @@ CREATE TABLE settings (
 
     PRIMARY KEY (name),
     CONSTRAINT settings_name_is_not_empty CHECK (length(name) > 0)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE TABLE block_headers (
     block_num    INTEGER NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE block_headers (
 
     PRIMARY KEY (block_num),
     CONSTRAINT block_header_block_num_is_u32 CHECK (block_num BETWEEN 0 AND 0xFFFFFFFF)
-) STRICT;
+);
 
 
 CREATE TABLE accounts (
@@ -26,7 +26,7 @@ CREATE TABLE accounts (
 
     PRIMARY KEY (account_id),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
 
@@ -58,7 +58,7 @@ CREATE TABLE notes (
     CONSTRAINT notes_consumed_is_bool CHECK (execution_mode BETWEEN 0 AND 1),
     CONSTRAINT notes_batch_index_is_u32 CHECK (batch_index BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_note_index_is_u32 CHECK (note_index BETWEEN 0 AND 0xFFFFFFFF)
-) STRICT;
+);
 
 CREATE INDEX idx_notes_note_id ON notes(note_id);
 CREATE INDEX idx_notes_sender ON notes(sender, block_num);
@@ -69,9 +69,9 @@ CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed);
 CREATE TABLE note_scripts (
     script_root BLOB NOT NULL,
     script      BLOB NOT NULL,
-  
+
     PRIMARY KEY (script_root)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE TABLE account_deltas (
     account_id  BLOB NOT NULL,
@@ -81,7 +81,7 @@ CREATE TABLE account_deltas (
     PRIMARY KEY (account_id, block_num),
     FOREIGN KEY (account_id) REFERENCES accounts(account_id),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE TABLE account_storage_slot_updates (
     account_id  BLOB NOT NULL,
@@ -91,7 +91,7 @@ CREATE TABLE account_storage_slot_updates (
 
     PRIMARY KEY (account_id, block_num, slot),
     FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE TABLE account_storage_map_updates (
     account_id  BLOB NOT NULL,
@@ -102,7 +102,7 @@ CREATE TABLE account_storage_map_updates (
 
     PRIMARY KEY (account_id, block_num, slot, key),
     FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE TABLE account_fungible_asset_deltas (
     account_id  BLOB NOT NULL,
@@ -112,7 +112,7 @@ CREATE TABLE account_fungible_asset_deltas (
 
     PRIMARY KEY (account_id, block_num, faucet_id),
     FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE TABLE account_non_fungible_asset_updates (
     account_id  BLOB NOT NULL,
@@ -122,7 +122,7 @@ CREATE TABLE account_non_fungible_asset_updates (
 
     PRIMARY KEY (account_id, block_num, vault_key),
     FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,
@@ -133,7 +133,7 @@ CREATE TABLE nullifiers (
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
     CONSTRAINT nullifiers_nullifier_is_digest CHECK (length(nullifier) = 32),
     CONSTRAINT nullifiers_nullifier_prefix_is_u16 CHECK (nullifier_prefix BETWEEN 0 AND 0xFFFF)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE INDEX idx_nullifiers_prefix ON nullifiers(nullifier_prefix);
 CREATE INDEX idx_nullifiers_block_num ON nullifiers(block_num);
@@ -146,7 +146,7 @@ CREATE TABLE transactions (
     PRIMARY KEY (transaction_id),
     FOREIGN KEY (account_id) REFERENCES accounts(account_id),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
-) STRICT, WITHOUT ROWID;
+) WITHOUT ROWID;
 
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);
 CREATE INDEX idx_transactions_block_num ON transactions(block_num);

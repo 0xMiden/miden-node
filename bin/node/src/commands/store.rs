@@ -136,6 +136,8 @@ impl StoreCommand {
         accounts_directory: &Path,
         maybe_genesis_config: Option<&PathBuf>,
     ) -> anyhow::Result<()> {
+        fs_err::create_dir_all(&accounts_directory)?;
+        fs_err::create_dir_all(&data_directory)?;
         let config = maybe_genesis_config
             .map(|genesis_config| {
                 let toml_str = fs_err::read_to_string(genesis_config)?;

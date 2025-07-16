@@ -31,11 +31,11 @@ use miden_node_utils::{
     tracing::grpc::OtelInterceptor,
 };
 use miden_objects::{
-    Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
+    Digest, Hasher, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
     account::{AccountId, delta::AccountUpdateDetails},
     crypto::hash::rpo::RpoDigest,
     transaction::ProvenTransaction,
-    utils::serde::Deserializable,
+    utils::serde::{Deserializable, Serializable},
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
@@ -245,6 +245,20 @@ impl api_server::Api for RpcService {
             return Err(Status::invalid_argument(
                 "Network transactions may not be submitted by users yet",
             ));
+        }
+
+        // Compare the account delta commitment of the ProvenTransaction with the actual delta
+        let delta_commitment = tx.account_update().account_delta_commitment();
+
+        // Verify that the delta commitment matches the actual delta
+        if let AccountUpdateDetails::Delta(delta) = tx.account_update().details() {
+            let computed_commitment = Hasher::hash(&delta.to_bytes());
+
+            if computed_commitment != delta_commitment {
+                return Err(Status::invalid_argument(
+                    "Account delta commitment does not match the actual account delta",
+                ));
+            }
         }
 
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);

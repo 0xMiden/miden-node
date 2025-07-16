@@ -131,7 +131,7 @@ CREATE TABLE nullifiers (
 
     PRIMARY KEY (nullifier),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
-    CONSTRAINT nullifiers_nullifier_is_word CHECK (length(nullifier) = 32),
+    CONSTRAINT nullifiers_nullifier_is_digest CHECK (length(nullifier) = 32),
     CONSTRAINT nullifiers_nullifier_prefix_is_u16 CHECK (nullifier_prefix BETWEEN 0 AND 0xFFFF)
 ) STRICT, WITHOUT ROWID;
 

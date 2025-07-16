@@ -43,7 +43,7 @@ impl Random {
         AccountIdBuilder::new().build_with_rng(&mut self.0)
     }
 
-    pub fn draw_word(&mut self) -> Word {
+    pub fn draw_digest(&mut self) -> Word {
         self.0.draw_word()
     }
 }

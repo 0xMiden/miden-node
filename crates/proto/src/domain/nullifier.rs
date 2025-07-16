@@ -27,8 +27,8 @@ impl TryFrom<proto::digest::Digest> for Nullifier {
     type Error = ConversionError;
 
     fn try_from(value: proto::digest::Digest) -> Result<Self, Self::Error> {
-        let word: Word = value.try_into()?;
-        Ok(word.into())
+        let digest: Word = value.try_into()?;
+        Ok(digest.into())
     }
 }
 

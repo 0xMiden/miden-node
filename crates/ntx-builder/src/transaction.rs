@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
-use miden_node_utils::{ErrorReport, FlattenResult, tracing::OpenTelemetrySpanExt};
+use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
 use miden_objects::{
     TransactionInputError, Word,
     account::{Account, AccountId},
@@ -20,7 +20,7 @@ use miden_tx::{
 };
 use rand::seq::SliceRandom;
 use tokio::task::JoinError;
-use tracing::instrument;
+use tracing::{Instrument, instrument, instrument::Instrumented};
 
 use crate::{COMPONENT, block_producer::BlockProducerClient, state::TransactionCandidate};
 
@@ -71,32 +71,42 @@ impl NtxContext {
 
         // Work-around for `TransactionExecutor` not being `Send`.
         tokio::task::spawn_blocking(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("runtime should be built");
+            {
+                {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("runtime should be built");
 
-            rt.block_on(async move {
-                let mut notes = notes
-                    .into_iter()
-                    .map(|note| InputNote::Unauthenticated { note: note.into() })
-                    .collect::<Vec<_>>();
-                // We shuffle the notes here to prevent having a failing note always in front.
-                notes.shuffle(&mut rand::rng());
-                let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
+                    rt.block_on(
+                        async move {
+                            let mut notes = notes
+                                .into_iter()
+                                .map(|note| InputNote::Unauthenticated { note: note.into() })
+                                .collect::<Vec<_>>();
+                            // We shuffle the notes here to prevent having a failing note always in
+                            // front.
+                            notes.shuffle(&mut rand::rng());
+                            let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                let data_store = NtxDataStore::new(account, self.genesis_header.clone());
+                            let data_store =
+                                NtxDataStore::new(account, self.genesis_header.clone());
 
-                self.filter_notes(&data_store, notes)
-                    .and_then(|notes| self.execute(&data_store, notes))
-                    .and_then(|tx| self.prove(tx))
-                    .and_then(|tx| self.submit(tx))
-                    .await
-            })
+                            self.filter_notes(&data_store, notes)
+                                .and_then(|notes| self.execute(&data_store, notes))
+                                .and_then(|tx| self.prove(tx))
+                                .and_then(|tx| self.submit(tx))
+                                .await
+                        }
+                        .in_current_span(),
+                    )
+                }
+            }
+            .in_current_span()
         })
-        .map_err(NtxError::Panic)
         .await
-        .flatten_result()
+        .map_err(NtxError::Panic)
+        .and_then(Instrumented::into_inner)
         .inspect_err(|err| tracing::Span::current().set_error(err))
     }
 

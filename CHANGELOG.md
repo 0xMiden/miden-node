@@ -3,7 +3,14 @@
 ## v0.11.0 (TBD)
 
 - [BREAKING] Updated MSRV to 1.88.
-- Add client builders for all components (#1075).
+- Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
+- Add client builders for all components ([#1075]((https://github.com/0xMiden/miden-node/pull/1075))).
+
+## v0.10.1 (2025-07-14)
+
+### Fixes
+
+- Network accounts are disabled after one transaction ([#1086](https://github.com/0xMiden/miden-node/pull/1086)).
 
 ## v0.10.0 (2025-07-10)
 

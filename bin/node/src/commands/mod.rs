@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use miden_node_block_producer::{SERVER_MAX_BATCHES_PER_BLOCK, SERVER_MAX_TXS_PER_BATCH};
+use miden_node_block_producer::{DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH};
 use url::Url;
 
 pub mod block_producer;
@@ -19,6 +19,8 @@ const ENV_STORE_BLOCK_PRODUCER_URL: &str = "MIDEN_NODE_STORE_BLOCK_PRODUCER_URL"
 const ENV_DATA_DIRECTORY: &str = "MIDEN_NODE_DATA_DIRECTORY";
 const ENV_ENABLE_OTEL: &str = "MIDEN_NODE_ENABLE_OTEL";
 const ENV_GENESIS_CONFIG_FILE: &str = "MIDEN_GENESIS_CONFIG_FILE";
+const ENV_MAX_TXS_PER_BATCH: &str = "MIDEN_MAX_TXS_PER_BATCH";
+const ENV_MAX_BATCHES_PER_BLOCK: &str = "MIDEN_MAX_BATCHES_PER_BLOCK";
 
 const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(2);
@@ -83,10 +85,10 @@ pub struct BlockProducerConfig {
     pub block_prover_url: Option<Url>,
 
     /// The number of transactions per batch.
-    #[arg(long = "max-txs-per-batch", default_value_t = SERVER_MAX_TXS_PER_BATCH)]
-    max_txs_per_batch: usize,
+    #[arg(long = "max-txs-per-batch", env = ENV_MAX_TXS_PER_BATCH, value_name = "NUM", default_value_t = DEFAULT_MAX_TXS_PER_BATCH)]
+    pub max_txs_per_batch: usize,
 
     /// Maximum number of batches per block.
-    #[arg(long = "max-batches-per-block", default_value_t = SERVER_MAX_BATCHES_PER_BLOCK)]
-    max_batches_per_block: usize,
+    #[arg(long = "max-batches-per-block", env = ENV_MAX_BATCHES_PER_BLOCK, value_name = "NUM", default_value_t = DEFAULT_MAX_BATCHES_PER_BLOCK)]
+    pub max_batches_per_block: usize,
 }

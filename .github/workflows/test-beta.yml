@@ -4,6 +4,9 @@ on:
   schedule:
     - cron: "0 6 * * *" # Everyday at 06:00am UTC
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: test

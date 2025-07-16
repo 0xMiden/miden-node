@@ -4,7 +4,7 @@
 pub struct TransactionId {
     /// The transaction ID.
     #[prost(message, optional, tag = "1")]
-    pub id: ::core::option::Option<super::word::Word>,
+    pub id: ::core::option::Option<super::digest::Digest>,
 }
 /// Represents a transaction summary.
 #[derive(Clone, PartialEq, ::prost::Message)]

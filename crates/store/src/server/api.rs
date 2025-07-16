@@ -87,23 +87,25 @@ pub fn read_account_ids(
 
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn validate_nullifiers(nullifiers: &[generated::word::Word]) -> Result<Vec<Nullifier>, Status> {
+pub fn validate_nullifiers(
+    nullifiers: &[generated::digest::Digest],
+) -> Result<Vec<Nullifier>, Status> {
     nullifiers
         .iter()
         .copied()
         .map(TryInto::try_into)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Word field is not in the modulus range"))
+        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn validate_notes(notes: &[generated::word::Word]) -> Result<Vec<NoteId>, Status> {
+pub fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
     notes
         .iter()
-        .map(|word| Ok(Word::try_from(word)?.into()))
+        .map(|digest| Ok(Word::try_from(digest)?.into()))
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Word field is not in the modulus range"))
+        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 
 #[instrument(level = "debug",target = COMPONENT, skip_all)]

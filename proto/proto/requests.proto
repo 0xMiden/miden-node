@@ -3,7 +3,7 @@ package requests;
 
 import "account.proto";
 import "note.proto";
-import "word.proto";
+import "digest.proto";
 import "transaction.proto";
 
 // Applies changes of a new block to the DB and in-memory data structures.
@@ -27,7 +27,7 @@ message CheckNullifiersByPrefixRequest {
 // Returns a nullifier proof for each of the requested nullifiers.
 message CheckNullifiersRequest {
     // List of nullifiers to return proofs for.
-    repeated word.Word nullifiers = 1;
+    repeated digest.Digest nullifiers = 1;
 }
 
 // Returns the block header corresponding to the requested block number, as well as the merkle
@@ -90,10 +90,10 @@ message GetBlockInputsRequest {
     //
     // However, if it is known that a certain note will be erased, it would not be necessary to
     // provide a nullifier witness for it.
-    repeated word.Word nullifiers = 2;
+    repeated digest.Digest nullifiers = 2;
 
     // Array of note IDs for which to retrieve note inclusion proofs, **if they exist in the store**.
-    repeated word.Word unauthenticated_notes = 3;
+    repeated digest.Digest unauthenticated_notes = 3;
 
     // Array of block numbers referenced by all batches in the block.
     repeated fixed32 reference_blocks = 4;
@@ -102,7 +102,7 @@ message GetBlockInputsRequest {
 // Returns the inputs for a transaction batch.
 message GetBatchInputsRequest {
   // List of unauthenticated notes to be queried from the database.
-  repeated word.Word note_ids = 1;
+  repeated digest.Digest note_ids = 1;
   // Set of block numbers referenced by transactions.
   repeated fixed32 reference_blocks = 2;
 }
@@ -112,12 +112,12 @@ message GetTransactionInputsRequest {
     // ID of the account against which a transaction is executed.
     account.AccountId account_id = 1;
     // Set of nullifiers consumed by this transaction.
-    repeated word.Word nullifiers = 2;
+    repeated digest.Digest nullifiers = 2;
     // Set of unauthenticated notes to check for existence on-chain.
     //
     // These are notes which were not on-chain at the state the transaction was proven,
     // but could by now be present.
-    repeated word.Word unauthenticated_notes = 3;
+    repeated digest.Digest unauthenticated_notes = 3;
 }
 
 // Submits proven transaction to the Miden network.
@@ -130,7 +130,7 @@ message SubmitProvenTransactionRequest {
 // Returns a list of notes matching the provided note IDs.
 message GetNotesByIdRequest {
     // List of notes to be queried from the database.
-    repeated word.Word note_ids = 1;
+    repeated digest.Digest note_ids = 1;
 }
 
 // Returns peaks for the given block number, or the chain tip if a block number not provided.
@@ -185,8 +185,8 @@ message GetAccountProofsRequest {
         // Storage slot index ([0..255])
         uint32 storage_slot_index = 1;
 
-        // A list of map keys (Words) associated with this storage slot.
-        repeated word.Word map_keys = 2;
+        // A list of map keys (Digests) associated with this storage slot.
+        repeated digest.Digest map_keys = 2;
     }
 
     // A list of account requests, including map keys + values.
@@ -200,7 +200,7 @@ message GetAccountProofsRequest {
     // accounts. Responses will include only the ones that are not known to the caller.
     // These are not associated with a specific account but rather, they will be matched against
     // all requested accounts.
-    repeated word.Word code_commitments = 3;
+    repeated digest.Digest code_commitments = 3;
 }
 
 // Returns a list of unconsumed network notes using pagination.

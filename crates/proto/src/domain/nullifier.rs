@@ -8,13 +8,13 @@ use crate::{
 // FROM NULLIFIER
 // ================================================================================================
 
-impl From<&Nullifier> for proto::word::Word {
+impl From<&Nullifier> for proto::digest::Digest {
     fn from(value: &Nullifier) -> Self {
         value.as_word().into()
     }
 }
 
-impl From<Nullifier> for proto::word::Word {
+impl From<Nullifier> for proto::digest::Digest {
     fn from(value: Nullifier) -> Self {
         value.as_word().into()
     }
@@ -23,10 +23,10 @@ impl From<Nullifier> for proto::word::Word {
 // INTO NULLIFIER
 // ================================================================================================
 
-impl TryFrom<proto::word::Word> for Nullifier {
+impl TryFrom<proto::digest::Digest> for Nullifier {
     type Error = ConversionError;
 
-    fn try_from(value: proto::word::Word) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::digest::Digest) -> Result<Self, Self::Error> {
         let word: Word = value.try_into()?;
         Ok(word.into())
     }

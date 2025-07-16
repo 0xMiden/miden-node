@@ -7,5 +7,5 @@ pub struct MmrDelta {
     pub forest: u64,
     /// New and changed MMR peaks.
     #[prost(message, repeated, tag = "2")]
-    pub data: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub data: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }

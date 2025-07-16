@@ -3,7 +3,7 @@ package responses;
 
 import "account.proto";
 import "block.proto";
-import "word.proto";
+import "digest.proto";
 import "merkle.proto";
 import "mmr.proto";
 import "note.proto";
@@ -40,7 +40,7 @@ message GetBlockHeaderByNumberResponse {
 // Represents a single nullifier update.
 message NullifierUpdate {
     // Nullifier ID.
-    word.Word nullifier = 1;
+    digest.Digest nullifier = 1;
 
     // Block number.
     fixed32 block_num = 2;
@@ -97,7 +97,7 @@ message AccountWitness {
     account.AccountId witness_id = 2;
 
     // The state commitment whose inclusion the witness proves.
-    word.Word commitment = 3;
+    digest.Digest commitment = 3;
 
     // The merkle path of the state commitment in the account tree.
     merkle.MerklePath path = 4;
@@ -106,7 +106,7 @@ message AccountWitness {
 // A nullifier returned as a response to the `GetBlockInputs`.
 message NullifierWitness {
     // The nullifier.
-    word.Word nullifier = 1;
+    digest.Digest nullifier = 1;
 
     // The SMT proof to verify the nullifier's inclusion in the nullifier tree.
     smt.SmtOpening opening = 2;
@@ -153,13 +153,13 @@ message AccountTransactionInputRecord {
     account.AccountId account_id = 1;
 
     // The latest account commitment, zero commitment if the account doesn't exist.
-    word.Word account_commitment = 2;
+    digest.Digest account_commitment = 2;
 }
 
 // A nullifier returned as a response to the `GetTransactionInputs`.
 message NullifierTransactionInputRecord {
     // The nullifier ID.
-    word.Word nullifier = 1;
+    digest.Digest nullifier = 1;
 
     // The block at which the nullifier has been consumed, zero if not consumed.
     fixed32 block_num = 2;
@@ -174,7 +174,7 @@ message GetTransactionInputsResponse {
     repeated NullifierTransactionInputRecord nullifiers = 2;
 
     // List of unauthenticated notes that were not found in the database.
-    repeated word.Word found_unauthenticated_notes = 3;
+    repeated digest.Digest found_unauthenticated_notes = 3;
 
     // The node's current block height.
     fixed32 block_height = 4;
@@ -214,7 +214,7 @@ message GetBlockByNumberResponse {
 // Current blockchain data based on the requested block number.
 message GetCurrentBlockchainDataResponse {
     // Commitments that represent the current state according to the MMR.
-    repeated word.Word current_peaks = 1;
+    repeated digest.Digest current_peaks = 1;
     // Current block header.
     optional block.BlockHeader current_block_header = 2;
 }

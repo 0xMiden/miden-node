@@ -14,7 +14,7 @@ use crate::{
 
 impl From<&MerklePath> for proto::merkle::MerklePath {
     fn from(value: &MerklePath) -> Self {
-        let siblings = value.nodes().iter().map(proto::word::Word::from).collect();
+        let siblings = value.nodes().iter().map(proto::digest::Digest::from).collect();
         proto::merkle::MerklePath { siblings }
     }
 }
@@ -46,7 +46,7 @@ impl TryFrom<proto::merkle::MerklePath> for MerklePath {
 
 impl From<MmrDelta> for proto::mmr::MmrDelta {
     fn from(value: MmrDelta) -> Self {
-        let data = value.data.into_iter().map(proto::word::Word::from).collect();
+        let data = value.data.into_iter().map(proto::digest::Digest::from).collect();
         proto::mmr::MmrDelta {
             forest: value.forest.num_leaves() as u64,
             data,

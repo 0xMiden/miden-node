@@ -6,12 +6,12 @@ use std::{
 use futures::{StreamExt, stream};
 use miden_node_proto::generated::{
     account as account_proto,
+    digest::Digest,
     requests::{
         CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
     },
     responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
     store::rpc_client::RpcClient,
-    word::Word,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
@@ -180,7 +180,7 @@ pub async fn bench_check_nullifiers_by_prefix(
         // get the accounts notes
         let (_, response) =
             sync_state(&mut store_client, account_ids.clone(), current_block_num).await;
-        let note_ids = response.notes.iter().map(|n| n.note_id.unwrap()).collect::<Vec<Word>>();
+        let note_ids = response.notes.iter().map(|n| n.note_id.unwrap()).collect::<Vec<Digest>>();
 
         // get the notes nullifiers.
         let notes = store_client

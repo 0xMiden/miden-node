@@ -2,12 +2,12 @@ syntax = "proto3";
 package transaction;
 
 import "account.proto";
-import "word.proto";
+import "digest.proto";
 
 // Represents a transaction ID.
 message TransactionId {
     // The transaction ID.
-    word.Word id = 1;
+    digest.Digest id = 1;
 }
 
 // Represents a transaction summary.

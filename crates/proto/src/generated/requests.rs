@@ -26,7 +26,7 @@ pub struct CheckNullifiersByPrefixRequest {
 pub struct CheckNullifiersRequest {
     /// List of nullifiers to return proofs for.
     #[prost(message, repeated, tag = "1")]
-    pub nullifiers: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub nullifiers: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }
 /// Returns the block header corresponding to the requested block number, as well as the merkle
 /// path and current forest which validate the block's inclusion in the chain.
@@ -94,10 +94,10 @@ pub struct GetBlockInputsRequest {
     /// However, if it is known that a certain note will be erased, it would not be necessary to
     /// provide a nullifier witness for it.
     #[prost(message, repeated, tag = "2")]
-    pub nullifiers: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub nullifiers: ::prost::alloc::vec::Vec<super::digest::Digest>,
     /// Array of note IDs for which to retrieve note inclusion proofs, **if they exist in the store**.
     #[prost(message, repeated, tag = "3")]
-    pub unauthenticated_notes: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub unauthenticated_notes: ::prost::alloc::vec::Vec<super::digest::Digest>,
     /// Array of block numbers referenced by all batches in the block.
     #[prost(fixed32, repeated, tag = "4")]
     pub reference_blocks: ::prost::alloc::vec::Vec<u32>,
@@ -107,7 +107,7 @@ pub struct GetBlockInputsRequest {
 pub struct GetBatchInputsRequest {
     /// List of unauthenticated notes to be queried from the database.
     #[prost(message, repeated, tag = "1")]
-    pub note_ids: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub note_ids: ::prost::alloc::vec::Vec<super::digest::Digest>,
     /// Set of block numbers referenced by transactions.
     #[prost(fixed32, repeated, tag = "2")]
     pub reference_blocks: ::prost::alloc::vec::Vec<u32>,
@@ -120,13 +120,13 @@ pub struct GetTransactionInputsRequest {
     pub account_id: ::core::option::Option<super::account::AccountId>,
     /// Set of nullifiers consumed by this transaction.
     #[prost(message, repeated, tag = "2")]
-    pub nullifiers: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub nullifiers: ::prost::alloc::vec::Vec<super::digest::Digest>,
     /// Set of unauthenticated notes to check for existence on-chain.
     ///
     /// These are notes which were not on-chain at the state the transaction was proven,
     /// but could by now be present.
     #[prost(message, repeated, tag = "3")]
-    pub unauthenticated_notes: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub unauthenticated_notes: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }
 /// Submits proven transaction to the Miden network.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -141,7 +141,7 @@ pub struct SubmitProvenTransactionRequest {
 pub struct GetNotesByIdRequest {
     /// List of notes to be queried from the database.
     #[prost(message, repeated, tag = "1")]
-    pub note_ids: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub note_ids: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }
 /// Returns peaks for the given block number, or the chain tip if a block number not provided.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -202,7 +202,7 @@ pub struct GetAccountProofsRequest {
     /// These are not associated with a specific account but rather, they will be matched against
     /// all requested accounts.
     #[prost(message, repeated, tag = "3")]
-    pub code_commitments: ::prost::alloc::vec::Vec<super::word::Word>,
+    pub code_commitments: ::prost::alloc::vec::Vec<super::digest::Digest>,
 }
 /// Nested message and enum types in `GetAccountProofsRequest`.
 pub mod get_account_proofs_request {
@@ -223,9 +223,9 @@ pub mod get_account_proofs_request {
         /// Storage slot index (\[0..255\])
         #[prost(uint32, tag = "1")]
         pub storage_slot_index: u32,
-        /// A list of map keys (Words) associated with this storage slot.
+        /// A list of map keys (Digests) associated with this storage slot.
         #[prost(message, repeated, tag = "2")]
-        pub map_keys: ::prost::alloc::vec::Vec<super::super::word::Word>,
+        pub map_keys: ::prost::alloc::vec::Vec<super::super::digest::Digest>,
     }
 }
 /// Returns a list of unconsumed network notes using pagination.

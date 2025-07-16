@@ -1,7 +1,7 @@
 syntax = "proto3";
 package mmr;
 
-import "word.proto";
+import "digest.proto";
 
 // Represents an MMR delta.
 message MmrDelta {
@@ -9,5 +9,5 @@ message MmrDelta {
     uint64 forest = 1;
 
     // New and changed MMR peaks.
-    repeated word.Word data = 2;
+    repeated digest.Digest data = 2;
 }

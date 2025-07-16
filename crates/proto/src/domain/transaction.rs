@@ -5,13 +5,13 @@ use crate::{errors::ConversionError, generated as proto};
 // FROM TRANSACTION ID
 // ================================================================================================
 
-impl From<&TransactionId> for proto::word::Word {
+impl From<&TransactionId> for proto::digest::Digest {
     fn from(value: &TransactionId) -> Self {
         value.as_word().into()
     }
 }
 
-impl From<TransactionId> for proto::word::Word {
+impl From<TransactionId> for proto::digest::Digest {
     fn from(value: TransactionId) -> Self {
         value.as_word().into()
     }
@@ -32,10 +32,10 @@ impl From<TransactionId> for proto::transaction::TransactionId {
 // INTO TRANSACTION ID
 // ================================================================================================
 
-impl TryFrom<proto::word::Word> for TransactionId {
+impl TryFrom<proto::digest::Digest> for TransactionId {
     type Error = ConversionError;
 
-    fn try_from(value: proto::word::Word) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::digest::Digest) -> Result<Self, Self::Error> {
         let word: Word = value.try_into()?;
         Ok(word.into())
     }

@@ -19,7 +19,7 @@ pub struct AccountSummary {
     pub account_id: ::core::option::Option<AccountId>,
     /// The current account commitment or zero if the account does not exist.
     #[prost(message, optional, tag = "2")]
-    pub account_commitment: ::core::option::Option<super::word::Word>,
+    pub account_commitment: ::core::option::Option<super::digest::Digest>,
     /// Block number at which the summary was made.
     #[prost(uint32, tag = "3")]
     pub block_num: u32,
@@ -40,13 +40,13 @@ pub struct AccountInfo {
 pub struct AccountHeader {
     /// Vault root hash.
     #[prost(message, optional, tag = "1")]
-    pub vault_root: ::core::option::Option<super::word::Word>,
+    pub vault_root: ::core::option::Option<super::digest::Digest>,
     /// Storage root hash.
     #[prost(message, optional, tag = "2")]
-    pub storage_commitment: ::core::option::Option<super::word::Word>,
+    pub storage_commitment: ::core::option::Option<super::digest::Digest>,
     /// Code root hash.
     #[prost(message, optional, tag = "3")]
-    pub code_commitment: ::core::option::Option<super::word::Word>,
+    pub code_commitment: ::core::option::Option<super::digest::Digest>,
     /// Account nonce.
     #[prost(uint64, tag = "4")]
     pub nonce: u64,

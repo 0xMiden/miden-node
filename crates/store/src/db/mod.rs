@@ -13,7 +13,7 @@ use miden_objects::{
     Word,
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
-    crypto::{merkle::MerklePath, utils::Deserializable},
+    crypto::{merkle::SparseMerklePath, utils::Deserializable},
     note::{
         NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
         NoteRecipient, NoteScript, Nullifier,
@@ -82,7 +82,7 @@ pub struct NoteRecord {
     pub note_id: Word,
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
-    pub merkle_path: MerklePath,
+    pub sparse_merkle_path: SparseMerklePath,
 }
 
 impl NoteRecord {
@@ -97,7 +97,7 @@ impl NoteRecord {
             tag,
             aux,
             execution_hint,
-            merkle_path,
+            sparse_merkle_path,
             assets,
             inputs,
             script,
@@ -122,8 +122,8 @@ impl NoteRecord {
         let aux: u64 = row.get(7)?;
         let aux = aux.try_into().map_err(DatabaseError::InvalidFelt)?;
         let execution_hint = column_value_as_u64(row, 8)?;
-        let merkle_path_data = row.get_ref(9)?.as_blob()?;
-        let merkle_path = MerklePath::read_from_bytes(merkle_path_data)?;
+        let sparse_merkle_path_data = row.get_ref(9)?.as_blob()?;
+        let sparse_merkle_path = SparseMerklePath::read_from_bytes(sparse_merkle_path_data)?;
 
         let assets = row.get_ref(10)?.as_blob_or_null()?;
         let inputs = row.get_ref(11)?.as_blob_or_null()?;
@@ -162,7 +162,7 @@ impl NoteRecord {
             note_id,
             metadata,
             details,
-            merkle_path,
+            sparse_merkle_path,
         })
     }
 }
@@ -173,7 +173,7 @@ impl From<NoteRecord> for proto::CommittedNote {
             note_id: Some(note.note_id.into()),
             block_num: note.block_num.as_u32(),
             note_index_in_block: note.note_index.leaf_index_value().into(),
-            merkle_path: Some(Into::into(&note.merkle_path)),
+            merkle_path: Some(Into::into(&note.sparse_merkle_path)),
         });
         let note = Some(proto::Note {
             metadata: Some(note.metadata.into()),
@@ -203,7 +203,7 @@ pub struct NoteSyncRecord {
     pub note_index: BlockNoteIndex,
     pub note_id: Word,
     pub metadata: NoteMetadata,
-    pub merkle_path: MerklePath,
+    pub sparse_merkle_path: SparseMerklePath,
 }
 
 impl From<NoteSyncRecord> for proto::NoteSyncRecord {
@@ -212,7 +212,7 @@ impl From<NoteSyncRecord> for proto::NoteSyncRecord {
             note_index: note.note_index.leaf_index_value().into(),
             note_id: Some(note.note_id.into()),
             metadata: Some(note.metadata.into()),
-            merkle_path: Some(Into::into(&note.merkle_path)),
+            merkle_path: Some(Into::into(&note.sparse_merkle_path)),
         }
     }
 }
@@ -224,7 +224,7 @@ impl From<NoteRecord> for NoteSyncRecord {
             note_index: note.note_index,
             note_id: note.note_id,
             metadata: note.metadata,
-            merkle_path: note.merkle_path,
+            sparse_merkle_path: note.sparse_merkle_path,
         }
     }
 }

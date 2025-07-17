@@ -285,7 +285,7 @@ impl State {
                     note_id: note.id().into(),
                     metadata: *note.metadata(),
                     details,
-                    merkle_path: sparse_merkle_path.into(),
+                    sparse_merkle_path,
                 };
 
                 Ok((note_record, nullifier))

@@ -854,7 +854,7 @@ pub fn insert_notes(
         execution_mode,
         aux,
         execution_hint,
-        merkle_path,
+        sparse_merkle_path,
         consumed,
         nullifier,
         assets,
@@ -876,7 +876,7 @@ pub fn insert_notes(
             note.metadata.tag().execution_mode() as u8,
             u64_to_value(note.metadata.aux().into()),
             u64_to_value(note.metadata.execution_hint().into()),
-            note.merkle_path.to_bytes(),
+            note.sparse_merkle_path.to_bytes(),
             // New notes are always unconsumed.
             false,
             // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
@@ -970,7 +970,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
         let aux: u64 = row.get(7)?;
         let aux = aux.try_into().map_err(DatabaseError::InvalidFelt)?;
         let execution_hint = column_value_as_u64(row, 8)?;
-        let merkle_path = read_from_blob_column(row, 9)?;
+        let sparse_merkle_path = read_from_blob_column(row, 9)?;
 
         let metadata = NoteMetadata::new(
             sender,
@@ -985,7 +985,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
             note_index,
             note_id,
             metadata,
-            merkle_path,
+            sparse_merkle_path,
         };
         res.push(note);
     }

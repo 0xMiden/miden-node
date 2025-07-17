@@ -3,8 +3,8 @@ package merkle;
 
 import "digest.proto";
 
-// Represents a Merkle path.
-message MerklePath {
+// Represents a sparse Merkle path.
+message SparseMerklePath {
     // List of sibling node hashes, in order from the root to the leaf.
     repeated digest.Digest siblings = 1;
 }

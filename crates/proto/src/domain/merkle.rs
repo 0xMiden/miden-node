@@ -11,51 +11,67 @@ use crate::{
     generated as proto,
 };
 
-// MERKLE PATH
+// SPARSE MERKLE PATH
 // ================================================================================================
 
-impl From<&MerklePath> for proto::merkle::MerklePath {
-    fn from(value: &MerklePath) -> Self {
-        let siblings = value.nodes().iter().map(proto::digest::Digest::from).collect();
-        proto::merkle::MerklePath { siblings }
+impl From<&SparseMerklePath> for proto::merkle::SparseMerklePath {
+    fn from(value: &SparseMerklePath) -> Self {
+        let siblings = value.iter().map(proto::digest::Digest::from).collect();
+        proto::merkle::SparseMerklePath { siblings }
     }
 }
 
-impl From<MerklePath> for proto::merkle::MerklePath {
+impl From<SparseMerklePath> for proto::merkle::SparseMerklePath {
+    fn from(value: SparseMerklePath) -> Self {
+        (&value).into()
+    }
+}
+
+impl TryFrom<&proto::merkle::SparseMerklePath> for SparseMerklePath {
+    type Error = ConversionError;
+
+    fn try_from(merkle_path: &proto::merkle::SparseMerklePath) -> Result<Self, Self::Error> {
+        let siblings =
+            merkle_path.siblings.iter().map(Word::try_from).collect::<Result<Vec<_>, _>>()?;
+
+        Ok(SparseMerklePath::from_sized_iter(siblings)?)
+    }
+}
+
+impl TryFrom<proto::merkle::SparseMerklePath> for SparseMerklePath {
+    type Error = ConversionError;
+
+    fn try_from(merkle_path: proto::merkle::SparseMerklePath) -> Result<Self, Self::Error> {
+        (&merkle_path).try_into()
+    }
+}
+
+impl From<&MerklePath> for proto::merkle::SparseMerklePath {
+    fn from(value: &MerklePath) -> Self {
+        let siblings = value.iter().map(proto::digest::Digest::from).collect();
+        proto::merkle::SparseMerklePath { siblings }
+    }
+}
+
+impl From<MerklePath> for proto::merkle::SparseMerklePath {
     fn from(value: MerklePath) -> Self {
         (&value).into()
     }
 }
 
-impl TryFrom<&proto::merkle::MerklePath> for MerklePath {
+impl TryFrom<&proto::merkle::SparseMerklePath> for MerklePath {
     type Error = ConversionError;
 
-    fn try_from(merkle_path: &proto::merkle::MerklePath) -> Result<Self, Self::Error> {
+    fn try_from(merkle_path: &proto::merkle::SparseMerklePath) -> Result<Self, Self::Error> {
         merkle_path.siblings.iter().map(Word::try_from).collect()
     }
 }
 
-impl TryFrom<proto::merkle::MerklePath> for MerklePath {
+impl TryFrom<proto::merkle::SparseMerklePath> for MerklePath {
     type Error = ConversionError;
 
-    fn try_from(merkle_path: proto::merkle::MerklePath) -> Result<Self, Self::Error> {
+    fn try_from(merkle_path: proto::merkle::SparseMerklePath) -> Result<Self, Self::Error> {
         (&merkle_path).try_into()
-    }
-}
-
-// SPARSE MERKLE PATH
-// ================================================================================================
-
-impl From<&SparseMerklePath> for proto::merkle::MerklePath {
-    fn from(value: &SparseMerklePath) -> Self {
-        let siblings = value.iter().map(proto::digest::Digest::from).collect();
-        proto::merkle::MerklePath { siblings }
-    }
-}
-
-impl From<SparseMerklePath> for proto::merkle::MerklePath {
-    fn from(value: SparseMerklePath) -> Self {
-        (&value).into()
     }
 }
 

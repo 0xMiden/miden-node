@@ -22,9 +22,9 @@ pub struct GetBlockHeaderByNumberResponse {
     /// The requested block header.
     #[prost(message, optional, tag = "1")]
     pub block_header: ::core::option::Option<super::block::BlockHeader>,
-    /// Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
+    /// Sparse Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
     #[prost(message, optional, tag = "2")]
-    pub mmr_path: ::core::option::Option<super::merkle::MerklePath>,
+    pub mmr_path: ::core::option::Option<super::merkle::SparseMerklePath>,
     /// Current chain length.
     #[prost(fixed32, optional, tag = "3")]
     pub chain_length: ::core::option::Option<u32>,
@@ -71,12 +71,12 @@ pub struct SyncNoteResponse {
     /// Block header of the block with the first note matching the specified criteria.
     #[prost(message, optional, tag = "2")]
     pub block_header: ::core::option::Option<super::block::BlockHeader>,
-    /// Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
+    /// Sparse Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
     ///
     /// An MMR proof can be constructed for the leaf of index `block_header.block_num` of
     /// an MMR of forest `chain_tip` with this path.
     #[prost(message, optional, tag = "3")]
-    pub mmr_path: ::core::option::Option<super::merkle::MerklePath>,
+    pub mmr_path: ::core::option::Option<super::merkle::SparseMerklePath>,
     /// List of all notes together with the Merkle paths from `response.block_header.note_root`.
     #[prost(message, repeated, tag = "4")]
     pub notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
@@ -95,9 +95,9 @@ pub struct AccountWitness {
     /// The state commitment whose inclusion the witness proves.
     #[prost(message, optional, tag = "3")]
     pub commitment: ::core::option::Option<super::digest::Digest>,
-    /// The merkle path of the state commitment in the account tree.
+    /// The sparse merkle path of the state commitment in the account tree.
     #[prost(message, optional, tag = "4")]
-    pub path: ::core::option::Option<super::merkle::MerklePath>,
+    pub path: ::core::option::Option<super::merkle::SparseMerklePath>,
 }
 /// A nullifier returned as a response to the `GetBlockInputs`.
 #[derive(Clone, PartialEq, ::prost::Message)]

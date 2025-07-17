@@ -19,7 +19,7 @@ use miden_node_proto::{
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
-    AccountError, Word,
+    AccountError, EMPTY_WORD,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
         AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
@@ -816,6 +816,12 @@ impl State {
             nullifiers,
             found_unauthenticated_notes,
         })
+    }
+
+    /// Checks if an account exists in the state.
+    pub async fn account_exists(&self, account_id: AccountId) -> bool {
+        let inner_state = self.inner.read().await;
+        inner_state.account_tree.get(account_id) != EMPTY_WORD.into()
     }
 
     /// Returns details for public (on-chain) account.

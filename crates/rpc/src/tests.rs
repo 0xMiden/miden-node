@@ -173,7 +173,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         account_id,
         [8; 32].try_into().unwrap(),
         [3; 32].try_into().unwrap(),
-        Word::default(),
+        [22; 32].try_into().unwrap(), // delta commitment
         0.into(),
         Word::default(),
         u32::MAX.into(),

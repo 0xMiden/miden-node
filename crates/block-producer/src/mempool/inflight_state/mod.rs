@@ -382,7 +382,7 @@ impl OutputNoteState {
 mod tests {
     use assert_matches::assert_matches;
     use miden_node_utils::ErrorReport;
-    use miden_objects::Digest;
+    use miden_objects::Word;
 
     use super::*;
     use crate::test_utils::{
@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_nullifiers() {
         let account = mock_account_id(1);
-        let states = (1u8..=4).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=4).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
 
         let note_seed = 123;
         // We need to make the note available first, in order for it to be consumed at all.
@@ -465,7 +465,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_output_notes() {
         let account = mock_account_id(1);
-        let states = (1u8..=3).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=3).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
 
         let note = mock_output_note(123);
         let tx0 = MockProvenTxBuilder::with_account(account, states[0], states[1])
@@ -491,7 +491,7 @@ mod tests {
     #[test]
     fn rejects_account_state_mismatch() {
         let account = mock_account_id(1);
-        let states = (1u8..=3).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=3).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
 
         let tx = MockProvenTxBuilder::with_account(account, states[0], states[1]).build();
 
@@ -512,7 +512,7 @@ mod tests {
     #[test]
     fn account_state_transitions() {
         let account = mock_account_id(1);
-        let states = (1u8..=3).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=3).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
 
         let tx0 = MockProvenTxBuilder::with_account(account, states[0], states[1]).build();
         let tx1 = MockProvenTxBuilder::with_account(account, states[1], states[2]).build();
@@ -542,7 +542,7 @@ mod tests {
     #[test]
     fn inflight_account_state_overrides_input_state() {
         let account = mock_account_id(1);
-        let states = (1u8..=3).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=3).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
 
         let tx0 = MockProvenTxBuilder::with_account(account, states[0], states[1]).build();
         let tx1 = MockProvenTxBuilder::with_account(account, states[1], states[2]).build();
@@ -559,7 +559,7 @@ mod tests {
     #[test]
     fn dependency_tracking() {
         let account = mock_account_id(1);
-        let states = (1u8..=3).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=3).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
         let note_seed = 123;
 
         // Parent via account state.
@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn committed_parents_are_not_tracked() {
         let account = mock_account_id(1);
-        let states = (1u8..=3).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=3).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
         let note_seed = 123;
 
         // Parent via account state.
@@ -624,7 +624,7 @@ mod tests {
         //
         // We test this by reverting some txs and equating it to the remaining set.
         // This is a form of property test.
-        let states = (1u8..=5).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=5).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
         let txs = vec![
             MockProvenTxBuilder::with_account(mock_account_id(1), states[0], states[1]),
             MockProvenTxBuilder::with_account(mock_account_id(1), states[1], states[2])
@@ -677,7 +677,7 @@ mod tests {
     fn pruning_committed_state() {
         //! This is a form of property test, where we assert that pruning the first `i` of `N`
         //! transactions is equivalent to only inserting the last `N-i` transactions.
-        let states = (1u8..=5).map(|x| Digest::from([x, 0, 0, 0])).collect::<Vec<_>>();
+        let states = (1u8..=5).map(|x| Word::from([x, 0, 0, 0])).collect::<Vec<_>>();
 
         // Skipping initial txs means that output notes required for subsequent unauthenticated
         // input notes wont' always be present. To work around this, we instead only use

@@ -8,7 +8,7 @@ use miden_node_proto::generated::{
 };
 use miden_node_store::{GenesisState, Store};
 use miden_objects::{
-    Digest,
+    Word,
     account::{
         AccountDelta, AccountId, AccountIdVersion, AccountStorageDelta, AccountStorageMode,
         AccountType, AccountVaultDelta, delta::AccountUpdateDetails,
@@ -173,9 +173,9 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         account_id,
         [8; 32].try_into().unwrap(),
         [3; 32].try_into().unwrap(),
-        Digest::default(),
+        Word::default(),
         0.into(),
-        Digest::default(),
+        Word::default(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )

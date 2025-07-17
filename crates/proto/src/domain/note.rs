@@ -1,5 +1,6 @@
 use miden_objects::{
-    Digest, Felt,
+    Felt, Word,
+    crypto::merkle::{MerklePath, SparseMerklePath},
     note::{
         Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
         NoteType, Nullifier,
@@ -85,7 +86,7 @@ impl From<(&NoteId, &NoteInclusionProof)> for proto::NoteInclusionInBlockProof {
             note_id: Some(note_id.into()),
             block_num: proof.location().block_num().as_u32(),
             note_index_in_block: proof.location().node_index_in_block().into(),
-            merkle_path: Some(Into::into(proof.note_path())),
+            merkle_path: Some(MerklePath::from(proof.note_path().clone()).into()),
         }
     }
 }
@@ -96,8 +97,13 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
     fn try_from(
         proof: &proto::NoteInclusionInBlockProof,
     ) -> Result<(NoteId, NoteInclusionProof), Self::Error> {
+        let merkle_path =
+            MerklePath::try_from(proof.merkle_path.as_ref().ok_or(
+                proto::NoteInclusionInBlockProof::missing_field(stringify!(merkle_path)),
+            )?)?;
+
         Ok((
-            Digest::try_from(
+            Word::try_from(
                 proof
                     .note_id
                     .as_ref()
@@ -107,13 +113,7 @@ impl TryFrom<&proto::NoteInclusionInBlockProof> for (NoteId, NoteInclusionProof)
             NoteInclusionProof::new(
                 proof.block_num.into(),
                 proof.note_index_in_block.try_into()?,
-                proof
-                    .merkle_path
-                    .as_ref()
-                    .ok_or(proto::NoteInclusionInBlockProof::missing_field(stringify!(
-                        merkle_path
-                    )))?
-                    .try_into()?,
+                SparseMerklePath::try_from(merkle_path)?,
             )?,
         ))
     }

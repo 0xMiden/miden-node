@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.11.0 (TBD)
+
+- [BREAKING] Updated MSRV to 1.88.
+- Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
+
 ## v0.10.1 (2025-07-14)
 
 ### Fixes
@@ -87,7 +92,7 @@
 - Added an optional API key request parameter to skip PoW in faucet (#839).
 - Proof-of-Work difficulty is now adjusted based on the number of concurrent requests (#865).
 - Added options for configuring NTB in `bundled` command (#884).
-- [BREAKING] Updated MSRV to 1.87
+- [BREAKING] Updated MSRV to 1.87.
 
 ### Fixes
 

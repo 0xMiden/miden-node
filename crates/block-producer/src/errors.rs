@@ -2,7 +2,7 @@ use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
 use miden_node_utils::{ErrorReport, formatting::format_opt};
 use miden_objects::{
-    Digest, ProposedBatchError, ProposedBlockError, ProvenBatchError,
+    ProposedBatchError, ProposedBlockError, ProvenBatchError, Word,
     block::BlockNumber,
     note::{NoteId, Nullifier},
     transaction::TransactionId,
@@ -56,8 +56,8 @@ pub enum VerifyTxError {
     /// The account's initial commitment did not match the current account's commitment
     #[error("transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {}", format_opt(.current_account_commitment.as_ref()))]
     IncorrectAccountInitialCommitment {
-        tx_initial_account_commitment: Digest,
-        current_account_commitment: Option<Digest>,
+        tx_initial_account_commitment: Word,
+        current_account_commitment: Option<Word>,
     },
 
     /// Failed to retrieve transaction inputs from the store

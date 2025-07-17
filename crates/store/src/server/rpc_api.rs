@@ -22,8 +22,7 @@ use miden_node_proto::{
     try_convert,
 };
 use miden_objects::{
-    account::AccountId, block::BlockNumber, crypto::hash::rpo::RpoDigest, note::NoteId,
-    utils::Serializable,
+    Word, account::AccountId, block::BlockNumber, note::NoteId, utils::Serializable,
 };
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
@@ -76,7 +75,7 @@ impl rpc_server::Rpc for StoreApi {
         &self,
         request: Request<CheckNullifiersRequest>,
     ) -> Result<Response<CheckNullifiersResponse>, Status> {
-        // Validate the nullifiers and convert them to Digest values. Stop on first error.
+        // Validate the nullifiers and convert them to Word values. Stop on first error.
         let request = request.into_inner();
 
         let nullifiers = validate_nullifiers(&request.nullifiers)?;
@@ -236,7 +235,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let note_ids = request.into_inner().note_ids;
 
-        let note_ids: Vec<RpoDigest> = try_convert(note_ids)
+        let note_ids: Vec<Word> = try_convert(note_ids)
             .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
 
         let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
@@ -318,7 +317,7 @@ impl rpc_server::Rpc for StoreApi {
         } = request.into_inner();
 
         let include_headers = include_headers.unwrap_or_default();
-        let request_code_commitments: BTreeSet<RpoDigest> = try_convert(code_commitments)
+        let request_code_commitments: BTreeSet<Word> = try_convert(code_commitments)
             .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
 
         let account_requests: Vec<AccountProofRequest> =

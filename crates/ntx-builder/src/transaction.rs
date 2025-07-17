@@ -259,7 +259,7 @@ impl DataStore for NtxDataStore {
 impl MastForestStore for NtxDataStore {
     fn get(
         &self,
-        procedure_hash: &miden_objects::Digest,
+        procedure_hash: &miden_objects::Word,
     ) -> Option<std::sync::Arc<miden_objects::MastForest>> {
         self.mast_store.get(procedure_hash)
     }

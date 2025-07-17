@@ -17,8 +17,8 @@ use miden_node_proto::{
 };
 use miden_node_utils::ErrorReport;
 use miden_objects::{
+    Word,
     block::{BlockNumber, ProvenBlock},
-    crypto::hash::rpo::RpoDigest,
     note::NoteId,
     utils::Deserializable,
 };
@@ -139,7 +139,7 @@ impl block_producer_server::BlockProducer for StoreApi {
     ) -> Result<Response<GetBatchInputsResponse>, Status> {
         let request = request.into_inner();
 
-        let note_ids: Vec<RpoDigest> = try_convert(request.note_ids)
+        let note_ids: Vec<Word> = try_convert(request.note_ids)
             .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
         let note_ids = note_ids.into_iter().map(NoteId::from).collect();
 

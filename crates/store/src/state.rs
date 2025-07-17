@@ -19,16 +19,13 @@ use miden_node_proto::{
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
-    AccountError,
+    AccountError, Word,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
         AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
         NullifierTree, NullifierWitness, ProvenBlock,
     },
-    crypto::{
-        hash::rpo::RpoDigest,
-        merkle::{Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof},
-    },
+    crypto::merkle::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof},
     note::{NoteDetails, NoteId, Nullifier},
     transaction::{OutputNote, PartialBlockchain},
     utils::Serializable,
@@ -54,7 +51,7 @@ use crate::{
 
 #[derive(Debug)]
 pub struct TransactionInputs {
-    pub account_commitment: RpoDigest,
+    pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
     pub found_unauthenticated_notes: BTreeSet<NoteId>,
 }
@@ -280,7 +277,7 @@ impl State {
                     },
                 };
 
-                let merkle_path = note_tree.get_note_path(note_index);
+                let sparse_merkle_path = note_tree.open(note_index);
 
                 let note_record = NoteRecord {
                     block_num,
@@ -288,7 +285,7 @@ impl State {
                     note_id: note.id().into(),
                     metadata: *note.metadata(),
                     details,
-                    merkle_path,
+                    merkle_path: sparse_merkle_path.into(),
                 };
 
                 Ok((note_record, nullifier))
@@ -599,7 +596,7 @@ impl State {
         let delta = if block_num == state_sync.block_header.block_num() {
             // The client is in sync with the chain tip.
             MmrDelta {
-                forest: block_num.as_usize(),
+                forest: Forest::new(block_num.as_usize()),
                 data: vec![],
             }
         } else {
@@ -617,7 +614,7 @@ impl State {
             inner
                 .blockchain
                 .as_mmr()
-                .get_delta(from_forest, to_forest)
+                .get_delta(Forest::new(from_forest), Forest::new(to_forest))
                 .map_err(StateSyncError::FailedToBuildMmrDelta)?
         };
 
@@ -838,7 +835,7 @@ impl State {
     pub async fn get_account_proofs(
         &self,
         account_requests: Vec<AccountProofRequest>,
-        known_code_commitments: BTreeSet<RpoDigest>,
+        known_code_commitments: BTreeSet<Word>,
         include_headers: bool,
     ) -> Result<(BlockNumber, Vec<AccountProofsResponse>), DatabaseError> {
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
@@ -997,7 +994,7 @@ async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitiali
 
 #[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
-    let block_commitments: Vec<RpoDigest> = db
+    let block_commitments: Vec<Word> = db
         .select_all_block_headers()
         .await?
         .iter()

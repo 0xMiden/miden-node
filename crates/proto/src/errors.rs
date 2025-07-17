@@ -28,6 +28,8 @@ pub enum ConversionError {
     InsufficientData { expected: usize, got: usize },
     #[error("value is not in the range 0..MODULUS")]
     NotAValidFelt,
+    #[error("merkle error")]
+    MerkleError(#[from] miden_objects::crypto::merkle::MerkleError),
     #[error("field `{entity}::{field_name}` is missing")]
     MissingFieldInProtobufRepresentation {
         entity: &'static str,

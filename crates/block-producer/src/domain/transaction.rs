@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use miden_objects::{
-    Digest,
+    Word,
     account::AccountId,
     block::BlockNumber,
     note::{NoteId, Nullifier},
@@ -25,7 +25,7 @@ pub struct AuthenticatedTransaction {
     ///
     /// This does not necessarily have to match the transaction's initial state
     /// as this may still be modified by inflight transactions.
-    store_account_state: Option<Digest>,
+    store_account_state: Option<Word>,
     /// Unauthenticated notes that have now been authenticated by the store
     /// [inputs](TransactionInputs).
     ///
@@ -77,7 +77,7 @@ impl AuthenticatedTransaction {
         self.inner.account_update()
     }
 
-    pub fn store_account_state(&self) -> Option<Digest> {
+    pub fn store_account_state(&self) -> Option<Word> {
         self.store_account_state
     }
 
@@ -105,7 +105,7 @@ impl AuthenticatedTransaction {
         self.inner.input_notes().num_notes() as usize
     }
 
-    pub fn reference_block(&self) -> (BlockNumber, Digest) {
+    pub fn reference_block(&self) -> (BlockNumber, Word) {
         (self.inner.ref_block_num(), self.inner.ref_block_commitment())
     }
 
@@ -140,8 +140,10 @@ impl AuthenticatedTransaction {
     /// Short-hand for `Self::new` where the input's are setup to match the transaction's initial
     /// account state. This covers the account's initial state and nullifiers being set to unspent.
     pub fn from_inner(inner: ProvenTransaction) -> Self {
+        use miden_objects::Word;
+
         let store_account_state = match inner.account_update().initial_state_commitment() {
-            zero if zero == Digest::default() => None,
+            zero if zero == Word::empty() => None,
             non_zero => Some(non_zero),
         };
         let inputs = TransactionInputs {
@@ -162,7 +164,7 @@ impl AuthenticatedTransaction {
     }
 
     /// Overrides the store state with the given value.
-    pub fn with_store_state(mut self, state: Digest) -> Self {
+    pub fn with_store_state(mut self, state: Word) -> Self {
         self.store_account_state = Some(state);
         self
     }

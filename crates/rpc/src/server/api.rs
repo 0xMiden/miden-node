@@ -31,10 +31,10 @@ use miden_node_utils::{
     tracing::grpc::OtelInterceptor,
 };
 use miden_objects::{
-    Hasher, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
+    MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
     account::{AccountId, delta::AccountUpdateDetails},
     transaction::ProvenTransaction,
-    utils::serde::{Deserializable, Serializable},
+    utils::serde::Deserializable,
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
@@ -251,7 +251,7 @@ impl api_server::Api for RpcService {
 
         // Verify that the delta commitment matches the actual delta
         if let AccountUpdateDetails::Delta(delta) = tx.account_update().details() {
-            let computed_commitment = Hasher::hash(&delta.to_bytes());
+            let computed_commitment = delta.to_commitment();
 
             if computed_commitment != delta_commitment {
                 return Err(Status::invalid_argument(

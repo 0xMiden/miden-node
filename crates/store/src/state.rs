@@ -15,10 +15,7 @@ use miden_node_proto::{
         account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
         batch::BatchInputs,
     },
-    generated::shared::account_proofs::{
-        AccountProof,
-        account_proof::{AccountStateHeader, account_state_header::StorageSlotMapProof},
-    },
+    generated as proto,
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
@@ -843,7 +840,8 @@ impl State {
         account_requests: Vec<AccountProofRequest>,
         known_code_commitments: BTreeSet<RpoDigest>,
         include_headers: bool,
-    ) -> Result<(BlockNumber, Vec<AccountProof>), DatabaseError> {
+    ) -> Result<(BlockNumber, Vec<proto::rpc_store::account_proofs::AccountProof>), DatabaseError>
+    {
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
@@ -853,7 +851,7 @@ impl State {
             account_requests.iter().map(|req| req.account_id).collect();
 
         let state_headers = if include_headers.not() {
-            BTreeMap::<AccountId, AccountStateHeader>::default()
+            BTreeMap::<AccountId, proto::rpc_store::account_proofs::account_proof::AccountStateHeader>::default()
         } else {
             let infos = self.db.select_accounts_by_ids(account_ids.clone()).await?;
             if account_ids.len() > infos.len() {
@@ -884,7 +882,7 @@ impl State {
                             for map_key in storage_keys {
                                 let proof = storage_map.open(map_key);
 
-                                let slot_map_key = StorageSlotMapProof {
+                                let slot_map_key = proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapProof {
                                     storage_slot: u32::from(*storage_index),
                                     smt_proof: proof.to_bytes(),
                                 };
@@ -901,12 +899,13 @@ impl State {
                         .not()
                         .then(|| details.code().to_bytes());
 
-                    let state_header = AccountStateHeader {
-                        header: Some(AccountHeader::from(details).into()),
-                        storage_header: details.storage().to_header().to_bytes(),
-                        account_code,
-                        storage_maps: storage_slot_map_keys,
-                    };
+                    let state_header =
+                        proto::rpc_store::account_proofs::account_proof::AccountStateHeader {
+                            header: Some(AccountHeader::from(details).into()),
+                            storage_header: details.storage().to_header().to_bytes(),
+                            account_code,
+                            storage_maps: storage_slot_map_keys,
+                        };
 
                     headers_map.insert(account_info.summary.account_id, state_header);
                 }
@@ -923,7 +922,7 @@ impl State {
 
                 let witness_record = AccountWitnessRecord { account_id, witness };
 
-                AccountProof {
+                proto::rpc_store::account_proofs::AccountProof {
                     witness: Some(witness_record.into()),
                     state_header,
                 }

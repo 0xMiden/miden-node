@@ -193,6 +193,16 @@ impl LoadBalancerState {
     pub async fn num_busy_workers(&self) -> usize {
         self.workers.read().await.iter().filter(|w| !w.is_available()).count()
     }
+
+    /// Get the supported proof type.
+    pub fn supported_proof_type(&self) -> ProofType {
+        self.supported_proof_type
+    }
+
+    /// Get a read lock on the workers.
+    pub async fn workers(&self) -> tokio::sync::RwLockReadGuard<'_, Vec<Worker>> {
+        self.workers.read().await
+    }
 }
 
 /// Rate limiter
@@ -355,6 +365,14 @@ impl ProxyHttp for LoadBalancer {
         };
 
         info!("Client address: {:?}", client_addr);
+
+        // Check if the request is a grpc proxy status request by checking the path
+        if session.downstream_session.req_header().as_ref().uri.path()
+            == "/remote_prover.ProxyStatusApi/Status"
+        {
+            info!("Proxy status request");
+            return crate::utils::create_proxy_status_response(session, &self.0).await;
+        }
 
         // Increment the request count
         REQUEST_COUNT.inc();

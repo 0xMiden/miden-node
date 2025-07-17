@@ -36,7 +36,9 @@ tracing                = { workspace = true }
 url                    = { workspace = true }
 
 [dev-dependencies]
+miden-air        = { workspace = true }
 miden-node-store = { workspace = true }
 miden-node-utils = { features = ["tracing-forest"], workspace = true }
 reqwest          = { version = "0.12" }
 tempfile         = { version = "3.20" }
+winterfell       = { version = "0.12" }

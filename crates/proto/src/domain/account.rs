@@ -269,9 +269,9 @@ impl TryFrom<proto::responses::AccountTransactionInputRecord> for AccountState {
             )))?
             .try_into()?;
 
-        // If the commitment is equal to `Word::default()`, it signifies that this is a new
+        // If the commitment is equal to `Word::empty()`, it signifies that this is a new
         // account which is not yet present in the Store.
-        let account_commitment = if account_commitment == Word::default() {
+        let account_commitment = if account_commitment == Word::empty() {
             None
         } else {
             Some(account_commitment)

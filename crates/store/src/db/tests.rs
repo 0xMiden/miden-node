@@ -1213,11 +1213,11 @@ fn mock_account_code_and_storage(
     ";
 
     let component_storage = vec![
-        StorageSlot::Value(Word::default()),
+        StorageSlot::Value(Word::empty()),
         StorageSlot::Value(num_to_word(1)),
-        StorageSlot::Value(Word::default()),
+        StorageSlot::Value(Word::empty()),
         StorageSlot::Value(num_to_word(3)),
-        StorageSlot::Value(Word::default()),
+        StorageSlot::Value(Word::empty()),
         StorageSlot::Value(num_to_word(5)),
     ];
 

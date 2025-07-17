@@ -20,7 +20,7 @@ pub struct MockPrivateAccount<const NUM_STATES: usize = 3> {
 
 impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
     fn new(id: AccountId, initial_state: Word) -> Self {
-        let mut states = [Word::default(); NUM_STATES];
+        let mut states = [Word::empty(); NUM_STATES];
 
         states[0] = initial_state;
 
@@ -37,21 +37,16 @@ impl<const NUM_STATES: usize> MockPrivateAccount<NUM_STATES> {
             AccountType::RegularAccountUpdatableCode,
             AccountStorageMode::Private,
             AccountIdVersion::Version0,
-            Word::default(),
-            Word::default(),
+            Word::empty(),
+            Word::empty(),
         )
         .unwrap();
 
         Self::new(
-            AccountId::new(
-                account_seed,
-                AccountIdVersion::Version0,
-                Word::default(),
-                Word::default(),
-            )
-            .unwrap(),
+            AccountId::new(account_seed, AccountIdVersion::Version0, Word::empty(), Word::empty())
+                .unwrap(),
             if new_account {
-                Word::default()
+                Word::empty()
             } else {
                 Hasher::hash(&init_seed)
             },

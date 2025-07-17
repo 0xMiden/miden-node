@@ -472,7 +472,7 @@ fn parse_desync_error(err: &str) -> Result<Word, anyhow::Error> {
 
     // This is used to represent the empty account state.
     if onchain_state.eq_ignore_ascii_case("none") {
-        return Ok(Word::default());
+        return Ok(Word::empty());
     }
 
     parse_hex_string_as_word(onchain_state)

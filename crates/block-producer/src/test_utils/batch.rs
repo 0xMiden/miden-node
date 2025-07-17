@@ -58,7 +58,7 @@ impl TransactionBatchConstructor for ProvenBatch {
 
         ProvenBatch::new(
             BatchId::from_transactions(txs.iter().copied()),
-            Word::default(),
+            Word::empty(),
             BlockNumber::GENESIS,
             account_updates,
             InputNotes::new_unchecked(input_notes),

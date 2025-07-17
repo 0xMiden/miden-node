@@ -78,15 +78,15 @@ impl GenesisState {
 
         let header = BlockHeader::new(
             self.version,
-            Word::default(),
+            Word::empty(),
             BlockNumber::GENESIS,
             MmrPeaks::new(Forest::empty(), Vec::new()).unwrap().hash_peaks(),
             account_smt.root(),
             empty_nullifier_tree.root(),
             empty_block_note_tree.root(),
-            Word::default(),
+            Word::empty(),
             TransactionKernel::kernel_commitment(),
-            Word::default(),
+            Word::empty(),
             self.timestamp,
         );
 

@@ -143,7 +143,7 @@ impl AuthenticatedTransaction {
         use miden_objects::Word;
 
         let store_account_state = match inner.account_update().initial_state_commitment() {
-            zero if zero == Word::default() => None,
+            zero if zero == Word::empty() => None,
             non_zero => Some(non_zero),
         };
         let inputs = TransactionInputs {

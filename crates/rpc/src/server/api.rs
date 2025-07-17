@@ -1,9 +1,9 @@
 use std::net::SocketAddr;
 
 use miden_node_proto::{
+    clients::{BlockProducer, BlockProducerApiClient, Builder, StoreRpc, StoreRpcClient},
     errors::ConversionError,
     generated::{
-        block_producer::api_client as block_producer_client,
         requests::{
             CheckNullifiersByPrefixRequest, CheckNullifiersRequest, GetAccountDetailsRequest,
             GetAccountProofsRequest, GetAccountStateDeltaRequest, GetBlockByNumberRequest,
@@ -18,7 +18,6 @@ use miden_node_proto::{
             SyncNoteResponse, SyncStateResponse,
         },
         rpc::api_server,
-        store::rpc_client as store_client,
     },
     try_convert,
 };
@@ -28,7 +27,6 @@ use miden_node_utils::{
         QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
         QueryParamNullifierLimit,
     },
-    tracing::grpc::OtelInterceptor,
 };
 use miden_objects::{
     Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
@@ -38,9 +36,7 @@ use miden_objects::{
     utils::serde::Deserializable,
 };
 use miden_tx::TransactionVerifier;
-use tonic::{
-    Request, Response, Status, service::interceptor::InterceptedService, transport::Channel,
-};
+use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
 use crate::COMPONENT;
@@ -48,13 +44,9 @@ use crate::COMPONENT;
 // RPC SERVICE
 // ================================================================================================
 
-type StoreClient = store_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
-type BlockProducerClient =
-    block_producer_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
-
 pub struct RpcService {
-    store: StoreClient,
-    block_producer: Option<BlockProducerClient>,
+    store: StoreRpcClient,
+    block_producer: Option<BlockProducerApiClient>,
 }
 
 impl RpcService {
@@ -65,8 +57,7 @@ impl RpcService {
         let store = {
             let store_url = format!("http://{store_address}");
             // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-            let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-            let store = store_client::RpcClient::with_interceptor(channel, OtelInterceptor);
+            let store = Builder::new().with_address(store_url).connect_lazy::<StoreRpc>().unwrap();
             info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
             store
         };
@@ -74,10 +65,10 @@ impl RpcService {
         let block_producer = block_producer_address.map(|block_producer_address| {
             let block_producer_url = format!("http://{block_producer_address}");
             // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
-            let channel =
-                tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
-            let block_producer =
-                block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+            let block_producer = Builder::new()
+                .with_address(block_producer_url)
+                .connect_lazy::<BlockProducer>()
+                .unwrap();
             info!(
                 target: COMPONENT,
                 block_producer_endpoint = %block_producer_address,

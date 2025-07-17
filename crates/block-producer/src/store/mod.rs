@@ -8,7 +8,7 @@ use std::{
 use itertools::Itertools;
 use miden_node_proto::{
     AccountState,
-    clients::{Builder, InstrumentedStoreBlockProducerClient, StoreBlockProducer},
+    clients::{Builder, StoreBlockProducer, StoreBlockProducerClient},
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
     generated::{
@@ -125,7 +125,7 @@ impl TryFrom<GetTransactionInputsResponse> for TransactionInputs {
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
 pub struct StoreClient {
-    client: InstrumentedStoreBlockProducerClient,
+    client: StoreBlockProducerClient,
 }
 
 impl StoreClient {

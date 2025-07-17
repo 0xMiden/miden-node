@@ -2,7 +2,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use futures::{TryStream, TryStreamExt};
 use miden_node_proto::{
-    clients::{BlockProducer, Builder, InstrumentedBlockProducerApiClient},
+    clients::{BlockProducer, BlockProducerApiClient, Builder},
     domain::mempool::MempoolEvent,
     generated::{
         block_producer::MempoolSubscriptionRequest, requests::SubmitProvenTransactionRequest,
@@ -25,7 +25,7 @@ use crate::COMPONENT;
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
 pub struct BlockProducerClient {
-    client: InstrumentedBlockProducerApiClient,
+    client: BlockProducerApiClient,
 }
 
 impl BlockProducerClient {

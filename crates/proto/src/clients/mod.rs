@@ -6,11 +6,11 @@
 //! # Examples
 //!
 //! ```rust,no_run
-//! use miden_node_proto::clients::{Builder, InstrumentedStoreNtxBuilderClient, StoreNtxBuilder};
+//! use miden_node_proto::clients::{Builder, StoreNtxBuilderClient, StoreNtxBuilder};
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Create a store client with OTEL and TLS
-//! let client: InstrumentedStoreNtxBuilderClient = Builder::new()
+//! let client: StoreNtxBuilderClient = Builder::new()
 //!     .with_address("https://store.example.com".to_string())
 //!     .with_tls()
 //!     .connect::<StoreNtxBuilder>()
@@ -28,29 +28,23 @@ use tonic::{
     transport::{Channel, Endpoint},
 };
 
-// RE-EXPORTS FOR CONVENIENCE
-// ================================================================================================
-pub use crate::generated::{
-    block_producer::api_client::ApiClient as BlockProducerApiClient,
-    rpc::{api_client::ApiClient as RpcApiClient, api_server::Api},
-    store::{
-        block_producer_client::BlockProducerClient as StoreBlockProducerClient,
-        ntx_builder_client::NtxBuilderClient as StoreNtxBuilderClient,
-        rpc_client::RpcClient as StoreRpcClient,
-    },
-};
+use crate::generated;
 
 // TYPE ALIASES FOR INSTRUMENTED CLIENTS
 // ================================================================================================
 
-pub type InstrumentedRpcApiClient = RpcApiClient<InterceptedService<Channel, OtelInterceptor>>;
-pub type InstrumentedBlockProducerApiClient =
-    BlockProducerApiClient<InterceptedService<Channel, OtelInterceptor>>;
-pub type InstrumentedStoreNtxBuilderClient =
-    StoreNtxBuilderClient<InterceptedService<Channel, OtelInterceptor>>;
-pub type InstrumentedStoreBlockProducerClient =
-    StoreBlockProducerClient<InterceptedService<Channel, OtelInterceptor>>;
-pub type InstrumentedStoreRpcClient = StoreRpcClient<InterceptedService<Channel, OtelInterceptor>>;
+pub type RpcApiClient =
+    generated::rpc::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+pub type BlockProducerApiClient =
+    generated::block_producer::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+pub type StoreNtxBuilderClient = generated::store::ntx_builder_client::NtxBuilderClient<
+    InterceptedService<Channel, OtelInterceptor>,
+>;
+pub type StoreBlockProducerClient = generated::store::block_producer_client::BlockProducerClient<
+    InterceptedService<Channel, OtelInterceptor>,
+>;
+pub type StoreRpcClient =
+    generated::store::rpc_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
 
 // BUILDER CONFIGURATION
 // ================================================================================================
@@ -161,41 +155,47 @@ pub struct StoreRpc;
 // ================================================================================================
 
 impl GrpcClientBuilder for Rpc {
-    type Service = InstrumentedRpcApiClient;
+    type Service = RpcApiClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        RpcApiClient::with_interceptor(channel, OtelInterceptor)
+        generated::rpc::api_client::ApiClient::with_interceptor(channel, OtelInterceptor)
     }
 }
 
 impl GrpcClientBuilder for BlockProducer {
-    type Service = InstrumentedBlockProducerApiClient;
+    type Service = BlockProducerApiClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        BlockProducerApiClient::with_interceptor(channel, OtelInterceptor)
+        generated::block_producer::api_client::ApiClient::with_interceptor(channel, OtelInterceptor)
     }
 }
 
 impl GrpcClientBuilder for StoreNtxBuilder {
-    type Service = InstrumentedStoreNtxBuilderClient;
+    type Service = StoreNtxBuilderClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        StoreNtxBuilderClient::with_interceptor(channel, OtelInterceptor)
+        generated::store::ntx_builder_client::NtxBuilderClient::with_interceptor(
+            channel,
+            OtelInterceptor,
+        )
     }
 }
 
 impl GrpcClientBuilder for StoreBlockProducer {
-    type Service = InstrumentedStoreBlockProducerClient;
+    type Service = StoreBlockProducerClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        StoreBlockProducerClient::with_interceptor(channel, OtelInterceptor)
+        generated::store::block_producer_client::BlockProducerClient::with_interceptor(
+            channel,
+            OtelInterceptor,
+        )
     }
 }
 
 impl GrpcClientBuilder for StoreRpc {
-    type Service = InstrumentedStoreRpcClient;
+    type Service = StoreRpcClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        StoreRpcClient::with_interceptor(channel, OtelInterceptor)
+        generated::store::rpc_client::RpcClient::with_interceptor(channel, OtelInterceptor)
     }
 }

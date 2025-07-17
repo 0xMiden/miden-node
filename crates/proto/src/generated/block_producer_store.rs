@@ -45,17 +45,20 @@ pub struct BlockInputs {
     pub account_witnesses: ::prost::alloc::vec::Vec<super::account::AccountWitness>,
     /// The requested nullifiers and their authentication paths.
     #[prost(message, repeated, tag = "5")]
-    pub nullifier_witnesses: ::prost::alloc::vec::Vec<NullifierWitness>,
+    pub nullifier_witnesses: ::prost::alloc::vec::Vec<block_inputs::NullifierWitness>,
 }
-/// A nullifier returned as a response to the `GetBlockInputs`.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct NullifierWitness {
-    /// The nullifier.
-    #[prost(message, optional, tag = "1")]
-    pub nullifier: ::core::option::Option<super::primitives::Digest>,
-    /// The SMT proof to verify the nullifier's inclusion in the nullifier tree.
-    #[prost(message, optional, tag = "2")]
-    pub opening: ::core::option::Option<super::primitives::SmtOpening>,
+/// Nested message and enum types in `BlockInputs`.
+pub mod block_inputs {
+    /// A nullifier returned as a response to the `GetBlockInputs`.
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct NullifierWitness {
+        /// The nullifier.
+        #[prost(message, optional, tag = "1")]
+        pub nullifier: ::core::option::Option<super::super::primitives::Digest>,
+        /// The SMT proof to verify the nullifier's inclusion in the nullifier tree.
+        #[prost(message, optional, tag = "2")]
+        pub opening: ::core::option::Option<super::super::primitives::SmtOpening>,
+    }
 }
 /// Returns the inputs for a transaction batch.
 #[derive(Clone, PartialEq, ::prost::Message)]

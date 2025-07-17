@@ -59,6 +59,14 @@ message GetBlockInputsRequest {
 
 // Represents the result of getting block inputs.
 message BlockInputs {
+    // A nullifier returned as a response to the `GetBlockInputs`.
+    message NullifierWitness {
+        // The nullifier.
+        primitives.Digest nullifier = 1;
+
+        // The SMT proof to verify the nullifier's inclusion in the nullifier tree.
+        primitives.SmtOpening opening = 2;
+    }
     // The latest block header.
     blockchain.BlockHeader latest_block_header = 1;
 
@@ -76,15 +84,6 @@ message BlockInputs {
 
     // The requested nullifiers and their authentication paths.
     repeated NullifierWitness nullifier_witnesses = 5;
-}
-
-// A nullifier returned as a response to the `GetBlockInputs`.
-message NullifierWitness {
-    // The nullifier.
-    primitives.Digest nullifier = 1;
-
-    // The SMT proof to verify the nullifier's inclusion in the nullifier tree.
-    primitives.SmtOpening opening = 2;
 }
 
 // GET BATCH INPUTS

@@ -240,7 +240,7 @@ mod test {
         testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
         transaction::{ProvenTransaction, TransactionScript, TransactionWitness},
     };
-    use miden_testing::{Auth, MockChain};
+    use miden_testing::{Auth, MockChainBuilder};
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
     use tonic::Request;
@@ -280,8 +280,9 @@ mod test {
         let mut client_2 = ApiClient::connect("http://127.0.0.1:50052").await.unwrap();
 
         // Create a mock transaction to send to the server
-        let mut mock_chain = MockChain::new();
-        let account = mock_chain.add_pending_existing_wallet(Auth::BasicAuth, vec![]);
+        let mut mock_chain_builder = MockChainBuilder::new();
+        let account = mock_chain_builder.add_existing_wallet(Auth::BasicAuth).unwrap();
+        let mut mock_chain = mock_chain_builder.build().unwrap();
 
         let fungible_asset_1: Asset =
             FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 100)

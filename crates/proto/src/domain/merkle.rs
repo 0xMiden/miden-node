@@ -1,6 +1,6 @@
 use miden_objects::{
-    Digest, Word,
-    crypto::merkle::{LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof},
+    Word,
+    crypto::merkle::{Forest, LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof},
 };
 
 use crate::{
@@ -29,7 +29,15 @@ impl TryFrom<&proto::primitives::MerklePath> for MerklePath {
     type Error = ConversionError;
 
     fn try_from(merkle_path: &proto::primitives::MerklePath) -> Result<Self, Self::Error> {
-        merkle_path.siblings.iter().map(Digest::try_from).collect()
+        merkle_path.siblings.iter().map(Word::try_from).collect()
+    }
+}
+
+impl TryFrom<proto::primitives::MerklePath> for MerklePath {
+    type Error = ConversionError;
+
+    fn try_from(merkle_path: proto::primitives::MerklePath) -> Result<Self, Self::Error> {
+        (&merkle_path).try_into()
     }
 }
 
@@ -39,7 +47,10 @@ impl TryFrom<&proto::primitives::MerklePath> for MerklePath {
 impl From<MmrDelta> for proto::primitives::MmrDelta {
     fn from(value: MmrDelta) -> Self {
         let data = value.data.into_iter().map(proto::primitives::Digest::from).collect();
-        proto::primitives::MmrDelta { forest: value.forest as u64, data }
+        proto::primitives::MmrDelta {
+            forest: value.forest.num_leaves() as u64,
+            data,
+        }
     }
 }
 
@@ -48,10 +59,10 @@ impl TryFrom<proto::primitives::MmrDelta> for MmrDelta {
 
     fn try_from(value: proto::primitives::MmrDelta) -> Result<Self, Self::Error> {
         let data: Result<Vec<_>, ConversionError> =
-            value.data.into_iter().map(Digest::try_from).collect();
+            value.data.into_iter().map(Word::try_from).collect();
 
         Ok(MmrDelta {
-            forest: value.forest as usize,
+            forest: Forest::new(value.forest as usize),
             data: data?,
         })
     }
@@ -74,12 +85,12 @@ impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
                 Ok(Self::new_empty(LeafIndex::new_max_depth(leaf_index)))
             },
             proto::primitives::smt_leaf::Leaf::Single(entry) => {
-                let (key, value): (Digest, Word) = entry.try_into()?;
+                let (key, value): (Word, Word) = entry.try_into()?;
 
                 Ok(SmtLeaf::new_single(key, value))
             },
             proto::primitives::smt_leaf::Leaf::Multiple(entries) => {
-                let domain_entries: Vec<(Digest, Word)> = try_convert(entries.entries)?;
+                let domain_entries: Vec<(Word, Word)> = try_convert(entries.entries)?;
 
                 Ok(SmtLeaf::new_multiple(domain_entries)?)
             },
@@ -106,11 +117,11 @@ impl From<SmtLeaf> for proto::primitives::SmtLeaf {
 // SMT LEAF ENTRY
 // ------------------------------------------------------------------------------------------------
 
-impl TryFrom<proto::primitives::SmtLeafEntry> for (Digest, Word) {
+impl TryFrom<proto::primitives::SmtLeafEntry> for (Word, Word) {
     type Error = ConversionError;
 
     fn try_from(entry: proto::primitives::SmtLeafEntry) -> Result<Self, Self::Error> {
-        let key: Digest = entry
+        let key: Word = entry
             .key
             .ok_or(proto::primitives::SmtLeafEntry::missing_field(stringify!(key)))?
             .try_into()?;
@@ -123,8 +134,8 @@ impl TryFrom<proto::primitives::SmtLeafEntry> for (Digest, Word) {
     }
 }
 
-impl From<(Digest, Word)> for proto::primitives::SmtLeafEntry {
-    fn from((key, value): (Digest, Word)) -> Self {
+impl From<(Word, Word)> for proto::primitives::SmtLeafEntry {
+    fn from((key, value): (Word, Word)) -> Self {
         Self {
             key: Some(key.into()),
             value: Some(value.into()),

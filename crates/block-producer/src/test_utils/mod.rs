@@ -1,5 +1,5 @@
 use miden_objects::{
-    Digest,
+    Word,
     account::AccountId,
     crypto::rand::{FeltRng, RpoRandomCoin},
     testing::account_id::AccountIdBuilder,
@@ -32,9 +32,7 @@ impl Random {
 
         println!("Random::with_random_seed: {seed:?}");
 
-        let seed = Digest::from(seed).into();
-
-        Self(RpoRandomCoin::new(seed))
+        Self(RpoRandomCoin::new(Word::from(seed)))
     }
 
     pub fn draw_tx_id(&mut self) -> TransactionId {
@@ -45,7 +43,7 @@ impl Random {
         AccountIdBuilder::new().build_with_rng(&mut self.0)
     }
 
-    pub fn draw_digest(&mut self) -> Digest {
-        self.0.draw_word().into()
+    pub fn draw_digest(&mut self) -> Word {
+        self.0.draw_word()
     }
 }

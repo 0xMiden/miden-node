@@ -20,9 +20,8 @@ use miden_node_utils::{
     tracing::grpc::OtelInterceptor,
 };
 use miden_objects::{
-    Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
+    MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
     account::{AccountId, delta::AccountUpdateDetails},
-    crypto::hash::rpo::RpoDigest,
     transaction::ProvenTransaction,
     utils::serde::Deserializable,
 };
@@ -99,9 +98,9 @@ impl api_server::Api for RpcService {
 
         // validate all the nullifiers from the user request
         for nullifier in &request.get_ref().nullifiers {
-            let _: Digest = nullifier
+            let _: Word = nullifier
                 .try_into()
-                .or(Err(Status::invalid_argument("Digest field is not in the modulus range")))?;
+                .or(Err(Status::invalid_argument("Word field is not in the modulus range")))?;
         }
 
         self.store.clone().check_nullifiers(request).await
@@ -201,7 +200,7 @@ impl api_server::Api for RpcService {
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().ids.clone();
 
-        let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err: ConversionError| {
+        let _: Vec<Word> = try_convert(note_ids).map_err(|err: ConversionError| {
             Status::invalid_argument(err.as_report_context("invalid NoteId"))
         })?;
 

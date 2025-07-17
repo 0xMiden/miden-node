@@ -18,7 +18,7 @@ use miden_node_proto::{
 };
 use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};
 use miden_objects::{
-    Digest,
+    Word,
     account::AccountId,
     block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock},
     note::{NoteId, Nullifier},
@@ -39,7 +39,7 @@ pub struct TransactionInputs {
     /// Account ID
     pub account_id: AccountId,
     /// The account commitment in the store corresponding to tx's account ID
-    pub account_commitment: Option<Digest>,
+    pub account_commitment: Option<Word>,
     /// Maps each consumed notes' nullifier to block number, where the note is consumed.
     ///
     /// We use `NonZeroU32` as the wire format uses 0 to encode none.
@@ -103,7 +103,7 @@ impl TryFrom<store_proto::TransactionInputs> for TransactionInputs {
         let found_unauthenticated_notes = response
             .found_unauthenticated_notes
             .into_iter()
-            .map(|digest| Ok(Digest::try_from(digest)?.into()))
+            .map(|digest| Ok(Word::try_from(digest)?.into()))
             .collect::<Result<_, ConversionError>>()?;
 
         let current_block_height = response.block_height.into();
@@ -220,7 +220,7 @@ impl StoreClient {
     #[instrument(target = COMPONENT, name = "store.client.get_batch_inputs", skip_all, err)]
     pub async fn get_batch_inputs(
         &self,
-        block_references: impl Iterator<Item = (BlockNumber, Digest)> + Send,
+        block_references: impl Iterator<Item = (BlockNumber, Word)> + Send,
         notes: impl Iterator<Item = NoteId> + Send,
     ) -> Result<BatchInputs, StoreError> {
         let request = tonic::Request::new(store_proto::GetBatchInputsRequest {

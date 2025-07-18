@@ -177,19 +177,6 @@ impl block_producer_server::BlockProducer for StoreApi {
         let nullifiers = validate_nullifiers(&request.nullifiers)?;
         let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
 
-        // Determine whether the Account exists.
-        match self.state.get_account_details(account_id).await {
-            // If the Account does not exist, this transaction must be creating it.
-            Err(DatabaseError::AccountNotFoundInDb(_)) => {
-                // Validate the new Account's Id prefix is unique.
-                if self.state.account_exists(account_id).await {
-                    return Err(Status::already_exists("Account Id prefix already exists"));
-                }
-            },
-            Err(err) => return Err(err.into()),
-            _ => {},
-        }
-
         let tx_inputs = self
             .state
             .get_transaction_inputs(account_id, &nullifiers, unauthenticated_notes)

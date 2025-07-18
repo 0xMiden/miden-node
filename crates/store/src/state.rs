@@ -800,6 +800,12 @@ impl State {
 
         let account_commitment = inner.account_tree.get(account_id);
 
+        // If account commitment is empty, this transaction must be creating a new account.
+        if account_commitment == EMPTY_WORD.into() {
+            // Validate that the account ID prefix is unique.
+            todo!("Implement account prefix uniqueness check");
+        }
+
         let nullifiers = nullifiers
             .iter()
             .map(|nullifier| NullifierInfo {
@@ -816,12 +822,6 @@ impl State {
             nullifiers,
             found_unauthenticated_notes,
         })
-    }
-
-    /// Checks if an account exists in the state.
-    pub async fn account_exists(&self, account_id: AccountId) -> bool {
-        let inner_state = self.inner.read().await;
-        inner_state.account_tree.get(account_id) != EMPTY_WORD.into()
     }
 
     /// Returns details for public (on-chain) account.

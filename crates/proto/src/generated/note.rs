@@ -74,7 +74,7 @@ pub struct NoteInclusionInBlockProof {
     pub note_index_in_block: u32,
     /// The note's inclusion proof in the block.
     #[prost(message, optional, tag = "4")]
-    pub inclusion_path: ::core::option::Option<super::merkle::SparseMerklePath>,
+    pub inclusion_path: ::core::option::Option<super::merkle::MerklePath>,
 }
 /// Represents proof of a note inclusion in the block.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -90,5 +90,5 @@ pub struct NoteSyncRecord {
     pub metadata: ::core::option::Option<NoteMetadata>,
     /// The note's inclusion proof in the block.
     #[prost(message, optional, tag = "4")]
-    pub inclusion_path: ::core::option::Option<super::merkle::SparseMerklePath>,
+    pub inclusion_path: ::core::option::Option<super::merkle::MerklePath>,
 }

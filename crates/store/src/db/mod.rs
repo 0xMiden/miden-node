@@ -173,7 +173,7 @@ impl From<NoteRecord> for proto::CommittedNote {
             note_id: Some(note.note_id.into()),
             block_num: note.block_num.as_u32(),
             note_index_in_block: note.note_index.leaf_index_value().into(),
-            inclusion_path: Some(Into::into(&note.inclusion_path)),
+            inclusion_path: Some(Into::into(note.inclusion_path)),
         });
         let note = Some(proto::Note {
             metadata: Some(note.metadata.into()),
@@ -212,7 +212,7 @@ impl From<NoteSyncRecord> for proto::NoteSyncRecord {
             note_index: note.note_index.leaf_index_value().into(),
             note_id: Some(note.note_id.into()),
             metadata: Some(note.metadata.into()),
-            inclusion_path: Some(Into::into(&note.inclusion_path)),
+            inclusion_path: Some(Into::into(note.inclusion_path)),
         }
     }
 }

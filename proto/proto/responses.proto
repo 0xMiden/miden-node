@@ -31,7 +31,7 @@ message GetBlockHeaderByNumberResponse {
     block.BlockHeader block_header = 1;
 
     // Sparse Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
-    optional merkle.SparseMerklePath mmr_path = 2;
+    optional merkle.MerklePath mmr_path = 2;
 
     // Current chain length.
     optional fixed32 chain_length = 3;
@@ -80,7 +80,7 @@ message SyncNoteResponse {
     //
     // An MMR proof can be constructed for the leaf of index `block_header.block_num` of
     // an MMR of forest `chain_tip` with this path.
-    merkle.SparseMerklePath mmr_path = 3;
+    merkle.MerklePath mmr_path = 3;
 
     // List of all notes together with the Merkle paths from `response.block_header.note_root`.
     repeated note.NoteSyncRecord notes = 4;
@@ -100,7 +100,7 @@ message AccountWitness {
     digest.Digest commitment = 3;
 
     // The sparse merkle path of the state commitment in the account tree.
-    merkle.SparseMerklePath path = 4;
+    merkle.MerklePath path = 4;
 }
 
 // A nullifier returned as a response to the `GetBlockInputs`.

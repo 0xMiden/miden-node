@@ -1,6 +1,8 @@
 use miden_objects::{
     Word,
-    crypto::merkle::{Forest, LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof},
+    crypto::merkle::{
+        Forest, LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof, SparseMerklePath,
+    },
 };
 
 use super::{convert, try_convert};
@@ -38,6 +40,23 @@ impl TryFrom<proto::merkle::MerklePath> for MerklePath {
 
     fn try_from(merkle_path: proto::merkle::MerklePath) -> Result<Self, Self::Error> {
         (&merkle_path).try_into()
+    }
+}
+
+// SPARSE MERKLE PATH
+// ================================================================================================
+
+impl From<SparseMerklePath> for proto::merkle::MerklePath {
+    fn from(value: SparseMerklePath) -> Self {
+        MerklePath::from(value).into()
+    }
+}
+
+impl TryFrom<proto::merkle::MerklePath> for SparseMerklePath {
+    type Error = ConversionError;
+
+    fn try_from(merkle_path: proto::merkle::MerklePath) -> Result<Self, Self::Error> {
+        Ok(MerklePath::try_from(merkle_path)?.try_into()?)
     }
 }
 

@@ -103,8 +103,8 @@ message NoteSyncRecord {
     // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
     NoteId note_id = 1;
 
-    // The index of the note.
-    uint32 note_index = 2;
+    // The index of the note in the block.
+    uint32 note_index_in_block = 2;
 
     // The note's metadata.
     NoteMetadata metadata = 3;

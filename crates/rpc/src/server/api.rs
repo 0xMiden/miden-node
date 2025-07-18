@@ -3,10 +3,7 @@ use std::net::SocketAddr;
 use miden_node_proto::{
     errors::ConversionError,
     generated::{
-        self as proto, account as account_proto, block_producer as block_producer_proto,
-        block_producer::api_client as block_producer_client,
-        blockchain as blockchain_proto, note as note_proto,
-        rpc::{RpcStatus, api_server},
+        self as proto, block_producer::api_client as block_producer_client, rpc::api_server,
         rpc_store::rpc_client as store_client,
     },
     try_convert,
@@ -191,8 +188,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_notes_by_id(
         &self,
-        request: Request<note_proto::NoteIdList>,
-    ) -> Result<Response<note_proto::CommittedNoteList>, Status> {
+        request: Request<proto::note::NoteIdList>,
+    ) -> Result<Response<proto::note::CommittedNoteList>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNoteIdLimit>(request.get_ref().ids.len())?;
@@ -211,7 +208,7 @@ impl api_server::Api for RpcService {
     async fn submit_proven_transaction(
         &self,
         request: Request<proto::transaction::ProvenTransaction>,
-    ) -> Result<Response<block_producer_proto::SubmitProvenTransactionResponse>, Status> {
+    ) -> Result<Response<proto::block_producer::SubmitProvenTransactionResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         let Some(block_producer) = &self.block_producer else {
@@ -259,8 +256,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_details(
         &self,
-        request: Request<account_proto::AccountId>,
-    ) -> std::result::Result<Response<account_proto::AccountDetails>, Status> {
+        request: Request<proto::account::AccountId>,
+    ) -> std::result::Result<Response<proto::account::AccountDetails>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         // Validating account using conversion:
@@ -283,8 +280,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_block_by_number(
         &self,
-        request: Request<blockchain_proto::BlockNumber>,
-    ) -> Result<Response<blockchain_proto::MaybeBlock>, Status> {
+        request: Request<proto::blockchain::BlockNumber>,
+    ) -> Result<Response<proto::blockchain::MaybeBlock>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -351,7 +348,10 @@ impl api_server::Api for RpcService {
         ret(level = "debug"),
         err
     )]
-    async fn status(&self, request: Request<()>) -> Result<Response<RpcStatus>, Status> {
+    async fn status(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<proto::rpc::RpcStatus>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         let store_status =
@@ -367,7 +367,7 @@ impl api_server::Api for RpcService {
             None
         };
 
-        Ok(Response::new(RpcStatus {
+        Ok(Response::new(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             store: store_status.or(Some(proto::rpc_store::StoreStatus {
                 status: "unreachable".to_string(),
@@ -375,7 +375,7 @@ impl api_server::Api for RpcService {
                 version: "-".to_string(),
             })),
             block_producer: block_producer_status.or(Some(
-                block_producer_proto::BlockProducerStatus {
+                proto::block_producer::BlockProducerStatus {
                     status: "unreachable".to_string(),
                     version: "-".to_string(),
                 },

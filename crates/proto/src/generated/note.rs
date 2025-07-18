@@ -104,9 +104,9 @@ pub struct NoteSyncRecord {
     /// A unique identifier of the note which is a 32-byte commitment to the underlying note data.
     #[prost(message, optional, tag = "1")]
     pub note_id: ::core::option::Option<NoteId>,
-    /// The index of the note.
+    /// The index of the note in the block.
     #[prost(uint32, tag = "2")]
-    pub note_index: u32,
+    pub note_index_in_block: u32,
     /// The note's metadata.
     #[prost(message, optional, tag = "3")]
     pub metadata: ::core::option::Option<NoteMetadata>,

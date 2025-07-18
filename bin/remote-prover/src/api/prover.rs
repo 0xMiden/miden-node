@@ -13,10 +13,7 @@ use tracing::{info, instrument};
 
 use crate::{
     COMPONENT,
-    generated::{
-        Proof, ProofRequest, api_server::Api as ProverApi,
-        remote_prover::ProofType as ProtoProofType,
-    },
+    generated::{self as proto, api_server::Api as ProverApi},
 };
 
 /// Specifies the type of proof supported by the remote prover.
@@ -103,7 +100,7 @@ impl ProverRpcApi {
     pub fn prove_tx(
         &self,
         transaction_witness: TransactionWitness,
-    ) -> Result<Response<Proof>, tonic::Status> {
+    ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Transaction(prover) = &self.prover else {
             return Err(Status::unimplemented("Transaction prover is not enabled"));
         };
@@ -118,7 +115,7 @@ impl ProverRpcApi {
         let transaction_id = proof.id();
         tracing::Span::current().record("id", tracing::field::display(&transaction_id));
 
-        Ok(Response::new(Proof { payload: proof.to_bytes() }))
+        Ok(Response::new(proto::remote_prover::Proof { payload: proof.to_bytes() }))
     }
 
     #[allow(clippy::result_large_err)]
@@ -133,7 +130,7 @@ impl ProverRpcApi {
     pub fn prove_batch(
         &self,
         proposed_batch: ProposedBatch,
-    ) -> Result<Response<Proof>, tonic::Status> {
+    ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Batch(prover) = &self.prover else {
             return Err(Status::unimplemented("Batch prover is not enabled"));
         };
@@ -148,7 +145,7 @@ impl ProverRpcApi {
         let batch_id = proven_batch.id();
         tracing::Span::current().record("id", tracing::field::display(&batch_id));
 
-        Ok(Response::new(Proof { payload: proven_batch.to_bytes() }))
+        Ok(Response::new(proto::remote_prover::Proof { payload: proven_batch.to_bytes() }))
     }
 
     #[allow(clippy::result_large_err)]
@@ -163,7 +160,7 @@ impl ProverRpcApi {
     pub fn prove_block(
         &self,
         proposed_block: ProposedBlock,
-    ) -> Result<Response<Proof>, tonic::Status> {
+    ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Block(prover) = &self.prover else {
             return Err(Status::unimplemented("Block prover is not enabled"));
         };
@@ -179,7 +176,7 @@ impl ProverRpcApi {
 
         tracing::Span::current().record("id", tracing::field::display(&block_id));
 
-        Ok(Response::new(Proof { payload: proven_block.to_bytes() }))
+        Ok(Response::new(proto::remote_prover::Proof { payload: proven_block.to_bytes() }))
     }
 }
 
@@ -195,18 +192,18 @@ impl ProverApi for ProverRpcApi {
     )]
     async fn prove(
         &self,
-        request: Request<ProofRequest>,
-    ) -> Result<Response<Proof>, tonic::Status> {
+        request: Request<proto::remote_prover::ProofRequest>,
+    ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         match request.get_ref().proof_type() {
-            ProtoProofType::Transaction => {
+            proto::remote_prover::ProofType::Transaction => {
                 let tx_witness = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_tx(tx_witness)
             },
-            ProtoProofType::Batch => {
+            proto::remote_prover::ProofType::Batch => {
                 let proposed_batch = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_batch(proposed_batch)
             },
-            ProtoProofType::Block => {
+            proto::remote_prover::ProofType::Block => {
                 let proposed_block = request.into_inner().try_into().map_err(invalid_argument)?;
                 self.prove_block(proposed_block)
             },
@@ -248,7 +245,7 @@ mod test {
 
     use crate::{
         api::ProverRpcApi,
-        generated::{ProofRequest, ProofType, api_client::ApiClient, api_server::ApiServer},
+        generated::{self as proto, api_client::ApiClient, api_server::ApiServer},
     };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
@@ -256,7 +253,7 @@ mod test {
         // Start the server in the background
         let listener = TcpListener::bind("127.0.0.1:50052").await.unwrap();
 
-        let proof_type = ProofType::Transaction;
+        let proof_type = proto::remote_prover::ProofType::Transaction;
 
         let api_service = ApiServer::new(ProverRpcApi::new(proof_type.into()));
 
@@ -316,13 +313,13 @@ mod test {
 
         let transaction_witness = TransactionWitness::from(executed_transaction);
 
-        let request_1 = Request::new(ProofRequest {
-            proof_type: ProofType::Transaction.into(),
+        let request_1 = Request::new(proto::remote_prover::ProofRequest {
+            proof_type: proto::remote_prover::ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });
 
-        let request_2 = Request::new(ProofRequest {
-            proof_type: ProofType::Transaction.into(),
+        let request_2 = Request::new(proto::remote_prover::ProofRequest {
+            proof_type: proto::remote_prover::ProofType::Transaction.into(),
             payload: transaction_witness.to_bytes(),
         });
 

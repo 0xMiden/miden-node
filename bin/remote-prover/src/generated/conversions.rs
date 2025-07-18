@@ -8,65 +8,62 @@ use miden_objects::{
 };
 use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
-use crate::{
-    api::ProofType,
-    generated::{Proof, ProofRequest, remote_prover::ProofType as ProtoProofType},
-};
+use crate::{api::ProofType, generated as proto};
 
-impl From<ProvenTransaction> for Proof {
+impl From<ProvenTransaction> for proto::Proof {
     fn from(value: ProvenTransaction) -> Self {
-        Proof { payload: value.to_bytes() }
+        proto::Proof { payload: value.to_bytes() }
     }
 }
 
-impl TryFrom<Proof> for ProvenTransaction {
+impl TryFrom<proto::Proof> for ProvenTransaction {
     type Error = DeserializationError;
 
-    fn try_from(response: Proof) -> Result<Self, Self::Error> {
+    fn try_from(response: proto::Proof) -> Result<Self, Self::Error> {
         ProvenTransaction::read_from_bytes(&response.payload)
     }
 }
 
-impl TryFrom<ProofRequest> for TransactionWitness {
+impl TryFrom<proto::ProofRequest> for TransactionWitness {
     type Error = DeserializationError;
 
-    fn try_from(request: ProofRequest) -> Result<Self, Self::Error> {
+    fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
         TransactionWitness::read_from_bytes(&request.payload)
     }
 }
 
-impl TryFrom<ProofRequest> for ProposedBatch {
+impl TryFrom<proto::ProofRequest> for ProposedBatch {
     type Error = DeserializationError;
 
-    fn try_from(request: ProofRequest) -> Result<Self, Self::Error> {
+    fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
         ProposedBatch::read_from_bytes(&request.payload)
     }
 }
 
-impl TryFrom<ProofRequest> for ProposedBlock {
+impl TryFrom<proto::ProofRequest> for ProposedBlock {
     type Error = DeserializationError;
 
-    fn try_from(request: ProofRequest) -> Result<Self, Self::Error> {
+    fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
         ProposedBlock::read_from_bytes(&request.payload)
     }
 }
 
-impl From<ProofType> for ProtoProofType {
+impl From<ProofType> for proto::ProofType {
     fn from(value: ProofType) -> Self {
         match value {
-            ProofType::Transaction => ProtoProofType::Transaction,
-            ProofType::Batch => ProtoProofType::Batch,
-            ProofType::Block => ProtoProofType::Block,
+            ProofType::Transaction => proto::ProofType::Transaction,
+            ProofType::Batch => proto::ProofType::Batch,
+            ProofType::Block => proto::ProofType::Block,
         }
     }
 }
 
-impl From<ProtoProofType> for ProofType {
-    fn from(value: ProtoProofType) -> Self {
+impl From<proto::ProofType> for ProofType {
+    fn from(value: proto::ProofType) -> Self {
         match value {
-            ProtoProofType::Transaction => ProofType::Transaction,
-            ProtoProofType::Batch => ProofType::Batch,
-            ProtoProofType::Block => ProofType::Block,
+            proto::ProofType::Transaction => ProofType::Transaction,
+            proto::ProofType::Batch => ProofType::Batch,
+            proto::ProofType::Block => ProofType::Block,
         }
     }
 }

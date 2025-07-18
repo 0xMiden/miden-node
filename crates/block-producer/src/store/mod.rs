@@ -10,11 +10,7 @@ use miden_node_proto::{
     AccountState,
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
-    generated::{
-        block_producer_store::{self as store_proto, block_producer_client as store_client},
-        blockchain as blockchain_proto, primitives,
-        shared::BlockHeaderByNumberRequest,
-    },
+    generated::{self as proto, block_producer_store::block_producer_client as store_client},
 };
 use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};
 use miden_objects::{
@@ -75,13 +71,17 @@ impl Display for TransactionInputs {
     }
 }
 
-impl TryFrom<store_proto::TransactionInputs> for TransactionInputs {
+impl TryFrom<proto::block_producer_store::TransactionInputs> for TransactionInputs {
     type Error = ConversionError;
 
-    fn try_from(response: store_proto::TransactionInputs) -> Result<Self, Self::Error> {
+    fn try_from(
+        response: proto::block_producer_store::TransactionInputs,
+    ) -> Result<Self, Self::Error> {
         let AccountState { account_id, account_commitment } = response
             .account_state
-            .ok_or(store_proto::TransactionInputs::missing_field(stringify!(account_state)))?
+            .ok_or(proto::block_producer_store::TransactionInputs::missing_field(stringify!(
+                account_state
+            )))?
             .try_into()?;
 
         let mut nullifiers = BTreeMap::new();
@@ -89,7 +89,7 @@ impl TryFrom<store_proto::TransactionInputs> for TransactionInputs {
             let nullifier = nullifier_record
                 .nullifier
                 .ok_or(
-                    store_proto::transaction_inputs::NullifierTransactionInputRecord::missing_field(
+                    proto::block_producer_store::transaction_inputs::NullifierTransactionInputRecord::missing_field(
                         stringify!(nullifier),
                     ),
                 )?
@@ -149,7 +149,9 @@ impl StoreClient {
         let response = self
             .inner
             .clone()
-            .get_block_header_by_number(tonic::Request::new(BlockHeaderByNumberRequest::default()))
+            .get_block_header_by_number(tonic::Request::new(
+                proto::shared::BlockHeaderByNumberRequest::default(),
+            ))
             .await?
             .into_inner()
             .block_header
@@ -165,7 +167,7 @@ impl StoreClient {
         &self,
         proven_tx: &ProvenTransaction,
     ) -> Result<TransactionInputs, StoreError> {
-        let message = store_proto::GetTransactionInputsRequest {
+        let message = proto::block_producer_store::GetTransactionInputsRequest {
             account_id: Some(proven_tx.account_id().into()),
             nullifiers: proven_tx.nullifiers().map(Into::into).collect(),
             unauthenticated_notes: proven_tx
@@ -205,10 +207,12 @@ impl StoreClient {
         unauthenticated_notes: impl Iterator<Item = NoteId> + Send,
         reference_blocks: impl Iterator<Item = BlockNumber> + Send,
     ) -> Result<BlockInputs, StoreError> {
-        let request = tonic::Request::new(store_proto::GetBlockInputsRequest {
+        let request = tonic::Request::new(proto::block_producer_store::GetBlockInputsRequest {
             account_ids: updated_accounts.map(Into::into).collect(),
-            nullifiers: created_nullifiers.map(primitives::Digest::from).collect(),
-            unauthenticated_notes: unauthenticated_notes.map(primitives::Digest::from).collect(),
+            nullifiers: created_nullifiers.map(proto::primitives::Digest::from).collect(),
+            unauthenticated_notes: unauthenticated_notes
+                .map(proto::primitives::Digest::from)
+                .collect(),
             reference_blocks: reference_blocks.map(|block_num| block_num.as_u32()).collect(),
         });
 
@@ -223,9 +227,9 @@ impl StoreClient {
         block_references: impl Iterator<Item = (BlockNumber, Word)> + Send,
         notes: impl Iterator<Item = NoteId> + Send,
     ) -> Result<BatchInputs, StoreError> {
-        let request = tonic::Request::new(store_proto::GetBatchInputsRequest {
+        let request = tonic::Request::new(proto::block_producer_store::GetBatchInputsRequest {
             reference_blocks: block_references.map(|(block_num, _)| block_num.as_u32()).collect(),
-            note_ids: notes.map(primitives::Digest::from).collect(),
+            note_ids: notes.map(proto::primitives::Digest::from).collect(),
         });
 
         let store_response = self.inner.clone().get_batch_inputs(request).await?.into_inner();
@@ -235,7 +239,7 @@ impl StoreClient {
 
     #[instrument(target = COMPONENT, name = "store.client.apply_block", skip_all, err)]
     pub async fn apply_block(&self, block: &ProvenBlock) -> Result<(), StoreError> {
-        let request = tonic::Request::new(blockchain_proto::Block { block: block.to_bytes() });
+        let request = tonic::Request::new(proto::blockchain::Block { block: block.to_bytes() });
 
         self.inner.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)
     }

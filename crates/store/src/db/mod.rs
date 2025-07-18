@@ -7,7 +7,7 @@ use anyhow::Context;
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
     domain::account::{AccountInfo, AccountSummary},
-    generated::note as note_proto,
+    generated as proto,
 };
 use miden_objects::{
     Word,
@@ -167,15 +167,15 @@ impl NoteRecord {
     }
 }
 
-impl From<NoteRecord> for note_proto::CommittedNote {
+impl From<NoteRecord> for proto::note::CommittedNote {
     fn from(note: NoteRecord) -> Self {
-        let inclusion_proof = Some(note_proto::NoteInclusionInBlockProof {
+        let inclusion_proof = Some(proto::note::NoteInclusionInBlockProof {
             note_id: Some(note.note_id.into()),
             block_num: note.block_num.as_u32(),
             note_index_in_block: note.note_index.leaf_index_value().into(),
             merkle_path: Some(Into::into(&note.merkle_path)),
         });
-        let note = Some(note_proto::Note {
+        let note = Some(proto::note::Note {
             metadata: Some(note.metadata.into()),
             details: note.details.map(|details| details.to_bytes()),
         });
@@ -206,10 +206,10 @@ pub struct NoteSyncRecord {
     pub merkle_path: MerklePath,
 }
 
-impl From<NoteSyncRecord> for note_proto::NoteSyncRecord {
+impl From<NoteSyncRecord> for proto::note::NoteSyncRecord {
     fn from(note: NoteSyncRecord) -> Self {
         Self {
-            note_index: note.note_index.leaf_index_value().into(),
+            note_index_in_block: note.note_index.leaf_index_value().into(),
             note_id: Some(note.note_id.into()),
             metadata: Some(note.metadata.into()),
             merkle_path: Some(Into::into(&note.merkle_path)),

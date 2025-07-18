@@ -1,10 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::generated::{
-    account::AccountId as ProtoAccountId, shared as store_proto,
-    transaction::ProvenTransaction as ProtoProvenTransaction,
-};
+use miden_node_proto::generated as proto;
 use miden_node_rpc::ApiClient;
 use miden_objects::{
     account::Account,
@@ -39,7 +36,7 @@ impl RpcClient {
     }
 
     pub async fn get_genesis_header(&mut self) -> Result<BlockHeader, RpcError> {
-        let request = store_proto::BlockHeaderByNumberRequest {
+        let request = proto::shared::BlockHeaderByNumberRequest {
             block_num: BlockNumber::GENESIS.as_u32().into(),
             include_mmr_proof: None,
         };
@@ -65,7 +62,7 @@ impl RpcClient {
     ///
     /// Note that this _does not_ include any uncommitted state in the mempool.
     pub async fn get_faucet_account(&mut self, id: FaucetId) -> Result<Account, RpcError> {
-        let request = ProtoAccountId { id: id.account_id.to_bytes().clone() };
+        let request = proto::account::AccountId { id: id.account_id.to_bytes().clone() };
 
         let details = self
             .inner
@@ -87,7 +84,7 @@ impl RpcClient {
         &mut self,
         tx: ProvenTransaction,
     ) -> Result<BlockNumber, RpcError> {
-        let request = ProtoProvenTransaction { transaction: tx.to_bytes() };
+        let request = proto::transaction::ProvenTransaction { transaction: tx.to_bytes() };
 
         self.inner
             .submit_proven_transaction(request)

@@ -2,14 +2,7 @@ use std::num::{NonZero, TryFromIntError};
 
 use miden_node_proto::{
     domain::account::{AccountInfo, NetworkAccountPrefix},
-    generated::{
-        blockchain as blockchain_proto,
-        ntx_builder_store::{
-            AccountIdPrefix, CurrentBlockchainData, GetUnconsumedNetworkNotesRequest,
-            MaybeAccountDetails, UnconsumedNetworkNotes, ntx_builder_server,
-        },
-        shared::{BlockHeaderByNumberRequest, BlockHeaderByNumberResponse},
-    },
+    generated::{self as proto, ntx_builder_store::ntx_builder_server},
 };
 use miden_node_utils::ErrorReport;
 use miden_objects::{block::BlockNumber, note::Note};
@@ -40,8 +33,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<BlockHeaderByNumberRequest>,
-    ) -> Result<Response<BlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::shared::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
         self.get_block_header_by_number_inner(request).await
     }
 
@@ -60,8 +53,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_current_blockchain_data(
         &self,
-        request: Request<blockchain_proto::MaybeBlockNumber>,
-    ) -> Result<Response<CurrentBlockchainData>, Status> {
+        request: Request<proto::blockchain::MaybeBlockNumber>,
+    ) -> Result<Response<proto::ntx_builder_store::CurrentBlockchainData>, Status> {
         let block_num = request.into_inner().block_num.map(BlockNumber::from);
 
         let response = match self
@@ -70,11 +63,11 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             .await
             .map_err(internal_error)?
         {
-            Some((header, peaks)) => CurrentBlockchainData {
+            Some((header, peaks)) => proto::ntx_builder_store::CurrentBlockchainData {
                 current_peaks: peaks.peaks().iter().map(Into::into).collect(),
                 current_block_header: Some(header.into()),
             },
-            None => CurrentBlockchainData {
+            None => proto::ntx_builder_store::CurrentBlockchainData {
                 current_peaks: vec![],
                 current_block_header: None,
             },
@@ -93,8 +86,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_network_account_details_by_prefix(
         &self,
-        request: Request<AccountIdPrefix>,
-    ) -> Result<Response<MaybeAccountDetails>, Status> {
+        request: Request<proto::ntx_builder_store::AccountIdPrefix>,
+    ) -> Result<Response<proto::ntx_builder_store::MaybeAccountDetails>, Status> {
         let request = request.into_inner();
 
         // Validate that the call is for a valid network account prefix
@@ -106,7 +99,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         let account_info: Option<AccountInfo> =
             self.state.get_network_account_details_by_prefix(prefix.inner()).await?;
 
-        Ok(Response::new(MaybeAccountDetails {
+        Ok(Response::new(proto::ntx_builder_store::MaybeAccountDetails {
             details: account_info.map(|acc| (&acc).into()),
         }))
     }
@@ -120,8 +113,8 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_unconsumed_network_notes(
         &self,
-        request: Request<GetUnconsumedNetworkNotesRequest>,
-    ) -> Result<Response<UnconsumedNetworkNotes>, Status> {
+        request: Request<proto::ntx_builder_store::GetUnconsumedNetworkNotesRequest>,
+    ) -> Result<Response<proto::ntx_builder_store::UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let state = self.state.clone();
 
@@ -144,7 +137,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             network_notes.push(note.into());
         }
 
-        Ok(Response::new(UnconsumedNetworkNotes {
+        Ok(Response::new(proto::ntx_builder_store::UnconsumedNetworkNotes {
             notes: network_notes,
             next_token: next_page.token,
         }))

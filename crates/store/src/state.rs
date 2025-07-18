@@ -277,7 +277,7 @@ impl State {
                     },
                 };
 
-                let sparse_merkle_path = note_tree.open(note_index);
+                let inclusion_path = note_tree.open(note_index);
 
                 let note_record = NoteRecord {
                     block_num,
@@ -285,7 +285,7 @@ impl State {
                     note_id: note.id().into(),
                     metadata: *note.metadata(),
                     details,
-                    sparse_merkle_path,
+                    inclusion_path,
                 };
 
                 Ok((note_record, nullifier))

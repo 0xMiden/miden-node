@@ -75,7 +75,7 @@ message NoteInclusionInBlockProof {
     uint32 note_index_in_block = 3;
 
     // The note's inclusion proof in the block.
-    merkle.SparseMerklePath merkle_path = 4;
+    merkle.SparseMerklePath inclusion_path = 4;
 }
 
 // Represents proof of a note inclusion in the block.
@@ -90,5 +90,5 @@ message NoteSyncRecord {
     NoteMetadata metadata = 3;
 
     // The note's inclusion proof in the block.
-    merkle.SparseMerklePath merkle_path = 4;
+    merkle.SparseMerklePath inclusion_path = 4;
 }

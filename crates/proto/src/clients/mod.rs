@@ -19,22 +19,54 @@
 //! # }
 //! ```
 
-use std::time::Duration;
+use std::{collections::HashMap, time::Duration};
 
 use anyhow::{Context, Result};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use tonic::{
-    service::interceptor::InterceptedService,
+    Request, Status,
+    metadata::AsciiMetadataValue,
+    service::{Interceptor, interceptor::InterceptedService},
     transport::{Channel, Endpoint},
 };
 
 use crate::generated;
 
+// METADATA INTERCEPTOR
+// ================================================================================================
+
+/// Interceptor designed to inject required metadata into all RPC requests.
+#[derive(Default, Clone)]
+pub struct MetadataInterceptor {
+    metadata: HashMap<&'static str, AsciiMetadataValue>,
+}
+
+impl MetadataInterceptor {
+    /// Adds or overwrites HTTP ACCEPT metadata to the interceptor.
+    ///
+    /// Provided version string must be ASCII.
+    pub fn with_accept_metadata(mut self, version: &str) -> Result<Self, anyhow::Error> {
+        let accept_value = format!("application/vnd.miden.{version}+grpc");
+        self.metadata.insert("accept", AsciiMetadataValue::try_from(accept_value)?);
+        Ok(self)
+    }
+}
+
+impl Interceptor for MetadataInterceptor {
+    fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
+        let mut request = request;
+        for (key, value) in &self.metadata {
+            request.metadata_mut().insert(*key, value.clone());
+        }
+        Ok(request)
+    }
+}
+
 // TYPE ALIASES FOR INSTRUMENTED CLIENTS
 // ================================================================================================
 
 pub type RpcApiClient =
-    generated::rpc::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+    generated::rpc::api_client::ApiClient<InterceptedService<Channel, MetadataInterceptor>>;
 pub type BlockProducerApiClient =
     generated::block_producer::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 pub type StoreNtxBuilderClient = generated::store::ntx_builder_client::NtxBuilderClient<
@@ -157,8 +189,14 @@ pub struct StoreRpc;
 impl GrpcClientBuilder for Rpc {
     type Service = RpcApiClient;
 
-    fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        generated::rpc::api_client::ApiClient::with_interceptor(channel, OtelInterceptor)
+    fn with_interceptor(channel: Channel, builder: &Builder) -> Self::Service {
+        // Use version from builder or default
+        let version = builder.metadata_version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
+        let interceptor = MetadataInterceptor::default()
+            .with_accept_metadata(version)
+            .expect("Failed to create metadata interceptor");
+
+        generated::rpc::api_client::ApiClient::with_interceptor(channel, interceptor)
     }
 }
 

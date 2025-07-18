@@ -3,7 +3,7 @@ mod server;
 #[cfg(test)]
 mod tests;
 
-pub use client::{ApiClient, MetadataInterceptor};
+pub use client::{Builder, Rpc as RpcClientMarker, RpcApiClient};
 pub use server::Rpc;
 
 // CONSTANTS

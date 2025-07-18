@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use accept::HeaderVerificationLayer;
+use accept::AcceptHeaderLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
 use miden_node_proto_build::rpc_api_descriptor;
@@ -68,7 +68,7 @@ impl Rpc {
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
-            .layer(HeaderVerificationLayer::new(&rpc_version, genesis.commitment()))
+            .layer(AcceptHeaderLayer::new(rpc_version, genesis.commitment()))
             .layer(cors_for_grpc_web_layer())
             // Enables gRPC-web support.
             .layer(GrpcWebLayer::new())

@@ -19,7 +19,7 @@ use miden_node_proto::{
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
-    AccountError, EMPTY_WORD,
+    AccountError, EMPTY_WORD, Word,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
         AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
@@ -801,7 +801,7 @@ impl State {
         let account_commitment = inner.account_tree.get(account_id);
 
         // If account commitment is empty, this transaction must be creating a new account.
-        if account_commitment == EMPTY_WORD.into() {
+        if account_commitment == EMPTY_WORD {
             // Validate that the account ID prefix is unique.
             todo!("Implement account prefix uniqueness check");
         }

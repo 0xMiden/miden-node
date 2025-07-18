@@ -27,7 +27,6 @@ use tracing::{debug, info, instrument};
 
 use crate::{
     COMPONENT,
-    errors::DatabaseError,
     server::api::{
         StoreApi, internal_error, read_account_id, read_account_ids, read_block_numbers,
         validate_notes, validate_nullifiers,

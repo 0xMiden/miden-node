@@ -8,45 +8,42 @@ use miden_objects::{
 };
 use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
-use crate::{
-    api::ProofType,
-    generated::{self as proto, ProvingRequest, ProvingResponse},
-};
+use crate::{api::ProofType, generated as proto};
 
-impl From<ProvenTransaction> for ProvingResponse {
+impl From<ProvenTransaction> for proto::Proof {
     fn from(value: ProvenTransaction) -> Self {
-        ProvingResponse { payload: value.to_bytes() }
+        proto::Proof { payload: value.to_bytes() }
     }
 }
 
-impl TryFrom<ProvingResponse> for ProvenTransaction {
+impl TryFrom<proto::Proof> for ProvenTransaction {
     type Error = DeserializationError;
 
-    fn try_from(response: ProvingResponse) -> Result<Self, Self::Error> {
+    fn try_from(response: proto::Proof) -> Result<Self, Self::Error> {
         ProvenTransaction::read_from_bytes(&response.payload)
     }
 }
 
-impl TryFrom<ProvingRequest> for TransactionWitness {
+impl TryFrom<proto::ProofRequest> for TransactionWitness {
     type Error = DeserializationError;
 
-    fn try_from(request: ProvingRequest) -> Result<Self, Self::Error> {
+    fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
         TransactionWitness::read_from_bytes(&request.payload)
     }
 }
 
-impl TryFrom<ProvingRequest> for ProposedBatch {
+impl TryFrom<proto::ProofRequest> for ProposedBatch {
     type Error = DeserializationError;
 
-    fn try_from(request: ProvingRequest) -> Result<Self, Self::Error> {
+    fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
         ProposedBatch::read_from_bytes(&request.payload)
     }
 }
 
-impl TryFrom<ProvingRequest> for ProposedBlock {
+impl TryFrom<proto::ProofRequest> for ProposedBlock {
     type Error = DeserializationError;
 
-    fn try_from(request: ProvingRequest) -> Result<Self, Self::Error> {
+    fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
         ProposedBlock::read_from_bytes(&request.payload)
     }
 }

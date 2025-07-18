@@ -1,9 +1,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::generated::requests::{
-    GetAccountDetailsRequest, GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest,
-};
+use miden_node_proto::generated as proto;
 use miden_node_rpc::ApiClient;
 use miden_objects::{
     account::Account,
@@ -38,7 +36,7 @@ impl RpcClient {
     }
 
     pub async fn get_genesis_header(&mut self) -> Result<BlockHeader, RpcError> {
-        let request = GetBlockHeaderByNumberRequest {
+        let request = proto::shared::BlockHeaderByNumberRequest {
             block_num: BlockNumber::GENESIS.as_u32().into(),
             include_mmr_proof: None,
         };
@@ -64,9 +62,9 @@ impl RpcClient {
     ///
     /// Note that this _does not_ include any uncommitted state in the mempool.
     pub async fn get_faucet_account(&mut self, id: FaucetId) -> Result<Account, RpcError> {
-        let request = GetAccountDetailsRequest { account_id: Some(id.account_id.into()) };
+        let request = proto::account::AccountId { id: id.account_id.to_bytes().clone() };
 
-        let account_info = self
+        let details = self
             .inner
             .get_account_details(request)
             .await
@@ -74,11 +72,6 @@ impl RpcClient {
             .into_inner()
             .details
             .context("details field is missing")
-            .map_err(RpcError::ResponseParsing)?;
-
-        let details = account_info
-            .details
-            .context("account_info.details field is empty")
             .map_err(RpcError::ResponseParsing)?;
 
         Account::read_from_bytes(&details)
@@ -91,7 +84,7 @@ impl RpcClient {
         &mut self,
         tx: ProvenTransaction,
     ) -> Result<BlockNumber, RpcError> {
-        let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+        let request = proto::transaction::ProvenTransaction { transaction: tx.to_bytes() };
 
         self.inner
             .submit_proven_transaction(request)

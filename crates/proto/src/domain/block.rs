@@ -10,15 +10,13 @@ use miden_objects::{
 use crate::{
     AccountWitnessRecord, NullifierWitnessRecord,
     errors::{ConversionError, MissingFieldHelper},
-    generated::{
-        block as proto, note::NoteInclusionInBlockProof, responses::GetBlockInputsResponse,
-    },
+    generated as proto,
 };
 
 // BLOCK HEADER
 // ================================================================================================
 
-impl From<&BlockHeader> for proto::BlockHeader {
+impl From<&BlockHeader> for proto::blockchain::BlockHeader {
     fn from(header: &BlockHeader) -> Self {
         Self {
             version: header.version(),
@@ -36,58 +34,62 @@ impl From<&BlockHeader> for proto::BlockHeader {
     }
 }
 
-impl From<BlockHeader> for proto::BlockHeader {
+impl From<BlockHeader> for proto::blockchain::BlockHeader {
     fn from(header: BlockHeader) -> Self {
         (&header).into()
     }
 }
 
-impl TryFrom<&proto::BlockHeader> for BlockHeader {
+impl TryFrom<&proto::blockchain::BlockHeader> for BlockHeader {
     type Error = ConversionError;
 
-    fn try_from(value: &proto::BlockHeader) -> Result<Self, Self::Error> {
+    fn try_from(value: &proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
         value.try_into()
     }
 }
 
-impl TryFrom<proto::BlockHeader> for BlockHeader {
+impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
     type Error = ConversionError;
 
-    fn try_from(value: proto::BlockHeader) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::blockchain::BlockHeader) -> Result<Self, Self::Error> {
         Ok(BlockHeader::new(
             value.version,
             value
                 .prev_block_commitment
-                .ok_or(proto::BlockHeader::missing_field(stringify!(prev_block_commitment)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(
+                    prev_block_commitment
+                )))?
                 .try_into()?,
             value.block_num.into(),
             value
                 .chain_commitment
-                .ok_or(proto::BlockHeader::missing_field(stringify!(chain_commitment)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(chain_commitment)))?
                 .try_into()?,
             value
                 .account_root
-                .ok_or(proto::BlockHeader::missing_field(stringify!(account_root)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(account_root)))?
                 .try_into()?,
             value
                 .nullifier_root
-                .ok_or(proto::BlockHeader::missing_field(stringify!(nullifier_root)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(nullifier_root)))?
                 .try_into()?,
             value
                 .note_root
-                .ok_or(proto::BlockHeader::missing_field(stringify!(note_root)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(note_root)))?
                 .try_into()?,
             value
                 .tx_commitment
-                .ok_or(proto::BlockHeader::missing_field(stringify!(tx_commitment)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(tx_commitment)))?
                 .try_into()?,
             value
                 .tx_kernel_commitment
-                .ok_or(proto::BlockHeader::missing_field(stringify!(tx_kernel_commitment)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(
+                    tx_kernel_commitment
+                )))?
                 .try_into()?,
             value
                 .proof_commitment
-                .ok_or(proto::BlockHeader::missing_field(stringify!(proof_commitment)))?
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
                 .try_into()?,
             value.timestamp,
         ))
@@ -97,7 +99,7 @@ impl TryFrom<proto::BlockHeader> for BlockHeader {
 // BLOCK INPUTS
 // ================================================================================================
 
-impl From<BlockInputs> for GetBlockInputsResponse {
+impl From<BlockInputs> for proto::block_producer_store::BlockInputs {
     fn from(inputs: BlockInputs) -> Self {
         let (
             prev_block_header,
@@ -107,7 +109,7 @@ impl From<BlockInputs> for GetBlockInputsResponse {
             unauthenticated_note_proofs,
         ) = inputs.into_parts();
 
-        GetBlockInputsResponse {
+        proto::block_producer_store::BlockInputs {
             latest_block_header: Some(prev_block_header.into()),
             account_witnesses: account_witnesses
                 .into_iter()
@@ -123,19 +125,19 @@ impl From<BlockInputs> for GetBlockInputsResponse {
             partial_block_chain: partial_block_chain.to_bytes(),
             unauthenticated_note_proofs: unauthenticated_note_proofs
                 .iter()
-                .map(NoteInclusionInBlockProof::from)
+                .map(proto::note::NoteInclusionInBlockProof::from)
                 .collect(),
         }
     }
 }
 
-impl TryFrom<GetBlockInputsResponse> for BlockInputs {
+impl TryFrom<proto::block_producer_store::BlockInputs> for BlockInputs {
     type Error = ConversionError;
 
-    fn try_from(response: GetBlockInputsResponse) -> Result<Self, Self::Error> {
+    fn try_from(response: proto::block_producer_store::BlockInputs) -> Result<Self, Self::Error> {
         let latest_block_header: BlockHeader = response
             .latest_block_header
-            .ok_or(proto::BlockHeader::missing_field("block_header"))?
+            .ok_or(proto::blockchain::BlockHeader::missing_field("block_header"))?
             .try_into()?;
 
         let account_witnesses = response

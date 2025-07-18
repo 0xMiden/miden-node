@@ -2,7 +2,10 @@
 
 ## v0.11.0 (TBD)
 
+### Changes
+
 - [BREAKING] Updated MSRV to 1.88.
+- [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
 - Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
 
 ## v0.10.1 (2025-07-14)

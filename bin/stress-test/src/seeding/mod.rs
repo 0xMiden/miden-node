@@ -10,12 +10,12 @@ use metrics::SeedingMetrics;
 use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::{
-    account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
+    account::{auth::AuthRpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
     note::create_p2id_note,
     utils::Serializable,
 };
 use miden_node_block_producer::store::StoreClient;
-use miden_node_proto::{domain::batch::BatchInputs, generated::store::rpc_client::RpcClient};
+use miden_node_proto::{domain::batch::BatchInputs, generated::rpc_store::rpc_client::RpcClient};
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
@@ -298,7 +298,7 @@ fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorag
     let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
-        .with_component(RpoFalcon512::new(public_key))
+        .with_component(AuthRpoFalcon512::new(public_key))
         .with_component(BasicWallet)
         .build()
         .unwrap();
@@ -316,7 +316,7 @@ fn create_faucet() -> Account {
     let (new_faucet, _seed) = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
-        .with_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
         .build()
         .unwrap();

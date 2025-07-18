@@ -13,7 +13,7 @@ use miden_objects::{
     Word,
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
+    crypto::{merkle::MerklePath, utils::Deserializable},
     note::{
         NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
         NoteRecipient, NoteScript, Nullifier,
@@ -79,7 +79,7 @@ pub struct TransactionSummary {
 pub struct NoteRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
-    pub note_id: RpoDigest,
+    pub note_id: Word,
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
     pub merkle_path: MerklePath,
@@ -115,7 +115,7 @@ impl NoteRecord {
         let note_index = BlockNoteIndex::new(batch_idx, note_idx_in_batch)
             .expect("batch and note index from DB should be valid");
         let note_id = row.get_ref(3)?.as_blob()?;
-        let note_id = RpoDigest::read_from_bytes(note_id)?;
+        let note_id = Word::read_from_bytes(note_id)?;
         let note_type = row.get::<_, u8>(4)?.try_into()?;
         let sender = AccountId::read_from_bytes(row.get_ref(5)?.as_blob()?)?;
         let tag: u32 = row.get(6)?;
@@ -201,7 +201,7 @@ pub struct NoteSyncUpdate {
 pub struct NoteSyncRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
-    pub note_id: RpoDigest,
+    pub note_id: Word,
     pub metadata: NoteMetadata,
     pub merkle_path: MerklePath,
 }
@@ -392,7 +392,7 @@ impl Db {
 
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
+    pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {
             sql::select_all_account_commitments(conn)
         })

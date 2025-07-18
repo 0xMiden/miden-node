@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use hex::{FromHex, ToHex};
-use miden_objects::{Digest, Felt, StarkField, note::NoteId};
+use miden_objects::{Felt, StarkField, Word, note::NoteId};
 
 use crate::{errors::ConversionError, generated::digest as proto};
 
@@ -117,8 +117,8 @@ impl From<&[Felt; 4]> for proto::Digest {
     }
 }
 
-impl From<Digest> for proto::Digest {
-    fn from(value: Digest) -> Self {
+impl From<Word> for proto::Digest {
+    fn from(value: Word) -> Self {
         Self {
             d0: value[0].as_int(),
             d1: value[1].as_int(),
@@ -128,21 +128,21 @@ impl From<Digest> for proto::Digest {
     }
 }
 
-impl From<&Digest> for proto::Digest {
-    fn from(value: &Digest) -> Self {
+impl From<&Word> for proto::Digest {
+    fn from(value: &Word) -> Self {
         (*value).into()
     }
 }
 
 impl From<&NoteId> for proto::Digest {
     fn from(value: &NoteId) -> Self {
-        (*value).inner().into()
+        value.as_word().into()
     }
 }
 
 impl From<NoteId> for proto::Digest {
     fn from(value: NoteId) -> Self {
-        value.inner().into()
+        value.as_word().into()
     }
 }
 
@@ -175,7 +175,7 @@ impl TryFrom<proto::Digest> for [Felt; 4] {
     }
 }
 
-impl TryFrom<proto::Digest> for Digest {
+impl TryFrom<proto::Digest> for Word {
     type Error = ConversionError;
 
     fn try_from(value: proto::Digest) -> Result<Self, Self::Error> {
@@ -191,7 +191,7 @@ impl TryFrom<&proto::Digest> for [Felt; 4] {
     }
 }
 
-impl TryFrom<&proto::Digest> for Digest {
+impl TryFrom<&proto::Digest> for Word {
     type Error = ConversionError;
 
     fn try_from(value: &proto::Digest) -> Result<Self, Self::Error> {

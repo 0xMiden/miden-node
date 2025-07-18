@@ -9,7 +9,7 @@ For more information on the installation and operation of this component, please
 
 ## API overview
 
-The full gRPC method definitions can be found in the [rpc-proto](../rpc-proto/README.md) crate.
+The full gRPC method definitions can be found in the [proto](../proto/README.md) crate.
 
 <!--toc:start-->
 

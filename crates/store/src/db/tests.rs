@@ -19,10 +19,7 @@ use miden_objects::{
     },
     asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
-    crypto::{
-        dsa::rpo_falcon512::PublicKey, hash::rpo::RpoDigest, merkle::MerklePath,
-        rand::RpoRandomCoin,
-    },
+    crypto::{dsa::rpo_falcon512::PublicKey, merkle::MerklePath, rand::RpoRandomCoin},
     note::{
         Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
     },
@@ -48,15 +45,15 @@ fn create_db() -> Connection {
 fn create_block(conn: &mut Connection, block_num: BlockNumber) {
     let block_header = BlockHeader::new(
         1_u8.into(),
-        num_to_rpo_digest(2),
+        num_to_word(2),
         block_num,
-        num_to_rpo_digest(4),
-        num_to_rpo_digest(5),
-        num_to_rpo_digest(6),
-        num_to_rpo_digest(7),
-        num_to_rpo_digest(8),
-        num_to_rpo_digest(9),
-        num_to_rpo_digest(10),
+        num_to_word(4),
+        num_to_word(5),
+        num_to_word(6),
+        num_to_word(7),
+        num_to_word(8),
+        num_to_word(9),
+        num_to_word(10),
         11_u8.into(),
     );
 
@@ -179,7 +176,7 @@ fn sql_select_nullifiers() {
 
 pub fn create_note(account_id: AccountId) -> Note {
     let coin_seed: [u64; 4] = rand::rng().random();
-    let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
+    let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new).into())));
     let mut rng = rng.lock().unwrap();
     create_p2id_note(
         account_id,
@@ -223,7 +220,7 @@ fn sql_select_notes() {
         let note = NoteRecord {
             block_num,
             note_index: BlockNoteIndex::new(0, i.try_into().unwrap()).unwrap(),
-            note_id: num_to_rpo_digest(u64::try_from(i).unwrap()),
+            note_id: num_to_word(u64::try_from(i).unwrap()),
             metadata: *new_note.metadata(),
             details: Some(NoteDetails::from(&new_note)),
             merkle_path: MerklePath::new(vec![]),
@@ -277,7 +274,7 @@ fn sql_select_notes_different_execution_hints() {
     let note_none = NoteRecord {
         block_num,
         note_index: BlockNoteIndex::new(0, 0).unwrap(),
-        note_id: num_to_rpo_digest(0),
+        note_id: num_to_word(0),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -296,15 +293,14 @@ fn sql_select_notes_different_execution_hints() {
     let res = sql::insert_notes(&transaction, &[(note_none, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
     transaction.commit().unwrap();
-    let note =
-        &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_rpo_digest(0).into()])
-            .unwrap()[0];
+    let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(0).into()])
+        .unwrap()[0];
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::none());
 
     let note_always = NoteRecord {
         block_num,
         note_index: BlockNoteIndex::new(0, 1).unwrap(),
-        note_id: num_to_rpo_digest(1),
+        note_id: num_to_word(1),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -322,15 +318,14 @@ fn sql_select_notes_different_execution_hints() {
     let res = sql::insert_notes(&transaction, &[(note_always, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
     transaction.commit().unwrap();
-    let note =
-        &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_rpo_digest(1).into()])
-            .unwrap()[0];
+    let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(1).into()])
+        .unwrap()[0];
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::always());
 
     let note_after_block = NoteRecord {
         block_num,
         note_index: BlockNoteIndex::new(0, 2).unwrap(),
-        note_id: num_to_rpo_digest(2),
+        note_id: num_to_word(2),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -348,9 +343,8 @@ fn sql_select_notes_different_execution_hints() {
     let res = sql::insert_notes(&transaction, &[(note_after_block, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
     transaction.commit().unwrap();
-    let note =
-        &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_rpo_digest(2).into()])
-            .unwrap()[0];
+    let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(2).into()])
+        .unwrap()[0];
     assert_eq!(
         note.metadata.execution_hint(),
         NoteExecutionHint::after_block(12.into()).unwrap()
@@ -417,7 +411,7 @@ fn sql_unconsumed_network_notes() {
             let note = NoteRecord {
                 block_num,
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
-                note_id: num_to_rpo_digest(i),
+                note_id: num_to_word(i),
                 metadata: NoteMetadata::new(
                     account_notes[index].0,
                     NoteType::Public,
@@ -511,7 +505,7 @@ fn sql_select_accounts() {
             AccountType::RegularAccountImmutableCode,
             AccountStorageMode::Private,
         );
-        let account_commitment = num_to_rpo_digest(u64::from(i));
+        let account_commitment = num_to_word(u64::from(i));
         state.push(AccountInfo {
             summary: AccountSummary {
                 account_id,
@@ -856,15 +850,15 @@ fn db_block_header() {
 
     let block_header = BlockHeader::new(
         1_u8.into(),
-        num_to_rpo_digest(2),
+        num_to_word(2),
         3.into(),
-        num_to_rpo_digest(4),
-        num_to_rpo_digest(5),
-        num_to_rpo_digest(6),
-        num_to_rpo_digest(7),
-        num_to_rpo_digest(8),
-        num_to_rpo_digest(9),
-        num_to_rpo_digest(10),
+        num_to_word(4),
+        num_to_word(5),
+        num_to_word(6),
+        num_to_word(7),
+        num_to_word(8),
+        num_to_word(9),
+        num_to_word(10),
         11_u8.into(),
     );
     // test insertion
@@ -895,15 +889,15 @@ fn db_block_header() {
 
     let block_header2 = BlockHeader::new(
         11_u8.into(),
-        num_to_rpo_digest(12),
+        num_to_word(12),
         13.into(),
-        num_to_rpo_digest(14),
-        num_to_rpo_digest(15),
-        num_to_rpo_digest(16),
-        num_to_rpo_digest(17),
-        num_to_rpo_digest(18),
-        num_to_rpo_digest(19),
-        num_to_rpo_digest(20),
+        num_to_word(14),
+        num_to_word(15),
+        num_to_word(16),
+        num_to_word(17),
+        num_to_word(18),
+        num_to_word(19),
+        num_to_word(20),
         21_u8.into(),
     );
 
@@ -943,7 +937,7 @@ fn db_account() {
 
     // test insertion
     let account_id = ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE;
-    let account_commitment = num_to_rpo_digest(0);
+    let account_commitment = num_to_word(0);
 
     let transaction = conn.transaction().unwrap();
     let row_count = sql::upsert_accounts(
@@ -1040,7 +1034,7 @@ fn notes() {
 
     let values = [(note_index, new_note.id(), note_metadata)];
     let notes_db = BlockNoteTree::with_entries(values.iter().copied()).unwrap();
-    let merkle_path = notes_db.get_note_path(note_index);
+    let merkle_path = notes_db.open(note_index);
 
     let note = NoteRecord {
         block_num: block_num_1,
@@ -1055,7 +1049,7 @@ fn notes() {
         )
         .unwrap(),
         details: Some(NoteDetails::from(&new_note)),
-        merkle_path: merkle_path.clone(),
+        merkle_path: merkle_path.clone().into(),
     };
 
     sql::insert_scripts(&transaction, [&note]).unwrap();
@@ -1102,7 +1096,7 @@ fn notes() {
         note_id: new_note.id().into(),
         metadata: note.metadata,
         details: None,
-        merkle_path,
+        merkle_path: merkle_path.clone().into(),
     };
 
     let transaction = conn.transaction().unwrap();
@@ -1131,7 +1125,7 @@ fn notes() {
 
     // test query notes by id
     let notes = vec![note.clone(), note2];
-    let note_ids: Vec<RpoDigest> = notes.clone().iter().map(|note| note.note_id).collect();
+    let note_ids: Vec<Word> = notes.clone().iter().map(|note| note.note_id).collect();
     let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
 
     let res = sql::select_notes_by_id(&conn.transaction().unwrap(), &note_ids).unwrap();
@@ -1146,27 +1140,23 @@ fn notes() {
 
 // UTILITIES
 // -------------------------------------------------------------------------------------------
-fn num_to_rpo_digest(n: u64) -> RpoDigest {
-    RpoDigest::new(num_to_word(n))
-}
-
 fn num_to_word(n: u64) -> Word {
-    [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)]
+    [Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::new(n)].into()
 }
 
 fn num_to_nullifier(n: u64) -> Nullifier {
-    Nullifier::from(num_to_rpo_digest(n))
+    Nullifier::from(num_to_word(n))
 }
 
 fn mock_block_account_update(account_id: AccountId, num: u64) -> BlockAccountUpdate {
-    BlockAccountUpdate::new(account_id, num_to_rpo_digest(num), AccountUpdateDetails::Private)
+    BlockAccountUpdate::new(account_id, num_to_word(num), AccountUpdateDetails::Private)
 }
 
 fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader {
-    let initial_state_commitment = RpoDigest::try_from([num, 0, 0, 0]).unwrap();
-    let final_account_commitment = RpoDigest::try_from([0, num, 0, 0]).unwrap();
-    let input_notes_commitment = RpoDigest::try_from([0, 0, num, 0]).unwrap();
-    let output_notes_commitment = RpoDigest::try_from([0, 0, 0, num]).unwrap();
+    let initial_state_commitment = Word::try_from([num, 0, 0, 0]).unwrap();
+    let final_account_commitment = Word::try_from([0, num, 0, 0]).unwrap();
+    let input_notes_commitment = Word::try_from([0, 0, num, 0]).unwrap();
+    let output_notes_commitment = Word::try_from([0, 0, 0, num]).unwrap();
 
     TransactionHeader::new_unchecked(
         TransactionId::new(
@@ -1180,8 +1170,8 @@ fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader 
         final_account_commitment,
         vec![num_to_nullifier(num)],
         vec![NoteId::new(
-            RpoDigest::try_from([num, num, 0, 0]).unwrap(),
-            RpoDigest::try_from([0, 0, num, num]).unwrap(),
+            Word::try_from([num, num, 0, 0]).unwrap(),
+            Word::try_from([0, 0, num, num]).unwrap(),
         )],
     )
 }
@@ -1223,11 +1213,11 @@ fn mock_account_code_and_storage(
     ";
 
     let component_storage = vec![
-        StorageSlot::Value(Word::default()),
+        StorageSlot::Value(Word::empty()),
         StorageSlot::Value(num_to_word(1)),
-        StorageSlot::Value(Word::default()),
+        StorageSlot::Value(Word::empty()),
         StorageSlot::Value(num_to_word(3)),
-        StorageSlot::Value(Word::default()),
+        StorageSlot::Value(Word::empty()),
         StorageSlot::Value(num_to_word(5)),
     ];
 

@@ -235,6 +235,9 @@ impl State {
                 },
             }
 
+            // If this account was in-progress, then it should no longer be as this update is the
+            // result of our own network transaction.
+            self.in_progress.remove(&prefix);
             tx_impact.account_delta = Some(prefix);
         }
         for note in network_notes {

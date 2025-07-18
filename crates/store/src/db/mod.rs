@@ -35,7 +35,7 @@ use crate::{
     genesis::GenesisBlock,
 };
 
-mod manager;
+pub(crate) mod manager;
 
 mod migrations;
 

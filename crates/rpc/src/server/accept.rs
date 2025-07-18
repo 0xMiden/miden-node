@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ops::Not,
     str::FromStr,
     task::{Context as StdContext, Poll},
 };
@@ -13,7 +14,6 @@ use itertools::Itertools;
 use miden_node_utils::ErrorReport;
 use miden_objects::Digest;
 use miden_tx::utils::HexParseError;
-use nom::bytes::complete::{tag, take_until};
 use semver::{Version, VersionReq};
 use tower::{Layer, Service};
 
@@ -85,10 +85,21 @@ impl AcceptHeaderLayer {
 
         let header = header.to_str().map_err(AcceptHeaderError::InvalidValue)?;
 
+        // Whether an empty is valid or not is up for debate, for ease of use lets just accept it.
+        if header.is_empty() {
+            return Ok(());
+        }
+
         let mut media_ranges = header
             .split(",")
+            // Allow trailing comma's.
+            .filter_map(|range| {
+                let range = range.trim();
+                range.is_empty().not().then_some(range)
+            })
             .map(MediaRange::from_str)
-            // Ignore media types that aren't ours. Wildcards are accepted.
+            // Ignore media types that aren't ours. Wildcards are accepted, as are obsolete
+            // legacy values: application/vnd.miden+grpc.
             .filter_ok(MediaRange::is_miden_application)
             .collect::<Result<Vec<_>, _>>()
             .map_err(AcceptHeaderError::InvalidMediaRange)?;
@@ -102,6 +113,16 @@ impl AcceptHeaderLayer {
         // Find the most preferred type that we support.
         media_ranges.sort_unstable_by(|a, b| b.quality.cmp(&a.quality));
         for range in media_ranges {
+            // If weighting is zero then this is not desired by the client.
+            if range.quality.0 == 0.0 {
+                continue;
+            }
+
+            // Skip obsolete variants.
+            if range.is_obsolete() {
+                continue;
+            }
+
             // Verify the user's version requirement against our rpc version.
             if let Some(version) = range.params.get(&CaselessKey::VERSION) {
                 let requirement = VersionReq::parse(version)
@@ -169,29 +190,6 @@ where
     }
 }
 
-/// The result of parsing the following canonical representation of an ACCEPT header value:
-/// `application/vnd.{app_name}.{version}+{response_type}`.
-#[derive(Debug, PartialEq)]
-pub struct AcceptHeaderValue<'a> {
-    app_name: &'a str,
-    version: &'a str,
-    response_type: &'a str,
-}
-
-impl<'a> TryFrom<&'a str> for AcceptHeaderValue<'a> {
-    type Error = nom::Err<nom::error::Error<&'a str>>;
-
-    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
-        let (input, _) = tag("application/vnd.")(input)?;
-        let (input, app_name) = take_until(".")(input)?;
-        let (input, _) = tag(".")(input)?;
-        let (input, version) = take_until("+")(input)?;
-        let (response_type, _) = tag("+")(input)?;
-
-        Ok(AcceptHeaderValue { app_name, version, response_type })
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 enum MediaRangeParsingError {
     #[error("media range contained no types")]
@@ -244,6 +242,15 @@ impl<'a> MediaType<'a> {
             MediaType::Type(media) => media.eq_ignore_ascii_case(value),
         }
     }
+
+    fn starts_with(&self, prefix: &str) -> bool {
+        match self {
+            MediaType::Wildcard => false,
+            MediaType::Type(media) => {
+                media[..prefix.len().min(media.len())].eq_ignore_ascii_case(prefix)
+            },
+        }
+    }
 }
 
 /// The value of a media-range's quality weighting parameter.
@@ -289,6 +296,11 @@ impl<'a> MediaRange<'a> {
         };
 
         let mut params = parts
+            // Handle a trailing semi-comma which otherwise results in an "empty" parameter.
+            .filter_map(|kv| {
+                let kv = kv.trim();
+                kv.is_empty().not().then_some(kv)
+            })
             .map(|kv| {
                 kv.split_once('=')
                     .map(|(k, v)| (CaselessKey(k.trim()), v.trim()))
@@ -313,7 +325,14 @@ impl<'a> MediaRange<'a> {
     }
 
     fn is_miden_application(&self) -> bool {
-        self.main.matches("application") && self.subtype.matches("vnd.miden")
+        // The subtype checks prefix only to include the legacy `vnd.miden+grpc` and optional
+        // version.
+        self.main.matches("application")
+            && (self.subtype.matches("vnd.miden") || self.subtype.starts_with("vnd.miden+grpc"))
+    }
+
+    fn is_obsolete(&self) -> bool {
+        self.subtype.starts_with("vnd.miden+grpc")
     }
 }
 
@@ -322,7 +341,7 @@ impl<'a> MediaRange<'a> {
 
 #[cfg(test)]
 mod tests {
-    use http::{HeaderMap, HeaderName, HeaderValue};
+    use http::{HeaderMap, HeaderValue, header::ACCEPT};
     use miden_objects::Digest;
     use semver::Version;
 
@@ -339,64 +358,51 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[case::without_headers(&[])]
-    #[case::with_matching_version(&[
-        ("accept", "application/vnd.miden.1.2.3+grpc")
-    ])]
-    #[case::with_newer_patch(&[
-        ("accept", "application/vnd.miden.1.2.4+grpc")
-    ])]
-    #[case::with_older_patch_version(&[
-        ("accept", "application/vnd.miden.1.2.2+grpc")
-    ])]
-    #[case::with_matching_network(&[
-        ("miden-network", TEST_GENESIS_COMMITMENT)
-    ])]
-    #[case::with_matching_network_and_version(&[
-        ("miden-network", TEST_GENESIS_COMMITMENT),
-        ("accept", "application/vnd.miden.1.2.3+grpc")
-    ])]
+    #[case::empty("")]
+    #[case::wildcard("*/*")]
+    #[case::wildcard_subtype("application/*")]
+    #[case::media_type_only("application/vnd.miden")]
+    #[case::with_quality("application/vnd.miden; q=0.3")]
+    #[case::version_exact("application/vnd.miden; version==1.2.3")]
+    #[case::version_major("application/vnd.miden; version=1")]
+    #[case::version_minor("application/vnd.miden; version=1.2")]
+    #[case::version_wildcard_major("application/vnd.miden; version=*")]
+    #[case::version_wildcard_minor("application/vnd.miden; version=1.*")]
+    #[case::version_wildcard_patch("application/vnd.miden; version=1.2.*")]
+    #[case::matching_network(
+        "application/vnd.miden; network=0x00000000000000000000000000000000000000000000000000000000deadbeef"
+    )]
+    #[case::matching_network_and_version(
+        "application/vnd.miden; network=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=1.2.3"
+    )]
+    #[case::parameter_order_swopped(
+        "application/vnd.miden; version=1.2.3; network=0x00000000000000000000000000000000000000000000000000000000deadbeef;"
+    )]
+    #[case::trailing_semi_comma("application/vnd.miden; ")]
+    #[case::trailing_comma("application/vnd.miden, ")]
+    // This should pass because the 2nd option is valid.
+    #[case::multiple_types("application/vnd.miden; version=2, application/vnd.miden")]
     #[test]
-    fn request_should_pass(#[case] headers: &[(&'static str, &'static str)]) {
-        let headers = headers
-            .iter()
-            .map(|(k, v)| (HeaderName::from_static(k), HeaderValue::from_static(v)));
-        let headers = HeaderMap::from_iter(headers);
+    fn request_should_pass(#[case] accept: &'static str) {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static(accept));
 
         let uut = AcceptHeaderLayer::for_tests();
         uut.verify(&headers).unwrap();
     }
 
     #[rstest::rstest]
-    #[case::with_older_minor_version(&[
-        ("accept", "application/vnd.miden.1.1.100+grpc")
-    ])]
-    #[case::with_newer_minor_version(&[
-        ("accept", "application/vnd.miden.1.3.0+grpc")
-    ])]
-    #[case::with_older_minor_version_and_matching_network(&[
-        ("accept", "application/vnd.miden.1.1.100+grpc"),
-        ("miden-network", TEST_GENESIS_COMMITMENT),
-    ])]
-    #[case::with_network_mismatch(&[
-        ("miden-network", "0x00000000000000000000000000000000000000000000000000000000dead1234"),
-    ])]
-    #[case::with_network_mismatch_but_matching_version(&[
-        ("accept", "application/vnd.miden.1.2.3+grpc"),
-        ("miden-network", "0x00000000000000000000000000000000000000000000000000000000dead1234"),
-    ])]
-    #[case::invalid_version(&[
-        ("accept", "application/vnd.miden.x.y.z+grpc"),
-    ])]
-    #[case::without_grpc_version_suffix(&[
-        ("accept", "application/vnd.miden.1.2.3"),
-    ])]
+    #[case::backwards_incompatible_with_version("application/vnd.miden+grpc.1.2.3")]
+    #[case::backwards_incompatible("application/vnd.miden+grpc")]
+    #[case::invalid_version("application/vnd.miden; version=0x123")]
+    #[case::invalid_genesis("application/vnd.miden; genesis=aaa")]
+    #[case::version_too_old("application/vnd.miden; version=>1.2.3")]
+    #[case::version_too_new("application/vnd.miden; version=<1.2.3")]
+    #[case::zero_weighting("application/vnd.miden; q=0.0")]
     #[test]
-    fn request_should_be_rejected(#[case] headers: &[(&'static str, &'static str)]) {
-        let headers = headers
-            .iter()
-            .map(|(k, v)| (HeaderName::from_static(k), HeaderValue::from_static(v)));
-        let headers = HeaderMap::from_iter(headers);
+    fn request_should_be_rejected(#[case] accept: &'static str) {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static(accept));
 
         let uut = AcceptHeaderLayer::for_tests();
         uut.verify(&headers).unwrap_err();

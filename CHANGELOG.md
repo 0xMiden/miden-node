@@ -2,8 +2,15 @@
 
 ## v0.11.0 (TBD)
 
+### Enhancements
+
+- RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are talking on the right network (#1084).
+
+### Changes
+
 - [BREAKING] Updated MSRV to 1.88.
-- RPC requests can now verify their network by setting the `miden-network` header to the genesis commitment (#1084).
+- [BREAKING] RPC accept header format changed from `application/miden.vnd+grpc.<version>` to `application/vnd.miden; version=<version>` (#1084).
+- RPC clients can now specify a range of valid versions in the accept header (#1084).
 
 ## v0.10.0 (2025-07-10)
 

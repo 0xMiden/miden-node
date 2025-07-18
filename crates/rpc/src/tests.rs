@@ -1,6 +1,6 @@
 use std::{net::SocketAddr, time::Duration};
 
-use miden_air::{ExecutionProof, Felt, HashFunction};
+use miden_air::HashFunction;
 use miden_node_proto::generated::{
     requests::{GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest},
     responses::GetBlockHeaderByNumberResponse,
@@ -8,14 +8,15 @@ use miden_node_proto::generated::{
 };
 use miden_node_store::{GenesisState, Store};
 use miden_objects::{
-    Word,
+    Felt, Word,
     account::{
         AccountDelta, AccountId, AccountIdVersion, AccountStorageDelta, AccountStorageMode,
         AccountType, AccountVaultDelta, delta::AccountUpdateDetails,
     },
     transaction::ProvenTransactionBuilder,
+    utils::Serializable,
+    vm::ExecutionProof,
 };
-use miden_tx::utils::Serializable;
 use tempfile::TempDir;
 use tokio::{
     net::TcpListener,

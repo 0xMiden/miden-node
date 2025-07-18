@@ -12,8 +12,7 @@ use http::{
 };
 use itertools::Itertools;
 use miden_node_utils::ErrorReport;
-use miden_objects::Digest;
-use miden_tx::utils::HexParseError;
+use miden_objects::{Word, WordError};
 use semver::{Version, VersionReq};
 use tower::{Layer, Service};
 
@@ -42,7 +41,7 @@ use tower::{Layer, Service};
 #[derive(Clone)]
 pub struct AcceptHeaderLayer {
     rpc_version: Version,
-    genesis_commitment: Digest,
+    genesis_commitment: Word,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -57,14 +56,14 @@ enum AcceptHeaderError {
     VersionParsing(#[source] semver::Error, String),
 
     #[error("genesis value {1} failed to parse")]
-    GenesisParsing(#[source] HexParseError, String),
+    GenesisParsing(#[source] WordError, String),
 
     #[error("server does not support any of the specified application/vnd.miden content types")]
     NoSupportedMediaRange,
 }
 
 impl AcceptHeaderLayer {
-    pub fn new(rpc_version: Version, genesis_commitment: Digest) -> Self {
+    pub fn new(rpc_version: Version, genesis_commitment: Word) -> Self {
         AcceptHeaderLayer { rpc_version, genesis_commitment }
     }
 }
@@ -91,7 +90,7 @@ impl AcceptHeaderLayer {
         }
 
         let mut media_ranges = header
-            .split(",")
+            .split(',')
             // Allow trailing comma's.
             .filter_map(|range| {
                 let range = range.trim();
@@ -113,6 +112,7 @@ impl AcceptHeaderLayer {
         // Find the most preferred type that we support.
         media_ranges.sort_unstable_by(|a, b| b.quality.cmp(&a.quality));
         for range in media_ranges {
+            dbg!(range);
             // If weighting is zero then this is not desired by the client.
             if range.quality.0 == 0.0 {
                 continue;
@@ -125,8 +125,9 @@ impl AcceptHeaderLayer {
 
             // Verify the user's version requirement against our rpc version.
             if let Some(version) = range.params.get(&CaselessKey::VERSION) {
-                let requirement = VersionReq::parse(version)
-                    .map_err(|err| AcceptHeaderError::VersionParsing(err, version.to_string()))?;
+                let requirement = VersionReq::parse(version).map_err(|err| {
+                    AcceptHeaderError::VersionParsing(err, (*version).to_string())
+                })?;
 
                 if !requirement.matches(&self.rpc_version) {
                     continue;
@@ -135,8 +136,9 @@ impl AcceptHeaderLayer {
 
             // Verify the user's genesis commitment against ours.
             if let Some(genesis) = range.params.get(&CaselessKey::GENESIS) {
-                let genesis = Digest::try_from(*genesis)
-                    .map_err(|err| AcceptHeaderError::GenesisParsing(err, genesis.to_string()))?;
+                let genesis = Word::try_from(*genesis).map_err(|err| {
+                    AcceptHeaderError::GenesisParsing(err, (*genesis).to_string())
+                })?;
 
                 if genesis != self.genesis_commitment {
                     continue;
@@ -202,6 +204,7 @@ enum MediaRangeParsingError {
     InvalidQuality(String),
 }
 
+#[derive(Debug)]
 struct MediaRange<'a> {
     main: MediaType<'a>,
     subtype: MediaType<'a>,
@@ -209,12 +212,13 @@ struct MediaRange<'a> {
     quality: Quality,
 }
 
+#[derive(Debug)]
 enum MediaType<'a> {
     Wildcard,
     Type(&'a str),
 }
 
-#[derive(Eq, Hash)]
+#[derive(Debug, Eq, Hash)]
 struct CaselessKey<'a>(&'a str);
 
 impl CaselessKey<'static> {
@@ -258,7 +262,7 @@ impl<'a> MediaType<'a> {
 /// The inner f32 is guaranteed to adhere to the standard's 0.0..1.0 range. As such, it has a total
 /// ordering and both [`Eq`] and [`Ord`] traits are implemented for it. Manually overriding the
 /// inner value is therefore a **bad idea**.
-#[derive(PartialEq, PartialOrd)]
+#[derive(Debug, PartialEq)]
 struct Quality(f32);
 
 impl Default for Quality {
@@ -271,11 +275,17 @@ impl Quality {
     fn from_str(s: &str) -> Option<Self> {
         f32::from_str(s)
             .ok()
-            .and_then(|val| (val >= 0.0 && val <= 1.0).then_some(Self(val)))
+            .and_then(|val| (0.0..=1.0).contains(&val).then_some(Self(val)))
     }
 }
 
 impl Eq for Quality {}
+
+impl PartialOrd for Quality {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl Ord for Quality {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
@@ -342,7 +352,7 @@ impl<'a> MediaRange<'a> {
 #[cfg(test)]
 mod tests {
     use http::{HeaderMap, HeaderValue, header::ACCEPT};
-    use miden_objects::Digest;
+    use miden_objects::Word;
     use semver::Version;
 
     use super::AcceptHeaderLayer;
@@ -353,7 +363,7 @@ mod tests {
 
     impl AcceptHeaderLayer {
         fn for_tests() -> Self {
-            Self::new(TEST_RPC_VERSION, Digest::try_from(TEST_GENESIS_COMMITMENT).unwrap())
+            Self::new(TEST_RPC_VERSION, Word::try_from(TEST_GENESIS_COMMITMENT).unwrap())
         }
     }
 

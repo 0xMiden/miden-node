@@ -8,7 +8,7 @@
 Welcome to the Miden node implementation :) This software is used to operate a Miden ZK-rollup network by
 receiving transactions and sequencing them into blocks.
 
-Access to the network is provided via a gRPC interface which can be found [here](./proto/readme.md).
+Access to the network is provided via a gRPC interface which can be found [here](./proto/README.md).
 
 > [!NOTE]
 > The Miden node is still under heavy development and the project can be considered to be in an _alpha_ stage.

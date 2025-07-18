@@ -218,7 +218,7 @@ impl GenesisConfig {
                 // slot 0
                 storage_delta.set_item(
                     memory::FAUCET_STORAGE_DATA_SLOT,
-                    [ZERO, ZERO, ZERO, Felt::new(total_issuance)],
+                    [ZERO, ZERO, ZERO, Felt::new(total_issuance)].into(),
                 );
                 tracing::debug!(
                     "Reducing faucet account {faucet} for {symbol} by {amount}",

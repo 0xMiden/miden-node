@@ -2,10 +2,9 @@ use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
 use miden_objects::{
-    Digest,
+    Word,
     account::{Account, AccountHeader, AccountId},
     block::{AccountWitness, BlockNumber},
-    crypto::hash::rpo::RpoDigest,
     note::{NoteExecutionMode, NoteTag},
     utils::{Deserializable, DeserializationError, Serializable},
 };
@@ -68,7 +67,7 @@ impl TryFrom<proto::account::AccountId> for AccountId {
 #[derive(Debug, PartialEq)]
 pub struct AccountSummary {
     pub account_id: AccountId,
-    pub account_commitment: RpoDigest,
+    pub account_commitment: Word,
     pub block_num: BlockNumber,
 }
 
@@ -132,7 +131,7 @@ pub struct StorageMapKeysProof {
     /// Index of the storage map
     pub storage_index: u8,
     /// List of requested keys in the map
-    pub storage_keys: Vec<Digest>,
+    pub storage_keys: Vec<Word>,
 }
 
 impl TryInto<StorageMapKeysProof> for proto::requests::get_account_proofs_request::StorageRequest {
@@ -217,7 +216,7 @@ pub struct AccountState {
     /// Account ID
     pub account_id: AccountId,
     /// The account commitment in the store corresponding to tx's account ID
-    pub account_commitment: Option<Digest>,
+    pub account_commitment: Option<Word>,
 }
 
 impl Display for AccountState {
@@ -270,9 +269,9 @@ impl TryFrom<proto::responses::AccountTransactionInputRecord> for AccountState {
             )))?
             .try_into()?;
 
-        // If the commitment is equal to `Digest::default()`, it signifies that this is a new
+        // If the commitment is equal to `Word::empty()`, it signifies that this is a new
         // account which is not yet present in the Store.
-        let account_commitment = if account_commitment == Digest::default() {
+        let account_commitment = if account_commitment == Word::empty() {
             None
         } else {
             Some(account_commitment)

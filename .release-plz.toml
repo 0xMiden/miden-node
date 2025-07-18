@@ -4,15 +4,3 @@ release_always   = true  # Without the tracking PR, it would never trigger unles
 
 git_release_enable = false
 git_tag_enable     = false
-
-[[package]]
-name = "miden-remote-prover"
-# Unpublished as of yet.
-# TODO: remove once the first version of miden-remote-prover is on crates.io.
-semver_checks = false
-
-[[package]]
-name = "miden-remote-prover-client"
-# Unpublished as of yet.
-# TODO: remove once the first version of miden-remote-prover-client is on crates.io.
-semver_checks = false

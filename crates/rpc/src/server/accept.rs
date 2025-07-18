@@ -1,61 +1,167 @@
-use std::task::{Context as StdContext, Poll};
+use std::{
+    collections::HashMap,
+    ops::Not,
+    str::FromStr,
+    task::{Context as StdContext, Poll},
+};
 
 use futures::{FutureExt, future::BoxFuture};
-use http::header::ACCEPT;
-use nom::bytes::complete::{tag, take_until};
+use http::{
+    HeaderMap, HeaderValue,
+    header::{ACCEPT, ToStrError},
+};
+use itertools::Itertools;
+use miden_node_utils::ErrorReport;
+use miden_objects::{Word, WordError};
 use semver::{Version, VersionReq};
 use tower::{Layer, Service};
-use tracing::debug;
 
-use crate::COMPONENT;
-
-/// Layer responsible for handling HTTP ACCEPT headers.
+/// Performs content negotiation by rejecting requests which don't match our RPC version or network.
+/// Clients can specify these as parameters in our `application/vnd.miden` accept media range.
+///
+/// The client can specify RPC versions it supports using the [`VersionReq`] format. The network
+/// is specified as the genesis block's commitment. If the server cannot satisfy either of these
+/// constraints then the request is rejected.
+///
+/// Note that both values are optional, as is the header itself. If unset, the server considers
+/// any value acceptable.
+///
+/// As part of the accept header's standard, all media ranges are examined in quality weighting
+/// order until a matching content type is found. This means that the client can set multiple
+/// `application/vnd.miden` values and each will be tested until one passes. If none pass, the
+/// request is rejected.
+///
+/// ## Format
+///
+/// Parameters are optional and order is not important.
+///
+/// ```
+/// application/vnd.miden; version=<version-req>; genesis=0x1234
+/// ```
 #[derive(Clone)]
-pub struct AcceptLayer {
-    version_req: VersionReq,
+pub struct AcceptHeaderLayer {
+    rpc_version: Version,
+    genesis_commitment: Word,
 }
 
-impl AcceptLayer {
-    /// Create a new accept layer that validates version values specified in the HTTP ACCEPT header.
-    ///
-    /// The version requirement is based on the version field found in the workspace's Cargo.toml.
-    ///
-    /// # Panics:
-    ///
-    /// Panics if the version string in Cargo.toml is not valid semver. The version string is made
-    /// into an env var at compile time which means that the unit tests prove this cannot panic
-    /// in practice.
-    pub fn new() -> anyhow::Result<Self> {
-        // Parse the full version string (e.g. "0.8.0").
-        let version = env!("CARGO_PKG_VERSION");
-        let version = Version::parse(version)?;
+#[derive(Debug, thiserror::Error)]
+enum AcceptHeaderError {
+    #[error("Header value could not be parsed as a string")]
+    InvalidValue(#[source] ToStrError),
 
-        // Form a version requirement from the major and minor version numbers.
-        let version_req = format!("={}.{}", version.major, version.minor);
-        let version_req = VersionReq::parse(&version_req).expect("valid version requirement");
-        Ok(AcceptLayer { version_req })
+    #[error("the accept header could not be parsed")]
+    InvalidMediaRange(#[source] MediaRangeParsingError),
+
+    #[error("version value {1} failed to parse")]
+    VersionParsing(#[source] semver::Error, String),
+
+    #[error("genesis value {1} failed to parse")]
+    GenesisParsing(#[source] WordError, String),
+
+    #[error("server does not support any of the specified application/vnd.miden content types")]
+    NoSupportedMediaRange,
+}
+
+impl AcceptHeaderLayer {
+    pub fn new(rpc_version: Version, genesis_commitment: Word) -> Self {
+        AcceptHeaderLayer { rpc_version, genesis_commitment }
     }
 }
 
-impl<S> Layer<S> for AcceptLayer {
-    type Service = AcceptService<S>;
+impl<S> Layer<S> for AcceptHeaderLayer {
+    type Service = AcceptHeaderService<S>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        AcceptService {
-            inner,
-            version_req: self.version_req.clone(),
+        AcceptHeaderService { inner, verifier: self.clone() }
+    }
+}
+
+impl AcceptHeaderLayer {
+    fn verify(&self, headers: &HeaderMap<HeaderValue>) -> Result<(), AcceptHeaderError> {
+        let Some(header) = headers.get(ACCEPT) else {
+            return Ok(());
+        };
+
+        let header = header.to_str().map_err(AcceptHeaderError::InvalidValue)?;
+
+        // Whether an empty is valid or not is up for debate, for ease of use lets just accept it.
+        if header.is_empty() {
+            return Ok(());
         }
+
+        let mut media_ranges = header
+            .split(',')
+            // Allow trailing comma's.
+            .filter_map(|range| {
+                let range = range.trim();
+                range.is_empty().not().then_some(range)
+            })
+            .map(MediaRange::from_str)
+            // Ignore media types that aren't ours. Wildcards are accepted, as are obsolete
+            // legacy values: application/vnd.miden+grpc.
+            .filter_ok(MediaRange::is_miden_application)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(AcceptHeaderError::InvalidMediaRange)?;
+
+        // If there are no miden specific headers, then accept the request as the client has no
+        // stated preference that we care about.
+        if media_ranges.is_empty() {
+            return Ok(());
+        }
+
+        // Find the most preferred type that we support.
+        media_ranges.sort_unstable_by(|a, b| b.quality.cmp(&a.quality));
+        for range in media_ranges {
+            // If weighting is zero then this is not desired by the client.
+            if range.quality.0 == 0.0 {
+                continue;
+            }
+
+            // Skip obsolete variants.
+            if range.is_obsolete() {
+                continue;
+            }
+
+            // Verify the user's version requirement against our rpc version.
+            if let Some(version) = range.params.get(&CaselessKey::VERSION) {
+                let requirement = VersionReq::parse(version).map_err(|err| {
+                    AcceptHeaderError::VersionParsing(err, (*version).to_string())
+                })?;
+
+                if !requirement.matches(&self.rpc_version) {
+                    continue;
+                }
+            }
+
+            // Verify the user's genesis commitment against ours.
+            if let Some(genesis) = range.params.get(&CaselessKey::GENESIS) {
+                let genesis = Word::try_from(*genesis).map_err(|err| {
+                    AcceptHeaderError::GenesisParsing(err, (*genesis).to_string())
+                })?;
+
+                if genesis != self.genesis_commitment {
+                    continue;
+                }
+            }
+
+            return Ok(());
+        }
+
+        // No matching media type found.
+        //
+        // We know the client specified at least one miden specific media type at this point.
+        Err(AcceptHeaderError::NoSupportedMediaRange)
     }
 }
 
 /// Service responsible for handling HTTP ACCEPT headers.
 #[derive(Clone)]
-pub struct AcceptService<S> {
+pub struct AcceptHeaderService<S> {
     inner: S,
-    version_req: VersionReq,
+    verifier: AcceptHeaderLayer,
 }
 
-impl<S, B> Service<http::Request<B>> for AcceptService<S>
+impl<S, B> Service<http::Request<B>> for AcceptHeaderService<S>
 where
     S: Service<http::Request<B>, Response = http::Response<B>> + Clone + Send + 'static,
     S::Error: Send + 'static,
@@ -75,148 +181,237 @@ where
     /// The version specified in the value of the ACCEPT header must match the version requirements
     /// specified by the server.
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
-        // If the ACCEPT header is not present, do not enforce the version requirement.
-        let Some(accept_header_value) = request.headers().get(ACCEPT) else {
-            return self.inner.call(request).boxed();
-        };
+        if let Err(err) = self.verifier.verify(request.headers()) {
+            let response = tonic::Status::invalid_argument(err.as_report()).into_http();
 
-        // Convert header value to str
-        let accept_str = match accept_header_value.to_str() {
-            Ok(value) => value,
-            Err(e) => {
-                debug!(target: COMPONENT, "Failed to stringify accept header value: {}", e);
-                return bad_request("Invalid accept header value".into()).boxed();
+            return futures::future::ready(Ok(response)).boxed();
+        }
+
+        self.inner.call(request).boxed()
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum MediaRangeParsingError {
+    #[error("media range contained no types")]
+    MissingMediaType,
+    #[error("the media type {0} is invalid")]
+    InvalidMediaType(String),
+    #[error("the parameter {0} is invalid")]
+    InvalidParameter(String),
+    #[error("the quality weight value {0} is invalid")]
+    InvalidQuality(String),
+}
+
+struct MediaRange<'a> {
+    main: MediaType<'a>,
+    subtype: MediaType<'a>,
+    params: HashMap<CaselessKey<'a>, &'a str>,
+    quality: Quality,
+}
+
+enum MediaType<'a> {
+    Wildcard,
+    Type(&'a str),
+}
+
+#[derive(Eq, Hash)]
+struct CaselessKey<'a>(&'a str);
+
+impl CaselessKey<'static> {
+    const VERSION: Self = Self("version");
+    const GENESIS: Self = Self("genesis");
+}
+
+impl PartialEq for CaselessKey<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq_ignore_ascii_case(other.0)
+    }
+}
+
+impl<'a> MediaType<'a> {
+    fn new(value: &'a str) -> Self {
+        match value.trim() {
+            "*" => Self::Wildcard,
+            other => Self::Type(other),
+        }
+    }
+
+    fn matches(&self, value: &str) -> bool {
+        match self {
+            MediaType::Wildcard => true,
+            MediaType::Type(media) => media.eq_ignore_ascii_case(value),
+        }
+    }
+
+    fn starts_with(&self, prefix: &str) -> bool {
+        match self {
+            MediaType::Wildcard => false,
+            MediaType::Type(media) => {
+                media[..prefix.len().min(media.len())].eq_ignore_ascii_case(prefix)
             },
-        };
-
-        // Parse the accept str
-        let accept = match AcceptHeaderValue::try_from(accept_str) {
-            Ok(value) => value,
-            Err(e) => {
-                // If the accept header value is different from expected, don't enforce the version
-                // requirement.
-                debug!(target: COMPONENT, "Failed to parse accept header value: {}", e);
-                return self.inner.call(request).boxed();
-            },
-        };
-
-        // Parse the version
-        let version = match Version::parse(accept.version) {
-            Ok(version) => version,
-            Err(e) => {
-                debug!(target: COMPONENT, "Failed to parse version: {}", e);
-                return bad_request("Invalid version specified in accept header value".into())
-                    .boxed();
-            },
-        };
-
-        // Verify the version matches configured requirements
-        if self.version_req.matches(&version) {
-            self.inner.call(request).boxed()
-        } else {
-            debug!(target: COMPONENT, "Version does not match ({}/{})", version, self.version_req);
-            let msg = format!(
-                "Client / server version mismatch. Version {} is required by the server",
-                self.version_req
-            );
-            bad_request(msg).boxed()
         }
     }
 }
 
-/// Returns a future that resolves to a bad request response.
-fn bad_request<B: Default + Send + 'static, E: Send + 'static>(
-    msg: String,
-) -> impl Future<Output = Result<http::Response<B>, E>> {
-    let response = http::Response::builder()
-        .status(http::StatusCode::BAD_REQUEST)
-        .header("content-type", "application/grpc")
-        .header("grpc-status", "3") // INVALID_ARGUMENT
-        .header("grpc-message", msg)
-        .body(B::default())
-        .expect("headers are valid");
+/// The value of a media-range's quality weighting parameter.
+///
+/// The inner f32 is guaranteed to adhere to the standard's 0.0..1.0 range. As such, it has a total
+/// ordering and both [`Eq`] and [`Ord`] traits are implemented for it. Manually overriding the
+/// inner value is therefore a **bad idea**.
+#[derive(PartialEq)]
+struct Quality(f32);
 
-    futures::future::ready(Ok(response))
-}
-
-/// The result of parsing the following canonical representation of an ACCEPT header value:
-/// `application/vnd.{app_name}.{version}+{response_type}`.
-#[derive(Debug, PartialEq)]
-pub struct AcceptHeaderValue<'a> {
-    app_name: &'a str,
-    version: &'a str,
-    response_type: &'a str,
-}
-
-impl<'a> TryFrom<&'a str> for AcceptHeaderValue<'a> {
-    type Error = nom::Err<nom::error::Error<&'a str>>;
-
-    fn try_from(input: &'a str) -> Result<Self, Self::Error> {
-        let (input, _) = tag("application/vnd.")(input)?;
-        let (input, app_name) = take_until(".")(input)?;
-        let (input, _) = tag(".")(input)?;
-        let (input, version) = take_until("+")(input)?;
-        let (response_type, _) = tag("+")(input)?;
-
-        Ok(AcceptHeaderValue { app_name, version, response_type })
+impl Default for Quality {
+    fn default() -> Self {
+        Self(1.0)
     }
 }
 
-// ACCEPT TESTS
+impl Quality {
+    fn from_str(s: &str) -> Option<Self> {
+        f32::from_str(s)
+            .ok()
+            .and_then(|val| (0.0..=1.0).contains(&val).then_some(Self(val)))
+    }
+}
+
+impl Eq for Quality {}
+
+impl PartialOrd for Quality {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Quality {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // SAFETY: Quality is guaranteed to never be NaN by construction.
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl<'a> MediaRange<'a> {
+    fn from_str(s: &'a str) -> Result<Self, MediaRangeParsingError> {
+        let mut parts = s.trim().split(';');
+        let Some(media) = parts.next() else {
+            return Err(MediaRangeParsingError::MissingMediaType);
+        };
+
+        let Some((main, subtype)) = media.split_once('/') else {
+            return Err(MediaRangeParsingError::InvalidMediaType(media.to_owned()));
+        };
+
+        let mut params = parts
+            // Handle a trailing semi-comma which otherwise results in an "empty" parameter.
+            .filter_map(|kv| {
+                let kv = kv.trim();
+                kv.is_empty().not().then_some(kv)
+            })
+            .map(|kv| {
+                kv.split_once('=')
+                    .map(|(k, v)| (CaselessKey(k.trim()), v.trim()))
+                    .ok_or(MediaRangeParsingError::InvalidParameter(kv.to_owned()))
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+
+        let quality = params
+            .remove(&CaselessKey("q"))
+            .map(|val| {
+                Quality::from_str(val).ok_or(MediaRangeParsingError::InvalidQuality(val.to_owned()))
+            })
+            .transpose()?
+            .unwrap_or_default();
+
+        Ok(Self {
+            main: MediaType::new(main),
+            subtype: MediaType::new(subtype),
+            params,
+            quality,
+        })
+    }
+
+    fn is_miden_application(&self) -> bool {
+        // The subtype checks prefix only to include the legacy `vnd.miden+grpc` and optional
+        // version.
+        self.main.matches("application")
+            && (self.subtype.matches("vnd.miden") || self.subtype.starts_with("vnd.miden+grpc"))
+    }
+
+    fn is_obsolete(&self) -> bool {
+        self.subtype.starts_with("vnd.miden+grpc")
+    }
+}
+
+// HEADER VERIFICATION TESTS
 // ================================================================================================
 
 #[cfg(test)]
 mod tests {
+    use http::{HeaderMap, HeaderValue, header::ACCEPT};
+    use miden_objects::Word;
     use semver::Version;
 
-    use super::{AcceptHeaderValue, AcceptLayer};
+    use super::AcceptHeaderLayer;
 
-    #[test]
-    fn current_version_is_parsed_and_matches() {
-        let a = AcceptLayer::new().unwrap();
-        let version = env!("CARGO_PKG_VERSION");
-        let version = Version::parse(version).unwrap();
-        assert!(a.version_req.matches(&version));
+    const TEST_GENESIS_COMMITMENT: &str =
+        "0x00000000000000000000000000000000000000000000000000000000deadbeef";
+    const TEST_RPC_VERSION: Version = Version::new(1, 2, 3);
+
+    impl AcceptHeaderLayer {
+        fn for_tests() -> Self {
+            Self::new(TEST_RPC_VERSION, Word::try_from(TEST_GENESIS_COMMITMENT).unwrap())
+        }
     }
 
+    #[rstest::rstest]
+    #[case::empty("")]
+    #[case::wildcard("*/*")]
+    #[case::wildcard_subtype("application/*")]
+    #[case::media_type_only("application/vnd.miden")]
+    #[case::with_quality("application/vnd.miden; q=0.3")]
+    #[case::version_exact("application/vnd.miden; version==1.2.3")]
+    #[case::version_major("application/vnd.miden; version=1")]
+    #[case::version_minor("application/vnd.miden; version=1.2")]
+    #[case::version_wildcard_major("application/vnd.miden; version=*")]
+    #[case::version_wildcard_minor("application/vnd.miden; version=1.*")]
+    #[case::version_wildcard_patch("application/vnd.miden; version=1.2.*")]
+    #[case::matching_network(
+        "application/vnd.miden; network=0x00000000000000000000000000000000000000000000000000000000deadbeef"
+    )]
+    #[case::matching_network_and_version(
+        "application/vnd.miden; network=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=1.2.3"
+    )]
+    #[case::parameter_order_swopped(
+        "application/vnd.miden; version=1.2.3; network=0x00000000000000000000000000000000000000000000000000000000deadbeef;"
+    )]
+    #[case::trailing_semi_comma("application/vnd.miden; ")]
+    #[case::trailing_comma("application/vnd.miden, ")]
+    // This should pass because the 2nd option is valid.
+    #[case::multiple_types("application/vnd.miden; version=2, application/vnd.miden")]
     #[test]
-    fn same_minor_different_patch_matches() {
-        let a = AcceptLayer::new().unwrap();
-        let version = env!("CARGO_PKG_VERSION");
-        let mut version = Version::parse(version).unwrap();
-        version.patch += 1;
-        assert!(a.version_req.matches(&version));
+    fn request_should_pass(#[case] accept: &'static str) {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static(accept));
+
+        let uut = AcceptHeaderLayer::for_tests();
+        uut.verify(&headers).unwrap();
     }
 
+    #[rstest::rstest]
+    #[case::backwards_incompatible_with_version("application/vnd.miden+grpc.1.2.3")]
+    #[case::backwards_incompatible("application/vnd.miden+grpc")]
+    #[case::invalid_version("application/vnd.miden; version=0x123")]
+    #[case::invalid_genesis("application/vnd.miden; genesis=aaa")]
+    #[case::version_too_old("application/vnd.miden; version=>1.2.3")]
+    #[case::version_too_new("application/vnd.miden; version=<1.2.3")]
+    #[case::zero_weighting("application/vnd.miden; q=0.0")]
     #[test]
-    fn greater_minor_does_not_match() {
-        let a = AcceptLayer::new().unwrap();
-        let version = Version::parse("0.99.0").unwrap();
-        assert!(!a.version_req.matches(&version));
-    }
+    fn request_should_be_rejected(#[case] accept: &'static str) {
+        let mut headers = HeaderMap::new();
+        headers.insert(ACCEPT, HeaderValue::from_static(accept));
 
-    #[test]
-    fn lower_minor_does_not_match() {
-        let a = AcceptLayer::new().unwrap();
-        let version = Version::parse("0.1.0").unwrap();
-        assert!(!a.version_req.matches(&version));
-    }
-
-    #[test]
-    fn greater_major_does_not_match() {
-        let a = AcceptLayer::new().unwrap();
-        let version = Version::parse("9.9.0").unwrap();
-        assert!(!a.version_req.matches(&version));
-    }
-
-    #[test]
-    fn valid_accept_header_is_parsed() {
-        let input = "application/vnd.miden.1.0.0+grpc";
-        let expected = AcceptHeaderValue {
-            app_name: "miden",
-            version: "1.0.0",
-            response_type: "grpc",
-        };
-        assert_eq!(AcceptHeaderValue::try_from(input), Ok(expected));
+        let uut = AcceptHeaderLayer::for_tests();
+        uut.verify(&headers).unwrap_err();
     }
 }

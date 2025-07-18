@@ -13,7 +13,7 @@ impl MetadataInterceptor {
     ///
     /// Provided version string must be ASCII.
     pub fn with_accept_metadata(mut self, version: &str) -> Result<Self, anyhow::Error> {
-        let accept_value = format!("application/vnd.miden.{version}+grpc");
+        let accept_value = format!("application/vnd.miden; version={version}");
         self.metadata.insert("accept", AsciiMetadataValue::try_from(accept_value)?);
         Ok(self)
     }

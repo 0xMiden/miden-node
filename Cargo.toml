@@ -68,6 +68,7 @@ itertools          = { version = "0.14" }
 prost              = { version = "0.13" }
 rand               = { version = "0.9" }
 rand_chacha        = { version = "0.9" }
+rstest             = { version = "0.25" }
 serde              = { features = ["derive"], version = "1" }
 thiserror          = { default-features = false, version = "2.0" }
 tokio              = { features = ["rt-multi-thread"], version = "1.46" }

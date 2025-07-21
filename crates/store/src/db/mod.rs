@@ -7,7 +7,7 @@ use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
-    domain::account::{AccountInfo, AccountSummary},
+    domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix},
     generated as proto,
 };
 use miden_objects::{
@@ -476,14 +476,33 @@ impl Db {
         Ok(())
     }
 
-    /// Loads the network notes that have not been consumed yet, using pagination to limit the
-    /// number of notes returned.
+    /// Loads the network notes that have not been consumed yet, using
+    /// pagination to limit the number of notes returned.
     pub(crate) async fn select_unconsumed_network_notes(
         &self,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
         self.transact("unconsumed network notes", move |conn| {
             models::queries::unconsumed_network_notes(conn, page)
+        })
+        .await
+    }
+
+    /// Loads the network notes for a network account that have not been consumed yet, using
+    /// pagination to limit the number of notes returned.
+    pub(crate) async fn select_unconsumed_network_notes_for_account(
+        &self,
+        network_account_id_prefix: NetworkAccountPrefix,
+        latest_block_num: BlockNumber,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page)> {
+        self.transact("unconsumed network notes for account", move |conn| {
+            models::queries::unconsumed_network_notes_for_account(
+                conn,
+                network_account_id_prefix,
+                latest_block_num,
+                page,
+            )
         })
         .await
     }

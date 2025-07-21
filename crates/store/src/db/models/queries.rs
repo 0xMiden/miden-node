@@ -1092,6 +1092,139 @@ pub(crate) fn unconsumed_network_notes(
     Ok((notes, page))
 }
 
+/// Returns a paginated batch of network notes for a specific account that have not yet been consumed.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+//
+// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+// statements
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "We need custom SQL statements which has given types that we need to convert"
+)]
+pub(crate) fn unconsumed_network_notes_for_account(
+    conn: &mut SqliteConnection,
+    network_account_id_prefix: NetworkAccountPrefix,
+    latest_block_num: BlockNumber,
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
+    let rowid_sel_ge =
+        diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
+            .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
+
+    // SELECT {}, rowid
+    // FROM notes
+    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+    // WHERE
+    //     execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+    // ORDER BY rowid
+    // LIMIT ?
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    type RawLoadedTuple = (
+        i64,             // block_num
+        i32,             // batch_index
+        i32,             // note_index
+        Vec<u8>,         // note_id
+        i32,             // note_type
+        Vec<u8>,         // sender
+        i32,             // tag
+        i64,             // aux
+        i64,             // execution_hint
+        Vec<u8>,         // merkle_path
+        Option<Vec<u8>>, // assets
+        Option<Vec<u8>>, // inputs
+        Option<Vec<u8>>, // script
+        Option<Vec<u8>>, // serial_num
+        i64,             // rowid (from sql::<BigInt>("notes.rowid"))
+    );
+
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    fn split_into_raw_note_record_and_implicit_row_id(
+        tuple: RawLoadedTuple,
+    ) -> (NoteRecordRaw, i64) {
+        (
+            NoteRecordRaw {
+                block_num: tuple.0,
+                batch_index: tuple.1,
+                note_index: tuple.2,
+                note_id: tuple.3,
+                note_type: tuple.4,
+                sender: tuple.5,
+                tag: tuple.6,
+                aux: tuple.7,
+                execution_hint: tuple.8,
+                merkle_path: tuple.9,
+                assets: tuple.10,
+                inputs: tuple.11,
+                script: tuple.12,
+                serial_num: tuple.13,
+            },
+            tuple.14,
+        )
+    }
+
+    let raw = SelectDsl::select(
+        schema::notes::table.left_join(
+            schema::note_scripts::table
+                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+        ),
+        (
+            schema::notes::block_num,
+            schema::notes::batch_index,
+            schema::notes::note_index,
+            schema::notes::note_id,
+            // metadata
+            schema::notes::note_type,
+            schema::notes::sender,
+            schema::notes::tag,
+            schema::notes::aux,
+            schema::notes::execution_hint,
+            schema::notes::inclusion_path,
+            // details
+            schema::notes::assets,
+            schema::notes::inputs,
+            schema::note_scripts::script.nullable(),
+            schema::notes::serial_num,
+            rowid_sel.clone(),
+        ),
+    )
+    .filter(schema::notes::execution_mode.eq(0_i32))
+    .filter(schema::notes::consumed.eq(consumed_to_raw_sql(false)))
+    .filter(rowid_sel_ge)
+    .order(rowid_sel.asc())
+    .limit(page.size.get() as i64 + 1)
+    .load::<RawLoadedTuple>(conn)?;
+
+    let mut notes = Vec::with_capacity(page.size.into());
+    for raw_item in raw {
+        let (raw_item, row_id) = split_into_raw_note_record_and_implicit_row_id(raw_item);
+        page.token = None;
+        if notes.len() == page.size.get() {
+            page.token = Some(row_id as u64);
+            break;
+        }
+        notes.push(TryInto::<NoteRecord>::try_into(raw_item)?);
+    }
+
+    Ok((notes, page))
+}
+
 /// Select all accounts from the DB using the given [Connection].
 ///
 /// # Returns

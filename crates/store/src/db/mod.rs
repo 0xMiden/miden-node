@@ -166,9 +166,10 @@ impl Db {
         // This will create the file if it does not exist, but will also happily open it if already
         // exists. In the latter case we will error out when attempting to insert the genesis
         // block so this isn't such a problem.
-        let mut conn: SqliteConnection =
-            diesel::sqlite::SqliteConnection::establish(database_filepath.to_str().context("database filepath is invalid")?) // TODO FIXME avoid unwrap
-                .context("failed to open a database connection")?;
+        let mut conn: SqliteConnection = diesel::sqlite::SqliteConnection::establish(
+            database_filepath.to_str().context("database filepath is invalid")?,
+        )
+        .context("failed to open a database connection")?;
 
         configure_connection_on_creation(&mut conn)?;
 

@@ -32,8 +32,8 @@ use crate::{
         update_workers::{Action, UpdateWorkers},
     },
     utils::{
-        create_queue_full_response, create_response_with_error_message,
-        create_too_many_requests_response,
+        create_proxy_status_response, create_queue_full_response,
+        create_response_with_error_message, create_too_many_requests_response,
     },
 };
 
@@ -371,7 +371,7 @@ impl ProxyHttp for LoadBalancer {
             == "/remote_prover.ProxyStatusApi/Status"
         {
             info!("Proxy status request");
-            return crate::utils::create_proxy_status_response(session, &self.0).await;
+            return create_proxy_status_response(session, &self.0).await;
         }
 
         // Increment the request count

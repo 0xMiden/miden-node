@@ -1,6 +1,5 @@
 use std::{net::SocketAddr, time::Duration};
 
-use miden_air::HashFunction;
 use miden_node_proto::generated::{
     requests::{GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest},
     responses::GetBlockHeaderByNumberResponse,
@@ -24,7 +23,6 @@ use tokio::{
     task,
 };
 use url::Url;
-use winterfell::Proof;
 
 use crate::{ApiClient, Rpc};
 
@@ -178,7 +176,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         0.into(),
         Word::default(),
         u32::MAX.into(),
-        ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
+        ExecutionProof::new_dummy(),
     )
     .account_update_details(AccountUpdateDetails::Delta(
         AccountDelta::new(

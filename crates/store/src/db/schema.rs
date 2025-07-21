@@ -82,7 +82,7 @@ diesel::table! {
         aux -> BigInt,
         execution_hint -> BigInt,
         inclusion_path -> Binary,
-        consumed -> Integer,
+        consumed_block_num -> Nullable<BigInt>,
         nullifier -> Nullable<Binary>,
         assets -> Nullable<Binary>,
         inputs -> Nullable<Binary>,

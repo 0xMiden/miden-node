@@ -44,7 +44,7 @@ use crate::{
             AccountRaw, AccountSummaryRaw, BigIntSum, ExpressionMethods, NoteInsertRowRaw,
             NoteRecordRaw, NoteRecordWithScriptRaw, TransactionSummaryRaw,
             conv::{
-                SqlTypeConvert, consumed_to_raw_sql, fungible_delta_to_raw_sql, nonce_to_raw_sql,
+                SqlTypeConvert, fungible_delta_to_raw_sql, nonce_to_raw_sql,
                 nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot,
                 slot_to_raw_sql,
             },
@@ -732,7 +732,7 @@ pub(crate) fn insert_nullifiers_for_block(
 
     let mut count = diesel::update(schema::notes::table)
         .filter(schema::notes::nullifier.eq_any(&serialized_nullifiers))
-        .set(schema::notes::consumed.eq(consumed_to_raw_sql(true)))
+        .set(schema::notes::consumed_block_num.eq(Some(block_num.to_raw_sql())))
         .execute(conn)?;
 
     count += diesel::insert_into(schema::nullifiers::table)
@@ -929,7 +929,7 @@ pub(crate) fn unconsumed_network_notes(
     // FROM notes
     // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
     // WHERE
-    //     execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+    //     execution_mode = 0 AND consumed_block_num = NULL AND rowid >= ?
     // ORDER BY rowid
     // LIMIT ?
     #[allow(
@@ -966,7 +966,113 @@ pub(crate) fn unconsumed_network_notes(
         ),
     )
     .filter(schema::notes::execution_mode.eq(0_i32))
-    .filter(schema::notes::consumed.eq(consumed_to_raw_sql(false)))
+    .filter(schema::notes::consumed_block_num.is_null())
+    .filter(rowid_sel_ge)
+    .order(rowid_sel.asc())
+    .limit(page.size.get() as i64 + 1)
+    .load::<RawLoadedTuple>(conn)?;
+
+    let mut notes = Vec::with_capacity(page.size.into());
+    for raw_item in raw {
+        let (raw_item, row_id) = split_into_raw_note_record_and_implicit_row_id(raw_item);
+        page.token = None;
+        if notes.len() == page.size.get() {
+            page.token = Some(row_id as u64);
+            break;
+        }
+        notes.push(TryInto::<NoteRecord>::try_into(raw_item)?);
+    }
+
+    Ok((notes, page))
+}
+
+/// Returns a paginated batch of network notes for an account that are unconsumed by a specified
+/// block number.
+///
+/// Notes that have been consumed after the specified block number are excluded from the result.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+//
+// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+// statements
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "We need custom SQL statements which has given types that we need to convert"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Lines will be reduced when schema is updated to simplify logic"
+)]
+pub(crate) fn select_unconsumed_network_notes_by_tag(
+    conn: &mut SqliteConnection,
+    tag: u32,
+    latest_block_num: BlockNumber,
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
+    let rowid_sel_ge =
+        diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
+            .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
+
+    // SELECT {}, rowid
+    // FROM notes
+    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+    // WHERE
+    //  execution_mode = 0 AND tag = ?1 AND
+    //  block_num <= ?2 AND
+    //  (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
+    // ORDER BY rowid
+    // LIMIT ?
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    type RawLoadedTuple = (
+        NoteRecordRaw,
+        Option<Vec<u8>>, // script
+        i64,             // rowid (from sql::<BigInt>("notes.rowid"))
+    );
+
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    fn split_into_raw_note_record_and_implicit_row_id(
+        tuple: RawLoadedTuple,
+    ) -> (NoteRecordWithScriptRaw, i64) {
+        let (note, script, row) = tuple;
+        let combined = NoteRecordWithScriptRaw::from((note, script));
+        (combined, row)
+    }
+
+    let raw = SelectDsl::select(
+        schema::notes::table.left_join(
+            schema::note_scripts::table
+                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+        ),
+        (
+            NoteRecordRaw::as_select(),
+            schema::note_scripts::script.nullable(),
+            rowid_sel.clone(),
+        ),
+    )
+    .filter(schema::notes::execution_mode.eq(0_i32))
+    .filter(schema::notes::tag.eq(tag as i32))
+    .filter(schema::notes::block_num.le(latest_block_num.to_raw_sql()))
+    .filter(
+        schema::notes::consumed_block_num
+            .is_null()
+            .or(schema::notes::consumed_block_num.gt(latest_block_num.to_raw_sql())),
+    )
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())
     .limit(page.size.get() as i64 + 1)

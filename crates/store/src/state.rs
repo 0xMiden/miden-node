@@ -12,7 +12,7 @@ use std::{
 use miden_node_proto::{
     AccountWitnessRecord,
     domain::{
-        account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
+        account::{AccountInfo, AccountProofRequest, NetworkAccountPrefix, StorageMapKeysProof},
         batch::BatchInputs,
     },
     generated as proto,
@@ -983,6 +983,23 @@ impl State {
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db.select_unconsumed_network_notes(page).await
+    }
+
+    /// Returns the network notes for an account that are unconsumed by a specified block number,
+    /// along with the next pagination token.
+    pub async fn get_unconsumed_network_notes_for_account(
+        &self,
+        network_account_id_prefix: NetworkAccountPrefix,
+        unconsumed_by_block_num: BlockNumber,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+        self.db
+            .select_unconsumed_network_notes_for_account(
+                network_account_id_prefix,
+                unconsumed_by_block_num,
+                page,
+            )
+            .await
     }
 }
 

@@ -19,8 +19,8 @@ use super::{
     Selectable, Sqlite, accounts, block_headers, notes, nullifiers, transactions,
 };
 use crate::db::models::conv::{
-    SqlTypeConvert, aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
-    execution_mode_to_raw_sql, idx_to_raw_sql, note_type_to_raw_sql,
+    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
+    idx_to_raw_sql, note_type_to_raw_sql,
 };
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
@@ -422,7 +422,7 @@ pub struct NoteInsertRowRaw {
     pub aux: i64,
     pub execution_hint: i64,
 
-    pub consumed: i32,
+    pub consumed_block_num: Option<i64>,
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
     pub serial_num: Option<Vec<u8>>,
@@ -446,7 +446,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
             aux: aux_to_raw_sql(note.metadata.aux()),
             execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
             inclusion_path: note.inclusion_path.to_bytes(),
-            consumed: consumed_to_raw_sql(false), // New notes are always unconsumed.
+            consumed_block_num: None::<i64>, // New notes are always unconsumed.
             nullifier: nullifier.as_ref().map(Nullifier::to_bytes), /* Beware: `Option<T>` also implements `to_bytes`, but this is not what you want. */
             assets: note.details.as_ref().map(|d| d.assets().to_bytes()),
             inputs: note.details.as_ref().map(|d| d.inputs().to_bytes()),

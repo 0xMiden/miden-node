@@ -91,17 +91,6 @@ impl SqlTypeConvert for NoteTag {
 // ===========================================================
 
 #[inline(always)]
-pub(crate) fn raw_sql_to_consumed(raw: i32) -> bool {
-    debug_assert!(raw == 1 || raw == 0);
-    raw == 1
-}
-
-#[inline(always)]
-pub(crate) fn consumed_to_raw_sql(consumed: bool) -> i32 {
-    consumed as u8 as i32
-}
-
-#[inline(always)]
 pub(crate) fn raw_sql_to_nullifier_prefix(raw: i32) -> u16 {
     debug_assert!(raw >= 0);
     raw as u16

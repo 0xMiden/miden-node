@@ -46,8 +46,8 @@ pub struct AcceptHeaderLayer {
 
 #[derive(Debug, thiserror::Error)]
 enum AcceptHeaderError {
-    #[error("Header value could not be parsed as a string")]
-    InvalidValue(#[source] ToStrError),
+    #[error("Header value could not be parsed as a UTF8 string")]
+    InvalidUtf8(#[source] ToStrError),
 
     #[error("the accept header could not be parsed")]
     InvalidMediaRange(#[source] MediaRangeParsingError),
@@ -82,7 +82,7 @@ impl AcceptHeaderLayer {
             return Ok(());
         };
 
-        let header = header.to_str().map_err(AcceptHeaderError::InvalidValue)?;
+        let header = header.to_str().map_err(AcceptHeaderError::InvalidUtf8)?;
 
         // Whether an empty is valid or not is up for debate, for ease of use lets just accept it.
         if header.is_empty() {
@@ -111,8 +111,8 @@ impl AcceptHeaderLayer {
 
         // Find the most preferred type that we support.
         media_ranges.sort_unstable_by(|a, b| b.quality.cmp(&a.quality));
+
         for range in media_ranges {
-            dbg!(range);
             // If weighting is zero then this is not desired by the client.
             if range.quality.0 == 0.0 {
                 continue;
@@ -265,12 +265,6 @@ impl<'a> MediaType<'a> {
 #[derive(Debug, PartialEq)]
 struct Quality(f32);
 
-impl Default for Quality {
-    fn default() -> Self {
-        Self(1.0)
-    }
-}
-
 impl Quality {
     fn from_str(s: &str) -> Option<Self> {
         f32::from_str(s)
@@ -289,8 +283,7 @@ impl PartialOrd for Quality {
 
 impl Ord for Quality {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // SAFETY: Quality is guaranteed to never be NaN by construction.
-        self.partial_cmp(other).unwrap()
+        self.0.total_cmp(&other.0)
     }
 }
 
@@ -324,7 +317,7 @@ impl<'a> MediaRange<'a> {
                 Quality::from_str(val).ok_or(MediaRangeParsingError::InvalidQuality(val.to_owned()))
             })
             .transpose()?
-            .unwrap_or_default();
+            .unwrap_or(Quality(1.0));
 
         Ok(Self {
             main: MediaType::new(main),

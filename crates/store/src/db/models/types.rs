@@ -117,9 +117,11 @@ impl TryInto<NoteMetadata> for NoteMetadataRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteMetadata, Self::Error> {
         let sender = AccountId::read_from_bytes(&self.sender[..])?;
-        let note_type = NoteType::try_from(self.note_type as u32).expect("XXX");
+        let note_type = NoteType::try_from(self.note_type as u32)
+            .map_err(DatabaseError::conversiont_from_sql::<i64, NoteType>)?;
         let tag = NoteTag::from(self.tag as u32);
-        let execution_hint = NoteExecutionHint::try_from(self.execution_hint as u64).expect("XXX");
+        let execution_hint = NoteExecutionHint::try_from(self.execution_hint as u64)
+            .map_err(DatabaseError::conversiont_from_sql::<i64, NoteExecutionHint>)?;
         let aux = Felt::new(self.aux as u64);
         Ok(NoteMetadata::new(sender, note_type, tag, execution_hint, aux)?)
     }
@@ -138,7 +140,7 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockNoteIndex, Self::Error> {
         Ok(BlockNoteIndex::new(self.batch_index as usize, self.note_index as usize)
-            .expect("The database content is sane at all times and should not exceed the limits for batch or note index"))
+                        .map_err(DatabaseError::conversiont_from_sql::<i32, BlockNoteIndex>)
     }
 }
 
@@ -164,7 +166,7 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
             self.block_note_index.batch_index as usize,
             self.block_note_index.note_index as usize,
         )
-        .expect("XXX"); // XXX usize is broken, and we need to handle the error here better
+            .map_err(DatabaseError::conversiont_from_sql::<i32, NoteExecutionHint>)?;
 
         let note_id = RpoDigest::read_from_bytes(&self.note_id[..])?;
         let merkle_path = MerklePath::read_from_bytes(&self.merkle_path[..])?;
@@ -292,7 +294,8 @@ impl TryInto<NoteRecord> for NoteRecordRaw {
         {
             let inputs = NoteInputs::read_from_bytes(&inputs[..])?;
             let serial_num = Word::read_from_bytes(&serial_num[..])?;
-            let recipient = NoteRecipient::new(serial_num, script.expect("XXX TODO"), inputs);
+            let script = script.map_err(DatabaseError::conversiont_from_sql::<NoteRecipient>)?;
+            let recipient = NoteRecipient::new(serial_num, script, inputs);
             let assets = NoteAssets::read_from_bytes(&assets[..])?;
             Some(NoteDetails::new(assets, recipient))
         } else {

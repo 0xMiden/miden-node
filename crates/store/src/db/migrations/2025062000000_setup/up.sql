@@ -1,7 +1,7 @@
 -- Table for storing different settings in run-time, which need to persist over runs.
 CREATE TABLE settings (
     name  TEXT NOT NULL,
-    value BLOB, -- NOTE: previously was ANY, but that's not supported by diesel
+    value BLOB,
 
     PRIMARY KEY (name),
     CONSTRAINT settings_name_is_not_empty CHECK (length(name) > 0)

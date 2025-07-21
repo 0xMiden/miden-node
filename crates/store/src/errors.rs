@@ -1,4 +1,4 @@
-use std::io;
+use std::{any::type_name, io};
 
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
@@ -64,10 +64,10 @@ pub enum DatabaseError {
     },
     #[error(transparent)]
     QueryParamLimit(#[from] QueryLimitError),
-    #[error("conversion from SQL {from} to rust type {to} failed")]
+    #[error("conversion from SQL to rust type {to} failed")]
     ConversionSqlToRust {
         #[source]
-        inner: Box<dyn std::error::Error + Send + Sync + 'static>,
+        inner: Option<Box<dyn std::error::Error + Send + Sync + 'static>>,
         to: &'static str,
     },
 
@@ -113,11 +113,13 @@ impl DatabaseError {
     }
 
     /// Failed to convert an SQL entry to a rust representation
-    pub fn conversiont_from_sql<RT>(
-        err: impl std::error::Error + Send + Sync + 'static,
-    ) -> DatabaseError {
+    pub fn conversiont_from_sql<RT, E, MaybeE>(err: MaybeE) -> DatabaseError
+    where
+        MaybeE: Into<Option<E>>,
+        E: std::error::Error + Send + Sync + 'static,
+    {
         DatabaseError::ConversionSqlToRust {
-            inner: Box::new(err) as Box<dyn std::error::Error + Send + Sync>,
+            inner: err.into().map(|err| Box::new(err) as Box<dyn std::error::Error + Send + Sync>),
             to: type_name::<RT>(),
         }
     }

@@ -6,7 +6,7 @@ use std::{
 use anyhow::Context;
 use miden_lib::utils::Serializable;
 use miden_node_proto::{
-    domain::account::{AccountInfo, AccountSummary},
+    domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix},
     generated::note as proto,
 };
 use miden_objects::{
@@ -555,6 +555,25 @@ impl Db {
     ) -> Result<(Vec<NoteRecord>, Page)> {
         self.transact("unconsumed network notes", move |conn| {
             sql::unconsumed_network_notes(conn, page)
+        })
+        .await
+    }
+
+    /// Loads the network notes for a network account that have not been consumed yet, using
+    /// pagination to limit the number of notes returned.
+    pub(crate) async fn select_unconsumed_network_notes_for_network_account(
+        &self,
+        network_account_id_prefix: NetworkAccountPrefix,
+        block_num: BlockNumber,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page)> {
+        self.transact("unconsumed network notes", move |conn| {
+            sql::unconsumed_network_notes_for_network_account(
+                conn,
+                network_account_id_prefix,
+                block_num,
+                page,
+            )
         })
         .await
     }

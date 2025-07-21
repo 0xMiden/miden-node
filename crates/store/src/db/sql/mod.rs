@@ -1131,6 +1131,55 @@ pub fn unconsumed_network_notes(
     Ok((notes, page))
 }
 
+/// ...
+pub fn unconsumed_network_notes_for_network_account(
+    transaction: &Transaction,
+    network_account_id_prefix: NetworkAccountPrefix,
+    block_num: BlockNumber,
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page)> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    // Select the rowid column so that we can return a pagination token.
+    //
+    // rowid column _must_ come after the note fields so that we don't mess up the
+    // `NoteRecord::from_row` call.
+    let mut stmt = transaction.prepare_cached(&format!(
+        "
+        SELECT {}, rowid
+        FROM notes
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+        WHERE
+            execution_mode = 0 AND consumed = FALSE AND
+            block_num = ? AND rowid >= ?
+        ORDER BY rowid
+        LIMIT ?
+        ",
+        NoteRecord::SELECT_COLUMNS
+    ))?;
+
+    // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
+    // check if there are more notes for the next page.
+    let mut rows =
+        stmt.query(params![page.token.unwrap_or(0), block_num.as_u32(), page.size.get() + 1])?;
+
+    page.token = None;
+    let mut notes = Vec::with_capacity(page.size.into());
+    while let Some(row) = rows.next()? {
+        if notes.len() == page.size.get() {
+            page.token = Some(row.get::<_, u64>(14)?);
+            break;
+        }
+        notes.push(NoteRecord::from_row(row)?);
+    }
+
+    Ok((notes, page))
+}
+
 // BLOCK CHAIN QUERIES
 // ================================================================================================
 

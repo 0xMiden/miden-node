@@ -46,7 +46,7 @@ service Rpc {
     // The response includes each note's metadata and inclusion proof.
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
-    // tip of the chain. 
+    // tip of the chain.
     rpc SyncNotes(requests.SyncNoteRequest) returns (responses.SyncNoteResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
@@ -98,8 +98,11 @@ service NtxBuilder {
     // Returns the list of unconsumed network notes and the next page number to query.
     rpc GetUnconsumedNetworkNotes(requests.GetUnconsumedNetworkNotesRequest) returns (responses.GetUnconsumedNetworkNotesResponse) {}
 
-    // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this 
-    // header for executing network transactions. 
+    // Returns the list of unconsumed network notes for a network account and the next page number to query.
+    rpc GetUnconsumedNetworkNotesForNetworkAccount(requests.GetUnconsumedNetworkNotesForNetworkAccountRequest) returns (responses.GetUnconsumedNetworkNotesResponse) {}
+
+    // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
+    // header for executing network transactions.
     rpc GetCurrentBlockchainData(requests.GetCurrentBlockchainDataRequest) returns (responses.GetCurrentBlockchainDataResponse) {}
 
     // Returns the latest state of a network account with the specified account prefix.

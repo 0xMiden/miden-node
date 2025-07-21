@@ -11,7 +11,12 @@ use metrics::{
     REQUEST_FAILURE_COUNT, REQUEST_LATENCY, REQUEST_RETRIES, WORKER_BUSY, WORKER_COUNT,
     WORKER_REQUEST_COUNT,
 };
-use miden_remote_prover::{COMPONENT, api::ProofType, error::RemoteProverError};
+use miden_remote_prover::{
+    COMPONENT,
+    api::ProofType,
+    error::RemoteProverError,
+    generated::remote_prover::{ProxyStatusResponse, WorkerStatus},
+};
 use pingora::{
     http::ResponseHeader,
     prelude::*,
@@ -28,20 +33,21 @@ use worker::Worker;
 
 use crate::{
     commands::{
-        ProxyConfig,
-        update_workers::{Action, UpdateWorkers},
+        update_workers::{Action, UpdateWorkers}, ProxyConfig
     },
     utils::{
-        create_proxy_status_response, create_queue_full_response,
-        create_response_with_error_message, create_too_many_requests_response,
+        create_queue_full_response, create_response_with_error_message,
+        create_too_many_requests_response, write_grpc_response_to_session,
     },
 };
 
 mod health_check;
 pub mod metrics;
-pub(crate) mod status;
+pub(crate) mod status_cache;
 pub(crate) mod update_workers;
 pub(crate) mod worker;
+
+use status_cache::ProxyStatusCache;
 
 // LOAD BALANCER STATE
 // ================================================================================================
@@ -58,6 +64,7 @@ pub struct LoadBalancerState {
     available_workers_polling_interval: Duration,
     health_check_interval: Duration,
     supported_proof_type: ProofType,
+    status_cache: ProxyStatusCache,
 }
 
 impl LoadBalancerState {
@@ -92,8 +99,23 @@ impl LoadBalancerState {
         RATE_LIMITED_REQUESTS.reset();
         REQUEST_RETRIES.reset();
 
+        let workers = Arc::new(RwLock::new(workers));
+        let supported_proof_type = config.proof_type;
+
+        // Build initial status for the cache
+        let initial_status = {
+            let workers_guard = workers.read().await;
+            let worker_statuses: Vec<WorkerStatus> =
+                workers_guard.iter().map(WorkerStatus::from).collect();
+            ProxyStatusResponse {
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                supported_proof_type: supported_proof_type.into(),
+                workers: worker_statuses,
+            }
+        };
+
         Ok(Self {
-            workers: Arc::new(RwLock::new(workers)),
+            workers,
             timeout: total_timeout,
             connection_timeout,
             max_queue_items: config.max_queue_items,
@@ -101,7 +123,8 @@ impl LoadBalancerState {
             max_req_per_sec: config.max_req_per_sec,
             available_workers_polling_interval: config.available_workers_polling_interval,
             health_check_interval: config.health_check_interval,
-            supported_proof_type: config.proof_type,
+            supported_proof_type,
+            status_cache: ProxyStatusCache::new(initial_status),
         })
     }
 
@@ -194,16 +217,30 @@ impl LoadBalancerState {
         self.workers.read().await.iter().filter(|w| !w.is_available()).count()
     }
 
-    /// Get the supported proof type.
-    pub fn supported_proof_type(&self) -> ProofType {
-        self.supported_proof_type
+    /// Get the cached status response
+    pub async fn get_cached_status(&self) -> ProxyStatusResponse {
+        self.status_cache.get_cached_status().await
     }
 
-    /// Get a read lock on the workers.
-    pub async fn workers(&self) -> tokio::sync::RwLockReadGuard<'_, Vec<Worker>> {
-        self.workers.read().await
+    /// Update the status cache with current worker status
+    pub async fn update_status_cache(&self) {
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        let supported_proof_type: i32 = self.supported_proof_type.into();
+        let workers = self.workers.read().await;
+        let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
+
+        let new_status = ProxyStatusResponse {
+            version,
+            supported_proof_type,
+            workers: worker_statuses,
+        };
+
+        self.status_cache.update_status(new_status).await;
     }
 }
+
+// UTILS
+// ================================================================================================
 
 /// Rate limiter
 static RATE_LIMITER: LazyLock<Rate> = LazyLock::new(|| Rate::new(Duration::from_secs(1)));
@@ -371,7 +408,8 @@ impl ProxyHttp for LoadBalancer {
             == "/remote_prover.ProxyStatusApi/Status"
         {
             info!("Proxy status request");
-            return create_proxy_status_response(session, &self.0).await;
+            let status = self.0.get_cached_status().await;
+            return write_grpc_response_to_session(session, status, None).await;
         }
 
         // Increment the request count

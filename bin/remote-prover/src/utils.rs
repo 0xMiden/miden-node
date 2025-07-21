@@ -1,21 +1,14 @@
 use std::net::TcpListener;
 
 use http::HeaderMap;
-use miden_remote_prover::{
-    error::RemoteProverError,
-    generated::remote_prover::{ProxyStatusResponse, WorkerStatus},
-};
+use miden_remote_prover::error::RemoteProverError;
 use pingora::{Error, ErrorType, http::ResponseHeader, protocols::http::ServerSession};
 use pingora_proxy::Session;
 use prost::Message;
 use tonic::Code;
 use tracing::debug;
 
-use crate::{
-    COMPONENT,
-    commands::PROXY_HOST,
-    proxy::{LoadBalancerState, metrics::QUEUE_DROP_COUNT},
-};
+use crate::{COMPONENT, commands::PROXY_HOST, proxy::metrics::QUEUE_DROP_COUNT};
 
 /// Write a protobuf message as a gRPC response to a Pingora session
 ///
@@ -103,30 +96,6 @@ pub async fn write_grpc_error_to_session(
     session.write_response_trailers(trailers).await?;
 
     Ok(true)
-}
-
-/// Create a gRPC proxy status response
-///
-/// This creates a proper gRPC response with the `ProxyStatusResponse` serialized as protobuf
-pub async fn create_proxy_status_response(
-    session: &mut Session,
-    load_balancer_state: &LoadBalancerState,
-) -> pingora_core::Result<bool> {
-    // Build the proxy status response
-    let version = env!("CARGO_PKG_VERSION").to_string();
-    let supported_proof_type: i32 = load_balancer_state.supported_proof_type().into();
-
-    let workers = load_balancer_state.workers().await;
-    let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
-
-    let status_response = ProxyStatusResponse {
-        version,
-        supported_proof_type,
-        workers: worker_statuses,
-    };
-
-    // Use our helper function to write the protobuf message as a gRPC response
-    write_grpc_response_to_session(session, status_response, None).await
 }
 
 /// Create a gRPC `RESOURCE_EXHAUSTED` response for a full queue

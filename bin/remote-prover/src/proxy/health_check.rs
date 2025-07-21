@@ -48,6 +48,10 @@ impl BackgroundService for LoadBalancerState {
                         worker.update_status(status_result);
                     }
                 }
+
+                // Update the status cache with current worker status
+                self.update_status_cache().await;
+
                 // Sleep for the defined interval before the next health check
                 sleep(self.health_check_interval).await;
             }

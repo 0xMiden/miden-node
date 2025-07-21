@@ -118,10 +118,10 @@ impl TryInto<NoteMetadata> for NoteMetadataRaw {
     fn try_into(self) -> Result<NoteMetadata, Self::Error> {
         let sender = AccountId::read_from_bytes(&self.sender[..])?;
         let note_type = NoteType::try_from(self.note_type as u32)
-            .map_err(DatabaseError::conversiont_from_sql::<i64, NoteType>)?;
+            .map_err(DatabaseError::conversiont_from_sql::<NoteType, _, _>)?;
         let tag = NoteTag::from(self.tag as u32);
         let execution_hint = NoteExecutionHint::try_from(self.execution_hint as u64)
-            .map_err(DatabaseError::conversiont_from_sql::<i64, NoteExecutionHint>)?;
+            .map_err(DatabaseError::conversiont_from_sql::<NoteExecutionHint, _, _>)?;
         let aux = Felt::new(self.aux as u64);
         Ok(NoteMetadata::new(sender, note_type, tag, execution_hint, aux)?)
     }
@@ -139,8 +139,12 @@ pub struct BlockNoteIndexRaw {
 impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockNoteIndex, Self::Error> {
-        Ok(BlockNoteIndex::new(self.batch_index as usize, self.note_index as usize)
-                        .map_err(DatabaseError::conversiont_from_sql::<i32, BlockNoteIndex>)
+        let batch_index = self.batch_index as usize;
+        let note_index = self.note_index as usize;
+        let index = BlockNoteIndex::new(batch_index, note_index).ok_or_else(|| {
+            DatabaseError::conversiont_from_sql::<BlockNoteIndex, DatabaseError, _>(None)
+        })?;
+        Ok(index)
     }
 }
 
@@ -162,11 +166,7 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteSyncRecord, Self::Error> {
         let block_num = raw_sql_to_block_number(self.block_num);
-        let note_index = BlockNoteIndex::new(
-            self.block_note_index.batch_index as usize,
-            self.block_note_index.note_index as usize,
-        )
-            .map_err(DatabaseError::conversiont_from_sql::<i32, NoteExecutionHint>)?;
+        let note_index = self.block_note_index.try_into()?;
 
         let note_id = RpoDigest::read_from_bytes(&self.note_id[..])?;
         let merkle_path = MerklePath::read_from_bytes(&self.merkle_path[..])?;
@@ -294,7 +294,9 @@ impl TryInto<NoteRecord> for NoteRecordRaw {
         {
             let inputs = NoteInputs::read_from_bytes(&inputs[..])?;
             let serial_num = Word::read_from_bytes(&serial_num[..])?;
-            let script = script.map_err(DatabaseError::conversiont_from_sql::<NoteRecipient>)?;
+            let script = script.ok_or_else(|| {
+                DatabaseError::conversiont_from_sql::<NoteRecipient, DatabaseError, _>(None)
+            })?;
             let recipient = NoteRecipient::new(serial_num, script, inputs);
             let assets = NoteAssets::read_from_bytes(&assets[..])?;
             Some(NoteDetails::new(assets, recipient))

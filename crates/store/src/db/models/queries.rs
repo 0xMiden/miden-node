@@ -1598,6 +1598,7 @@ pub fn select_accounts_by_block_range(
             .filter(schema::accounts::account_id.eq_any(desired_account_ids))
             .order(schema::accounts::block_num.asc())
             .load::<AccountSummaryRaw>(conn)?;
+    // SAFETY `From` implies `TryFrom<Error=Infallible`, which is the case for `AccountSummaryRaw` -> `AccountSummary`
     Ok(vec_raw_try_into(raw).unwrap())
 }
 

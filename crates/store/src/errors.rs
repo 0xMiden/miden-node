@@ -42,19 +42,19 @@ pub enum DatabaseError {
     NetworkAccountError(#[from] NetworkAccountError),
     #[error("note error")]
     NoteError(#[from] NoteError),
-    #[error("Setup deadpool connection pool failed")]
+    #[error("setup deadpool connection pool failed")]
     Deadpool(#[from] deadpool::managed::PoolError<deadpool_diesel::Error>),
-    #[error("Setup deadpool connection pool failed")]
+    #[error("setup deadpool connection pool failed")]
     ConnectionPoolObtainError(#[from] Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error(transparent)]
     Diesel(#[from] diesel::result::Error),
-    #[error("Sqlite FFI boundary NUL termination error (not much you can do, file an issue)")]
+    #[error("sqlite FFI boundary NUL termination error (not much you can do, file an issue)")]
     DieselSqliteFfi(#[from] std::ffi::NulError),
     #[error(transparent)]
     DeadpoolDiesel(#[from] deadpool_diesel::Error),
     #[error(transparent)]
     PoolRecycle(#[from] deadpool::managed::RecycleError<deadpool_diesel::Error>),
-    #[error("Summing over column {column} of table {table} exceeded {limit}")]
+    #[error("summing over column {column} of table {table} exceeded {limit}")]
     ColumnSumExceedsLimit {
         table: &'static str,
         column: &'static str,
@@ -64,6 +64,12 @@ pub enum DatabaseError {
     },
     #[error(transparent)]
     QueryParamLimit(#[from] QueryLimitError),
+    #[error("conversion from SQL {from} to rust type {to} failed")]
+    ConversionSqlToRust {
+        #[source]
+        inner: Box<dyn std::error::Error + Send + Sync + 'static>,
+        to: &'static str,
+    },
 
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
@@ -104,6 +110,16 @@ impl DatabaseError {
     pub fn interact(msg: &(impl ToString + ?Sized), e: &InteractError) -> Self {
         let msg = msg.to_string();
         Self::InteractError(format!("{msg} failed: {e:?}"))
+    }
+
+    /// Failed to convert an SQL entry to a rust representation
+    pub fn conversiont_from_sql<RT>(
+        err: impl std::error::Error + Send + Sync + 'static,
+    ) -> DatabaseError {
+        DatabaseError::ConversionSqlToRust {
+            inner: Box::new(err) as Box<dyn std::error::Error + Send + Sync>,
+            to: type_name::<RT>(),
+        }
     }
 }
 
@@ -304,6 +320,10 @@ pub enum GetBatchInputsError {
     },
 }
 
+// Do not scope for `cfg(test)` - if it the traitbounds don't suffice
+// the issue will already appear in the compilation of the library
+// or binary, which would prevent getting to compiling the
+// following code.
 mod compile_tests {
     use std::marker::PhantomData;
 
@@ -312,17 +332,16 @@ mod compile_tests {
         GenesisError, NetworkAccountError, NoteError, RecvError, StateInitializationError,
     };
 
-    #[allow(dead_code)]
-    fn ensure_is_error<E>(_phony: PhantomData<E>)
-    where
-        E: std::error::Error + Send + Sync + 'static,
-    {
-    }
-
     /// Ensure all enum variants remain compat with the desired
     /// trait bounds. Otherwise one gets very unwieldy errors.
     #[allow(dead_code)]
     fn assumed_trait_bounds_upheld() {
+        fn ensure_is_error<E>(_phony: PhantomData<E>)
+        where
+            E: std::error::Error + Send + Sync + 'static,
+        {
+        }
+
         ensure_is_error::<AccountError>(PhantomData);
         ensure_is_error::<AccountDeltaError>(PhantomData);
         ensure_is_error::<RecvError>(PhantomData);

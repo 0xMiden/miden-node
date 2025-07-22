@@ -33,7 +33,8 @@ use worker::Worker;
 
 use crate::{
     commands::{
-        update_workers::{Action, UpdateWorkers}, ProxyConfig
+        ProxyConfig,
+        update_workers::{Action, UpdateWorkers},
     },
     utils::{
         create_queue_full_response, create_response_with_error_message,

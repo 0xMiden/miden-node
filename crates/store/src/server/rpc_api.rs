@@ -83,7 +83,7 @@ impl rpc_server::Rpc for StoreApi {
         // Query the state for the request's nullifiers
         let proofs = self.state.check_nullifiers(&nullifiers).await;
 
-        Ok(Response::new(CheckNullifiersResponse { proofs: convert(proofs) }))
+        Ok(Response::new(CheckNullifiersResponse { proofs: convert(proofs).collect() }))
     }
 
     /// Returns nullifiers that match the specified prefixes and have been consumed.
@@ -236,6 +236,7 @@ impl rpc_server::Rpc for StoreApi {
         let note_ids = request.into_inner().note_ids;
 
         let note_ids: Vec<Word> = try_convert(note_ids)
+            .collect::<Result<_, _>>()
             .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
 
         let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
@@ -318,10 +319,11 @@ impl rpc_server::Rpc for StoreApi {
 
         let include_headers = include_headers.unwrap_or_default();
         let request_code_commitments: BTreeSet<Word> = try_convert(code_commitments)
+            .collect::<Result<_, _>>()
             .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
 
         let account_requests: Vec<AccountProofRequest> =
-            try_convert(account_requests).map_err(|err| {
+            try_convert(account_requests).collect::<Result<_, _>>().map_err(|err| {
                 Status::invalid_argument(format!("Invalid account proofs request: {err}"))
             })?;
 

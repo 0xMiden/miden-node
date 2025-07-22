@@ -211,9 +211,12 @@ impl api_server::Api for RpcService {
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().note_ids.clone();
 
-        let _: Vec<Word> = try_convert(note_ids).map_err(|err: ConversionError| {
-            Status::invalid_argument(err.as_report_context("invalid NoteId"))
-        })?;
+        let _: Vec<Word> =
+            try_convert(note_ids)
+                .collect::<Result<_, _>>()
+                .map_err(|err: ConversionError| {
+                    Status::invalid_argument(err.as_report_context("invalid NoteId"))
+                })?;
 
         self.store.clone().get_notes_by_id(request).await
     }

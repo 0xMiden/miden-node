@@ -717,8 +717,8 @@ pub fn insert_nullifiers_for_block(
     let serialized_nullifiers = Rc::new(serialized_nullifiers);
 
     let mut stmt = transaction
-        .prepare_cached("UPDATE notes SET consumed = TRUE WHERE nullifier IN rarray(?1)")?;
-    let mut count = stmt.execute(params![serialized_nullifiers])?;
+        .prepare_cached("UPDATE notes SET consumed_block_num = ? nullifier IN rarray(?1)")?;
+    let mut count = stmt.execute(params![block_num.as_u64(), serialized_nullifiers])?;
 
     let mut stmt = transaction.prepare_cached(insert_sql!(nullifiers {
         nullifier,
@@ -1107,7 +1107,7 @@ pub fn unconsumed_network_notes(
         FROM notes
         LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
-            execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+            execution_mode = 0 AND consumed_block_num IS NULL AND rowid >= ?
         ORDER BY rowid
         LIMIT ?
         ",
@@ -1154,8 +1154,8 @@ pub fn unconsumed_network_notes_for_network_account(
         FROM notes
         LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
-            execution_mode = 0 AND consumed = FALSE AND
-            tag = ? AND block_num = ? AND rowid >= ?
+            execution_mode = 0 AND tag = ? AND
+            (consumed_block_num IS NULL OR consumed_block_num > ?) AND rowid >= ?
         ORDER BY rowid
         LIMIT ?
         ",

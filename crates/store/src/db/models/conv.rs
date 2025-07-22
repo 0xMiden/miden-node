@@ -3,7 +3,7 @@
 //! Eventually, all of them should have types and we can implement a trait for them
 //! rather than function pairs.
 //!
-//! Notice: All of them are infailable. The invariant is a sane content of the database
+//! Notice: All of them are infallible. The invariant is a sane content of the database
 //! and humans ensure the sanity of casts.
 //!
 //! Notice: Keep in mind if you _need_ to expand the datatype, only if you require sorting this is

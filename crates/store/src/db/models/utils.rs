@@ -1,5 +1,8 @@
+use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::{Deserializable, DeserializationError, Serializable};
-use miden_objects::block::BlockNumber;
+use miden_objects::{block::BlockNumber, note::Nullifier};
+
+use crate::errors::DatabaseError;
 
 /// Utility to convert an iterable container of containing `R`-typed values
 /// to a `Vec<D>` and bail at the first failing conversion
@@ -53,11 +56,6 @@ pub(crate) fn raw_sql_to_block_number(raw: impl Into<i64>) -> BlockNumber {
 pub(crate) fn block_number_to_raw_sql(block_num: BlockNumber) -> i64 {
     block_num.as_u32() as i64
 }
-
-use diesel::{Connection, RunQueryDsl, SqliteConnection};
-use miden_objects::note::Nullifier;
-
-use crate::errors::DatabaseError;
 
 /// Returns the high 16 bits of the provided nullifier.
 pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u16 {

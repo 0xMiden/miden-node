@@ -201,20 +201,32 @@ enum MediaRangeParsingError {
     InvalidQuality(String),
 }
 
+/// Describes a single media-range content type and the parameters we care about.
+///
+/// The expected format is `main/subtype; param=value; param=value; <... params>`.
+///
+/// The specification can be found here <https://www.rfc-editor.org/rfc/rfc9110.html>.
 #[derive(Debug)]
 struct MediaRange<'a> {
     main: MediaType<'a>,
     subtype: MediaType<'a>,
     params: Parameters<'a>,
+    /// The quality weighting parameter indicating the client's preference for this media-type.
+    ///
+    /// This is lifted from params so that we can trivially sort by it.
     quality: Quality,
 }
 
+/// Represents a main or subtype media type. This includes handling for wildcard (*) types.
 #[derive(Debug)]
 enum MediaType<'a> {
     Wildcard,
     Type(&'a str),
 }
 
+/// Contains the raw parameter values of a given [`MediaRange`].
+///
+/// We only store the parameters that we care about.
 #[derive(Debug, Default)]
 struct Parameters<'a> {
     version: Option<&'a str>,
@@ -239,6 +251,7 @@ impl<'a> Parameters<'a> {
             });
 
         while let Some((k, v)) = kv.next().transpose()? {
+            // Unfortunately the spec states that they should be interpretted case-agnostic.
             match k {
                 quality if quality.eq_ignore_ascii_case("q") => params.quality = v.into(),
                 version if version.eq_ignore_ascii_case("version") => params.version = v.into(),

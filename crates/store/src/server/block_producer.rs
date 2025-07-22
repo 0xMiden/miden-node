@@ -124,7 +124,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_batch_inputs(
         &self,
-        request: Request<proto::block_producer_store::GetBatchInputsRequest>,
+        request: Request<proto::block_producer_store::BatchInputsRequest>,
     ) -> Result<Response<proto::block_producer_store::BatchInputs>, Status> {
         let request = request.into_inner();
 

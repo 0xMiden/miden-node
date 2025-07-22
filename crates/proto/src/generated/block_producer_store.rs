@@ -62,7 +62,7 @@ pub mod block_inputs {
 }
 /// Returns the inputs for a transaction batch.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetBatchInputsRequest {
+pub struct BatchInputsRequest {
     /// List of unauthenticated notes to be queried from the database.
     #[prost(message, repeated, tag = "1")]
     pub note_ids: ::prost::alloc::vec::Vec<super::primitives::Digest>,
@@ -325,7 +325,7 @@ pub mod block_producer_client {
         /// Returns the inputs for a transaction batch.
         pub async fn get_batch_inputs(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetBatchInputsRequest>,
+            request: impl tonic::IntoRequest<super::BatchInputsRequest>,
         ) -> std::result::Result<tonic::Response<super::BatchInputs>, tonic::Status> {
             self.inner
                 .ready()
@@ -416,7 +416,7 @@ pub mod block_producer_server {
         /// Returns the inputs for a transaction batch.
         async fn get_batch_inputs(
             &self,
-            request: tonic::Request<super::GetBatchInputsRequest>,
+            request: tonic::Request<super::BatchInputsRequest>,
         ) -> std::result::Result<tonic::Response<super::BatchInputs>, tonic::Status>;
         /// Returns data required to validate a new transaction.
         async fn get_transaction_inputs(
@@ -652,7 +652,7 @@ pub mod block_producer_server {
                     struct GetBatchInputsSvc<T: BlockProducer>(pub Arc<T>);
                     impl<
                         T: BlockProducer,
-                    > tonic::server::UnaryService<super::GetBatchInputsRequest>
+                    > tonic::server::UnaryService<super::BatchInputsRequest>
                     for GetBatchInputsSvc<T> {
                         type Response = super::BatchInputs;
                         type Future = BoxFuture<
@@ -661,7 +661,7 @@ pub mod block_producer_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetBatchInputsRequest>,
+                            request: tonic::Request<super::BatchInputsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

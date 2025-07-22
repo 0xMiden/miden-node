@@ -25,7 +25,7 @@ service BlockProducer {
     rpc GetBlockInputs(BlockInputsRequest) returns (BlockInputs) {}
 
     // Returns the inputs for a transaction batch.
-    rpc GetBatchInputs(GetBatchInputsRequest) returns (BatchInputs) {}
+    rpc GetBatchInputs(BatchInputsRequest) returns (BatchInputs) {}
 
     // Returns data required to validate a new transaction.
     rpc GetTransactionInputs(GetTransactionInputsRequest) returns (TransactionInputs) {}
@@ -90,7 +90,7 @@ message BlockInputs {
 // ================================================================================================
 
 // Returns the inputs for a transaction batch.
-message GetBatchInputsRequest {
+message BatchInputsRequest {
   // List of unauthenticated notes to be queried from the database.
   repeated primitives.Digest note_ids = 1;
   // Set of block numbers referenced by transactions.

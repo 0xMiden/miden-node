@@ -227,7 +227,7 @@ impl StoreClient {
         block_references: impl Iterator<Item = (BlockNumber, Word)> + Send,
         notes: impl Iterator<Item = NoteId> + Send,
     ) -> Result<BatchInputs, StoreError> {
-        let request = tonic::Request::new(proto::block_producer_store::GetBatchInputsRequest {
+        let request = tonic::Request::new(proto::block_producer_store::BatchInputsRequest {
             reference_blocks: block_references.map(|(block_num, _)| block_num.as_u32()).collect(),
             note_ids: notes.map(proto::primitives::Digest::from).collect(),
         });

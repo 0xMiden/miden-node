@@ -7,7 +7,7 @@ use std::{
 };
 
 use miden_lib::{
-    account::auth::RpoFalcon512, note::create_p2id_note, transaction::TransactionKernel,
+    account::auth::AuthRpoFalcon512, note::create_p2id_note, transaction::TransactionKernel,
 };
 use miden_node_proto::domain::account::AccountSummary;
 use miden_objects::{
@@ -1234,7 +1234,7 @@ fn mock_account_code_and_storage(
         .storage_mode(storage_mode)
         .with_assets(assets)
         .with_component(component)
-        .with_auth_component(RpoFalcon512::new(PublicKey::new(EMPTY_WORD)))
+        .with_auth_component(AuthRpoFalcon512::new(PublicKey::new(EMPTY_WORD)))
         .build_existing()
         .unwrap()
 }

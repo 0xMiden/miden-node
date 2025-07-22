@@ -21,14 +21,12 @@ pub enum WalConnManagerError {
 impl WalConnManagerError {
     /// Converts from `InteractError`
     ///
-    /// Note: Required since `InteractError` has at least one enum
-    /// variant that is _not_ `Send + Sync` and hence prevents the
-    /// `Sync` auto implementation.
-    /// This does an internal conversion to string while maintaining
-    /// convenience.
+    /// Note: Required since `InteractError` has at least one enum variant that is _not_ `Send +
+    /// Sync` and hence prevents the `Sync` auto implementation. This does an internal
+    /// conversion to string while maintaining convenience.
     ///
-    /// Using `MSG` as const so it can be called as
-    /// `.map_err(DatabaseError::interact::<"Your message">)`
+    /// Using `MSG` as const so it can be called as `.map_err(DatabaseError::interact::<"Your
+    /// message">)`
     pub fn interact(msg: &(impl ToString + ?Sized), e: &InteractError) -> Self {
         let msg = msg.to_string();
         Self::InteractError(format!("{msg} failed: {e:?}"))
@@ -37,8 +35,7 @@ impl WalConnManagerError {
 
 /// Create a connection manager with per-connection setup
 ///
-/// Particularly, `foreign_key` checks are enabled and using
-/// a write-append-log for journaling.
+/// Particularly, `foreign_key` checks are enabled and using a write-append-log for journaling.
 pub(crate) struct WalConnManager {
     pub(crate) manager: deadpool_diesel::sqlite::Manager,
 }
@@ -81,10 +78,9 @@ impl deadpool::managed::Manager for WalConnManager {
 pub(crate) fn configure_connection_on_creation(
     conn: &mut SqliteConnection,
 ) -> Result<(), WalConnManagerError> {
-    // Enable the WAL mode. This allows concurrent reads while the
-    // transaction is being written, this is required for proper
-    // synchronization of the servers in-memory and on-disk representations
-    // (see [State::apply_block])
+    // Enable the WAL mode. This allows concurrent reads while the transaction is being written,
+    // this is required for proper synchronization of the servers in-memory and on-disk
+    // representations (see [State::apply_block])
     diesel::sql_query("PRAGMA journal_mode=WAL")
         .execute(conn)
         .map_err(WalConnManagerError::ConnectionParamSetup)?;

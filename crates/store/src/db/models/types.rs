@@ -49,14 +49,12 @@ impl TryInto<proto::domain::account::AccountInfo> for AccountRaw {
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = nullifiers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct NullifierRawRow {
+pub struct NullifierWithoutPrefixRawRow {
     pub nullifier: Vec<u8>,
-    #[allow(dead_code)]
-    pub nullifier_prefix: i32, // TODO most usecases do not require this to be actually loaded
     pub block_num: i64,
 }
 
-impl TryInto<NullifierInfo> for NullifierRawRow {
+impl TryInto<NullifierInfo> for NullifierWithoutPrefixRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NullifierInfo, Self::Error> {
         let nullifier = Nullifier::read_from_bytes(&self.nullifier)?;

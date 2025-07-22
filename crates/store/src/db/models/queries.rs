@@ -764,7 +764,11 @@ pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     // SELECT nullifier, block_num FROM nullifiers ORDER BY block_num ASC
-    let nullifiers_raw = schema::nullifiers::table.load::<models::NullifierRawRow>(conn)?;
+    let nullifiers_raw = SelectDsl::select(
+        schema::nullifiers::table,
+        models::NullifierWithoutPrefixRawRow::as_select(),
+    )
+    .load::<models::NullifierWithoutPrefixRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }
 
@@ -861,12 +865,14 @@ pub(crate) fn select_nullifiers_by_prefix(
     //     block_num ASC
 
     let prefixes = nullifier_prefixes.iter().map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
-    let nullifiers_raw =
-        SelectDsl::select(schema::nullifiers::table, models::NullifierRawRow::as_select())
-            .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
-            .filter(schema::nullifiers::block_num.ge(block_number_to_raw_sql(block_num)))
-            .order(schema::nullifiers::block_num.asc())
-            .load::<models::NullifierRawRow>(conn)?;
+    let nullifiers_raw = SelectDsl::select(
+        schema::nullifiers::table,
+        models::NullifierWithoutPrefixRawRow::as_select(),
+    )
+    .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
+    .filter(schema::nullifiers::block_num.ge(block_number_to_raw_sql(block_num)))
+    .order(schema::nullifiers::block_num.asc())
+    .load::<models::NullifierWithoutPrefixRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }
 

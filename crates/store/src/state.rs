@@ -990,7 +990,6 @@ impl State {
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        // TODO: check account exists
         self.db
             .select_unconsumed_network_notes_for_network_account(
                 network_account_id_prefix,

@@ -567,7 +567,7 @@ impl Db {
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
-        self.transact("unconsumed network notes", move |conn| {
+        self.transact("unconsumed network notes for network account", move |conn| {
             sql::unconsumed_network_notes_for_network_account(
                 conn,
                 network_account_id_prefix,

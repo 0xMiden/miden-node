@@ -1155,7 +1155,7 @@ pub fn unconsumed_network_notes_for_network_account(
         LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
             execution_mode = 0 AND consumed = FALSE AND
-            block_num = ? AND rowid >= ?
+            tag = ? AND block_num = ? AND rowid >= ?
         ORDER BY rowid
         LIMIT ?
         ",
@@ -1164,8 +1164,12 @@ pub fn unconsumed_network_notes_for_network_account(
 
     // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
     // check if there are more notes for the next page.
-    let mut rows =
-        stmt.query(params![page.token.unwrap_or(0), block_num.as_u32(), page.size.get() + 1])?;
+    let mut rows = stmt.query(params![
+        u32::from(network_account_id_prefix),
+        block_num.as_u32(),
+        page.token.unwrap_or(0),
+        page.size.get() + 1
+    ])?;
 
     page.token = None;
     let mut notes = Vec::with_capacity(page.size.into());

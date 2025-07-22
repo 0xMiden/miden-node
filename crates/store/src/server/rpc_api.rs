@@ -296,10 +296,10 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_account_proofs(
         &self,
-        request: Request<proto::rpc_store::GetAccountProofsRequest>,
+        request: Request<proto::rpc_store::AccountProofsRequest>,
     ) -> Result<Response<proto::rpc_store::AccountProofs>, Status> {
         debug!(target: COMPONENT, ?request);
-        let proto::rpc_store::GetAccountProofsRequest {
+        let proto::rpc_store::AccountProofsRequest {
             account_requests,
             include_headers,
             code_commitments,
@@ -336,7 +336,7 @@ impl rpc_server::Rpc for StoreApi {
     )]
     async fn get_account_state_delta(
         &self,
-        request: Request<proto::rpc_store::GetAccountStateDeltaRequest>,
+        request: Request<proto::rpc_store::AccountStateDeltaRequest>,
     ) -> Result<Response<proto::rpc_store::AccountStateDelta>, Status> {
         let request = request.into_inner();
 

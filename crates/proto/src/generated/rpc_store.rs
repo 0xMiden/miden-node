@@ -14,11 +14,11 @@ pub struct StoreStatus {
 }
 /// Returns the latest state proofs of the specified accounts.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetAccountProofsRequest {
+pub struct AccountProofsRequest {
     /// A list of account requests, including map keys + values.
     #[prost(message, repeated, tag = "1")]
     pub account_requests: ::prost::alloc::vec::Vec<
-        get_account_proofs_request::AccountRequest,
+        account_proofs_request::AccountRequest,
     >,
     /// Optional flag to include account headers and account code in the response. If false, storage
     /// requests are also ignored. False by default.
@@ -31,8 +31,8 @@ pub struct GetAccountProofsRequest {
     #[prost(message, repeated, tag = "3")]
     pub code_commitments: ::prost::alloc::vec::Vec<super::primitives::Digest>,
 }
-/// Nested message and enum types in `GetAccountProofsRequest`.
-pub mod get_account_proofs_request {
+/// Nested message and enum types in `AccountProofsRequest`.
+pub mod account_proofs_request {
     /// Represents per-account requests where each account ID has its own list of
     /// (storage_slot_index, map_keys) pairs.
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -123,7 +123,7 @@ pub mod account_proofs {
 /// Returns delta of the account states in the range from `from_block_num` (exclusive) to
 /// `to_block_num` (inclusive).
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetAccountStateDeltaRequest {
+pub struct AccountStateDeltaRequest {
     /// ID of the account for which the delta is requested.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
@@ -462,7 +462,7 @@ pub mod rpc_client {
         /// Returns the latest state proofs of the specified accounts.
         pub async fn get_account_proofs(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetAccountProofsRequest>,
+            request: impl tonic::IntoRequest<super::AccountProofsRequest>,
         ) -> std::result::Result<tonic::Response<super::AccountProofs>, tonic::Status> {
             self.inner
                 .ready()
@@ -485,7 +485,7 @@ pub mod rpc_client {
         /// `to_block_num` (inclusive).
         pub async fn get_account_state_delta(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetAccountStateDeltaRequest>,
+            request: impl tonic::IntoRequest<super::AccountStateDeltaRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AccountStateDelta>,
             tonic::Status,
@@ -700,13 +700,13 @@ pub mod rpc_server {
         /// Returns the latest state proofs of the specified accounts.
         async fn get_account_proofs(
             &self,
-            request: tonic::Request<super::GetAccountProofsRequest>,
+            request: tonic::Request<super::AccountProofsRequest>,
         ) -> std::result::Result<tonic::Response<super::AccountProofs>, tonic::Status>;
         /// Returns delta of the account states in the range from `from_block_num` (exclusive) to
         /// `to_block_num` (inclusive).
         async fn get_account_state_delta(
             &self,
-            request: tonic::Request<super::GetAccountStateDeltaRequest>,
+            request: tonic::Request<super::AccountStateDeltaRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AccountStateDelta>,
             tonic::Status,
@@ -1030,9 +1030,7 @@ pub mod rpc_server {
                 "/rpc_store.Rpc/GetAccountProofs" => {
                     #[allow(non_camel_case_types)]
                     struct GetAccountProofsSvc<T: Rpc>(pub Arc<T>);
-                    impl<
-                        T: Rpc,
-                    > tonic::server::UnaryService<super::GetAccountProofsRequest>
+                    impl<T: Rpc> tonic::server::UnaryService<super::AccountProofsRequest>
                     for GetAccountProofsSvc<T> {
                         type Response = super::AccountProofs;
                         type Future = BoxFuture<
@@ -1041,7 +1039,7 @@ pub mod rpc_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetAccountProofsRequest>,
+                            request: tonic::Request<super::AccountProofsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
@@ -1077,7 +1075,7 @@ pub mod rpc_server {
                     struct GetAccountStateDeltaSvc<T: Rpc>(pub Arc<T>);
                     impl<
                         T: Rpc,
-                    > tonic::server::UnaryService<super::GetAccountStateDeltaRequest>
+                    > tonic::server::UnaryService<super::AccountStateDeltaRequest>
                     for GetAccountStateDeltaSvc<T> {
                         type Response = super::AccountStateDelta;
                         type Future = BoxFuture<
@@ -1086,7 +1084,7 @@ pub mod rpc_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetAccountStateDeltaRequest>,
+                            request: tonic::Request<super::AccountStateDeltaRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

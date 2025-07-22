@@ -313,7 +313,7 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_state_delta(
         &self,
-        request: Request<proto::rpc_store::GetAccountStateDeltaRequest>,
+        request: Request<proto::rpc_store::AccountStateDeltaRequest>,
     ) -> Result<Response<proto::rpc_store::AccountStateDelta>, Status> {
         let request = request.into_inner();
 
@@ -332,7 +332,7 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_proofs(
         &self,
-        request: Request<proto::rpc_store::GetAccountProofsRequest>,
+        request: Request<proto::rpc_store::AccountProofsRequest>,
     ) -> Result<Response<proto::rpc_store::AccountProofs>, Status> {
         let request = request.into_inner();
 

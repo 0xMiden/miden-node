@@ -204,7 +204,7 @@ pub mod api_client {
         pub async fn get_account_proofs(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::super::rpc_store::GetAccountProofsRequest,
+                super::super::rpc_store::AccountProofsRequest,
             >,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc_store::AccountProofs>,
@@ -229,7 +229,7 @@ pub mod api_client {
         pub async fn get_account_state_delta(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::super::rpc_store::GetAccountStateDeltaRequest,
+                super::super::rpc_store::AccountStateDeltaRequest,
             >,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc_store::AccountStateDelta>,
@@ -470,7 +470,7 @@ pub mod api_server {
         /// Returns the latest state proofs of the specified accounts.
         async fn get_account_proofs(
             &self,
-            request: tonic::Request<super::super::rpc_store::GetAccountProofsRequest>,
+            request: tonic::Request<super::super::rpc_store::AccountProofsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc_store::AccountProofs>,
             tonic::Status,
@@ -479,7 +479,7 @@ pub mod api_server {
         /// `to_block_num` (inclusive).
         async fn get_account_state_delta(
             &self,
-            request: tonic::Request<super::super::rpc_store::GetAccountStateDeltaRequest>,
+            request: tonic::Request<super::super::rpc_store::AccountStateDeltaRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc_store::AccountStateDelta>,
             tonic::Status,
@@ -821,7 +821,7 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::GetAccountProofsRequest,
+                        super::super::rpc_store::AccountProofsRequest,
                     > for GetAccountProofsSvc<T> {
                         type Response = super::super::rpc_store::AccountProofs;
                         type Future = BoxFuture<
@@ -831,7 +831,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::GetAccountProofsRequest,
+                                super::super::rpc_store::AccountProofsRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
@@ -869,7 +869,7 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::GetAccountStateDeltaRequest,
+                        super::super::rpc_store::AccountStateDeltaRequest,
                     > for GetAccountStateDeltaSvc<T> {
                         type Response = super::super::rpc_store::AccountStateDelta;
                         type Future = BoxFuture<
@@ -879,7 +879,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::GetAccountStateDeltaRequest,
+                                super::super::rpc_store::AccountStateDeltaRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);

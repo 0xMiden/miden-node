@@ -32,11 +32,11 @@ service Rpc {
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
     // Returns the latest state proofs of the specified accounts.
-    rpc GetAccountProofs(GetAccountProofsRequest) returns (AccountProofs) {}
+    rpc GetAccountProofs(AccountProofsRequest) returns (AccountProofs) {}
 
     // Returns delta of the account states in the range from `from_block_num` (exclusive) to
     // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(GetAccountStateDeltaRequest) returns (AccountStateDelta) {}
+    rpc GetAccountStateDelta(AccountStateDeltaRequest) returns (AccountStateDelta) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
@@ -96,7 +96,7 @@ message StoreStatus {
 // ================================================================================================
 
 // Returns the latest state proofs of the specified accounts.
-message GetAccountProofsRequest {
+message AccountProofsRequest {
     // Represents per-account requests where each account ID has its own list of
     // (storage_slot_index, map_keys) pairs.
     message AccountRequest {
@@ -178,7 +178,7 @@ message AccountProofs {
 
 // Returns delta of the account states in the range from `from_block_num` (exclusive) to
 // `to_block_num` (inclusive).
-message GetAccountStateDeltaRequest {
+message AccountStateDeltaRequest {
     // ID of the account for which the delta is requested.
     account.AccountId account_id = 1;
     // Block number from which the delta is requested (exclusive).

@@ -229,13 +229,12 @@ fn invalid_argument<E: ErrorReport>(err: E) -> Status {
 mod test {
     use std::time::Duration;
 
-    use miden_lib::transaction::TransactionKernel;
     use miden_node_utils::cors::cors_for_grpc_web_layer;
     use miden_objects::{
         asset::{Asset, FungibleAsset},
         note::NoteType,
         testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
-        transaction::{ProvenTransaction, TransactionScript, TransactionWitness},
+        transaction::{ProvenTransaction, TransactionWitness},
     };
     use miden_testing::{Auth, MockChainBuilder};
     use miden_tx::utils::Serializable;
@@ -294,18 +293,10 @@ mod test {
             )
             .unwrap();
 
-        let tx_script = TransactionScript::compile(
-            "begin
-                call.::miden::contracts::auth::basic::auth__tx_rpo_falcon512
-            end",
-            TransactionKernel::assembler(),
-        )
-        .unwrap();
         let tx_context = mock_chain
             .build_tx_context(account.id(), &[], &[])
             .unwrap()
             .extend_input_notes(vec![note_1])
-            .tx_script(tx_script)
             .build()
             .unwrap();
 

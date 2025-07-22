@@ -2,6 +2,16 @@ use std::{net::SocketAddr, time::Duration};
 
 use miden_node_proto::generated::{self as proto, rpc::api_client::ApiClient as ProtoClient};
 use miden_node_store::{GenesisState, Store};
+use miden_objects::{
+    Felt, Word,
+    account::{
+        AccountDelta, AccountId, AccountIdVersion, AccountStorageDelta, AccountStorageMode,
+        AccountType, AccountVaultDelta, delta::AccountUpdateDetails,
+    },
+    transaction::ProvenTransactionBuilder,
+    utils::Serializable,
+    vm::ExecutionProof,
+};
 use tempfile::TempDir;
 use tokio::{
     net::TcpListener,
@@ -132,6 +142,68 @@ async fn rpc_startup_is_robust_to_network_failures() {
     });
     let response = send_request(&mut rpc_client).await;
     assert_eq!(response.unwrap().into_inner().block_header.unwrap().block_num, 0);
+}
+
+#[tokio::test]
+async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
+    // Start the RPC.
+    let (_, rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory) = start_store(store_addr).await;
+
+    // Override the client so that the ACCEPT header is not set.
+    let mut rpc_client = {
+        let endpoint = tonic::transport::Endpoint::try_from(format!("http://{rpc_addr}")).unwrap();
+
+        ProtoClient::connect(endpoint).await.unwrap()
+    };
+
+    let account_id = AccountId::dummy(
+        [0; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+    );
+    // Send any request to the RPC.
+    let tx = ProvenTransactionBuilder::new(
+        account_id,
+        [8; 32].try_into().unwrap(),
+        [3; 32].try_into().unwrap(),
+        [22; 32].try_into().unwrap(), // delta commitment
+        0.into(),
+        Word::default(),
+        u32::MAX.into(),
+        ExecutionProof::new_dummy(),
+    )
+    .account_update_details(AccountUpdateDetails::Delta(
+        AccountDelta::new(
+            account_id,
+            AccountStorageDelta::new(),
+            AccountVaultDelta::default(),
+            Felt::default(),
+        )
+        .unwrap(),
+    ))
+    .build()
+    .unwrap();
+    let request = proto::transaction::ProvenTransaction { transaction: tx.to_bytes() };
+
+    let response = rpc_client.submit_proven_transaction(request).await;
+
+    // Assert that the server rejected our request.
+    assert!(response.is_err());
+
+    // Assert that the error is due to the invalid account delta commitment.
+    assert!(
+        response
+            .as_ref()
+            .err()
+            .unwrap()
+            .message()
+            .contains("Account delta commitment does not match the actual account delta"),
+    );
+
+    // Shutdown to avoid runtime drop error.
+    store_runtime.shutdown_background();
 }
 
 /// Sends an arbitrary / irrelevant request to the RPC.

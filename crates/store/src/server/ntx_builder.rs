@@ -113,7 +113,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_unconsumed_network_notes(
         &self,
-        request: Request<proto::ntx_builder_store::GetUnconsumedNetworkNotesRequest>,
+        request: Request<proto::ntx_builder_store::UnconsumedNetworkNotesRequest>,
     ) -> Result<Response<proto::ntx_builder_store::UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let state = self.state.clone();

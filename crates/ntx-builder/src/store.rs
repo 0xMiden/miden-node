@@ -139,7 +139,7 @@ impl StoreClient {
         let mut page_token: Option<u64> = None;
 
         loop {
-            let req = store_proto::GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
+            let req = store_proto::UnconsumedNetworkNotesRequest { page_token, page_size: 128 };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
             let page: Vec<NetworkNote> = resp

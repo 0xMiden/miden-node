@@ -15,7 +15,7 @@ pub struct MaybeAccountDetails {
 }
 /// Returns a list of unconsumed network notes using pagination.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct GetUnconsumedNetworkNotesRequest {
+pub struct UnconsumedNetworkNotesRequest {
     /// An opaque token used to paginate through the notes.
     ///
     /// This should be null on the first call, and set to the response
@@ -180,7 +180,7 @@ pub mod ntx_builder_client {
         /// Returns the list of unconsumed network notes and the next page number to query.
         pub async fn get_unconsumed_network_notes(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetUnconsumedNetworkNotesRequest>,
+            request: impl tonic::IntoRequest<super::UnconsumedNetworkNotesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::UnconsumedNetworkNotes>,
             tonic::Status,
@@ -296,7 +296,7 @@ pub mod ntx_builder_server {
         /// Returns the list of unconsumed network notes and the next page number to query.
         async fn get_unconsumed_network_notes(
             &self,
-            request: tonic::Request<super::GetUnconsumedNetworkNotesRequest>,
+            request: tonic::Request<super::UnconsumedNetworkNotesRequest>,
         ) -> std::result::Result<
             tonic::Response<super::UnconsumedNetworkNotes>,
             tonic::Status,
@@ -454,9 +454,8 @@ pub mod ntx_builder_server {
                     struct GetUnconsumedNetworkNotesSvc<T: NtxBuilder>(pub Arc<T>);
                     impl<
                         T: NtxBuilder,
-                    > tonic::server::UnaryService<
-                        super::GetUnconsumedNetworkNotesRequest,
-                    > for GetUnconsumedNetworkNotesSvc<T> {
+                    > tonic::server::UnaryService<super::UnconsumedNetworkNotesRequest>
+                    for GetUnconsumedNetworkNotesSvc<T> {
                         type Response = super::UnconsumedNetworkNotes;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -464,9 +463,7 @@ pub mod ntx_builder_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<
-                                super::GetUnconsumedNetworkNotesRequest,
-                            >,
+                            request: tonic::Request<super::UnconsumedNetworkNotesRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

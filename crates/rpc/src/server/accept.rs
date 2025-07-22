@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     ops::Not,
     str::FromStr,
     task::{Context as StdContext, Poll},
@@ -46,7 +45,7 @@ pub struct AcceptHeaderLayer {
 
 #[derive(Debug, thiserror::Error)]
 enum AcceptHeaderError {
-    #[error("Header value could not be parsed as a UTF8 string")]
+    #[error("header value could not be parsed as a UTF8 string")]
     InvalidUtf8(#[source] ToStrError),
 
     #[error("the accept header could not be parsed")]
@@ -124,7 +123,7 @@ impl AcceptHeaderLayer {
             }
 
             // Verify the user's version requirement against our rpc version.
-            if let Some(version) = range.params.get(&CaselessKey::VERSION) {
+            if let Some(version) = range.params.version {
                 let requirement = VersionReq::parse(version).map_err(|err| {
                     AcceptHeaderError::VersionParsing(err, (*version).to_string())
                 })?;
@@ -135,8 +134,8 @@ impl AcceptHeaderLayer {
             }
 
             // Verify the user's genesis commitment against ours.
-            if let Some(genesis) = range.params.get(&CaselessKey::GENESIS) {
-                let genesis = Word::try_from(*genesis).map_err(|err| {
+            if let Some(genesis) = range.params.genesis {
+                let genesis = Word::try_from(genesis).map_err(|err| {
                     AcceptHeaderError::GenesisParsing(err, (*genesis).to_string())
                 })?;
 
@@ -194,8 +193,6 @@ where
 
 #[derive(Debug, thiserror::Error)]
 enum MediaRangeParsingError {
-    #[error("media range contained no types")]
-    MissingMediaType,
     #[error("the media type {0} is invalid")]
     InvalidMediaType(String),
     #[error("the parameter {0} is invalid")]
@@ -208,7 +205,7 @@ enum MediaRangeParsingError {
 struct MediaRange<'a> {
     main: MediaType<'a>,
     subtype: MediaType<'a>,
-    params: HashMap<CaselessKey<'a>, &'a str>,
+    params: Parameters<'a>,
     quality: Quality,
 }
 
@@ -218,17 +215,39 @@ enum MediaType<'a> {
     Type(&'a str),
 }
 
-#[derive(Debug, Eq, Hash)]
-struct CaselessKey<'a>(&'a str);
-
-impl CaselessKey<'static> {
-    const VERSION: Self = Self("version");
-    const GENESIS: Self = Self("genesis");
+#[derive(Debug, Default)]
+struct Parameters<'a> {
+    version: Option<&'a str>,
+    genesis: Option<&'a str>,
+    quality: Option<&'a str>,
 }
 
-impl PartialEq for CaselessKey<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq_ignore_ascii_case(other.0)
+impl<'a> Parameters<'a> {
+    fn parse(s: &'a str) -> Result<Self, MediaRangeParsingError> {
+        let mut params = Parameters::default();
+
+        let mut kv = s.split(";")
+            // Handle a trailing semi-comma which otherwise results in an "empty" parameter.
+            .filter_map(|kv| {
+                let kv = kv.trim();
+                kv.is_empty().not().then_some(kv)
+            })
+            .map(|kv| {
+                kv.split_once('=')
+                    .map(|(k, v)| (k.trim(), v.trim()))
+                    .ok_or(MediaRangeParsingError::InvalidParameter(kv.to_owned()))
+            });
+
+        while let Some((k, v)) = kv.next().transpose()? {
+            match k {
+                quality if quality.eq_ignore_ascii_case("q") => params.quality = v.into(),
+                version if version.eq_ignore_ascii_case("version") => params.version = v.into(),
+                genesis if genesis.eq_ignore_ascii_case("genesis") => params.genesis = v.into(),
+                _ => continue,
+            }
+        }
+
+        Ok(params)
     }
 }
 
@@ -289,30 +308,16 @@ impl Ord for Quality {
 
 impl<'a> MediaRange<'a> {
     fn from_str(s: &'a str) -> Result<Self, MediaRangeParsingError> {
-        let mut parts = s.trim().split(';');
-        let Some(media) = parts.next() else {
-            return Err(MediaRangeParsingError::MissingMediaType);
-        };
+        let (media, params) = s.split_once(';').unwrap_or((s, ""));
 
         let Some((main, subtype)) = media.split_once('/') else {
             return Err(MediaRangeParsingError::InvalidMediaType(media.to_owned()));
         };
 
-        let mut params = parts
-            // Handle a trailing semi-comma which otherwise results in an "empty" parameter.
-            .filter_map(|kv| {
-                let kv = kv.trim();
-                kv.is_empty().not().then_some(kv)
-            })
-            .map(|kv| {
-                kv.split_once('=')
-                    .map(|(k, v)| (CaselessKey(k.trim()), v.trim()))
-                    .ok_or(MediaRangeParsingError::InvalidParameter(kv.to_owned()))
-            })
-            .collect::<Result<HashMap<_, _>, _>>()?;
+        let params = Parameters::parse(params)?;
 
         let quality = params
-            .remove(&CaselessKey("q"))
+            .quality
             .map(|val| {
                 Quality::from_str(val).ok_or(MediaRangeParsingError::InvalidQuality(val.to_owned()))
             })
@@ -320,8 +325,8 @@ impl<'a> MediaRange<'a> {
             .unwrap_or(Quality(1.0));
 
         Ok(Self {
-            main: MediaType::new(main),
-            subtype: MediaType::new(subtype),
+            main: MediaType::new(main.trim()),
+            subtype: MediaType::new(subtype.trim()),
             params,
             quality,
         })
@@ -387,9 +392,7 @@ mod tests {
     // This should pass because the 2nd option is valid.
     #[case::multiple_types("application/vnd.miden; version=2, application/vnd.miden")]
     #[case::whitespace_agnostic(
-        "   application/vnd.miden  ;
-        genesis = 0x00000000000000000000000000000000000000000000000000000000deadbeef ;
-        version = 1.2.3"
+        "   application/vnd.miden  ;        genesis = 0x00000000000000000000000000000000000000000000000000000000deadbeef ;        version = 1.2.3"
     )]
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {

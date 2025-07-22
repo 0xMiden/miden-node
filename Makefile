@@ -8,7 +8,6 @@ help:
 
 WARNINGS=RUSTDOCFLAGS="-D warnings"
 BUILD_PROTO=BUILD_PROTO=1
-CONTAINER_EXECUTOR=docker
 
 # -- linting --------------------------------------------------------------------------------------
 
@@ -117,7 +116,7 @@ docker-build-node: ## Builds the Miden node using Docker
 	@CREATED=$$(date) && \
 	VERSION=$$(cat bin/node/Cargo.toml | grep -m 1 '^version' | cut -d '"' -f 2) && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	$(CONTAINER_EXECUTOR) build --build-arg CREATED="$$CREATED" \
+	docker build --build-arg CREATED="$$CREATED" \
         		 --build-arg VERSION="$$VERSION" \
           		 --build-arg COMMIT="$$COMMIT" \
                  -f bin/node/Dockerfile \
@@ -125,8 +124,8 @@ docker-build-node: ## Builds the Miden node using Docker
 
 .PHONY: docker-run-node
 docker-run-node: ## Runs the Miden node as a Docker container
-	$(CONTAINER_EXECUTOR) volume create miden-db
-	$(CONTAINER_EXECUTOR) run --name miden-node \
+	docker volume create miden-db
+	docker run --name miden-node \
 			   -p 57291:57291 \
                -v miden-db:/db \
                -d miden-node-image
@@ -136,7 +135,7 @@ docker-build-faucet: ## Builds the Miden faucet using Docker
 	@CREATED=$$(date) && \
 	VERSION=$$(cat bin/faucet/Cargo.toml | grep -m 1 '^version' | cut -d '"' -f 2) && \
 	COMMIT=$$(git rev-parse HEAD) && \
-	$(CONTAINER_EXECUTOR) build --build-arg CREATED="$$CREATED" \
+	docker build --build-arg CREATED="$$CREATED" \
         		 --build-arg VERSION="$$VERSION" \
           		 --build-arg COMMIT="$$COMMIT" \
                  -f bin/faucet/Dockerfile \
@@ -144,7 +143,7 @@ docker-build-faucet: ## Builds the Miden faucet using Docker
 
 .PHONY: docker-run-faucet
 docker-run-faucet: ## Runs the Miden faucet as a Docker container
-	$(CONTAINER_EXECUTOR) volume create miden-db
-	$(CONTAINER_EXECUTOR) run --name miden-faucet \
+	docker volume create miden-db
+	docker run --name miden-faucet \
 			   -p 8080:8080 \
                -d miden-faucet-image

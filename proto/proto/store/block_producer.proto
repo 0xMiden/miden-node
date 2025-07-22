@@ -28,7 +28,7 @@ service BlockProducer {
     rpc GetBatchInputs(BatchInputsRequest) returns (BatchInputs) {}
 
     // Returns data required to validate a new transaction.
-    rpc GetTransactionInputs(GetTransactionInputsRequest) returns (TransactionInputs) {}
+    rpc GetTransactionInputs(TransactionInputsRequest) returns (TransactionInputs) {}
 }
 
 // GET BLOCK INPUTS
@@ -115,7 +115,7 @@ message BatchInputs {
 // ================================================================================================
 
 // Returns data required to validate a new transaction.
-message GetTransactionInputsRequest {
+message TransactionInputsRequest {
     // ID of the account against which a transaction is executed.
     account.AccountId account_id = 1;
     // Set of nullifiers consumed by this transaction.

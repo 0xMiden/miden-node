@@ -89,7 +89,7 @@ pub struct BatchInputs {
 }
 /// Returns data required to validate a new transaction.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetTransactionInputsRequest {
+pub struct TransactionInputsRequest {
     /// ID of the account against which a transaction is executed.
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
@@ -352,7 +352,7 @@ pub mod block_producer_client {
         /// Returns data required to validate a new transaction.
         pub async fn get_transaction_inputs(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetTransactionInputsRequest>,
+            request: impl tonic::IntoRequest<super::TransactionInputsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::TransactionInputs>,
             tonic::Status,
@@ -421,7 +421,7 @@ pub mod block_producer_server {
         /// Returns data required to validate a new transaction.
         async fn get_transaction_inputs(
             &self,
-            request: tonic::Request<super::GetTransactionInputsRequest>,
+            request: tonic::Request<super::TransactionInputsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::TransactionInputs>,
             tonic::Status,
@@ -698,7 +698,7 @@ pub mod block_producer_server {
                     struct GetTransactionInputsSvc<T: BlockProducer>(pub Arc<T>);
                     impl<
                         T: BlockProducer,
-                    > tonic::server::UnaryService<super::GetTransactionInputsRequest>
+                    > tonic::server::UnaryService<super::TransactionInputsRequest>
                     for GetTransactionInputsSvc<T> {
                         type Response = super::TransactionInputs;
                         type Future = BoxFuture<
@@ -707,7 +707,7 @@ pub mod block_producer_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::GetTransactionInputsRequest>,
+                            request: tonic::Request<super::TransactionInputsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

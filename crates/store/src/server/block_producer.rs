@@ -155,7 +155,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_transaction_inputs(
         &self,
-        request: Request<proto::block_producer_store::GetTransactionInputsRequest>,
+        request: Request<proto::block_producer_store::TransactionInputsRequest>,
     ) -> Result<Response<proto::block_producer_store::TransactionInputs>, Status> {
         let request = request.into_inner();
 

@@ -167,7 +167,7 @@ impl StoreClient {
         &self,
         proven_tx: &ProvenTransaction,
     ) -> Result<TransactionInputs, StoreError> {
-        let message = proto::block_producer_store::GetTransactionInputsRequest {
+        let message = proto::block_producer_store::TransactionInputsRequest {
             account_id: Some(proven_tx.account_id().into()),
             nullifiers: proven_tx.nullifiers().map(Into::into).collect(),
             unauthenticated_notes: proven_tx

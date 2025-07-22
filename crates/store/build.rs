@@ -4,5 +4,4 @@ fn main() {
     // if we do one re-write, the defaults are gone
     // <https://doc.rust-lang.org/cargo/reference/build-scripts.html#rerun-if-changed>
     println!("cargo:rerun-if-changed=Cargo.toml");
-    println!("cargo:rerun-if-changed=build.rs");
 }

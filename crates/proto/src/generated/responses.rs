@@ -22,7 +22,7 @@ pub struct GetBlockHeaderByNumberResponse {
     /// The requested block header.
     #[prost(message, optional, tag = "1")]
     pub block_header: ::core::option::Option<super::block::BlockHeader>,
-    /// Sparse Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
+    /// Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
     #[prost(message, optional, tag = "2")]
     pub mmr_path: ::core::option::Option<super::merkle::MerklePath>,
     /// Current chain length.
@@ -71,7 +71,7 @@ pub struct SyncNoteResponse {
     /// Block header of the block with the first note matching the specified criteria.
     #[prost(message, optional, tag = "2")]
     pub block_header: ::core::option::Option<super::block::BlockHeader>,
-    /// Sparse Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
+    /// Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
     ///
     /// An MMR proof can be constructed for the leaf of index `block_header.block_num` of
     /// an MMR of forest `chain_tip` with this path.
@@ -95,7 +95,7 @@ pub struct AccountWitness {
     /// The state commitment whose inclusion the witness proves.
     #[prost(message, optional, tag = "3")]
     pub commitment: ::core::option::Option<super::digest::Digest>,
-    /// The sparse merkle path of the state commitment in the account tree.
+    /// The merkle path of the state commitment in the account tree.
     #[prost(message, optional, tag = "4")]
     pub path: ::core::option::Option<super::merkle::MerklePath>,
 }

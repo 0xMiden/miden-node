@@ -30,7 +30,7 @@ message GetBlockHeaderByNumberResponse {
     // The requested block header.
     block.BlockHeader block_header = 1;
 
-    // Sparse Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
+    // Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
     optional merkle.MerklePath mmr_path = 2;
 
     // Current chain length.
@@ -76,7 +76,7 @@ message SyncNoteResponse {
     // Block header of the block with the first note matching the specified criteria.
     block.BlockHeader block_header = 2;
 
-    // Sparse Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
+    // Merkle path to verify the block's inclusion in the MMR at the returned `chain_tip`.
     //
     // An MMR proof can be constructed for the leaf of index `block_header.block_num` of
     // an MMR of forest `chain_tip` with this path.
@@ -99,7 +99,7 @@ message AccountWitness {
     // The state commitment whose inclusion the witness proves.
     digest.Digest commitment = 3;
 
-    // The sparse merkle path of the state commitment in the account tree.
+    // The merkle path of the state commitment in the account tree.
     merkle.MerklePath path = 4;
 }
 

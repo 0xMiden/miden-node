@@ -46,17 +46,28 @@ impl TryFrom<proto::merkle::MerklePath> for MerklePath {
 // SPARSE MERKLE PATH
 // ================================================================================================
 
-impl From<SparseMerklePath> for proto::merkle::MerklePath {
+impl From<SparseMerklePath> for proto::merkle::SparseMerklePath {
     fn from(value: SparseMerklePath) -> Self {
-        MerklePath::from(value).into()
+        let (empty_nodes_mask, siblings) = value.into_parts();
+        proto::merkle::SparseMerklePath {
+            empty_nodes_mask,
+            siblings: siblings.into_iter().map(proto::digest::Digest::from).collect(),
+        }
     }
 }
 
-impl TryFrom<proto::merkle::MerklePath> for SparseMerklePath {
+impl TryFrom<proto::merkle::SparseMerklePath> for SparseMerklePath {
     type Error = ConversionError;
 
-    fn try_from(merkle_path: proto::merkle::MerklePath) -> Result<Self, Self::Error> {
-        Ok(MerklePath::try_from(merkle_path)?.try_into()?)
+    fn try_from(merkle_path: proto::merkle::SparseMerklePath) -> Result<Self, Self::Error> {
+        Ok(SparseMerklePath::from_parts(
+            merkle_path.empty_nodes_mask,
+            merkle_path
+                .siblings
+                .into_iter()
+                .map(Word::try_from)
+                .collect::<Result<Vec<_>, _>>()?,
+        )?)
     }
 }
 

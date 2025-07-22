@@ -210,7 +210,7 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(SyncNoteResponse {
             chain_tip: self.state.latest_block_num().await.as_u32(),
             block_header: Some(state.block_header.into()),
-            mmr_path: Some((&mmr_proof.merkle_path).into()),
+            mmr_path: Some(mmr_proof.merkle_path.into()),
             notes,
         }))
     }

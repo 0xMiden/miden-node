@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use miden_objects::{
-    Digest,
+    Word,
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
     block::BlockNumber,
     transaction::{InputNotes, OrderedTransactionHeaders, ProvenTransaction, TransactionHeader},
@@ -58,7 +58,7 @@ impl TransactionBatchConstructor for ProvenBatch {
 
         ProvenBatch::new(
             BatchId::from_transactions(txs.iter().copied()),
-            Digest::default(),
+            Word::empty(),
             BlockNumber::GENESIS,
             account_updates,
             InputNotes::new_unchecked(input_notes),

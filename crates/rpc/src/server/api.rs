@@ -29,9 +29,8 @@ use miden_node_utils::{
     },
 };
 use miden_objects::{
-    Digest, MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL,
+    MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
     account::{AccountId, delta::AccountUpdateDetails},
-    crypto::hash::rpo::RpoDigest,
     transaction::ProvenTransaction,
     utils::serde::Deserializable,
 };
@@ -101,9 +100,9 @@ impl api_server::Api for RpcService {
 
         // validate all the nullifiers from the user request
         for nullifier in &request.get_ref().nullifiers {
-            let _: Digest = nullifier
+            let _: Word = nullifier
                 .try_into()
-                .or(Err(Status::invalid_argument("Digest field is not in the modulus range")))?;
+                .or(Err(Status::invalid_argument("Word field is not in the modulus range")))?;
         }
 
         self.store.clone().check_nullifiers(request).await
@@ -203,7 +202,7 @@ impl api_server::Api for RpcService {
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().note_ids.clone();
 
-        let _: Vec<RpoDigest> = try_convert(note_ids).map_err(|err: ConversionError| {
+        let _: Vec<Word> = try_convert(note_ids).map_err(|err: ConversionError| {
             Status::invalid_argument(err.as_report_context("invalid NoteId"))
         })?;
 
@@ -236,6 +235,20 @@ impl api_server::Api for RpcService {
             return Err(Status::invalid_argument(
                 "Network transactions may not be submitted by users yet",
             ));
+        }
+
+        // Compare the account delta commitment of the ProvenTransaction with the actual delta
+        let delta_commitment = tx.account_update().account_delta_commitment();
+
+        // Verify that the delta commitment matches the actual delta
+        if let AccountUpdateDetails::Delta(delta) = tx.account_update().details() {
+            let computed_commitment = delta.to_commitment();
+
+            if computed_commitment != delta_commitment {
+                return Err(Status::invalid_argument(
+                    "Account delta commitment does not match the actual account delta",
+                ));
+            }
         }
 
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);

@@ -13,7 +13,7 @@ use miden_node_proto::{
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
-    crypto::merkle::{MmrPeaks, PartialMmr},
+    crypto::merkle::{Forest, MmrPeaks, PartialMmr},
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -111,11 +111,12 @@ impl StoreClient {
                 let header =
                     BlockHeader::try_from(block).map_err(StoreError::DeserializationError)?;
 
-                let peaks = MmrPeaks::new(header.block_num().as_usize(), peaks).map_err(|_| {
-                    StoreError::MalformedResponse(
-                        "returned peaks are not valid for the sent request".into(),
-                    )
-                })?;
+                let peaks = MmrPeaks::new(Forest::new(header.block_num().as_usize()), peaks)
+                    .map_err(|_| {
+                        StoreError::MalformedResponse(
+                            "returned peaks are not valid for the sent request".into(),
+                        )
+                    })?;
 
                 let partial_mmr = PartialMmr::from_peaks(peaks);
 

@@ -373,18 +373,24 @@ mod tests {
     #[case::version_wildcard_minor("application/vnd.miden; version=1.*")]
     #[case::version_wildcard_patch("application/vnd.miden; version=1.2.*")]
     #[case::matching_network(
-        "application/vnd.miden; network=0x00000000000000000000000000000000000000000000000000000000deadbeef"
+        "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef"
     )]
     #[case::matching_network_and_version(
-        "application/vnd.miden; network=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=1.2.3"
+        "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=1.2.3"
     )]
     #[case::parameter_order_swopped(
-        "application/vnd.miden; version=1.2.3; network=0x00000000000000000000000000000000000000000000000000000000deadbeef;"
+        "application/vnd.miden; version=1.2.3; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef;"
     )]
     #[case::trailing_semi_comma("application/vnd.miden; ")]
     #[case::trailing_comma("application/vnd.miden, ")]
+    #[case::trailing_commas(", , , ,   , , application/vnd.miden, ")]
     // This should pass because the 2nd option is valid.
     #[case::multiple_types("application/vnd.miden; version=2, application/vnd.miden")]
+    #[case::whitespace_agnostic(
+        "   application/vnd.miden  ;
+        genesis = 0x00000000000000000000000000000000000000000000000000000000deadbeef ;
+        version = 1.2.3"
+    )]
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {
         let mut headers = HeaderMap::new();

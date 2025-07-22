@@ -22,7 +22,7 @@ service BlockProducer {
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
     // Returns data required to prove the next block.
-    rpc GetBlockInputs(GetBlockInputsRequest) returns (BlockInputs) {}
+    rpc GetBlockInputs(BlockInputsRequest) returns (BlockInputs) {}
 
     // Returns the inputs for a transaction batch.
     rpc GetBatchInputs(GetBatchInputsRequest) returns (BatchInputs) {}
@@ -35,7 +35,7 @@ service BlockProducer {
 // ================================================================================================
 
 // Returns data required to prove the next block.
-message GetBlockInputsRequest {
+message BlockInputsRequest {
     // IDs of all accounts updated in the proposed block for which to retrieve account witnesses.
     repeated account.AccountId account_ids = 1;
 

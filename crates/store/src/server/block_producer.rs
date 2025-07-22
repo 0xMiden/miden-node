@@ -93,7 +93,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         )]
     async fn get_block_inputs(
         &self,
-        request: Request<proto::block_producer_store::GetBlockInputsRequest>,
+        request: Request<proto::block_producer_store::BlockInputsRequest>,
     ) -> Result<Response<proto::block_producer_store::BlockInputs>, Status> {
         let request = request.into_inner();
 

@@ -207,7 +207,7 @@ impl StoreClient {
         unauthenticated_notes: impl Iterator<Item = NoteId> + Send,
         reference_blocks: impl Iterator<Item = BlockNumber> + Send,
     ) -> Result<BlockInputs, StoreError> {
-        let request = tonic::Request::new(proto::block_producer_store::GetBlockInputsRequest {
+        let request = tonic::Request::new(proto::block_producer_store::BlockInputsRequest {
             account_ids: updated_accounts.map(Into::into).collect(),
             nullifiers: created_nullifiers.map(proto::primitives::Digest::from).collect(),
             unauthenticated_notes: unauthenticated_notes

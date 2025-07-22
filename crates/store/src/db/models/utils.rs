@@ -15,8 +15,8 @@ pub(crate) fn vec_raw_try_into<D, R: TryInto<D>>(
 /// Deserialize an iterable container full of byte blobs `B` to types `T`
 pub(crate) fn deserialize_raw_vec<B: AsRef<[u8]>, T: Deserializable>(
     raw: impl IntoIterator<Item = B>,
-) -> std::result::Result<Vec<T>, DeserializationError> {
-    std::result::Result::<Vec<_>, DeserializationError>::from_iter(
+) -> Result<Vec<T>, DeserializationError> {
+    Result::<Vec<_>, DeserializationError>::from_iter(
         raw.into_iter().map(|raw| T::read_from_bytes(raw.as_ref())),
     )
 }

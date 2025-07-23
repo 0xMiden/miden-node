@@ -5,10 +5,8 @@
 
 use std::sync::Arc;
 
-use miden_remote_prover::generated::remote_prover::{ProxyStatusResponse, WorkerStatus};
+use miden_remote_prover::generated::remote_prover::ProxyStatusResponse;
 use tokio::sync::RwLock;
-
-use crate::proxy::worker::{Worker, WorkerHealthStatus};
 
 /// Caches the proxy status response.
 #[derive(Debug)]
@@ -32,21 +30,5 @@ impl ProxyStatusCache {
     /// Update the cached status response.
     pub async fn update_status(&self, new_status: ProxyStatusResponse) {
         *self.cached_status.write().await = new_status;
-    }
-}
-
-/// Conversion from a Worker reference to a `WorkerStatus` proto message.
-impl From<&Worker> for WorkerStatus {
-    fn from(worker: &Worker) -> Self {
-        use miden_remote_prover::generated::remote_prover::WorkerHealthStatus as ProtoWorkerHealthStatus;
-        Self {
-            address: worker.address(),
-            version: worker.version().to_string(),
-            status: match worker.health_status() {
-                WorkerHealthStatus::Healthy => ProtoWorkerHealthStatus::Healthy,
-                WorkerHealthStatus::Unhealthy { .. } => ProtoWorkerHealthStatus::Unhealthy,
-                WorkerHealthStatus::Unknown => ProtoWorkerHealthStatus::Unknown,
-            } as i32,
-        }
     }
 }

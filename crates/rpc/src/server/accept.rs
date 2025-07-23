@@ -4,12 +4,9 @@ use std::{
 };
 
 use futures::{FutureExt, future::BoxFuture};
-use http::{
-    HeaderMap, HeaderValue,
-    header::{ACCEPT, ToStrError},
-};
+use http::header::{ACCEPT, ToStrError};
 use mediatype::{Name, ReadParams};
-use miden_node_utils::ErrorReport;
+use miden_node_utils::{ErrorReport, FlattenResult};
 use miden_objects::{Word, WordError};
 use semver::{Version, VersionReq};
 use tower::{Layer, Service};
@@ -81,14 +78,8 @@ impl AcceptHeaderLayer {
     const VERSION: Name<'static> = Name::new_unchecked("version");
     const GENESIS: Name<'static> = Name::new_unchecked("genesis");
 
-    fn verify(&self, headers: &HeaderMap<HeaderValue>) -> Result<(), AcceptHeaderError> {
-        let Some(header) = headers.get(ACCEPT) else {
-            return Ok(());
-        };
-
-        let header = header.to_str().map_err(AcceptHeaderError::InvalidUtf8)?;
-
-        let mut media_types = mediatype::MediaTypeList::new(header).peekable();
+    fn verify(&self, accept: &str) -> Result<(), AcceptHeaderError> {
+        let mut media_types = mediatype::MediaTypeList::new(accept).peekable();
 
         // Its debateable whether an empty header value is valid. Let's err on the side of being
         // gracious if the client want's to be weird.
@@ -177,13 +168,24 @@ where
     /// The version specified in the value of the ACCEPT header must match the version requirements
     /// specified by the server.
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
-        if let Err(err) = self.verifier.verify(request.headers()) {
-            let response = tonic::Status::invalid_argument(err.as_report()).into_http();
+        let Some(header) = request.headers().get(ACCEPT) else {
+            return self.inner.call(request).boxed();
+        };
 
-            return futures::future::ready(Ok(response)).boxed();
+        let result = header
+            .to_str()
+            .map_err(AcceptHeaderError::InvalidUtf8)
+            .map(|header| self.verifier.verify(header))
+            .flatten_result();
+
+        match result {
+            Ok(()) => self.inner.call(request).boxed(),
+            Err(err) => {
+                let response = tonic::Status::invalid_argument(err.as_report()).into_http();
+
+                futures::future::ready(Ok(response)).boxed()
+            },
         }
-
-        self.inner.call(request).boxed()
     }
 }
 
@@ -254,7 +256,6 @@ impl FromStr for QValue {
 
 #[cfg(test)]
 mod tests {
-    use http::{HeaderMap, HeaderValue, header::ACCEPT};
     use miden_objects::Word;
     use semver::Version;
 
@@ -301,11 +302,7 @@ mod tests {
     )]
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {
-        let mut headers = HeaderMap::new();
-        headers.insert(ACCEPT, HeaderValue::from_static(accept));
-
-        let uut = AcceptHeaderLayer::for_tests();
-        uut.verify(&headers).unwrap();
+        AcceptHeaderLayer::for_tests().verify(accept).unwrap();
     }
 
     #[rstest::rstest]
@@ -318,10 +315,6 @@ mod tests {
     #[case::zero_weighting("application/vnd.miden; q=0.0")]
     #[test]
     fn request_should_be_rejected(#[case] accept: &'static str) {
-        let mut headers = HeaderMap::new();
-        headers.insert(ACCEPT, HeaderValue::from_static(accept));
-
-        let uut = AcceptHeaderLayer::for_tests();
-        uut.verify(&headers).unwrap_err();
+        AcceptHeaderLayer::for_tests().verify(accept).unwrap_err();
     }
 }

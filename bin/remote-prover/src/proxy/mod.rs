@@ -106,13 +106,7 @@ impl LoadBalancerState {
         // Build initial status for the cache
         let initial_status = {
             let workers_guard = workers.read().await;
-            let worker_statuses: Vec<WorkerStatus> =
-                workers_guard.iter().map(WorkerStatus::from).collect();
-            ProxyStatusResponse {
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                supported_proof_type: supported_proof_type.into(),
-                workers: worker_statuses,
-            }
+            build_proxy_status_response(&workers_guard, supported_proof_type)
         };
 
         Ok(Self {
@@ -225,17 +219,8 @@ impl LoadBalancerState {
 
     /// Update the status cache with current worker status
     pub async fn update_status_cache(&self) {
-        let version = env!("CARGO_PKG_VERSION").to_string();
-        let supported_proof_type: i32 = self.supported_proof_type.into();
         let workers = self.workers.read().await;
-        let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
-
-        let new_status = ProxyStatusResponse {
-            version,
-            supported_proof_type,
-            workers: worker_statuses,
-        };
-
+        let new_status = build_proxy_status_response(&workers, self.supported_proof_type);
         self.status_cache.update_status(new_status).await;
     }
 }
@@ -722,5 +707,21 @@ impl ProxyHttp for ProxyHttpDefaultImpl {
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
         unimplemented!("This is a dummy implementation, should not be called")
+    }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Builds a `ProxyStatusResponse` from a list of workers and a supported proof type.
+fn build_proxy_status_response(
+    workers: &[Worker],
+    supported_proof_type: ProofType,
+) -> ProxyStatusResponse {
+    let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
+    ProxyStatusResponse {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        supported_proof_type: supported_proof_type.into(),
+        workers: worker_statuses,
     }
 }

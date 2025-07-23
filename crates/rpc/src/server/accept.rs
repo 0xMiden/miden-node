@@ -1,5 +1,4 @@
 use std::{
-    ops::Not,
     str::FromStr,
     task::{Context as StdContext, Poll},
 };
@@ -9,7 +8,7 @@ use http::{
     HeaderMap, HeaderValue,
     header::{ACCEPT, ToStrError},
 };
-use itertools::Itertools;
+use mediatype::{Name, ReadParams};
 use miden_node_utils::ErrorReport;
 use miden_objects::{Word, WordError};
 use semver::{Version, VersionReq};
@@ -48,14 +47,17 @@ enum AcceptHeaderError {
     #[error("header value could not be parsed as a UTF8 string")]
     InvalidUtf8(#[source] ToStrError),
 
-    #[error("the accept header could not be parsed")]
-    InvalidMediaRange(#[source] MediaRangeParsingError),
+    #[error("accept header's media type could not be parsed")]
+    InvalidMediaType(#[source] mediatype::MediaTypeError),
 
-    #[error("version value {1} failed to parse")]
-    VersionParsing(#[source] semver::Error, String),
+    #[error("a Q value was invalid")]
+    InvalidQValue(#[source] QParsingError),
 
-    #[error("genesis value {1} failed to parse")]
-    GenesisParsing(#[source] WordError, String),
+    #[error("version value failed to parse")]
+    InvalidVersion(#[source] semver::Error),
+
+    #[error("genesis value failed to parse")]
+    InvalidGenesis(#[source] WordError),
 
     #[error("server does not support any of the specified application/vnd.miden content types")]
     NoSupportedMediaRange,
@@ -76,6 +78,9 @@ impl<S> Layer<S> for AcceptHeaderLayer {
 }
 
 impl AcceptHeaderLayer {
+    const VERSION: Name<'static> = Name::new_unchecked("version");
+    const GENESIS: Name<'static> = Name::new_unchecked("genesis");
+
     fn verify(&self, headers: &HeaderMap<HeaderValue>) -> Result<(), AcceptHeaderError> {
         let Some(header) = headers.get(ACCEPT) else {
             return Ok(());
@@ -83,73 +88,64 @@ impl AcceptHeaderLayer {
 
         let header = header.to_str().map_err(AcceptHeaderError::InvalidUtf8)?;
 
-        // Whether an empty is valid or not is up for debate, for ease of use lets just accept it.
-        if header.is_empty() {
+        let mut media_types = mediatype::MediaTypeList::new(header).peekable();
+
+        // Its debateable whether an empty header value is valid. Let's err on the side of being
+        // gracious if the client want's to be weird.
+        if media_types.peek().is_none() {
             return Ok(());
         }
 
-        let mut media_ranges = header
-            .split(',')
-            // Allow trailing comma's.
-            .filter_map(|range| {
-                let range = range.trim();
-                range.is_empty().not().then_some(range)
-            })
-            .map(MediaRange::from_str)
-            // Ignore media types that aren't ours. Wildcards are accepted, as are obsolete
-            // legacy values: application/vnd.miden+grpc.
-            .filter_ok(MediaRange::is_miden_application)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(AcceptHeaderError::InvalidMediaRange)?;
+        while let Some(media_type) = media_types.next() {
+            let media_type = media_type.map_err(AcceptHeaderError::InvalidMediaType)?;
 
-        // If there are no miden specific headers, then accept the request as the client has no
-        // stated preference that we care about.
-        if media_ranges.is_empty() {
-            return Ok(());
-        }
+            // Skip types that don't match `application/vnd.miden`.
+            //
+            // Note that `application/*` is invalid so we cannot collapse the conditions.
+            match (media_type.ty.as_str(), media_type.subty.as_str()) {
+                ("*", "*") | ("*" | "application", "vnd.miden") => {},
+                _ => continue,
+            }
 
-        // Find the most preferred type that we support.
-        media_ranges.sort_unstable_by(|a, b| b.quality.cmp(&a.quality));
+            // Quality value may be set to zero, indicating that the client _does not_ want this
+            // media type. So we skip those.
+            let quality = media_type
+                .get_param(mediatype::names::Q)
+                .map(|value| QValue::from_str(value.as_str()))
+                .transpose()
+                .map_err(AcceptHeaderError::InvalidQValue)?
+                .unwrap_or_default();
 
-        for range in media_ranges {
-            // If weighting is zero then this is not desired by the client.
-            if range.quality.0 == 0.0 {
+            if quality.is_zero() {
                 continue;
             }
 
-            // Skip obsolete variants.
-            if range.is_obsolete() {
+            // Skip those that don't match the version requirement.
+            let version = media_type
+                .get_param(Self::VERSION)
+                .map(|value| VersionReq::parse(value.as_str()))
+                .transpose()
+                .map_err(AcceptHeaderError::InvalidVersion)?;
+            if !version.is_some_and(|v| v.matches(&self.rpc_version)) {
                 continue;
             }
 
-            // Verify the user's version requirement against our rpc version.
-            if let Some(version) = range.params.version {
-                let requirement = VersionReq::parse(version).map_err(|err| {
-                    AcceptHeaderError::VersionParsing(err, (*version).to_string())
-                })?;
-
-                if !requirement.matches(&self.rpc_version) {
-                    continue;
-                }
+            // Skip if the genesis commitment does not match.
+            let genesis = media_type
+                .get_param(Self::GENESIS)
+                .map(|value| Word::try_from(value.as_str()))
+                .transpose()
+                .map_err(AcceptHeaderError::InvalidGenesis)?;
+            if genesis.is_some_and(|g| g != self.genesis_commitment) {
+                continue;
             }
 
-            // Verify the user's genesis commitment against ours.
-            if let Some(genesis) = range.params.genesis {
-                let genesis = Word::try_from(genesis).map_err(|err| {
-                    AcceptHeaderError::GenesisParsing(err, (*genesis).to_string())
-                })?;
-
-                if genesis != self.genesis_commitment {
-                    continue;
-                }
-            }
-
+            // All preconditions met, this is a valid media type that we can serve.
             return Ok(());
         }
 
-        // No matching media type found.
-        //
-        // We know the client specified at least one miden specific media type at this point.
+        // We've already handled the case where there are no media types specified, so if we are
+        // here its because the client _did_ specify some but none of them are a match.
         Err(AcceptHeaderError::NoSupportedMediaRange)
     }
 }
@@ -192,168 +188,64 @@ where
 }
 
 #[derive(Debug, thiserror::Error)]
-enum MediaRangeParsingError {
-    #[error("the media type {0} is invalid")]
-    InvalidMediaType(String),
-    #[error("the parameter {0} is invalid")]
-    InvalidParameter(String),
-    #[error("the quality weight value {0} is invalid")]
-    InvalidQuality(String),
+enum QParsingError {
+    #[error("Q value contained too many decimal digits")]
+    TooManyDigits,
+    #[error("invalid decimal digit {0}")]
+    InvalidDigit(u8),
+    #[error("invalid format")]
+    BadFormat,
 }
 
-/// Describes a single media-range content type and the parameters we care about.
+/// Denotes the value of the `Q` parameter which indicates priority of the media-type.
 ///
-/// The expected format is `main/subtype; param=value; param=value; <... params>`.
-///
-/// The specification can be found here <https://www.rfc-editor.org/rfc/rfc9110.html>.
-#[derive(Debug)]
-struct MediaRange<'a> {
-    main: MediaType<'a>,
-    subtype: MediaType<'a>,
-    params: Parameters<'a>,
-    /// The quality weighting parameter indicating the client's preference for this media-type.
-    ///
-    /// This is lifted from params so that we can trivially sort by it.
-    quality: Quality,
+/// Has a range of 0..=1 and can have upto three decimals.
+struct QValue {
+    /// Represents the range 0..=1 with three possible decimal digits by multiplying the original
+    /// fraction by 1000.
+    kilo: u16,
 }
 
-/// Represents a main or subtype media type. This includes handling for wildcard (*) types.
-#[derive(Debug)]
-enum MediaType<'a> {
-    Wildcard,
-    Type(&'a str),
-}
-
-/// Contains the raw parameter values of a given [`MediaRange`].
-///
-/// We only store the parameters that we care about.
-#[derive(Debug, Default)]
-struct Parameters<'a> {
-    version: Option<&'a str>,
-    genesis: Option<&'a str>,
-    quality: Option<&'a str>,
-}
-
-impl<'a> Parameters<'a> {
-    fn parse(s: &'a str) -> Result<Self, MediaRangeParsingError> {
-        let mut params = Parameters::default();
-
-        let mut kv = s.split(";")
-            // Handle a trailing semi-comma which otherwise results in an "empty" parameter.
-            .filter_map(|kv| {
-                let kv = kv.trim();
-                kv.is_empty().not().then_some(kv)
-            })
-            .map(|kv| {
-                kv.split_once('=')
-                    .map(|(k, v)| (k.trim(), v.trim()))
-                    .ok_or(MediaRangeParsingError::InvalidParameter(kv.to_owned()))
-            });
-
-        while let Some((k, v)) = kv.next().transpose()? {
-            // Unfortunately the spec states that they should be interpretted case-agnostic.
-            match k {
-                quality if quality.eq_ignore_ascii_case("q") => params.quality = v.into(),
-                version if version.eq_ignore_ascii_case("version") => params.version = v.into(),
-                genesis if genesis.eq_ignore_ascii_case("genesis") => params.genesis = v.into(),
-                _ => continue,
-            }
-        }
-
-        Ok(params)
+/// As per spec, the default value is 1 if unspecified.
+impl Default for QValue {
+    fn default() -> Self {
+        Self { kilo: 1000 }
     }
 }
 
-impl<'a> MediaType<'a> {
-    fn new(value: &'a str) -> Self {
-        match value.trim() {
-            "*" => Self::Wildcard,
-            other => Self::Type(other),
-        }
+impl QValue {
+    fn is_zero(&self) -> bool {
+        self.kilo == 0
     }
+}
 
-    fn matches(&self, value: &str) -> bool {
-        match self {
-            MediaType::Wildcard => true,
-            MediaType::Type(media) => media.eq_ignore_ascii_case(value),
-        }
-    }
+impl FromStr for QValue {
+    type Err = QParsingError;
 
-    fn starts_with(&self, prefix: &str) -> bool {
-        match self {
-            MediaType::Wildcard => false,
-            MediaType::Type(media) => {
-                media[..prefix.len().min(media.len())].eq_ignore_ascii_case(prefix)
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let kilo = match s.as_bytes() {
+            [b'1'] => 1000,
+            [b'1', b'.', rest @ ..] if rest.iter().all(|&c| c == b'0') => 1000,
+            [b'0'] => 0,
+            [b'0', b'.', rest @ ..] => {
+                if rest.len() > 3 {
+                    return Err(Self::Err::TooManyDigits);
+                }
+
+                let mut value = 0u16;
+                for digit in rest {
+                    match digit {
+                        b'0'..b'1' => value = value * 10 + u16::from(digit - b'0'),
+                        invalid => return Err(Self::Err::InvalidDigit(*invalid)),
+                    }
+                }
+
+                value
             },
-        }
-    }
-}
-
-/// The value of a media-range's quality weighting parameter.
-///
-/// The inner f32 is guaranteed to adhere to the standard's 0.0..1.0 range. As such, it has a total
-/// ordering and both [`Eq`] and [`Ord`] traits are implemented for it. Manually overriding the
-/// inner value is therefore a **bad idea**.
-#[derive(Debug, PartialEq)]
-struct Quality(f32);
-
-impl Quality {
-    fn from_str(s: &str) -> Option<Self> {
-        f32::from_str(s)
-            .ok()
-            .and_then(|val| (0.0..=1.0).contains(&val).then_some(Self(val)))
-    }
-}
-
-impl Eq for Quality {}
-
-impl PartialOrd for Quality {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Quality {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.total_cmp(&other.0)
-    }
-}
-
-impl<'a> MediaRange<'a> {
-    fn from_str(s: &'a str) -> Result<Self, MediaRangeParsingError> {
-        let (media, params) = s.split_once(';').unwrap_or((s, ""));
-
-        let Some((main, subtype)) = media.split_once('/') else {
-            return Err(MediaRangeParsingError::InvalidMediaType(media.to_owned()));
+            _ => return Err(Self::Err::BadFormat),
         };
 
-        let params = Parameters::parse(params)?;
-
-        let quality = params
-            .quality
-            .map(|val| {
-                Quality::from_str(val).ok_or(MediaRangeParsingError::InvalidQuality(val.to_owned()))
-            })
-            .transpose()?
-            .unwrap_or(Quality(1.0));
-
-        Ok(Self {
-            main: MediaType::new(main.trim()),
-            subtype: MediaType::new(subtype.trim()),
-            params,
-            quality,
-        })
-    }
-
-    fn is_miden_application(&self) -> bool {
-        // The subtype checks prefix only to include the legacy `vnd.miden+grpc` and optional
-        // version.
-        self.main.matches("application")
-            && (self.subtype.matches("vnd.miden") || self.subtype.starts_with("vnd.miden+grpc"))
-    }
-
-    fn is_obsolete(&self) -> bool {
-        self.subtype.starts_with("vnd.miden+grpc")
+        Ok(Self { kilo })
     }
 }
 

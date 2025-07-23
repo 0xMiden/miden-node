@@ -47,6 +47,11 @@ pub mod metrics;
 pub(crate) mod update_workers;
 pub(crate) mod worker;
 
+// CONSTANTS
+// ================================================================================================
+
+const PROXY_STATUS_PATH: &str = "/remote_prover.ProxyStatusApi/Status";
+
 // LOAD BALANCER STATE
 // ================================================================================================
 
@@ -368,7 +373,10 @@ impl ProxyHttp for LoadBalancer {
     }
 
     /// Decide whether to filter the request or not. Also, handle the special case of the update
-    /// workers request.
+    /// workers request or the proxy status request.
+    ///
+    /// The proxy status request is handled separately because it is used by the health check
+    /// service to check the status of the proxy and returns immediate response.
     ///
     /// Here we apply IP-based rate-limiting to the request. We also check if the queue is full.
     ///
@@ -396,7 +404,7 @@ impl ProxyHttp for LoadBalancer {
         Span::current().record("path", path);
 
         // Check if the request is a grpc proxy status request by checking the path
-        if path == "/remote_prover.ProxyStatusApi/Status" {
+        if path == PROXY_STATUS_PATH {
             let status = self.0.get_cached_status();
             return write_grpc_response_to_session(session, status).await;
         }

@@ -68,7 +68,7 @@ impl Rpc {
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
-            .layer(AcceptHeaderLayer::new(rpc_version, genesis.commitment()))
+            .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(cors_for_grpc_web_layer())
             // Enables gRPC-web support.
             .layer(GrpcWebLayer::new())

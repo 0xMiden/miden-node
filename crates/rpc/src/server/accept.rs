@@ -61,10 +61,10 @@ enum AcceptHeaderError {
 }
 
 impl AcceptHeaderLayer {
-    pub fn new(rpc_version: Version, genesis_commitment: Word) -> Self {
+    pub fn new(rpc_version: &Version, genesis_commitment: Word) -> Self {
         let supported_versions = VersionReq {
             comparators: vec![Comparator {
-                op: semver::Op::Exact.into(),
+                op: semver::Op::Exact,
                 major: rpc_version.major,
                 minor: rpc_version.minor.into(),
                 patch: None,
@@ -89,7 +89,9 @@ impl AcceptHeaderLayer {
     const GENESIS: Name<'static> = Name::new_unchecked("genesis");
     const GRPC: Name<'static> = Name::new_unchecked("grpc");
 
-    fn verify(&self, accept: &str) -> Result<(), AcceptHeaderError> {
+    /// Parses the `Accept` header's contents, searching for any media type compatible with our
+    /// RPC version and genesis commitment.
+    fn negotiate(&self, accept: &str) -> Result<(), AcceptHeaderError> {
         let mut media_types = mediatype::MediaTypeList::new(accept).peekable();
 
         // Its debatable whether an empty header value is valid. Let's err on the side of being
@@ -99,7 +101,12 @@ impl AcceptHeaderLayer {
         }
 
         // Parse media types until we find one we support.
-        while let Some(media_type) = media_types.next() {
+        //
+        // Since we only support a single RPC version and a single network, there is no need for
+        // fancy content negotiation e.g. searching for the best variation via the quality
+        // parameter. We only need to find a single match with any non-zero quality. This simplifies
+        // matters quite a bit as tie-breaking is quite complex.
+        for media_type in media_types {
             let media_type = media_type.map_err(AcceptHeaderError::InvalidMediaType)?;
 
             // Skip types that don't match `application/vnd.miden`.
@@ -196,7 +203,7 @@ where
         let result = header
             .to_str()
             .map_err(AcceptHeaderError::InvalidUtf8)
-            .map(|header| self.verifier.verify(header))
+            .map(|header| self.verifier.negotiate(header))
             .flatten_result();
 
         match result {
@@ -261,11 +268,10 @@ impl FromStr for QValue {
 
                 let mut value = 0u16;
                 for digit in rest {
-                    match digit {
-                        b'0'..b'9' => value = value * 10 + u16::from(digit - b'0'),
-                        invalid => {
-                            return Err(Self::Err::InvalidDigit(char::from(*invalid)));
-                        },
+                    if digit.is_ascii_digit() {
+                        value = value * 10 + u16::from(digit - b'0');
+                    } else {
+                        return Err(Self::Err::InvalidDigit(char::from(*digit)));
                     }
                 }
 
@@ -294,7 +300,7 @@ mod tests {
 
     impl AcceptHeaderLayer {
         fn for_tests() -> Self {
-            Self::new(TEST_RPC_VERSION, Word::try_from(TEST_GENESIS_COMMITMENT).unwrap())
+            Self::new(&TEST_RPC_VERSION, Word::try_from(TEST_GENESIS_COMMITMENT).unwrap())
         }
     }
 
@@ -326,7 +332,7 @@ mod tests {
     #[case::quoted_network(r#"application/vnd.miden; genesis="0x00000000000000000000000000000000000000000000000000000000deadbeef""#)]
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {
-        AcceptHeaderLayer::for_tests().verify(accept).unwrap();
+        AcceptHeaderLayer::for_tests().negotiate(accept).unwrap();
     }
 
     #[rstest::rstest]
@@ -340,6 +346,15 @@ mod tests {
     #[case::wildcard_subtype("application/*")]
     #[test]
     fn request_should_be_rejected(#[case] accept: &'static str) {
-        AcceptHeaderLayer::for_tests().verify(accept).unwrap_err();
+        AcceptHeaderLayer::for_tests().negotiate(accept).unwrap_err();
+    }
+
+
+    #[rstest::rstest]
+    #[case::zero("0", Quality(0))]
+    #[case::zero_period("0.", Quality(0)]
+    #[test]
+    fn quality_parsing(#[case] s: &'static str, #[case] expected: Quality) {
+        let value = Quality::from_str(s).unwrap();
     }
 }

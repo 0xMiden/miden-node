@@ -18,7 +18,6 @@ workspace = true
 anyhow                 = { workspace = true }
 futures                = { version = "0.3" }
 http                   = { workspace = true }
-itertools              = { workspace = true }
 mediatype              = { version = "0.20" }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { workspace = true }

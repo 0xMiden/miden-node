@@ -10,6 +10,37 @@ use tracing::debug;
 
 use crate::{COMPONENT, commands::PROXY_HOST, proxy::metrics::QUEUE_DROP_COUNT};
 
+/// Build gRPC trailers with status and optional message
+fn build_grpc_trailers(
+    grpc_status: Code,
+    error_message: Option<&str>,
+) -> pingora_core::Result<HeaderMap> {
+    let mut trailers = HeaderMap::new();
+
+    // Set gRPC status
+    let status_code = (grpc_status as i32).to_string();
+    trailers.insert(
+        "grpc-status",
+        status_code.parse().map_err(|e| {
+            Error::new(ErrorType::InternalError)
+                .more_context(format!("Failed to parse grpc-status: {e}"))
+        })?,
+    );
+
+    // Set gRPC message if provided
+    if let Some(message) = error_message {
+        trailers.insert(
+            "grpc-message",
+            message.parse().map_err(|e| {
+                Error::new(ErrorType::InternalError)
+                    .more_context(format!("Failed to parse grpc-message: {e}"))
+            })?,
+        );
+    }
+
+    Ok(trailers)
+}
+
 /// Write a protobuf message as a gRPC response to a Pingora session
 ///
 /// This helper function takes a protobuf message and writes it to a Pingora session
@@ -17,7 +48,6 @@ use crate::{COMPONENT, commands::PROXY_HOST, proxy::metrics::QUEUE_DROP_COUNT};
 pub async fn write_grpc_response_to_session<T>(
     session: &mut Session,
     message: T,
-    grpc_status: Option<&str>,
 ) -> pingora_core::Result<bool>
 where
     T: Message,
@@ -50,12 +80,7 @@ where
     session.write_response_body(Some(grpc_message.into()), false).await?;
 
     // Send trailers with gRPC status
-    let mut trailers = HeaderMap::new();
-    let status_value = grpc_status.unwrap_or("0"); // Default to "0" (OK)
-    trailers.insert(
-        "grpc-status",
-        status_value.parse().map_err(|_| Error::new(ErrorType::InternalError))?,
-    );
+    let trailers = build_grpc_trailers(Code::Ok, None)?;
     session.write_response_trailers(trailers).await?;
 
     Ok(true)
@@ -81,18 +106,7 @@ pub async fn write_grpc_error_to_session(
     session.write_response_body(None, false).await?;
 
     // Send trailers with gRPC status and error message
-    let mut trailers = HeaderMap::new();
-    let status_code = (grpc_status as i32).to_string();
-    trailers.insert(
-        "grpc-status",
-        status_code.parse().map_err(|_| Error::new(ErrorType::InternalError))?,
-    );
-
-    trailers.insert(
-        "grpc-message",
-        error_message.parse().map_err(|_| Error::new(ErrorType::InternalError))?,
-    );
-
+    let trailers = build_grpc_trailers(grpc_status, Some(error_message))?;
     session.write_response_trailers(trailers).await?;
 
     Ok(true)

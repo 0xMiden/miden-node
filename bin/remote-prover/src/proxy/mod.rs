@@ -395,7 +395,7 @@ impl ProxyHttp for LoadBalancer {
         // Check if the request is a grpc proxy status request by checking the path
         if path == "/remote_prover.ProxyStatusApi/Status" {
             let status = self.0.get_cached_status().await;
-            return write_grpc_response_to_session(session, status, None).await;
+            return write_grpc_response_to_session(session, status).await;
         }
 
         // Increment the request count

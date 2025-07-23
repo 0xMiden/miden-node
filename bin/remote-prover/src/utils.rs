@@ -1,6 +1,6 @@
 use std::net::TcpListener;
 
-use http::HeaderMap;
+use http::{HeaderMap, HeaderName, HeaderValue};
 use miden_remote_prover::error::RemoteProverError;
 use pingora::{Error, ErrorType, http::ResponseHeader, protocols::http::ServerSession};
 use pingora_proxy::Session;
@@ -9,6 +9,12 @@ use tonic::Code;
 use tracing::debug;
 
 use crate::{COMPONENT, commands::PROXY_HOST, proxy::metrics::QUEUE_DROP_COUNT};
+
+// CONSTANTS
+// ================================================================================================
+const GRPC_CONTENT_TYPE: HeaderValue = HeaderValue::from_static("application/grpc");
+const GRPC_STATUS_HEADER: HeaderName = HeaderName::from_static("grpc-status");
+const GRPC_MESSAGE_HEADER: HeaderName = HeaderName::from_static("grpc-message");
 
 /// Build gRPC trailers with status and optional message
 fn build_grpc_trailers(
@@ -20,7 +26,7 @@ fn build_grpc_trailers(
     // Set gRPC status
     let status_code = (grpc_status as i32).to_string();
     trailers.insert(
-        "grpc-status",
+        GRPC_STATUS_HEADER,
         status_code.parse().map_err(|e| {
             Error::because(ErrorType::InternalError, format!("Failed to parse grpc-status: {e}"), e)
         })?,
@@ -29,7 +35,7 @@ fn build_grpc_trailers(
     // Set gRPC message if provided
     if let Some(message) = error_message {
         trailers.insert(
-            "grpc-message",
+            GRPC_MESSAGE_HEADER,
             message.parse().map_err(|e| {
                 Error::because(
                     ErrorType::InternalError,
@@ -74,7 +80,7 @@ where
 
     // Create gRPC response headers WITHOUT grpc-status (that goes in trailers)
     let mut header = ResponseHeader::build(200, None)?;
-    header.insert_header("content-type", "application/grpc".to_string())?;
+    header.insert_header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)?;
 
     session.set_keepalive(None);
     session.write_response_header(Box::new(header), false).await?;
@@ -98,7 +104,7 @@ pub async fn write_grpc_error_to_session(
 ) -> pingora_core::Result<bool> {
     // Create gRPC response headers (always HTTP 200 for gRPC)
     let mut header = ResponseHeader::build(200, None)?;
-    header.insert_header("content-type", "application/grpc".to_string())?;
+    header.insert_header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)?;
 
     session.set_keepalive(None);
     session.write_response_header(Box::new(header), false).await?;

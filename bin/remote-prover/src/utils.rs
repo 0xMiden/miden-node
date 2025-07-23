@@ -22,8 +22,7 @@ fn build_grpc_trailers(
     trailers.insert(
         "grpc-status",
         status_code.parse().map_err(|e| {
-            Error::new(ErrorType::InternalError)
-                .more_context(format!("Failed to parse grpc-status: {e}"))
+            Error::because(ErrorType::InternalError, format!("Failed to parse grpc-status: {e}"), e)
         })?,
     );
 
@@ -32,8 +31,11 @@ fn build_grpc_trailers(
         trailers.insert(
             "grpc-message",
             message.parse().map_err(|e| {
-                Error::new(ErrorType::InternalError)
-                    .more_context(format!("Failed to parse grpc-message: {e}"))
+                Error::because(
+                    ErrorType::InternalError,
+                    format!("Failed to parse grpc-message: {e}"),
+                    e,
+                )
             })?,
         );
     }
@@ -55,8 +57,7 @@ where
     // Serialize the protobuf message
     let mut response_body = Vec::new();
     message.encode(&mut response_body).map_err(|e| {
-        Error::new(ErrorType::InternalError)
-            .more_context(format!("Failed to encode proto response: {e}"))
+        Error::because(ErrorType::InternalError, format!("Failed to encode proto response: {e}"), e)
     })?;
 
     let mut grpc_message = Vec::new();

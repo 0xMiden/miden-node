@@ -140,11 +140,13 @@ impl block_producer_server::BlockProducer for StoreApi {
         let request = request.into_inner();
 
         let note_ids: Vec<Word> = try_convert(request.note_ids)
+            .collect::<Result<_, _>>()
             .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
         let note_ids = note_ids.into_iter().map(NoteId::from).collect();
 
         let reference_blocks: Vec<u32> =
-            try_convert::<_, Infallible, _, _, _>(request.reference_blocks)
+            try_convert::<_, Infallible, _, _>(request.reference_blocks)
+                .collect::<Result<Vec<_>, _>>()
                 .expect("operation should be infallible");
         let reference_blocks = reference_blocks.into_iter().map(BlockNumber::from).collect();
 
@@ -201,6 +203,7 @@ impl block_producer_server::BlockProducer for StoreApi {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            new_account_id_prefix_is_unique: tx_inputs.new_account_id_prefix_is_unique,
             block_height,
         }))
     }

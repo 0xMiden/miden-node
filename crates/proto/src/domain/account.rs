@@ -121,7 +121,7 @@ impl TryInto<AccountProofRequest> for proto::requests::get_account_proofs_reques
                     stringify!(account_id),
                 ))?
                 .try_into()?,
-            storage_requests: try_convert(storage_requests)?,
+            storage_requests: try_convert(storage_requests).collect::<Result<_, _>>()?,
         })
     }
 }
@@ -145,7 +145,7 @@ impl TryInto<StorageMapKeysProof> for proto::requests::get_account_proofs_reques
 
         Ok(StorageMapKeysProof {
             storage_index: storage_slot_index.try_into()?,
-            storage_keys: try_convert(map_keys)?,
+            storage_keys: try_convert(map_keys).collect::<Result<_, _>>()?,
         })
     }
 }

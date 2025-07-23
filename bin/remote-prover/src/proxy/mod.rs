@@ -44,11 +44,8 @@ use crate::{
 
 mod health_check;
 pub mod metrics;
-pub(crate) mod status_cache;
 pub(crate) mod update_workers;
 pub(crate) mod worker;
-
-use status_cache::ProxyStatusCache;
 
 // LOAD BALANCER STATE
 // ================================================================================================
@@ -65,7 +62,8 @@ pub struct LoadBalancerState {
     available_workers_polling_interval: Duration,
     health_check_interval: Duration,
     supported_proof_type: ProofType,
-    status_cache: ProxyStatusCache,
+    status_cache_sender: tokio::sync::watch::Sender<ProxyStatusResponse>,
+    status_cache_receiver: tokio::sync::watch::Receiver<ProxyStatusResponse>,
 }
 
 impl LoadBalancerState {
@@ -109,6 +107,10 @@ impl LoadBalancerState {
             build_proxy_status_response(&workers_guard, supported_proof_type)
         };
 
+        // Create the status cache channel
+        let (status_cache_sender, status_cache_receiver) =
+            tokio::sync::watch::channel(initial_status);
+
         Ok(Self {
             workers,
             timeout: total_timeout,
@@ -119,7 +121,8 @@ impl LoadBalancerState {
             available_workers_polling_interval: config.available_workers_polling_interval,
             health_check_interval: config.health_check_interval,
             supported_proof_type,
-            status_cache: ProxyStatusCache::new(initial_status),
+            status_cache_sender,
+            status_cache_receiver,
         })
     }
 
@@ -213,15 +216,15 @@ impl LoadBalancerState {
     }
 
     /// Get the cached status response
-    pub async fn get_cached_status(&self) -> ProxyStatusResponse {
-        self.status_cache.get_cached_status().await
+    pub fn get_cached_status(&self) -> ProxyStatusResponse {
+        self.status_cache_receiver.borrow().clone()
     }
 
     /// Update the status cache with current worker status
     pub async fn update_status_cache(&self) {
         let workers = self.workers.read().await;
         let new_status = build_proxy_status_response(&workers, self.supported_proof_type);
-        self.status_cache.update_status(new_status).await;
+        self.status_cache_sender.send(new_status).expect("Failed to send new status");
     }
 }
 
@@ -394,7 +397,7 @@ impl ProxyHttp for LoadBalancer {
 
         // Check if the request is a grpc proxy status request by checking the path
         if path == "/remote_prover.ProxyStatusApi/Status" {
-            let status = self.0.get_cached_status().await;
+            let status = self.0.get_cached_status();
             return write_grpc_response_to_session(session, status).await;
         }
 

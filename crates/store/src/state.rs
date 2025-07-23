@@ -49,7 +49,7 @@ use crate::{
 // STRUCTURES
 // ================================================================================================
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TransactionInputs {
     pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
@@ -801,13 +801,19 @@ impl State {
 
         let account_commitment = inner.account_tree.get(account_id);
 
-        // If account commitment is empty, this transaction must be creating a new account.
         let new_account_id_prefix_is_unique = if account_commitment.is_empty() {
-            let is_unique = !inner.account_tree.contains_account_id_prefix(account_id.prefix());
-            Some(is_unique)
+            Some(!inner.account_tree.contains_account_id_prefix(account_id.prefix()))
         } else {
             None
         };
+
+        // Non-unique account Id prefixes for new accounts are not allowed.
+        if let Some(false) = new_account_id_prefix_is_unique {
+            return Ok(TransactionInputs {
+                new_account_id_prefix_is_unique,
+                ..Default::default()
+            });
+        }
 
         let nullifiers = nullifiers
             .iter()

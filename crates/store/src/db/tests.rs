@@ -400,6 +400,7 @@ fn sql_unconsumed_network_notes() {
         make_account_and_note(&mut conn, block_num, [0u8; 32], AccountStorageMode::Public),
         make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network),
     ];
+    let network_account_id = account_notes[1].0;
 
     // Create some notes, of which half are network notes.
     let notes = (0..N)
@@ -449,6 +450,17 @@ fn sql_unconsumed_network_notes() {
     )
     .unwrap();
     assert_eq!(result, network_notes);
+    let (result, _) = sql::unconsumed_network_notes_for_network_account(
+        &db_tx,
+        network_account_id.try_into().unwrap(),
+        block_num,
+        Page {
+            token: None,
+            size: NonZeroUsize::new(N as usize * 10).unwrap(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result, network_notes);
 
     // Check pagination works as expected.
     let limit = 5;
@@ -458,6 +470,18 @@ fn sql_unconsumed_network_notes() {
     };
     network_notes.chunks(limit).for_each(|expected| {
         let (result, new_page) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
+        page = new_page;
+        assert_eq!(result, expected);
+    });
+    assert!(page.token.is_none());
+    network_notes.chunks(limit).for_each(|expected| {
+        let (result, new_page) = sql::unconsumed_network_notes_for_network_account(
+            &db_tx,
+            network_account_id.try_into().unwrap(),
+            block_num,
+            page,
+        )
+        .unwrap();
         page = new_page;
         assert_eq!(result, expected);
     });
@@ -482,6 +506,14 @@ fn sql_unconsumed_network_notes() {
         size: NonZeroUsize::new(N as usize * 10).unwrap(),
     };
     let (result, _) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
+    assert_eq!(result, expected);
+    let (result, _) = sql::unconsumed_network_notes_for_network_account(
+        &db_tx,
+        network_account_id.try_into().unwrap(),
+        block_num,
+        page,
+    )
+    .unwrap();
     assert_eq!(result, expected);
 }
 

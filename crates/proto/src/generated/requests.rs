@@ -255,10 +255,12 @@ pub struct GetUnconsumedNetworkNotesForNetworkAccountRequest {
     /// Number of notes to retrieve per page.
     #[prost(uint64, tag = "2")]
     pub page_size: u64,
-    /// ...
+    /// The network account ID prefix to filter notes by.
     #[prost(uint32, tag = "3")]
     pub network_account_id_prefix: u32,
-    /// ...
+    /// The maximum (inclusive) block number to scope the query by.
+    /// Notes that are not consumed before or within the specified block number
+    /// are treated as unconsumed.
     #[prost(fixed32, tag = "4")]
     pub block_num: u32,
 }

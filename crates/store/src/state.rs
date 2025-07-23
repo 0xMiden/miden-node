@@ -983,7 +983,8 @@ impl State {
         self.db.select_unconsumed_network_notes(page).await
     }
 
-    /// Returns the unprocessed network notes for a network account, along with the next pagination token.
+    /// Returns the unprocessed network notes for a network account, along with the next pagination
+    /// token.
     pub async fn get_unconsumed_network_notes_for_network_account(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,

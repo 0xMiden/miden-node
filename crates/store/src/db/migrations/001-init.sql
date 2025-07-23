@@ -64,7 +64,7 @@ CREATE INDEX idx_notes_note_id ON notes(note_id);
 CREATE INDEX idx_notes_sender ON notes(sender, block_num);
 CREATE INDEX idx_notes_tag ON notes(tag, block_num);
 CREATE INDEX idx_notes_nullifier ON notes(nullifier);
-CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed);
+CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed_block_num);
 
 CREATE TABLE note_scripts (
     script_root BLOB NOT NULL,

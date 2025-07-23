@@ -228,9 +228,11 @@ message GetUnconsumedNetworkNotesForNetworkAccountRequest {
     // Number of notes to retrieve per page.
     uint64 page_size = 2;
 
-    // ...
+    // The network account ID prefix to filter notes by.
     uint32 network_account_id_prefix = 3;
 
-    // ...
+    // The maximum (inclusive) block number to scope the query by.
+    // Notes that are not consumed before or within the specified block number
+    // are treated as unconsumed.
     fixed32 block_num = 4;
 }

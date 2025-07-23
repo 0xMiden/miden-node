@@ -717,8 +717,8 @@ pub fn insert_nullifiers_for_block(
     let serialized_nullifiers = Rc::new(serialized_nullifiers);
 
     let mut stmt = transaction
-        .prepare_cached("UPDATE notes SET consumed_block_num = ? nullifier IN rarray(?1)")?;
-    let mut count = stmt.execute(params![block_num.as_u64(), serialized_nullifiers])?;
+        .prepare_cached("UPDATE notes SET consumed_block_num = ?1 WHERE nullifier IN rarray(?2)")?;
+    let mut count = stmt.execute(params![block_num.as_u32(), serialized_nullifiers])?;
 
     let mut stmt = transaction.prepare_cached(insert_sql!(nullifiers {
         nullifier,
@@ -855,7 +855,7 @@ pub fn insert_notes(
         aux,
         execution_hint,
         inclusion_path,
-        consumed,
+        consumed_block_num,
         nullifier,
         assets,
         inputs,
@@ -878,7 +878,7 @@ pub fn insert_notes(
             u64_to_value(note.metadata.execution_hint().into()),
             note.inclusion_path.to_bytes(),
             // New notes are always unconsumed.
-            false,
+            Option::<u32>::None,
             // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
             nullifier.as_ref().map(Nullifier::to_bytes),
             note.details.as_ref().map(|d| d.assets().to_bytes()),
@@ -1131,7 +1131,16 @@ pub fn unconsumed_network_notes(
     Ok((notes, page))
 }
 
-/// ...
+/// Returns a paginated batch of network notes for a specific account that have not yet been
+/// consumed.
+///
+/// The scope of the query is limited by the specified block number. Notes that have not been
+/// consumed before or within the specified block number are treated as unconsumed.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
 pub fn unconsumed_network_notes_for_network_account(
     transaction: &Transaction,
     network_account_id_prefix: NetworkAccountPrefix,

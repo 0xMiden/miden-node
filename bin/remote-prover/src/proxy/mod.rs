@@ -378,9 +378,6 @@ impl ProxyHttp for LoadBalancer {
     where
         Self::CTX: Send + Sync,
     {
-        let path = session.downstream_session.req_header().uri.path();
-        Span::current().record("path", path);
-
         // Extract the client address early
         let client_addr = match session.client_addr() {
             Some(addr) => addr.to_string(),
@@ -393,7 +390,10 @@ impl ProxyHttp for LoadBalancer {
             },
         };
 
-        info!("Client address: {:?}", client_addr);
+        Span::current().record("client_addr", client_addr.clone());
+
+        let path = session.downstream_session.req_header().uri.path();
+        Span::current().record("path", path);
 
         // Check if the request is a grpc proxy status request by checking the path
         if path == "/remote_prover.ProxyStatusApi/Status" {

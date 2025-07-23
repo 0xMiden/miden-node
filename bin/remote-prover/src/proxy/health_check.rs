@@ -25,9 +25,16 @@ impl BackgroundService for LoadBalancerState {
     ///
     /// # Errors
     /// - If the worker has an invalid URI.
-    async fn start(&self, mut _shutdown: ShutdownWatch) {
+    async fn start(&self, shutdown: ShutdownWatch) {
         Box::pin(async move {
             loop {
+                // Check if the shutdown signal has been received
+                {
+                    if *shutdown.borrow() {
+                        break;
+                    }
+                }
+
                 // Create a new spawn to perform the health check
                 let span = debug_span!(target: COMPONENT, "proxy.health_check");
                 let _guard = span.enter();

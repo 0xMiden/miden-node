@@ -5,10 +5,21 @@ use http::{
     header::{ACCEPT, CONTENT_TYPE},
 };
 use miden_node_proto::generated::{
-    requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
+    requests::{GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest},
+    responses::GetBlockHeaderByNumberResponse,
     rpc::api_client::ApiClient as ProtoClient,
 };
 use miden_node_store::{GenesisState, Store};
+use miden_objects::{
+    Felt, Word,
+    account::{
+        AccountDelta, AccountId, AccountIdVersion, AccountStorageDelta, AccountStorageMode,
+        AccountType, AccountVaultDelta, delta::AccountUpdateDetails,
+    },
+    transaction::ProvenTransactionBuilder,
+    utils::Serializable,
+    vm::ExecutionProof,
+};
 use tempfile::TempDir;
 use tokio::{
     net::TcpListener,
@@ -174,6 +185,68 @@ async fn rpc_server_has_web_support() {
     assert!(headers.get("access-control-allow-credentials").is_some());
     assert!(headers.get("access-control-expose-headers").is_some());
     assert!(headers.get("vary").is_some());
+    store_runtime.shutdown_background();
+}
+
+#[tokio::test]
+async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
+    // Start the RPC.
+    let (_, rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory) = start_store(store_addr).await;
+
+    // Override the client so that the ACCEPT header is not set.
+    let mut rpc_client = {
+        let endpoint = tonic::transport::Endpoint::try_from(format!("http://{rpc_addr}")).unwrap();
+
+        ProtoClient::connect(endpoint).await.unwrap()
+    };
+
+    let account_id = AccountId::dummy(
+        [0; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+    );
+    // Send any request to the RPC.
+    let tx = ProvenTransactionBuilder::new(
+        account_id,
+        [8; 32].try_into().unwrap(),
+        [3; 32].try_into().unwrap(),
+        [22; 32].try_into().unwrap(), // delta commitment
+        0.into(),
+        Word::default(),
+        u32::MAX.into(),
+        ExecutionProof::new_dummy(),
+    )
+    .account_update_details(AccountUpdateDetails::Delta(
+        AccountDelta::new(
+            account_id,
+            AccountStorageDelta::new(),
+            AccountVaultDelta::default(),
+            Felt::default(),
+        )
+        .unwrap(),
+    ))
+    .build()
+    .unwrap();
+    let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+
+    let response = rpc_client.submit_proven_transaction(request).await;
+
+    // Assert that the server rejected our request.
+    assert!(response.is_err());
+
+    // Assert that the error is due to the invalid account delta commitment.
+    assert!(
+        response
+            .as_ref()
+            .err()
+            .unwrap()
+            .message()
+            .contains("Account delta commitment does not match the actual account delta"),
+    );
+
+    // Shutdown to avoid runtime drop error.
     store_runtime.shutdown_background();
 }
 

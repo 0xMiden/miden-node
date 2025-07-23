@@ -262,9 +262,12 @@ impl api_server::Api for RpcService {
         // Validation checking for correct NoteId's
         let note_ids = request.get_ref().note_ids.clone();
 
-        let _: Vec<Word> = try_convert(note_ids).map_err(|err: ConversionError| {
-            Status::invalid_argument(err.as_report_context("invalid NoteId"))
-        })?;
+        let _: Vec<Word> =
+            try_convert(note_ids)
+                .collect::<Result<_, _>>()
+                .map_err(|err: ConversionError| {
+                    Status::invalid_argument(err.as_report_context("invalid NoteId"))
+                })?;
 
         self.store.clone().get_notes_by_id(request).await
     }
@@ -295,6 +298,20 @@ impl api_server::Api for RpcService {
             return Err(Status::invalid_argument(
                 "Network transactions may not be submitted by users yet",
             ));
+        }
+
+        // Compare the account delta commitment of the ProvenTransaction with the actual delta
+        let delta_commitment = tx.account_update().account_delta_commitment();
+
+        // Verify that the delta commitment matches the actual delta
+        if let AccountUpdateDetails::Delta(delta) = tx.account_update().details() {
+            let computed_commitment = delta.to_commitment();
+
+            if computed_commitment != delta_commitment {
+                return Err(Status::invalid_argument(
+                    "Account delta commitment does not match the actual account delta",
+                ));
+            }
         }
 
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);

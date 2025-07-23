@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use miden_lib::{
     AuthScheme,
-    account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::create_basic_wallet},
+    account::{auth::AuthRpoFalcon512, faucets::BasicFungibleFaucet, wallets::create_basic_wallet},
     transaction::memory,
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
@@ -104,7 +104,7 @@ impl GenesisConfig {
         {
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-            let auth = RpoFalcon512::new(secret_key.public_key());
+            let auth = AuthRpoFalcon512::new(secret_key.public_key());
             let init_seed: [u8; 32] = rng.random();
 
             let token_symbol = TokenSymbol::new(&symbol)?;

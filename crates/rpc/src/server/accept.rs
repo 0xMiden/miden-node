@@ -92,7 +92,7 @@ impl AcceptHeaderLayer {
     fn verify(&self, accept: &str) -> Result<(), AcceptHeaderError> {
         let mut media_types = mediatype::MediaTypeList::new(accept).peekable();
 
-        // Its debateable whether an empty header value is valid. Let's err on the side of being
+        // Its debatable whether an empty header value is valid. Let's err on the side of being
         // gracious if the client want's to be weird.
         if media_types.peek().is_none() {
             return Ok(());

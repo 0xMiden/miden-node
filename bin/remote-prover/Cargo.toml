@@ -30,7 +30,6 @@ bytes                 = { version = "1.0" }
 clap                  = { features = ["derive", "env"], version = "4.5" }
 humantime             = { workspace = true }
 miden-block-prover    = { workspace = true }
-miden-lib             = { workspace = true }
 miden-node-utils      = { workspace = true }
 miden-objects         = { features = ["std"], workspace = true }
 miden-tx              = { features = ["std"], workspace = true }

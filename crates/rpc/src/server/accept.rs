@@ -8,7 +8,7 @@ use http::header::{ACCEPT, ToStrError};
 use mediatype::{Name, ReadParams};
 use miden_node_utils::{ErrorReport, FlattenResult};
 use miden_objects::{Word, WordError};
-use semver::{Version, VersionReq};
+use semver::{Comparator, Version, VersionReq};
 use tower::{Layer, Service};
 
 /// Performs content negotiation by rejecting requests which don't match our RPC version or network.
@@ -35,7 +35,7 @@ use tower::{Layer, Service};
 /// ```
 #[derive(Clone)]
 pub struct AcceptHeaderLayer {
-    rpc_version: Version,
+    supported_versions: VersionReq,
     genesis_commitment: Word,
 }
 
@@ -62,7 +62,17 @@ enum AcceptHeaderError {
 
 impl AcceptHeaderLayer {
     pub fn new(rpc_version: Version, genesis_commitment: Word) -> Self {
-        AcceptHeaderLayer { rpc_version, genesis_commitment }
+        let supported_versions = VersionReq {
+            comparators: vec![Comparator {
+                op: semver::Op::Exact.into(),
+                major: rpc_version.major,
+                minor: rpc_version.minor.into(),
+                patch: None,
+                pre: semver::Prerelease::default(),
+            }],
+        };
+
+        AcceptHeaderLayer { supported_versions, genesis_commitment }
     }
 }
 
@@ -77,6 +87,7 @@ impl<S> Layer<S> for AcceptHeaderLayer {
 impl AcceptHeaderLayer {
     const VERSION: Name<'static> = Name::new_unchecked("version");
     const GENESIS: Name<'static> = Name::new_unchecked("genesis");
+    const GRPC: Name<'static> = Name::new_unchecked("grpc");
 
     fn verify(&self, accept: &str) -> Result<(), AcceptHeaderError> {
         let mut media_types = mediatype::MediaTypeList::new(accept).peekable();
@@ -87,6 +98,7 @@ impl AcceptHeaderLayer {
             return Ok(());
         }
 
+        // Parse media types until we find one we support.
         while let Some(media_type) = media_types.next() {
             let media_type = media_type.map_err(AcceptHeaderError::InvalidMediaType)?;
 
@@ -98,11 +110,20 @@ impl AcceptHeaderLayer {
                 _ => continue,
             }
 
+            // Allow a suffix of grpc.
+            //
+            // Note that this also serves to obsolete the legacy format of `+grpc.<x.y.z>`.
+            if let Some(suffix) = media_type.suffix
+                && suffix != Self::GRPC
+            {
+                continue;
+            }
+
             // Quality value may be set to zero, indicating that the client _does not_ want this
             // media type. So we skip those.
             let quality = media_type
                 .get_param(mediatype::names::Q)
-                .map(|value| QValue::from_str(value.as_str()))
+                .map(|value| QValue::from_str(value.unquoted_str().as_ref()))
                 .transpose()
                 .map_err(AcceptHeaderError::InvalidQValue)?
                 .unwrap_or_default();
@@ -114,20 +135,24 @@ impl AcceptHeaderLayer {
             // Skip those that don't match the version requirement.
             let version = media_type
                 .get_param(Self::VERSION)
-                .map(|value| VersionReq::parse(value.as_str()))
+                .map(|value| Version::parse(value.unquoted_str().as_ref()))
                 .transpose()
                 .map_err(AcceptHeaderError::InvalidVersion)?;
-            if !version.is_some_and(|v| v.matches(&self.rpc_version)) {
+            if let Some(version) = version
+                && !self.supported_versions.matches(&version)
+            {
                 continue;
             }
 
             // Skip if the genesis commitment does not match.
             let genesis = media_type
                 .get_param(Self::GENESIS)
-                .map(|value| Word::try_from(value.as_str()))
+                .map(|value| Word::try_from(value.unquoted_str().as_ref()))
                 .transpose()
                 .map_err(AcceptHeaderError::InvalidGenesis)?;
-            if genesis.is_some_and(|g| g != self.genesis_commitment) {
+            if let Some(genesis) = genesis
+                && genesis != self.genesis_commitment
+            {
                 continue;
             }
 
@@ -163,10 +188,6 @@ where
         self.inner.poll_ready(cx)
     }
 
-    /// Validates existence and content of HTTP ACCEPT header.
-    ///
-    /// The version specified in the value of the ACCEPT header must match the version requirements
-    /// specified by the server.
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         let Some(header) = request.headers().get(ACCEPT) else {
             return self.inner.call(request).boxed();
@@ -194,7 +215,7 @@ enum QParsingError {
     #[error("Q value contained too many decimal digits")]
     TooManyDigits,
     #[error("invalid decimal digit {0}")]
-    InvalidDigit(u8),
+    InvalidDigit(char),
     #[error("invalid format")]
     BadFormat,
 }
@@ -226,9 +247,13 @@ impl FromStr for QValue {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let kilo = match s.as_bytes() {
+            // 1
             [b'1'] => 1000,
+            // 1. | 1.0 | 1.00 | 1.000
             [b'1', b'.', rest @ ..] if rest.iter().all(|&c| c == b'0') => 1000,
+            // 0
             [b'0'] => 0,
+            // 0. | 0.x | 0.xy | 0.xyz
             [b'0', b'.', rest @ ..] => {
                 if rest.len() > 3 {
                     return Err(Self::Err::TooManyDigits);
@@ -237,8 +262,10 @@ impl FromStr for QValue {
                 let mut value = 0u16;
                 for digit in rest {
                     match digit {
-                        b'0'..b'1' => value = value * 10 + u16::from(digit - b'0'),
-                        invalid => return Err(Self::Err::InvalidDigit(*invalid)),
+                        b'0'..b'9' => value = value * 10 + u16::from(digit - b'0'),
+                        invalid => {
+                            return Err(Self::Err::InvalidDigit(char::from(*invalid)));
+                        },
                     }
                 }
 
@@ -263,7 +290,7 @@ mod tests {
 
     const TEST_GENESIS_COMMITMENT: &str =
         "0x00000000000000000000000000000000000000000000000000000000deadbeef";
-    const TEST_RPC_VERSION: Version = Version::new(1, 2, 3);
+    const TEST_RPC_VERSION: Version = Version::new(0, 2, 3);
 
     impl AcceptHeaderLayer {
         fn for_tests() -> Self {
@@ -274,45 +301,43 @@ mod tests {
     #[rstest::rstest]
     #[case::empty("")]
     #[case::wildcard("*/*")]
-    #[case::wildcard_subtype("application/*")]
     #[case::media_type_only("application/vnd.miden")]
+    #[case::with_grpc_suffix("application/vnd.miden+grpc")]
     #[case::with_quality("application/vnd.miden; q=0.3")]
-    #[case::version_exact("application/vnd.miden; version==1.2.3")]
-    #[case::version_major("application/vnd.miden; version=1")]
-    #[case::version_minor("application/vnd.miden; version=1.2")]
-    #[case::version_wildcard_major("application/vnd.miden; version=*")]
-    #[case::version_wildcard_minor("application/vnd.miden; version=1.*")]
-    #[case::version_wildcard_patch("application/vnd.miden; version=1.2.*")]
+    #[case::version_exact("application/vnd.miden; version=0.2.3")]
+    #[case::version_patch_bump("application/vnd.miden; version=0.2.4")]
+    #[case::version_patch_down("application/vnd.miden; version=0.2.2")]
     #[case::matching_network(
         "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef"
     )]
     #[case::matching_network_and_version(
-        "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=1.2.3"
+        "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=0.2.3"
     )]
     #[case::parameter_order_swopped(
-        "application/vnd.miden; version=1.2.3; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef;"
+        "application/vnd.miden; version=0.2.3; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef;"
     )]
     #[case::trailing_semi_comma("application/vnd.miden; ")]
     #[case::trailing_comma("application/vnd.miden, ")]
-    #[case::trailing_commas(", , , ,   , , application/vnd.miden, ")]
     // This should pass because the 2nd option is valid.
-    #[case::multiple_types("application/vnd.miden; version=2, application/vnd.miden")]
-    #[case::whitespace_agnostic(
-        "   application/vnd.miden  ;        genesis = 0x00000000000000000000000000000000000000000000000000000000deadbeef ;        version = 1.2.3"
-    )]
+    #[case::multiple_types("application/vnd.miden; version=2.0.0, application/vnd.miden")]
+    // Parameter values may be quoted.
+    #[case::quoted_quality(r#"application/vnd.miden; q="1""#)]
+    #[case::quoted_version(r#"application/vnd.miden; version="0.2.3""#)]
+    #[case::quoted_network(r#"application/vnd.miden; genesis="0x00000000000000000000000000000000000000000000000000000000deadbeef""#)]
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests().verify(accept).unwrap();
     }
 
     #[rstest::rstest]
-    #[case::backwards_incompatible_with_version("application/vnd.miden+grpc.1.2.3")]
-    #[case::backwards_incompatible("application/vnd.miden+grpc")]
+    #[case::obsolete_format("application/vnd.miden+grpc.0.2.3")]
+    #[case::with_non_grpc_suffix("application/vnd.miden+not")]
     #[case::invalid_version("application/vnd.miden; version=0x123")]
     #[case::invalid_genesis("application/vnd.miden; genesis=aaa")]
-    #[case::version_too_old("application/vnd.miden; version=>1.2.3")]
-    #[case::version_too_new("application/vnd.miden; version=<1.2.3")]
+    #[case::version_too_old("application/vnd.miden; version=0.1.0")]
+    #[case::version_too_new("application/vnd.miden; version=0.3.0")]
     #[case::zero_weighting("application/vnd.miden; q=0.0")]
+    #[case::wildcard_subtype("application/*")]
     #[test]
     fn request_should_be_rejected(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests().verify(accept).unwrap_err();

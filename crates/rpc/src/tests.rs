@@ -144,7 +144,7 @@ async fn rpc_server_has_web_support() {
     let client = reqwest::Client::new();
 
     let mut headers = HeaderMap::new();
-    let accept_header = concat!("application/vnd.miden.", env!("CARGO_PKG_VERSION"), "+grpc");
+    let accept_header = concat!("application/vnd.miden; version=", env!("CARGO_PKG_VERSION"));
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
     headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
 

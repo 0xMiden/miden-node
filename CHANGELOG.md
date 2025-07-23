@@ -11,7 +11,6 @@
 - [BREAKING] Updated MSRV to 1.88.
 - Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
 - [BREAKING] RPC accept header format changed from `application/miden.vnd+grpc.<version>` to `application/vnd.miden; version=<version>` (#1084).
-- RPC clients can now specify a range of valid versions in the accept header (#1084).
 
 ## v0.10.1 (2025-07-14)
 

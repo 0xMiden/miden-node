@@ -19,7 +19,7 @@ use miden_node_proto::{
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
-    AccountError, EMPTY_WORD, Word,
+    AccountError, Word,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
         AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
@@ -54,6 +54,7 @@ pub struct TransactionInputs {
     pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
     pub found_unauthenticated_notes: BTreeSet<NoteId>,
+    pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
 /// Container for state that needs to be updated atomically.
@@ -801,12 +802,12 @@ impl State {
         let account_commitment = inner.account_tree.get(account_id);
 
         // If account commitment is empty, this transaction must be creating a new account.
-        if account_commitment == EMPTY_WORD {
-            // Validate that the account ID prefix is unique.
-            if inner.account_tree.contains_account_id_prefix(account_id.prefix()) {
-                return Err(DatabaseError::DuplicateAccountIdPrefix(account_id));
-            }
-        }
+        let new_account_id_prefix_is_unique = if account_commitment.is_empty() {
+            let is_unique = !inner.account_tree.contains_account_id_prefix(account_id.prefix());
+            Some(is_unique)
+        } else {
+            None
+        };
 
         let nullifiers = nullifiers
             .iter()
@@ -823,6 +824,7 @@ impl State {
             account_commitment,
             nullifiers,
             found_unauthenticated_notes,
+            new_account_id_prefix_is_unique,
         })
     }
 

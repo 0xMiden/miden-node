@@ -6,6 +6,7 @@
 - Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
 - A transaction's account delta is now checked against its commitments in `SubmitProvenTransaction` endpoint ([#1093](https://github.com/0xMiden/miden-node/pull/1093)).
 - Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the store ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
+- Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the mempool ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
 
 ## v0.10.1 (2025-07-14)
 

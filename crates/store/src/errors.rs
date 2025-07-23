@@ -74,8 +74,6 @@ pub enum DatabaseError {
         Remove all database files and try again."
     )]
     UnsupportedDatabaseVersion,
-    #[error("duplicate account ID prefix {0}")]
-    DuplicateAccountIdPrefix(AccountId),
 }
 
 impl DatabaseError {

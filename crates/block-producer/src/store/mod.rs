@@ -184,6 +184,14 @@ impl StoreClient {
 
         debug!(target: COMPONENT, ?response);
 
+        if !response.new_account_id_prefix_is_unique.unwrap_or(true) {
+            debug_assert!(
+                proven_tx.account_update().initial_state_commitment().is_empty(),
+                "account id prefix uniqueness should not be validated unless transaction creates a new account"
+            );
+            return Err(StoreError::DuplicateAccountIdPrefix(proven_tx.account_id()));
+        }
+
         let tx_inputs: TransactionInputs = response.try_into()?;
 
         if tx_inputs.account_id != proven_tx.account_id() {

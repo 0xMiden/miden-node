@@ -90,7 +90,8 @@ impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
                 Ok(SmtLeaf::new_single(key, value))
             },
             proto::primitives::smt_leaf::Leaf::Multiple(entries) => {
-                let domain_entries: Vec<(Word, Word)> = try_convert(entries.entries)?;
+                let domain_entries: Vec<(Word, Word)> =
+                    try_convert(entries.entries).collect::<Result<_, _>>()?;
 
                 Ok(SmtLeaf::new_multiple(domain_entries)?)
             },
@@ -105,9 +106,9 @@ impl From<SmtLeaf> for proto::primitives::SmtLeaf {
         let leaf = match smt_leaf {
             SmtLeaf::Empty(leaf_index) => Leaf::Empty(leaf_index.value()),
             SmtLeaf::Single(entry) => Leaf::Single(entry.into()),
-            SmtLeaf::Multiple(entries) => {
-                Leaf::Multiple(proto::primitives::SmtLeafEntryList { entries: convert(entries) })
-            },
+            SmtLeaf::Multiple(entries) => Leaf::Multiple(proto::primitives::SmtLeafEntryList {
+                entries: convert(entries).collect(),
+            }),
         };
 
         Self { leaf: Some(leaf) }

@@ -108,7 +108,7 @@ impl StoreClient {
         match response.current_block_header {
             // There are new blocks compared to the builder's latest state
             Some(block) => {
-                let peaks = try_convert(response.current_peaks)?;
+                let peaks = try_convert(response.current_peaks).collect::<Result<_, _>>()?;
                 let header =
                     BlockHeader::try_from(block).map_err(StoreError::DeserializationError)?;
 

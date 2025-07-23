@@ -394,7 +394,8 @@ impl ProxyHttp for LoadBalancer {
                     session.as_downstream_mut(),
                     "No socket address".to_string(),
                 )
-                .await;
+                .await
+                .map(|_| true);
             },
         };
 
@@ -406,7 +407,7 @@ impl ProxyHttp for LoadBalancer {
         // Check if the request is a grpc proxy status request by checking the path
         if path == PROXY_STATUS_PATH {
             let status = self.0.get_cached_status();
-            return write_grpc_response_to_session(session, status).await;
+            return write_grpc_response_to_session(session, status).await.map(|_| true);
         }
 
         // Increment the request count
@@ -426,7 +427,9 @@ impl ProxyHttp for LoadBalancer {
                 RATE_LIMIT_VIOLATIONS.inc();
             }
 
-            return create_too_many_requests_response(session, self.0.max_req_per_sec).await;
+            return create_too_many_requests_response(session, self.0.max_req_per_sec)
+                .await
+                .map(|_| true);
         }
 
         let queue_len = QUEUE.len().await;
@@ -436,7 +439,7 @@ impl ProxyHttp for LoadBalancer {
 
         // Check if the queue is full
         if queue_len >= self.0.max_queue_items {
-            return create_queue_full_response(session).await;
+            return create_queue_full_response(session).await.map(|_| true);
         }
 
         Ok(false)

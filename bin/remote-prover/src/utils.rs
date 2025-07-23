@@ -56,7 +56,7 @@ fn build_grpc_trailers(
 pub async fn write_grpc_response_to_session<T>(
     session: &mut Session,
     message: T,
-) -> pingora_core::Result<bool>
+) -> pingora_core::Result<()>
 where
     T: Message,
 {
@@ -90,7 +90,7 @@ where
     let trailers = build_grpc_trailers(Code::Ok, None)?;
     session.write_response_trailers(trailers).await?;
 
-    Ok(true)
+    Ok(())
 }
 
 /// Write a gRPC error response to a Pingora session
@@ -101,7 +101,7 @@ pub async fn write_grpc_error_to_session(
     session: &mut Session,
     grpc_status: Code,
     error_message: &str,
-) -> pingora_core::Result<bool> {
+) -> pingora_core::Result<()> {
     // Create gRPC response headers (always HTTP 200 for gRPC)
     let mut header = ResponseHeader::build(200, None)?;
     header.insert_header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)?;
@@ -116,13 +116,11 @@ pub async fn write_grpc_error_to_session(
     let trailers = build_grpc_trailers(grpc_status, Some(error_message))?;
     session.write_response_trailers(trailers).await?;
 
-    Ok(true)
+    Ok(())
 }
 
 /// Create a gRPC `RESOURCE_EXHAUSTED` response for a full queue
-pub(crate) async fn create_queue_full_response(
-    session: &mut Session,
-) -> pingora_core::Result<bool> {
+pub(crate) async fn create_queue_full_response(session: &mut Session) -> pingora_core::Result<()> {
     // Increment the queue drop count metric
     QUEUE_DROP_COUNT.inc();
 
@@ -135,7 +133,7 @@ pub(crate) async fn create_queue_full_response(
 pub async fn create_too_many_requests_response(
     session: &mut Session,
     max_request_per_second: isize,
-) -> pingora_core::Result<bool> {
+) -> pingora_core::Result<()> {
     // Use our helper function to create a proper gRPC error response
     let error_message =
         format!("Rate limit exceeded: {max_request_per_second} requests per second");
@@ -148,12 +146,12 @@ pub async fn create_too_many_requests_response(
 pub async fn create_response_with_error_message(
     session: &mut ServerSession,
     error_msg: String,
-) -> pingora_core::Result<bool> {
+) -> pingora_core::Result<()> {
     let mut header = ResponseHeader::build(400, None)?;
     header.insert_header("X-Error-Message", error_msg)?;
     session.set_keepalive(None);
     session.write_response_header(Box::new(header)).await?;
-    Ok(true)
+    Ok(())
 }
 
 /// Checks if a port is available for use.

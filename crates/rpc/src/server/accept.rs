@@ -217,7 +217,7 @@ where
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, PartialEq, thiserror::Error)]
 enum QParsingError {
     #[error("Q value contained too many decimal digits")]
     TooManyDigits,
@@ -230,6 +230,7 @@ enum QParsingError {
 /// Denotes the value of the `Q` parameter which indicates priority of the media-type.
 ///
 /// Has a range of 0..=1 and can have upto three decimals.
+#[derive(Debug, PartialEq)]
 struct QValue {
     /// Represents the range 0..=1 with three possible decimal digits by multiplying the original
     /// fraction by 1000.
@@ -244,6 +245,11 @@ impl Default for QValue {
 }
 
 impl QValue {
+    #[cfg(test)]
+    const fn new(kilo: u16) -> Self {
+        Self { kilo }
+    }
+
     fn is_zero(&self) -> bool {
         self.kilo == 0
     }
@@ -292,7 +298,8 @@ mod tests {
     use miden_objects::Word;
     use semver::Version;
 
-    use super::AcceptHeaderLayer;
+    use super::{AcceptHeaderLayer, QParsingError};
+    use crate::server::accept::QValue;
 
     const TEST_GENESIS_COMMITMENT: &str =
         "0x00000000000000000000000000000000000000000000000000000000deadbeef";
@@ -349,12 +356,34 @@ mod tests {
         AcceptHeaderLayer::for_tests().negotiate(accept).unwrap_err();
     }
 
-
     #[rstest::rstest]
-    #[case::zero("0", Quality(0))]
-    #[case::zero_period("0.", Quality(0)]
+    // Success cases
+    #[case::one("1", Ok(QValue::new(1_000)))]
+    #[case::one_period("1.", Ok(QValue::new(1_000)))]
+    #[case::one_full("1.000", Ok(QValue::new(1_000)))]
+    #[case::zero("0", Ok(QValue::new(0)))]
+    #[case::zero_period("0.", Ok(QValue::new(0)))]
+    #[case::zeros("0.000", Ok(QValue::new(0)))]
+    #[case::digits_123("0.123", Ok(QValue::new(123)))]
+    #[case::digits_456("0.456", Ok(QValue::new(456)))]
+    #[case::digits_789("0.789", Ok(QValue::new(789)))]
+    // Error cases.
+    #[case::too_many_digits("0.1234", Err(QParsingError::TooManyDigits))]
+    #[case::invalid_digit("0.a", Err(QParsingError::InvalidDigit('a')))]
+    #[case::extra_period("0..0", Err(QParsingError::InvalidDigit('.')))]
+    #[case::leading_period(".0", Err(QParsingError::BadFormat))]
+    #[case::missing_period("0123", Err(QParsingError::BadFormat))]
+    #[case::barely_too_large("1.001", Err(QParsingError::BadFormat))]
+    #[case::too_large_by_far("2.0", Err(QParsingError::BadFormat))]
     #[test]
-    fn quality_parsing(#[case] s: &'static str, #[case] expected: Quality) {
-        let value = Quality::from_str(s).unwrap();
+    fn qvalue_parsing(#[case] s: &'static str, #[case] expected: Result<QValue, QParsingError>) {
+        use std::str::FromStr;
+
+        assert_eq!(QValue::from_str(s), expected);
+    }
+
+    #[test]
+    fn qvalue_default_is_one() {
+        assert_eq!(QValue::default(), QValue::new(1_000));
     }
 }

@@ -34,7 +34,9 @@ mod metrics;
 pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     // load accounts from the dump file
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
-    let accounts = fs::read_to_string(accounts_file).await.unwrap();
+    let accounts = fs::read_to_string(&accounts_file)
+        .await
+        .expect(format!("missing file {}", accounts_file.display()).as_str());
     let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
     let (store_client, _) = start_store(data_directory).await;
@@ -100,7 +102,9 @@ pub async fn sync_state(
 pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     // load accounts from the dump file
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
-    let accounts = fs::read_to_string(accounts_file).await.unwrap();
+    let accounts = fs::read_to_string(&accounts_file)
+        .await
+        .expect(format!("missing file {}", accounts_file.display()).as_str());
     let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
     let (store_client, _) = start_store(data_directory).await;
@@ -161,7 +165,9 @@ pub async fn bench_check_nullifiers_by_prefix(
     let (mut store_client, _) = start_store(data_directory.clone()).await;
 
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
-    let accounts = fs::read_to_string(accounts_file).await.unwrap();
+    let accounts = fs::read_to_string(&accounts_file)
+        .await
+        .expect(format!("missing file {}", accounts_file.display()).as_str());
     let account_ids: Vec<AccountId> =
         accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).collect();
 

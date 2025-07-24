@@ -221,19 +221,18 @@ where
 enum QParsingError {
     #[error("Q value contained too many decimal digits")]
     TooManyDigits,
-    #[error("invalid decimal digit {0}")]
-    InvalidDigit(char),
     #[error("invalid format")]
     BadFormat,
+    #[error("invalid decimal digits")]
+    InvalidDecimalDigits,
 }
 
 /// Denotes the value of the `Q` parameter which indicates priority of the media-type.
 ///
-/// Has a range of 0..=1 and can have upto three decimals.
+/// Has a range of 0..=1 and can have upto three decimal places.
 #[derive(Debug, PartialEq)]
 struct QValue {
-    /// Represents the range 0..=1 with three possible decimal digits by multiplying the original
-    /// fraction by 1000.
+    /// A value in the range `0..=1000` representing the original `Q` value multipled by 1000.
     kilo: u16,
 }
 
@@ -258,6 +257,7 @@ impl QValue {
 impl FromStr for QValue {
     type Err = QParsingError;
 
+    /// A [`QValue`] is limited to the `0..=1` range with up to three decimal places.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let kilo = match s.as_bytes() {
             // 1
@@ -268,18 +268,25 @@ impl FromStr for QValue {
             [b'0'] => 0,
             // 0. | 0.x | 0.xy | 0.xyz
             [b'0', b'.', rest @ ..] => {
-                if rest.len() > 3 {
-                    return Err(Self::Err::TooManyDigits);
-                }
+                // This looks weird but simplifies several things that otherwise become annoying.
+                //
+                // - `u16::from_str` cannot parse an empty string aka case [].
+                // - Because these are fraction digits we need to multiply shorter strings.
+                //
+                // This recomposition removes the special casing for these.
+                let digits = match rest {
+                    [] => [b'0', b'0', b'0'],
+                    [a] => [*a, b'0', b'0'],
+                    [a, b] => [*a, *b, b'0'],
+                    [a, b, c] => [*a, *b, *c],
+                    _ => return Err(QParsingError::TooManyDigits),
+                };
 
-                let mut value = 0u16;
-                for digit in rest {
-                    if digit.is_ascii_digit() {
-                        value = value * 10 + u16::from(digit - b'0');
-                    } else {
-                        return Err(Self::Err::InvalidDigit(char::from(*digit)));
-                    }
-                }
+                // SAFETY: This original came from a str and we only pulled off two ascii bytes so
+                // the remainder must still be valid utf8.
+                let digits = str::from_utf8(&digits).unwrap();
+                let value =
+                    u16::from_str(digits).map_err(|_| QParsingError::InvalidDecimalDigits)?;
 
                 value
             },
@@ -364,13 +371,16 @@ mod tests {
     #[case::zero("0", Ok(QValue::new(0)))]
     #[case::zero_period("0.", Ok(QValue::new(0)))]
     #[case::zeros("0.000", Ok(QValue::new(0)))]
+    #[case::first_decimal("0.1", Ok(QValue::new(100)))]
+    #[case::second_decimal("0.01", Ok(QValue::new(10)))]
+    #[case::third_decimal("0.001", Ok(QValue::new(1)))]
     #[case::digits_123("0.123", Ok(QValue::new(123)))]
     #[case::digits_456("0.456", Ok(QValue::new(456)))]
     #[case::digits_789("0.789", Ok(QValue::new(789)))]
     // Error cases.
     #[case::too_many_digits("0.1234", Err(QParsingError::TooManyDigits))]
-    #[case::invalid_digit("0.a", Err(QParsingError::InvalidDigit('a')))]
-    #[case::extra_period("0..0", Err(QParsingError::InvalidDigit('.')))]
+    #[case::invalid_digit("0.a", Err(QParsingError::InvalidDecimalDigits))]
+    #[case::extra_period("0..0", Err(QParsingError::InvalidDecimalDigits))]
     #[case::leading_period(".0", Err(QParsingError::BadFormat))]
     #[case::missing_period("0123", Err(QParsingError::BadFormat))]
     #[case::barely_too_large("1.001", Err(QParsingError::BadFormat))]

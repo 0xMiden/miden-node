@@ -55,6 +55,9 @@ pub struct State {
     /// The chain MMR including the latest block header.
     chain_mmr: PartialBlockchain,
 
+    /// The number of blocks in the chain MMR after pruning.
+    chain_mmr_block_count: u32,
+
     /// Tracks all network accounts with inflight state.
     ///
     /// This is network account deltas, network notes and their nullifiers.
@@ -87,8 +90,10 @@ pub struct State {
 }
 
 impl State {
-    /// The number of blocks to keep in memory while tracking the chain tip.
-    const CHAIN_TIP_LENGTH: u32 = 128;
+    /// The maximum number of blocks to keep in memory while tracking the chain tip.
+    const MAX_BLOCK_COUNT: u32 = 16;
+    /// The number of blocks kept after pruning.
+    const PRUNED_BLOCK_COUNT: u32 = 8;
 
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
@@ -100,12 +105,14 @@ impl State {
 
         let mut chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
-        chain_mmr.prune_to(..Self::CHAIN_TIP_LENGTH.into());
+        let pruned_block_height = chain_mmr.chain_length().as_u32() - Self::PRUNED_BLOCK_COUNT;
+        chain_mmr.prune_to(..pruned_block_height.into());
 
         let mut state = Self {
             chain_tip,
             chain_mmr,
             store,
+            chain_mmr_block_count: Self::PRUNED_BLOCK_COUNT,
             accounts: HashMap::default(),
             queue: VecDeque::default(),
             in_progress: HashSet::default(),
@@ -195,6 +202,26 @@ impl State {
         self.chain_tip.block_num()
     }
 
+    /// Updates the chain tip and MMR block count.
+    ///
+    /// Blocks in the MMR are pruned if the block count exceeds the maximum.
+    fn update_chain_tip(&mut self, tip: BlockHeader) {
+        // Update MMR which lags by one block.
+        self.chain_mmr.add_block(self.chain_tip.clone(), true);
+        self.chain_mmr_block_count += 1;
+
+        // Set the new tip.
+        self.chain_tip = tip;
+
+        // Prune MMR if necessary.
+        if self.chain_mmr_block_count > Self::MAX_BLOCK_COUNT {
+            let pruned_block_height =
+                self.chain_mmr.chain_length().as_u32() - Self::PRUNED_BLOCK_COUNT;
+            self.chain_mmr.prune_to(..pruned_block_height.into());
+            self.chain_mmr_block_count = Self::PRUNED_BLOCK_COUNT;
+        }
+    }
+
     /// Marks a previously selected candidate account as failed, allowing it to be available for
     /// selection again.
     #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
@@ -227,11 +254,7 @@ impl State {
                     header.prev_block_commitment(),
                     self.chain_tip.commitment()
                 );
-
-                // Chain MMR always lags by one block.
-                self.chain_mmr.add_block(self.chain_tip.clone(), true);
-                self.chain_mmr.prune_to(..Self::CHAIN_TIP_LENGTH.into());
-                self.chain_tip = header;
+                self.update_chain_tip(header);
                 for tx in txs {
                     self.commit_transaction(tx);
                 }

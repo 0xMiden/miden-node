@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use miden_objects::{
     Word,
@@ -31,7 +31,7 @@ pub struct AuthenticatedTransaction {
     ///
     /// In other words, notes which were unauthenticated at the time the transaction was proven,
     /// but which have since been committed to, and authenticated by the store.
-    notes_authenticated_by_store: BTreeSet<NoteId>,
+    notes_authenticated_by_store: HashSet<NoteId>,
     /// Chain height that the authentication took place at.
     authentication_height: BlockNumber,
 }
@@ -150,7 +150,7 @@ impl AuthenticatedTransaction {
             account_id: inner.account_id(),
             account_commitment: store_account_state,
             nullifiers: inner.nullifiers().map(|nullifier| (nullifier, None)).collect(),
-            found_unauthenticated_notes: BTreeSet::default(),
+            found_unauthenticated_notes: HashSet::default(),
             current_block_height: 0.into(),
         };
         // SAFETY: nullifiers were set to None aka are definitely unspent.

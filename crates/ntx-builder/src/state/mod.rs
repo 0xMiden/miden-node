@@ -87,6 +87,9 @@ pub struct State {
 }
 
 impl State {
+    /// The number of blocks to keep in memory while tracking the chain tip.
+    const CHAIN_TIP_LENGTH: u32 = 128;
+
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
@@ -97,7 +100,7 @@ impl State {
 
         let mut chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
-        chain_mmr.prune_to(..128.into());
+        chain_mmr.prune_to(..Self::CHAIN_TIP_LENGTH.into());
 
         let mut state = Self {
             chain_tip,
@@ -227,6 +230,7 @@ impl State {
 
                 // Chain MMR always lags by one block.
                 self.chain_mmr.add_block(self.chain_tip.clone(), true);
+                self.chain_mmr.prune_to(..Self::CHAIN_TIP_LENGTH.into());
                 self.chain_tip = header;
                 for tx in txs {
                     self.commit_transaction(tx);

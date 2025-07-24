@@ -95,8 +95,10 @@ impl State {
             .await?
             .expect("store should contain a latest block");
 
-        let chain_mmr = PartialBlockchain::new(chain_mmr, [])
+        let mut chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
+        chain_mmr.prune_to(..128.into());
+
         let mut state = Self {
             chain_tip,
             chain_mmr,

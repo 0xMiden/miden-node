@@ -231,11 +231,11 @@ pub mod get_account_proofs_request {
 /// Returns a list of unconsumed network notes for a network account using pagination.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct GetUnconsumedNetworkNotesRequest {
-    /// An opaque token used to paginate through the notes.
-    ///
     /// This should be null on the first call, and set to the response
     /// token until the response token is null, at which point all data
     /// has been fetched.
+    ///
+    /// Note that this token is only valid if used with the same parameters.
     #[prost(uint64, optional, tag = "1")]
     pub page_token: ::core::option::Option<u64>,
     /// Number of notes to retrieve per page.
@@ -245,8 +245,8 @@ pub struct GetUnconsumedNetworkNotesRequest {
     #[prost(uint32, tag = "3")]
     pub network_account_id_prefix: u32,
     /// The maximum (inclusive) block number to scope the query by.
-    /// Notes that are not consumed before or within the specified block number
-    /// are treated as unconsumed.
+    ///
+    /// Notes that are consumed after this block number are excluded from the result.
     #[prost(fixed32, tag = "4")]
-    pub block_num: u32,
+    pub latest_block_num: u32,
 }

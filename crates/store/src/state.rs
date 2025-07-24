@@ -980,11 +980,11 @@ impl State {
     pub async fn get_unconsumed_network_notes(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,
-        block_num: BlockNumber,
+        latest_block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db
-            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
+            .select_unconsumed_network_notes(network_account_id_prefix, latest_block_num, page)
             .await
     }
 }

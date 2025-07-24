@@ -126,7 +126,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         request: Request<GetUnconsumedNetworkNotesRequest>,
     ) -> Result<Response<GetUnconsumedNetworkNotesResponse>, Status> {
         let request = request.into_inner();
-        let block_num = BlockNumber::from(request.block_num);
+        let latest_block_num = BlockNumber::from(request.latest_block_num);
         let network_account_id_prefix =
             NetworkAccountPrefix::try_from(request.network_account_id_prefix).map_err(|err| {
                 invalid_argument(err.as_report_context("invalid network_account_id_prefix"))
@@ -142,7 +142,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created
         // instead
         let (notes, next_page) = state
-            .get_unconsumed_network_notes(network_account_id_prefix, block_num, page)
+            .get_unconsumed_network_notes(network_account_id_prefix, latest_block_num, page)
             .await
             .map_err(internal_error)?;
 

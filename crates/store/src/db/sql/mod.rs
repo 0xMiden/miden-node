@@ -1084,8 +1084,8 @@ pub fn select_note_inclusion_proofs(
 /// Returns a paginated batch of network notes for a specific account that have not yet been
 /// consumed.
 ///
-/// The scope of the query is limited by the specified block number. Notes that have not been
-/// consumed before or within the specified block number are treated as unconsumed.
+/// The scope of the query is limited by the specified block number. Notes that are consumed after
+/// the specified block number are excluded from the result.
 ///
 /// # Returns
 ///
@@ -1094,7 +1094,7 @@ pub fn select_note_inclusion_proofs(
 pub fn unconsumed_network_notes(
     transaction: &Transaction,
     network_account_id_prefix: NetworkAccountPrefix,
-    block_num: BlockNumber,
+    latest_block_num: BlockNumber,
     mut page: Page,
 ) -> Result<(Vec<NoteRecord>, Page)> {
     assert_eq!(
@@ -1114,6 +1114,7 @@ pub fn unconsumed_network_notes(
         LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
             execution_mode = 0 AND tag = ? AND
+            block_num <= ? AND
             (consumed_block_num IS NULL OR consumed_block_num > ?) AND rowid >= ?
         ORDER BY rowid
         LIMIT ?
@@ -1125,7 +1126,7 @@ pub fn unconsumed_network_notes(
     // check if there are more notes for the next page.
     let mut rows = stmt.query(params![
         u32::from(network_account_id_prefix),
-        block_num.as_u32(),
+        latest_block_num.as_u32(),
         page.token.unwrap_or(0),
         page.size.get() + 1
     ])?;

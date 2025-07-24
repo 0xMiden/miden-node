@@ -552,11 +552,11 @@ impl Db {
     pub(crate) async fn select_unconsumed_network_notes(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,
-        block_num: BlockNumber,
+        latest_block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
         self.transact("unconsumed network notes for network account", move |conn| {
-            sql::unconsumed_network_notes(conn, network_account_id_prefix, block_num, page)
+            sql::unconsumed_network_notes(conn, network_account_id_prefix, latest_block_num, page)
         })
         .await
     }

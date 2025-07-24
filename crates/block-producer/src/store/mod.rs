@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{HashMap, HashSet},
     fmt::{Display, Formatter},
     net::SocketAddr,
     num::NonZeroU32,
@@ -39,11 +39,11 @@ pub struct TransactionInputs {
     /// Maps each consumed notes' nullifier to block number, where the note is consumed.
     ///
     /// We use `NonZeroU32` as the wire format uses 0 to encode none.
-    pub nullifiers: BTreeMap<Nullifier, Option<NonZeroU32>>,
+    pub nullifiers: HashMap<Nullifier, Option<NonZeroU32>>,
     /// Unauthenticated notes which are present in the store.
     ///
     /// These are notes which were committed _after_ the transaction was created.
-    pub found_unauthenticated_notes: BTreeSet<NoteId>,
+    pub found_unauthenticated_notes: HashSet<NoteId>,
     /// The current block height.
     pub current_block_height: BlockNumber,
 }
@@ -84,7 +84,7 @@ impl TryFrom<proto::block_producer_store::TransactionInputs> for TransactionInpu
             )))?
             .try_into()?;
 
-        let mut nullifiers = BTreeMap::new();
+        let mut nullifiers = HashMap::new();
         for nullifier_record in response.nullifiers {
             let nullifier = nullifier_record
                 .nullifier
@@ -183,6 +183,14 @@ impl StoreClient {
         let response = self.inner.clone().get_transaction_inputs(request).await?.into_inner();
 
         debug!(target: COMPONENT, ?response);
+
+        if !response.new_account_id_prefix_is_unique.unwrap_or(true) {
+            debug_assert!(
+                proven_tx.account_update().initial_state_commitment().is_empty(),
+                "account id prefix uniqueness should not be validated unless transaction creates a new account"
+            );
+            return Err(StoreError::DuplicateAccountIdPrefix(proven_tx.account_id()));
+        }
 
         let tx_inputs: TransactionInputs = response.try_into()?;
 

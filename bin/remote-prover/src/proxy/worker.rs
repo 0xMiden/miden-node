@@ -6,8 +6,12 @@ use std::{
 use anyhow::Context;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover::{
-    COMPONENT, api::ProofType, error::RemoteProverError,
-    generated::remote_prover::worker_status_api_client::WorkerStatusApiClient,
+    COMPONENT,
+    api::ProofType,
+    error::RemoteProverError,
+    generated::{
+        ProxyWorkerStatus, remote_prover::worker_status_api_client::WorkerStatusApiClient,
+    },
 };
 use pingora::lb::Backend;
 use semver::{Version, VersionReq};
@@ -347,6 +351,25 @@ impl Worker {
 impl PartialEq for Worker {
     fn eq(&self, other: &Self) -> bool {
         self.backend == other.backend
+    }
+}
+
+// CONVERSIONS
+// ================================================================================================
+
+/// Conversion from a Worker reference to a `WorkerStatus` proto message.
+impl From<&Worker> for ProxyWorkerStatus {
+    fn from(worker: &Worker) -> Self {
+        use miden_remote_prover::generated::remote_prover::WorkerHealthStatus as ProtoWorkerHealthStatus;
+        Self {
+            address: worker.address(),
+            version: worker.version().to_string(),
+            status: match worker.health_status() {
+                WorkerHealthStatus::Healthy => ProtoWorkerHealthStatus::Healthy,
+                WorkerHealthStatus::Unhealthy { .. } => ProtoWorkerHealthStatus::Unhealthy,
+                WorkerHealthStatus::Unknown => ProtoWorkerHealthStatus::Unknown,
+            } as i32,
+        }
     }
 }
 

@@ -158,4 +158,7 @@ message TransactionInputs {
 
     // The node's current block height.
     fixed32 block_height = 4;
+
+    // Whether the account ID prefix is unique. Only relevant for account creation requests.
+    optional bool new_account_id_prefix_is_unique = 5; // TODO: Replace this with an error. When a general error message exists.
 }

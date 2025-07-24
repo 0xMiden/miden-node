@@ -1,9 +1,12 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, time::Duration};
 
+use anyhow::Context;
 use miden_node_proto::{
     errors::ConversionError,
     generated::{
-        self as proto, block_producer::api_client as block_producer_client, rpc::api_server,
+        self as proto,
+        block_producer::api_client as block_producer_client,
+        rpc::api_server::{self, Api},
         rpc_store::rpc_client as store_client,
     },
     try_convert,
@@ -19,12 +22,14 @@ use miden_node_utils::{
 use miden_objects::{
     MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
     account::{AccountId, delta::AccountUpdateDetails},
+    block::{BlockHeader, BlockNumber},
     transaction::ProvenTransaction,
     utils::serde::Deserializable,
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
-    Request, Response, Status, service::interceptor::InterceptedService, transport::Channel,
+    IntoRequest, Request, Response, Status, service::interceptor::InterceptedService,
+    transport::Channel,
 };
 use tracing::{debug, info, instrument};
 
@@ -72,6 +77,54 @@ impl RpcService {
         });
 
         Self { store, block_producer }
+    }
+
+    /// Fetches the genesis block header from the store.
+    ///
+    /// Automatically retries until the store connection becomes available.
+    pub async fn get_genesis_header_with_retry(&self) -> anyhow::Result<BlockHeader> {
+        let mut retry_counter = 0;
+        loop {
+            let result = self
+                .get_block_header_by_number(
+                    proto::shared::BlockHeaderByNumberRequest {
+                        block_num: Some(BlockNumber::GENESIS.as_u32()),
+                        include_mmr_proof: None,
+                    }
+                    .into_request(),
+                )
+                .await;
+
+            match result {
+                Ok(header) => {
+                    let header = header
+                        .into_inner()
+                        .block_header
+                        .context("response is missing the header")?;
+                    let header =
+                        BlockHeader::try_from(header).context("failed to parse response")?;
+
+                    return Ok(header);
+                },
+                Err(err) if err.code() == tonic::Code::Unavailable => {
+                    // exponential backoff with base 500ms and max 30s
+                    let backoff = Duration::from_millis(500)
+                        .saturating_mul(1 << retry_counter)
+                        .min(Duration::from_secs(30));
+
+                    tracing::warn!(
+                        ?backoff,
+                        %retry_counter,
+                        %err,
+                        "connection failed while subscribing to the mempool, retrying"
+                    );
+
+                    retry_counter += 1;
+                    tokio::time::sleep(backoff).await;
+                },
+                Err(other) => return Err(other.into()),
+            }
+        }
     }
 }
 

@@ -3,6 +3,7 @@ use miden_node_proto::errors::ConversionError;
 use miden_node_utils::{ErrorReport, formatting::format_opt};
 use miden_objects::{
     ProposedBatchError, ProposedBlockError, ProvenBatchError, Word,
+    account::AccountId,
     block::BlockNumber,
     note::{NoteId, Nullifier},
     transaction::TransactionId,
@@ -181,6 +182,8 @@ pub enum BuildBlockError {
 /// Errors returned by the [`StoreClient`](crate::store::StoreClient).
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("account Id prefix already exists: {0}")]
+    DuplicateAccountIdPrefix(AccountId),
     #[error("gRPC client error")]
     GrpcClientError(Box<tonic::Status>),
     #[error("malformed response from store: {0}")]

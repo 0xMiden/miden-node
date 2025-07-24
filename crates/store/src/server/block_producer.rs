@@ -192,6 +192,7 @@ impl block_producer_server::BlockProducer for StoreApi {
                 .into_iter()
                 .map(Into::into)
                 .collect(),
+            new_account_id_prefix_is_unique: tx_inputs.new_account_id_prefix_is_unique,
             block_height,
         }))
     }

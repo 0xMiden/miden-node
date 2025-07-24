@@ -49,11 +49,12 @@ use crate::{
 // STRUCTURES
 // ================================================================================================
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TransactionInputs {
     pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
     pub found_unauthenticated_notes: BTreeSet<NoteId>,
+    pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
 /// Container for state that needs to be updated atomically.
@@ -800,6 +801,20 @@ impl State {
 
         let account_commitment = inner.account_tree.get(account_id);
 
+        let new_account_id_prefix_is_unique = if account_commitment.is_empty() {
+            Some(!inner.account_tree.contains_account_id_prefix(account_id.prefix()))
+        } else {
+            None
+        };
+
+        // Non-unique account Id prefixes for new accounts are not allowed.
+        if let Some(false) = new_account_id_prefix_is_unique {
+            return Ok(TransactionInputs {
+                new_account_id_prefix_is_unique,
+                ..Default::default()
+            });
+        }
+
         let nullifiers = nullifiers
             .iter()
             .map(|nullifier| NullifierInfo {
@@ -815,6 +830,7 @@ impl State {
             account_commitment,
             nullifiers,
             found_unauthenticated_notes,
+            new_account_id_prefix_is_unique,
         })
     }
 

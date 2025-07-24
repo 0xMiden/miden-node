@@ -11,20 +11,18 @@ pub mod transaction;
 // UTILITIES
 // ================================================================================================
 
-pub fn convert<T, From, To, R>(from: T) -> R
+pub fn convert<T, From, To>(from: T) -> impl Iterator<Item = To>
 where
     T: IntoIterator<Item = From>,
     From: Into<To>,
-    R: FromIterator<To>,
 {
-    from.into_iter().map(Into::into).collect()
+    from.into_iter().map(Into::into)
 }
 
-pub fn try_convert<T, E, From, To, R>(from: T) -> Result<R, E>
+pub fn try_convert<T, E, From, To>(from: T) -> impl Iterator<Item = Result<To, E>>
 where
     T: IntoIterator<Item = From>,
     From: TryInto<To, Error = E>,
-    R: FromIterator<To>,
 {
-    from.into_iter().map(TryInto::try_into).collect()
+    from.into_iter().map(TryInto::try_into)
 }

@@ -9,7 +9,7 @@ SELECT
     tag,
     aux,
     execution_hint,
-    merkle_path
+    inclusion_path
 FROM
     notes
 WHERE

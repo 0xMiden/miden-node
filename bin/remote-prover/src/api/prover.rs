@@ -229,15 +229,14 @@ fn invalid_argument<E: ErrorReport>(err: E) -> Status {
 mod test {
     use std::time::Duration;
 
-    use miden_lib::transaction::TransactionKernel;
     use miden_node_utils::cors::cors_for_grpc_web_layer;
     use miden_objects::{
         asset::{Asset, FungibleAsset},
         note::NoteType,
         testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
-        transaction::{ProvenTransaction, TransactionScript, TransactionWitness},
+        transaction::{ProvenTransaction, TransactionWitness},
     };
-    use miden_testing::{Auth, MockChain};
+    use miden_testing::{Auth, MockChainBuilder};
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
     use tonic::Request;
@@ -277,8 +276,9 @@ mod test {
         let mut client_2 = ApiClient::connect("http://127.0.0.1:50052").await.unwrap();
 
         // Create a mock transaction to send to the server
-        let mut mock_chain = MockChain::new();
-        let account = mock_chain.add_pending_existing_wallet(Auth::BasicAuth, vec![]);
+        let mut mock_chain_builder = MockChainBuilder::new();
+        let account = mock_chain_builder.add_existing_wallet(Auth::BasicAuth).unwrap();
+        let mut mock_chain = mock_chain_builder.build().unwrap();
 
         let fungible_asset_1: Asset =
             FungibleAsset::new(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap(), 100)
@@ -293,18 +293,10 @@ mod test {
             )
             .unwrap();
 
-        let tx_script = TransactionScript::compile(
-            "begin
-                call.::miden::contracts::auth::basic::auth__tx_rpo_falcon512
-            end",
-            TransactionKernel::assembler(),
-        )
-        .unwrap();
         let tx_context = mock_chain
             .build_tx_context(account.id(), &[], &[])
             .unwrap()
             .extend_input_notes(vec![note_1])
-            .tx_script(tx_script)
             .build()
             .unwrap();
 

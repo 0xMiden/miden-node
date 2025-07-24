@@ -1,4 +1,4 @@
-use miden_objects::{Digest, block::BlockNumber};
+use miden_objects::{Word, block::BlockNumber};
 use pretty_assertions::assert_eq;
 use serial_test::serial;
 
@@ -157,7 +157,7 @@ fn block_commit_reverts_expired_txns() {
     uut.add_transaction(tx_to_revert).unwrap();
 
     // Commit the pending block which should revert the above tx.
-    let arb_header = BlockHeader::mock(0, None, None, &[], Digest::default());
+    let arb_header = BlockHeader::mock(0, None, None, &[], Word::empty());
     uut.commit_block(arb_header.clone());
     reference.commit_block(arb_header);
 
@@ -168,7 +168,7 @@ fn block_commit_reverts_expired_txns() {
 fn empty_block_commitment() {
     let mut uut = Mempool::for_tests();
 
-    let arb_header = BlockHeader::mock(0, None, None, &[], Digest::default());
+    let arb_header = BlockHeader::mock(0, None, None, &[], Word::empty());
     for _ in 0..3 {
         let (_block, _) = uut.select_block();
         uut.commit_block(arb_header.clone());
@@ -178,7 +178,7 @@ fn empty_block_commitment() {
 #[test]
 #[should_panic]
 fn block_commitment_is_rejected_if_no_block_is_in_flight() {
-    let arb_header = BlockHeader::mock(0, None, None, &[], Digest::default());
+    let arb_header = BlockHeader::mock(0, None, None, &[], Word::empty());
     Mempool::for_tests().commit_block(arb_header);
 }
 

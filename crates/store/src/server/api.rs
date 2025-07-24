@@ -8,9 +8,9 @@ use miden_node_proto::{
 };
 use miden_node_utils::ErrorReport;
 use miden_objects::{
+    Word,
     account::AccountId,
     block::BlockNumber,
-    crypto::hash::rpo::RpoDigest,
     note::{NoteId, Nullifier},
 };
 use tonic::{Request, Response, Status};
@@ -43,7 +43,7 @@ impl StoreApi {
 
         Ok(Response::new(GetBlockHeaderByNumberResponse {
             block_header: block_header.map(Into::into),
-            chain_length: mmr_proof.as_ref().map(|p| p.forest as u32),
+            chain_length: mmr_proof.as_ref().map(|p| p.forest.num_leaves() as u32),
             mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
         }))
     }
@@ -103,7 +103,7 @@ pub fn validate_nullifiers(
 pub fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
     notes
         .iter()
-        .map(|digest| Ok(RpoDigest::try_from(digest)?.into()))
+        .map(|digest| Ok(Word::try_from(digest)?.into()))
         .collect::<Result<_, ConversionError>>()
         .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }

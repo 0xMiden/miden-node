@@ -10,7 +10,7 @@ use metrics::SeedingMetrics;
 use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::{
-    account::{auth::RpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
+    account::{auth::AuthRpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
     note::create_p2id_note,
     utils::Serializable,
 };
@@ -19,7 +19,7 @@ use miden_node_proto::{domain::batch::BatchInputs, generated::store::rpc_client:
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    Digest, Felt, ONE,
+    Felt, ONE, Word,
     account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType},
     asset::{Asset, FungibleAsset, TokenSymbol},
     batch::{BatchAccountUpdate, BatchId, ProvenBatch},
@@ -136,7 +136,7 @@ async fn generate_blocks(
 
     // share random coin seed and key pair for all accounts to avoid key generation overhead
     let coin_seed: [u64; 4] = rand::rng().random();
-    let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new))));
+    let rng = Arc::new(Mutex::new(RpoRandomCoin::new(coin_seed.map(Felt::new).into())));
     let key_pair = {
         let mut rng = rng.lock().unwrap();
         SecretKey::with_rng(&mut *rng)
@@ -298,7 +298,7 @@ fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorag
     let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
-        .with_component(RpoFalcon512::new(public_key))
+        .with_component(AuthRpoFalcon512::new(public_key))
         .with_component(BasicWallet)
         .build()
         .unwrap();
@@ -308,7 +308,7 @@ fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorag
 /// Creates a new faucet account.
 fn create_faucet() -> Account {
     let coin_seed: [u64; 4] = rand::rng().random();
-    let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new));
+    let mut rng = RpoRandomCoin::new(coin_seed.map(Felt::new).into());
     let key_pair = SecretKey::with_rng(&mut rng);
     let init_seed = [0_u8; 32];
 
@@ -316,7 +316,7 @@ fn create_faucet() -> Account {
     let (new_faucet, _seed) = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
-        .with_component(RpoFalcon512::new(key_pair.public_key()))
+        .with_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
         .build()
         .unwrap();
@@ -386,7 +386,7 @@ fn create_consume_note_tx(
         updated_account.id(),
         init_hash,
         updated_account.commitment(),
-        Digest::default(),
+        Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),
@@ -409,7 +409,7 @@ fn create_emit_note_tx(
     let slot = faucet.storage().get_item(2).unwrap();
     faucet
         .storage_mut()
-        .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)])
+        .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
         .unwrap();
 
     let (id, vault, sorage, code, nonce) = faucet.clone().into_parts();
@@ -419,7 +419,7 @@ fn create_emit_note_tx(
         updated_faucet.id(),
         initial_account_hash,
         updated_faucet.commitment(),
-        Digest::default(),
+        Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
         u32::MAX.into(),

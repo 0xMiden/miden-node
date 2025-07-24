@@ -19,16 +19,15 @@ use miden_node_utils::{
     },
 };
 use miden_objects::{
-    Digest, Word,
+    LexicographicWord, Word,
     account::{
         Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta,
         FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
-        StorageSlot,
-        delta::{AccountUpdateDetails, LexicographicWord},
+        StorageSlot, delta::AccountUpdateDetails,
     },
     asset::{Asset, NonFungibleAsset},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
+    crypto::merkle::SparseMerklePath,
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, NoteMetadata, NoteType, Nullifier},
     transaction::{OrderedTransactionHeaders, TransactionId},
     utils::serde::{Deserializable, Serializable},
@@ -95,9 +94,7 @@ pub fn select_all_accounts(transaction: &Transaction) -> Result<Vec<AccountInfo>
 /// # Returns
 ///
 /// The vector with the account id and corresponding commitment, or an error.
-pub fn select_all_account_commitments(
-    transaction: &Transaction,
-) -> Result<Vec<(AccountId, RpoDigest)>> {
+pub fn select_all_account_commitments(transaction: &Transaction) -> Result<Vec<(AccountId, Word)>> {
     let mut stmt = transaction.prepare_cached(
         "SELECT account_id, account_commitment FROM accounts ORDER BY block_num ASC;",
     )?;
@@ -107,7 +104,7 @@ pub fn select_all_account_commitments(
     while let Some(row) = rows.next()? {
         let account_id: AccountId = read_from_blob_column(row, 0)?;
         let account_commitment_data = row.get_ref(1)?.as_blob()?;
-        let account_commitment = RpoDigest::read_from_bytes(account_commitment_data)?;
+        let account_commitment = Word::read_from_bytes(account_commitment_data)?;
 
         result.push((account_id, account_commitment));
     }
@@ -400,7 +397,7 @@ pub fn select_account_delta(
     while let Some(row) = rows.next()? {
         let slot = row.get(0)?;
         let key_data = row.get_ref(1)?.as_blob()?;
-        let key = Digest::read_from_bytes(key_data)?;
+        let key = Word::read_from_bytes(key_data)?;
         let value_data = row.get_ref(2)?.as_blob()?;
         let value = Word::read_from_bytes(value_data)?;
 
@@ -857,7 +854,7 @@ pub fn insert_notes(
         execution_mode,
         aux,
         execution_hint,
-        merkle_path,
+        inclusion_path,
         consumed,
         nullifier,
         assets,
@@ -879,7 +876,7 @@ pub fn insert_notes(
             note.metadata.tag().execution_mode() as u8,
             u64_to_value(note.metadata.aux().into()),
             u64_to_value(note.metadata.execution_hint().into()),
-            note.merkle_path.to_bytes(),
+            note.inclusion_path.to_bytes(),
             // New notes are always unconsumed.
             false,
             // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
@@ -973,7 +970,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
         let aux: u64 = row.get(7)?;
         let aux = aux.try_into().map_err(DatabaseError::InvalidFelt)?;
         let execution_hint = column_value_as_u64(row, 8)?;
-        let merkle_path = read_from_blob_column(row, 9)?;
+        let inclusion_path = read_from_blob_column(row, 9)?;
 
         let metadata = NoteMetadata::new(
             sender,
@@ -988,7 +985,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
             note_index,
             note_id,
             metadata,
-            merkle_path,
+            inclusion_path,
         };
         res.push(note);
     }
@@ -1047,7 +1044,7 @@ pub fn select_note_inclusion_proofs(
             note_id,
             batch_index,
             note_index,
-            merkle_path
+            inclusion_path
         FROM
             notes
         WHERE
@@ -1073,10 +1070,10 @@ pub fn select_note_inclusion_proofs(
             .expect("batch and note index from DB should be valid")
             .leaf_index_value();
 
-        let merkle_path_data = row.get_ref(4)?.as_blob()?;
-        let merkle_path = MerklePath::read_from_bytes(merkle_path_data)?;
+        let inclusion_path_data = row.get_ref(4)?.as_blob()?;
+        let inclusion_path = SparseMerklePath::read_from_bytes(inclusion_path_data)?;
 
-        let proof = NoteInclusionProof::new(block_num.into(), node_index_in_block, merkle_path)?;
+        let proof = NoteInclusionProof::new(block_num.into(), node_index_in_block, inclusion_path)?;
 
         result.insert(note_id, proof);
     }
@@ -1279,7 +1276,8 @@ pub fn insert_transactions(
 ///
 /// # Returns
 ///
-/// The vector of [`RpoDigest`] with the transaction IDs.
+/// A vector of [`TransactionSummary`] containing the account ID, block number, and transaction ID
+/// for each transaction that matches the criteria.
 pub fn select_transactions_by_accounts_and_block_range(
     transaction: &Transaction,
     block_start: BlockNumber,

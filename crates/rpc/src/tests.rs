@@ -1,10 +1,25 @@
 use std::{net::SocketAddr, time::Duration};
 
+use http::{
+    HeaderMap, HeaderValue,
+    header::{ACCEPT, CONTENT_TYPE},
+};
 use miden_node_proto::generated::{
-    requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
+    requests::{GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest},
+    responses::GetBlockHeaderByNumberResponse,
     rpc::api_client::ApiClient as ProtoClient,
 };
 use miden_node_store::{GenesisState, Store};
+use miden_objects::{
+    Felt, Word,
+    account::{
+        AccountDelta, AccountId, AccountIdVersion, AccountStorageDelta, AccountStorageMode,
+        AccountType, AccountVaultDelta, delta::AccountUpdateDetails,
+    },
+    transaction::ProvenTransactionBuilder,
+    utils::Serializable,
+    vm::ExecutionProof,
+};
 use tempfile::TempDir;
 use tokio::{
     net::TcpListener,
@@ -77,14 +92,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         // Assert the server does not reject our request on the basis of missing accept header.
         assert!(response.is_err());
         assert_eq!(response.as_ref().err().unwrap().code(), tonic::Code::InvalidArgument);
-        assert!(
-            response
-                .as_ref()
-                .err()
-                .unwrap()
-                .message()
-                .contains("Client / server version mismatch"),
-        );
+        assert!(response.as_ref().err().unwrap().message().contains("server does not support"),);
 
         // Shutdown to avoid runtime drop error.
         store_runtime.shutdown_background();
@@ -135,6 +143,111 @@ async fn rpc_startup_is_robust_to_network_failures() {
     });
     let response = send_request(&mut rpc_client).await;
     assert_eq!(response.unwrap().into_inner().block_header.unwrap().block_num, 0);
+}
+
+#[tokio::test]
+async fn rpc_server_has_web_support() {
+    // Start server
+    let (_, rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory) = start_store(store_addr).await;
+
+    // Send a status request
+    let client = reqwest::Client::new();
+
+    let mut headers = HeaderMap::new();
+    let accept_header = concat!("application/vnd.miden; version=", env!("CARGO_PKG_VERSION"));
+    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
+    headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
+
+    // An empty message with header format:
+    //   - A byte indicating uncompressed (0)
+    //   - A u32 indicating the data length (0)
+    //
+    // Originally described here:
+    // https://github.com/hyperium/tonic/issues/1040#issuecomment-1191832200
+    let mut message = Vec::new();
+    message.push(0);
+    message.extend_from_slice(&0u32.to_be_bytes());
+
+    let response = client
+        .post(format!("http://{rpc_addr}/rpc.Api/Status"))
+        .headers(headers)
+        .body(message)
+        .send()
+        .await
+        .unwrap();
+    let headers = response.headers();
+
+    // CORS headers are usually set when `tonic_web` is enabled.
+    //
+    // This was deduced by manually checking, and isn't formally described
+    // in any documentation.
+    assert!(headers.get("access-control-allow-credentials").is_some());
+    assert!(headers.get("access-control-expose-headers").is_some());
+    assert!(headers.get("vary").is_some());
+    store_runtime.shutdown_background();
+}
+
+#[tokio::test]
+async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
+    // Start the RPC.
+    let (_, rpc_addr, store_addr) = start_rpc().await;
+    let (store_runtime, _data_directory) = start_store(store_addr).await;
+
+    // Override the client so that the ACCEPT header is not set.
+    let mut rpc_client = {
+        let endpoint = tonic::transport::Endpoint::try_from(format!("http://{rpc_addr}")).unwrap();
+
+        ProtoClient::connect(endpoint).await.unwrap()
+    };
+
+    let account_id = AccountId::dummy(
+        [0; 15],
+        AccountIdVersion::Version0,
+        AccountType::RegularAccountImmutableCode,
+        AccountStorageMode::Public,
+    );
+    // Send any request to the RPC.
+    let tx = ProvenTransactionBuilder::new(
+        account_id,
+        [8; 32].try_into().unwrap(),
+        [3; 32].try_into().unwrap(),
+        [22; 32].try_into().unwrap(), // delta commitment
+        0.into(),
+        Word::default(),
+        u32::MAX.into(),
+        ExecutionProof::new_dummy(),
+    )
+    .account_update_details(AccountUpdateDetails::Delta(
+        AccountDelta::new(
+            account_id,
+            AccountStorageDelta::new(),
+            AccountVaultDelta::default(),
+            Felt::default(),
+        )
+        .unwrap(),
+    ))
+    .build()
+    .unwrap();
+    let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+
+    let response = rpc_client.submit_proven_transaction(request).await;
+
+    // Assert that the server rejected our request.
+    assert!(response.is_err());
+
+    // Assert that the error is due to the invalid account delta commitment.
+    assert!(
+        response
+            .as_ref()
+            .err()
+            .unwrap()
+            .message()
+            .contains("Account delta commitment does not match the actual account delta"),
+    );
+
+    // Shutdown to avoid runtime drop error.
+    store_runtime.shutdown_background();
 }
 
 /// Sends an arbitrary / irrelevant request to the RPC.

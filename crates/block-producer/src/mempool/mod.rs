@@ -18,7 +18,7 @@ use transaction_expiration::TransactionExpirations;
 use transaction_graph::TransactionGraph;
 
 use crate::{
-    COMPONENT, SERVER_MAX_BATCHES_PER_BLOCK, SERVER_MAX_TXS_PER_BATCH,
+    COMPONENT, DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH,
     domain::transaction::AuthenticatedTransaction, errors::AddTransactionError,
 };
 
@@ -66,7 +66,7 @@ enum BudgetStatus {
 impl Default for BatchBudget {
     fn default() -> Self {
         Self {
-            transactions: SERVER_MAX_TXS_PER_BATCH,
+            transactions: DEFAULT_MAX_TXS_PER_BATCH,
             input_notes: MAX_INPUT_NOTES_PER_BATCH,
             output_notes: MAX_OUTPUT_NOTES_PER_BATCH,
             accounts: MAX_ACCOUNTS_PER_BATCH,
@@ -76,7 +76,7 @@ impl Default for BatchBudget {
 
 impl Default for BlockBudget {
     fn default() -> Self {
-        Self { batches: SERVER_MAX_BATCHES_PER_BLOCK }
+        Self { batches: DEFAULT_MAX_BATCHES_PER_BLOCK }
     }
 }
 

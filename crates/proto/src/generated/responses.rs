@@ -183,6 +183,11 @@ pub struct GetTransactionInputsResponse {
     /// The node's current block height.
     #[prost(fixed32, tag = "4")]
     pub block_height: u32,
+    /// Whether the account ID prefix is unique. Only relevant for account creation requests.
+    ///
+    /// TODO: Replace this with an error. When a general error message exists.
+    #[prost(bool, optional, tag = "5")]
+    pub new_account_id_prefix_is_unique: ::core::option::Option<bool>,
 }
 /// Represents the result of submitting proven transaction.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]

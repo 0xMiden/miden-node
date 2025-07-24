@@ -25,10 +25,10 @@ pub use server::BlockProducer;
 pub const COMPONENT: &str = "miden-block-producer";
 
 /// The number of transactions per batch.
-pub const SERVER_MAX_TXS_PER_BATCH: usize = 8;
+pub const DEFAULT_MAX_TXS_PER_BATCH: usize = 8;
 
 /// Maximum number of batches per block.
-pub const SERVER_MAX_BATCHES_PER_BLOCK: usize = 8;
+pub const DEFAULT_MAX_BATCHES_PER_BLOCK: usize = 8;
 
 /// Size of the batch building worker pool.
 const SERVER_NUM_BATCH_BUILDERS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
@@ -46,12 +46,12 @@ const SERVER_MEMPOOL_STATE_RETENTION: usize = 5;
 const SERVER_MEMPOOL_EXPIRATION_SLACK: u32 = 2;
 
 const _: () = assert!(
-    SERVER_MAX_BATCHES_PER_BLOCK <= miden_objects::MAX_BATCHES_PER_BLOCK,
+    DEFAULT_MAX_BATCHES_PER_BLOCK <= miden_objects::MAX_BATCHES_PER_BLOCK,
     "Server constraint cannot exceed the protocol's constraint"
 );
 
 const _: () = assert!(
-    SERVER_MAX_TXS_PER_BATCH <= miden_objects::MAX_ACCOUNTS_PER_BATCH,
+    DEFAULT_MAX_TXS_PER_BATCH <= miden_objects::MAX_ACCOUNTS_PER_BATCH,
     "Server constraint cannot exceed the protocol's constraint"
 );
 

@@ -1,8 +1,8 @@
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_objects::{
+    Word,
     account::{Account, AccountDelta, AccountId},
     block::BlockNumber,
-    crypto::hash::rpo::RpoDigest,
     note::Nullifier,
     utils::Deserializable,
 };
@@ -138,7 +138,7 @@ where
 pub fn account_summary_from_row(row: &rusqlite::Row<'_>) -> crate::db::Result<AccountSummary> {
     let account_id = read_from_blob_column(row, 0)?;
     let account_commitment_data = row.get_ref(1)?.as_blob()?;
-    let account_commitment = RpoDigest::read_from_bytes(account_commitment_data)?;
+    let account_commitment = Word::read_from_bytes(account_commitment_data)?;
     let block_num = read_block_number(row, 2)?;
 
     Ok(AccountSummary {
@@ -165,7 +165,7 @@ pub fn apply_delta(
     account_id: AccountId,
     value: &ValueRef<'_>,
     delta: &AccountDelta,
-    final_state_commitment: &RpoDigest,
+    final_state_commitment: &Word,
 ) -> crate::db::Result<Account, DatabaseError> {
     let account = value.as_blob_or_null()?;
     let account = account.map(Account::read_from_bytes).transpose()?;

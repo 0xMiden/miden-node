@@ -16,7 +16,7 @@ use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},
-    crypto::merkle::{MmrPeaks, PartialMmr},
+    crypto::merkle::{Forest, MmrPeaks, PartialMmr},
 };
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
@@ -112,15 +112,16 @@ impl StoreClient {
         match response.current_block_header {
             // There are new blocks compared to the builder's latest state
             Some(block) => {
-                let peaks = try_convert(response.current_peaks)?;
+                let peaks = try_convert(response.current_peaks).collect::<Result<_, _>>()?;
                 let header =
                     BlockHeader::try_from(block).map_err(StoreError::DeserializationError)?;
 
-                let peaks = MmrPeaks::new(header.block_num().as_usize(), peaks).map_err(|_| {
-                    StoreError::MalformedResponse(
-                        "returned peaks are not valid for the sent request".into(),
-                    )
-                })?;
+                let peaks = MmrPeaks::new(Forest::new(header.block_num().as_usize()), peaks)
+                    .map_err(|_| {
+                        StoreError::MalformedResponse(
+                            "returned peaks are not valid for the sent request".into(),
+                        )
+                    })?;
 
                 let partial_mmr = PartialMmr::from_peaks(peaks);
 

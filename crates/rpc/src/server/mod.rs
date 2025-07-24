@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use accept::AcceptLayer;
+use accept::AcceptHeaderLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
 use miden_node_proto_build::rpc_api_descriptor;
@@ -38,6 +38,12 @@ impl Rpc {
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
         let api = api::RpcService::new(self.store, self.block_producer);
+
+        let genesis = api
+            .get_genesis_header_with_retry()
+            .await
+            .context("Fetching genesis header from store")?;
+
         let api_service = api_server::ApiServer::new(api);
         let reflection_service = server::Builder::configure()
             .register_file_descriptor_set(rpc_api_descriptor())
@@ -55,10 +61,14 @@ impl Rpc {
 
         info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
 
+        let rpc_version = env!("CARGO_PKG_VERSION");
+        let rpc_version =
+            semver::Version::parse(rpc_version).context("failed to parse crate version")?;
+
         tonic::transport::Server::builder()
             .accept_http1(true)
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
-            .layer(AcceptLayer::new()?)
+            .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(cors_for_grpc_web_layer())
             // Enables gRPC-web support.
             .layer(GrpcWebLayer::new())
@@ -69,64 +79,5 @@ impl Rpc {
             .serve_with_incoming(TcpListenerStream::new(self.listener))
             .await
             .context("failed to serve RPC API")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use http::{
-        HeaderMap, HeaderValue,
-        header::{ACCEPT, CONTENT_TYPE},
-    };
-    use tokio::net::TcpListener;
-
-    use crate::Rpc;
-
-    #[tokio::test]
-    async fn rpc_server_has_web_support() {
-        // Start server
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let rpc_addr = listener.local_addr().unwrap();
-        let rpc = Rpc {
-            listener,
-            store: "127.0.0.1:50051".parse().unwrap(),
-            block_producer: None,
-        };
-        tokio::spawn(async move { rpc.serve().await.unwrap() });
-
-        // Send a status request
-        let client = reqwest::Client::new();
-
-        let mut headers = HeaderMap::new();
-        let accept_header = concat!("application/vnd.miden.", env!("CARGO_PKG_VERSION"), "+grpc");
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/grpc-web+proto"));
-        headers.insert(ACCEPT, HeaderValue::from_static(accept_header));
-
-        // An empty message with header format:
-        //   - A byte indicating uncompressed (0)
-        //   - A u32 indicating the data length (0)
-        //
-        // Originally described here:
-        // https://github.com/hyperium/tonic/issues/1040#issuecomment-1191832200
-        let mut message = Vec::new();
-        message.push(0);
-        message.extend_from_slice(&0u32.to_be_bytes());
-
-        let response = client
-            .post(format!("http://{rpc_addr}/rpc.Api/Status"))
-            .headers(headers)
-            .body(message)
-            .send()
-            .await
-            .unwrap();
-        let headers = response.headers();
-
-        // CORS headers are usually set when `tonic_web` is enabled.
-        //
-        // This was deduced by manually checking, and isn't formally described
-        // in any documentation.
-        assert!(headers.get("access-control-allow-credentials").is_some());
-        assert!(headers.get("access-control-expose-headers").is_some());
-        assert!(headers.get("vary").is_some());
     }
 }

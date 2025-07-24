@@ -1,52 +1,143 @@
 use std::net::TcpListener;
 
+use http::{HeaderMap, HeaderName, HeaderValue};
 use miden_remote_prover::error::RemoteProverError;
 use pingora::{Error, ErrorType, http::ResponseHeader, protocols::http::ServerSession};
 use pingora_proxy::Session;
+use prost::Message;
+use tonic::Code;
 use tracing::debug;
 
 use crate::{COMPONENT, commands::PROXY_HOST, proxy::metrics::QUEUE_DROP_COUNT};
 
-const RESOURCE_EXHAUSTED_CODE: u16 = 8;
+// CONSTANTS
+// ================================================================================================
+const GRPC_CONTENT_TYPE: HeaderValue = HeaderValue::from_static("application/grpc");
+const GRPC_STATUS_HEADER: HeaderName = HeaderName::from_static("grpc-status");
+const GRPC_MESSAGE_HEADER: HeaderName = HeaderName::from_static("grpc-message");
 
-/// Create a 503 response for a full queue
-pub(crate) async fn create_queue_full_response(
+/// Build gRPC trailers with status and optional message
+fn build_grpc_trailers(
+    grpc_status: Code,
+    error_message: Option<&str>,
+) -> pingora_core::Result<HeaderMap> {
+    let mut trailers = HeaderMap::new();
+
+    // Set gRPC status
+    let status_code = (grpc_status as i32).to_string();
+    trailers.insert(
+        GRPC_STATUS_HEADER,
+        status_code.parse().map_err(|e| {
+            Error::because(ErrorType::InternalError, format!("Failed to parse grpc-status: {e}"), e)
+        })?,
+    );
+
+    // Set gRPC message if provided
+    if let Some(message) = error_message {
+        trailers.insert(
+            GRPC_MESSAGE_HEADER,
+            message.parse().map_err(|e| {
+                Error::because(
+                    ErrorType::InternalError,
+                    format!("Failed to parse grpc-message: {e}"),
+                    e,
+                )
+            })?,
+        );
+    }
+
+    Ok(trailers)
+}
+
+/// Write a protobuf message as a gRPC response to a Pingora session
+///
+/// This helper function takes a protobuf message and writes it to a Pingora session
+/// in the proper gRPC format, handling message encoding, headers, and trailers.
+pub async fn write_grpc_response_to_session<T>(
     session: &mut Session,
-) -> pingora_core::Result<bool> {
-    // Set grpc-message header to "Too many requests in the queue"
-    // This is meant to be used by a Tonic interceptor to return a gRPC error
-    let mut header = ResponseHeader::build(503, None)?;
-    header.insert_header("grpc-message", "Too many requests in the queue".to_string())?;
-    header.insert_header("grpc-status", RESOURCE_EXHAUSTED_CODE)?;
+    message: T,
+) -> pingora_core::Result<()>
+where
+    T: Message,
+{
+    // Serialize the protobuf message
+    let mut response_body = Vec::new();
+    message.encode(&mut response_body).map_err(|e| {
+        Error::because(ErrorType::InternalError, format!("Failed to encode proto response: {e}"), e)
+    })?;
+
+    let mut grpc_message = Vec::new();
+
+    // Add compression flag (1 byte, 0 = no compression)
+    grpc_message.push(0u8);
+
+    // Add message length (4 bytes, big-endian)
+    let msg_len = response_body.len() as u32;
+    grpc_message.extend_from_slice(&msg_len.to_be_bytes());
+
+    // Add the actual message
+    grpc_message.extend_from_slice(&response_body);
+
+    // Create gRPC response headers WITHOUT grpc-status (that goes in trailers)
+    let mut header = ResponseHeader::build(200, None)?;
+    header.insert_header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)?;
+
     session.set_keepalive(None);
-    session.write_response_header(Box::new(header.clone()), true).await?;
+    session.write_response_header(Box::new(header), false).await?;
+    session.write_response_body(Some(grpc_message.into()), false).await?;
 
-    let mut error = Error::new(ErrorType::HTTPStatus(503))
-        .more_context("Too many requests in the queue")
-        .into_in();
-    error.set_cause("Too many requests in the queue");
+    // Send trailers with gRPC status
+    let trailers = build_grpc_trailers(Code::Ok, None)?;
+    session.write_response_trailers(trailers).await?;
 
+    Ok(())
+}
+
+/// Write a gRPC error response to a Pingora session
+///
+/// This helper function creates a proper gRPC error response with the specified
+/// status code and error message.
+pub async fn write_grpc_error_to_session(
+    session: &mut Session,
+    grpc_status: Code,
+    error_message: &str,
+) -> pingora_core::Result<()> {
+    // Create gRPC response headers (always HTTP 200 for gRPC)
+    let mut header = ResponseHeader::build(200, None)?;
+    header.insert_header(http::header::CONTENT_TYPE, GRPC_CONTENT_TYPE)?;
+
+    session.set_keepalive(None);
     session.write_response_header(Box::new(header), false).await?;
 
+    // gRPC errors don't have a body, just headers and trailers
+    session.write_response_body(None, false).await?;
+
+    // Send trailers with gRPC status and error message
+    let trailers = build_grpc_trailers(grpc_status, Some(error_message))?;
+    session.write_response_trailers(trailers).await?;
+
+    Ok(())
+}
+
+/// Create a gRPC `RESOURCE_EXHAUSTED` response for a full queue
+pub(crate) async fn create_queue_full_response(session: &mut Session) -> pingora_core::Result<()> {
     // Increment the queue drop count metric
     QUEUE_DROP_COUNT.inc();
 
-    Err(error)
+    // Use our helper function to create a proper gRPC error response
+    write_grpc_error_to_session(session, Code::ResourceExhausted, "Too many requests in the queue")
+        .await
 }
 
-/// Create a 429 response for too many requests
+/// Create a gRPC `RESOURCE_EXHAUSTED` response for rate limiting
 pub async fn create_too_many_requests_response(
     session: &mut Session,
     max_request_per_second: isize,
-) -> pingora_core::Result<bool> {
-    // Rate limited, return 429
-    let mut header = ResponseHeader::build(429, None)?;
-    header.insert_header("X-Rate-Limit-Limit", max_request_per_second.to_string())?;
-    header.insert_header("X-Rate-Limit-Remaining", "0")?;
-    header.insert_header("X-Rate-Limit-Reset", "1")?;
-    session.set_keepalive(None);
-    session.write_response_header(Box::new(header), true).await?;
-    Ok(true)
+) -> pingora_core::Result<()> {
+    // Use our helper function to create a proper gRPC error response
+    let error_message =
+        format!("Rate limit exceeded: {max_request_per_second} requests per second");
+    write_grpc_error_to_session(session, Code::ResourceExhausted, &error_message).await
 }
 
 /// Create a 400 response with an error message
@@ -55,12 +146,12 @@ pub async fn create_too_many_requests_response(
 pub async fn create_response_with_error_message(
     session: &mut ServerSession,
     error_msg: String,
-) -> pingora_core::Result<bool> {
+) -> pingora_core::Result<()> {
     let mut header = ResponseHeader::build(400, None)?;
     header.insert_header("X-Error-Message", error_msg)?;
     session.set_keepalive(None);
     session.write_response_header(Box::new(header)).await?;
-    Ok(true)
+    Ok(())
 }
 
 /// Checks if a port is available for use.

@@ -11,7 +11,7 @@ mode.
 The inter-component communication is done using a gRPC API which is assumed trusted. In other words this _must not_ be
 public. External communication is handled by the RPC component with a separate external-only gRPC API.
 
-![node architecture](../resources/operator_architecture.svg)
+[![node architecture](../resources/operator_architecture.svg)](../resources/operator_architecture.svg)
 
 ## RPC
 

@@ -40,7 +40,7 @@ pub mod smt_leaf {
 /// The opening of a leaf in an SMT.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SmtOpening {
-    /// The merkle path to the leaf.
+    /// The Merkle path to the leaf.
     #[prost(message, optional, tag = "1")]
     pub path: ::core::option::Option<super::merkle::MerklePath>,
     /// The leaf itself.

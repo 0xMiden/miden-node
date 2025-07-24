@@ -5,10 +5,10 @@ use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::{
-    AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError,
+    AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError, Word,
     account::AccountId,
     block::BlockNumber,
-    crypto::{hash::rpo::RpoDigest, merkle::MmrError, utils::DeserializationError},
+    crypto::{merkle::MmrError, utils::DeserializationError},
     note::Nullifier,
     transaction::OutputNote,
 };
@@ -38,6 +38,8 @@ pub enum DatabaseError {
     FromSqlError(#[from] FromSqlError),
     #[error("I/O error")]
     IoError(#[from] io::Error),
+    #[error("merkle error")]
+    MerkleError(#[from] miden_objects::crypto::merkle::MerkleError),
     #[error("migration failed")]
     MigrationError(#[from] rusqlite_migration::Error),
     #[error("missing database connection")]
@@ -54,10 +56,7 @@ pub enum DatabaseError {
     // OTHER ERRORS
     // ---------------------------------------------------------------------------------------------
     #[error("account commitment mismatch (expected {expected}, but calculated is {calculated})")]
-    AccountCommitmentsMismatch {
-        expected: RpoDigest,
-        calculated: RpoDigest,
-    },
+    AccountCommitmentsMismatch { expected: Word, calculated: Word },
     #[error("account {0} not found")]
     AccountNotFoundInDb(AccountId),
     #[error("accounts {0:?} not found")]
@@ -154,7 +153,7 @@ pub enum InvalidBlockError {
     #[error("invalid output note type: {0:?}")]
     InvalidOutputNoteType(Box<OutputNote>),
     #[error("invalid block tx commitment: expected {expected}, but got {actual}")]
-    InvalidBlockTxCommitment { expected: RpoDigest, actual: RpoDigest },
+    InvalidBlockTxCommitment { expected: Word, actual: Word },
     #[error("received invalid account tree root")]
     NewBlockInvalidAccountRoot,
     #[error("new block number must be 1 greater than the current block number")]

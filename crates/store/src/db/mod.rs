@@ -13,7 +13,7 @@ use miden_objects::{
     Word,
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath, utils::Deserializable},
+    crypto::{merkle::SparseMerklePath, utils::Deserializable},
     note::{
         NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
         NoteRecipient, NoteScript, Nullifier,
@@ -79,10 +79,10 @@ pub struct TransactionSummary {
 pub struct NoteRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
-    pub note_id: RpoDigest,
+    pub note_id: Word,
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
-    pub merkle_path: MerklePath,
+    pub inclusion_path: SparseMerklePath,
 }
 
 impl NoteRecord {
@@ -97,7 +97,7 @@ impl NoteRecord {
             tag,
             aux,
             execution_hint,
-            merkle_path,
+            inclusion_path,
             assets,
             inputs,
             script,
@@ -115,15 +115,15 @@ impl NoteRecord {
         let note_index = BlockNoteIndex::new(batch_idx, note_idx_in_batch)
             .expect("batch and note index from DB should be valid");
         let note_id = row.get_ref(3)?.as_blob()?;
-        let note_id = RpoDigest::read_from_bytes(note_id)?;
+        let note_id = Word::read_from_bytes(note_id)?;
         let note_type = row.get::<_, u8>(4)?.try_into()?;
         let sender = AccountId::read_from_bytes(row.get_ref(5)?.as_blob()?)?;
         let tag: u32 = row.get(6)?;
         let aux: u64 = row.get(7)?;
         let aux = aux.try_into().map_err(DatabaseError::InvalidFelt)?;
         let execution_hint = column_value_as_u64(row, 8)?;
-        let merkle_path_data = row.get_ref(9)?.as_blob()?;
-        let merkle_path = MerklePath::read_from_bytes(merkle_path_data)?;
+        let inclusion_path_data = row.get_ref(9)?.as_blob()?;
+        let inclusion_path = SparseMerklePath::read_from_bytes(inclusion_path_data)?;
 
         let assets = row.get_ref(10)?.as_blob_or_null()?;
         let inputs = row.get_ref(11)?.as_blob_or_null()?;
@@ -162,7 +162,7 @@ impl NoteRecord {
             note_id,
             metadata,
             details,
-            merkle_path,
+            inclusion_path,
         })
     }
 }
@@ -173,7 +173,7 @@ impl From<NoteRecord> for proto::CommittedNote {
             note_id: Some(note.note_id.into()),
             block_num: note.block_num.as_u32(),
             note_index_in_block: note.note_index.leaf_index_value().into(),
-            merkle_path: Some(Into::into(&note.merkle_path)),
+            inclusion_path: Some(Into::into(note.inclusion_path)),
         });
         let note = Some(proto::Note {
             metadata: Some(note.metadata.into()),
@@ -201,9 +201,9 @@ pub struct NoteSyncUpdate {
 pub struct NoteSyncRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
-    pub note_id: RpoDigest,
+    pub note_id: Word,
     pub metadata: NoteMetadata,
-    pub merkle_path: MerklePath,
+    pub inclusion_path: SparseMerklePath,
 }
 
 impl From<NoteSyncRecord> for proto::NoteSyncRecord {
@@ -212,7 +212,7 @@ impl From<NoteSyncRecord> for proto::NoteSyncRecord {
             note_index: note.note_index.leaf_index_value().into(),
             note_id: Some(note.note_id.into()),
             metadata: Some(note.metadata.into()),
-            merkle_path: Some(Into::into(&note.merkle_path)),
+            inclusion_path: Some(Into::into(note.inclusion_path)),
         }
     }
 }
@@ -224,7 +224,7 @@ impl From<NoteRecord> for NoteSyncRecord {
             note_index: note.note_index,
             note_id: note.note_id,
             metadata: note.metadata,
-            merkle_path: note.merkle_path,
+            inclusion_path: note.inclusion_path,
         }
     }
 }
@@ -392,7 +392,7 @@ impl Db {
 
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
+    pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {
             sql::select_all_account_commitments(conn)
         })

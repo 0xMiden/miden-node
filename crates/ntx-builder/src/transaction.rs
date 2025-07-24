@@ -16,7 +16,7 @@ use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProve
 use miden_tx::{
     DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
-    TransactionProverError,
+    TransactionProverError, auth::UnreachableAuth,
 };
 use rand::seq::SliceRandom;
 use tokio::task::JoinError;
@@ -125,7 +125,8 @@ impl NtxContext {
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
     ) -> NtxResult<InputNotes<InputNote>> {
-        let executor = TransactionExecutor::new(data_store, None);
+        let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
+            TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 
         let notes = match checker
@@ -170,7 +171,8 @@ impl NtxContext {
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
     ) -> NtxResult<ExecutedTransaction> {
-        let executor = TransactionExecutor::new(data_store, None);
+        let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
+            TransactionExecutor::new(data_store, None);
 
         executor
             .execute_transaction(

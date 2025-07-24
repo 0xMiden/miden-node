@@ -232,7 +232,7 @@ enum QParsingError {
 /// Has a range of 0..=1 and can have upto three decimal places.
 #[derive(Debug, PartialEq)]
 struct QValue {
-    /// A value in the range `0..=1000` representing the original `Q` value multipled by 1000.
+    /// A value in the range `0..=1000` representing the original `Q` value multiplied by 1000.
     kilo: u16,
 }
 
@@ -285,10 +285,7 @@ impl FromStr for QValue {
                 // SAFETY: This original came from a str and we only pulled off two ascii bytes so
                 // the remainder must still be valid utf8.
                 let digits = str::from_utf8(&digits).unwrap();
-                let value =
-                    u16::from_str(digits).map_err(|_| QParsingError::InvalidDecimalDigits)?;
-
-                value
+                u16::from_str(digits).map_err(|_| QParsingError::InvalidDecimalDigits)?
             },
             _ => return Err(Self::Err::BadFormat),
         };

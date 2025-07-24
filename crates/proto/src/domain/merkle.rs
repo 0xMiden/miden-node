@@ -81,7 +81,7 @@ impl TryFrom<proto::primitives::SmtLeaf> for SmtLeaf {
         let leaf = value.leaf.ok_or(proto::primitives::SmtLeaf::missing_field(stringify!(leaf)))?;
 
         match leaf {
-            proto::primitives::smt_leaf::Leaf::Empty(leaf_index) => {
+            proto::primitives::smt_leaf::Leaf::EmptyLeafIndex(leaf_index) => {
                 Ok(Self::new_empty(LeafIndex::new_max_depth(leaf_index)))
             },
             proto::primitives::smt_leaf::Leaf::Single(entry) => {
@@ -104,7 +104,7 @@ impl From<SmtLeaf> for proto::primitives::SmtLeaf {
         use proto::primitives::smt_leaf::Leaf;
 
         let leaf = match smt_leaf {
-            SmtLeaf::Empty(leaf_index) => Leaf::Empty(leaf_index.value()),
+            SmtLeaf::Empty(leaf_index) => Leaf::EmptyLeafIndex(leaf_index.value()),
             SmtLeaf::Single(entry) => Leaf::Single(entry.into()),
             SmtLeaf::Multiple(entries) => Leaf::Multiple(proto::primitives::SmtLeafEntryList {
                 entries: convert(entries).collect(),

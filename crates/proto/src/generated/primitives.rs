@@ -26,9 +26,9 @@ pub struct SmtLeaf {
 pub mod smt_leaf {
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Leaf {
-        /// An empty leaf.
+        /// An empty leaf index.
         #[prost(uint64, tag = "1")]
-        Empty(u64),
+        EmptyLeafIndex(u64),
         /// A single leaf entry.
         #[prost(message, tag = "2")]
         Single(super::SmtLeafEntry),

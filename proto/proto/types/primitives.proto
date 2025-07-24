@@ -22,8 +22,8 @@ message SmtLeafEntryList {
 // A leaf in an SMT, sitting at depth 64. A leaf can contain 0, 1 or multiple leaf entries.
 message SmtLeaf {
     oneof leaf {
-        // An empty leaf.
-        uint64 empty = 1;
+        // An empty leaf index.
+        uint64 empty_leaf_index = 1;
 
         // A single leaf entry.
         SmtLeafEntry single = 2;

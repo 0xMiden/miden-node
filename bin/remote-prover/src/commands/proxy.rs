@@ -12,10 +12,7 @@ use tracing::{info, warn};
 use super::ProxyConfig;
 use crate::{
     commands::PROXY_HOST,
-    proxy::{
-        LoadBalancer, LoadBalancerState, status::ProxyStatusPingoraService,
-        update_workers::LoadBalancerUpdateService,
-    },
+    proxy::{LoadBalancer, LoadBalancerState, update_workers::LoadBalancerUpdateService},
     utils::check_port_availability,
 };
 
@@ -123,21 +120,8 @@ impl StartProxy {
             info!(target: COMPONENT, "Metrics service disabled");
         }
 
-        // Add gRPC status service
-        let status_service = ProxyStatusPingoraService::new(
-            worker_lb,
-            self.proxy_config.status_port,
-            self.proxy_config.status_update_interval,
-        )
-        .await;
-        info!(target: COMPONENT,
-            endpoint = %format!("{}:{}/status", PROXY_HOST, self.proxy_config.status_port),
-            "Status service initialized"
-        );
-
         server.add_service(health_check_service);
         server.add_service(update_workers_service);
-        server.add_service(status_service);
         server.add_service(lb);
         tokio::task::spawn_blocking(|| server.run_forever())
             .await

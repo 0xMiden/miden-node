@@ -11,7 +11,12 @@ use metrics::{
     REQUEST_FAILURE_COUNT, REQUEST_LATENCY, REQUEST_RETRIES, WORKER_BUSY, WORKER_COUNT,
     WORKER_REQUEST_COUNT,
 };
-use miden_remote_prover::{COMPONENT, api::ProofType, error::RemoteProverError};
+use miden_remote_prover::{
+    COMPONENT,
+    api::ProofType,
+    error::RemoteProverError,
+    generated::remote_prover::{ProxyStatusResponse, WorkerStatus},
+};
 use pingora::{
     http::ResponseHeader,
     prelude::*,
@@ -33,15 +38,19 @@ use crate::{
     },
     utils::{
         create_queue_full_response, create_response_with_error_message,
-        create_too_many_requests_response,
+        create_too_many_requests_response, write_grpc_response_to_session,
     },
 };
 
 mod health_check;
 pub mod metrics;
-pub(crate) mod status;
 pub(crate) mod update_workers;
 pub(crate) mod worker;
+
+// CONSTANTS
+// ================================================================================================
+
+const PROXY_STATUS_PATH: &str = "/remote_prover.ProxyStatusApi/Status";
 
 // LOAD BALANCER STATE
 // ================================================================================================
@@ -58,6 +67,8 @@ pub struct LoadBalancerState {
     available_workers_polling_interval: Duration,
     health_check_interval: Duration,
     supported_proof_type: ProofType,
+    status_cache_sender: tokio::sync::watch::Sender<ProxyStatusResponse>,
+    status_cache_receiver: tokio::sync::watch::Receiver<ProxyStatusResponse>,
 }
 
 impl LoadBalancerState {
@@ -92,8 +103,21 @@ impl LoadBalancerState {
         RATE_LIMITED_REQUESTS.reset();
         REQUEST_RETRIES.reset();
 
+        let workers = Arc::new(RwLock::new(workers));
+        let supported_proof_type = config.proof_type;
+
+        // Build initial status for the cache
+        let initial_status = {
+            let workers_guard = workers.read().await;
+            build_proxy_status_response(&workers_guard, supported_proof_type)
+        };
+
+        // Create the status cache channel
+        let (status_cache_sender, status_cache_receiver) =
+            tokio::sync::watch::channel(initial_status);
+
         Ok(Self {
-            workers: Arc::new(RwLock::new(workers)),
+            workers,
             timeout: total_timeout,
             connection_timeout,
             max_queue_items: config.max_queue_items,
@@ -101,7 +125,9 @@ impl LoadBalancerState {
             max_req_per_sec: config.max_req_per_sec,
             available_workers_polling_interval: config.available_workers_polling_interval,
             health_check_interval: config.health_check_interval,
-            supported_proof_type: config.proof_type,
+            supported_proof_type,
+            status_cache_sender,
+            status_cache_receiver,
         })
     }
 
@@ -193,7 +219,22 @@ impl LoadBalancerState {
     pub async fn num_busy_workers(&self) -> usize {
         self.workers.read().await.iter().filter(|w| !w.is_available()).count()
     }
+
+    /// Get the cached status response
+    pub fn get_cached_status(&self) -> ProxyStatusResponse {
+        self.status_cache_receiver.borrow().clone()
+    }
+
+    /// Update the status cache with current worker status
+    pub async fn update_status_cache(&self) {
+        let workers = self.workers.read().await;
+        let new_status = build_proxy_status_response(&workers, self.supported_proof_type);
+        self.status_cache_sender.send(new_status).expect("Failed to send new status");
+    }
 }
+
+// UTILS
+// ================================================================================================
 
 /// Rate limiter
 static RATE_LIMITER: LazyLock<Rate> = LazyLock::new(|| Rate::new(Duration::from_secs(1)));
@@ -332,7 +373,10 @@ impl ProxyHttp for LoadBalancer {
     }
 
     /// Decide whether to filter the request or not. Also, handle the special case of the update
-    /// workers request.
+    /// workers request or the proxy status request.
+    ///
+    /// The proxy status request is handled separately because it is used by the health check
+    /// service to check the status of the proxy and returns immediate response.
     ///
     /// Here we apply IP-based rate-limiting to the request. We also check if the queue is full.
     ///
@@ -350,11 +394,21 @@ impl ProxyHttp for LoadBalancer {
                     session.as_downstream_mut(),
                     "No socket address".to_string(),
                 )
-                .await;
+                .await
+                .map(|_| true);
             },
         };
 
-        info!("Client address: {:?}", client_addr);
+        Span::current().record("client_addr", client_addr.clone());
+
+        let path = session.downstream_session.req_header().uri.path();
+        Span::current().record("path", path);
+
+        // Check if the request is a grpc proxy status request by checking the path
+        if path == PROXY_STATUS_PATH {
+            let status = self.0.get_cached_status();
+            return write_grpc_response_to_session(session, status).await.map(|_| true);
+        }
 
         // Increment the request count
         REQUEST_COUNT.inc();
@@ -373,7 +427,9 @@ impl ProxyHttp for LoadBalancer {
                 RATE_LIMIT_VIOLATIONS.inc();
             }
 
-            return create_too_many_requests_response(session, self.0.max_req_per_sec).await;
+            return create_too_many_requests_response(session, self.0.max_req_per_sec)
+                .await
+                .map(|_| true);
         }
 
         let queue_len = QUEUE.len().await;
@@ -383,7 +439,7 @@ impl ProxyHttp for LoadBalancer {
 
         // Check if the queue is full
         if queue_len >= self.0.max_queue_items {
-            return create_queue_full_response(session).await;
+            return create_queue_full_response(session).await.map(|_| true);
         }
 
         Ok(false)
@@ -665,5 +721,21 @@ impl ProxyHttp for ProxyHttpDefaultImpl {
         _ctx: &mut Self::CTX,
     ) -> Result<Box<HttpPeer>> {
         unimplemented!("This is a dummy implementation, should not be called")
+    }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Builds a `ProxyStatusResponse` from a list of workers and a supported proof type.
+fn build_proxy_status_response(
+    workers: &[Worker],
+    supported_proof_type: ProofType,
+) -> ProxyStatusResponse {
+    let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
+    ProxyStatusResponse {
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        supported_proof_type: supported_proof_type.into(),
+        workers: worker_statuses,
     }
 }

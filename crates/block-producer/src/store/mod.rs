@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{HashMap, HashSet},
     fmt::{Display, Formatter},
     net::SocketAddr,
     num::NonZeroU32,
@@ -47,11 +47,11 @@ pub struct TransactionInputs {
     /// Maps each consumed notes' nullifier to block number, where the note is consumed.
     ///
     /// We use `NonZeroU32` as the wire format uses 0 to encode none.
-    pub nullifiers: BTreeMap<Nullifier, Option<NonZeroU32>>,
+    pub nullifiers: HashMap<Nullifier, Option<NonZeroU32>>,
     /// Unauthenticated notes which are present in the store.
     ///
     /// These are notes which were committed _after_ the transaction was created.
-    pub found_unauthenticated_notes: BTreeSet<NoteId>,
+    pub found_unauthenticated_notes: HashSet<NoteId>,
     /// The current block height.
     pub current_block_height: BlockNumber,
 }
@@ -88,7 +88,7 @@ impl TryFrom<GetTransactionInputsResponse> for TransactionInputs {
             .ok_or(GetTransactionInputsResponse::missing_field(stringify!(account_state)))?
             .try_into()?;
 
-        let mut nullifiers = BTreeMap::new();
+        let mut nullifiers = HashMap::new();
         for nullifier_record in response.nullifiers {
             let nullifier = nullifier_record
                 .nullifier

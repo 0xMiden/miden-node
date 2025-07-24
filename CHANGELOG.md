@@ -16,13 +16,14 @@
 
 ### Fixes
 
-- RPC requests with wildcard (`*/*`) media-type are rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+- [BREAKING] Integrated proxy status endpoint into main proxy service, removing separate status port.
+- RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 
 ## v0.10.1 (2025-07-14)
 
 ### Fixes
 
-- Network accounts are disabled after one transaction ([#1086](https://github.com/0xMiden/miden-node/pull/1086)).
+- Network accounts are no longer disabled after one transaction ([#1086](https://github.com/0xMiden/miden-node/pull/1086)).
 
 ## v0.10.0 (2025-07-10)
 

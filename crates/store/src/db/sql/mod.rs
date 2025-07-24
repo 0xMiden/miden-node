@@ -1081,56 +1081,6 @@ pub fn select_note_inclusion_proofs(
     Ok(result)
 }
 
-/// Returns a paginated batch of network notes that have not yet been consumed.
-///
-/// # Returns
-///
-/// A set of unconsumed network notes with maximum length of `size` and the page to get
-/// the next set.
-pub fn unconsumed_network_notes(
-    transaction: &Transaction,
-    mut page: Page,
-) -> Result<(Vec<NoteRecord>, Page)> {
-    assert_eq!(
-        NoteExecutionMode::Network as u8,
-        0,
-        "Hardcoded execution value must match query"
-    );
-
-    // Select the rowid column so that we can return a pagination token.
-    //
-    // rowid column _must_ come after the note fields so that we don't mess up the
-    // `NoteRecord::from_row` call.
-    let mut stmt = transaction.prepare_cached(&format!(
-        "
-        SELECT {}, rowid
-        FROM notes
-        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-        WHERE
-            execution_mode = 0 AND consumed_block_num IS NULL AND rowid >= ?
-        ORDER BY rowid
-        LIMIT ?
-        ",
-        NoteRecord::SELECT_COLUMNS
-    ))?;
-
-    // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
-    // check if there are more notes for the next page.
-    let mut rows = stmt.query(params![page.token.unwrap_or(0), page.size.get() + 1])?;
-
-    page.token = None;
-    let mut notes = Vec::with_capacity(page.size.into());
-    while let Some(row) = rows.next()? {
-        if notes.len() == page.size.get() {
-            page.token = Some(row.get::<_, u64>(14)?);
-            break;
-        }
-        notes.push(NoteRecord::from_row(row)?);
-    }
-
-    Ok((notes, page))
-}
-
 /// Returns a paginated batch of network notes for a specific account that have not yet been
 /// consumed.
 ///
@@ -1141,7 +1091,7 @@ pub fn unconsumed_network_notes(
 ///
 /// A set of unconsumed network notes with maximum length of `size` and the page to get
 /// the next set.
-pub fn unconsumed_network_notes_for_network_account(
+pub fn unconsumed_network_notes(
     transaction: &Transaction,
     network_account_id_prefix: NetworkAccountPrefix,
     block_num: BlockNumber,

@@ -547,33 +547,16 @@ impl Db {
         Ok(())
     }
 
-    /// Loads the network notes that have not been consumed yet, using pagination to limit the
-    /// number of notes returned.
-    pub(crate) async fn select_unconsumed_network_notes(
-        &self,
-        page: Page,
-    ) -> Result<(Vec<NoteRecord>, Page)> {
-        self.transact("unconsumed network notes", move |conn| {
-            sql::unconsumed_network_notes(conn, page)
-        })
-        .await
-    }
-
     /// Loads the network notes for a network account that have not been consumed yet, using
     /// pagination to limit the number of notes returned.
-    pub(crate) async fn select_unconsumed_network_notes_for_network_account(
+    pub(crate) async fn select_unconsumed_network_notes(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,
         block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
         self.transact("unconsumed network notes for network account", move |conn| {
-            sql::unconsumed_network_notes_for_network_account(
-                conn,
-                network_account_id_prefix,
-                block_num,
-                page,
-            )
+            sql::unconsumed_network_notes(conn, network_account_id_prefix, block_num, page)
         })
         .await
     }

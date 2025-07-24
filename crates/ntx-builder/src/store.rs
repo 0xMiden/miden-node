@@ -134,12 +134,21 @@ impl StoreClient {
 
     /// Returns the list of unconsumed network notes.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
-    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
+    pub async fn get_unconsumed_network_notes(
+        &self,
+        network_account_id_prefix: NetworkAccountPrefix,
+        block_num: BlockNumber,
+    ) -> Result<Vec<NetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
         let mut page_token: Option<u64> = None;
 
         loop {
-            let req = GetUnconsumedNetworkNotesRequest { page_token, page_size: 128 };
+            let req = GetUnconsumedNetworkNotesRequest {
+                page_token,
+                page_size: 128,
+                network_account_id_prefix: network_account_id_prefix.into(),
+                block_num: block_num.as_u32(),
+            };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
             let page: Vec<NetworkNote> = resp

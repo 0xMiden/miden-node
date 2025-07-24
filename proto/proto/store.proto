@@ -95,11 +95,8 @@ service NtxBuilder {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
 
-    // Returns the list of unconsumed network notes and the next page number to query.
-    rpc GetUnconsumedNetworkNotes(requests.GetUnconsumedNetworkNotesRequest) returns (responses.GetUnconsumedNetworkNotesResponse) {}
-
     // Returns the list of unconsumed network notes for a network account and the next page number to query.
-    rpc GetUnconsumedNetworkNotesForNetworkAccount(requests.GetUnconsumedNetworkNotesForNetworkAccountRequest) returns (responses.GetUnconsumedNetworkNotesResponse) {}
+    rpc GetUnconsumedNetworkNotes(requests.GetUnconsumedNetworkNotesRequest) returns (responses.GetUnconsumedNetworkNotesResponse) {}
 
     // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
     // header for executing network transactions.

@@ -11,6 +11,7 @@ use miden_node_proto::domain::{
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     account::{Account, delta::AccountUpdateDetails},
+    block::BlockNumber,
     note::Nullifier,
     transaction::TransactionId,
 };
@@ -82,15 +83,22 @@ impl State {
             nullifier_idx: BTreeMap::default(),
         };
 
-        let notes = state.store.get_unconsumed_network_notes().await?;
-        for note in notes {
-            let prefix = note.account_prefix();
+        for prefix in self.accounts.iter() {
+            let network_account_id_prefix = NetworkAccountPrefix::try_from(0u32).unwrap();
+            let block_num = BlockNumber::from(u32::MAX);
+            let notes = state
+                .store
+                .get_unconsumed_network_notes(network_account_id_prefix, block_num)
+                .await?;
+            for note in notes {
+                let prefix = note.account_prefix();
 
-            // Ignore notes which don't target an existing account.
-            let Some(account) = state.fetch_account(prefix).await? else {
-                continue;
-            };
-            account.add_note(note);
+                // Ignore notes which don't target an existing account.
+                let Some(account) = state.fetch_account(prefix).await? else {
+                    continue;
+                };
+                account.add_note(note);
+            }
         }
         state.inject_telemetry();
 

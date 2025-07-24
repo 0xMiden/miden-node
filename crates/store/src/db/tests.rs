@@ -443,15 +443,6 @@ fn sql_unconsumed_network_notes() {
     // Fetch all network notes by setting a limit larger than the amount available.
     let (result, _) = sql::unconsumed_network_notes(
         &db_tx,
-        Page {
-            token: None,
-            size: NonZeroUsize::new(N as usize * 10).unwrap(),
-        },
-    )
-    .unwrap();
-    assert_eq!(result, network_notes);
-    let (result, _) = sql::unconsumed_network_notes_for_network_account(
-        &db_tx,
         network_account_id.try_into().unwrap(),
         block_num,
         Page {
@@ -469,13 +460,7 @@ fn sql_unconsumed_network_notes() {
         size: NonZeroUsize::new(limit).unwrap(),
     };
     network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
-        page = new_page;
-        assert_eq!(result, expected);
-    });
-    assert!(page.token.is_none());
-    network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = sql::unconsumed_network_notes_for_network_account(
+        let (result, new_page) = sql::unconsumed_network_notes(
             &db_tx,
             network_account_id.try_into().unwrap(),
             block_num,
@@ -505,9 +490,7 @@ fn sql_unconsumed_network_notes() {
         token: None,
         size: NonZeroUsize::new(N as usize * 10).unwrap(),
     };
-    let (result, _) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
-    assert_eq!(result, expected);
-    let (result, _) = sql::unconsumed_network_notes_for_network_account(
+    let (result, _) = sql::unconsumed_network_notes(
         &db_tx,
         network_account_id.try_into().unwrap(),
         block_num,

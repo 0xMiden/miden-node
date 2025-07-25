@@ -2203,7 +2203,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#d6dc69b877f2ccbed55e6faedc0ca1e9672a9f7c"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#0e81822793fb7b1efcc828cd25621a445fec6f7f"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2228,9 +2228,9 @@ dependencies = [
 
 [[package]]
 name = "miden-crypto"
-version = "0.15.8"
+version = "0.15.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c58d9b9ae3867b5b5111876165c23008e934871bd3ea46a8919ea10a1ab04e8"
+checksum = "e4329275a11c7d8328b14a7129b21d40183056dcd0d871c3069be6e550d6ca40"
 dependencies = [
  "blake3",
  "cc",
@@ -2313,7 +2313,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#d6dc69b877f2ccbed55e6faedc0ca1e9672a9f7c"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#0e81822793fb7b1efcc828cd25621a445fec6f7f"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2605,7 +2605,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#d6dc69b877f2ccbed55e6faedc0ca1e9672a9f7c"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#0e81822793fb7b1efcc828cd25621a445fec6f7f"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2734,7 +2734,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#d6dc69b877f2ccbed55e6faedc0ca1e9672a9f7c"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#0e81822793fb7b1efcc828cd25621a445fec6f7f"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2754,7 +2754,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#d6dc69b877f2ccbed55e6faedc0ca1e9672a9f7c"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#0e81822793fb7b1efcc828cd25621a445fec6f7f"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2770,7 +2770,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#d6dc69b877f2ccbed55e6faedc0ca1e9672a9f7c"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#0e81822793fb7b1efcc828cd25621a445fec6f7f"
 dependencies = [
  "miden-objects",
  "miden-tx",

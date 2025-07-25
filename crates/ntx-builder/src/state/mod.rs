@@ -28,9 +28,9 @@ mod account;
 // =================================================================================================
 
 /// The maximum number of blocks to keep in memory while tracking the chain tip.
-const MAX_BLOCK_COUNT: u32 = 16;
+const MAX_BLOCK_COUNT: usize = 16;
 /// The number of blocks kept after pruning.
-const PRUNED_BLOCK_COUNT: u32 = 8;
+const PRUNED_BLOCK_COUNT: usize = 8;
 
 /// A candidate network transaction.
 ///
@@ -61,9 +61,6 @@ pub struct State {
 
     /// The chain MMR including the latest block header.
     chain_mmr: PartialBlockchain,
-
-    /// The number of blocks in the chain MMR after pruning.
-    chain_mmr_block_count: u32,
 
     /// Tracks all network accounts with inflight state.
     ///
@@ -112,7 +109,6 @@ impl State {
             chain_tip,
             chain_mmr,
             store,
-            chain_mmr_block_count: 1,
             accounts: HashMap::default(),
             queue: VecDeque::default(),
             in_progress: HashSet::default(),
@@ -208,16 +204,15 @@ impl State {
     fn update_chain_tip(&mut self, tip: BlockHeader) {
         // Update MMR which lags by one block.
         self.chain_mmr.add_block(self.chain_tip.clone(), true);
-        self.chain_mmr_block_count += 1;
 
         // Set the new tip.
         self.chain_tip = tip;
 
         // Prune MMR if necessary.
-        if self.chain_mmr_block_count > MAX_BLOCK_COUNT {
-            let pruned_block_height = self.chain_mmr.chain_length().as_u32() - PRUNED_BLOCK_COUNT;
+        if self.chain_mmr.num_tracked_blocks() > MAX_BLOCK_COUNT {
+            let pruned_block_height =
+                (self.chain_mmr.chain_length().as_usize() - PRUNED_BLOCK_COUNT) as u32;
             self.chain_mmr.prune_to(..pruned_block_height.into());
-            self.chain_mmr_block_count = PRUNED_BLOCK_COUNT;
         }
     }
 

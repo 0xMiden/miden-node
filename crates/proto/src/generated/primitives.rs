@@ -40,12 +40,25 @@ pub mod smt_leaf {
 /// The opening of a leaf in an SMT.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SmtOpening {
-    /// The merkle path to the leaf.
+    /// The Merkle path to the leaf.
     #[prost(message, optional, tag = "1")]
     pub path: ::core::option::Option<MerklePath>,
     /// The leaf itself.
     #[prost(message, optional, tag = "2")]
     pub leaf: ::core::option::Option<SmtLeaf>,
+}
+/// A different representation of a Merkle path designed for memory efficiency.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SparseMerklePath {
+    /// A bitmask representing empty nodes.
+    ///
+    /// The set bit corresponds to the depth of an empty node. The least significant bit (bit 0)
+    /// describes depth 1 node (root's children). The `bit index + 1` is equal to node's depth.
+    #[prost(fixed64, tag = "1")]
+    pub empty_nodes_mask: u64,
+    /// The non-empty nodes, stored in depth-order, but not contiguous across depth.
+    #[prost(message, repeated, tag = "2")]
+    pub siblings: ::prost::alloc::vec::Vec<Digest>,
 }
 /// Represents an MMR delta.
 #[derive(Clone, PartialEq, ::prost::Message)]

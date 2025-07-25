@@ -27,7 +27,7 @@ use miden_objects::{
     },
     asset::{Asset, NonFungibleAsset},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
-    crypto::merkle::MerklePath,
+    crypto::merkle::SparseMerklePath,
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, NoteMetadata, NoteType, Nullifier},
     transaction::{OrderedTransactionHeaders, TransactionId},
     utils::serde::{Deserializable, Serializable},
@@ -854,7 +854,7 @@ pub fn insert_notes(
         execution_mode,
         aux,
         execution_hint,
-        merkle_path,
+        inclusion_path,
         consumed,
         nullifier,
         assets,
@@ -876,7 +876,7 @@ pub fn insert_notes(
             note.metadata.tag().execution_mode() as u8,
             u64_to_value(note.metadata.aux().into()),
             u64_to_value(note.metadata.execution_hint().into()),
-            note.merkle_path.to_bytes(),
+            note.inclusion_path.to_bytes(),
             // New notes are always unconsumed.
             false,
             // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
@@ -970,7 +970,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
         let aux: u64 = row.get(7)?;
         let aux = aux.try_into().map_err(DatabaseError::InvalidFelt)?;
         let execution_hint = column_value_as_u64(row, 8)?;
-        let merkle_path = read_from_blob_column(row, 9)?;
+        let inclusion_path = read_from_blob_column(row, 9)?;
 
         let metadata = NoteMetadata::new(
             sender,
@@ -985,7 +985,7 @@ pub fn select_notes_since_block_by_tag_and_sender(
             note_index,
             note_id,
             metadata,
-            merkle_path,
+            inclusion_path,
         };
         res.push(note);
     }
@@ -1044,7 +1044,7 @@ pub fn select_note_inclusion_proofs(
             note_id,
             batch_index,
             note_index,
-            merkle_path
+            inclusion_path
         FROM
             notes
         WHERE
@@ -1070,14 +1070,10 @@ pub fn select_note_inclusion_proofs(
             .expect("batch and note index from DB should be valid")
             .leaf_index_value();
 
-        let merkle_path_data = row.get_ref(4)?.as_blob()?;
-        let merkle_path = MerklePath::read_from_bytes(merkle_path_data)?;
+        let inclusion_path_data = row.get_ref(4)?.as_blob()?;
+        let inclusion_path = SparseMerklePath::read_from_bytes(inclusion_path_data)?;
 
-        let proof = NoteInclusionProof::new(
-            block_num.into(),
-            node_index_in_block,
-            merkle_path.try_into()?,
-        )?;
+        let proof = NoteInclusionProof::new(block_num.into(), node_index_in_block, inclusion_path)?;
 
         result.insert(note_id, proof);
     }

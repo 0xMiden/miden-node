@@ -1,6 +1,8 @@
 use miden_objects::{
     Word,
-    crypto::merkle::{Forest, LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof},
+    crypto::merkle::{
+        Forest, LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof, SparseMerklePath,
+    },
 };
 
 use crate::{
@@ -38,6 +40,34 @@ impl TryFrom<proto::primitives::MerklePath> for MerklePath {
 
     fn try_from(merkle_path: proto::primitives::MerklePath) -> Result<Self, Self::Error> {
         (&merkle_path).try_into()
+    }
+}
+
+// SPARSE MERKLE PATH
+// ================================================================================================
+
+impl From<SparseMerklePath> for proto::primitives::SparseMerklePath {
+    fn from(value: SparseMerklePath) -> Self {
+        let (empty_nodes_mask, siblings) = value.into_parts();
+        proto::primitives::SparseMerklePath {
+            empty_nodes_mask,
+            siblings: siblings.into_iter().map(proto::primitives::Digest::from).collect(),
+        }
+    }
+}
+
+impl TryFrom<proto::primitives::SparseMerklePath> for SparseMerklePath {
+    type Error = ConversionError;
+
+    fn try_from(merkle_path: proto::primitives::SparseMerklePath) -> Result<Self, Self::Error> {
+        Ok(SparseMerklePath::from_parts(
+            merkle_path.empty_nodes_mask,
+            merkle_path
+                .siblings
+                .into_iter()
+                .map(Word::try_from)
+                .collect::<Result<Vec<_>, _>>()?,
+        )?)
     }
 }
 

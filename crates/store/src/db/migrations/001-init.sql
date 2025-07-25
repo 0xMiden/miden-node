@@ -31,23 +31,23 @@ CREATE TABLE accounts (
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
 
 CREATE TABLE notes (
-    block_num      INTEGER NOT NULL,
-    batch_index    INTEGER NOT NULL, -- Index of batch in block, starting from 0
-    note_index     INTEGER NOT NULL, -- Index of note in batch, starting from 0
-    note_id        BLOB    NOT NULL,
-    note_type      INTEGER NOT NULL, -- 1-Public (0b01), 2-Private (0b10), 3-Encrypted (0b11)
-    sender         BLOB    NOT NULL,
-    tag            INTEGER NOT NULL,
-    execution_mode INTEGER NOT NULL, -- 0-Network, 1-Local
-    aux            INTEGER NOT NULL,
-    execution_hint INTEGER NOT NULL,
-    merkle_path    BLOB    NOT NULL,
-    consumed       INTEGER NOT NULL, -- boolean
-    nullifier      BLOB,             -- Only known for public notes, null for private notes
-    assets         BLOB,
-    inputs         BLOB,
-    script_root    BLOB,
-    serial_num     BLOB,
+    block_num       INTEGER NOT NULL,
+    batch_index     INTEGER NOT NULL, -- Index of batch in block, starting from 0
+    note_index      INTEGER NOT NULL, -- Index of note in batch, starting from 0
+    note_id         BLOB    NOT NULL,
+    note_type       INTEGER NOT NULL, -- 1-Public (0b01), 2-Private (0b10), 3-Encrypted (0b11)
+    sender          BLOB    NOT NULL,
+    tag             INTEGER NOT NULL,
+    execution_mode  INTEGER NOT NULL, -- 0-Network, 1-Local
+    aux             INTEGER NOT NULL,
+    execution_hint  INTEGER NOT NULL,
+    inclusion_path  BLOB NOT NULL,    -- Serialized sparse Merkle path of the note in the block's note tree
+    consumed        INTEGER NOT NULL, -- boolean
+    nullifier       BLOB,             -- Only known for public notes, null for private notes
+    assets          BLOB,
+    inputs          BLOB,
+    script_root     BLOB,
+    serial_num      BLOB,
 
     PRIMARY KEY (block_num, batch_index, note_index),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),

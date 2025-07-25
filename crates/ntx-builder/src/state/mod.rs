@@ -24,6 +24,14 @@ use crate::{
 
 mod account;
 
+// CONSTANTS
+// =================================================================================================
+
+/// The maximum number of blocks to keep in memory while tracking the chain tip.
+const MAX_BLOCK_COUNT: u32 = 16;
+/// The number of blocks kept after pruning.
+const PRUNED_BLOCK_COUNT: u32 = 8;
+
 /// A candidate network transaction.
 ///
 /// Contains the data pertaining to a specific network account which can be used to build a network
@@ -37,11 +45,10 @@ pub struct TransactionCandidate {
 
     /// The latest locally committed block header.
     ///
-    /// This should be used as the reference block during transaction execution. It is guaranteed
-    /// to be tracked by `chain_mmr`.
+    /// This should be used as the reference block during transaction execution.
     pub chain_tip: BlockHeader,
 
-    /// The chain MMR, which includes the `chain_tip`'s block.
+    /// The chain MMR, which lags behind the `chain_tip` by one block.
     pub chain_mmr: PartialBlockchain,
 }
 
@@ -90,11 +97,6 @@ pub struct State {
 }
 
 impl State {
-    /// The maximum number of blocks to keep in memory while tracking the chain tip.
-    const MAX_BLOCK_COUNT: u32 = 16;
-    /// The number of blocks kept after pruning.
-    const PRUNED_BLOCK_COUNT: u32 = 8;
-
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
@@ -103,16 +105,14 @@ impl State {
             .await?
             .expect("store should contain a latest block");
 
-        let mut chain_mmr = PartialBlockchain::new(chain_mmr, [])
+        let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
-        let pruned_block_height = chain_mmr.chain_length().as_u32() - Self::PRUNED_BLOCK_COUNT;
-        chain_mmr.prune_to(..pruned_block_height.into());
 
         let mut state = Self {
             chain_tip,
             chain_mmr,
             store,
-            chain_mmr_block_count: Self::PRUNED_BLOCK_COUNT,
+            chain_mmr_block_count: 1,
             accounts: HashMap::default(),
             queue: VecDeque::default(),
             in_progress: HashSet::default(),
@@ -198,7 +198,7 @@ impl State {
     }
 
     /// The latest block number the state knows of.
-    pub fn chain_tip(&self) -> BlockNumber {
+    pub fn chain_tip_header(&self) -> BlockNumber {
         self.chain_tip.block_num()
     }
 
@@ -214,11 +214,10 @@ impl State {
         self.chain_tip = tip;
 
         // Prune MMR if necessary.
-        if self.chain_mmr_block_count > Self::MAX_BLOCK_COUNT {
-            let pruned_block_height =
-                self.chain_mmr.chain_length().as_u32() - Self::PRUNED_BLOCK_COUNT;
+        if self.chain_mmr_block_count > MAX_BLOCK_COUNT {
+            let pruned_block_height = self.chain_mmr.chain_length().as_u32() - PRUNED_BLOCK_COUNT;
             self.chain_mmr.prune_to(..pruned_block_height.into());
-            self.chain_mmr_block_count = Self::PRUNED_BLOCK_COUNT;
+            self.chain_mmr_block_count = PRUNED_BLOCK_COUNT;
         }
     }
 

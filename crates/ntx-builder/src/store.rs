@@ -53,9 +53,7 @@ impl StoreClient {
         Self { inner: store }
     }
 
-    /// Returns the block header and MMR peaks at the chain tip if the input `block_num` is either
-    /// `None` or an outdated block number. If the input `block_num` is equal to the current
-    /// chain tip, this function returns `None`.
+    /// Returns the block header and MMR peaks at the current chain tip.
     #[instrument(target = COMPONENT, name = "store.client.get_latest_blockchain_data_with_retry", skip_all, err)]
     pub async fn get_latest_blockchain_data_with_retry(
         &self,
@@ -64,7 +62,7 @@ impl StoreClient {
         loop {
             match self.get_latest_blockchain_data().await {
                 Err(StoreError::GrpcClientError(err)) => {
-                    // exponential backoff with base 500ms and max 30s
+                    // Exponential backoff with base 500ms and max 30s.
                     let backoff = Duration::from_millis(500)
                         .saturating_mul(1 << retry_counter)
                         .min(Duration::from_secs(30));

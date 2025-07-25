@@ -46,7 +46,7 @@ impl NetworkTransactionBuilder {
             .context("failed to load ntx state")?;
 
         let mut mempool_events = block_producer
-            .subscribe_to_mempool_with_retry(state.chain_tip())
+            .subscribe_to_mempool_with_retry(state.chain_tip_header())
             .await
             .context("failed to subscribe to mempool events")?;
 

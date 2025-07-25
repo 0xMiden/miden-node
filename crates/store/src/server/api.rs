@@ -1,11 +1,6 @@
 use std::{collections::BTreeSet, sync::Arc};
 
-use miden_node_proto::{
-    errors::ConversionError,
-    generated::{
-        self, requests::GetBlockHeaderByNumberRequest, responses::GetBlockHeaderByNumberResponse,
-    },
-};
+use miden_node_proto::{errors::ConversionError, generated as proto};
 use miden_node_utils::ErrorReport;
 use miden_objects::{
     Word,
@@ -29,8 +24,8 @@ impl StoreApi {
     /// Shared implementation for all `get_block_header_by_number` endpoints.
     pub async fn get_block_header_by_number_inner(
         &self,
-        request: Request<GetBlockHeaderByNumberRequest>,
-    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::shared::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
         info!(target: COMPONENT, ?request);
         let request = request.into_inner();
 
@@ -41,7 +36,7 @@ impl StoreApi {
             .await
             .map_err(internal_error)?;
 
-        Ok(Response::new(GetBlockHeaderByNumberResponse {
+        Ok(Response::new(proto::shared::BlockHeaderByNumberResponse {
             block_header: block_header.map(Into::into),
             chain_length: mmr_proof.as_ref().map(|p| p.forest.num_leaves() as u32),
             mmr_path: mmr_proof.map(|p| Into::into(&p.merkle_path)),
@@ -62,9 +57,7 @@ pub fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
     Status::invalid_argument(err.to_string())
 }
 
-pub fn read_account_id(
-    id: Option<generated::account::AccountId>,
-) -> Result<AccountId, Box<Status>> {
+pub fn read_account_id(id: Option<proto::account::AccountId>) -> Result<AccountId, Box<Status>> {
     id.ok_or(invalid_argument("missing account ID"))?
         .try_into()
         .map_err(|err: ConversionError| {
@@ -75,7 +68,7 @@ pub fn read_account_id(
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 pub fn read_account_ids(
-    account_ids: &[generated::account::AccountId],
+    account_ids: &[proto::account::AccountId],
 ) -> Result<Vec<AccountId>, Status> {
     account_ids
         .iter()
@@ -88,7 +81,7 @@ pub fn read_account_ids(
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
 pub fn validate_nullifiers(
-    nullifiers: &[generated::digest::Digest],
+    nullifiers: &[proto::primitives::Digest],
 ) -> Result<Vec<Nullifier>, Status> {
     nullifiers
         .iter()
@@ -100,7 +93,7 @@ pub fn validate_nullifiers(
 
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn validate_notes(notes: &[generated::digest::Digest]) -> Result<Vec<NoteId>, Status> {
+pub fn validate_notes(notes: &[proto::primitives::Digest]) -> Result<Vec<NoteId>, Status> {
     notes
         .iter()
         .map(|digest| Ok(Word::try_from(digest)?.into()))

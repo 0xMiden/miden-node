@@ -10,8 +10,7 @@ use miden_remote_prover::{
     api::ProofType,
     error::RemoteProverError,
     generated::{
-        WorkerStatus,
-        remote_prover::{WorkerStatusRequest, worker_status_api_client::WorkerStatusApiClient},
+        ProxyWorkerStatus, remote_prover::worker_status_api_client::WorkerStatusApiClient,
     },
 };
 use pingora::lb::Backend;
@@ -184,14 +183,13 @@ impl Worker {
             }
         }
 
-        let worker_status =
-            match self.status_client.as_mut().unwrap().status(WorkerStatusRequest {}).await {
-                Ok(response) => response.into_inner(),
-                Err(e) => {
-                    error!("Failed to check worker status ({}): {}", self.address(), e);
-                    return Err(e.message().to_string());
-                },
-            };
+        let worker_status = match self.status_client.as_mut().unwrap().status(()).await {
+            Ok(response) => response.into_inner(),
+            Err(e) => {
+                error!("Failed to check worker status ({}): {}", self.address(), e);
+                return Err(e.message().to_string());
+            },
+        };
 
         if worker_status.version.is_empty() {
             return Err("Worker version is empty".to_string());
@@ -360,7 +358,7 @@ impl PartialEq for Worker {
 // ================================================================================================
 
 /// Conversion from a Worker reference to a `WorkerStatus` proto message.
-impl From<&Worker> for WorkerStatus {
+impl From<&Worker> for ProxyWorkerStatus {
     fn from(worker: &Worker) -> Self {
         use miden_remote_prover::generated::remote_prover::WorkerHealthStatus as ProtoWorkerHealthStatus;
         Self {

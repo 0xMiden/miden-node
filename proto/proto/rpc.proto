@@ -2,41 +2,54 @@
 syntax = "proto3";
 package rpc;
 
-import "requests.proto";
-import "responses.proto";
+import "types/account.proto";
+import "types/blockchain.proto";
+import "types/note.proto";
+import "types/primitives.proto";
+import "types/transaction.proto";
+import "block_producer.proto";
+import "store/rpc.proto";
+import "store/shared.proto";
 import "google/protobuf/empty.proto";
 
+// RPC API
+// ================================================================================================
+
+// RPC API for the RPC component
 service Api {
+    // Returns the status info of the node.
+    rpc Status(google.protobuf.Empty) returns (RpcStatus) {}
+
     // Returns a nullifier proof for each of the requested nullifiers.
-    rpc CheckNullifiers(requests.CheckNullifiersRequest) returns (responses.CheckNullifiersResponse) {}
+    rpc CheckNullifiers(rpc_store.NullifierList) returns (rpc_store.CheckNullifiersResponse) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //
     // Note that only 16-bit prefixes are supported at this time.
-    rpc CheckNullifiersByPrefix(requests.CheckNullifiersByPrefixRequest) returns (responses.CheckNullifiersByPrefixResponse) {}
+    rpc CheckNullifiersByPrefix(rpc_store.CheckNullifiersByPrefixRequest) returns (rpc_store.CheckNullifiersByPrefixResponse) {}
 
     // Returns the latest state of an account with the specified ID.
-    rpc GetAccountDetails(requests.GetAccountDetailsRequest) returns (responses.GetAccountDetailsResponse) {}
+    rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
     // Returns the latest state proofs of the specified accounts.
-    rpc GetAccountProofs(requests.GetAccountProofsRequest) returns (responses.GetAccountProofsResponse) {}
+    rpc GetAccountProofs(rpc_store.AccountProofsRequest) returns (rpc_store.AccountProofs) {}
 
     // Returns delta of the account states in the range from `from_block_num` (exclusive) to
     // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(requests.GetAccountStateDeltaRequest) returns (responses.GetAccountStateDeltaResponse) {}
+    rpc GetAccountStateDelta(rpc_store.AccountStateDeltaRequest) returns (rpc_store.AccountStateDelta) {}
 
     // Returns raw block data for the specified block number.
-    rpc GetBlockByNumber(requests.GetBlockByNumberRequest) returns (responses.GetBlockByNumberResponse) {}
+    rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
 
     // Retrieves block header by given block number. Optionally, it also returns the MMR path
     // and current chain length to authenticate the block's inclusion.
-    rpc GetBlockHeaderByNumber(requests.GetBlockHeaderByNumberRequest) returns (responses.GetBlockHeaderByNumberResponse) {}
+    rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
     // Returns a list of notes matching the provided note IDs.
-    rpc GetNotesById(requests.GetNotesByIdRequest) returns (responses.GetNotesByIdResponse) {}
+    rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
 
     // Submits proven transaction to the Miden network.
-    rpc SubmitProvenTransaction(requests.SubmitProvenTransactionRequest) returns (responses.SubmitProvenTransactionResponse) {}
+    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (block_producer.SubmitProvenTransactionResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -47,7 +60,7 @@ service Api {
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
     // tip of the chain. 
-    rpc SyncNotes(requests.SyncNoteRequest) returns (responses.SyncNoteResponse) {}
+    rpc SyncNotes(rpc_store.SyncNotesRequest) returns (rpc_store.SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
     // for the objects (accounts and notes) the client is interested in.
@@ -64,8 +77,20 @@ service Api {
     // For preserving some degree of privacy, note tags contain only high
     // part of hashes. Thus, returned data contains excessive notes, client can make
     // additional filtering of that data on its side.
-    rpc SyncState(requests.SyncStateRequest) returns (responses.SyncStateResponse) {}
+    rpc SyncState(rpc_store.SyncStateRequest) returns (rpc_store.SyncStateResponse) {}
+}
 
-    // Returns the status info of the node.
-    rpc Status(google.protobuf.Empty) returns (responses.RpcStatusResponse) {}
+// RPC STATUS
+// ================================================================================================
+
+// Represents the status of the node.
+message RpcStatus {
+    // The rpc component's running version.
+    string version = 1;
+
+    // The store status.
+    rpc_store.StoreStatus store = 3;
+
+    // The block producer status.
+    block_producer.BlockProducerStatus block_producer = 4;
 }

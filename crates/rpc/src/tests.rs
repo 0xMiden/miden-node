@@ -4,11 +4,7 @@ use http::{
     HeaderMap, HeaderValue,
     header::{ACCEPT, CONTENT_TYPE},
 };
-use miden_node_proto::generated::{
-    requests::{GetBlockHeaderByNumberRequest, SubmitProvenTransactionRequest},
-    responses::GetBlockHeaderByNumberResponse,
-    rpc::api_client::ApiClient as ProtoClient,
-};
+use miden_node_proto::generated::{self as proto, rpc::api_client::ApiClient as ProtoClient};
 use miden_node_store::{GenesisState, Store};
 use miden_objects::{
     Felt, Word,
@@ -44,7 +40,7 @@ async fn rpc_server_accepts_requests_without_accept_header() {
     };
 
     // Send any request to the RPC.
-    let request = GetBlockHeaderByNumberRequest {
+    let request = proto::shared::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };
@@ -229,7 +225,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     ))
     .build()
     .unwrap();
-    let request = SubmitProvenTransactionRequest { transaction: tx.to_bytes() };
+    let request = proto::transaction::ProvenTransaction { transaction: tx.to_bytes() };
 
     let response = rpc_client.submit_proven_transaction(request).await;
 
@@ -253,8 +249,9 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 /// Sends an arbitrary / irrelevant request to the RPC.
 async fn send_request(
     rpc_client: &mut ApiClient,
-) -> std::result::Result<tonic::Response<GetBlockHeaderByNumberResponse>, tonic::Status> {
-    let request = GetBlockHeaderByNumberRequest {
+) -> std::result::Result<tonic::Response<proto::shared::BlockHeaderByNumberResponse>, tonic::Status>
+{
+    let request = proto::shared::BlockHeaderByNumberRequest {
         block_num: Some(0),
         include_mmr_proof: None,
     };

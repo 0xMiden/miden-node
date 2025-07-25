@@ -11,11 +11,7 @@ use miden_objects::{
 use super::note::NetworkNote;
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
-    generated::block_producer::{
-        BlockCommitted as ProtoBlockCommitted, MempoolEvent as ProtoMempoolEvent,
-        TransactionAdded as ProtoTransactionAdded,
-        TransactionsReverted as ProtoTransactionsReverted, mempool_event,
-    },
+    generated as proto,
 };
 
 #[derive(Debug, Clone)]
@@ -43,7 +39,7 @@ impl MempoolEvent {
     }
 }
 
-impl From<MempoolEvent> for ProtoMempoolEvent {
+impl From<MempoolEvent> for proto::block_producer::MempoolEvent {
     fn from(event: MempoolEvent) -> Self {
         let event = match event {
             MempoolEvent::TransactionAdded {
@@ -52,7 +48,7 @@ impl From<MempoolEvent> for ProtoMempoolEvent {
                 network_notes,
                 account_delta,
             } => {
-                let event = ProtoTransactionAdded {
+                let event = proto::block_producer::mempool_event::TransactionAdded {
                     id: Some(id.into()),
                     nullifiers: nullifiers.into_iter().map(Into::into).collect(),
                     network_notes: network_notes.into_iter().map(Into::into).collect(),
@@ -61,18 +57,22 @@ impl From<MempoolEvent> for ProtoMempoolEvent {
                         .map(AccountUpdateDetails::to_bytes),
                 };
 
-                mempool_event::Event::TransactionAdded(event)
+                proto::block_producer::mempool_event::Event::TransactionAdded(event)
             },
             MempoolEvent::BlockCommitted { header, txs } => {
-                mempool_event::Event::BlockCommitted(ProtoBlockCommitted {
-                    block_header: Some(header.into()),
-                    transactions: txs.into_iter().map(Into::into).collect(),
-                })
+                proto::block_producer::mempool_event::Event::BlockCommitted(
+                    proto::block_producer::mempool_event::BlockCommitted {
+                        block_header: Some(header.into()),
+                        transactions: txs.into_iter().map(Into::into).collect(),
+                    },
+                )
             },
             MempoolEvent::TransactionsReverted(txs) => {
-                mempool_event::Event::TransactionsReverted(ProtoTransactionsReverted {
-                    reverted: txs.into_iter().map(Into::into).collect(),
-                })
+                proto::block_producer::mempool_event::Event::TransactionsReverted(
+                    proto::block_producer::mempool_event::TransactionsReverted {
+                        reverted: txs.into_iter().map(Into::into).collect(),
+                    },
+                )
             },
         }
         .into();
@@ -81,15 +81,21 @@ impl From<MempoolEvent> for ProtoMempoolEvent {
     }
 }
 
-impl TryFrom<ProtoMempoolEvent> for MempoolEvent {
+impl TryFrom<proto::block_producer::MempoolEvent> for MempoolEvent {
     type Error = ConversionError;
 
-    fn try_from(event: ProtoMempoolEvent) -> Result<Self, Self::Error> {
-        let event = event.event.ok_or(ProtoMempoolEvent::missing_field("event"))?;
+    fn try_from(event: proto::block_producer::MempoolEvent) -> Result<Self, Self::Error> {
+        let event =
+            event.event.ok_or(proto::block_producer::MempoolEvent::missing_field("event"))?;
 
         match event {
-            mempool_event::Event::TransactionAdded(tx) => {
-                let id = tx.id.ok_or(ProtoTransactionAdded::missing_field("id"))?.try_into()?;
+            proto::block_producer::mempool_event::Event::TransactionAdded(tx) => {
+                let id = tx
+                    .id
+                    .ok_or(proto::block_producer::mempool_event::TransactionAdded::missing_field(
+                        "id",
+                    ))?
+                    .try_into()?;
                 let nullifiers =
                     tx.nullifiers.into_iter().map(TryInto::try_into).collect::<Result<_, _>>()?;
                 let network_notes = tx
@@ -111,10 +117,12 @@ impl TryFrom<ProtoMempoolEvent> for MempoolEvent {
                     account_delta,
                 })
             },
-            mempool_event::Event::BlockCommitted(block_committed) => {
+            proto::block_producer::mempool_event::Event::BlockCommitted(block_committed) => {
                 let header = block_committed
                     .block_header
-                    .ok_or(ProtoBlockCommitted::missing_field("block_header"))?
+                    .ok_or(proto::block_producer::mempool_event::BlockCommitted::missing_field(
+                        "block_header",
+                    ))?
                     .try_into()?;
                 let txs = block_committed
                     .transactions
@@ -124,7 +132,7 @@ impl TryFrom<ProtoMempoolEvent> for MempoolEvent {
 
                 Ok(Self::BlockCommitted { header, txs })
             },
-            mempool_event::Event::TransactionsReverted(txs) => {
+            proto::block_producer::mempool_event::Event::TransactionsReverted(txs) => {
                 let txs = txs
                     .reverted
                     .into_iter()

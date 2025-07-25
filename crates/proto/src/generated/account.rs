@@ -19,14 +19,14 @@ pub struct AccountSummary {
     pub account_id: ::core::option::Option<AccountId>,
     /// The current account commitment or zero if the account does not exist.
     #[prost(message, optional, tag = "2")]
-    pub account_commitment: ::core::option::Option<super::digest::Digest>,
+    pub account_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Block number at which the summary was made.
     #[prost(uint32, tag = "3")]
     pub block_num: u32,
 }
-/// An account info.
+/// An account details.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountInfo {
+pub struct AccountDetails {
     /// Account summary.
     #[prost(message, optional, tag = "1")]
     pub summary: ::core::option::Option<AccountSummary>,
@@ -40,14 +40,32 @@ pub struct AccountInfo {
 pub struct AccountHeader {
     /// Vault root hash.
     #[prost(message, optional, tag = "1")]
-    pub vault_root: ::core::option::Option<super::digest::Digest>,
+    pub vault_root: ::core::option::Option<super::primitives::Digest>,
     /// Storage root hash.
     #[prost(message, optional, tag = "2")]
-    pub storage_commitment: ::core::option::Option<super::digest::Digest>,
+    pub storage_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Code root hash.
     #[prost(message, optional, tag = "3")]
-    pub code_commitment: ::core::option::Option<super::digest::Digest>,
+    pub code_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Account nonce.
     #[prost(uint64, tag = "4")]
     pub nonce: u64,
+}
+/// An account witness.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountWitness {
+    /// Account ID for which this proof is requested.
+    #[prost(message, optional, tag = "1")]
+    pub account_id: ::core::option::Option<AccountId>,
+    /// The account ID within the proof, which may be different from the above account ID.
+    /// This can happen when the requested account ID's prefix matches the prefix of an existing
+    /// account ID in the tree. Then the witness will prove inclusion of this witness ID in the tree.
+    #[prost(message, optional, tag = "2")]
+    pub witness_id: ::core::option::Option<AccountId>,
+    /// The state commitment whose inclusion the witness proves.
+    #[prost(message, optional, tag = "3")]
+    pub commitment: ::core::option::Option<super::primitives::Digest>,
+    /// The merkle path of the state commitment in the account tree.
+    #[prost(message, optional, tag = "4")]
+    pub path: ::core::option::Option<super::primitives::MerklePath>,
 }

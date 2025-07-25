@@ -15,7 +15,7 @@ use miden_remote_prover::{
     COMPONENT,
     api::ProofType,
     error::RemoteProverError,
-    generated::remote_prover::{ProxyStatusResponse, WorkerStatus},
+    generated::remote_prover::{ProxyStatus, ProxyWorkerStatus},
 };
 use pingora::{
     http::ResponseHeader,
@@ -67,8 +67,8 @@ pub struct LoadBalancerState {
     available_workers_polling_interval: Duration,
     health_check_interval: Duration,
     supported_proof_type: ProofType,
-    status_cache_sender: tokio::sync::watch::Sender<ProxyStatusResponse>,
-    status_cache_receiver: tokio::sync::watch::Receiver<ProxyStatusResponse>,
+    status_cache_sender: tokio::sync::watch::Sender<ProxyStatus>,
+    status_cache_receiver: tokio::sync::watch::Receiver<ProxyStatus>,
 }
 
 impl LoadBalancerState {
@@ -221,7 +221,7 @@ impl LoadBalancerState {
     }
 
     /// Get the cached status response
-    pub fn get_cached_status(&self) -> ProxyStatusResponse {
+    pub fn get_cached_status(&self) -> ProxyStatus {
         self.status_cache_receiver.borrow().clone()
     }
 
@@ -728,12 +728,10 @@ impl ProxyHttp for ProxyHttpDefaultImpl {
 // ================================================================================================
 
 /// Builds a `ProxyStatusResponse` from a list of workers and a supported proof type.
-fn build_proxy_status_response(
-    workers: &[Worker],
-    supported_proof_type: ProofType,
-) -> ProxyStatusResponse {
-    let worker_statuses: Vec<WorkerStatus> = workers.iter().map(WorkerStatus::from).collect();
-    ProxyStatusResponse {
+fn build_proxy_status_response(workers: &[Worker], supported_proof_type: ProofType) -> ProxyStatus {
+    let worker_statuses: Vec<ProxyWorkerStatus> =
+        workers.iter().map(ProxyWorkerStatus::from).collect();
+    ProxyStatus {
         version: env!("CARGO_PKG_VERSION").to_string(),
         supported_proof_type: supported_proof_type.into(),
         workers: worker_statuses,

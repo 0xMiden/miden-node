@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use hex::{FromHex, ToHex};
 use miden_objects::{Felt, StarkField, Word, note::NoteId};
 
-use crate::{errors::ConversionError, generated::digest as proto};
+use crate::{errors::ConversionError, generated as proto};
 
 // CONSTANTS
 // ================================================================================================
@@ -13,19 +13,19 @@ pub const DIGEST_DATA_SIZE: usize = 32;
 // FORMATTING
 // ================================================================================================
 
-impl Display for proto::Digest {
+impl Display for proto::primitives::Digest {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.encode_hex::<String>())
     }
 }
 
-impl Debug for proto::Digest {
+impl Debug for proto::primitives::Digest {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         Display::fmt(self, f)
     }
 }
 
-impl ToHex for &proto::Digest {
+impl ToHex for &proto::primitives::Digest {
     fn encode_hex<T: FromIterator<char>>(&self) -> T {
         (*self).encode_hex()
     }
@@ -35,7 +35,7 @@ impl ToHex for &proto::Digest {
     }
 }
 
-impl ToHex for proto::Digest {
+impl ToHex for proto::primitives::Digest {
     fn encode_hex<T: FromIterator<char>>(&self) -> T {
         let mut data: Vec<char> = Vec::with_capacity(DIGEST_DATA_SIZE);
         data.extend(format!("{:016x}", self.d0).chars());
@@ -55,7 +55,7 @@ impl ToHex for proto::Digest {
     }
 }
 
-impl FromHex for proto::Digest {
+impl FromHex for proto::primitives::Digest {
     type Error = ConversionError;
 
     fn from_hex<T: AsRef<[u8]>>(hex: T) -> Result<Self, Self::Error> {
@@ -74,7 +74,7 @@ impl FromHex for proto::Digest {
                 let d2 = u64::from_be_bytes(data[16..24].try_into().unwrap());
                 let d3 = u64::from_be_bytes(data[24..32].try_into().unwrap());
 
-                Ok(proto::Digest { d0, d1, d2, d3 })
+                Ok(proto::primitives::Digest { d0, d1, d2, d3 })
             },
         }
     }
@@ -83,7 +83,7 @@ impl FromHex for proto::Digest {
 // INTO
 // ================================================================================================
 
-impl From<[u64; 4]> for proto::Digest {
+impl From<[u64; 4]> for proto::primitives::Digest {
     fn from(value: [u64; 4]) -> Self {
         Self {
             d0: value[0],
@@ -94,13 +94,13 @@ impl From<[u64; 4]> for proto::Digest {
     }
 }
 
-impl From<&[u64; 4]> for proto::Digest {
+impl From<&[u64; 4]> for proto::primitives::Digest {
     fn from(value: &[u64; 4]) -> Self {
         (*value).into()
     }
 }
 
-impl From<[Felt; 4]> for proto::Digest {
+impl From<[Felt; 4]> for proto::primitives::Digest {
     fn from(value: [Felt; 4]) -> Self {
         Self {
             d0: value[0].as_int(),
@@ -111,13 +111,13 @@ impl From<[Felt; 4]> for proto::Digest {
     }
 }
 
-impl From<&[Felt; 4]> for proto::Digest {
+impl From<&[Felt; 4]> for proto::primitives::Digest {
     fn from(value: &[Felt; 4]) -> Self {
         (*value).into()
     }
 }
 
-impl From<Word> for proto::Digest {
+impl From<Word> for proto::primitives::Digest {
     fn from(value: Word) -> Self {
         Self {
             d0: value[0].as_int(),
@@ -128,19 +128,19 @@ impl From<Word> for proto::Digest {
     }
 }
 
-impl From<&Word> for proto::Digest {
+impl From<&Word> for proto::primitives::Digest {
     fn from(value: &Word) -> Self {
         (*value).into()
     }
 }
 
-impl From<&NoteId> for proto::Digest {
+impl From<&NoteId> for proto::primitives::Digest {
     fn from(value: &NoteId) -> Self {
         value.as_word().into()
     }
 }
 
-impl From<NoteId> for proto::Digest {
+impl From<NoteId> for proto::primitives::Digest {
     fn from(value: NoteId) -> Self {
         value.as_word().into()
     }
@@ -149,16 +149,16 @@ impl From<NoteId> for proto::Digest {
 // FROM DIGEST
 // ================================================================================================
 
-impl From<proto::Digest> for [u64; 4] {
-    fn from(value: proto::Digest) -> Self {
+impl From<proto::primitives::Digest> for [u64; 4] {
+    fn from(value: proto::primitives::Digest) -> Self {
         [value.d0, value.d1, value.d2, value.d3]
     }
 }
 
-impl TryFrom<proto::Digest> for [Felt; 4] {
+impl TryFrom<proto::primitives::Digest> for [Felt; 4] {
     type Error = ConversionError;
 
-    fn try_from(value: proto::Digest) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
         if [value.d0, value.d1, value.d2, value.d3]
             .iter()
             .any(|v| *v >= <Felt as StarkField>::MODULUS)
@@ -175,26 +175,26 @@ impl TryFrom<proto::Digest> for [Felt; 4] {
     }
 }
 
-impl TryFrom<proto::Digest> for Word {
+impl TryFrom<proto::primitives::Digest> for Word {
     type Error = ConversionError;
 
-    fn try_from(value: proto::Digest) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
         Ok(Self::new(value.try_into()?))
     }
 }
 
-impl TryFrom<&proto::Digest> for [Felt; 4] {
+impl TryFrom<&proto::primitives::Digest> for [Felt; 4] {
     type Error = ConversionError;
 
-    fn try_from(value: &proto::Digest) -> Result<Self, Self::Error> {
+    fn try_from(value: &proto::primitives::Digest) -> Result<Self, Self::Error> {
         (*value).try_into()
     }
 }
 
-impl TryFrom<&proto::Digest> for Word {
+impl TryFrom<&proto::primitives::Digest> for Word {
     type Error = ConversionError;
 
-    fn try_from(value: &proto::Digest) -> Result<Self, Self::Error> {
+    fn try_from(value: &proto::primitives::Digest) -> Result<Self, Self::Error> {
         (*value).try_into()
     }
 }
@@ -207,23 +207,25 @@ mod test {
     use hex::{FromHex, ToHex};
     use proptest::prelude::*;
 
-    use crate::generated::digest as proto;
+    use crate::generated as proto;
 
     #[test]
     fn hex_digest() {
-        let digest = proto::Digest {
+        let digest = proto::primitives::Digest {
             d0: 0x306A_B7A6_F795_CAD7,
             d1: 0x4927_3716_D099_AA04,
             d2: 0xF741_2C3D_E726_4450,
             d3: 0x976B_8764_9DB3_B82F,
         };
         let encoded: String = ToHex::encode_hex(&digest);
-        let round_trip: Result<proto::Digest, _> = FromHex::from_hex::<&[u8]>(encoded.as_ref());
+        let round_trip: Result<proto::primitives::Digest, _> =
+            FromHex::from_hex::<&[u8]>(encoded.as_ref());
         assert_eq!(digest, round_trip.unwrap());
 
-        let digest = proto::Digest { d0: 0, d1: 0, d2: 0, d3: 0 };
+        let digest = proto::primitives::Digest { d0: 0, d1: 0, d2: 0, d3: 0 };
         let encoded: String = ToHex::encode_hex(&digest);
-        let round_trip: Result<proto::Digest, _> = FromHex::from_hex::<&[u8]>(encoded.as_ref());
+        let round_trip: Result<proto::primitives::Digest, _> =
+            FromHex::from_hex::<&[u8]>(encoded.as_ref());
         assert_eq!(digest, round_trip.unwrap());
     }
 
@@ -235,9 +237,9 @@ mod test {
             d2: u64,
             d3: u64,
         ) {
-            let digest = proto::Digest { d0, d1, d2, d3 };
+            let digest = proto::primitives::Digest { d0, d1, d2, d3 };
             let encoded: String = ToHex::encode_hex(&digest);
-            let round_trip: Result<proto::Digest, _> = FromHex::from_hex::<&[u8]>(encoded.as_ref());
+            let round_trip: Result<proto::primitives::Digest, _> = FromHex::from_hex::<&[u8]>(encoded.as_ref());
             assert_eq!(digest, round_trip.unwrap());
         }
     }

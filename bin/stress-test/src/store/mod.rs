@@ -4,15 +4,7 @@ use std::{
 };
 
 use futures::{StreamExt, stream};
-use miden_node_proto::generated::{
-    account as account_proto,
-    digest::Digest,
-    requests::{
-        CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
-    },
-    responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
-    store::rpc_client::RpcClient,
-};
+use miden_node_proto::generated::{self as proto, rpc_store::rpc_client::RpcClient};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::AccountId,
@@ -77,7 +69,7 @@ pub async fn sync_state(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
     block_num: u32,
-) -> (Duration, SyncStateResponse) {
+) -> (Duration, proto::rpc_store::SyncStateResponse) {
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
@@ -85,10 +77,10 @@ pub async fn sync_state(
 
     let account_ids = account_ids
         .iter()
-        .map(|id| account_proto::AccountId { id: id.to_bytes() })
+        .map(|id| proto::account::AccountId { id: id.to_bytes() })
         .collect::<Vec<_>>();
 
-    let sync_request = SyncStateRequest { block_num, note_tags, account_ids };
+    let sync_request = proto::rpc_store::SyncStateRequest { block_num, note_tags, account_ids };
 
     let start = Instant::now();
     let response = api_client.sync_state(sync_request).await.unwrap();
@@ -142,7 +134,7 @@ pub async fn sync_notes(
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
         .collect::<Vec<_>>();
-    let sync_request = SyncNoteRequest { block_num: 0, note_tags };
+    let sync_request = proto::rpc_store::SyncNotesRequest { block_num: 0, note_tags };
 
     let start = Instant::now();
     api_client.sync_notes(sync_request).await.unwrap();
@@ -180,11 +172,15 @@ pub async fn bench_check_nullifiers_by_prefix(
         // get the accounts notes
         let (_, response) =
             sync_state(&mut store_client, account_ids.clone(), current_block_num).await;
-        let note_ids = response.notes.iter().map(|n| n.note_id.unwrap()).collect::<Vec<Digest>>();
+        let note_ids = response
+            .notes
+            .iter()
+            .map(|n| n.note_id.unwrap())
+            .collect::<Vec<proto::note::NoteId>>();
 
         // get the notes nullifiers.
         let notes = store_client
-            .get_notes_by_id(GetNotesByIdRequest { note_ids })
+            .get_notes_by_id(proto::note::NoteIdList { ids: note_ids })
             .await
             .unwrap()
             .into_inner()
@@ -240,8 +236,8 @@ pub async fn bench_check_nullifiers_by_prefix(
 async fn check_nullifiers_by_prefix(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers_prefixes: Vec<u32>,
-) -> (Duration, CheckNullifiersByPrefixResponse) {
-    let sync_request = CheckNullifiersByPrefixRequest {
+) -> (Duration, proto::rpc_store::CheckNullifiersByPrefixResponse) {
+    let sync_request = proto::rpc_store::CheckNullifiersByPrefixRequest {
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,
         block_num: 0,

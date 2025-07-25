@@ -975,16 +975,29 @@ impl State {
         self.db.optimize().await
     }
 
-    /// Returns the unprocessed network notes for a network account, along with the next pagination
+    /// Returns the unprocessed network notes, along with the next pagination
     /// token.
     pub async fn get_unconsumed_network_notes(
+        &self,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+        self.db.select_unconsumed_network_notes(page).await
+    }
+
+    /// Returns the unprocessed notes for a network account, along with the next pagination
+    /// token.
+    pub async fn get_unconsumed_notes_for_network_account(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,
         latest_block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db
-            .select_unconsumed_network_notes(network_account_id_prefix, latest_block_num, page)
+            .select_unconsumed_notes_for_network_account(
+                network_account_id_prefix,
+                latest_block_num,
+                page,
+            )
             .await
     }
 }

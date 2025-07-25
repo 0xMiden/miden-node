@@ -203,8 +203,21 @@ message GetAccountProofsRequest {
     repeated digest.Digest code_commitments = 3;
 }
 
-// Returns a list of unconsumed network notes for a network account using pagination.
+// Returns a list of unconsumed network notes using pagination.
 message GetUnconsumedNetworkNotesRequest {
+    // This should be null on the first call, and set to the response
+    // token until the response token is null, at which point all data
+    // has been fetched.
+    //
+    // Note that this token is only valid if used with the same parameters.
+    optional uint64 page_token = 1;
+
+    // Number of notes to retrieve per page.
+    uint64 page_size = 2;
+}
+
+// Returns a list of unconsumed network notes for a network account using pagination.
+message GetUnconsumedNotesForNetworkAccountRequest {
     // This should be null on the first call, and set to the response
     // token until the response token is null, at which point all data
     // has been fetched.

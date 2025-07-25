@@ -55,7 +55,7 @@ CREATE TABLE notes (
     FOREIGN KEY (script_root) REFERENCES note_scripts(script_root),
     CONSTRAINT notes_type_in_enum CHECK (note_type BETWEEN 1 AND 3),
     CONSTRAINT notes_execution_mode_in_enum CHECK (execution_mode BETWEEN 0 AND 1),
-    CONSTRAINT notes_consumed_is_bool CHECK (execution_mode BETWEEN 0 AND 1),
+    CONSTRAINT notes_consumed_block_num_is_u32 CHECK (batch_index BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_batch_index_is_u32 CHECK (batch_index BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_note_index_is_u32 CHECK (note_index BETWEEN 0 AND 0xFFFFFFFF)
 ) STRICT;

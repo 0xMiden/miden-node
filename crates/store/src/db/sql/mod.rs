@@ -717,8 +717,8 @@ pub fn insert_nullifiers_for_block(
     let serialized_nullifiers = Rc::new(serialized_nullifiers);
 
     let mut stmt = transaction
-        .prepare_cached("UPDATE notes SET consumed = TRUE WHERE nullifier IN rarray(?1)")?;
-    let mut count = stmt.execute(params![serialized_nullifiers])?;
+        .prepare_cached("UPDATE notes SET consumed_block_num = ?1 WHERE nullifier IN rarray(?2)")?;
+    let mut count = stmt.execute(params![block_num.as_u32(), serialized_nullifiers])?;
 
     let mut stmt = transaction.prepare_cached(insert_sql!(nullifiers {
         nullifier,
@@ -855,7 +855,7 @@ pub fn insert_notes(
         aux,
         execution_hint,
         inclusion_path,
-        consumed,
+        consumed_block_num,
         nullifier,
         assets,
         inputs,
@@ -878,7 +878,7 @@ pub fn insert_notes(
             u64_to_value(note.metadata.execution_hint().into()),
             note.inclusion_path.to_bytes(),
             // New notes are always unconsumed.
-            false,
+            Option::<u32>::None,
             // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
             nullifier.as_ref().map(Nullifier::to_bytes),
             note.details.as_ref().map(|d| d.assets().to_bytes()),
@@ -1107,7 +1107,7 @@ pub fn unconsumed_network_notes(
         FROM notes
         LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
         WHERE
-            execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+            execution_mode = 0 AND consumed_block_num IS NULL AND rowid >= ?
         ORDER BY rowid
         LIMIT ?
         ",
@@ -1117,6 +1117,69 @@ pub fn unconsumed_network_notes(
     // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
     // check if there are more notes for the next page.
     let mut rows = stmt.query(params![page.token.unwrap_or(0), page.size.get() + 1])?;
+
+    page.token = None;
+    let mut notes = Vec::with_capacity(page.size.into());
+    while let Some(row) = rows.next()? {
+        if notes.len() == page.size.get() {
+            page.token = Some(row.get::<_, u64>(14)?);
+            break;
+        }
+        notes.push(NoteRecord::from_row(row)?);
+    }
+
+    Ok((notes, page))
+}
+
+/// Returns a paginated batch of network notes for a specific account that have not yet been
+/// consumed.
+///
+/// The scope of the query is limited by the specified block number. Notes that are consumed after
+/// the specified block number are excluded from the result.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+pub fn unconsumed_notes_for_network_account(
+    transaction: &Transaction,
+    network_account_id_prefix: NetworkAccountPrefix,
+    latest_block_num: BlockNumber,
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page)> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    // Select the rowid column so that we can return a pagination token.
+    //
+    // rowid column _must_ come after the note fields so that we don't mess up the
+    // `NoteRecord::from_row` call.
+    let mut stmt = transaction.prepare_cached(&format!(
+        "
+        SELECT {}, rowid
+        FROM notes
+        LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+        WHERE
+            execution_mode = 0 AND tag = ?1 AND
+            block_num <= ?2 AND
+            (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
+        ORDER BY rowid
+        LIMIT ?
+        ",
+        NoteRecord::SELECT_COLUMNS
+    ))?;
+
+    // The `page.size` is the maximum number of notes to return. We add 1 to it so that we can
+    // check if there are more notes for the next page.
+    let mut rows = stmt.query(params![
+        u32::from(network_account_id_prefix),
+        latest_block_num.as_u32(),
+        page.token.unwrap_or(0),
+        page.size.get() + 1
+    ])?;
 
     page.token = None;
     let mut notes = Vec::with_capacity(page.size.into());

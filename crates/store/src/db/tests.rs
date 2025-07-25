@@ -400,6 +400,7 @@ fn sql_unconsumed_network_notes() {
         make_account_and_note(&mut conn, block_num, [0u8; 32], AccountStorageMode::Public),
         make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network),
     ];
+    let network_account_id = account_notes[1].0;
 
     // Create some notes, of which half are network notes.
     let notes = (0..N)
@@ -449,6 +450,17 @@ fn sql_unconsumed_network_notes() {
     )
     .unwrap();
     assert_eq!(result, network_notes);
+    let (result, _) = sql::unconsumed_notes_for_network_account(
+        &db_tx,
+        network_account_id.try_into().unwrap(),
+        block_num,
+        Page {
+            token: None,
+            size: NonZeroUsize::new(N as usize * 10).unwrap(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result, network_notes);
 
     // Check pagination works as expected.
     let limit = 5;
@@ -458,6 +470,17 @@ fn sql_unconsumed_network_notes() {
     };
     network_notes.chunks(limit).for_each(|expected| {
         let (result, new_page) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
+        page = new_page;
+        assert_eq!(result, expected);
+    });
+    network_notes.chunks(limit).for_each(|expected| {
+        let (result, new_page) = sql::unconsumed_notes_for_network_account(
+            &db_tx,
+            network_account_id.try_into().unwrap(),
+            block_num,
+            page,
+        )
+        .unwrap();
         page = new_page;
         assert_eq!(result, expected);
     });
@@ -483,6 +506,108 @@ fn sql_unconsumed_network_notes() {
     };
     let (result, _) = sql::unconsumed_network_notes(&db_tx, page).unwrap();
     assert_eq!(result, expected);
+    let (result, _) = sql::unconsumed_notes_for_network_account(
+        &db_tx,
+        network_account_id.try_into().unwrap(),
+        block_num,
+        page,
+    )
+    .unwrap();
+    assert_eq!(result, expected);
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn sql_unconsumed_notes_for_network_account() {
+    // Number of notes to generate.
+    const N: u64 = 32;
+
+    let mut conn = create_db();
+
+    // Create a first block which we will query for.
+    let block_num = BlockNumber::from(0);
+    create_block(&mut conn, block_num);
+    // Create a second block which should be excluded by our query.
+    create_block(&mut conn, BlockNumber::from(1));
+
+    let account_notes = vec![
+        make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network),
+        make_account_and_note(&mut conn, block_num, [2u8; 32], AccountStorageMode::Network),
+    ];
+
+    // Create notes for both accounts and blocks.
+    // The first 32 notes are for block 0.
+    // The next 32 notes are for block 1.
+    // Both accounts have notes for both blocks.
+    let notes = (0..N * 2)
+        .map(|i| {
+            let index = (i % 2) as usize;
+            let account_id = account_notes[index].0;
+            let new_note = &account_notes[index].1;
+            let block_num: u32 = (i < N).into(); // Block 0 or 1.
+            let note = NoteRecord {
+                block_num: block_num.into(),
+                note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
+                note_id: num_to_word(i),
+                metadata: NoteMetadata::new(
+                    account_notes[index].0,
+                    NoteType::Public,
+                    NoteTag::from_account_id(account_id),
+                    NoteExecutionHint::none(),
+                    Felt::default(),
+                )
+                .unwrap(),
+                details: Some(NoteDetails::from(new_note)),
+                inclusion_path: SparseMerklePath::default(),
+            };
+
+            (note, Some(num_to_nullifier(i)))
+        })
+        .collect::<Vec<_>>();
+
+    // Insert the full set of notes for both accounts and blocks.
+    let db_tx = conn.transaction().unwrap();
+    sql::insert_scripts(&db_tx, notes.iter().map(|(note, _)| note)).unwrap();
+    sql::insert_notes(&db_tx, &notes).unwrap();
+
+    // Test the queries against both accounts and blocks.
+    for accounts in account_notes {
+        let account_id = accounts.0;
+
+        // First block as latest should have half the notes for the account.
+        let (result, _) = sql::unconsumed_notes_for_network_account(
+            &db_tx,
+            account_id.try_into().unwrap(),
+            0.into(),
+            Page {
+                token: None,
+                size: NonZeroUsize::new(N as usize * 10).unwrap(),
+            },
+        )
+        .unwrap();
+        assert_eq!(result.len(), N as usize / 2);
+        // Validate the query returns notes pertaining to the right account.
+        for note in result {
+            assert_eq!(note.metadata.tag(), NoteTag::from_account_id(account_id));
+        }
+
+        // Second block as latest should have all the notes for the account.
+        let (result, _) = sql::unconsumed_notes_for_network_account(
+            &db_tx,
+            account_id.try_into().unwrap(),
+            1.into(),
+            Page {
+                token: None,
+                size: NonZeroUsize::new(N as usize * 10).unwrap(),
+            },
+        )
+        .unwrap();
+        assert_eq!(result.len(), N as usize);
+        // Validate the query returns notes pertaining to the right account.
+        for note in result {
+            assert_eq!(note.metadata.tag(), NoteTag::from_account_id(account_id));
+        }
+    }
 }
 
 #[test]

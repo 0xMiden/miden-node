@@ -242,3 +242,25 @@ pub struct GetUnconsumedNetworkNotesRequest {
     #[prost(uint64, tag = "2")]
     pub page_size: u64,
 }
+/// Returns a list of unconsumed notes for a network account using pagination.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetUnconsumedNotesForNetworkAccountRequest {
+    /// This should be null on the first call, and set to the response
+    /// token until the response token is null, at which point all data
+    /// has been fetched.
+    ///
+    /// Note that this token is only valid if used with the same parameters.
+    #[prost(uint64, optional, tag = "1")]
+    pub page_token: ::core::option::Option<u64>,
+    /// Number of notes to retrieve per page.
+    #[prost(uint64, tag = "2")]
+    pub page_size: u64,
+    /// The network account ID prefix to filter notes by.
+    #[prost(uint32, tag = "3")]
+    pub network_account_id_prefix: u32,
+    /// The maximum (inclusive) block number to scope the query by.
+    ///
+    /// Notes that are consumed after this block number are excluded from the result.
+    #[prost(fixed32, tag = "4")]
+    pub latest_block_num: u32,
+}

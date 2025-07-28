@@ -40,7 +40,7 @@ miden-node-stress-test benchmark-store \
 Using the current store seed command:
 ```bash
 # Using 1M accounts, half are public
-miden-node-stress-test seed-store --data-directory data --num-accounts 1000000 --public-accounts-percentage 50
+miden-node-stress-test seed-store --data-directory data --num-accounts 100000 --public-accounts-percentage 50
 ```
 Current results of the store stress-tests:
 
@@ -48,26 +48,26 @@ Current results of the store stress-tests:
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-state
 
-Average request latency: 4.448008ms
-P95 request latency: 6.519875ms
-Average notes per response: 2.9486
+Average request latency: 77.386421ms
+P95 request latency: 29.490042ms
+Average notes per response: 1.4048
 ```
 
 - sync-notes
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-notes
 
-Average request latency: 3.569797ms
-P95 request latency: 5.724ms
+Average request latency: 77.229469ms
+P95 request latency: 27.882625ms
 ```
 
 - check-nullifiers-by-prefix
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 check-nullifiers-by-prefix --prefixes 10
 
-Average request latency: 770.598µs
-P95 request latency: 1.221709ms
-Average nullifiers per response: 7.599
+Average request latency: 1.727873ms
+P95 request latency: 2.615959ms
+Average nullifiers per response: 25.1951
 ```
 
 ## License

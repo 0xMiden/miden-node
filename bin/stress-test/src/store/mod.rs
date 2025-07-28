@@ -177,21 +177,37 @@ pub async fn bench_check_nullifiers_by_prefix(
     let mut nullifier_prefixes: Vec<u32> = vec![];
     let mut current_block_num = 0;
     loop {
-        // get the accounts notes
-        let (_, response) =
-            sync_state(&mut store_client, account_ids.clone(), current_block_num).await;
-        let note_ids = response.notes.iter().map(|n| n.note_id.unwrap()).collect::<Vec<Digest>>();
+        // Process chunks in parallel using futures
+        let chunk_futures: Vec<_> = account_ids
+            .chunks(1000)
+            .map(|chunk| {
+                let mut client = store_client.clone();
+                let chunk_vec = chunk.to_vec();
+                async move {
+                    let (_, response) = sync_state(&mut client, chunk_vec, current_block_num).await;
+                    response.notes.iter().map(|n| n.note_id.unwrap()).collect::<Vec<Digest>>()
+                }
+            })
+            .collect();
 
-        // get the notes nullifiers.
-        let notes = store_client
-            .get_notes_by_id(GetNotesByIdRequest { note_ids })
-            .await
-            .unwrap()
-            .into_inner()
-            .notes;
+        // Wait for all chunks to complete and flatten results
+        let chunk_results = futures::future::join_all(chunk_futures).await;
+        let note_ids: Vec<Digest> = chunk_results.into_iter().flatten().collect();
+
+        // get the notes nullifiers in chunks of 1k
+        let mut all_notes = Vec::new();
+        for note_chunk in note_ids.chunks(1000) {
+            let notes = store_client
+                .get_notes_by_id(GetNotesByIdRequest { note_ids: note_chunk.to_vec() })
+                .await
+                .unwrap()
+                .into_inner()
+                .notes;
+            all_notes.extend(notes);
+        }
 
         nullifier_prefixes.extend(
-            notes
+            all_notes
                 .iter()
                 .filter_map(|n| {
                     // private notes are filtered out because `n.details` is None
@@ -202,8 +218,16 @@ pub async fn bench_check_nullifiers_by_prefix(
                 .collect::<Vec<u32>>(),
         );
 
-        current_block_num = response.block_header.unwrap().block_num;
-        if response.chain_tip == current_block_num {
+        // Use the response from the first chunk to update block number
+        // (all chunks should return the same block header for the same block_num)
+        let (_, first_response) = sync_state(
+            &mut store_client,
+            account_ids[..1000.min(account_ids.len())].to_vec(),
+            current_block_num,
+        )
+        .await;
+        current_block_num = first_response.block_header.unwrap().block_num;
+        if first_response.chain_tip == current_block_num {
             break;
         }
     }

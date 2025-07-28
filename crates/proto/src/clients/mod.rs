@@ -46,7 +46,7 @@ impl MetadataInterceptor {
     ///
     /// Provided version string must be ASCII.
     pub fn with_accept_metadata(mut self, version: &str) -> Result<Self, anyhow::Error> {
-        let accept_value = format!("application/vnd.miden.{version}+grpc");
+        let accept_value = format!("application/vnd.miden; version={version}");
         self.metadata.insert("accept", AsciiMetadataValue::try_from(accept_value)?);
         Ok(self)
     }
@@ -69,14 +69,15 @@ pub type RpcApiClient =
     generated::rpc::api_client::ApiClient<InterceptedService<Channel, MetadataInterceptor>>;
 pub type BlockProducerApiClient =
     generated::block_producer::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
-pub type StoreNtxBuilderClient = generated::store::ntx_builder_client::NtxBuilderClient<
+pub type StoreNtxBuilderClient = generated::ntx_builder_store::ntx_builder_client::NtxBuilderClient<
     InterceptedService<Channel, OtelInterceptor>,
 >;
-pub type StoreBlockProducerClient = generated::store::block_producer_client::BlockProducerClient<
-    InterceptedService<Channel, OtelInterceptor>,
->;
+pub type StoreBlockProducerClient =
+    generated::block_producer_store::block_producer_client::BlockProducerClient<
+        InterceptedService<Channel, OtelInterceptor>,
+    >;
 pub type StoreRpcClient =
-    generated::store::rpc_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
+    generated::rpc_store::rpc_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
 
 // BUILDER CONFIGURATION
 // ================================================================================================
@@ -212,7 +213,7 @@ impl GrpcClientBuilder for StoreNtxBuilder {
     type Service = StoreNtxBuilderClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        generated::store::ntx_builder_client::NtxBuilderClient::with_interceptor(
+        generated::ntx_builder_store::ntx_builder_client::NtxBuilderClient::with_interceptor(
             channel,
             OtelInterceptor,
         )
@@ -223,7 +224,7 @@ impl GrpcClientBuilder for StoreBlockProducer {
     type Service = StoreBlockProducerClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        generated::store::block_producer_client::BlockProducerClient::with_interceptor(
+        generated::block_producer_store::block_producer_client::BlockProducerClient::with_interceptor(
             channel,
             OtelInterceptor,
         )
@@ -234,6 +235,6 @@ impl GrpcClientBuilder for StoreRpc {
     type Service = StoreRpcClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
-        generated::store::rpc_client::RpcClient::with_interceptor(channel, OtelInterceptor)
+        generated::rpc_store::rpc_client::RpcClient::with_interceptor(channel, OtelInterceptor)
     }
 }

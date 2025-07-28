@@ -18,13 +18,14 @@ workspace = true
 anyhow                 = { workspace = true }
 futures                = { version = "0.3" }
 http                   = { workspace = true }
+mediatype              = { version = "0.20" }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { workspace = true }
 miden-node-utils       = { workspace = true }
 miden-objects          = { default-features = true, workspace = true }
 miden-tx               = { default-features = true, workspace = true }
-nom                    = { version = "8.0" }
 semver                 = { version = "1.0" }
+thiserror              = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
 tonic                  = { features = ["tls-native-roots", "tls-ring"], workspace = true }
@@ -36,7 +37,10 @@ tracing                = { workspace = true }
 url                    = { workspace = true }
 
 [dev-dependencies]
+miden-air        = { default-features = true, features = ["testing"], workspace = true }
 miden-node-store = { workspace = true }
 miden-node-utils = { features = ["tracing-forest"], workspace = true }
+miden-objects    = { default-features = true, features = ["testing"], workspace = true }
 reqwest          = { version = "0.12" }
+rstest           = { workspace = true }
 tempfile         = { version = "3.20" }

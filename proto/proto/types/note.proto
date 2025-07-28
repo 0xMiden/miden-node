@@ -1,10 +1,23 @@
 syntax = "proto3";
 package note;
 
-import "account.proto";
-import "block.proto";
-import "digest.proto";
-import "merkle.proto";
+import "types/primitives.proto";
+import "types/account.proto";
+
+// NOTES
+// ================================================================================================
+
+// Represents a note's ID.
+message NoteId {
+    // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
+    primitives.Digest id = 1;
+}
+
+// List of note IDs.
+message NoteIdList {
+    // List of note IDs to be queried from the database.
+    repeated NoteId ids = 1;
+}
 
 // Represents a note's metadata.
 message NoteMetadata {
@@ -28,17 +41,6 @@ message NoteMetadata {
     fixed64 aux = 5;
 }
 
-// Represents a committed note.
-//
-// A committed note is a note that has been included in a block.
-message CommittedNote {
-    // Either private, public, or network note.
-    Note note = 1;
-
-    // The data needed to prove that the note is present in the chain.
-    NoteInclusionInBlockProof inclusion_proof = 2;
-}
-
 // Represents a note.
 //
 // The note is composed of the note metadata and its serialized details.
@@ -52,7 +54,8 @@ message Note {
 
 // Represents a network note.
 //
-// The note is composed of the note metadata and its serialized details.
+// Network notes are a subtype of public notes, and as such, their details are always publicly
+// known.
 message NetworkNote {
     // The note's metadata.
     NoteMetadata metadata = 1;
@@ -61,12 +64,29 @@ message NetworkNote {
     bytes details = 2;
 }
 
+// Represents a committed note.
+//
+// A committed note is a note that has been included in a block.
+message CommittedNote {
+    // Either private, public, or network note.
+    Note note = 1;
+
+    // The data needed to prove that the note is present in the chain.
+    NoteInclusionInBlockProof inclusion_proof = 2;
+}
+
+// Represents the result of getting committed notes.
+message CommittedNoteList {
+    // List of committed notes.
+    repeated CommittedNote notes = 1;
+}
+
 // Represents a proof of note's inclusion in a block.
 //
 // Does not include proof of the block's inclusion in the chain.
 message NoteInclusionInBlockProof {
     // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    digest.Digest note_id = 1;
+    NoteId note_id = 1;
 
     // The block number in which the note was created.
     fixed32 block_num = 2;
@@ -75,20 +95,20 @@ message NoteInclusionInBlockProof {
     uint32 note_index_in_block = 3;
 
     // The note's inclusion proof in the block.
-    merkle.MerklePath merkle_path = 4;
+    primitives.SparseMerklePath inclusion_path = 4;
 }
 
 // Represents proof of a note inclusion in the block.
 message NoteSyncRecord {
-    // The index of the note.
-    uint32 note_index = 1;
-
     // A unique identifier of the note which is a 32-byte commitment to the underlying note data.
-    digest.Digest note_id = 2;
+    NoteId note_id = 1;
+
+    // The index of the note in the block.
+    uint32 note_index_in_block = 2;
 
     // The note's metadata.
     NoteMetadata metadata = 3;
 
     // The note's inclusion proof in the block.
-    merkle.MerklePath merkle_path = 4;
+    primitives.SparseMerklePath inclusion_path = 4;
 }

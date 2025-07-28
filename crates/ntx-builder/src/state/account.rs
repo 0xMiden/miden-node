@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{HashMap, VecDeque};
 
 use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
 use miden_objects::{
@@ -17,10 +17,10 @@ pub struct AccountState {
     inflight: VecDeque<Account>,
 
     /// Unconsumed notes of this account.
-    available_notes: BTreeMap<Nullifier, NetworkNote>,
+    available_notes: HashMap<Nullifier, NetworkNote>,
 
     /// Notes which have been consumed by transactions that are still inflight.
-    nullified_notes: BTreeMap<Nullifier, NetworkNote>,
+    nullified_notes: HashMap<Nullifier, NetworkNote>,
 }
 
 impl AccountState {
@@ -29,8 +29,8 @@ impl AccountState {
         Self {
             committed: Some(account),
             inflight: VecDeque::default(),
-            available_notes: BTreeMap::default(),
-            nullified_notes: BTreeMap::default(),
+            available_notes: HashMap::default(),
+            nullified_notes: HashMap::default(),
         }
     }
 
@@ -39,8 +39,8 @@ impl AccountState {
         Self {
             inflight: VecDeque::from([account]),
             committed: None,
-            available_notes: BTreeMap::default(),
-            nullified_notes: BTreeMap::default(),
+            available_notes: HashMap::default(),
+            nullified_notes: HashMap::default(),
         }
     }
 

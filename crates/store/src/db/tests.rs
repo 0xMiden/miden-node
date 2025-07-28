@@ -19,7 +19,7 @@ use miden_objects::{
     },
     asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
-    crypto::{dsa::rpo_falcon512::PublicKey, merkle::MerklePath, rand::RpoRandomCoin},
+    crypto::{dsa::rpo_falcon512::PublicKey, merkle::SparseMerklePath, rand::RpoRandomCoin},
     note::{
         Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
     },
@@ -223,7 +223,7 @@ fn sql_select_notes() {
             note_id: num_to_word(u64::try_from(i).unwrap()),
             metadata: *new_note.metadata(),
             details: Some(NoteDetails::from(&new_note)),
-            merkle_path: MerklePath::new(vec![]),
+            inclusion_path: SparseMerklePath::default(),
         };
         state.push(note.clone());
 
@@ -284,7 +284,7 @@ fn sql_select_notes_different_execution_hints() {
         )
         .unwrap(),
         details: Some(NoteDetails::from(&new_note)),
-        merkle_path: MerklePath::new(vec![]),
+        inclusion_path: SparseMerklePath::default(),
     };
     state.push(note_none.clone());
 
@@ -310,7 +310,7 @@ fn sql_select_notes_different_execution_hints() {
         )
         .unwrap(),
         details: Some(NoteDetails::from(&new_note)),
-        merkle_path: MerklePath::new(vec![]),
+        inclusion_path: SparseMerklePath::default(),
     };
     state.push(note_always.clone());
 
@@ -335,7 +335,7 @@ fn sql_select_notes_different_execution_hints() {
         )
         .unwrap(),
         details: Some(NoteDetails::from(&new_note)),
-        merkle_path: MerklePath::new(vec![]),
+        inclusion_path: SparseMerklePath::default(),
     };
     state.push(note_after_block.clone());
 
@@ -421,7 +421,7 @@ fn sql_unconsumed_network_notes() {
                 )
                 .unwrap(),
                 details: is_network.then_some(NoteDetails::from(new_note)),
-                merkle_path: MerklePath::new(vec![]),
+                inclusion_path: SparseMerklePath::default(),
             };
 
             (note, is_network.then_some(num_to_nullifier(i)))
@@ -1034,7 +1034,7 @@ fn notes() {
 
     let values = [(note_index, new_note.id(), note_metadata)];
     let notes_db = BlockNoteTree::with_entries(values.iter().copied()).unwrap();
-    let merkle_path = notes_db.open(note_index);
+    let inclusion_path = notes_db.open(note_index);
 
     let note = NoteRecord {
         block_num: block_num_1,
@@ -1049,7 +1049,7 @@ fn notes() {
         )
         .unwrap(),
         details: Some(NoteDetails::from(&new_note)),
-        merkle_path: merkle_path.clone().into(),
+        inclusion_path: inclusion_path.clone(),
     };
 
     sql::insert_scripts(&transaction, [&note]).unwrap();
@@ -1096,7 +1096,7 @@ fn notes() {
         note_id: new_note.id().into(),
         metadata: note.metadata,
         details: None,
-        merkle_path: merkle_path.clone().into(),
+        inclusion_path: inclusion_path.clone(),
     };
 
     let transaction = conn.transaction().unwrap();

@@ -4,9 +4,7 @@ use futures::{TryStream, TryStreamExt};
 use miden_node_proto::{
     clients::{BlockProducer, BlockProducerApiClient, Builder},
     domain::mempool::MempoolEvent,
-    generated::{
-        block_producer::MempoolSubscriptionRequest, requests::SubmitProvenTransactionRequest,
-    },
+    generated::{self as proto},
 };
 use miden_node_utils::FlattenResult;
 use miden_objects::{block::BlockNumber, transaction::ProvenTransaction};
@@ -46,7 +44,7 @@ impl BlockProducerClient {
         &self,
         proven_tx: ProvenTransaction,
     ) -> Result<(), Status> {
-        let request = SubmitProvenTransactionRequest { transaction: proven_tx.to_bytes() };
+        let request = proto::transaction::ProvenTransaction { transaction: proven_tx.to_bytes() };
 
         self.client.clone().submit_proven_transaction(request).await?;
 
@@ -86,7 +84,8 @@ impl BlockProducerClient {
         &self,
         chain_tip: BlockNumber,
     ) -> Result<impl TryStream<Ok = MempoolEvent, Error = Status>, Status> {
-        let request = MempoolSubscriptionRequest { chain_tip: chain_tip.as_u32() };
+        let request =
+            proto::block_producer::MempoolSubscriptionRequest { chain_tip: chain_tip.as_u32() };
         let stream = self.client.clone().mempool_subscription(request).await?;
 
         let stream = stream

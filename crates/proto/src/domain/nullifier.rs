@@ -8,13 +8,13 @@ use crate::{
 // FROM NULLIFIER
 // ================================================================================================
 
-impl From<&Nullifier> for proto::digest::Digest {
+impl From<&Nullifier> for proto::primitives::Digest {
     fn from(value: &Nullifier) -> Self {
         value.as_word().into()
     }
 }
 
-impl From<Nullifier> for proto::digest::Digest {
+impl From<Nullifier> for proto::primitives::Digest {
     fn from(value: Nullifier) -> Self {
         value.as_word().into()
     }
@@ -23,10 +23,10 @@ impl From<Nullifier> for proto::digest::Digest {
 // INTO NULLIFIER
 // ================================================================================================
 
-impl TryFrom<proto::digest::Digest> for Nullifier {
+impl TryFrom<proto::primitives::Digest> for Nullifier {
     type Error = ConversionError;
 
-    fn try_from(value: proto::digest::Digest) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::primitives::Digest) -> Result<Self, Self::Error> {
         let digest: Word = value.try_into()?;
         Ok(digest.into())
     }
@@ -41,26 +41,32 @@ pub struct NullifierWitnessRecord {
     pub proof: SmtProof,
 }
 
-impl TryFrom<proto::responses::NullifierWitness> for NullifierWitnessRecord {
+impl TryFrom<proto::block_producer_store::block_inputs::NullifierWitness>
+    for NullifierWitnessRecord
+{
     type Error = ConversionError;
 
     fn try_from(
-        nullifier_witness_record: proto::responses::NullifierWitness,
+        nullifier_witness_record: proto::block_producer_store::block_inputs::NullifierWitness,
     ) -> Result<Self, Self::Error> {
         Ok(Self {
             nullifier: nullifier_witness_record
                 .nullifier
-                .ok_or(proto::responses::NullifierWitness::missing_field(stringify!(nullifier)))?
+                .ok_or(proto::block_producer_store::block_inputs::NullifierWitness::missing_field(
+                    stringify!(nullifier),
+                ))?
                 .try_into()?,
             proof: nullifier_witness_record
                 .opening
-                .ok_or(proto::responses::NullifierWitness::missing_field(stringify!(opening)))?
+                .ok_or(proto::block_producer_store::block_inputs::NullifierWitness::missing_field(
+                    stringify!(opening),
+                ))?
                 .try_into()?,
         })
     }
 }
 
-impl From<NullifierWitnessRecord> for proto::responses::NullifierWitness {
+impl From<NullifierWitnessRecord> for proto::block_producer_store::block_inputs::NullifierWitness {
     fn from(value: NullifierWitnessRecord) -> Self {
         Self {
             nullifier: Some(value.nullifier.into()),

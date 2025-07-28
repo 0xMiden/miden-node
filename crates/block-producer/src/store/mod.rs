@@ -133,10 +133,11 @@ impl StoreClient {
     /// Creates a new store client with a lazy connection.
     pub fn new(store_address: SocketAddr) -> Self {
         let store_url = format!("http://{store_address}");
+        // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
         let store = Builder::new()
             .with_address(store_url)
             .connect_lazy::<StoreBlockProducer>()
-            .expect("failed to connect to store"); // TODO: handle error
+            .unwrap();
 
         info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
 

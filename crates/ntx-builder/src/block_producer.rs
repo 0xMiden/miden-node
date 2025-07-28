@@ -29,10 +29,11 @@ pub struct BlockProducerClient {
 impl BlockProducerClient {
     /// Creates a new block producer client with a lazy connection.
     pub fn new(block_producer_address: SocketAddr) -> Self {
+        // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
         let block_producer = Builder::new()
             .with_address(format!("http://{block_producer_address}"))
             .connect_lazy::<BlockProducer>()
-            .expect("failed to connect to block producer"); // TODO: handle error
+            .unwrap();
 
         info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Store client initialized");
 

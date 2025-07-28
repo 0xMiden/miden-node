@@ -32,10 +32,11 @@ pub struct StoreClient {
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
     pub fn new(store_url: &Url) -> Self {
+        // SAFETY: The store_url is always valid as it is created from a `Url`.
         let store = Builder::new()
             .with_address(store_url.to_string())
             .connect_lazy::<StoreNtxBuilder>()
-            .expect("failed to connect to store"); // TODO: handle error
+            .unwrap();
 
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 

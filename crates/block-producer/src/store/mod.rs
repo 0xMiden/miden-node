@@ -132,10 +132,9 @@ pub struct StoreClient {
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
     pub fn new(store_address: SocketAddr) -> Self {
-        let store_url = format!("http://{store_address}");
-        // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
+        // SAFETY: The store address is always valid as it is created from a `SocketAddr`.
         let store = Builder::new()
-            .with_address(store_url)
+            .with_address(format!("http://{store_address}"))
             .connect_lazy::<StoreBlockProducer>()
             .unwrap();
 

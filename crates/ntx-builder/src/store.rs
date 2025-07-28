@@ -3,15 +3,7 @@ use std::time::Duration;
 use miden_node_proto::{
     domain::{account::NetworkAccountPrefix, note::NetworkNote},
     errors::ConversionError,
-    errors::{ConversionError, MissingFieldHelper},
-    generated::{
-        self as proto,
-        ntx_builder_store::ntx_builder_client as store_client,
-        requests::{
-            GetCurrentBlockchainDataRequest, GetNetworkAccountDetailsByPrefixRequest,
-            GetUnconsumedNetworkNotesRequest,
-        },
-    },
+    generated::{self as proto, ntx_builder_store::ntx_builder_client as store_client},
     try_convert,
 };
 use miden_node_utils::tracing::grpc::OtelInterceptor;
@@ -86,7 +78,7 @@ impl StoreClient {
     async fn get_latest_blockchain_data(
         &self,
     ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
-        let request = tonic::Request::new(GetCurrentBlockchainDataRequest::default());
+        let request = tonic::Request::new(proto::blockchain::MaybeBlockNumber::default());
 
         let response = self.inner.clone().get_current_blockchain_data(request).await?.into_inner();
 

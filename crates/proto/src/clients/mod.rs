@@ -65,9 +65,9 @@ impl Interceptor for MetadataInterceptor {
 // TYPE ALIASES FOR INSTRUMENTED CLIENTS
 // ================================================================================================
 
-pub type RpcApiClient =
+pub type RpcClient =
     generated::rpc::api_client::ApiClient<InterceptedService<Channel, MetadataInterceptor>>;
-pub type BlockProducerApiClient =
+pub type BlockProducerClient =
     generated::block_producer::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 pub type StoreNtxBuilderClient = generated::ntx_builder_store::ntx_builder_client::NtxBuilderClient<
     InterceptedService<Channel, OtelInterceptor>,
@@ -82,43 +82,120 @@ pub type StoreRpcClient =
 // BUILDER CONFIGURATION
 // ================================================================================================
 
+/// Builder for configuring and creating gRPC clients with consistent options.
+///
+/// This builder provides a fluent interface for configuring various aspects of gRPC client
+/// connections including TLS, timeouts, metadata, and connection types. It supports both
+/// eager and lazy connection establishment.
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use miden_node_proto::clients::{Builder, Rpc, RpcClient};
+/// use std::time::Duration;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// // Create a client with TLS and timeout
+/// let client: RpcClient = Builder::new()
+///     .with_address("https://rpc.example.com:8080".to_string())
+///     .with_tls()
+///     .with_timeout(Duration::from_secs(30))
+///     .connect::<Rpc>()
+///     .await?;
+/// # Ok(())
+/// # }
+/// ```
 #[derive(Default, Clone)]
 pub struct Builder {
+    /// Whether to enable TLS encryption for the connection.
     pub with_tls: bool,
+    /// The gRPC server address in the format `{protocol}://{hostname}:{port}`.
     pub address: String,
+    /// Optional timeout for gRPC operations.
     pub with_timeout: Option<Duration>,
+    /// Optional version string to include in request metadata.
     pub metadata_version: Option<String>,
 }
 
 impl Builder {
+    /// Creates a new builder with default configuration.
+    ///
+    /// The default configuration has TLS disabled, no timeout, and no metadata version.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Enables TLS encryption for the gRPC connection.
+    ///
+    /// When enabled, the client will use native system certificate roots for TLS verification.
+    /// This is required for connecting to secure endpoints.
     #[must_use]
     pub fn with_tls(mut self) -> Self {
         self.with_tls = true;
         self
     }
 
+    /// Sets a timeout for gRPC operations.
+    ///
+    /// This timeout applies to all gRPC calls made through the client. If not set,
+    /// operations may hang indefinitely.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - The duration after which gRPC operations will timeout
     #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.with_timeout = Some(timeout);
         self
     }
 
+    /// Sets the version string to include in request metadata.
+    ///
+    /// This version is used by the [`MetadataInterceptor`] to set the `Accept` header
+    /// in gRPC requests. If not set, the current crate version will be used.
+    ///
+    /// # Arguments
+    ///
+    /// * `version` - The version string to include in request metadata
     #[must_use]
     pub fn with_metadata_version(mut self, version: String) -> Self {
         self.metadata_version = Some(version);
         self
     }
 
+    /// Sets the gRPC server address.
+    ///
+    /// The address should be in the format `{protocol}://{hostname}:{port}`.
+    /// Examples: `http://localhost:8080`, `https://api.example.com:443`
+    ///
+    /// # Arguments
+    ///
+    /// * `address` - The gRPC server address
     #[must_use]
     pub fn with_address(mut self, address: String) -> Self {
         self.address = address;
         self
     }
 
+    /// Establishes an eager connection to the gRPC server.
+    ///
+    /// This method attempts to connect to the server immediately and returns a client
+    /// only after the connection is established. If the connection fails, an error
+    /// is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `T` - The type implementing [`GrpcClientBuilder`] that determines which client type to
+    ///   create (e.g., [`Rpc`], [`BlockProducer`], [`StoreRpc`])
+    ///
+    /// # Returns
+    ///
+    /// A configured gRPC client of type `T::Service` if the connection succeeds.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the connection cannot be established or if the endpoint
+    /// configuration is invalid.
     pub async fn connect<T>(self) -> Result<T::Service>
     where
         T: GrpcClientBuilder,
@@ -127,6 +204,25 @@ impl Builder {
         Ok(T::with_interceptor(channel, &self))
     }
 
+    /// Establishes a lazy connection to the gRPC server.
+    ///
+    /// This method returns a client immediately without attempting to connect.
+    /// The actual connection is established when the first gRPC call is made.
+    /// This is useful for creating clients that may not be used immediately.
+    ///
+    /// # Arguments
+    ///
+    /// * `T` - The type implementing [`GrpcClientBuilder`] that determines which client type to
+    ///   create (e.g., [`Rpc`], [`BlockProducer`], [`StoreRpc`])
+    ///
+    /// # Returns
+    ///
+    /// A configured gRPC client of type `T::Service`. Connection errors will only
+    /// be encountered when making actual gRPC calls.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the endpoint configuration is invalid.
     pub fn connect_lazy<T>(self) -> Result<T::Service>
     where
         T: GrpcClientBuilder,
@@ -135,6 +231,18 @@ impl Builder {
         Ok(T::with_interceptor(channel, &self))
     }
 
+    /// Builds a tonic [`Endpoint`] from the builder configuration.
+    ///
+    /// This method creates and configures a gRPC endpoint with the specified
+    /// address, timeout, and TLS settings.
+    ///
+    /// # Returns
+    ///
+    /// A configured [`Endpoint`] ready for connection establishment.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the address is invalid or TLS configuration fails.
     fn build_endpoint(&self) -> Result<Endpoint> {
         let mut endpoint = Endpoint::from_shared(self.address.clone())
             .context("Failed to create endpoint from address")?;
@@ -188,7 +296,7 @@ pub struct StoreRpc;
 // ================================================================================================
 
 impl GrpcClientBuilder for Rpc {
-    type Service = RpcApiClient;
+    type Service = RpcClient;
 
     fn with_interceptor(channel: Channel, builder: &Builder) -> Self::Service {
         // Use version from builder or default
@@ -202,7 +310,7 @@ impl GrpcClientBuilder for Rpc {
 }
 
 impl GrpcClientBuilder for BlockProducer {
-    type Service = BlockProducerApiClient;
+    type Service = BlockProducerClient;
 
     fn with_interceptor(channel: Channel, _builder: &Builder) -> Self::Service {
         generated::block_producer::api_client::ApiClient::with_interceptor(channel, OtelInterceptor)

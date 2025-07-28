@@ -5,7 +5,7 @@ use http::{
     header::{ACCEPT, CONTENT_TYPE},
 };
 use miden_node_proto::{
-    clients::{Builder, RpcApiClient},
+    clients::{Builder, RpcClient},
     generated::{self as proto, rpc::api_client::ApiClient as ProtoClient},
 };
 use miden_node_store::{GenesisState, Store};
@@ -82,7 +82,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         // Recreate the RPC client with an invalid version.
         let url = rpc_addr.to_string();
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-        let mut rpc_client: RpcApiClient = Builder::new()
+        let mut rpc_client: RpcClient = Builder::new()
             .with_address(url.to_string())
             .with_timeout(Duration::from_secs(10))
             .with_metadata_version(version.to_string())
@@ -256,7 +256,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
 
 /// Sends an arbitrary / irrelevant request to the RPC.
 async fn send_request(
-    rpc_client: &mut RpcApiClient,
+    rpc_client: &mut RpcClient,
 ) -> std::result::Result<tonic::Response<proto::shared::BlockHeaderByNumberResponse>, tonic::Status>
 {
     let request = proto::shared::BlockHeaderByNumberRequest {
@@ -268,7 +268,7 @@ async fn send_request(
 
 /// Binds a socket on an available port, runs the RPC server on it, and
 /// returns a client to talk to the server, along with the socket address.
-async fn start_rpc() -> (RpcApiClient, std::net::SocketAddr, std::net::SocketAddr) {
+async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) {
     let store_addr = {
         let store_listener =
             TcpListener::bind("127.0.0.1:0").await.expect("store should bind a port");
@@ -297,7 +297,7 @@ async fn start_rpc() -> (RpcApiClient, std::net::SocketAddr, std::net::SocketAdd
     });
     let url = rpc_addr.to_string();
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let rpc_client: RpcApiClient = Builder::new()
+    let rpc_client: RpcClient = Builder::new()
         .with_address(url.to_string())
         .with_timeout(Duration::from_secs(10))
         .connect::<RpcClientMarker>()

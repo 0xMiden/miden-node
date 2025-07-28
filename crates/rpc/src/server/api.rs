@@ -2,7 +2,7 @@ use std::{net::SocketAddr, time::Duration};
 
 use anyhow::Context;
 use miden_node_proto::{
-    clients::{BlockProducer, BlockProducerApiClient, Builder, StoreRpc, StoreRpcClient},
+    clients::{BlockProducer, BlockProducerClient, Builder, StoreRpc, StoreRpcClient},
     errors::ConversionError,
     generated::{
         self as proto,
@@ -35,7 +35,7 @@ use crate::COMPONENT;
 
 pub struct RpcService {
     store: StoreRpcClient,
-    block_producer: Option<BlockProducerApiClient>,
+    block_producer: Option<BlockProducerClient>,
 }
 
 impl RpcService {

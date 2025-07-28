@@ -3,7 +3,7 @@ mod server;
 #[cfg(test)]
 mod tests;
 
-pub use client::{Builder, Rpc as RpcClientMarker, RpcApiClient};
+pub use client::{Builder, Rpc as RpcClientMarker, RpcClient};
 pub use server::Rpc;
 
 // CONSTANTS

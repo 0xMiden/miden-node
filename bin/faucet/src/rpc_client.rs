@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::{
-    clients::{Builder, RpcApiClient},
+    clients::{Builder, RpcClient as InnerRpcClient},
     generated as proto,
 };
 use miden_node_rpc::RpcClientMarker;
@@ -29,7 +29,7 @@ pub enum RpcError {
 
 /// Client used to interact with an RPC endpoint on a Miden node.
 pub struct RpcClient {
-    inner: RpcApiClient,
+    inner: InnerRpcClient,
 }
 
 impl RpcClient {

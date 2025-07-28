@@ -18,7 +18,7 @@
 
 - [BREAKING] Integrated proxy status endpoint into main proxy service, removing separate status port.
 - RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
-- Stress-test CLI account now properly sets the storage mode and increment nonce in transactions ([#????](https://github.com/0xMiden/miden-node/pull/????)).
+- Stress-test CLI account now properly sets the storage mode and increment nonce in transactions ([#1113](https://github.com/0xMiden/miden-node/pull/1113)).
 
 ## v0.10.1 (2025-07-14)
 

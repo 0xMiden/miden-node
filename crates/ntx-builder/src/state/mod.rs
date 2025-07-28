@@ -57,7 +57,7 @@ pub struct TransactionCandidate {
 /// It tracks inflight transactions, and their impact on network-related state.
 pub struct State {
     /// The latest committed block header.
-    chain_tip: BlockHeader,
+    chain_tip_header: BlockHeader,
 
     /// The chain MMR including the latest block header.
     chain_mmr: PartialBlockchain,
@@ -97,7 +97,7 @@ impl State {
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
-        let (chain_tip, chain_mmr) = store
+        let (chain_tip_header, chain_mmr) = store
             .get_latest_blockchain_data_with_retry()
             .await?
             .expect("store should contain a latest block");
@@ -106,7 +106,7 @@ impl State {
             .expect("PartialBlockchain should build from latest partial MMR");
 
         let mut state = Self {
-            chain_tip,
+            chain_tip_header,
             chain_mmr,
             store,
             accounts: HashMap::default(),
@@ -183,7 +183,7 @@ impl State {
             return TransactionCandidate {
                 account: account.latest_account(),
                 notes,
-                chain_tip: self.chain_tip.clone(),
+                chain_tip: self.chain_tip_header.clone(),
                 chain_mmr: self.chain_mmr.clone(),
             }
             .into();
@@ -194,8 +194,8 @@ impl State {
     }
 
     /// The latest block number the state knows of.
-    pub fn chain_tip_header(&self) -> BlockNumber {
-        self.chain_tip.block_num()
+    pub fn chain_tip(&self) -> BlockNumber {
+        self.chain_tip_header.block_num()
     }
 
     /// Updates the chain tip and MMR block count.
@@ -203,10 +203,10 @@ impl State {
     /// Blocks in the MMR are pruned if the block count exceeds the maximum.
     fn update_chain_tip(&mut self, tip: BlockHeader) {
         // Update MMR which lags by one block.
-        self.chain_mmr.add_block(self.chain_tip.clone(), true);
+        self.chain_mmr.add_block(self.chain_tip_header.clone(), true);
 
         // Set the new tip.
-        self.chain_tip = tip;
+        self.chain_tip_header = tip;
 
         // Prune MMR if necessary.
         if self.chain_mmr.num_tracked_blocks() > MAX_BLOCK_COUNT {
@@ -243,10 +243,10 @@ impl State {
             },
             MempoolEvent::BlockCommitted { header, txs } => {
                 anyhow::ensure!(
-                    header.prev_block_commitment() == self.chain_tip.commitment(),
+                    header.prev_block_commitment() == self.chain_tip_header.commitment(),
                     "New block's parent commitment {} does not match local chain tip {}",
                     header.prev_block_commitment(),
-                    self.chain_tip.commitment()
+                    self.chain_tip_header.commitment()
                 );
                 self.update_chain_tip(header);
                 for tx in txs {

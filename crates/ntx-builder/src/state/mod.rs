@@ -46,9 +46,9 @@ pub struct TransactionCandidate {
     /// The latest locally committed block header.
     ///
     /// This should be used as the reference block during transaction execution.
-    pub chain_tip: BlockHeader,
+    pub chain_tip_header: BlockHeader,
 
-    /// The chain MMR, which lags behind the `chain_tip` by one block.
+    /// The chain MMR, which lags behind the tip by one block.
     pub chain_mmr: PartialBlockchain,
 }
 
@@ -59,7 +59,7 @@ pub struct State {
     /// The latest committed block header.
     chain_tip_header: BlockHeader,
 
-    /// The chain MMR including the latest block header.
+    /// The chain MMR, which lags behind the tip by one block.
     chain_mmr: PartialBlockchain,
 
     /// Tracks all network accounts with inflight state.
@@ -183,7 +183,7 @@ impl State {
             return TransactionCandidate {
                 account: account.latest_account(),
                 notes,
-                chain_tip: self.chain_tip_header.clone(),
+                chain_tip_header: self.chain_tip_header.clone(),
                 chain_mmr: self.chain_mmr.clone(),
             }
             .into();

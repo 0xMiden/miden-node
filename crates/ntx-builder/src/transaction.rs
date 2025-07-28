@@ -62,11 +62,17 @@ pub struct NtxContext {
 impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
-        let TransactionCandidate { account, notes, chain_tip, chain_mmr } = tx;
+        let TransactionCandidate {
+            account,
+            notes,
+            chain_tip_header,
+            chain_mmr,
+        } = tx;
 
         tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current().set_attribute("notes.count", notes.len());
-        tracing::Span::current().set_attribute("reference_block.number", chain_tip.block_num());
+        tracing::Span::current()
+            .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         // Work-around for `TransactionExecutor` not being `Send`.
         tokio::task::spawn_blocking(move || {
@@ -88,7 +94,8 @@ impl NtxContext {
                             notes.shuffle(&mut rand::rng());
                             let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                            let data_store = NtxDataStore::new(account, chain_tip, chain_mmr);
+                            let data_store =
+                                NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
                             self.filter_notes(&data_store, notes)
                                 .and_then(|notes| self.execute(&data_store, notes))

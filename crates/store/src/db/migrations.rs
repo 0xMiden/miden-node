@@ -11,12 +11,12 @@ pub fn apply_migrations(
     conn: &mut SqliteConnection,
 ) -> std::result::Result<(), crate::errors::DatabaseError> {
     let migrations = conn.pending_migrations(MIGRATIONS).expect("In memory migrations never fail");
-    println!("Applying migrations: {}", migrations.len());
+    tracing::info!(target = COMPONENT, "Applying {} migration(s)", migrations.len());
 
     let Err(e) = conn.run_pending_migrations(MIGRATIONS) else {
         return Ok(());
     };
-    eprintln!("Failed to apply migration: {e:?}");
+    tracing::warn!(target = COMPONENT, "Failed to apply migration: {e:?}");
     // something went wrong, MIGRATIONS contains
     conn.revert_last_migration(MIGRATIONS)
         .expect("Duality is maintained by the developer");

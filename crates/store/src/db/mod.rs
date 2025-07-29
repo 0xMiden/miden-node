@@ -41,14 +41,8 @@ mod settings;
 mod tests;
 
 pub(crate) mod models;
+
 /// [diesel](https://diesel.rs) generated schema
-///
-/// ```sh
-/// cargo binstall diesel_cli
-/// sqlite3 -init ./src/db/migrations/001-init.sql ephemeral_setup.db ""
-/// diesel setup --database-url=./ephemeral_setup.db
-/// diesel print-schema > src/db/schema.rs
-/// ```
 pub(crate) mod schema;
 
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;

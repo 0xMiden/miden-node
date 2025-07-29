@@ -28,9 +28,9 @@ mod account;
 // =================================================================================================
 
 /// The maximum number of blocks to keep in memory while tracking the chain tip.
-const MAX_BLOCK_COUNT: usize = 16;
+const MAX_BLOCK_COUNT: usize = 4;
 /// The number of blocks kept after pruning.
-const PRUNED_BLOCK_COUNT: usize = 8;
+const PRUNED_BLOCK_COUNT: usize = 2;
 
 /// A candidate network transaction.
 ///

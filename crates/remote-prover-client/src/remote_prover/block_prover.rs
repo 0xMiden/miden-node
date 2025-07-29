@@ -14,10 +14,7 @@ use miden_objects::{
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
-use crate::{
-    RemoteProverClientError,
-    remote_prover::generated::{ProofType, ProvingRequest, ProvingResponse},
-};
+use crate::{RemoteProverClientError, remote_prover::generated as proto};
 
 // REMOTE BLOCK PROVER
 // ================================================================================================
@@ -162,18 +159,18 @@ impl RemoteBlockProver {
 // CONVERSION
 // ================================================================================================
 
-impl TryFrom<ProvingResponse> for ProvenBlock {
+impl TryFrom<proto::Proof> for ProvenBlock {
     type Error = DeserializationError;
 
-    fn try_from(value: ProvingResponse) -> Result<Self, Self::Error> {
+    fn try_from(value: proto::Proof) -> Result<Self, Self::Error> {
         ProvenBlock::read_from_bytes(&value.payload)
     }
 }
 
-impl From<ProposedBlock> for ProvingRequest {
+impl From<ProposedBlock> for proto::ProofRequest {
     fn from(proposed_block: ProposedBlock) -> Self {
-        ProvingRequest {
-            proof_type: ProofType::Block.into(),
+        proto::ProofRequest {
+            proof_type: proto::ProofType::Block.into(),
             payload: proposed_block.to_bytes(),
         }
     }

@@ -4,13 +4,7 @@ use anyhow::{Context, Result};
 use futures::StreamExt;
 use miden_node_proto::{
     domain::mempool::MempoolEvent,
-    generated::{
-        block_producer::{
-            MempoolEvent as ProtoMempoolEvent, MempoolSubscriptionRequest, api_server,
-        },
-        requests::SubmitProvenTransactionRequest,
-        responses::{BlockProducerStatusResponse, SubmitProvenTransactionResponse},
-    },
+    generated::{self as proto, block_producer::api_server},
 };
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::{
@@ -222,8 +216,9 @@ struct BlockProducerRpcServer {
 impl api_server::Api for BlockProducerRpcServer {
     async fn submit_proven_transaction(
         &self,
-        request: tonic::Request<SubmitProvenTransactionRequest>,
-    ) -> Result<tonic::Response<SubmitProvenTransactionResponse>, Status> {
+        request: tonic::Request<proto::transaction::ProvenTransaction>,
+    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, Status>
+    {
         self.submit_proven_transaction(request.into_inner())
              .await
              .map(tonic::Response::new)
@@ -240,8 +235,8 @@ impl api_server::Api for BlockProducerRpcServer {
     async fn status(
         &self,
         _request: tonic::Request<()>,
-    ) -> Result<tonic::Response<BlockProducerStatusResponse>, Status> {
-        Ok(tonic::Response::new(BlockProducerStatusResponse {
+    ) -> Result<tonic::Response<proto::block_producer::BlockProducerStatus>, Status> {
+        Ok(tonic::Response::new(proto::block_producer::BlockProducerStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
         }))
@@ -251,7 +246,7 @@ impl api_server::Api for BlockProducerRpcServer {
 
     async fn mempool_subscription(
         &self,
-        request: tonic::Request<MempoolSubscriptionRequest>,
+        request: tonic::Request<proto::block_producer::MempoolSubscriptionRequest>,
     ) -> Result<tonic::Response<Self::MempoolSubscriptionStream>, tonic::Status> {
         let chain_tip = BlockNumber::from(request.into_inner().chain_tip);
 
@@ -278,7 +273,7 @@ struct MempoolEventSubscription {
 }
 
 impl tokio_stream::Stream for MempoolEventSubscription {
-    type Item = Result<ProtoMempoolEvent, tonic::Status>;
+    type Item = Result<proto::block_producer::MempoolEvent, tonic::Status>;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -286,7 +281,7 @@ impl tokio_stream::Stream for MempoolEventSubscription {
     ) -> std::task::Poll<Option<Self::Item>> {
         self.inner
             .poll_next_unpin(cx)
-            .map(|x| x.map(ProtoMempoolEvent::from).map(Result::Ok))
+            .map(|x| x.map(proto::block_producer::MempoolEvent::from).map(Result::Ok))
     }
 }
 
@@ -332,8 +327,8 @@ impl BlockProducerRpcServer {
      )]
     async fn submit_proven_transaction(
         &self,
-        request: SubmitProvenTransactionRequest,
-    ) -> Result<SubmitProvenTransactionResponse, AddTransactionError> {
+        request: proto::transaction::ProvenTransaction,
+    ) -> Result<proto::block_producer::SubmitProvenTransactionResponse, AddTransactionError> {
         debug!(target: COMPONENT, ?request);
 
         let tx = ProvenTransaction::read_from_bytes(&request.transaction)
@@ -360,7 +355,9 @@ impl BlockProducerRpcServer {
         let tx = AuthenticatedTransaction::new(tx, inputs)?;
 
         self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
-            SubmitProvenTransactionResponse { block_height: block_height.as_u32() }
+            proto::block_producer::SubmitProvenTransactionResponse {
+                block_height: block_height.as_u32(),
+            }
         })
     }
 }

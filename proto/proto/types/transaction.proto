@@ -1,13 +1,23 @@
 syntax = "proto3";
 package transaction;
 
-import "account.proto";
-import "digest.proto";
+import "types/primitives.proto";
+import "types/account.proto";
+
+// TRANSACTION
+// ================================================================================================
+
+// Submits proven transaction to the Miden network.
+message ProvenTransaction {
+    // Transaction encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::transaction::proven_tx::ProvenTransaction].
+    bytes transaction = 1;
+}
 
 // Represents a transaction ID.
 message TransactionId {
     // The transaction ID.
-    digest.Digest id = 1;
+    primitives.Digest id = 1;
 }
 
 // Represents a transaction summary.

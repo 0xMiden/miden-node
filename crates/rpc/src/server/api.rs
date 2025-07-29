@@ -4,22 +4,10 @@ use anyhow::Context;
 use miden_node_proto::{
     errors::ConversionError,
     generated::{
+        self as proto,
         block_producer::api_client as block_producer_client,
-        requests::{
-            CheckNullifiersByPrefixRequest, CheckNullifiersRequest, GetAccountDetailsRequest,
-            GetAccountProofsRequest, GetAccountStateDeltaRequest, GetBlockByNumberRequest,
-            GetBlockHeaderByNumberRequest, GetNotesByIdRequest, SubmitProvenTransactionRequest,
-            SyncNoteRequest, SyncStateRequest,
-        },
-        responses::{
-            BlockProducerStatusResponse, CheckNullifiersByPrefixResponse, CheckNullifiersResponse,
-            GetAccountDetailsResponse, GetAccountProofsResponse, GetAccountStateDeltaResponse,
-            GetBlockByNumberResponse, GetBlockHeaderByNumberResponse, GetNotesByIdResponse,
-            RpcStatusResponse, StoreStatusResponse, SubmitProvenTransactionResponse,
-            SyncNoteResponse, SyncStateResponse,
-        },
         rpc::api_server::{self, Api},
-        store::rpc_client as store_client,
+        rpc_store::rpc_client as store_client,
     },
     try_convert,
 };
@@ -99,7 +87,7 @@ impl RpcService {
         loop {
             let result = self
                 .get_block_header_by_number(
-                    GetBlockHeaderByNumberRequest {
+                    proto::shared::BlockHeaderByNumberRequest {
                         block_num: Some(BlockNumber::GENESIS.as_u32()),
                         include_mmr_proof: None,
                     }
@@ -152,8 +140,8 @@ impl api_server::Api for RpcService {
     )]
     async fn check_nullifiers(
         &self,
-        request: Request<CheckNullifiersRequest>,
-    ) -> Result<Response<CheckNullifiersResponse>, Status> {
+        request: Request<proto::rpc_store::NullifierList>,
+    ) -> Result<Response<proto::rpc_store::CheckNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
@@ -178,8 +166,8 @@ impl api_server::Api for RpcService {
     )]
     async fn check_nullifiers_by_prefix(
         &self,
-        request: Request<CheckNullifiersByPrefixRequest>,
-    ) -> Result<Response<CheckNullifiersByPrefixResponse>, Status> {
+        request: Request<proto::rpc_store::CheckNullifiersByPrefixRequest>,
+    ) -> Result<Response<proto::rpc_store::CheckNullifiersByPrefixResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
@@ -197,8 +185,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_block_header_by_number(
         &self,
-        request: Request<GetBlockHeaderByNumberRequest>,
-    ) -> Result<Response<GetBlockHeaderByNumberResponse>, Status> {
+        request: Request<proto::shared::BlockHeaderByNumberRequest>,
+    ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
         info!(target: COMPONENT, request = ?request.get_ref());
 
         self.store.clone().get_block_header_by_number(request).await
@@ -214,8 +202,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_state(
         &self,
-        request: Request<SyncStateRequest>,
-    ) -> Result<Response<SyncStateResponse>, Status> {
+        request: Request<proto::rpc_store::SyncStateRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncStateResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamAccountIdLimit>(request.get_ref().account_ids.len())?;
@@ -234,8 +222,8 @@ impl api_server::Api for RpcService {
     )]
     async fn sync_notes(
         &self,
-        request: Request<SyncNoteRequest>,
-    ) -> Result<Response<SyncNoteResponse>, Status> {
+        request: Request<proto::rpc_store::SyncNotesRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncNotesResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNoteTagLimit>(request.get_ref().note_tags.len())?;
@@ -253,14 +241,14 @@ impl api_server::Api for RpcService {
     )]
     async fn get_notes_by_id(
         &self,
-        request: Request<GetNotesByIdRequest>,
-    ) -> Result<Response<GetNotesByIdResponse>, Status> {
+        request: Request<proto::note::NoteIdList>,
+    ) -> Result<Response<proto::note::CommittedNoteList>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
-        check::<QueryParamNoteIdLimit>(request.get_ref().note_ids.len())?;
+        check::<QueryParamNoteIdLimit>(request.get_ref().ids.len())?;
 
         // Validation checking for correct NoteId's
-        let note_ids = request.get_ref().note_ids.clone();
+        let note_ids = request.get_ref().ids.clone();
 
         let _: Vec<Word> =
             try_convert(note_ids)
@@ -275,8 +263,8 @@ impl api_server::Api for RpcService {
     #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
     async fn submit_proven_transaction(
         &self,
-        request: Request<SubmitProvenTransactionRequest>,
-    ) -> Result<Response<SubmitProvenTransactionResponse>, Status> {
+        request: Request<proto::transaction::ProvenTransaction>,
+    ) -> Result<Response<proto::block_producer::SubmitProvenTransactionResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         let Some(block_producer) = &self.block_producer else {
@@ -338,16 +326,14 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_details(
         &self,
-        request: Request<GetAccountDetailsRequest>,
-    ) -> std::result::Result<Response<GetAccountDetailsResponse>, Status> {
+        request: Request<proto::account::AccountId>,
+    ) -> std::result::Result<Response<proto::account::AccountDetails>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         // Validating account using conversion:
         let _account_id: AccountId = request
             .get_ref()
-            .account_id
             .clone()
-            .ok_or(Status::invalid_argument("account_id is missing"))?
             .try_into()
             .map_err(|err| Status::invalid_argument(format!("Invalid account id: {err}")))?;
 
@@ -364,8 +350,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_block_by_number(
         &self,
-        request: Request<GetBlockByNumberRequest>,
-    ) -> Result<Response<GetBlockByNumberResponse>, Status> {
+        request: Request<proto::blockchain::BlockNumber>,
+    ) -> Result<Response<proto::blockchain::MaybeBlock>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -383,8 +369,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_state_delta(
         &self,
-        request: Request<GetAccountStateDeltaRequest>,
-    ) -> Result<Response<GetAccountStateDeltaResponse>, Status> {
+        request: Request<proto::rpc_store::AccountStateDeltaRequest>,
+    ) -> Result<Response<proto::rpc_store::AccountStateDelta>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -402,8 +388,8 @@ impl api_server::Api for RpcService {
     )]
     async fn get_account_proofs(
         &self,
-        request: Request<GetAccountProofsRequest>,
-    ) -> Result<Response<GetAccountProofsResponse>, Status> {
+        request: Request<proto::rpc_store::AccountProofsRequest>,
+    ) -> Result<Response<proto::rpc_store::AccountProofs>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -432,7 +418,10 @@ impl api_server::Api for RpcService {
         ret(level = "debug"),
         err
     )]
-    async fn status(&self, request: Request<()>) -> Result<Response<RpcStatusResponse>, Status> {
+    async fn status(
+        &self,
+        request: Request<()>,
+    ) -> Result<Response<proto::rpc::RpcStatus>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         let store_status =
@@ -448,17 +437,19 @@ impl api_server::Api for RpcService {
             None
         };
 
-        Ok(Response::new(RpcStatusResponse {
+        Ok(Response::new(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            store_status: store_status.or(Some(StoreStatusResponse {
+            store: store_status.or(Some(proto::rpc_store::StoreStatus {
                 status: "unreachable".to_string(),
                 chain_tip: 0,
                 version: "-".to_string(),
             })),
-            block_producer_status: block_producer_status.or(Some(BlockProducerStatusResponse {
-                status: "unreachable".to_string(),
-                version: "-".to_string(),
-            })),
+            block_producer: block_producer_status.or(Some(
+                proto::block_producer::BlockProducerStatus {
+                    status: "unreachable".to_string(),
+                    version: "-".to_string(),
+                },
+            )),
         }))
     }
 }

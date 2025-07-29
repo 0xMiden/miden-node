@@ -1,0 +1,86 @@
+// Specification of the NTX Builder store RPC.
+syntax = "proto3";
+package ntx_builder_store;
+
+import "types/account.proto";
+import "types/blockchain.proto";
+import "types/note.proto";
+import "types/primitives.proto";
+import "store/shared.proto";
+
+// NTX BUILDER STORE API
+// ================================================================================================
+
+// Store API for the network transaction builder component
+service NtxBuilder {
+    // Retrieves block header by given block number. Optionally, it also returns the MMR path
+    // and current chain length to authenticate the block's inclusion.
+    rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
+
+    // Returns the list of unconsumed network notes and the next page number to query.
+    rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
+
+    // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this 
+    // header for executing network transactions. If the block number is not provided, the latest
+    // header and peaks will be retrieved.
+    rpc GetCurrentBlockchainData(blockchain.MaybeBlockNumber) returns (CurrentBlockchainData) {}
+
+    // Returns the latest state of a network account with the specified account prefix.
+    rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
+}
+
+// GET NETWORK ACCOUNT DETAILS BY PREFIX
+// ================================================================================================
+
+// Account ID prefix.
+message AccountIdPrefix {
+    // Account ID prefix.
+    fixed32 account_id_prefix = 1;
+}
+
+// Represents the result of getting network account details by prefix.
+message MaybeAccountDetails {
+    // Account details.
+    optional account.AccountDetails details = 1;
+}
+
+// GET UNCONSUMED NETWORK NOTES
+// ================================================================================================
+
+// Returns a list of unconsumed network notes using pagination.
+message UnconsumedNetworkNotesRequest {
+    // An opaque token used to paginate through the notes.
+    //
+    // This should be null on the first call, and set to the response
+    // token until the response token is null, at which point all data
+    // has been fetched.
+    optional uint64 page_token = 1;
+
+    // Number of notes to retrieve per page.
+    uint64 page_size = 2;
+}
+
+// Represents the result of getting the unconsumed network notes.
+message UnconsumedNetworkNotes {
+    // An opaque pagination token.
+    //
+    // Use this in your next request to get the next
+    // set of data.
+    //
+    // Will be null once there is no more data remaining.
+    optional uint64 next_token = 1;
+
+    // The list of unconsumed network notes.
+    repeated note.NetworkNote notes = 2;
+}
+
+// GET CURRENT BLOCKCHAIN DATA
+// ================================================================================================
+
+// Current blockchain data based on the requested block number.
+message CurrentBlockchainData {
+    // Commitments that represent the current state according to the MMR.
+    repeated primitives.Digest current_peaks = 1;
+    // Current block header.
+    optional blockchain.BlockHeader current_block_header = 2;
+}

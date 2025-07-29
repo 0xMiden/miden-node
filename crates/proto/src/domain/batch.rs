@@ -9,7 +9,7 @@ use miden_objects::{
 
 use crate::{
     errors::{ConversionError, MissingFieldHelper},
-    generated::responses as proto,
+    generated as proto,
 };
 
 /// Data required for a transaction batch.
@@ -20,7 +20,7 @@ pub struct BatchInputs {
     pub partial_block_chain: PartialBlockchain,
 }
 
-impl From<BatchInputs> for proto::GetBatchInputsResponse {
+impl From<BatchInputs> for proto::block_producer_store::BatchInputs {
     fn from(inputs: BatchInputs) -> Self {
         Self {
             batch_reference_block_header: Some(inputs.batch_reference_block_header.into()),
@@ -30,14 +30,16 @@ impl From<BatchInputs> for proto::GetBatchInputsResponse {
     }
 }
 
-impl TryFrom<proto::GetBatchInputsResponse> for BatchInputs {
+impl TryFrom<proto::block_producer_store::BatchInputs> for BatchInputs {
     type Error = ConversionError;
 
-    fn try_from(response: proto::GetBatchInputsResponse) -> Result<Self, ConversionError> {
+    fn try_from(
+        response: proto::block_producer_store::BatchInputs,
+    ) -> Result<Self, ConversionError> {
         let result = Self {
             batch_reference_block_header: response
                 .batch_reference_block_header
-                .ok_or(proto::GetBatchInputsResponse::missing_field("block_header"))?
+                .ok_or(proto::block_producer_store::BatchInputs::missing_field("block_header"))?
                 .try_into()?,
             note_proofs: response
                 .note_proofs

@@ -87,7 +87,7 @@ pub struct AccountInfo {
     pub details: Option<Account>,
 }
 
-impl From<&AccountInfo> for proto::account::AccountInfo {
+impl From<&AccountInfo> for proto::account::AccountDetails {
     fn from(AccountInfo { summary, details }: &AccountInfo) -> Self {
         Self {
             summary: Some(summary.into()),
@@ -105,11 +105,11 @@ pub struct AccountProofRequest {
     pub storage_requests: Vec<StorageMapKeysProof>,
 }
 
-impl TryInto<AccountProofRequest> for proto::requests::get_account_proofs_request::AccountRequest {
+impl TryInto<AccountProofRequest> for proto::rpc_store::account_proofs_request::AccountRequest {
     type Error = ConversionError;
 
     fn try_into(self) -> Result<AccountProofRequest, Self::Error> {
-        let proto::requests::get_account_proofs_request::AccountRequest {
+        let proto::rpc_store::account_proofs_request::AccountRequest {
             account_id,
             storage_requests,
         } = self;
@@ -117,7 +117,7 @@ impl TryInto<AccountProofRequest> for proto::requests::get_account_proofs_reques
         Ok(AccountProofRequest {
             account_id: account_id
                 .clone()
-                .ok_or(proto::requests::get_account_proofs_request::AccountRequest::missing_field(
+                .ok_or(proto::rpc_store::account_proofs_request::AccountRequest::missing_field(
                     stringify!(account_id),
                 ))?
                 .try_into()?,
@@ -134,11 +134,13 @@ pub struct StorageMapKeysProof {
     pub storage_keys: Vec<Word>,
 }
 
-impl TryInto<StorageMapKeysProof> for proto::requests::get_account_proofs_request::StorageRequest {
+impl TryInto<StorageMapKeysProof>
+    for proto::rpc_store::account_proofs_request::account_request::StorageRequest
+{
     type Error = ConversionError;
 
     fn try_into(self) -> Result<StorageMapKeysProof, Self::Error> {
-        let proto::requests::get_account_proofs_request::StorageRequest {
+        let proto::rpc_store::account_proofs_request::account_request::StorageRequest {
             storage_slot_index,
             map_keys,
         } = self;
@@ -159,7 +161,7 @@ pub struct AccountWitnessRecord {
     pub witness: AccountWitness,
 }
 
-impl From<AccountWitnessRecord> for proto::responses::AccountWitness {
+impl From<AccountWitnessRecord> for proto::account::AccountWitness {
     fn from(from: AccountWitnessRecord) -> Self {
         Self {
             account_id: Some(from.account_id.into()),
@@ -170,24 +172,24 @@ impl From<AccountWitnessRecord> for proto::responses::AccountWitness {
     }
 }
 
-impl TryFrom<proto::responses::AccountWitness> for AccountWitnessRecord {
+impl TryFrom<proto::account::AccountWitness> for AccountWitnessRecord {
     type Error = ConversionError;
 
     fn try_from(
-        account_witness_record: proto::responses::AccountWitness,
+        account_witness_record: proto::account::AccountWitness,
     ) -> Result<Self, Self::Error> {
         let witness_id = account_witness_record
             .witness_id
-            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(witness_id)))?
+            .ok_or(proto::account::AccountWitness::missing_field(stringify!(witness_id)))?
             .try_into()?;
         let commitment = account_witness_record
             .commitment
-            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(commitment)))?
+            .ok_or(proto::account::AccountWitness::missing_field(stringify!(commitment)))?
             .try_into()?;
         let path = account_witness_record
             .path
             .as_ref()
-            .ok_or(proto::responses::AccountWitness::missing_field(stringify!(path)))?
+            .ok_or(proto::account::AccountWitness::missing_field(stringify!(path)))?
             .try_into()?;
 
         let witness = AccountWitness::new(witness_id, commitment, path).map_err(|err| {
@@ -200,7 +202,7 @@ impl TryFrom<proto::responses::AccountWitness> for AccountWitnessRecord {
         Ok(Self {
             account_id: account_witness_record
                 .account_id
-                .ok_or(proto::responses::AccountWitness::missing_field(stringify!(account_id)))?
+                .ok_or(proto::account::AccountWitness::missing_field(stringify!(account_id)))?
                 .try_into()?,
             witness,
         })
@@ -229,7 +231,9 @@ impl Display for AccountState {
     }
 }
 
-impl From<AccountState> for proto::responses::AccountTransactionInputRecord {
+impl From<AccountState>
+    for proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord
+{
     fn from(from: AccountState) -> Self {
         Self {
             account_id: Some(from.account_id.into()),
@@ -249,24 +253,26 @@ impl From<AccountHeader> for proto::account::AccountHeader {
     }
 }
 
-impl TryFrom<proto::responses::AccountTransactionInputRecord> for AccountState {
+impl TryFrom<proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord>
+    for AccountState
+{
     type Error = ConversionError;
 
     fn try_from(
-        from: proto::responses::AccountTransactionInputRecord,
+        from: proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord,
     ) -> Result<Self, Self::Error> {
         let account_id = from
             .account_id
-            .ok_or(proto::responses::AccountTransactionInputRecord::missing_field(stringify!(
-                account_id
-            )))?
+            .ok_or(proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+                stringify!(account_id),
+            ))?
             .try_into()?;
 
         let account_commitment = from
             .account_commitment
-            .ok_or(proto::responses::AccountTransactionInputRecord::missing_field(stringify!(
-                account_commitment
-            )))?
+            .ok_or(proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord::missing_field(
+                stringify!(account_commitment),
+            ))?
             .try_into()?;
 
         // If the commitment is equal to `Word::empty()`, it signifies that this is a new

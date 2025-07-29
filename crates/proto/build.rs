@@ -5,7 +5,8 @@ use std::{
 
 use anyhow::Context;
 use miden_node_proto_build::{
-    block_producer_api_descriptor, rpc_api_descriptor, store_api_descriptor,
+    block_producer_api_descriptor, rpc_api_descriptor, store_block_producer_api_descriptor,
+    store_ntx_builder_api_descriptor, store_rpc_api_descriptor, store_shared_api_descriptor,
 };
 use tonic_build::FileDescriptorSet;
 
@@ -31,7 +32,10 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir(&dst_dir).context("creating destination folder")?;
 
     generate_bindings(rpc_api_descriptor(), &dst_dir)?;
-    generate_bindings(store_api_descriptor(), &dst_dir)?;
+    generate_bindings(store_rpc_api_descriptor(), &dst_dir)?;
+    generate_bindings(store_ntx_builder_api_descriptor(), &dst_dir)?;
+    generate_bindings(store_block_producer_api_descriptor(), &dst_dir)?;
+    generate_bindings(store_shared_api_descriptor(), &dst_dir)?;
     generate_bindings(block_producer_api_descriptor(), &dst_dir)?;
 
     generate_mod_rs(&dst_dir).context("generating mod.rs")?;

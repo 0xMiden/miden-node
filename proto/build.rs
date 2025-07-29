@@ -4,12 +4,18 @@ use anyhow::Context;
 use prost::Message;
 
 const RPC_PROTO: &str = "rpc.proto";
-const STORE_PROTO: &str = "store.proto";
+const STORE_RPC_PROTO: &str = "store/rpc.proto";
+const STORE_NTX_BUILDER_PROTO: &str = "store/ntx_builder.proto";
+const STORE_BLOCK_PRODUCER_PROTO: &str = "store/block_producer.proto";
+const STORE_SHARED_PROTO: &str = "store/shared.proto";
 const BLOCK_PRODUCER_PROTO: &str = "block_producer.proto";
 const REMOTE_PROVER_PROTO: &str = "remote_prover.proto";
 
 const RPC_DESCRIPTOR: &str = "rpc_file_descriptor.bin";
-const STORE_DESCRIPTOR: &str = "store_file_descriptor.bin";
+const STORE_RPC_DESCRIPTOR: &str = "store_rpc_file_descriptor.bin";
+const STORE_NTX_BUILDER_DESCRIPTOR: &str = "store_ntx_builder_file_descriptor.bin";
+const STORE_BLOCK_PRODUCER_DESCRIPTOR: &str = "store_block_producer_file_descriptor.bin";
+const STORE_SHARED_DESCRIPTOR: &str = "store_shared_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
 
@@ -37,10 +43,26 @@ fn main() -> anyhow::Result<()> {
     fs::write(&remote_prover_path, remote_prover_file_descriptor.encode_to_vec())
         .context("writing remote prover file descriptor")?;
 
-    let store_file_descriptor = protox::compile([STORE_PROTO], includes)?;
-    let store_path = PathBuf::from(&out).join(STORE_DESCRIPTOR);
-    fs::write(&store_path, store_file_descriptor.encode_to_vec())
-        .context("writing store file descriptor")?;
+    let store_rpc_file_descriptor = protox::compile([STORE_RPC_PROTO], includes)?;
+    let store_rpc_path = PathBuf::from(&out).join(STORE_RPC_DESCRIPTOR);
+    fs::write(&store_rpc_path, store_rpc_file_descriptor.encode_to_vec())
+        .context("writing store rpc file descriptor")?;
+
+    let store_ntx_builder_file_descriptor = protox::compile([STORE_NTX_BUILDER_PROTO], includes)?;
+    let store_ntx_builder_path = PathBuf::from(&out).join(STORE_NTX_BUILDER_DESCRIPTOR);
+    fs::write(&store_ntx_builder_path, store_ntx_builder_file_descriptor.encode_to_vec())
+        .context("writing store ntx builder file descriptor")?;
+
+    let store_block_producer_file_descriptor =
+        protox::compile([STORE_BLOCK_PRODUCER_PROTO], includes)?;
+    let store_block_producer_path = PathBuf::from(&out).join(STORE_BLOCK_PRODUCER_DESCRIPTOR);
+    fs::write(&store_block_producer_path, store_block_producer_file_descriptor.encode_to_vec())
+        .context("writing store block producer file descriptor")?;
+
+    let store_shared_file_descriptor = protox::compile([STORE_SHARED_PROTO], includes)?;
+    let store_shared_path = PathBuf::from(&out).join(STORE_SHARED_DESCRIPTOR);
+    fs::write(&store_shared_path, store_shared_file_descriptor.encode_to_vec())
+        .context("writing store shared file descriptor")?;
 
     let block_producer_file_descriptor = protox::compile([BLOCK_PRODUCER_PROTO], includes)?;
     let block_producer_path = PathBuf::from(&out).join(BLOCK_PRODUCER_DESCRIPTOR);

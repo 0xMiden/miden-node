@@ -287,14 +287,9 @@ fn sql_select_notes_different_execution_hints() {
     queries::insert_scripts(conn, [&note_none]).unwrap(); // only necessary for the first note
     let res = queries::insert_notes(conn, &[(note_none, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-<<<<<<< HEAD
-    transaction.commit().unwrap();
-    let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(0).into()])
-        .unwrap()[0];
-=======
 
-    let note = &queries::select_notes_by_id(conn, &[num_to_rpo_digest(0).into()]).unwrap()[0];
->>>>>>> b1ad1a38 (migrate to diesel-rs)
+    let note = &queries::select_notes_by_id(conn, &[num_to_word(0).into()]).unwrap()[0];
+
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::none());
 
     let note_always = NoteRecord {
@@ -316,14 +311,8 @@ fn sql_select_notes_different_execution_hints() {
 
     let res = queries::insert_notes(conn, &[(note_always, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-<<<<<<< HEAD
-    transaction.commit().unwrap();
-    let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(1).into()])
-        .unwrap()[0];
-=======
 
-    let note = &queries::select_notes_by_id(conn, &[num_to_rpo_digest(1).into()]).unwrap()[0];
->>>>>>> b1ad1a38 (migrate to diesel-rs)
+    let note = &queries::select_notes_by_id(conn, &[num_to_word(1).into()]).unwrap()[0];
     assert_eq!(note.metadata.execution_hint(), NoteExecutionHint::always());
 
     let note_after_block = NoteRecord {
@@ -345,14 +334,7 @@ fn sql_select_notes_different_execution_hints() {
 
     let res = queries::insert_notes(conn, &[(note_after_block, None)]);
     assert_eq!(res.unwrap(), 1, "One element must have been inserted");
-<<<<<<< HEAD
-    transaction.commit().unwrap();
-    let note = &sql::select_notes_by_id(&conn.transaction().unwrap(), &[num_to_word(2).into()])
-        .unwrap()[0];
-=======
-
-    let note = &queries::select_notes_by_id(conn, &[num_to_rpo_digest(2).into()]).unwrap()[0];
->>>>>>> b1ad1a38 (migrate to diesel-rs)
+    let note = &queries::select_notes_by_id(conn, &[num_to_word(2).into()]).unwrap()[0];
     assert_eq!(
         note.metadata.execution_hint(),
         NoteExecutionHint::after_block(12.into()).unwrap()
@@ -1066,7 +1048,7 @@ fn notes() {
     // test query notes by id
     let notes = vec![note.clone(), note2];
 
-    let note_ids: Vec<NoteId> = note_ids.into_iter().map(|note| note.note_id).map(From::from).collect();
+    let note_ids = Vec::from_iter(notes.iter().map(|note| NoteId::from(note.note_id)));
 
     let res = queries::select_notes_by_id(conn, &note_ids).unwrap();
     assert_eq!(res, notes);

@@ -81,7 +81,7 @@ diesel::table! {
         execution_mode -> Integer,
         aux -> BigInt,
         execution_hint -> BigInt,
-        merkle_path -> Binary,
+        inclusion_path -> Binary,
         consumed -> Integer,
         nullifier -> Nullable<Binary>,
         assets -> Nullable<Binary>,

@@ -11,14 +11,11 @@ use miden_node_proto::{
     generated as proto,
 };
 use miden_objects::{
+    Word,
     account::{AccountDelta, AccountId},
     block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
-    crypto::{merkle::SparseMerklePath, utils::Deserializable},
-    note::{
-        NoteAssets, NoteDetails, NoteId, NoteInclusionProof, NoteInputs, NoteMetadata,
-        NoteRecipient, NoteScript, Nullifier,
-    },
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
+    crypto::merkle::SparseMerklePath,
+    note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier},
     transaction::TransactionId,
 };
 use tokio::sync::oneshot;
@@ -89,7 +86,7 @@ pub struct NoteRecord {
     pub inclusion_path: SparseMerklePath,
 }
 
-impl From<NoteRecord> for proto::CommittedNote {
+impl From<NoteRecord> for proto::note::CommittedNote {
     fn from(note: NoteRecord) -> Self {
         let inclusion_proof = Some(proto::note::NoteInclusionInBlockProof {
             note_id: Some(note.note_id.into()),
@@ -328,17 +325,11 @@ impl Db {
 
     /// Loads all the account commitments from the DB.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-<<<<<<< HEAD
     pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, Word)>> {
         self.transact("read all account commitments", move |conn| {
-            sql::select_all_account_commitments(conn)
+            queries::select_all_account_commitments(conn)
         })
         .await
-=======
-    pub async fn select_all_account_commitments(&self) -> Result<Vec<(AccountId, RpoDigest)>> {
-        self.transact("read all account commitments", queries::select_all_account_commitments)
-            .await
->>>>>>> b1ad1a38 (migrate to diesel-rs)
     }
 
     /// Loads public account details from the DB.

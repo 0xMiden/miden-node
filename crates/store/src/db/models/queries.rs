@@ -19,16 +19,15 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
 };
 use miden_objects::{
-    Felt, Word,
+    Felt, LexicographicWord, Word,
     account::{
         Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta,
         FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
-        StorageSlot,
-        delta::{AccountUpdateDetails, LexicographicWord},
+        StorageSlot, delta::AccountUpdateDetails,
     },
     asset::{Asset, NonFungibleAsset},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
+    crypto::merkle::SparseMerklePath,
     note::{NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier},
     transaction::OrderedTransactionHeaders,
 };
@@ -89,7 +88,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
     //     tag,
     //     aux,
     //     execution_hint,
-    //     merkle_path
+    //     inclusion_path
     // FROM
     //     notes
     // WHERE
@@ -195,7 +194,7 @@ pub(crate) fn select_note_inclusion_proofs(
     //     note_id,
     //     batch_index,
     //     note_index,
-    //     merkle_path
+    //     inclusion_path
     // FROM
     //     notes
     // WHERE
@@ -211,7 +210,7 @@ pub(crate) fn select_note_inclusion_proofs(
             schema::notes::note_id,
             schema::notes::batch_index,
             schema::notes::note_index,
-            schema::notes::merkle_path,
+            schema::notes::inclusion_path,
         ),
     )
     .filter(schema::notes::note_id.eq_any(noted_ids_serialized))
@@ -226,7 +225,7 @@ pub(crate) fn select_note_inclusion_proofs(
                 BlockNoteIndex::new(raw_sql_to_idx(*batch_index), raw_sql_to_idx(*note_index))
                     .expect("batch and note index from DB should be valid")
                     .leaf_index_value();
-            let merkle_path = MerklePath::read_from_bytes(&merkle_path[..])?;
+            let merkle_path = SparseMerklePath::read_from_bytes(&merkle_path[..])?;
             let proof = NoteInclusionProof::new(block_num, node_index_in_block, merkle_path)?;
             Ok((note_id, proof))
         },
@@ -260,7 +259,7 @@ pub(crate) fn insert_block_header(
 pub(crate) fn apply_delta(
     mut account: Account,
     delta: &AccountDelta,
-    final_state_commitment: &RpoDigest,
+    final_state_commitment: &Word,
 ) -> crate::db::Result<Account, DatabaseError> {
     account.apply_delta(delta)?;
 
@@ -592,7 +591,7 @@ pub(crate) fn insert_notes(
                 schema::notes::aux.eq(aux_to_raw_sql(note.metadata.aux())),
                 schema::notes::execution_hint
                     .eq(execution_hint_to_raw_sql(note.metadata.execution_hint().into())),
-                schema::notes::merkle_path.eq(note.merkle_path.to_bytes()),
+                schema::notes::inclusion_path.eq(note.inclusion_path.to_bytes()),
                 schema::notes::consumed.eq(consumed_to_raw_sql(false)), // New notes are always unconsumed.
                 schema::notes::nullifier.eq(nullifier.as_ref().map(Nullifier::to_bytes)), // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
                 schema::notes::assets.eq(note.details.as_ref().map(|d| d.assets().to_bytes())),
@@ -690,7 +689,7 @@ pub(crate) fn select_notes_by_id(
         schema::notes::inputs,
         schema::notes::serial_num,
         // // merkle
-        schema::notes::merkle_path,
+        schema::notes::inclusion_path,
         schema::note_scripts::script.nullable(),
     );
 
@@ -738,7 +737,7 @@ pub(crate) fn select_all_notes(
         schema::notes::inputs,
         schema::notes::serial_num,
         // merkle
-        schema::notes::merkle_path,
+        schema::notes::inclusion_path,
         schema::note_scripts::script.nullable(),
     );
 
@@ -945,7 +944,7 @@ pub(crate) fn select_account_by_id_prefix(
 /// The vector with the account id and corresponding commitment, or an error.
 pub(crate) fn select_all_account_commitments(
     conn: &mut SqliteConnection,
-) -> Result<Vec<(AccountId, RpoDigest)>, DatabaseError> {
+) -> Result<Vec<(AccountId, Word)>, DatabaseError> {
     // SELECT account_id, account_commitment FROM accounts ORDER BY block_num ASC
     let raw = SelectDsl::select(
         schema::accounts::table,
@@ -956,7 +955,7 @@ pub(crate) fn select_all_account_commitments(
 
     Result::<Vec<_>, DatabaseError>::from_iter(raw.into_iter().map(
         |(ref account, ref commitment)| {
-            Ok((AccountId::read_from_bytes(account)?, RpoDigest::read_from_bytes(commitment)?))
+            Ok((AccountId::read_from_bytes(account)?, Word::read_from_bytes(commitment)?))
         },
     ))
 }
@@ -1062,7 +1061,7 @@ pub(crate) fn unconsumed_network_notes(
             schema::notes::tag,
             schema::notes::aux,
             schema::notes::execution_hint,
-            schema::notes::merkle_path,
+            schema::notes::inclusion_path,
             // details
             schema::notes::assets,
             schema::notes::inputs,
@@ -1172,7 +1171,7 @@ pub(crate) fn select_account_delta(
 
     let mut storage_maps = BTreeMap::<u8, StorageMapDelta>::new();
     for StorageMapUpdateEntry { slot, key, value } in storage_map_updates {
-        let key = miden_objects::Digest::read_from_bytes(&key)?;
+        let key = Word::read_from_bytes(&key)?;
         let value = Word::read_from_bytes(&value)?;
         storage_maps.entry(slot as u8).or_default().insert(key, value);
     }

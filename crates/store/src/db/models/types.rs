@@ -5,7 +5,7 @@ use miden_objects::{
     Felt, Word,
     account::{Account, AccountId},
     block::{BlockHeader, BlockNoteIndex},
-    crypto::{hash::rpo::RpoDigest, merkle::MerklePath},
+    crypto::merkle::SparseMerklePath,
     note::{
         NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
         NoteScript, NoteTag, NoteType, Nullifier,
@@ -34,7 +34,7 @@ impl TryInto<proto::domain::account::AccountInfo> for AccountRaw {
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
         use proto::domain::account::{AccountInfo, AccountSummary};
         let account_id = AccountId::read_from_bytes(&self.account_id[..])?;
-        let account_commitment = RpoDigest::read_from_bytes(&self.account_commitment[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account_commitment[..])?;
         let block_num = raw_sql_to_block_number(self.block_num);
         let summary = AccountSummary {
             account_id,
@@ -156,7 +156,7 @@ pub struct NoteSyncRecordRawRow {
     pub note_id: Vec<u8>, // BlobDigest
     #[diesel(embed)]
     pub metadata: NoteMetadataRaw,
-    pub merkle_path: Vec<u8>, // MerklePath
+    pub inclusion_path: Vec<u8>, // SparseMerklePath
 }
 
 #[allow(clippy::cast_sign_loss, reason = "Indices are cast to usize for ease of use")]
@@ -166,15 +166,15 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
         let block_num = raw_sql_to_block_number(self.block_num);
         let note_index = self.block_note_index.try_into()?;
 
-        let note_id = RpoDigest::read_from_bytes(&self.note_id[..])?;
-        let merkle_path = MerklePath::read_from_bytes(&self.merkle_path[..])?;
+        let note_id = Word::read_from_bytes(&self.note_id[..])?;
+        let inclusion_path = SparseMerklePath::read_from_bytes(&self.inclusion_path[..])?;
         let metadata = self.metadata.try_into()?;
         Ok(NoteSyncRecord {
             block_num,
             note_index,
             note_id,
             metadata,
-            merkle_path,
+            inclusion_path,
         })
     }
 }
@@ -192,7 +192,7 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<AccountSummary, Self::Error> {
         let account_id = AccountId::read_from_bytes(&self.account_id[..])?;
-        let account_commitment = RpoDigest::read_from_bytes(&self.account_commitment[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account_commitment[..])?;
         let block_num = raw_sql_to_block_number(self.block_num);
 
         Ok(AccountSummary {
@@ -282,7 +282,7 @@ impl TryInto<NoteRecord> for NoteRecordRaw {
 
         let metadata = metadata.try_into()?;
         let block_num = raw_sql_to_block_number(block_num);
-        let note_id = RpoDigest::read_from_bytes(&note_id[..])?;
+        let note_id = Word::read_from_bytes(&note_id[..])?;
         let script = script.map(|script| NoteScript::read_from_bytes(&script[..])).transpose()?;
         let details = if let NoteDetailsRaw {
             assets: Some(assets),
@@ -301,7 +301,7 @@ impl TryInto<NoteRecord> for NoteRecordRaw {
         } else {
             None
         };
-        let merkle_path = MerklePath::read_from_bytes(&merkle_path[..])?;
+        let inclusion_path = SparseMerklePath::read_from_bytes(&merkle_path[..])?;
         let note_index = index.try_into()?;
         Ok(NoteRecord {
             block_num,
@@ -309,7 +309,7 @@ impl TryInto<NoteRecord> for NoteRecordRaw {
             note_id,
             metadata,
             details,
-            merkle_path,
+            inclusion_path,
         })
     }
 }

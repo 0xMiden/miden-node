@@ -7,7 +7,7 @@ use deadpool_sync::InteractError;
 use super::{Result, RunQueryDsl, SqliteConnection};
 
 #[derive(thiserror::Error, Debug)]
-pub enum WalConnManagerError {
+pub enum ConnectionManagerError {
     #[error("failed to apply connection parameter")]
     ConnectionParamSetup(#[source] diesel::result::Error),
     #[error("SQLite pool interaction failed: {0}")]
@@ -18,7 +18,7 @@ pub enum WalConnManagerError {
     PoolRecycle(#[source] deadpool::managed::RecycleError<deadpool_diesel::Error>),
 }
 
-impl WalConnManagerError {
+impl ConnectionManagerError {
     /// Converts from `InteractError`
     ///
     /// Note: Required since `InteractError` has at least one enum variant that is _not_ `Send +
@@ -36,11 +36,11 @@ impl WalConnManagerError {
 /// Create a connection manager with per-connection setup
 ///
 /// Particularly, `foreign_key` checks are enabled and using a write-append-log for journaling.
-pub(crate) struct WalConnManager {
+pub(crate) struct ConnectionManager {
     pub(crate) manager: deadpool_diesel::sqlite::Manager,
 }
 
-impl WalConnManager {
+impl ConnectionManager {
     pub(crate) fn new(database_path: &str) -> Self {
         let manager = deadpool_diesel::sqlite::Manager::new(
             database_path.to_owned(),
@@ -50,16 +50,16 @@ impl WalConnManager {
     }
 }
 
-impl deadpool::managed::Manager for WalConnManager {
+impl deadpool::managed::Manager for ConnectionManager {
     type Type = deadpool_sync::SyncWrapper<SqliteConnection>;
-    type Error = WalConnManagerError;
+    type Error = ConnectionManagerError;
 
     async fn create(&self) -> Result<Self::Type, Self::Error> {
-        let conn = self.manager.create().await.map_err(WalConnManagerError::ConnectionCreate)?;
+        let conn = self.manager.create().await.map_err(ConnectionManagerError::ConnectionCreate)?;
 
         conn.interact(configure_connection_on_creation)
             .await
-            .map_err(|e| WalConnManagerError::interact("Connection setup", &e))??;
+            .map_err(|e| ConnectionManagerError::interact("Connection setup", &e))??;
         Ok(conn)
     }
 
@@ -69,7 +69,7 @@ impl deadpool::managed::Manager for WalConnManager {
         metrics: &deadpool_diesel::Metrics,
     ) -> deadpool::managed::RecycleResult<Self::Error> {
         self.manager.recycle(conn, metrics).await.map_err(|err| {
-            deadpool::managed::RecycleError::Backend(WalConnManagerError::PoolRecycle(err))
+            deadpool::managed::RecycleError::Backend(ConnectionManagerError::PoolRecycle(err))
         })?;
         Ok(())
     }
@@ -77,17 +77,17 @@ impl deadpool::managed::Manager for WalConnManager {
 
 pub(crate) fn configure_connection_on_creation(
     conn: &mut SqliteConnection,
-) -> Result<(), WalConnManagerError> {
+) -> Result<(), ConnectionManagerError> {
     // Enable the WAL mode. This allows concurrent reads while the transaction is being written,
     // this is required for proper synchronization of the servers in-memory and on-disk
     // representations (see [State::apply_block])
     diesel::sql_query("PRAGMA journal_mode=WAL")
         .execute(conn)
-        .map_err(WalConnManagerError::ConnectionParamSetup)?;
+        .map_err(ConnectionManagerError::ConnectionParamSetup)?;
 
     // Enable foreign key checks.
     diesel::sql_query("PRAGMA foreign_keys=ON")
         .execute(conn)
-        .map_err(WalConnManagerError::ConnectionParamSetup)?;
+        .map_err(ConnectionManagerError::ConnectionParamSetup)?;
     Ok(())
 }

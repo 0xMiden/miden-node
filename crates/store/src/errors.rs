@@ -15,7 +15,7 @@ use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
 use tonic::Status;
 
-use crate::db::manager::WalConnManagerError;
+use crate::db::manager::ConnectionManagerError;
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -93,7 +93,7 @@ pub enum DatabaseError {
     )]
     UnsupportedDatabaseVersion,
     #[error(transparent)]
-    ConnectionManager(#[from] WalConnManagerError),
+    ConnectionManager(#[from] ConnectionManagerError),
 }
 
 impl DatabaseError {

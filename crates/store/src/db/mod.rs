@@ -24,7 +24,7 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     db::{
-        manager::{WalConnManager, configure_connection_on_creation},
+        manager::{ConnectionManager, configure_connection_on_creation},
         migrations::apply_migrations,
         models::{Page, queries},
     },
@@ -54,7 +54,7 @@ pub(crate) mod schema;
 pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
-    pool: deadpool_diesel::Pool<WalConnManager, deadpool::managed::Object<WalConnManager>>,
+    pool: deadpool_diesel::Pool<ConnectionManager, deadpool::managed::Object<ConnectionManager>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -238,7 +238,7 @@ impl Db {
     /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
-        let manager = WalConnManager::new(database_filepath.to_str().unwrap());
+        let manager = ConnectionManager::new(database_filepath.to_str().unwrap());
         let pool = deadpool_diesel::Pool::builder(manager).max_size(16).build()?;
 
         info!(

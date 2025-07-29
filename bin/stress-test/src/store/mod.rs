@@ -179,7 +179,7 @@ pub async fn bench_check_nullifiers_by_prefix(
             .collect::<Vec<proto::note::NoteId>>();
 
         // get the notes nullifiers, limiting to 20 notes maximum
-        let note_ids_to_fetch = note_ids.iter().take(20).cloned().collect::<Vec<_>>();
+        let note_ids_to_fetch = note_ids.iter().take(20).copied().collect::<Vec<_>>();
         let notes = store_client
             .get_notes_by_id(proto::note::NoteIdList { ids: note_ids_to_fetch })
             .await

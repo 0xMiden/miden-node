@@ -28,8 +28,8 @@ miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }
 miden-objects          = { workspace = true }
-rand                   = { version = "0.9" }
-rand_chacha            = { version = "0.9" }
+rand                   = { workspace = true }
+rand_chacha            = { workspace = true }
 serde                  = { features = ["derive"], version = "1" }
 thiserror              = { workspace = true }
 tokio                  = { features = ["fs", "rt-multi-thread"], workspace = true }
@@ -46,7 +46,7 @@ miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["tracing-forest"], workspace = true }
 miden-objects         = { default-features = true, features = ["testing"], workspace = true }
-pretty_assertions     = { version = "1.4" }
-rand                  = { version = "0.9" }
+pretty_assertions     = { workspace = true }
+rand                  = { workspace = true }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }

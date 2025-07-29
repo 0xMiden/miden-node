@@ -2279,7 +2279,6 @@ dependencies = [
  "miden-lib",
  "miden-node-block-producer",
  "miden-node-proto",
- "miden-node-rpc",
  "miden-node-utils",
  "miden-objects",
  "miden-remote-prover-client",

@@ -5,7 +5,7 @@ use http::{
     header::{ACCEPT, CONTENT_TYPE},
 };
 use miden_node_proto::{
-    clients::{Builder, RpcClient},
+    clients::{Builder, Rpc as RpcClientMarker, RpcClient},
     generated::{self as proto, rpc::api_client::ApiClient as ProtoClient},
 };
 use miden_node_store::{GenesisState, Store};
@@ -27,7 +27,7 @@ use tokio::{
 };
 use url::Url;
 
-use crate::{Rpc, RpcClientMarker};
+use crate::Rpc;
 
 #[tokio::test]
 async fn rpc_server_accepts_requests_without_accept_header() {

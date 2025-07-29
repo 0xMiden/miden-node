@@ -2,10 +2,9 @@ use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::{
-    clients::{Builder, RpcClient as InnerRpcClient},
+    clients::{Builder, Rpc as RpcClientMarker, RpcClient as InnerRpcClient},
     generated as proto,
 };
-use miden_node_rpc::RpcClientMarker;
 use miden_objects::{
     account::Account,
     block::{BlockHeader, BlockNumber},

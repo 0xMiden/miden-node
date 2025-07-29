@@ -3,8 +3,58 @@ use std::collections::{HashMap, VecDeque};
 use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
 use miden_objects::{
     account::{Account, AccountDelta, AccountId, delta::AccountUpdateDetails},
+    block::BlockNumber,
     note::Nullifier,
 };
+
+// INFLIGHT NETWORK NOTE
+// ================================================================================================
+
+/// An unconsumed network note that may have failed to execute.
+///
+/// The block numbers at which the network note was attempted are approximate and may not
+/// reflect the exact block number for which the execution attempt failed. The actual block
+/// will likely be soon after the number that is recorded here.
+#[derive(Debug, Clone)]
+pub struct InflightNetworkNote {
+    note: NetworkNote,
+    attempted_at: Vec<BlockNumber>,
+}
+
+impl InflightNetworkNote {
+    /// Creates a new inflight network note.
+    pub fn new(note: NetworkNote) -> Self {
+        Self { note, attempted_at: Vec::new() }
+    }
+
+    /// Consumes the inflight network note and returns the inner network note.
+    pub fn into_inner(self) -> NetworkNote {
+        self.note
+    }
+
+    /// Returns a reference to the inner network note.
+    pub fn to_inner(&self) -> &NetworkNote {
+        &self.note
+    }
+
+    /// Returns the number of attempts made to execute the network note.
+    pub fn attempts(&self) -> usize {
+        self.attempted_at.len()
+    }
+
+    /// Returns the last block number at which the network note was attempted.
+    pub fn last_attempt(&self) -> Option<BlockNumber> {
+        self.attempted_at.last().copied()
+    }
+
+    /// Registers a failed attempt to execute the network note at the specified block number.
+    pub fn fail(&mut self, block_num: BlockNumber) {
+        self.attempted_at.push(block_num);
+    }
+}
+
+// ACCOUNT STATE
+// ================================================================================================
 
 /// Tracks the state of a network account and its notes.
 pub struct AccountState {
@@ -17,7 +67,7 @@ pub struct AccountState {
     inflight: VecDeque<Account>,
 
     /// Unconsumed notes of this account.
-    available_notes: HashMap<Nullifier, NetworkNote>,
+    available_notes: HashMap<Nullifier, InflightNetworkNote>,
 
     /// Notes which have been consumed by transactions that are still inflight.
     nullified_notes: HashMap<Nullifier, NetworkNote>,
@@ -81,7 +131,7 @@ impl AccountState {
 
     /// Adds a new network note making it available for consumption.
     pub fn add_note(&mut self, note: NetworkNote) {
-        self.available_notes.insert(note.nullifier(), note);
+        self.available_notes.insert(note.nullifier(), InflightNetworkNote::new(note));
     }
 
     /// Removes the note completely.
@@ -107,7 +157,7 @@ impl AccountState {
             .remove(&nullifier)
             .expect("note must be available to nullify");
 
-        self.nullified_notes.insert(nullifier, note);
+        self.nullified_notes.insert(nullifier, note.into_inner());
     }
 
     /// Marks a nullifier as being committed, removing the associated note data entirely.
@@ -128,12 +178,16 @@ impl AccountState {
         // The note may already have been fully removed by `revert_note` if the transaction creating
         // the note was reverted before the transaction that consumed it.
         if let Some(note) = self.nullified_notes.remove(&nullifier) {
-            self.available_notes.insert(nullifier, note);
+            self.available_notes.insert(nullifier, InflightNetworkNote::new(note));
         }
     }
 
-    pub fn notes(&self) -> impl Iterator<Item = &NetworkNote> {
+    pub fn notes(&self) -> impl Iterator<Item = &InflightNetworkNote> {
         self.available_notes.values()
+    }
+
+    pub fn drain_failing_notes(&mut self, max_attempts: usize) {
+        self.available_notes.retain(|_, note| note.attempts() <= max_attempts);
     }
 
     /// Returns the latest inflight account state.
@@ -153,7 +207,21 @@ impl AccountState {
             && self.available_notes.is_empty()
             && self.nullified_notes.is_empty()
     }
+
+    /// Marks the specified notes as failed.
+    pub fn fail(&mut self, notes: &[InflightNetworkNote], block_num: BlockNumber) {
+        for nullifier in notes.iter().map(|note| note.to_inner().nullifier()) {
+            if let Some(note) = self.available_notes.get_mut(&nullifier) {
+                note.fail(block_num);
+            } else {
+                tracing::warn!("failed to find note with nullifier {nullifier}");
+            }
+        }
+    }
 }
+
+// NETWORK ACCOUNT UPDATE
+// ================================================================================================
 
 #[derive(Clone)]
 pub enum NetworkAccountUpdate {

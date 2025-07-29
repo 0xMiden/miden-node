@@ -22,7 +22,6 @@ miden-node-utils           = { workspace = true }
 miden-objects              = { default-features = true, workspace = true }
 miden-remote-prover-client = { features = ["tx-prover"], workspace = true }
 miden-tx                   = { default-features = true, workspace = true }
-rand                       = { workspace = true }
 thiserror                  = { workspace = true }
 tokio                      = { features = ["rt-multi-thread"], workspace = true }
 tokio-stream               = { workspace = true }

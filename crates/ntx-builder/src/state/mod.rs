@@ -3,7 +3,7 @@ use std::{
     num::NonZeroUsize,
 };
 
-use account::{AccountState, NetworkAccountUpdate};
+use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
 use anyhow::Context;
 use miden_node_proto::domain::{
     account::NetworkAccountPrefix, mempool::MempoolEvent, note::NetworkNote,
@@ -34,12 +34,13 @@ const MAX_BLOCK_COUNT: usize = 4;
 ///
 /// Contains the data pertaining to a specific network account which can be used to build a network
 /// transaction.
+#[derive(Clone)]
 pub struct TransactionCandidate {
     /// The current inflight state of the account.
     pub account: Account,
 
     /// A set of notes addressed to this network account.
-    pub notes: Vec<NetworkNote>,
+    pub notes: Vec<InflightNetworkNote>,
 
     /// The latest locally committed block header.
     ///
@@ -92,6 +93,12 @@ pub struct State {
 }
 
 impl State {
+    /// Maximum number of attempts to execute a network note.
+    const MAX_NOTE_ATTEMPTS: usize = 10;
+    /// Multiplier applied to note failed attempt count when considering whether enough blocks
+    /// have passed since the last attempt.
+    const NOTE_ATTEMPT_BACKOFF_MULTIPLIER: usize = 2;
+
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
@@ -138,7 +145,7 @@ impl State {
     ///   - the transaction was submitted successfully, indicated by the associated mempool event
     ///     being submitted
     #[instrument(target = COMPONENT, name = "ntx.state.select_candidate", skip_all)]
-    pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
+    pub async fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
         // Loop through the account queue until we find one that is selectable.
         //
         // Since the queue contains _all_ accounts, including unselectable accounts, we limit our
@@ -156,10 +163,9 @@ impl State {
                 continue;
             }
 
-            let account = self.accounts.get(&candidate).expect("queue account must be tracked");
+            let account = self.accounts.get_mut(&candidate).expect("queue account must be tracked");
 
             // Skip empty accounts, and prune them.
-            //
             // This is how we keep the number of accounts bounded.
             if account.is_empty() {
                 // We don't need to prune the inflight transactions because if the account is empty,
@@ -170,7 +176,34 @@ impl State {
                 continue;
             }
 
-            let notes = account.notes().take(limit.get()).cloned().collect::<Vec<_>>();
+            // Remove notes that have failed too many times.
+            account.drain_failing_notes(Self::MAX_NOTE_ATTEMPTS);
+
+            // Select notes from the account that can be consumed or are ready for a retry.
+            let notes = account
+                .notes()
+                .take(limit.get())
+                .filter(|&note| {
+                    // Filter based on execution hint.
+                    let block_num = self.chain_tip_header.block_num();
+                    let can_consume = note
+                        .to_inner()
+                        .metadata()
+                        .execution_hint()
+                        .can_be_consumed(block_num)
+                        .unwrap_or(true);
+                    // Filter based on attempts.
+                    let backoff_threshold = Self::NOTE_ATTEMPT_BACKOFF_MULTIPLIER * note.attempts();
+                    let backoff_threshold_passed = block_num.as_usize()
+                        - note
+                            .last_attempt()
+                            .map(|block_num| block_num.as_usize())
+                            .unwrap_or_default()
+                        > backoff_threshold;
+                    can_consume && backoff_threshold_passed
+                })
+                .cloned()
+                .collect::<Vec<_>>();
 
             // Skip accounts with no available notes.
             if notes.is_empty() {
@@ -215,8 +248,17 @@ impl State {
     /// Marks a previously selected candidate account as failed, allowing it to be available for
     /// selection again.
     #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
-    pub fn candidate_failed(&mut self, candidate: NetworkAccountPrefix) {
-        self.in_progress.remove(&candidate);
+    pub fn candidate_failed(&mut self, candidate: &TransactionCandidate) {
+        let prefix = NetworkAccountPrefix::try_from(candidate.account.id()).unwrap();
+
+        if let Some(account) = self.accounts.get_mut(&prefix) {
+            account.fail(&candidate.notes, candidate.chain_tip_header.block_num());
+        } else {
+            tracing::error!("failed to find network account with prefix {}", prefix);
+        }
+
+        self.in_progress.remove(&prefix);
+
         self.inject_telemetry();
     }
 

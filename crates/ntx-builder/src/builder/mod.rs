@@ -2,13 +2,15 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use futures::TryStreamExt;
-use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::{sync::Barrier, time};
 use url::Url;
 
-use crate::{MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, store::StoreClient};
+use crate::{
+    MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, state::TransactionCandidate,
+    store::StoreClient,
+};
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -81,19 +83,18 @@ impl NetworkTransactionBuilder {
                         continue;
                     }
 
-                    let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
+                    let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX).await else {
                         tracing::debug!("No candidate network transaction available");
                         continue;
                     };
 
-                    let prefix = NetworkAccountPrefix::try_from(candidate.account.id()).unwrap();
                     let task_id = inflight.spawn({
                         let context = context.clone();
-                        context.execute_transaction(candidate)
+                        context.execute_transaction(TransactionCandidate::clone(&candidate))
                     }).id();
 
                     // SAFETY: This is definitely a network account.
-                    inflight_idx.insert(task_id, prefix);
+                    inflight_idx.insert(task_id, candidate);
                 },
                 event = mempool_events.try_next() => {
                     let event = event
@@ -116,11 +117,11 @@ impl NetworkTransactionBuilder {
                         // Inform state if the tx failed.
                         Ok((_, Err(err))) => {
                             tracing::warn!(err=err.as_report(), "network transaction failed");
-                            state.candidate_failed(candidate);
+                            state.candidate_failed(&candidate);
                         },
                         Err(err) => {
                             tracing::warn!(err=err.as_report(), "network transaction panic'd");
-                            state.candidate_failed(candidate);
+                            state.candidate_failed(&candidate);
                         }
                     }
                 }

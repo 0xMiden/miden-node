@@ -23,7 +23,6 @@
 - [BREAKING] Integrated proxy status endpoint into main proxy service, removing separate status port.
 - RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - [BREAKING] Update `notes` table schema to have a nullable `consumed_block_num` ([#1100](https://github.com/0xMiden/miden-node/pull/1100)).
-- Add gRPC endpoint for retrieving unconsumed network notes for a specific network account and block limit ([#1100](https://github.com/0xMiden/miden-node/pull/1100)).
 
 ## v0.10.1 (2025-07-14)
 

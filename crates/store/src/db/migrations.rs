@@ -3,6 +3,9 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use tracing::instrument;
 
 use crate::COMPONENT;
+
+// The rebuild is automatically triggered by `build.rs` as described in
+// <https://docs.rs/diesel_migrations/latest/diesel_migrations/macro.embed_migrations.html#automatic-rebuilds>.
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("src/db/migrations");
 
 // TODO we have not tested this in practice!

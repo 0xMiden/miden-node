@@ -45,7 +45,7 @@ pub struct BlockProducer {
     /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
-    pub store_address: SocketAddr,
+    pub store_url: Url,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -72,8 +72,8 @@ impl BlockProducer {
     ///       a fatal error is encountered.
     #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
-        let store = StoreClient::new(self.store_address);
+        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
+        let store = StoreClient::new(&self.store_url);
 
         // retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
@@ -86,7 +86,7 @@ impl BlockProducer {
                         .min(Duration::from_secs(30));
 
                     error!(
-                        store = %self.store_address,
+                        store = %self.store_url,
                         ?backoff,
                         %retries_counter,
                         %err,

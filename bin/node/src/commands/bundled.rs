@@ -164,10 +164,14 @@ impl BundledCommand {
         let block_producer_id = join_set
             .spawn({
                 let checkpoint = Arc::clone(&checkpoint);
+                // SAFETY: The store_block_producer_address is always valid as it is created from a
+                // `SocketAddr`.
+                let store_url =
+                    Url::parse(&format!("http://{store_block_producer_address}")).unwrap();
                 async move {
                     BlockProducer {
                         block_producer_address,
-                        store_address: store_block_producer_address,
+                        store_url,
                         batch_prover_url: block_producer.batch_prover_url,
                         block_prover_url: block_producer.block_prover_url,
                         batch_interval: block_producer.batch_interval,
@@ -186,10 +190,17 @@ impl BundledCommand {
         // Start RPC component.
         let rpc_id = join_set
             .spawn(async move {
+                // SAFETY: The store_rpc_address is always valid as it is created from a
+                // `SocketAddr`.
+                let store_url = Url::parse(&format!("http://{store_rpc_address}")).unwrap();
+                // SAFETY: The block_producer_address is always valid as it is created from a
+                // `SocketAddr`.
+                let block_producer_url =
+                    Url::parse(&format!("http://{block_producer_address}")).unwrap();
                 Rpc {
                     listener: grpc_rpc,
-                    store: store_rpc_address,
-                    block_producer: Some(block_producer_address),
+                    store: store_url,
+                    block_producer: Some(block_producer_url),
                 }
                 .serve()
                 .await
@@ -212,9 +223,13 @@ impl BundledCommand {
         if should_start_ntb {
             let id = join_set
                 .spawn(async move {
+                    // SAFETY: The block_producer_address is always valid as it is created from a
+                    // `SocketAddr`.
+                    let block_producer_url =
+                        Url::parse(&format!("http://{block_producer_address}")).unwrap();
                     NetworkTransactionBuilder {
                         store_url: store_ntx_builder_url,
-                        block_producer_address,
+                        block_producer_url,
                         tx_prover_url: ntx_builder.tx_prover_url,
                         ticker_interval: ntx_builder.ticker_interval,
                         bp_checkpoint: checkpoint,

@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter},
-    net::SocketAddr,
     num::NonZeroU32,
 };
 
@@ -23,6 +22,7 @@ use miden_objects::{
     utils::Serializable,
 };
 use tracing::{debug, info, instrument};
+use url::Url;
 
 use crate::{COMPONENT, errors::StoreError};
 
@@ -131,14 +131,15 @@ pub struct StoreClient {
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub fn new(store_address: SocketAddr) -> Self {
-        // SAFETY: The store address is always valid as it is created from a `SocketAddr`.
+    pub fn new(store_url: &Url) -> Self {
+        // SAFETY: The store_url is always valid as it is a user-provided URL that has been
+        // validated.
         let store = Builder::new()
-            .with_address(format!("http://{store_address}"))
+            .with_address(store_url.to_string())
             .connect_lazy::<StoreBlockProducer>()
             .unwrap();
 
-        info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+        info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 
         Self { client: store }
     }

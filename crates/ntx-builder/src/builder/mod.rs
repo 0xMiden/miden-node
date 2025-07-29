@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use futures::TryStreamExt;
@@ -23,7 +23,7 @@ pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
     pub store_url: Url,
     /// Address of the block producer gRPC server.
-    pub block_producer_address: SocketAddr,
+    pub block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
@@ -39,7 +39,7 @@ pub struct NetworkTransactionBuilder {
 impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(&self.store_url);
-        let block_producer = BlockProducerClient::new(self.block_producer_address);
+        let block_producer = BlockProducerClient::new(&self.block_producer_url);
 
         // Retry until the store is up and running. After this we expect all requests to pass.
         let genesis_header = store

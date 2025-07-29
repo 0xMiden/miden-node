@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::{
@@ -27,6 +27,7 @@ use miden_objects::{
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
 use tracing::{debug, info, instrument};
+use url::Url;
 
 use crate::COMPONENT;
 
@@ -39,28 +40,28 @@ pub struct RpcService {
 }
 
 impl RpcService {
-    pub(super) fn new(
-        store_address: SocketAddr,
-        block_producer_address: Option<SocketAddr>,
-    ) -> Self {
+    pub(super) fn new(store_url: &Url, block_producer_url: Option<Url>) -> Self {
         let store = {
-            let store_url = format!("http://{store_address}");
-            // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-            let store = Builder::new().with_address(store_url).connect_lazy::<StoreRpc>().unwrap();
-            info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+            // SAFETY: The store_url is always valid as it is a user-provided URL that has been
+            // validated.
+            let store = Builder::new()
+                .with_address(store_url.to_string())
+                .connect_lazy::<StoreRpc>()
+                .unwrap();
+            info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
             store
         };
 
-        let block_producer = block_producer_address.map(|block_producer_address| {
-            let block_producer_url = format!("http://{block_producer_address}");
-            // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
+        let block_producer = block_producer_url.map(|block_producer_url| {
+            // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has
+            // been validated.
             let block_producer = Builder::new()
-                .with_address(block_producer_url)
+                .with_address(block_producer_url.to_string())
                 .connect_lazy::<BlockProducer>()
                 .unwrap();
             info!(
                 target: COMPONENT,
-                block_producer_endpoint = %block_producer_address,
+                block_producer_endpoint = %block_producer_url,
                 "Block producer client initialized",
             );
             block_producer

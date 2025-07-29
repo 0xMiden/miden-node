@@ -1,5 +1,3 @@
-use std::net::SocketAddr;
-
 use accept::AcceptHeaderLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
@@ -14,6 +12,7 @@ use tonic_reflection::server;
 use tonic_web::GrpcWebLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
+use url::Url;
 
 use crate::COMPONENT;
 
@@ -27,8 +26,8 @@ mod api;
 /// Requests will fail if the components are not available.
 pub struct Rpc {
     pub listener: TcpListener,
-    pub store: SocketAddr,
-    pub block_producer: Option<SocketAddr>,
+    pub store: Url,
+    pub block_producer: Option<Url>,
 }
 
 impl Rpc {
@@ -37,7 +36,9 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        let api = api::RpcService::new(self.store, self.block_producer);
+        let store_url = self.store.clone();
+        let block_producer_url = self.block_producer.clone();
+        let api = api::RpcService::new(&self.store, self.block_producer);
 
         let genesis = api
             .get_genesis_header_with_retry()
@@ -59,7 +60,7 @@ impl Rpc {
             .build_v1alpha()
             .context("failed to build reflection service")?;
 
-        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
+        info!(target: COMPONENT, endpoint=?self.listener, store=%store_url, block_producer=?block_producer_url, "Server initialized");
 
         let rpc_version = env!("CARGO_PKG_VERSION");
         let rpc_version =

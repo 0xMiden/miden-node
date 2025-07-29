@@ -81,6 +81,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
 
         // Recreate the RPC client with an invalid version.
         let url = rpc_addr.to_string();
+        // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
         let mut rpc_client: RpcClient = Builder::new()
             .with_address(url.to_string())
@@ -286,16 +287,21 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
     let rpc_listener = TcpListener::bind("127.0.0.1:0").await.expect("Failed to bind rpc");
     let rpc_addr = rpc_listener.local_addr().expect("Failed to get rpc address");
     task::spawn(async move {
+        // SAFETY: The store_addr is always valid as it is created from a `SocketAddr`.
+        let store_url = Url::parse(&format!("http://{store_addr}")).unwrap();
+        // SAFETY: The block_producer_addr is always valid as it is created from a `SocketAddr`.
+        let block_producer_url = Url::parse(&format!("http://{block_producer_addr}")).unwrap();
         Rpc {
             listener: rpc_listener,
-            store: store_addr,
-            block_producer: Some(block_producer_addr),
+            store: store_url,
+            block_producer: Some(block_producer_url),
         }
         .serve()
         .await
         .expect("Failed to start serving store");
     });
     let url = rpc_addr.to_string();
+    // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
     let rpc_client: RpcClient = Builder::new()
         .with_address(url.to_string())

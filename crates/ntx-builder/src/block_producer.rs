@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 use futures::{TryStream, TryStreamExt};
 use miden_node_proto::{
@@ -12,6 +12,7 @@ use miden_tx::utils::Serializable;
 use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::{info, instrument};
+use url::Url;
 
 use crate::COMPONENT;
 
@@ -28,14 +29,15 @@ pub struct BlockProducerClient {
 
 impl BlockProducerClient {
     /// Creates a new block producer client with a lazy connection.
-    pub fn new(block_producer_address: SocketAddr) -> Self {
-        // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
+    pub fn new(block_producer_url: &Url) -> Self {
+        // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has been
+        // validated.
         let block_producer = Builder::new()
-            .with_address(format!("http://{block_producer_address}"))
+            .with_address(block_producer_url.to_string())
             .connect_lazy::<BlockProducer>()
             .unwrap();
 
-        info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Store client initialized");
+        info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Block producer client initialized");
 
         Self { client: block_producer }
     }

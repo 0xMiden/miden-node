@@ -41,22 +41,19 @@ impl RpcCommand {
             enable_otel: _,
         } = self;
 
-        let store = store_url
-            .to_socket()
-            .context("Failed to extract socket address from store URL")?;
-
-        let block_producer = if let Some(url) = block_producer_url {
-            Some(url.to_socket().context("Failed to extract socket address from store URL")?)
-        } else {
-            None
-        };
-
         let listener = url.to_socket().context("Failed to extract socket address from RPC URL")?;
         let listener = tokio::net::TcpListener::bind(listener)
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        Rpc { listener, store, block_producer }.serve().await.context("Serving RPC")
+        Rpc {
+            listener,
+            store: store_url,
+            block_producer: block_producer_url,
+        }
+        .serve()
+        .await
+        .context("Serving RPC")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

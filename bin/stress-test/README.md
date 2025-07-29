@@ -37,37 +37,71 @@ miden-node-stress-test benchmark-store \
 
 ### Results
 
-Using the current store seed command:
+Using the store seed command:
 ```bash
 # Using 1M accounts, half are public
-miden-node-stress-test seed-store --data-directory data --num-accounts 100000 --public-accounts-percentage 50
+$ miden-node-stress-test seed-store --data-directory data --num-accounts 100000 --public-accounts-percentage 50
+
+Total time: 235.452 seconds
+Inserted 393 blocks with avg insertion time 212 ms
+Initial DB size: 120.1 KB
+Average DB growth rate: 325.3 KB per block
 ```
+
+#### Block metrics
+| Block  | Insert Time (ms)   |  Get Block Inputs Time (ms)   |  Get Batch Inputs Time (ms)    | Block Size (B)     |  DB Size (KB) |
+| ------ | ------------------ | ----------------------------- | ------------------------------ | ------------------ | ------------- |
+| 0      | 22                 | 1                             | 0                              | 384593             | 341.4         |
+| 50     | 186                | 9                             | 1                              | 484994             | 24509.6       |
+| 100    | 199                | 10                            | 1                              | 484994             | 41866.6       |
+| 150    | 219                | 10                            | 1                              | 484994             | 59477.6       |
+| 200    | 218                | 11                            | 1                              | 484994             | 76849.9       |
+| 250    | 222                | 11                            | 1                              | 484994             | 94141.4       |
+| 300    | 228                | 12                            | 1                              | 484994             | 111200.0      |
+| 350    | 232                | 13                            | 1                              | 484994             | 127973.5      |
+
+#### Database stats
+| Table                               | Size (KB)      |  KB/Entry |
+| ------------------------------------| -------------- | --------- |
+| account_deltas                      | 1288.0         |  0.0      |
+| block_headers                       | 120.0          |  0.3      |
+| account_fungible_asset_deltas       | 2240.0         |  0.0      |
+| notes                               | 50236.0        |  0.5      |
+| account_non_fungible_asset_updates  | 4.0            |  -        |
+| nullifiers                          | 4736.0         |  0.0      |
+| account_storage_map_updates         | 4.0            |  -        |
+| settings                            | 4.0            |  2.0      |
+| account_storage_slot_updates        | 3092.0         |  0.1      |
+| transactions                        | 6168.0         |  0.1      |
+| accounts                            | 26704.0        |  0.3      |
+| note_scripts                        | 8.0            |  8.0      |
+
 Current results of the store stress-tests:
 
 - sync-state
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-state
 
-Average request latency: 77.386421ms
-P95 request latency: 29.490042ms
-Average notes per response: 1.4048
+Average request latency: 73.391934ms
+P95 request latency: 20.94225ms
+Average notes per response: 1.3197
 ```
 
 - sync-notes
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-notes
 
-Average request latency: 77.229469ms
-P95 request latency: 27.882625ms
+Average request latency: 70.498732ms
+P95 request latency: 7.286208ms
 ```
 
 - check-nullifiers-by-prefix
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 check-nullifiers-by-prefix --prefixes 10
 
-Average request latency: 1.727873ms
-P95 request latency: 2.615959ms
-Average nullifiers per response: 25.1951
+Average request latency: 1.038896ms
+P95 request latency: 1.659917ms
+Average nullifiers per response: 24.5
 ```
 
 ## License

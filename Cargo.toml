@@ -45,15 +45,15 @@ miden-node-utils           = { path = "crates/utils", version = "0.11" }
 miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.11" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "pgackst-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "pgackst-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { version = "0.16" }
+miden-air = { branch = "async-experimental", git = "https://github.com/0xMiden/miden-vm", version = "0.17" }
 
 # External dependencies
 anyhow             = { version = "1.0" }
@@ -98,6 +98,3 @@ module_name_repetitions      = "allow" # Many triggers, and is a stylistic choic
 must_use_candidate           = "allow" # This marks many fn's which isn't helpful.
 should_panic_without_expect  = "allow" # We don't care about the specific panic message.
 # End of pedantic lints.
-
-[patch.crates-io]
-miden-tx = { path = "../miden-base-bernhard-arc-elimination/crates/miden-tx" }

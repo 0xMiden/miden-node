@@ -1,9 +1,13 @@
 use bigdecimal::BigDecimal;
 use miden_lib::utils::Deserializable;
-use miden_node_proto::{self as proto, domain::account::AccountSummary};
+use miden_node_proto::{
+    self as proto,
+    domain::account::{AccountInfo, AccountSummary},
+};
 use miden_objects::{
     Felt, Word,
-    account::{Account, AccountId},
+    account::{Account, AccountCode, AccountId, AccountStorage},
+    asset::AssetVault,
     block::{BlockHeader, BlockNoteIndex},
     crypto::merkle::SparseMerklePath,
     note::{
@@ -13,6 +17,9 @@ use miden_objects::{
     transaction::TransactionId,
 };
 
+use crate::db::models::conv::raw_sql_to_nonce;
+
+use super::super::schema::account_codes;
 use super::{
     DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
     Selectable, Sqlite, accounts, block_headers, notes, nullifiers, raw_sql_to_block_number,
@@ -24,25 +31,92 @@ use super::{
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct AccountRaw {
     pub account_id: Vec<u8>,
+    pub network_account_id_prefix: Option<i64>,
     pub account_commitment: Vec<u8>,
     pub block_num: i64,
-    pub details: Option<Vec<u8>>,
+    pub storage: Option<Vec<u8>>,
+    pub vault: Option<Vec<u8>>,
+    pub nonce: Option<i64>,
+    pub code_commitment: Vec<u8>,
 }
 
-impl TryInto<proto::domain::account::AccountInfo> for AccountRaw {
+#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
+#[diesel(table_name = account_codes)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct CodeRaw {
+    pub code_commitment: Vec<u8>,
+    pub code: Vec<u8>,
+}
+
+#[derive(Debug, Clone, QueryableByName)]
+pub struct AccountWithCodeRaw {
+    #[diesel(embed)]
+    pub account: AccountRaw,
+    #[diesel(embed)]
+    pub code: Option<Vec<u8>>,
+}
+
+impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRaw {
+    fn from((account, code): (AccountRaw, Option<Vec<u8>>)) -> Self {
+        Self { account, code }
+    }
+}
+
+impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
-        use proto::domain::account::{AccountInfo, AccountSummary};
-        let account_id = AccountId::read_from_bytes(&self.account_id[..])?;
-        let account_commitment = Word::read_from_bytes(&self.account_commitment[..])?;
-        let block_num = raw_sql_to_block_number(self.block_num);
+        use proto::domain::account::AccountSummary;
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
+        let block_num = raw_sql_to_block_number(self.account.block_num);
         let summary = AccountSummary {
             account_id,
             account_commitment,
             block_num,
         };
-        let details = self.details.as_deref().map(Account::read_from_bytes).transpose()?;
+
+        let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
+            (self.account.vault, self.account.storage, self.account.nonce, self.code)
+        {
+            let vault = AssetVault::read_from_bytes(&vault)?;
+            let storage = AccountStorage::read_from_bytes(&storage)?;
+            let code = AccountCode::read_from_bytes(&code)?;
+            let nonce = raw_sql_to_nonce(nonce);
+            let nonce = Felt::new(nonce);
+            Some(Account::from_parts(account_id, vault, storage, code, nonce))
+        } else {
+            None
+        };
+
         Ok(AccountInfo { summary, details })
+    }
+}
+
+impl TryInto<Account> for AccountWithCodeRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<Account, Self::Error> {
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
+        let block_num = raw_sql_to_block_number(self.account.block_num);
+        let summary = AccountSummary {
+            account_id,
+            account_commitment,
+            block_num,
+        };
+
+        let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
+            (self.account.vault, self.account.storage, self.account.nonce, self.code)
+        {
+            let vault = AssetVault::read_from_bytes(&vault)?;
+            let storage = AccountStorage::read_from_bytes(&storage)?;
+            let code = AccountCode::read_from_bytes(&code)?;
+            let nonce = raw_sql_to_nonce(nonce);
+            let nonce = Felt::new(nonce);
+            Some(Account::from_parts(account_id, vault, storage, code, nonce))
+        } else {
+            None
+        };
+        Ok(details.unwrap()) // TODO FIXME
     }
 }
 

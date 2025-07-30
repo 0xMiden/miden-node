@@ -10,7 +10,7 @@ use std::{
 
 use diesel::{
     JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection, alias,
-    prelude::Queryable, query_dsl::methods::SelectDsl,
+    prelude::Queryable, query_dsl::methods::SelectDsl, sqlite::Sqlite,
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
@@ -41,14 +41,14 @@ use crate::{
         NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
         TransactionSummary,
         models::{
-            AccountRaw, AccountSummaryRaw, BigIntSum, ExpressionMethods, NoteRecordRaw,
-            TransactionSummaryRaw, block_number_to_raw_sql,
+            AccountRaw, AccountSummaryRaw, AccountWithCodeRaw, BigIntSum, CodeRaw,
+            ExpressionMethods, NoteRecordRaw, TransactionSummaryRaw, block_number_to_raw_sql,
             conv::{
                 aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
                 execution_mode_to_raw_sql, fungible_delta_to_raw_sql, idx_to_raw_sql,
                 network_account_prefix_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
-                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot,
-                slot_to_raw_sql, tag_to_raw_sql,
+                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_network_account_prefix,
+                raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql, tag_to_raw_sql,
             },
             deserialize_raw_vec, get_nullifier_prefix, raw_sql_to_block_number, serialize_vec,
             sql_sum_into, vec_raw_try_into,
@@ -487,11 +487,20 @@ pub(crate) fn upsert_accounts(
         account_id: AccountId,
     ) -> Result<Vec<Account>, DatabaseError> {
         let account_id = account_id.to_bytes();
-        let account_details_serialized =
-            SelectDsl::select(schema::accounts::table, schema::accounts::details.assume_not_null())
-                .filter(schema::accounts::account_id.eq(account_id))
-                .get_results::<Vec<u8>>(conn)?;
-        let accounts = deserialize_raw_vec::<_, Account>(account_details_serialized)?;
+        let accounts =
+            SelectDsl::select(
+                schema::accounts::table.left_join(schema::account_codes::table.on(
+                    schema::accounts::code_commitment.eq(schema::account_codes::code_commitment),
+                )),
+                (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+            )
+            .filter(schema::accounts::account_id.eq(account_id))
+            .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+
+        // SAFETY: infallible
+        let accounts =
+            vec_raw_try_into::<Account, _>(accounts.into_iter().map(AccountWithCodeRaw::from))
+                .unwrap();
         Ok(accounts)
     }
 
@@ -534,14 +543,33 @@ pub(crate) fn upsert_accounts(
             },
         };
 
-        let val = (
-            schema::accounts::account_id.eq(account_id.to_bytes()),
-            schema::accounts::network_account_id_prefix
-                .eq(network_account_id_prefix.map(network_account_prefix_to_raw_sql)),
-            schema::accounts::account_commitment.eq(update.final_state_commitment().to_bytes()),
-            schema::accounts::block_num.eq(block_number_to_raw_sql(block_num)),
-            schema::accounts::details.eq(full_account.as_ref().map(|account| account.to_bytes())),
-        );
+        #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
+        #[diesel(table_name = schema::accounts)]
+        struct AccountInsert {
+            account_id: Vec<u8>,
+            network_account_id_prefix: Option<i64>,
+            account_commitment: Vec<u8>,
+            block_num: i64,
+            nonce: Option<i64>,
+            storage: Option<Vec<u8>>,
+            vault: Option<Vec<u8>>,
+            code_commitment: Option<Vec<u8>>,
+        }
+
+        let val = AccountInsert {
+            account_id: account_id.to_bytes(),
+            network_account_id_prefix: network_account_id_prefix
+                .map(network_account_prefix_to_raw_sql),
+            account_commitment: update.final_state_commitment().to_bytes(),
+            block_num: block_number_to_raw_sql(block_num),
+            nonce: full_account.as_ref().map(|account| nonce_to_raw_sql(account.nonce())),
+            storage: full_account.as_ref().map(|account| account.storage().to_bytes()),
+            vault: full_account.as_ref().map(|account| account.vault().to_bytes()),
+            code_commitment: full_account
+                .as_ref()
+                .map(|account| account.code().commitment().to_bytes()),
+        };
+
         let v = val.clone();
         let inserted = diesel::insert_into(schema::accounts::table)
             .values(&v)
@@ -895,12 +923,19 @@ pub(crate) fn select_account(
     // WHERE
     //     account_id = ?1;
     //
-    let info = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
-        .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .get_result::<models::AccountRaw>(conn)
-        .optional()?
-        .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-    let info = info.try_into()?;
+
+    let raw = SelectDsl::select(
+        schema::accounts::table.left_join(
+            schema::account_codes::table
+                .on(schema::accounts::code_commitment.eq(schema::account_codes::code_commitment)),
+        ),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
+    .optional()?
+    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    let info: AccountInfo = AccountWithCodeRaw::from(raw).try_into()?;
     Ok(info)
 }
 
@@ -926,14 +961,22 @@ pub(crate) fn select_account_by_id_prefix(
     //     accounts
     // WHERE
     //     network_account_id_prefix = ?1;
-    let maybe_info = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
-        .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
-        .get_result::<AccountRaw>(conn)
-        .optional()
-        .map_err(DatabaseError::Diesel)?;
+    let maybe_info = SelectDsl::select(
+        schema::accounts::table.left_join(
+            schema::account_codes::table
+                .on(schema::account_codes::code_commitment.eq(schema::accounts::code_commitment)),
+        ),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
+    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
+    .optional()
+    .map_err(DatabaseError::Diesel)?;
 
-    let result: Result<Option<AccountInfo>, DatabaseError> =
-        maybe_info.map(std::convert::TryInto::<AccountInfo>::try_into).transpose();
+    let result: Result<Option<AccountInfo>, DatabaseError> = maybe_info
+        .map(AccountWithCodeRaw::from)
+        .map(std::convert::TryInto::<AccountInfo>::try_into)
+        .transpose();
 
     result
 }
@@ -1110,9 +1153,19 @@ pub(crate) fn select_all_accounts(
     //     accounts
     // ORDER BY
     //     block_num ASC;
-    let accounts_raw =
-        QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()).load(conn)?;
-    vec_raw_try_into(accounts_raw)
+
+    let accounts_raw = QueryDsl::select(
+        schema::accounts::table.left_join(
+            schema::account_codes::table
+                .on(schema::accounts::code_commitment.eq(schema::account_codes::code_commitment)),
+        ),
+        (models::AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+    Ok(vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
+        accounts_raw.into_iter().map(AccountWithCodeRaw::from),
+    )
+    .unwrap())
 }
 
 pub(crate) fn select_accounts_by_id(
@@ -1123,12 +1176,20 @@ pub(crate) fn select_accounts_by_id(
 
     let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
 
-    let accounts_raw = QueryDsl::filter(
-        QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()),
-        schema::accounts::account_id.eq_any(account_ids),
+    let accounts_raw = SelectDsl::select(
+        schema::accounts::table.left_join(
+            schema::account_codes::table
+                .on(schema::accounts::code_commitment.eq(schema::account_codes::code_commitment)),
+        ),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
-    .load(conn)?;
-    vec_raw_try_into(accounts_raw)
+    .filter(schema::accounts::account_id.eq_any(account_ids))
+    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+    // SAFETY: infallible error
+    Ok(vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
+        accounts_raw.into_iter().map(AccountWithCodeRaw::from),
+    )
+    .unwrap())
 }
 
 /// Selects and merges account deltas by account id and block range from the DB using the given

@@ -147,13 +147,13 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.ntx_builder_server.get_unconsumed_notes_for_network_account",
+        name = "store.ntx_builder_server.get_unconsumed_network_notes_for_account",
         skip_all,
         err
     )]
-    async fn get_unconsumed_notes_for_network_account(
+    async fn get_unconsumed_network_notes_for_account(
         &self,
-        request: Request<proto::ntx_builder_store::UnconsumedNotesForNetworkAccountRequest>,
+        request: Request<proto::ntx_builder_store::UnconsumedNetworkNotesForAccountRequest>,
     ) -> Result<Response<proto::ntx_builder_store::UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let latest_block_num = BlockNumber::from(request.latest_block_num);
@@ -172,7 +172,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created
         // instead
         let (notes, next_page) = state
-            .get_unconsumed_notes_for_network_account(
+            .get_unconsumed_network_notes_for_account(
                 network_account_id_prefix,
                 latest_block_num,
                 page,

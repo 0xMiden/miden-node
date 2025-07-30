@@ -476,8 +476,8 @@ impl Db {
         Ok(())
     }
 
-    /// Loads the network notes that have not been consumed yet, using
-    /// pagination to limit the number of notes returned.
+    /// Loads the network notes that have not been consumed yet, using pagination to limit the number
+    /// of notes returned.
     pub(crate) async fn select_unconsumed_network_notes(
         &self,
         page: Page,

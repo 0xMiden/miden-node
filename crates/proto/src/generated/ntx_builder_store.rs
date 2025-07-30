@@ -29,7 +29,7 @@ pub struct UnconsumedNetworkNotesRequest {
 }
 /// Returns a list of unconsumed notes for a network account using pagination.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct UnconsumedNotesForNetworkAccountRequest {
+pub struct UnconsumedNetworkNotesForAccountRequest {
     /// This should be null on the first call, and set to the response
     /// token until the response token is null, at which point all data
     /// has been fetched.
@@ -230,10 +230,10 @@ pub mod ntx_builder_client {
             self.inner.unary(req, path, codec).await
         }
         /// Returns a paginated list of a network account's unconsumed notes.
-        pub async fn get_unconsumed_notes_for_network_account(
+        pub async fn get_unconsumed_network_notes_for_account(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::UnconsumedNotesForNetworkAccountRequest,
+                super::UnconsumedNetworkNotesForAccountRequest,
             >,
         ) -> std::result::Result<
             tonic::Response<super::UnconsumedNetworkNotes>,
@@ -249,14 +249,14 @@ pub mod ntx_builder_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/ntx_builder_store.NtxBuilder/GetUnconsumedNotesForNetworkAccount",
+                "/ntx_builder_store.NtxBuilder/GetUnconsumedNetworkNotesForAccount",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "ntx_builder_store.NtxBuilder",
-                        "GetUnconsumedNotesForNetworkAccount",
+                        "GetUnconsumedNetworkNotesForAccount",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -356,9 +356,9 @@ pub mod ntx_builder_server {
             tonic::Status,
         >;
         /// Returns a paginated list of a network account's unconsumed notes.
-        async fn get_unconsumed_notes_for_network_account(
+        async fn get_unconsumed_network_notes_for_account(
             &self,
-            request: tonic::Request<super::UnconsumedNotesForNetworkAccountRequest>,
+            request: tonic::Request<super::UnconsumedNetworkNotesForAccountRequest>,
         ) -> std::result::Result<
             tonic::Response<super::UnconsumedNetworkNotes>,
             tonic::Status,
@@ -560,16 +560,16 @@ pub mod ntx_builder_server {
                     };
                     Box::pin(fut)
                 }
-                "/ntx_builder_store.NtxBuilder/GetUnconsumedNotesForNetworkAccount" => {
+                "/ntx_builder_store.NtxBuilder/GetUnconsumedNetworkNotesForAccount" => {
                     #[allow(non_camel_case_types)]
-                    struct GetUnconsumedNotesForNetworkAccountSvc<T: NtxBuilder>(
+                    struct GetUnconsumedNetworkNotesForAccountSvc<T: NtxBuilder>(
                         pub Arc<T>,
                     );
                     impl<
                         T: NtxBuilder,
                     > tonic::server::UnaryService<
-                        super::UnconsumedNotesForNetworkAccountRequest,
-                    > for GetUnconsumedNotesForNetworkAccountSvc<T> {
+                        super::UnconsumedNetworkNotesForAccountRequest,
+                    > for GetUnconsumedNetworkNotesForAccountSvc<T> {
                         type Response = super::UnconsumedNetworkNotes;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -578,12 +578,12 @@ pub mod ntx_builder_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::UnconsumedNotesForNetworkAccountRequest,
+                                super::UnconsumedNetworkNotesForAccountRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as NtxBuilder>::get_unconsumed_notes_for_network_account(
+                                <T as NtxBuilder>::get_unconsumed_network_notes_for_account(
                                         &inner,
                                         request,
                                     )
@@ -598,7 +598,7 @@ pub mod ntx_builder_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetUnconsumedNotesForNetworkAccountSvc(inner);
+                        let method = GetUnconsumedNetworkNotesForAccountSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

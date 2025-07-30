@@ -1141,7 +1141,7 @@ pub fn unconsumed_network_notes(
 ///
 /// A set of unconsumed network notes with maximum length of `size` and the page to get
 /// the next set.
-pub fn unconsumed_notes_for_network_account(
+pub fn unconsumed_network_notes_for_account(
     transaction: &Transaction,
     network_account_id_prefix: NetworkAccountPrefix,
     latest_block_num: BlockNumber,

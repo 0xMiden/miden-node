@@ -439,7 +439,7 @@ fn sql_unconsumed_network_notes() {
     )
     .unwrap();
     assert_eq!(result, network_notes);
-    let (result, _) = sql::unconsumed_notes_for_network_account(
+    let (result, _) = sql::unconsumed_network_notes_for_account(
         &db_tx,
         network_account_id.try_into().unwrap(),
         block_num,
@@ -463,7 +463,7 @@ fn sql_unconsumed_network_notes() {
         assert_eq!(result, expected);
     });
     network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = sql::unconsumed_notes_for_network_account(
+        let (result, new_page) = sql::unconsumed_network_notes_for_account(
             &db_tx,
             network_account_id.try_into().unwrap(),
             block_num,
@@ -495,7 +495,7 @@ fn sql_unconsumed_network_notes() {
     };
     let (result, _) = queries::unconsumed_network_notes(conn, page).unwrap();
     assert_eq!(result, expected);
-    let (result, _) = sql::unconsumed_notes_for_network_account(
+    let (result, _) = sql::unconsumed_network_notes_for_account(
         &db_tx,
         network_account_id.try_into().unwrap(),
         block_num,
@@ -564,7 +564,7 @@ fn sql_unconsumed_notes_for_network_account() {
         let account_id = accounts.0;
 
         // First block as latest should have half the notes for the account.
-        let (result, _) = sql::unconsumed_notes_for_network_account(
+        let (result, _) = sql::unconsumed_network_notes_for_account(
             &db_tx,
             account_id.try_into().unwrap(),
             0.into(),
@@ -581,7 +581,7 @@ fn sql_unconsumed_notes_for_network_account() {
         }
 
         // Second block as latest should have all the notes for the account.
-        let (result, _) = sql::unconsumed_notes_for_network_account(
+        let (result, _) = sql::unconsumed_network_notes_for_account(
             &db_tx,
             account_id.try_into().unwrap(),
             1.into(),

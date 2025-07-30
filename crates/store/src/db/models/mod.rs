@@ -23,18 +23,7 @@ use std::num::NonZeroUsize;
 use diesel::{prelude::*, sqlite::Sqlite};
 
 use crate::{
-    db::{
-        NoteRecord, NoteSyncRecord, NullifierInfo,
-        schema::{
-            // the list of tables
-            // referenced in `#[diesel(table_name = _)]`
-            accounts,
-            block_headers,
-            notes,
-            nullifiers,
-            transactions,
-        },
-    },
+    db::{NoteRecord, NoteSyncRecord, NullifierInfo},
     errors::DatabaseError,
 };
 

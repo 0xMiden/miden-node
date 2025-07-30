@@ -24,6 +24,8 @@ use crate::db::{manager::ConnectionManagerError, models::conv::DatabaseTypeConve
 pub enum DatabaseError {
     // ERRORS WITH AUTOMATIC CONVERSIONS FROM NESTED ERROR TYPES
     // ---------------------------------------------------------------------------------------------
+    #[error("account is incomplete")]
+    AccountIncomplete,
     #[error("account error")]
     AccountError(#[from] AccountError),
     #[error("account delta error")]

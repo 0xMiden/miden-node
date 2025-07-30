@@ -1,10 +1,11 @@
 use bigdecimal::BigDecimal;
-use diesel::prelude::Insertable;
+use diesel::prelude::{AsChangeset, Insertable};
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::{self as proto, domain::account::AccountSummary};
 use miden_objects::{
     Felt, Word,
-    account::{Account, AccountId},
+    account::{Account, AccountCode, AccountId, AccountStorage},
+    asset::AssetVault,
     block::{BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::merkle::SparseMerklePath,
     note::{
@@ -16,42 +17,83 @@ use miden_objects::{
 
 use super::{
     DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
-    Selectable, Sqlite, accounts, block_headers, notes, nullifiers, transactions,
+    Selectable, Sqlite,
 };
-use crate::db::models::conv::{
-    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
-    idx_to_raw_sql, note_type_to_raw_sql,
+use crate::db::{
+    models::conv::{
+        SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
+        idx_to_raw_sql, note_type_to_raw_sql, raw_sql_to_nonce,
+    },
+    schema,
 };
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = accounts)]
+#[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct AccountRaw {
     pub account_id: Vec<u8>,
     pub account_commitment: Vec<u8>,
     pub block_num: i64,
-    pub details: Option<Vec<u8>>,
+    pub storage: Option<Vec<u8>>,
+    pub vault: Option<Vec<u8>>,
+    pub nonce: Option<i64>,
 }
 
-impl TryInto<proto::domain::account::AccountInfo> for AccountRaw {
+#[derive(Debug, Clone, QueryableByName)]
+pub struct AccountWithCodeRaw {
+    #[diesel(embed)]
+    pub account: AccountRaw,
+    #[diesel(embed)]
+    pub code: Option<Vec<u8>>,
+}
+
+impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRaw {
+    fn from((account, code): (AccountRaw, Option<Vec<u8>>)) -> Self {
+        Self { account, code }
+    }
+}
+
+impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
         use proto::domain::account::{AccountInfo, AccountSummary};
-        let account_id = AccountId::read_from_bytes(&self.account_id[..])?;
-        let account_commitment = Word::read_from_bytes(&self.account_commitment[..])?;
-        let block_num = BlockNumber::from_raw_sql(self.block_num)?;
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
+        let block_num = BlockNumber::from_raw_sql(self.account.block_num)?;
         let summary = AccountSummary {
             account_id,
             account_commitment,
             block_num,
         };
-        let details = self.details.as_deref().map(Account::read_from_bytes).transpose()?;
-        Ok(AccountInfo { summary, details })
+        let maybe_account = self.try_into()?;
+        Ok(AccountInfo { summary, details: maybe_account })
+    }
+}
+
+impl TryInto<Option<Account>> for AccountWithCodeRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<Option<Account>, Self::Error> {
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+
+        let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
+            (self.account.vault, self.account.storage, self.account.nonce, self.code)
+        {
+            let vault = AssetVault::read_from_bytes(&vault)?;
+            let storage = AccountStorage::read_from_bytes(&storage)?;
+            let code = AccountCode::read_from_bytes(&code)?;
+            let nonce = raw_sql_to_nonce(nonce);
+            let nonce = Felt::new(nonce);
+            Some(Account::from_parts(account_id, vault, storage, code, nonce))
+        } else {
+            // a private account
+            None
+        };
+        Ok(details)
     }
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = nullifiers)]
+#[diesel(table_name = schema::nullifiers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NullifierWithoutPrefixRawRow {
     pub nullifier: Vec<u8>,
@@ -68,7 +110,7 @@ impl TryInto<NullifierInfo> for NullifierWithoutPrefixRawRow {
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = block_headers)]
+#[diesel(table_name = schema::block_headers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct BlockHeaderRaw {
     #[allow(dead_code)]
@@ -84,7 +126,7 @@ impl TryInto<BlockHeader> for BlockHeaderRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Queryable, Selectable, QueryableByName)]
-#[diesel(table_name = transactions)]
+#[diesel(table_name = schema::transactions)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct TransactionSummaryRaw {
     account_id: Vec<u8>,
@@ -104,7 +146,7 @@ impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteMetadataRaw {
     note_type: i32,
@@ -130,7 +172,7 @@ impl TryInto<NoteMetadata> for NoteMetadataRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct BlockNoteIndexRaw {
     pub batch_index: i32,
@@ -151,7 +193,7 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteSyncRecordRawRow {
     pub committed_at: i64, // BlockNumber
@@ -184,7 +226,7 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = accounts)]
+#[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct AccountSummaryRaw {
     account_id: Vec<u8>,         // AccountId,
@@ -208,7 +250,7 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteDetailsRaw {
     pub assets: Option<Vec<u8>>,
@@ -355,7 +397,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteRecordRaw {
     pub committed_at: i64,
@@ -407,7 +449,7 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Insertable)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 pub struct NoteInsertRowRaw {
     pub committed_at: i64,
 
@@ -454,4 +496,24 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
             serial_num: note.details.as_ref().map(|d| d.serial_num().to_bytes()),
         }
     }
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = schema::account_codes)]
+pub(crate) struct AccountCodeRowInsert {
+    pub(crate) code_commitment: Vec<u8>,
+    pub(crate) code: Vec<u8>,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::accounts)]
+pub(crate) struct AccountRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) network_account_id_prefix: Option<i64>,
+    pub(crate) account_commitment: Vec<u8>,
+    pub(crate) block_num: i64,
+    pub(crate) nonce: Option<i64>,
+    pub(crate) storage: Option<Vec<u8>>,
+    pub(crate) vault: Option<Vec<u8>>,
+    pub(crate) code_commitment: Option<Vec<u8>>,
 }

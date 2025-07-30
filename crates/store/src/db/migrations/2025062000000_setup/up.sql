@@ -6,16 +6,31 @@ CREATE TABLE block_headers (
     CONSTRAINT block_header_block_num_is_u32 CHECK (block_num BETWEEN 0 AND 0xFFFFFFFF)
 );
 
+CREATE TABLE account_codes (
+    code_commitment BLOB NOT NULL,
+    code            BLOB NOT NULL,
+    PRIMARY KEY(code_commitment)
+) WITHOUT ROWID;
 
 CREATE TABLE accounts (
     account_id                              BLOB NOT NULL,
     network_account_id_prefix               INTEGER NULL, -- 30-bit account ID prefix, only filled for network accounts
     account_commitment                      BLOB NOT NULL,
     block_num                               INTEGER NOT NULL,
-    details                                 BLOB,
+    code_commitment                         BLOB,
+    storage                                 BLOB,
+    vault                                   BLOB,
+    nonce                                   INTEGER,
 
     PRIMARY KEY (account_id),
-    FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
+    FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
+    FOREIGN KEY (code_commitment) REFERENCES account_codes(code_commitment),
+    CONSTRAINT all_null_or_none_null CHECK
+        (
+            (code_commitment IS NOT NULL AND storage IS NOT NULL AND vault IS NOT NULL AND nonce IS NOT NULL)
+            OR
+            (code_commitment IS NULL AND storage IS NULL AND vault IS NULL AND nonce IS NULL)
+        )
 ) WITHOUT ROWID;
 
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;

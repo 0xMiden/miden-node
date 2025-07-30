@@ -8,14 +8,14 @@ use std::{
 const SQLITE_TABLES: [&str; 11] = [
     "accounts",
     "account_deltas",
-    "block_headers",
     "account_fungible_asset_deltas",
-    "note_scripts",
     "account_non_fungible_asset_updates",
-    "notes",
     "account_storage_map_updates",
-    "nullifiers",
     "account_storage_slot_updates",
+    "block_headers",
+    "notes",
+    "note_scripts",
+    "nullifiers",
     "transactions",
 ];
 

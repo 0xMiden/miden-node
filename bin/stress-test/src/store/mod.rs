@@ -56,7 +56,7 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
         .collect::<(Vec<_>, Vec<_>)>()
         .await;
 
-    print_summary(timers_accumulator);
+    print_summary(&timers_accumulator);
 
     #[allow(clippy::cast_precision_loss)]
     let average_notes_per_response =
@@ -124,7 +124,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
         .collect::<Vec<_>>()
         .await;
 
-    print_summary(timers_accumulator);
+    print_summary(&timers_accumulator);
 }
 
 /// Sends a single `sync_notes` request to the store and returns the elapsed time.
@@ -237,7 +237,7 @@ pub async fn bench_check_nullifiers_by_prefix(
         .collect::<(Vec<_>, Vec<_>)>()
         .await;
 
-    print_summary(timers_accumulator);
+    print_summary(&timers_accumulator);
 
     #[allow(clippy::cast_precision_loss)]
     let average_nullifiers_per_response =

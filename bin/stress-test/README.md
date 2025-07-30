@@ -49,32 +49,37 @@ Average DB growth rate: 325.3 KB per block
 ```
 
 #### Block metrics
+
+> Note: Each block contains 256 transactions (16 batches * 16 transactions).
+
 | Block  | Insert Time (ms)   |  Get Block Inputs Time (ms)   |  Get Batch Inputs Time (ms)    | Block Size (B)     |  DB Size (KB) |
 | ------ | ------------------ | ----------------------------- | ------------------------------ | ------------------ | ------------- |
-| 0      | 22                 | 1                             | 0                              | 384593             | 341.4         |
-| 50     | 186                | 9                             | 1                              | 484994             | 24509.6       |
-| 100    | 199                | 10                            | 1                              | 484994             | 41866.6       |
-| 150    | 219                | 10                            | 1                              | 484994             | 59477.6       |
-| 200    | 218                | 11                            | 1                              | 484994             | 76849.9       |
-| 250    | 222                | 11                            | 1                              | 484994             | 94141.4       |
-| 300    | 228                | 12                            | 1                              | 484994             | 111200.0      |
-| 350    | 232                | 13                            | 1                              | 484994             | 127973.5      |
+| 0      | 22                 | 1                             | 0                              | 375.6              | 0.3           |
+| 50     | 186                | 9                             | 1                              | 473.6              | 22.2          |
+| 100    | 199                | 10                            | 1                              | 473.6              | 40.7          |
+| 150    | 219                | 10                            | 1                              | 473.6              | 58.1          |
+| 200    | 218                | 11                            | 1                              | 473.6              | 74.8          |
+| 250    | 222                | 11                            | 1                              | 473.6              | 91.6          |
+| 300    | 228                | 12                            | 1                              | 473.6              | 108.1         |
+| 350    | 232                | 13                            | 1                              | 473.6              | 124.4         |
 
 #### Database stats
-| Table                               | Size (KB)      |  KB/Entry |
-| ------------------------------------| -------------- | --------- |
-| account_deltas                      | 1288.0         |  0.0      |
-| block_headers                       | 120.0          |  0.3      |
-| account_fungible_asset_deltas       | 2240.0         |  0.0      |
-| notes                               | 50236.0        |  0.5      |
-| account_non_fungible_asset_updates  | 4.0            |  -        |
-| nullifiers                          | 4736.0         |  0.0      |
-| account_storage_map_updates         | 4.0            |  -        |
-| settings                            | 4.0            |  2.0      |
-| account_storage_slot_updates        | 3092.0         |  0.1      |
-| transactions                        | 6168.0         |  0.1      |
-| accounts                            | 26704.0        |  0.3      |
-| note_scripts                        | 8.0            |  8.0      |
+
+> Note: Database contains 100215 accounts and 100215 notes across all blocks.
+
+| Table                              | Size (MB)       | KB/Entry   |
+| ---------------------------------- | --------------- | ---------- |
+| accounts                           | 26.1            | 0.3        |
+| account_deltas                     | 1.2             | 0.0        |
+| block_headers                      | 0.1             | 0.3        |
+| account_fungible_asset_deltas      | 2.2             | 0.0        |
+| note_scripts                       | 0.0             | 8.0        |
+| account_non_fungible_asset_updates | 0.0             | -          |
+| notes                              | 49.1            | 0.5        |
+| account_storage_map_updates        | 0.0             | -          |
+| nullifiers                         | 4.6             | 0.0        |
+| account_storage_slot_updates       | 3.1             | 0.1        |
+| transactions                       | 6.0             | 0.1        |
 
 Current results of the store stress-tests:
 

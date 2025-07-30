@@ -232,7 +232,7 @@ pub(crate) fn select_note_inclusion_proofs(
     ))
 }
 
-/// Insert a [`BlockHeader`] to the DB using the given [Transaction].
+/// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -240,7 +240,7 @@ pub(crate) fn select_note_inclusion_proofs(
 ///
 /// # Note
 ///
-/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction
 pub(crate) fn insert_block_header(
     conn: &mut SqliteConnection,
@@ -562,7 +562,7 @@ pub(crate) fn upsert_accounts(
     Ok(count)
 }
 
-/// Insert notes to the DB using the given [Transaction]. Public notes should also have a nullifier.
+/// Insert notes to the DB using the given [`SqliteConnection`]. Public notes should also have a nullifier.
 ///
 /// # Returns
 ///
@@ -570,7 +570,7 @@ pub(crate) fn upsert_accounts(
 ///
 /// # Note
 ///
-/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
 pub(crate) fn insert_notes(
     conn: &mut SqliteConnection,
@@ -606,7 +606,7 @@ pub(crate) fn insert_notes(
     Ok(count)
 }
 
-/// Insert scripts to the DB using the given [Transaction]. It inserts the scripts held by the
+/// Insert scripts to the DB using the given [`SqliteConnection`]. It inserts the scripts held by the
 /// notes passed as parameter. If the script root already exists in the DB, it will be ignored.
 ///
 /// # Returns
@@ -615,7 +615,7 @@ pub(crate) fn insert_notes(
 ///
 /// # Note
 ///
-/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
 pub(crate) fn insert_scripts<'a>(
     conn: &mut SqliteConnection,
@@ -635,7 +635,7 @@ pub(crate) fn insert_scripts<'a>(
     Ok(count)
 }
 
-/// Insert transactions to the DB using the given [Transaction].
+/// Insert transactions to the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -643,7 +643,7 @@ pub(crate) fn insert_scripts<'a>(
 ///
 /// # Note
 ///
-/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
 pub(crate) fn insert_transactions(
     conn: &mut SqliteConnection,
@@ -707,7 +707,7 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
-/// Select all notes from the DB using the given [Connection].
+/// Select all notes from the DB using the given [`SqliteConnection`].
 ///
 ///
 /// # Returns
@@ -771,7 +771,7 @@ pub(crate) fn select_all_nullifiers(
     vec_raw_try_into(nullifiers_raw)
 }
 
-/// Commit nullifiers to the DB using the given [Transaction]. This inserts the nullifiers into the
+/// Commit nullifiers to the DB using the given [`SqliteConnection`]. This inserts the nullifiers into the
 /// nullifiers table, and marks the note as consumed (if it was public).
 ///
 /// # Returns
@@ -780,7 +780,7 @@ pub(crate) fn select_all_nullifiers(
 ///
 /// # Note
 ///
-/// The [Transaction] object is not consumed. It's up to the caller to commit or rollback the
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
 pub(crate) fn insert_nullifiers_for_block(
     conn: &mut SqliteConnection,

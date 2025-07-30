@@ -29,8 +29,6 @@ mod account;
 
 /// The maximum number of blocks to keep in memory while tracking the chain tip.
 const MAX_BLOCK_COUNT: usize = 4;
-/// The number of blocks kept after pruning.
-const PRUNED_BLOCK_COUNT: usize = 2;
 
 /// A candidate network transaction.
 ///
@@ -208,12 +206,10 @@ impl State {
         // Set the new tip.
         self.chain_tip_header = tip;
 
-        // Prune MMR if necessary.
-        if self.chain_mmr.num_tracked_blocks() > MAX_BLOCK_COUNT {
-            let pruned_block_height =
-                (self.chain_mmr.chain_length().as_usize() - PRUNED_BLOCK_COUNT) as u32;
-            self.chain_mmr.prune_to(..pruned_block_height.into());
-        }
+        // Keep MMR pruned.
+        let pruned_block_height =
+            (self.chain_mmr.chain_length().as_usize() - MAX_BLOCK_COUNT) as u32;
+        self.chain_mmr.prune_to(..pruned_block_height.into());
     }
 
     /// Marks a previously selected candidate account as failed, allowing it to be available for

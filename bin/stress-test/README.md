@@ -16,7 +16,7 @@ The store file will then be located at `./data/miden-store.sqlite3`.
 
 ## Benchmark Store
 
-This command allows to run stress tests against the Store component. This tests use the dump file with accounts ids created when seeding the store, so be sure to run the `seed-store` command beforehand.
+This command allows to run stress tests against the Store component. These tests use the dump file with accounts ids created when seeding the store, so be sure to run the `seed-store` command beforehand.
 
 The endpoints that you can test are:
 - `sync_state`
@@ -24,6 +24,8 @@ The endpoints that you can test are:
 - `check_nullifiers_by_prefix`
 
 Each benchmark accepts options to control the number of iterations and concurrency level.
+
+**Note on Concurrency**: The concurrency parameter controls how many requests are sent in parallel to the store. Since these benchmarks run against a local store (no network overhead), higher concurrency values can help identify bottlenecks in the store's internal processing. The latency measurements exclude network time and represent pure store processing time.
 
 Example usage:
 
@@ -82,6 +84,8 @@ Average DB growth rate: 325.3 KB per block
 | transactions                       | 6.0             | 0.1        |
 
 Current results of the store stress-tests:
+
+**Performance Note**: The latency measurements below represent pure store processing time (no network overhead).
 
 - sync-state
 ``` bash

@@ -562,7 +562,8 @@ pub(crate) fn upsert_accounts(
     Ok(count)
 }
 
-/// Insert notes to the DB using the given [`SqliteConnection`]. Public notes should also have a nullifier.
+/// Insert notes to the DB using the given [`SqliteConnection`]. Public notes should also have a
+/// nullifier.
 ///
 /// # Returns
 ///
@@ -606,8 +607,8 @@ pub(crate) fn insert_notes(
     Ok(count)
 }
 
-/// Insert scripts to the DB using the given [`SqliteConnection`]. It inserts the scripts held by the
-/// notes passed as parameter. If the script root already exists in the DB, it will be ignored.
+/// Insert scripts to the DB using the given [`SqliteConnection`]. It inserts the scripts held by
+/// the notes passed as parameter. If the script root already exists in the DB, it will be ignored.
 ///
 /// # Returns
 ///
@@ -771,8 +772,8 @@ pub(crate) fn select_all_nullifiers(
     vec_raw_try_into(nullifiers_raw)
 }
 
-/// Commit nullifiers to the DB using the given [`SqliteConnection`]. This inserts the nullifiers into the
-/// nullifiers table, and marks the note as consumed (if it was public).
+/// Commit nullifiers to the DB using the given [`SqliteConnection`]. This inserts the nullifiers
+/// into the nullifiers table, and marks the note as consumed (if it was public).
 ///
 /// # Returns
 ///

@@ -322,9 +322,8 @@ pub enum GetBatchInputsError {
     },
 }
 
-// Do not scope for `cfg(test)` - if it the traitbounds don't suffice
-// the issue will already appear in the compilation of the library
-// or binary, which would prevent getting to compiling the
+// Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear
+// in the compilation of the library or binary, which would prevent getting to compiling the
 // following code.
 mod compile_tests {
     use std::marker::PhantomData;

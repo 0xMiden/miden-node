@@ -100,13 +100,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    settings (name) {
-        name -> Text,
-        value -> Nullable<Binary>,
-    }
-}
-
-diesel::table! {
     transactions (transaction_id) {
         transaction_id -> Binary,
         account_id -> Binary,

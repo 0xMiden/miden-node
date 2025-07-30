@@ -36,7 +36,6 @@ pub(crate) mod manager;
 
 mod migrations;
 
-mod settings;
 #[cfg(test)]
 mod tests;
 

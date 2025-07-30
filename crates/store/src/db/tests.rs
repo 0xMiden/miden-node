@@ -439,8 +439,8 @@ fn sql_unconsumed_network_notes() {
     )
     .unwrap();
     assert_eq!(result, network_notes);
-    let (result, _) = sql::unconsumed_network_notes_for_account(
-        &db_tx,
+    let (result, _) = queries::unconsumed_network_notes_for_account(
+        conn,
         network_account_id.try_into().unwrap(),
         block_num,
         Page {
@@ -463,8 +463,8 @@ fn sql_unconsumed_network_notes() {
         assert_eq!(result, expected);
     });
     network_notes.chunks(limit).for_each(|expected| {
-        let (result, new_page) = sql::unconsumed_network_notes_for_account(
-            &db_tx,
+        let (result, new_page) = queries::unconsumed_network_notes_for_account(
+            conn,
             network_account_id.try_into().unwrap(),
             block_num,
             page,
@@ -495,8 +495,8 @@ fn sql_unconsumed_network_notes() {
     };
     let (result, _) = queries::unconsumed_network_notes(conn, page).unwrap();
     assert_eq!(result, expected);
-    let (result, _) = sql::unconsumed_network_notes_for_account(
-        &db_tx,
+    let (result, _) = queries::unconsumed_network_notes_for_account(
+        conn,
         network_account_id.try_into().unwrap(),
         block_num,
         page,
@@ -507,7 +507,7 @@ fn sql_unconsumed_network_notes() {
 
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn sql_unconsumed_notes_for_network_account() {
+fn sql_unconsumed_network_notes_for_account() {
     // Number of notes to generate.
     const N: u64 = 32;
 
@@ -555,17 +555,16 @@ fn sql_unconsumed_notes_for_network_account() {
         .collect::<Vec<_>>();
 
     // Insert the full set of notes for both accounts and blocks.
-    let db_tx = conn.transaction().unwrap();
-    sql::insert_scripts(&db_tx, notes.iter().map(|(note, _)| note)).unwrap();
-    sql::insert_notes(&db_tx, &notes).unwrap();
+    queries::insert_scripts(&mut conn, notes.iter().map(|(note, _)| note)).unwrap();
+    queries::insert_notes(&mut conn, &notes).unwrap();
 
     // Test the queries against both accounts and blocks.
     for accounts in account_notes {
         let account_id = accounts.0;
 
         // First block as latest should have half the notes for the account.
-        let (result, _) = sql::unconsumed_network_notes_for_account(
-            &db_tx,
+        let (result, _) = queries::unconsumed_network_notes_for_account(
+            &mut conn,
             account_id.try_into().unwrap(),
             0.into(),
             Page {
@@ -581,8 +580,8 @@ fn sql_unconsumed_notes_for_network_account() {
         }
 
         // Second block as latest should have all the notes for the account.
-        let (result, _) = sql::unconsumed_network_notes_for_account(
-            &db_tx,
+        let (result, _) = queries::unconsumed_network_notes_for_account(
+            &mut conn,
             account_id.try_into().unwrap(),
             1.into(),
             Page {

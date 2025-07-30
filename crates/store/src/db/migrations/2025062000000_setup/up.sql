@@ -1,12 +1,3 @@
--- Table for storing different settings in run-time, which need to persist over runs.
-CREATE TABLE settings (
-    name  TEXT NOT NULL,
-    value BLOB,
-
-    PRIMARY KEY (name),
-    CONSTRAINT settings_name_is_not_empty CHECK (length(name) > 0)
-) WITHOUT ROWID;
-
 CREATE TABLE block_headers (
     block_num    INTEGER NOT NULL,
     block_header BLOB    NOT NULL,

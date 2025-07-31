@@ -49,4 +49,5 @@ miden-objects         = { default-features = true, features = ["testing"], works
 pretty_assertions     = { workspace = true }
 rand                  = { workspace = true }
 regex                 = { version = "1.11" }
+rstest                = { workspace = true }
 termtree              = { version = "0.5" }

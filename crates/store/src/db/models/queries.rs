@@ -44,11 +44,10 @@ use crate::{
             AccountRaw, AccountSummaryRaw, BigIntSum, ExpressionMethods, NoteRecordRaw,
             TransactionSummaryRaw, block_number_to_raw_sql,
             conv::{
-                aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
-                execution_mode_to_raw_sql, fungible_delta_to_raw_sql, idx_to_raw_sql,
-                network_account_prefix_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
-                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot,
-                slot_to_raw_sql, tag_to_raw_sql,
+                aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
+                fungible_delta_to_raw_sql, idx_to_raw_sql, network_account_prefix_to_raw_sql,
+                nonce_to_raw_sql, note_type_to_raw_sql, nullifier_prefix_to_raw_sql,
+                raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql, tag_to_raw_sql,
             },
             deserialize_raw_vec, get_nullifier_prefix, raw_sql_to_block_number, serialize_vec,
             sql_sum_into, vec_raw_try_into,
@@ -593,7 +592,7 @@ pub(crate) fn insert_notes(
                 schema::notes::execution_hint
                     .eq(execution_hint_to_raw_sql(note.metadata.execution_hint().into())),
                 schema::notes::inclusion_path.eq(note.inclusion_path.to_bytes()),
-                schema::notes::consumed.eq(consumed_to_raw_sql(false)), // New notes are always unconsumed.
+                schema::notes::consumed_block_num.eq(None::<i64>), // New notes are always unconsumed.
                 schema::notes::nullifier.eq(nullifier.as_ref().map(Nullifier::to_bytes)), // Beware: `Option<T>` also implements `to_bytes`, but this is not what you want.
                 schema::notes::assets.eq(note.details.as_ref().map(|d| d.assets().to_bytes())),
                 schema::notes::inputs.eq(note.details.as_ref().map(|d| d.inputs().to_bytes())),
@@ -796,7 +795,7 @@ pub(crate) fn insert_nullifiers_for_block(
 
     let mut count = diesel::update(schema::notes::table)
         .filter(schema::notes::nullifier.eq_any(&serialized_nullifiers))
-        .set(schema::notes::consumed.eq(consumed_to_raw_sql(true)))
+        .set(schema::notes::consumed_block_num.eq(Some(block_number_to_raw_sql(block_num))))
         .execute(conn)?;
 
     count += diesel::insert_into(schema::nullifiers::table)
@@ -993,7 +992,7 @@ pub(crate) fn unconsumed_network_notes(
     // FROM notes
     // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
     // WHERE
-    //     execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+    //     execution_mode = 0 AND consumed_block_num = NULL AND rowid >= ?
     // ORDER BY rowid
     // LIMIT ?
     #[allow(
@@ -1072,7 +1071,155 @@ pub(crate) fn unconsumed_network_notes(
         ),
     )
     .filter(schema::notes::execution_mode.eq(0_i32))
-    .filter(schema::notes::consumed.eq(consumed_to_raw_sql(false)))
+    .filter(schema::notes::consumed_block_num.is_null())
+    .filter(rowid_sel_ge)
+    .order(rowid_sel.asc())
+    .limit(page.size.get() as i64 + 1)
+    .load::<RawLoadedTuple>(conn)?;
+
+    let mut notes = Vec::with_capacity(page.size.into());
+    for raw_item in raw {
+        let (raw_item, row_id) = split_into_raw_note_record_and_implicit_row_id(raw_item);
+        page.token = None;
+        if notes.len() == page.size.get() {
+            page.token = Some(row_id as u64);
+            break;
+        }
+        notes.push(TryInto::<NoteRecord>::try_into(raw_item)?);
+    }
+
+    Ok((notes, page))
+}
+
+/// Returns a paginated batch of network notes for an account that have not been consumed
+/// before, or at, a specified block number.
+///
+/// Notes that have been consumed after the specified block number are excluded from the result.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+//
+// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+// statements
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "We need custom SQL statements which has given types that we need to convert"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Lines will be reduced when schema is updated to simplify logic"
+)]
+pub(crate) fn unconsumed_network_notes_for_account(
+    conn: &mut SqliteConnection,
+    network_account_id_prefix: NetworkAccountPrefix,
+    latest_block_num: BlockNumber,
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
+    let rowid_sel_ge =
+        diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
+            .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
+
+    // SELECT {}, rowid
+    // FROM notes
+    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+    // WHERE
+    //  execution_mode = 0 AND tag = ?1 AND
+    //  block_num <= ?2 AND
+    //  (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
+    // ORDER BY rowid
+    // LIMIT ?
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    type RawLoadedTuple = (
+        i64,             // block_num
+        i32,             // batch_index
+        i32,             // note_index
+        Vec<u8>,         // note_id
+        i32,             // note_type
+        Vec<u8>,         // sender
+        i32,             // tag
+        i64,             // aux
+        i64,             // execution_hint
+        Vec<u8>,         // merkle_path
+        Option<Vec<u8>>, // assets
+        Option<Vec<u8>>, // inputs
+        Option<Vec<u8>>, // script
+        Option<Vec<u8>>, // serial_num
+        i64,             // rowid (from sql::<BigInt>("notes.rowid"))
+    );
+
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    fn split_into_raw_note_record_and_implicit_row_id(
+        tuple: RawLoadedTuple,
+    ) -> (NoteRecordRaw, i64) {
+        (
+            NoteRecordRaw {
+                block_num: tuple.0,
+                batch_index: tuple.1,
+                note_index: tuple.2,
+                note_id: tuple.3,
+                note_type: tuple.4,
+                sender: tuple.5,
+                tag: tuple.6,
+                aux: tuple.7,
+                execution_hint: tuple.8,
+                merkle_path: tuple.9,
+                assets: tuple.10,
+                inputs: tuple.11,
+                script: tuple.12,
+                serial_num: tuple.13,
+            },
+            tuple.14,
+        )
+    }
+
+    let raw = SelectDsl::select(
+        schema::notes::table.left_join(
+            schema::note_scripts::table
+                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+        ),
+        (
+            schema::notes::block_num,
+            schema::notes::batch_index,
+            schema::notes::note_index,
+            schema::notes::note_id,
+            // metadata
+            schema::notes::note_type,
+            schema::notes::sender,
+            schema::notes::tag,
+            schema::notes::aux,
+            schema::notes::execution_hint,
+            schema::notes::inclusion_path,
+            // details
+            schema::notes::assets,
+            schema::notes::inputs,
+            schema::note_scripts::script.nullable(),
+            schema::notes::serial_num,
+            rowid_sel.clone(),
+        ),
+    )
+    .filter(schema::notes::execution_mode.eq(0_i32))
+    .filter(schema::notes::tag.eq(tag_to_raw_sql(u32::from(network_account_id_prefix).into())))
+    .filter(schema::notes::block_num.le(block_number_to_raw_sql(latest_block_num)))
+    .filter(
+        schema::notes::consumed_block_num
+            .is_null()
+            .or(schema::notes::consumed_block_num.gt(block_number_to_raw_sql(latest_block_num))),
+    )
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())
     .limit(page.size.get() as i64 + 1)

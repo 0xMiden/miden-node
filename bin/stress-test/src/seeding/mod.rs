@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
     time::Instant,
@@ -42,6 +41,7 @@ use rayon::{
 };
 use tokio::{fs, io::AsyncWriteExt, net::TcpListener, task};
 use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use url::Url;
 use winterfell::Proof;
 
 mod metrics;
@@ -77,8 +77,8 @@ pub async fn seed_store(
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
-    let (_, store_addr) = start_store(data_directory.clone()).await;
-    let store_client = StoreClient::new(store_addr);
+    let (_, store_url) = start_store(data_directory.clone()).await;
+    let store_client = StoreClient::new(&store_url);
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
@@ -479,10 +479,10 @@ async fn get_block_inputs(
 
 /// Runs the store with the given data directory. Returns a tuple with:
 /// - a gRPC client to access the store
-/// - the address of the store
+/// - the URL of the store
 pub async fn start_store(
     data_directory: PathBuf,
-) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
+) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, Url) {
     let rpc_listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind store RPC gRPC endpoint");
@@ -516,5 +516,7 @@ pub async fn start_store(
         .await
         .expect("Failed to connect to store");
 
-    (RpcClient::with_interceptor(channel, OtelInterceptor), store_block_producer_addr)
+    // SAFETY: The store_block_producer_addr is always valid as it is created from a `SocketAddr`.
+    let store_url = Url::parse(&format!("http://{store_block_producer_addr}")).unwrap();
+    (RpcClient::with_interceptor(channel, OtelInterceptor), store_url)
 }

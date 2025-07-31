@@ -567,6 +567,7 @@ mod tests {
     #[tokio::test]
     async fn faucet_batches_requests() {
         let stub_node_url = Url::from_str("http://localhost:50052").unwrap();
+        // SAFETY: The stub_node_url is a hardcoded test URL that is known to be valid.
         let mut rpc_client = RpcClient::connect_lazy(&stub_node_url, 1000).unwrap();
 
         // Start the stub node

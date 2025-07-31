@@ -1,18 +1,18 @@
 use std::{
     collections::{HashMap, HashSet},
     fmt::{Display, Formatter},
-    net::SocketAddr,
     num::NonZeroU32,
 };
 
 use itertools::Itertools;
 use miden_node_proto::{
     AccountState,
+    clients::{Builder, StoreBlockProducer, StoreBlockProducerClient},
     domain::batch::BatchInputs,
     errors::{ConversionError, MissingFieldHelper},
-    generated::{self as proto, block_producer_store::block_producer_client as store_client},
+    generated as proto,
 };
-use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};
+use miden_node_utils::formatting::format_opt;
 use miden_objects::{
     Word,
     account::AccountId,
@@ -21,8 +21,8 @@ use miden_objects::{
     transaction::ProvenTransaction,
     utils::Serializable,
 };
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
 use tracing::{debug, info, instrument};
+use url::Url;
 
 use crate::{COMPONENT, errors::StoreError};
 
@@ -121,33 +121,34 @@ impl TryFrom<proto::block_producer_store::TransactionInputs> for TransactionInpu
 // STORE CLIENT
 // ================================================================================================
 
-type InnerClient = store_client::BlockProducerClient<InterceptedService<Channel, OtelInterceptor>>;
-
 /// Interface to the store's block-producer gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
 pub struct StoreClient {
-    inner: InnerClient,
+    client: StoreBlockProducerClient,
 }
 
 impl StoreClient {
     /// Creates a new store client with a lazy connection.
-    pub fn new(store_address: SocketAddr) -> Self {
-        let store_url = format!("http://{store_address}");
-        // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-        let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-        let store = store_client::BlockProducerClient::with_interceptor(channel, OtelInterceptor);
-        info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+    pub fn new(store_url: &Url) -> Self {
+        // SAFETY: The store_url is always valid as it is a user-provided URL that has been
+        // validated.
+        let store = Builder::new()
+            .with_address(store_url.to_string())
+            .connect_lazy::<StoreBlockProducer>()
+            .expect("Failed to build client");
 
-        Self { inner: store }
+        info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
+
+        Self { client: store }
     }
 
     /// Returns the latest block's header from the store.
     #[instrument(target = COMPONENT, name = "store.client.latest_header", skip_all, err)]
     pub async fn latest_header(&self) -> Result<BlockHeader, StoreError> {
         let response = self
-            .inner
+            .client
             .clone()
             .get_block_header_by_number(tonic::Request::new(
                 proto::shared::BlockHeaderByNumberRequest::default(),
@@ -180,7 +181,7 @@ impl StoreClient {
         debug!(target: COMPONENT, ?message);
 
         let request = tonic::Request::new(message);
-        let response = self.inner.clone().get_transaction_inputs(request).await?.into_inner();
+        let response = self.client.clone().get_transaction_inputs(request).await?.into_inner();
 
         debug!(target: COMPONENT, ?response);
 
@@ -224,7 +225,7 @@ impl StoreClient {
             reference_blocks: reference_blocks.map(|block_num| block_num.as_u32()).collect(),
         });
 
-        let store_response = self.inner.clone().get_block_inputs(request).await?.into_inner();
+        let store_response = self.client.clone().get_block_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -240,7 +241,7 @@ impl StoreClient {
             note_ids: notes.map(proto::primitives::Digest::from).collect(),
         });
 
-        let store_response = self.inner.clone().get_batch_inputs(request).await?.into_inner();
+        let store_response = self.client.clone().get_batch_inputs(request).await?.into_inner();
 
         store_response.try_into().map_err(Into::into)
     }
@@ -249,6 +250,6 @@ impl StoreClient {
     pub async fn apply_block(&self, block: &ProvenBlock) -> Result<(), StoreError> {
         let request = tonic::Request::new(proto::blockchain::Block { block: block.to_bytes() });
 
-        self.inner.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)
+        self.client.clone().apply_block(request).await.map(|_| ()).map_err(Into::into)
     }
 }

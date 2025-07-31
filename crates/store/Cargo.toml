@@ -50,3 +50,4 @@ pretty_assertions     = { workspace = true }
 rand                  = { workspace = true }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }
+rstest           = { workspace = true }

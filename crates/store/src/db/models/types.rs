@@ -57,11 +57,21 @@ impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
         let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
         let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
         let block_num = raw_sql_to_block_number(self.account.block_num);
+
+        let details = self.try_into()?;
         let summary = AccountSummary {
             account_id,
             account_commitment,
             block_num,
         };
+        Ok(AccountInfo { summary, details })
+    }
+}
+
+impl TryInto<Option<Account>> for AccountWithCodeRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<Option<Account>, Self::Error> {
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
 
         let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
             (self.account.vault, self.account.storage, self.account.nonce, self.code)
@@ -73,30 +83,10 @@ impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
             let nonce = Felt::new(nonce);
             Some(Account::from_parts(account_id, vault, storage, code, nonce))
         } else {
+            // a private account
             None
         };
-
-        Ok(AccountInfo { summary, details })
-    }
-}
-
-impl TryInto<Account> for AccountWithCodeRaw {
-    type Error = DatabaseError;
-    fn try_into(self) -> Result<Account, Self::Error> {
-        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
-
-        if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
-            (self.account.vault, self.account.storage, self.account.nonce, self.code)
-        {
-            let vault = AssetVault::read_from_bytes(&vault)?;
-            let storage = AccountStorage::read_from_bytes(&storage)?;
-            let code = AccountCode::read_from_bytes(&code)?;
-            let nonce = raw_sql_to_nonce(nonce);
-            let nonce = Felt::new(nonce);
-            Ok(Account::from_parts(account_id, vault, storage, code, nonce))
-        } else {
-            Err(DatabaseError::AccountIncomplete)
-        }
+        Ok(details)
     }
 }
 

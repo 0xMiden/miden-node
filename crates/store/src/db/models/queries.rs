@@ -498,9 +498,11 @@ pub(crate) fn upsert_accounts(
             .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
 
         // SAFETY: infallible
-        let accounts =
-            vec_raw_try_into::<Account, _>(accounts.into_iter().map(AccountWithCodeRaw::from))
-                .unwrap();
+        let accounts = Result::from_iter(accounts.into_iter().filter_map(|x| {
+            let x = AccountWithCodeRaw::from(x);
+            x.try_into().transpose()
+        }))
+        .unwrap();
         Ok(accounts)
     }
 

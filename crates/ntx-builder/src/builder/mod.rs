@@ -41,24 +41,12 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(&self.store_url);
         let block_producer = BlockProducerClient::new(&self.block_producer_url);
 
-        // Retry until the store is up and running. After this we expect all requests to pass.
-        let genesis_header = store
-            .genesis_header_with_retry()
-            .await
-            .context("failed to fetch genesis header")?;
-
         let mut state = crate::state::State::load(store.clone())
             .await
             .context("failed to load ntx state")?;
 
-        let (chain_tip, _mmr) = store
-            .get_current_blockchain_data(None)
-            .await
-            .context("failed to fetch the chain tip data from the store")?
-            .context("chain tip data was None")?;
-
         let mut mempool_events = block_producer
-            .subscribe_to_mempool_with_retry(chain_tip.block_num())
+            .subscribe_to_mempool_with_retry(state.chain_tip())
             .await
             .context("failed to subscribe to mempool events")?;
 
@@ -82,7 +70,6 @@ impl NetworkTransactionBuilder {
 
         let context = crate::transaction::NtxContext {
             block_producer: block_producer.clone(),
-            genesis_header,
             prover,
         };
 

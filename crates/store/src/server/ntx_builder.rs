@@ -11,7 +11,7 @@ use tracing::instrument;
 
 use crate::{
     COMPONENT,
-    db::Page,
+    db::models::Page,
     server::api::{StoreApi, internal_error, invalid_argument},
 };
 

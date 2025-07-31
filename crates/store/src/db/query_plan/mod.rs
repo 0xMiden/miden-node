@@ -3,8 +3,6 @@ use std::{
     ops::Not,
 };
 
-use crate::db::{query_plan::renderer::QueryPlanRenderer, transaction::Transaction};
-
 pub mod renderer;
 
 impl Transaction<'_> {

@@ -56,7 +56,7 @@ impl Default for GenesisConfig {
             .expect("Timestamp should fit into u32"),
             wallet: vec![],
             fungible_faucet: vec![FungibleFaucetConfig {
-                max_supply: 100_000_000_000u64,
+                max_supply: 100_000_000_000_000_000u64,
                 decimals: 6u8,
                 storage_mode: StorageMode::Public,
                 symbol: "MIDEN".to_owned(),

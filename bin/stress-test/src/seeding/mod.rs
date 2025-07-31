@@ -298,7 +298,7 @@ fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorag
     let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
-        .with_component(AuthRpoFalcon512::new(public_key))
+        .with_auth_component(AuthRpoFalcon512::new(public_key))
         .with_component(BasicWallet)
         .build()
         .unwrap();
@@ -316,7 +316,7 @@ fn create_faucet() -> Account {
     let (new_faucet, _seed) = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
-        .with_component(AuthRpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
         .build()
         .unwrap();

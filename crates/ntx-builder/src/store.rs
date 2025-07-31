@@ -3,12 +3,13 @@ use std::time::Duration;
 use miden_node_proto::{
     clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient},
     domain::{account::NetworkAccountPrefix, note::NetworkNote},
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto, try_convert,
+    errors::ConversionError,
+    generated::{self as proto},
+    try_convert,
 };
 use miden_objects::{
     account::Account,
-    block::{BlockHeader, BlockNumber},
+    block::BlockHeader,
     crypto::merkle::{Forest, MmrPeaks, PartialMmr},
 };
 use miden_tx::utils::Deserializable;
@@ -43,13 +44,16 @@ impl StoreClient {
         Self { inner: store }
     }
 
-    #[instrument(target = COMPONENT, name = "store.client.genesis_header", skip_all, err)]
-    pub async fn genesis_header_with_retry(&self) -> Result<BlockHeader, StoreError> {
+    /// Returns the block header and MMR peaks at the current chain tip.
+    #[instrument(target = COMPONENT, name = "store.client.get_latest_blockchain_data_with_retry", skip_all, err)]
+    pub async fn get_latest_blockchain_data_with_retry(
+        &self,
+    ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
         let mut retry_counter = 0;
         loop {
-            match self.genesis_header().await {
+            match self.get_latest_blockchain_data().await {
                 Err(StoreError::GrpcClientError(err)) => {
-                    // exponential backoff with base 500ms and max 30s
+                    // Exponential backoff with base 500ms and max 30s.
                     let backoff = Duration::from_millis(500)
                         .saturating_mul(1 << retry_counter)
                         .min(Duration::from_secs(30));
@@ -58,7 +62,7 @@ impl StoreClient {
                         ?backoff,
                         %retry_counter,
                         %err,
-                        "store connection failed while fetching genesis header, retrying"
+                        "store connection failed while fetching latest blockchain data, retrying"
                     );
 
                     retry_counter += 1;
@@ -69,37 +73,11 @@ impl StoreClient {
         }
     }
 
-    async fn genesis_header(&self) -> Result<BlockHeader, StoreError> {
-        let response = self
-            .inner
-            .clone()
-            .get_block_header_by_number(tonic::Request::new(
-                proto::shared::BlockHeaderByNumberRequest {
-                    block_num: Some(BlockNumber::GENESIS.as_u32()),
-                    include_mmr_proof: None,
-                },
-            ))
-            .await?
-            .into_inner()
-            .block_header
-            .ok_or(miden_node_proto::generated::blockchain::BlockHeader::missing_field(
-                "block_header",
-            ))?;
-
-        BlockHeader::try_from(response).map_err(Into::into)
-    }
-
-    /// Returns the block header and MMR peaks at the chain tip if the input `block_num` is either
-    /// `None` or an outdated block number. If the input `block_num` is equal to the current
-    /// chain tip, this function returns `None`.
-    #[instrument(target = COMPONENT, name = "store.client.get_current_blockchain_data", skip_all, err)]
-    pub async fn get_current_blockchain_data(
+    #[instrument(target = COMPONENT, name = "store.client.get_latest_blockchain_data", skip_all, err)]
+    async fn get_latest_blockchain_data(
         &self,
-        block_num: Option<BlockNumber>,
     ) -> Result<Option<(BlockHeader, PartialMmr)>, StoreError> {
-        let request = tonic::Request::new(proto::blockchain::MaybeBlockNumber {
-            block_num: block_num.as_ref().map(BlockNumber::as_u32),
-        });
+        let request = tonic::Request::new(proto::blockchain::MaybeBlockNumber::default());
 
         let response = self.inner.clone().get_current_blockchain_data(request).await?.into_inner();
 

@@ -517,24 +517,18 @@ fn sql_unconsumed_network_notes_for_account(
 ) {
     let mut conn = create_db();
 
-    // Create a first block which we will query for.
-    let block_num = BlockNumber::from(0);
-    create_block(&mut conn, block_num);
-    // Create a second block which should be excluded by our query.
-    create_block(&mut conn, BlockNumber::from(1));
-
     let account_notes = vec![
-        make_account_and_note(&mut conn, block_num, [1u8; 32], AccountStorageMode::Network),
-        make_account_and_note(&mut conn, block_num, [2u8; 32], AccountStorageMode::Network),
+        make_account_and_note(&mut conn, 0.into(), [1u8; 32], AccountStorageMode::Network),
+        make_account_and_note(&mut conn, 0.into(), [2u8; 32], AccountStorageMode::Network),
     ];
 
-    let account_count = account_notes.len() as u64;
+    // Construct a set of notes for each account and block.
     let mut notes = vec![];
     for b in 0..block_count {
-        for a in 0..account_count {
+        for a in &account_notes {
             for _ in 0..note_count_per_block {
-                let account_id = account_notes[a as usize].0;
-                let new_note = &account_notes[a as usize].1;
+                let account_id = a.0;
+                let new_note = &a.1;
                 let note = NoteRecord {
                     block_num: b.into(),
                     note_index: BlockNoteIndex::new(0, notes.len()).unwrap(),
@@ -560,9 +554,9 @@ fn sql_unconsumed_network_notes_for_account(
     queries::insert_scripts(&mut conn, notes.iter().map(|(note, _)| note)).unwrap();
     queries::insert_notes(&mut conn, &notes).unwrap();
 
-    // Test the queries against both accounts and blocks.
-    for account in account_notes {
-        let account_id = account.0;
+    // Test the queries against both accounts and all blocks.
+    for a in account_notes {
+        let account_id = a.0;
 
         for b in 0..block_count {
             let expected_count = notes

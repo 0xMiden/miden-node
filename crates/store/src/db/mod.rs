@@ -476,8 +476,8 @@ impl Db {
         Ok(())
     }
 
-    /// Loads the network notes that have not been consumed yet, using pagination to limit the number
-    /// of notes returned.
+    /// Loads the network notes that have not been consumed yet, using pagination to limit the
+    /// number of notes returned.
     pub(crate) async fn select_unconsumed_network_notes(
         &self,
         page: Page,
@@ -488,8 +488,8 @@ impl Db {
         .await
     }
 
-    /// Loads the network notes for a network account that have not been consumed yet, using
-    /// pagination to limit the number of notes returned.
+    /// Loads the network notes for an account that have not been consumed before, or at, a
+    /// specified block number. Pagination is used to limit the number of notes returned.
     pub(crate) async fn select_unconsumed_network_notes_for_account(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,

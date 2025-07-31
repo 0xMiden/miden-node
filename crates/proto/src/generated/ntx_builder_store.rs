@@ -27,7 +27,8 @@ pub struct UnconsumedNetworkNotesRequest {
     #[prost(uint64, tag = "2")]
     pub page_size: u64,
 }
-/// Returns a list of unconsumed notes for a network account using pagination.
+/// Returns a list of unconsumed network notes for an account up to a specified block number using
+/// pagination.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct UnconsumedNetworkNotesForAccountRequest {
     /// This should be null on the first call, and set to the response
@@ -45,7 +46,7 @@ pub struct UnconsumedNetworkNotesForAccountRequest {
     pub network_account_id_prefix: u32,
     /// The maximum (inclusive) block number to scope the query by.
     ///
-    /// Notes that are consumed after this block number are excluded from the result.
+    /// Notes that are consumed after this block are excluded from the result.
     #[prost(fixed32, tag = "4")]
     pub latest_block_num: u32,
 }
@@ -229,7 +230,7 @@ pub mod ntx_builder_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Returns a paginated list of a network account's unconsumed notes.
+        /// Returns a paginated list of a network account's unconsumed notes up to a specified block number.
         pub async fn get_unconsumed_network_notes_for_account(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -355,7 +356,7 @@ pub mod ntx_builder_server {
             tonic::Response<super::UnconsumedNetworkNotes>,
             tonic::Status,
         >;
-        /// Returns a paginated list of a network account's unconsumed notes.
+        /// Returns a paginated list of a network account's unconsumed notes up to a specified block number.
         async fn get_unconsumed_network_notes_for_account(
             &self,
             request: tonic::Request<super::UnconsumedNetworkNotesForAccountRequest>,

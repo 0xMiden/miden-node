@@ -992,7 +992,7 @@ pub(crate) fn unconsumed_network_notes(
     // FROM notes
     // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
     // WHERE
-    //     execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+    //     execution_mode = 0 AND consumed_block_num = NULL AND rowid >= ?
     // ORDER BY rowid
     // LIMIT ?
     #[allow(
@@ -1091,7 +1091,10 @@ pub(crate) fn unconsumed_network_notes(
     Ok((notes, page))
 }
 
-/// Returns a paginated batch of network notes for a specific account that have not yet been consumed.
+/// Returns a paginated batch of network notes for an account that have not been consumed
+/// before, or at, a specified block number.
+///
+/// Notes that have been consumed after the specified block number are excluded from the result.
 ///
 /// # Returns
 ///

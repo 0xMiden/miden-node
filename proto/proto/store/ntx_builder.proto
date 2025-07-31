@@ -20,7 +20,7 @@ service NtxBuilder {
     // Returns paginated list of unconsumed network notes.
     rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
 
-    // Returns a paginated list of a network account's unconsumed notes.
+    // Returns a paginated list of a network account's unconsumed notes up to a specified block number.
     rpc GetUnconsumedNetworkNotesForAccount(UnconsumedNetworkNotesForAccountRequest) returns (UnconsumedNetworkNotes) {}
 
     // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
@@ -63,7 +63,8 @@ message UnconsumedNetworkNotesRequest {
     uint64 page_size = 2;
 }
 
-// Returns a list of unconsumed notes for a network account using pagination.
+// Returns a list of unconsumed network notes for an account up to a specified block number using
+// pagination.
 message UnconsumedNetworkNotesForAccountRequest {
     // This should be null on the first call, and set to the response
     // token until the response token is null, at which point all data
@@ -80,7 +81,7 @@ message UnconsumedNetworkNotesForAccountRequest {
 
      // The maximum (inclusive) block number to scope the query by.
      //
-     // Notes that are consumed after this block number are excluded from the result.
+     // Notes that are consumed after this block are excluded from the result.
      fixed32 latest_block_num = 4;
 }
 

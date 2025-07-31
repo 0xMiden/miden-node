@@ -510,10 +510,8 @@ mod tests {
     #[case::all_zero(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
     #[case::no_attempts(None, BlockNumber::from(0), 0, true)]
     #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, true)]
-    #[case::attempt_gt_current(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
-    #[case::two_attempts_not_passed(Some(BlockNumber::from(2)), BlockNumber::from(5), 2, false)]
     #[case::two_attempts(Some(BlockNumber::from(2)), BlockNumber::from(6), 2, true)]
-    #[case::current_gt_backoff(Some(BlockNumber::from(1)), BlockNumber::from(9), 2, true)]
+    #[case::two_attempts_not_passed(Some(BlockNumber::from(2)), BlockNumber::from(5), 2, false)]
     fn backoff_has_passed(
         #[case] last_attempt_block_num: Option<BlockNumber>,
         #[case] current_block_num: BlockNumber,

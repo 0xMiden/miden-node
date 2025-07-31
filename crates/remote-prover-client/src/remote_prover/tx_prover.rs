@@ -81,9 +81,8 @@ impl RemoteTransactionProver {
     }
 }
 
-#[async_trait::async_trait(?Send)]
-impl TransactionProver for RemoteTransactionProver {
-    async fn prove(
+impl RemoteTransactionProver {
+    pub async fn prove(
         &self,
         tx_witness: TransactionWitness,
     ) -> Result<ProvenTransaction, TransactionProverError> {

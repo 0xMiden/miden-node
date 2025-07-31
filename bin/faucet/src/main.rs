@@ -498,37 +498,26 @@ mod test {
         // Start the faucet connected to the stub
         // Use std::thread to launch faucet - avoids Send requirements
         let endpoint_clone = Url::parse("http://localhost:8080").unwrap();
-        std::thread::spawn(move || {
-            // Create a new runtime for this thread
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to build runtime");
-
-            // Run the faucet on this thread's runtime
-            rt.block_on(async {
-                run_faucet_command(Cli {
-                    command: crate::Command::Start {
-                        endpoint: endpoint_clone,
-                        network: FaucetNetwork::Testnet,
-                        node_url: stub_node_url,
-                        timeout: Duration::from_millis(5000),
-                        asset_amounts: vec![100, 500, 1000],
-                        api_keys: vec![],
-                        pow_secret: None,
-                        pow_challenge_lifetime: Duration::from_secs(30),
-                        pow_cleanup_interval: Duration::from_secs(1),
-                        pow_growth_rate: NonZeroUsize::new(1).unwrap(),
-                        pow_baseline: 12,
-                        faucet_account_path: faucet_account_path.clone(),
-                        remote_tx_prover_url: None,
-                        open_telemetry: false,
-                    },
-                })
-                .await
-                .unwrap();
-            });
-        });
+        run_faucet_command(Cli {
+            command: crate::Command::Start {
+                endpoint: endpoint_clone,
+                network: FaucetNetwork::Testnet,
+                node_url: stub_node_url,
+                timeout: Duration::from_millis(5000),
+                asset_amounts: vec![100, 500, 1000],
+                api_keys: vec![],
+                pow_secret: None,
+                pow_challenge_lifetime: Duration::from_secs(30),
+                pow_cleanup_interval: Duration::from_secs(1),
+                pow_growth_rate: NonZeroUsize::new(1).unwrap(),
+                pow_baseline: 12,
+                faucet_account_path: faucet_account_path.clone(),
+                remote_tx_prover_url: None,
+                open_telemetry: false,
+            },
+        })
+        .await
+        .unwrap();
 
         // Wait for faucet to be up
         let endpoint = Url::parse("http://localhost:8080").unwrap();

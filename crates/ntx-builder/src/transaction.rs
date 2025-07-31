@@ -70,43 +70,26 @@ impl NtxContext {
         tracing::Span::current().set_attribute("notes.count", notes.len());
 
         // Work-around for `TransactionExecutor` not being `Send`.
-        tokio::task::spawn_blocking(move || {
-            {
-                {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("runtime should be built");
+        async move {
+            let mut notes = notes
+                .into_iter()
+                .map(|note| InputNote::Unauthenticated { note: note.into() })
+                .collect::<Vec<_>>();
+            // We shuffle the notes here to prevent having a failing note always in
+            // front.
+            notes.shuffle(&mut rand::rng());
+            let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                    rt.block_on(
-                        async move {
-                            let mut notes = notes
-                                .into_iter()
-                                .map(|note| InputNote::Unauthenticated { note: note.into() })
-                                .collect::<Vec<_>>();
-                            // We shuffle the notes here to prevent having a failing note always in
-                            // front.
-                            notes.shuffle(&mut rand::rng());
-                            let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
+            let data_store = NtxDataStore::new(account, self.genesis_header.clone());
 
-                            let data_store =
-                                NtxDataStore::new(account, self.genesis_header.clone());
-
-                            self.filter_notes(&data_store, notes)
-                                .and_then(|notes| self.execute(&data_store, notes))
-                                .and_then(|tx| self.prove(tx))
-                                .and_then(|tx| self.submit(tx))
-                                .await
-                        }
-                        .in_current_span(),
-                    )
-                }
-            }
-            .in_current_span()
-        })
+            let notes = self.filter_notes(&data_store, notes).await?;
+            let executed = self.execute(&data_store, notes).await?;
+            let proven = self.prove(executed).await?;
+            self.submit(proven).await?;
+            Ok(())
+        }
+        .in_current_span()
         .await
-        .map_err(NtxError::Panic)
-        .and_then(Instrumented::into_inner)
         .inspect_err(|err| tracing::Span::current().set_error(err))
     }
 
@@ -125,7 +108,7 @@ impl NtxContext {
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
     ) -> NtxResult<InputNotes<InputNote>> {
-        let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
+        let executor: TransactionExecutor<'_, '_, NtxDataStore, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 

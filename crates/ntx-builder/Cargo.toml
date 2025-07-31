@@ -31,4 +31,4 @@ url                        = { workspace = true }
 
 [dev-dependencies]
 miden-node-test-macro = { path = "../test-macro" }
-rstest           = { workspace = true }
+rstest                = { workspace = true }

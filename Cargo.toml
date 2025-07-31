@@ -45,12 +45,12 @@ miden-node-utils           = { path = "crates/utils", version = "0.11" }
 miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.11" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "pgackst-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "pgackst-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "pgackst-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "bernhard-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "bernhard-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { branch = "async-experimental", git = "https://github.com/0xMiden/miden-vm", version = "0.17" }

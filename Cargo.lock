@@ -2200,7 +2200,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-async-experimental#1303dd9e6de93826a63f44ab2bd769e199d8410f"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-async-experimental#8326ecc58dd2eed9e1c020aae3f28d70c562ebc6"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2308,7 +2308,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-async-experimental#1303dd9e6de93826a63f44ab2bd769e199d8410f"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-async-experimental#8326ecc58dd2eed9e1c020aae3f28d70c562ebc6"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2600,7 +2600,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-async-experimental#1303dd9e6de93826a63f44ab2bd769e199d8410f"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-async-experimental#8326ecc58dd2eed9e1c020aae3f28d70c562ebc6"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2728,7 +2728,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-async-experimental#1303dd9e6de93826a63f44ab2bd769e199d8410f"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-async-experimental#8326ecc58dd2eed9e1c020aae3f28d70c562ebc6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2749,7 +2749,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-async-experimental#1303dd9e6de93826a63f44ab2bd769e199d8410f"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-async-experimental#8326ecc58dd2eed9e1c020aae3f28d70c562ebc6"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2766,7 +2766,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-async-experimental#1303dd9e6de93826a63f44ab2bd769e199d8410f"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-async-experimental#8326ecc58dd2eed9e1c020aae3f28d70c562ebc6"
 dependencies = [
  "miden-objects",
  "miden-tx",

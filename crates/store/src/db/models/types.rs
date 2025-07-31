@@ -17,14 +17,12 @@ use miden_objects::{
     transaction::TransactionId,
 };
 
-use crate::db::models::conv::raw_sql_to_nonce;
-
-use super::super::schema::account_codes;
 use super::{
-    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
-    Selectable, Sqlite, accounts, block_headers, notes, nullifiers, raw_sql_to_block_number,
-    transactions,
+    super::schema::account_codes, DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo,
+    Queryable, QueryableByName, Selectable, Sqlite, accounts, block_headers, notes, nullifiers,
+    raw_sql_to_block_number, transactions,
 };
+use crate::db::models::conv::raw_sql_to_nonce;
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = accounts)]

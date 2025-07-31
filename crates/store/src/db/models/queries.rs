@@ -10,7 +10,7 @@ use std::{
 
 use diesel::{
     JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection, alias,
-    prelude::Queryable, query_dsl::methods::SelectDsl, sqlite::Sqlite,
+    prelude::Queryable, query_dsl::methods::SelectDsl,
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
@@ -41,16 +41,15 @@ use crate::{
         NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
         TransactionSummary,
         models::{
-            AccountRaw, AccountSummaryRaw, AccountWithCodeRaw, BigIntSum, CodeRaw,
+            AccountRaw, AccountSummaryRaw, AccountWithCodeRaw, BigIntSum,
             ExpressionMethods, NoteRecordRaw, TransactionSummaryRaw, block_number_to_raw_sql,
             conv::{
                 aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
                 execution_mode_to_raw_sql, fungible_delta_to_raw_sql, idx_to_raw_sql,
                 network_account_prefix_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
-                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_network_account_prefix,
+                nullifier_prefix_to_raw_sql, raw_sql_to_idx,
                 raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql, tag_to_raw_sql,
-            },
-            deserialize_raw_vec, get_nullifier_prefix, raw_sql_to_block_number, serialize_vec,
+            }, get_nullifier_prefix, raw_sql_to_block_number, serialize_vec,
             sql_sum_into, vec_raw_try_into,
         },
         schema,

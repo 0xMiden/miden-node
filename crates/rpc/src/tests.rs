@@ -308,7 +308,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         .with_timeout(Duration::from_secs(10))
         .connect::<RpcClientMarker>()
         .await
-        .unwrap();
+        .expect("Failed to build client");
 
     (rpc_client, rpc_addr, store_addr)
 }

@@ -35,7 +35,7 @@ impl BlockProducerClient {
         let block_producer = Builder::new()
             .with_address(block_producer_url.to_string())
             .connect_lazy::<BlockProducer>()
-            .unwrap();
+            .expect("Failed to build client");
 
         info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Block producer client initialized");
 

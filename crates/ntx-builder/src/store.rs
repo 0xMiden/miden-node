@@ -36,7 +36,7 @@ impl StoreClient {
         let store = Builder::new()
             .with_address(store_url.to_string())
             .connect_lazy::<StoreNtxBuilder>()
-            .unwrap();
+            .expect("Failed to build client");
 
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 

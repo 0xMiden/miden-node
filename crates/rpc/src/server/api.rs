@@ -47,7 +47,7 @@ impl RpcService {
             let store = Builder::new()
                 .with_address(store_url.to_string())
                 .connect_lazy::<StoreRpc>()
-                .unwrap();
+                .expect("Failed to build client");
             info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
             store
         };
@@ -58,7 +58,7 @@ impl RpcService {
             let block_producer = Builder::new()
                 .with_address(block_producer_url.to_string())
                 .connect_lazy::<BlockProducer>()
-                .unwrap();
+                .expect("Failed to build client");
             info!(
                 target: COMPONENT,
                 block_producer_endpoint = %block_producer_url,

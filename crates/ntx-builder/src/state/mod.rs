@@ -194,12 +194,13 @@ impl State {
                         .unwrap_or(true);
                     // Filter based on attempts.
                     let backoff_threshold = Self::NOTE_ATTEMPT_BACKOFF_MULTIPLIER * note.attempts();
-                    let backoff_threshold_passed = block_num.as_usize()
-                        - note
-                            .last_attempt()
-                            .map(|block_num| block_num.as_usize())
-                            .unwrap_or_default()
-                        > backoff_threshold;
+                    let last_attempt_block_num = note
+                        .last_attempt()
+                        .map(|block_num| block_num.as_usize())
+                        .unwrap_or_default();
+                    let blocks_passed = block_num.as_usize().saturating_sub(last_attempt_block_num);
+                    let backoff_threshold_passed = blocks_passed >= backoff_threshold;
+                    // Note must meet all conditions.
                     can_consume && backoff_threshold_passed
                 })
                 .cloned()
@@ -241,7 +242,7 @@ impl State {
 
         // Keep MMR pruned.
         let pruned_block_height =
-            (self.chain_mmr.chain_length().as_usize() - MAX_BLOCK_COUNT) as u32;
+            (self.chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
         self.chain_mmr.prune_to(..pruned_block_height.into());
     }
 

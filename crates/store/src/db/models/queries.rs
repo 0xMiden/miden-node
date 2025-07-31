@@ -41,16 +41,17 @@ use crate::{
         NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
         TransactionSummary,
         models::{
-            AccountRaw, AccountSummaryRaw, AccountWithCodeRaw, BigIntSum,
-            ExpressionMethods, NoteRecordRaw, TransactionSummaryRaw, block_number_to_raw_sql,
+            AccountRaw, AccountSummaryRaw, AccountWithCodeRaw, BigIntSum, ExpressionMethods,
+            NoteRecordRaw, TransactionSummaryRaw, block_number_to_raw_sql,
             conv::{
                 aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
                 execution_mode_to_raw_sql, fungible_delta_to_raw_sql, idx_to_raw_sql,
                 network_account_prefix_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
-                nullifier_prefix_to_raw_sql, raw_sql_to_idx,
-                raw_sql_to_nonce, raw_sql_to_slot, slot_to_raw_sql, tag_to_raw_sql,
-            }, get_nullifier_prefix, raw_sql_to_block_number, serialize_vec,
-            sql_sum_into, vec_raw_try_into,
+                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot,
+                slot_to_raw_sql, tag_to_raw_sql,
+            },
+            get_nullifier_prefix, raw_sql_to_block_number, serialize_vec, sql_sum_into,
+            vec_raw_try_into,
         },
         schema,
     },
@@ -543,6 +544,13 @@ pub(crate) fn upsert_accounts(
         };
 
         #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
+        #[diesel(table_name = schema::account_codes)]
+        struct CodeInsert {
+            code_commitment: Vec<u8>,
+            code: Vec<u8>,
+        }
+
+        #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
         #[diesel(table_name = schema::accounts)]
         struct AccountInsert {
             account_id: Vec<u8>,
@@ -555,7 +563,19 @@ pub(crate) fn upsert_accounts(
             code_commitment: Option<Vec<u8>>,
         }
 
-        let val = AccountInsert {
+        if let Some(code) = full_account.as_ref().map(|account| account.code()) {
+            let code_value = CodeInsert {
+                code_commitment: code.commitment().to_bytes(),
+                code: code.to_bytes(),
+            };
+            diesel::insert_into(schema::account_codes::table)
+                .values(&code_value)
+                .on_conflict(schema::account_codes::code_commitment)
+                .do_nothing()
+                .execute(conn)?;
+        }
+
+        let account_value = AccountInsert {
             account_id: account_id.to_bytes(),
             network_account_id_prefix: network_account_id_prefix
                 .map(network_account_prefix_to_raw_sql),
@@ -569,12 +589,12 @@ pub(crate) fn upsert_accounts(
                 .map(|account| account.code().commitment().to_bytes()),
         };
 
-        let v = val.clone();
+        let v = account_value.clone();
         let inserted = diesel::insert_into(schema::accounts::table)
             .values(&v)
             .on_conflict(schema::accounts::account_id)
             .do_update()
-            .set(val)
+            .set(account_value)
             .execute(conn)?;
 
         debug_assert_eq!(inserted, 1);

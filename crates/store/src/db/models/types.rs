@@ -18,9 +18,9 @@ use miden_objects::{
 };
 
 use super::{
-    super::schema::account_codes, DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo,
-    Queryable, QueryableByName, Selectable, Sqlite, accounts, block_headers, notes, nullifiers,
-    raw_sql_to_block_number, transactions,
+    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
+    Selectable, Sqlite, accounts, block_headers, notes, nullifiers, raw_sql_to_block_number,
+    transactions,
 };
 use crate::db::models::conv::raw_sql_to_nonce;
 
@@ -29,21 +29,11 @@ use crate::db::models::conv::raw_sql_to_nonce;
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct AccountRaw {
     pub account_id: Vec<u8>,
-    pub network_account_id_prefix: Option<i64>,
     pub account_commitment: Vec<u8>,
     pub block_num: i64,
     pub storage: Option<Vec<u8>>,
     pub vault: Option<Vec<u8>>,
     pub nonce: Option<i64>,
-    pub code_commitment: Vec<u8>,
-}
-
-#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = account_codes)]
-#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct CodeRaw {
-    pub code_commitment: Vec<u8>,
-    pub code: Vec<u8>,
 }
 
 #[derive(Debug, Clone, QueryableByName)]
@@ -94,15 +84,8 @@ impl TryInto<Account> for AccountWithCodeRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<Account, Self::Error> {
         let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
-        let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
-        let block_num = raw_sql_to_block_number(self.account.block_num);
-        let summary = AccountSummary {
-            account_id,
-            account_commitment,
-            block_num,
-        };
 
-        let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
+        if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
             (self.account.vault, self.account.storage, self.account.nonce, self.code)
         {
             let vault = AssetVault::read_from_bytes(&vault)?;
@@ -110,11 +93,10 @@ impl TryInto<Account> for AccountWithCodeRaw {
             let code = AccountCode::read_from_bytes(&code)?;
             let nonce = raw_sql_to_nonce(nonce);
             let nonce = Felt::new(nonce);
-            Some(Account::from_parts(account_id, vault, storage, code, nonce))
+            Ok(Account::from_parts(account_id, vault, storage, code, nonce))
         } else {
-            None
-        };
-        Ok(details.unwrap()) // TODO FIXME
+            Err(DatabaseError::AccountIncomplete)
+        }
     }
 }
 

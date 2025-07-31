@@ -543,6 +543,7 @@ pub(crate) fn upsert_accounts(
             },
         };
 
+        #[allow(clippy::items_after_statements)]
         #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
         #[diesel(table_name = schema::account_codes)]
         struct CodeInsert {
@@ -550,6 +551,7 @@ pub(crate) fn upsert_accounts(
             code: Vec<u8>,
         }
 
+        #[allow(clippy::items_after_statements)]
         #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
         #[diesel(table_name = schema::accounts)]
         struct AccountInsert {

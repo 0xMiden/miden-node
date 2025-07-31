@@ -1,7 +1,7 @@
 //! gRPC client builder utilities for Miden node.
 //!
-//! This module provides a unified [`Builder`] pattern for creating various gRPC clients
-//! with consistent configuration options including TLS, OTEL interceptors, and connection types.
+//! This module provides a unified [`Builder`] pattern for creating various gRPC clients with
+//! consistent configuration options including TLS, OTEL interceptors, and connection types.
 //!
 //! # Examples
 //!
@@ -85,8 +85,8 @@ pub type StoreRpcClient =
 /// Builder for configuring and creating gRPC clients with consistent options.
 ///
 /// This builder provides a fluent interface for configuring various aspects of gRPC client
-/// connections including TLS, timeouts, metadata, and connection types. It supports both
-/// eager and lazy connection establishment.
+/// connections including TLS, timeouts, metadata, and connection types. It supports both eager and
+/// lazy connection establishment.
 ///
 /// # Examples
 ///
@@ -179,9 +179,8 @@ impl Builder {
 
     /// Establishes an eager connection to the gRPC server.
     ///
-    /// This method attempts to connect to the server immediately and returns a client
-    /// only after the connection is established. If the connection fails, an error
-    /// is returned.
+    /// This method attempts to connect to the server immediately and returns a client only after
+    /// the connection is established. If the connection fails, an error is returned.
     ///
     /// # Arguments
     ///
@@ -194,8 +193,8 @@ impl Builder {
     ///
     /// # Errors
     ///
-    /// Returns an error if the connection cannot be established or if the endpoint
-    /// configuration is invalid.
+    /// Returns an error if the connection cannot be established or if the endpoint configuration
+    /// is invalid.
     pub async fn connect<T>(self) -> Result<T::Service>
     where
         T: GrpcClientBuilder,
@@ -206,9 +205,9 @@ impl Builder {
 
     /// Establishes a lazy connection to the gRPC server.
     ///
-    /// This method returns a client immediately without attempting to connect.
-    /// The actual connection is established when the first gRPC call is made.
-    /// This is useful for creating clients that may not be used immediately.
+    /// This method returns a client immediately without attempting to connect. The actual
+    /// connection is established when the first gRPC call is made. This is useful for creating
+    /// clients that may not be used immediately.
     ///
     /// # Arguments
     ///
@@ -217,8 +216,8 @@ impl Builder {
     ///
     /// # Returns
     ///
-    /// A configured gRPC client of type `T::Service`. Connection errors will only
-    /// be encountered when making actual gRPC calls.
+    /// A configured gRPC client of type `T::Service`. Connection errors will only be encountered
+    /// when making actual gRPC calls.
     ///
     /// # Errors
     ///
@@ -233,8 +232,8 @@ impl Builder {
 
     /// Builds a tonic [`Endpoint`] from the builder configuration.
     ///
-    /// This method creates and configures a gRPC endpoint with the specified
-    /// address, timeout, and TLS settings.
+    /// This method creates and configures a gRPC endpoint with the specified address, timeout, and
+    /// TLS settings.
     ///
     /// # Returns
     ///
@@ -266,8 +265,8 @@ impl Builder {
 
 /// Trait for building gRPC clients from a common [`Builder`] configuration.
 ///
-/// This trait provides a standardized way to create different gRPC clients with
-/// consistent configuration options like TLS, OTEL interceptors, and connection types.
+/// This trait provides a standardized way to create different gRPC clients with consistent
+/// configuration options like TLS, OTEL interceptors, and connection types.
 pub trait GrpcClientBuilder {
     type Service;
 

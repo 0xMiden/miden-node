@@ -95,9 +95,6 @@ pub struct State {
 impl State {
     /// Maximum number of attempts to execute a network note.
     const MAX_NOTE_ATTEMPTS: usize = 10;
-    /// Multiplier applied to note failed attempt count when considering whether enough blocks
-    /// have passed since the last attempt.
-    const NOTE_ATTEMPT_BACKOFF_MULTIPLIER: usize = 2;
 
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
@@ -192,16 +189,9 @@ impl State {
                         .execution_hint()
                         .can_be_consumed(block_num)
                         .unwrap_or(true);
-                    // Filter based on attempts.
-                    let backoff_threshold = Self::NOTE_ATTEMPT_BACKOFF_MULTIPLIER * note.attempts();
-                    let last_attempt_block_num = note
-                        .last_attempt()
-                        .map(|block_num| block_num.as_usize())
-                        .unwrap_or_default();
-                    let blocks_passed = block_num.as_usize().saturating_sub(last_attempt_block_num);
-                    let backoff_threshold_passed = blocks_passed >= backoff_threshold;
-                    // Note must meet all conditions.
-                    can_consume && backoff_threshold_passed
+                    // Filter based on attempts also.
+                    can_consume
+                        && Self::backoff_has_passed(note.last_attempt(), block_num, note.attempts())
                 })
                 .cloned()
                 .collect::<Vec<_>>();
@@ -469,6 +459,25 @@ impl State {
         span.set_attribute("ntx.state.transactions", self.inflight_txs.len());
         span.set_attribute("ntx.state.notes.total", self.nullifier_idx.len());
     }
+
+    /// Checks if the backoff period for a note has passed.
+    ///
+    /// The number of blocks passed since the last attempt must be greater than or equal to the
+    /// square of the attempt count.
+    fn backoff_has_passed(
+        last_attempt_block_num: Option<BlockNumber>,
+        current_block_num: BlockNumber,
+        attempt_count: usize,
+    ) -> bool {
+        // Compute the number of blocks passed since the last attempt.
+        let last_attempt_block_num =
+            last_attempt_block_num.map(|block_num| block_num.as_usize()).unwrap_or_default();
+        let blocks_passed = current_block_num.as_usize().saturating_sub(last_attempt_block_num);
+        // Compute the backoff threshold based on the attempt count.
+        let backoff_threshold = attempt_count.pow(2);
+        // Check if the backoff period has passed.
+        blocks_passed >= backoff_threshold
+    }
 }
 
 /// The impact a transaction has on the state.
@@ -487,5 +496,33 @@ struct TransactionImpact {
 impl TransactionImpact {
     fn is_empty(&self) -> bool {
         self.account_delta.is_none() && self.notes.is_empty() && self.nullifiers.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_objects::block::BlockNumber;
+
+    use super::State;
+
+    #[rstest::rstest]
+    #[test]
+    #[case::all_zero(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
+    #[case::no_attempts(None, BlockNumber::from(0), 0, true)]
+    #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, true)]
+    #[case::attempt_gt_current(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
+    #[case::two_attempts_not_passed(Some(BlockNumber::from(2)), BlockNumber::from(5), 2, false)]
+    #[case::two_attempts(Some(BlockNumber::from(2)), BlockNumber::from(6), 2, true)]
+    #[case::current_gt_backoff(Some(BlockNumber::from(1)), BlockNumber::from(9), 2, true)]
+    fn backoff_has_passed(
+        #[case] last_attempt_block_num: Option<BlockNumber>,
+        #[case] current_block_num: BlockNumber,
+        #[case] attempt_count: usize,
+        #[case] backoff_should_have_passed: bool,
+    ) {
+        assert_eq!(
+            backoff_should_have_passed,
+            State::backoff_has_passed(last_attempt_block_num, current_block_num, attempt_count)
+        );
     }
 }

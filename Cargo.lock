@@ -2463,6 +2463,7 @@ dependencies = [
  "miden-objects",
  "miden-remote-prover-client",
  "miden-tx",
+ "rstest",
  "thiserror 2.0.12",
  "tokio",
  "tokio-stream",

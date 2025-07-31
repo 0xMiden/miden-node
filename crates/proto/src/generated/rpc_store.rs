@@ -69,6 +69,8 @@ pub struct AccountProofs {
     /// List of account state infos for the requested account keys.
     #[prost(message, repeated, tag = "2")]
     pub account_proofs: ::prost::alloc::vec::Vec<account_proofs::AccountProof>,
+    #[prost(message, optional, tag = "3")]
+    pub mmr_peaks: ::core::option::Option<account_proofs::MmrPeaks>,
 }
 /// Nested message and enum types in `AccountProofs`.
 pub mod account_proofs {
@@ -118,6 +120,13 @@ pub mod account_proofs {
                 pub smt_proof: ::prost::alloc::vec::Vec<u8>,
             }
         }
+    }
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct MmrPeaks {
+        #[prost(uint64, tag = "1")]
+        pub forest: u64,
+        #[prost(message, repeated, tag = "2")]
+        pub peaks: ::prost::alloc::vec::Vec<super::super::primitives::Digest>,
     }
 }
 /// Returns delta of the account states in the range from `from_block_num` (exclusive) to

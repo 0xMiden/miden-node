@@ -3,7 +3,10 @@ use std::collections::BTreeSet;
 use miden_node_proto::{
     convert,
     domain::account::{AccountInfo, AccountProofRequest},
-    generated::{self as proto, rpc_store::rpc_server},
+    generated::{
+        self as proto,
+        rpc_store::{account_proofs::MmrPeaks, rpc_server},
+    },
     try_convert,
 };
 use miden_objects::{
@@ -316,7 +319,7 @@ impl rpc_server::Rpc for StoreApi {
                 Status::invalid_argument(format!("Invalid account proofs request: {err}"))
             })?;
 
-        let (block_num, infos) = self
+        let (block_num, mmr_peaks, infos) = self
             .state
             .get_account_proofs(account_requests, request_code_commitments, include_headers)
             .await?;
@@ -324,6 +327,10 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(proto::rpc_store::AccountProofs {
             block_num: block_num.as_u32(),
             account_proofs: infos,
+            mmr_peaks: Some(MmrPeaks {
+                forest: mmr_peaks.forest().num_leaves() as u64,
+                peaks: mmr_peaks.peaks().iter().map(Into::into).collect(),
+            }),
         }))
     }
 

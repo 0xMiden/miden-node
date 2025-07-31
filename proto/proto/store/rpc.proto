@@ -166,11 +166,18 @@ message AccountProofs {
         optional AccountStateHeader state_header = 2;
     }
 
+    message MmrPeaks{
+        uint64 forest = 1;
+        repeated primitives.Digest peaks = 2;
+    }
+
     // Block number at which the state of the accounts is returned.
     fixed32 block_num = 1;
 
     // List of account state infos for the requested account keys.
     repeated AccountProof account_proofs = 2;
+
+    MmrPeaks mmr_peaks = 3;
 }
 
 // GET ACCOUNT STATE DELTA

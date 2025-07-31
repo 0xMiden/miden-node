@@ -1071,7 +1071,7 @@ pub(crate) fn unconsumed_network_notes(
         ),
     )
     .filter(schema::notes::execution_mode.eq(0_i32))
-    .filter(schema::notes::consumed_block_num.eq(None::<i64>))
+    .filter(schema::notes::consumed_block_num.is_null())
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())
     .limit(page.size.get() as i64 + 1)
@@ -1217,7 +1217,7 @@ pub(crate) fn unconsumed_network_notes_for_account(
     .filter(schema::notes::block_num.le(block_number_to_raw_sql(latest_block_num)))
     .filter(
         schema::notes::consumed_block_num
-            .eq(None::<i64>)
+            .is_null()
             .or(schema::notes::consumed_block_num.gt(block_number_to_raw_sql(latest_block_num))),
     )
     .filter(rowid_sel_ge)

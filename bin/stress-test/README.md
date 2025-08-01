@@ -83,6 +83,22 @@ Average DB growth rate: 325.3 KB per block
 | nullifiers                         | 4.6             | 0.0        |
 | transactions                       | 6.0             | 0.1        |
 
+#### Index stats
+
+| Index                              | Size (MB)       |
+| ---------------------------------- | --------------- |
+| idx_accounts_network_prefix        | 0.0             |
+| idx_notes_note_id                  | 4.4             |
+| idx_notes_sender                   | 2.9             |
+| idx_notes_tag                      | 1.6             |
+| idx_notes_nullifier                | 4.4             |
+| idx_unconsumed_network_notes       | 1.1             |
+| idx_nullifiers_prefix              | 4.3             |
+| idx_nullifiers_block_num           | 4.2             |
+| idx_transactions_account_id        | 5.6             |
+| idx_transactions_block_num         | 4.2             |
+
+
 Current results of the store stress-tests:
 
 **Performance Note**: The latency measurements below represent pure store processing time (no network overhead).

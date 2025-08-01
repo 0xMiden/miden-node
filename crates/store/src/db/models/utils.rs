@@ -1,7 +1,6 @@
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::{Deserializable, DeserializationError, Serializable};
-use miden_node_proto::generated::blockchain::Block;
-use miden_objects::{block::BlockNumber, note::Nullifier};
+use miden_objects::note::Nullifier;
 
 use crate::errors::DatabaseError;
 
@@ -30,25 +29,6 @@ pub(crate) fn serialize_vec<'a, D: Serializable + 'a>(
     raw: impl IntoIterator<Item = &'a D>,
 ) -> Vec<Vec<u8>> {
     Vec::<_>::from_iter(raw.into_iter().map(<D as Serializable>::to_bytes))
-}
-
-// TODO once all integers are wrapper types, use something like
-trait FlatAndBloat {
-    type Raw: Sized;
-    fn to_raw_sql(self) -> Self::Raw;
-    fn from_raw_sql(_raw: Self::Raw) -> Self;
-}
-
-impl FlatAndBloat for BlockNumber {
-    type Raw = i64;
-    fn from_raw_sql(raw: Self::Raw) -> Self {
-        debug_assert!(raw <= u32::MAX as i64);
-        #[allow(clippy::cast_sign_loss)]
-        BlockNumber::from(raw as u32)
-    }
-    fn to_raw_sql(self) -> Self::Raw {
-        self.as_u32() as i64
-    }
 }
 
 /// Returns the high 16 bits of the provided nullifier.

@@ -38,7 +38,7 @@ use crate::{
     errors::DatabaseError,
 };
 
-mod conv;
+pub(crate) mod conv;
 
 pub mod queries;
 mod types;

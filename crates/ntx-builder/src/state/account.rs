@@ -219,6 +219,7 @@ impl AccountState {
         self.available_notes.values()
     }
 
+    /// Drains all notes that have failed to be consumed after a certain number of attempts.
     pub fn drain_failing_notes(&mut self, max_attempts: usize) {
         self.available_notes.retain(|_, note| note.attempt_count() <= max_attempts);
     }

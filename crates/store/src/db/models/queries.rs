@@ -41,8 +41,9 @@ use crate::{
         NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
         TransactionSummary,
         models::{
-            AccountRaw, AccountSummaryRaw, AccountWithCodeRaw, BigIntSum, ExpressionMethods,
-            NoteRecordRaw, TransactionSummaryRaw, block_number_to_raw_sql,
+            AccountCodeRowInsert, AccountRaw, AccountRowInsert, AccountSummaryRaw,
+            AccountWithCodeRaw, BigIntSum, ExpressionMethods, NoteRecordRaw, TransactionSummaryRaw,
+            block_number_to_raw_sql,
             conv::{
                 aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
                 execution_mode_to_raw_sql, fungible_delta_to_raw_sql, idx_to_raw_sql,
@@ -546,7 +547,7 @@ pub(crate) fn upsert_accounts(
         };
 
         if let Some(code) = full_account.as_ref().map(|account| account.code()) {
-            let code_value = CodeInsert {
+            let code_value = AccountCodeRowInsert {
                 code_commitment: code.commitment().to_bytes(),
                 code: code.to_bytes(),
             };
@@ -557,7 +558,7 @@ pub(crate) fn upsert_accounts(
                 .execute(conn)?;
         }
 
-        let account_value = AccountInsert {
+        let account_value = AccountRowInsert {
             account_id: account_id.to_bytes(),
             network_account_id_prefix: network_account_id_prefix
                 .map(network_account_prefix_to_raw_sql),

@@ -19,13 +19,12 @@ use miden_objects::{
 
 use super::{
     DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
-    Selectable, Sqlite, accounts, block_headers, notes, nullifiers, raw_sql_to_block_number,
-    transactions,
+    Selectable, Sqlite, raw_sql_to_block_number,
 };
-use crate::db::models::conv::raw_sql_to_nonce;
+use crate::db::{models::conv::raw_sql_to_nonce, schema};
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = accounts)]
+#[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct AccountRaw {
     pub account_id: Vec<u8>,
@@ -53,7 +52,6 @@ impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRaw {
 impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
-        use proto::domain::account::AccountSummary;
         let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
         let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
         let block_num = raw_sql_to_block_number(self.account.block_num);
@@ -91,7 +89,7 @@ impl TryInto<Option<Account>> for AccountWithCodeRaw {
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = nullifiers)]
+#[diesel(table_name = schema::nullifiers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NullifierWithoutPrefixRawRow {
     pub nullifier: Vec<u8>,
@@ -108,7 +106,7 @@ impl TryInto<NullifierInfo> for NullifierWithoutPrefixRawRow {
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = block_headers)]
+#[diesel(table_name = schema::block_headers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct BlockHeaderRaw {
     #[allow(dead_code)]
@@ -124,7 +122,7 @@ impl TryInto<BlockHeader> for BlockHeaderRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Queryable, Selectable, QueryableByName)]
-#[diesel(table_name = transactions)]
+#[diesel(table_name = schema::transactions)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct TransactionSummaryRaw {
     account_id: Vec<u8>,
@@ -144,7 +142,7 @@ impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteMetadataRaw {
     note_type: i32,
@@ -170,7 +168,7 @@ impl TryInto<NoteMetadata> for NoteMetadataRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct BlockNoteIndexRaw {
     pub batch_index: i32,
@@ -191,7 +189,7 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteSyncRecordRawRow {
     pub block_num: i64, // BlockNumber
@@ -224,7 +222,7 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = accounts)]
+#[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct AccountSummaryRaw {
     account_id: Vec<u8>,         // AccountId,
@@ -248,7 +246,7 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteDetailsRaw {
     pub assets: Option<Vec<u8>>,
@@ -390,7 +388,7 @@ where
 #[allow(clippy::items_after_statements)]
 #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
 #[diesel(table_name = schema::account_codes)]
-pub(crate) struct CodeInsert {
+pub(crate) struct AccountCodeRowInsert {
     pub(crate) code_commitment: Vec<u8>,
     pub(crate) code: Vec<u8>,
 }
@@ -398,7 +396,7 @@ pub(crate) struct CodeInsert {
 #[allow(clippy::items_after_statements)]
 #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
 #[diesel(table_name = schema::accounts)]
-pub(crate) struct AccountInsert {
+pub(crate) struct AccountRowInsert {
     pub(crate) account_id: Vec<u8>,
     pub(crate) network_account_id_prefix: Option<i64>,
     pub(crate) account_commitment: Vec<u8>,

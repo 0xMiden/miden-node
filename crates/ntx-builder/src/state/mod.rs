@@ -39,6 +39,9 @@ pub struct TransactionCandidate {
     /// The current inflight state of the account.
     pub account: Account,
 
+    /// The account id prefix corresponding to the candidate account.
+    pub account_id_prefix: NetworkAccountPrefix,
+
     /// A set of notes addressed to this network account.
     pub notes: Vec<InflightNetworkNote>,
 
@@ -179,7 +182,6 @@ impl State {
             // Select notes from the account that can be consumed or are ready for a retry.
             let notes = account
                 .notes()
-                .take(limit.get())
                 .filter(|&note| {
                     // Filter based on execution hint.
                     let block_num = self.chain_tip_header.block_num();
@@ -193,6 +195,7 @@ impl State {
                     can_consume
                         && Self::backoff_has_passed(note.last_attempt(), block_num, note.attempts())
                 })
+                .take(limit.get())
                 .cloned()
                 .collect::<Vec<_>>();
 
@@ -204,6 +207,7 @@ impl State {
             self.in_progress.insert(candidate);
             return TransactionCandidate {
                 account: account.latest_account(),
+                account_id_prefix: candidate,
                 notes,
                 chain_tip_header: self.chain_tip_header.clone(),
                 chain_mmr: self.chain_mmr.clone(),
@@ -240,15 +244,16 @@ impl State {
     /// selection again.
     #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
     pub fn candidate_failed(&mut self, candidate: &TransactionCandidate) {
-        let prefix = NetworkAccountPrefix::try_from(candidate.account.id()).unwrap();
-
-        if let Some(account) = self.accounts.get_mut(&prefix) {
+        if let Some(account) = self.accounts.get_mut(&candidate.account_id_prefix) {
             account.fail(&candidate.notes, candidate.chain_tip_header.block_num());
         } else {
-            tracing::error!("failed to find network account with prefix {}", prefix);
+            tracing::error!(
+                "failed to find network account with prefix {}",
+                candidate.account_id_prefix
+            );
         }
 
-        self.in_progress.remove(&prefix);
+        self.in_progress.remove(&candidate.account_id_prefix);
 
         self.inject_telemetry();
     }

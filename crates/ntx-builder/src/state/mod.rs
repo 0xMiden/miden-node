@@ -182,23 +182,7 @@ impl State {
             // Select notes from the account that can be consumed or are ready for a retry.
             let notes = account
                 .notes()
-                .filter(|&note| {
-                    // Filter based on execution hint.
-                    let block_num = self.chain_tip_header.block_num();
-                    let can_consume = note
-                        .to_inner()
-                        .metadata()
-                        .execution_hint()
-                        .can_be_consumed(block_num)
-                        .unwrap_or(true);
-                    // Filter based on attempts also.
-                    can_consume
-                        && Self::backoff_has_passed(
-                            note.last_attempt(),
-                            block_num,
-                            note.attempt_count(),
-                        )
-                })
+                .filter(|&note| note.is_available(self.chain_tip_header.block_num()))
                 .take(limit.get())
                 .cloned()
                 .collect::<Vec<_>>();
@@ -465,25 +449,6 @@ impl State {
         span.set_attribute("ntx.state.transactions", self.inflight_txs.len());
         span.set_attribute("ntx.state.notes.total", self.nullifier_idx.len());
     }
-
-    /// Checks if the backoff period for a note has passed.
-    ///
-    /// The number of blocks passed since the last attempt must be greater than or equal to the
-    /// square of the attempt count.
-    fn backoff_has_passed(
-        last_attempt_block_num: Option<BlockNumber>,
-        current_block_num: BlockNumber,
-        attempt_count: usize,
-    ) -> bool {
-        // Compute the number of blocks passed since the last attempt.
-        let last_attempt_block_num =
-            last_attempt_block_num.map(|block_num| block_num.as_usize()).unwrap_or_default();
-        let blocks_passed = current_block_num.as_usize().saturating_sub(last_attempt_block_num);
-        // Compute the backoff threshold based on the attempt count.
-        let backoff_threshold = attempt_count.pow(2);
-        // Check if the backoff period has passed.
-        blocks_passed >= backoff_threshold
-    }
 }
 
 /// The impact a transaction has on the state.
@@ -502,31 +467,5 @@ struct TransactionImpact {
 impl TransactionImpact {
     fn is_empty(&self) -> bool {
         self.account_delta.is_none() && self.notes.is_empty() && self.nullifiers.is_empty()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use miden_objects::block::BlockNumber;
-
-    use super::State;
-
-    #[rstest::rstest]
-    #[test]
-    #[case::all_zero(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
-    #[case::no_attempts(None, BlockNumber::from(0), 0, true)]
-    #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, true)]
-    #[case::two_attempts(Some(BlockNumber::from(2)), BlockNumber::from(6), 2, true)]
-    #[case::two_attempts_not_passed(Some(BlockNumber::from(2)), BlockNumber::from(5), 2, false)]
-    fn backoff_has_passed(
-        #[case] last_attempt_block_num: Option<BlockNumber>,
-        #[case] current_block_num: BlockNumber,
-        #[case] attempt_count: usize,
-        #[case] backoff_should_have_passed: bool,
-    ) {
-        assert_eq!(
-            backoff_should_have_passed,
-            State::backoff_has_passed(last_attempt_block_num, current_block_num, attempt_count)
-        );
     }
 }

@@ -47,9 +47,36 @@ impl InflightNetworkNote {
         self.attempt_count
     }
 
-    /// Returns the last block number at which the network note was attempted.
-    pub fn last_attempt(&self) -> Option<BlockNumber> {
-        self.last_attempt
+    /// Checks if the network note is available for execution.
+    ///
+    /// The note is available if it can be consumed and the backoff period has passed.
+    pub fn is_available(&self, block_num: BlockNumber) -> bool {
+        let can_consume = self
+            .to_inner()
+            .metadata()
+            .execution_hint()
+            .can_be_consumed(block_num)
+            .unwrap_or(true);
+        can_consume && Self::backoff_has_passed(self.last_attempt, block_num, self.attempt_count)
+    }
+
+    /// Checks if the backoff block period has passed.
+    ///
+    /// The number of blocks passed since the last attempt must be greater than or equal to the
+    /// square of the attempt count.
+    fn backoff_has_passed(
+        last_attempt_block_num: Option<BlockNumber>,
+        current_block_num: BlockNumber,
+        attempt_count: usize,
+    ) -> bool {
+        // Compute the number of blocks passed since the last attempt.
+        let last_attempt_block_num =
+            last_attempt_block_num.map(|block_num| block_num.as_usize()).unwrap_or_default();
+        let blocks_passed = current_block_num.as_usize().saturating_sub(last_attempt_block_num);
+        // Compute the backoff threshold based on the attempt count.
+        let backoff_threshold = attempt_count.pow(2);
+        // Check if the backoff period has passed.
+        blocks_passed >= backoff_threshold
     }
 
     /// Registers a failed attempt to execute the network note at the specified block number.
@@ -220,7 +247,7 @@ impl AccountState {
             if let Some(note) = self.available_notes.get_mut(&nullifier) {
                 note.fail(block_num);
             } else {
-                tracing::warn!("failed to find note with nullifier {nullifier}");
+                tracing::warn!(%nullifier, "failed note is not in account's state");
             }
         }
     }
@@ -256,5 +283,35 @@ impl NetworkAccountUpdate {
             NetworkAccountUpdate::New(account) => account.id(),
             NetworkAccountUpdate::Delta(account_delta) => account_delta.id(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_objects::block::BlockNumber;
+
+    use super::InflightNetworkNote;
+
+    #[rstest::rstest]
+    #[test]
+    #[case::all_zero(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
+    #[case::no_attempts(None, BlockNumber::from(0), 0, true)]
+    #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, true)]
+    #[case::two_attempts(Some(BlockNumber::from(2)), BlockNumber::from(6), 2, true)]
+    #[case::two_attempts_not_passed(Some(BlockNumber::from(2)), BlockNumber::from(5), 2, false)]
+    fn backoff_has_passed(
+        #[case] last_attempt_block_num: Option<BlockNumber>,
+        #[case] current_block_num: BlockNumber,
+        #[case] attempt_count: usize,
+        #[case] backoff_should_have_passed: bool,
+    ) {
+        assert_eq!(
+            backoff_should_have_passed,
+            InflightNetworkNote::backoff_has_passed(
+                last_attempt_block_num,
+                current_block_num,
+                attempt_count
+            )
+        );
     }
 }

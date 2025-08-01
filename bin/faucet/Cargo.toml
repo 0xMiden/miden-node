@@ -52,7 +52,7 @@ miden-node-utils = { features = ["vergen"], workspace = true }
 fantoccini                = { version = "0.22" }
 miden-node-block-producer = { features = ["testing"], workspace = true }
 miden-objects             = { features = ["testing"], workspace = true }
-miden-testing             = { features = ["async"], workspace = true }
+miden-testing             = { workspace = true }
 serde_json                = { version = "1.0" }
 tokio                     = { features = ["process"], workspace = true }
 tokio-stream              = { features = ["net"], workspace = true }

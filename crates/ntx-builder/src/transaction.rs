@@ -1,6 +1,5 @@
 use std::{collections::BTreeSet, sync::Arc};
 
-use futures::TryFutureExt;
 use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
 use miden_objects::{
     TransactionInputError, Word,
@@ -20,7 +19,7 @@ use miden_tx::{
 };
 use rand::seq::SliceRandom;
 use tokio::task::JoinError;
-use tracing::{Instrument, instrument, instrument::Instrumented};
+use tracing::{Instrument, instrument};
 
 use crate::{COMPONENT, block_producer::BlockProducerClient, state::TransactionCandidate};
 
@@ -38,8 +37,6 @@ pub enum NtxError {
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
     Submission(#[source] tonic::Status),
-    #[error("the ntx task panic'd")]
-    Panic(#[source] JoinError),
 }
 
 type NtxResult<T> = Result<T, NtxError>;

@@ -545,28 +545,6 @@ pub(crate) fn upsert_accounts(
             },
         };
 
-        #[allow(clippy::items_after_statements)]
-        #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
-        #[diesel(table_name = schema::account_codes)]
-        struct CodeInsert {
-            code_commitment: Vec<u8>,
-            code: Vec<u8>,
-        }
-
-        #[allow(clippy::items_after_statements)]
-        #[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
-        #[diesel(table_name = schema::accounts)]
-        struct AccountInsert {
-            account_id: Vec<u8>,
-            network_account_id_prefix: Option<i64>,
-            account_commitment: Vec<u8>,
-            block_num: i64,
-            nonce: Option<i64>,
-            storage: Option<Vec<u8>>,
-            vault: Option<Vec<u8>>,
-            code_commitment: Option<Vec<u8>>,
-        }
-
         if let Some(code) = full_account.as_ref().map(|account| account.code()) {
             let code_value = CodeInsert {
                 code_commitment: code.commitment().to_bytes(),

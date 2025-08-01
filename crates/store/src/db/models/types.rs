@@ -386,3 +386,25 @@ where
     })?;
     Ok::<_, DatabaseError>(val)
 }
+
+#[allow(clippy::items_after_statements)]
+#[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
+#[diesel(table_name = schema::account_codes)]
+pub(crate) struct CodeInsert {
+    pub(crate) code_commitment: Vec<u8>,
+    pub(crate) code: Vec<u8>,
+}
+
+#[allow(clippy::items_after_statements)]
+#[derive(diesel::Insertable, diesel::AsChangeset, Clone)]
+#[diesel(table_name = schema::accounts)]
+pub(crate) struct AccountInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) network_account_id_prefix: Option<i64>,
+    pub(crate) account_commitment: Vec<u8>,
+    pub(crate) block_num: i64,
+    pub(crate) nonce: Option<i64>,
+    pub(crate) storage: Option<Vec<u8>>,
+    pub(crate) vault: Option<Vec<u8>>,
+    pub(crate) code_commitment: Option<Vec<u8>>,
+}

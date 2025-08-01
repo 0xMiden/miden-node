@@ -8,26 +8,15 @@ use miden_objects::account::{Account, AccountId};
 use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::transaction::{
-    ExecutedTransaction,
-    InputNote,
-    InputNotes,
-    PartialBlockchain,
-    ProvenTransaction,
+    ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
     TransactionArgs,
 };
 use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore,
-    DataStoreError,
-    LocalTransactionProver,
-    MastForestStore,
-    NoteAccountExecution,
-    NoteConsumptionChecker,
-    TransactionExecutor,
-    TransactionExecutorError,
-    TransactionMastStore,
+    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
+    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
     TransactionProverError,
 };
 use rand::seq::SliceRandom;
@@ -76,58 +65,45 @@ pub struct NtxContext {
 
 impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
-    pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
+    pub fn execute_transaction(
+        self,
+        tx: TransactionCandidate,
+    ) -> impl FutureMaybeSend<NtxResult<()>> {
         let TransactionCandidate {
             account,
             notes,
             chain_tip_header,
             chain_mmr,
         } = tx;
-
         tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current().set_attribute("notes.count", notes.len());
         tracing::Span::current()
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
-        // Work-around for `TransactionExecutor` not being `Send`.
-        tokio::task::spawn_blocking(move || {
-            {
-                {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("runtime should be built");
+        async move {
+            // Work-around for `TransactionExecutor` not being `Send`.
+            async move {
+                let mut notes = notes
+                    .into_iter()
+                    .map(|note| InputNote::Unauthenticated { note: note.into() })
+                    .collect::<Vec<_>>();
+                // We shuffle the notes here to prevent having a failing note always in
+                // front.
+                notes.shuffle(&mut rand::rng());
+                let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                    rt.block_on(
-                        async move {
-                            let mut notes = notes
-                                .into_iter()
-                                .map(|note| InputNote::Unauthenticated { note: note.into() })
-                                .collect::<Vec<_>>();
-                            // We shuffle the notes here to prevent having a failing note always in
-                            // front.
-                            notes.shuffle(&mut rand::rng());
-                            let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
+                let data_store = NtxDataStore::new(account, self.genesis_header.clone());
 
-                            let data_store =
-                                NtxDataStore::new(account, chain_tip_header, chain_mmr);
-
-                            self.filter_notes(&data_store, notes)
-                                .and_then(|notes| self.execute(&data_store, notes))
-                                .and_then(|tx| self.prove(tx))
-                                .and_then(|tx| self.submit(tx))
-                                .await
-                        }
-                        .in_current_span(),
-                    )
-                }
+                let notes = self.filter_notes(&data_store, notes).await?;
+                let executed = self.execute(&data_store, notes).await?;
+                let proven = self.prove(executed).await?;
+                self.submit(proven).await?;
+                Ok(())
             }
             .in_current_span()
-        })
-        .await
-        .map_err(NtxError::Panic)
-        .and_then(Instrumented::into_inner)
-        .inspect_err(|err| tracing::Span::current().set_error(err))
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+        }
     }
 
     /// Returns a set of input notes which can be successfully executed against the network account.
@@ -210,8 +186,6 @@ impl NtxContext {
     /// proof locally.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
     async fn prove(&self, tx: ExecutedTransaction) -> NtxResult<ProvenTransaction> {
-        use miden_tx::TransactionProver;
-
         if let Some(remote) = &self.prover {
             remote.prove(tx.into()).await
         } else {
@@ -258,29 +232,30 @@ impl NtxDataStore {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl DataStore for NtxDataStore {
-    async fn get_transaction_inputs(
+    fn get_transaction_inputs(
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
-        if self.account.id() != account_id {
-            return Err(DataStoreError::AccountNotFound(account_id));
-        }
+    ) -> impl FutureMaybeSend<
+        Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
+    > {
+        let genesis_header = self.genesis_header.clone();
+        let account = self.account.clone();
+        async move {
+            if account.id() != account_id {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
 
-        match ref_blocks.last().copied() {
-            Some(reference) if reference == self.reference_header.block_num() => {},
-            Some(other) => return Err(DataStoreError::BlockNotFound(other)),
-            None => return Err(DataStoreError::other("no reference block requested")),
-        }
+            match ref_blocks.last().copied() {
+                Some(reference) if reference == self.reference_header.block_num() => {},
 
-        Ok((
-            self.account.clone(),
-            None,
-            self.reference_header.clone(),
-            self.chain_mmr.clone(),
-        ))
+                Some(other) => return Err(DataStoreError::BlockNotFound(other)),
+                None => return Err(DataStoreError::other("no reference block requested")),
+            }
+
+            Ok((account, None, self.reference_header.clone(), self.chain_mmr.clone()))
+        }
     }
 }
 

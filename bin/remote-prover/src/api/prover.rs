@@ -5,7 +5,7 @@ use miden_objects::batch::ProposedBatch;
 use miden_objects::block::ProposedBlock;
 use miden_objects::transaction::TransactionWitness;
 use miden_objects::utils::Serializable;
-use miden_tx::{LocalTransactionProver, TransactionProver};
+use miden_tx::LocalTransactionProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -97,7 +97,7 @@ impl ProverRpcApi {
         fields(id = tracing::field::Empty),
         err
     )]
-    pub fn prove_tx(
+    pub async fn prove_tx(
         &self,
         transaction_witness: TransactionWitness,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
@@ -109,6 +109,7 @@ impl ProverRpcApi {
             .try_lock()
             .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
             .prove(transaction_witness)
+            .await
             .map_err(internal_error)?;
 
         // Record the transaction_id in the current tracing span
@@ -197,7 +198,7 @@ impl ProverApi for ProverRpcApi {
         match request.get_ref().proof_type() {
             proto::remote_prover::ProofType::Transaction => {
                 let tx_witness = request.into_inner().try_into().map_err(invalid_argument)?;
-                self.prove_tx(tx_witness)
+                self.prove_tx(tx_witness).await
             },
             proto::remote_prover::ProofType::Batch => {
                 let proposed_batch = request.into_inner().try_into().map_err(invalid_argument)?;

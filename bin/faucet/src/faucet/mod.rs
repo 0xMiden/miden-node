@@ -6,12 +6,7 @@ use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::interface::{AccountInterface, AccountInterfaceError};
 use miden_lib::note::create_p2id_note;
 use miden_objects::account::{
-    Account,
-    AccountDelta,
-    AccountFile,
-    AccountId,
-    AuthSecretKey,
-    NetworkId,
+    Account, AccountDelta, AccountFile, AccountId, AuthSecretKey, NetworkId,
 };
 use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::asset::FungibleAsset;
@@ -20,26 +15,14 @@ use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::Note;
 use miden_objects::transaction::{
-    ExecutedTransaction,
-    InputNotes,
-    PartialBlockchain,
-    ProvenTransaction,
-    TransactionArgs,
-    TransactionId,
-    TransactionWitness,
+    ExecutedTransaction, InputNotes, PartialBlockchain, ProvenTransaction, TransactionArgs,
+    TransactionId, TransactionWitness,
 };
 use miden_objects::{AccountError, Felt, NoteError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
+use miden_tx::TransactionExecutor;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::parse_hex_string_as_word;
-use miden_tx::{
-    LocalTransactionProver,
-    ProvingOptions,
-    TransactionExecutor,
-    TransactionExecutorError,
-    TransactionProver,
-    TransactionProverError,
-};
 use rand::rngs::StdRng;
 use rand::{Rng, rng};
 use serde::Serialize;

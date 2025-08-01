@@ -1185,10 +1185,10 @@ pub(crate) fn select_all_accounts(
         (models::AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-    Ok(vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
+    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
         accounts_raw.into_iter().map(AccountWithCodeRaw::from),
-    )
-    .unwrap())
+    )?;
+    Ok(account_infos)
 }
 
 pub(crate) fn select_accounts_by_id(
@@ -1208,11 +1208,10 @@ pub(crate) fn select_accounts_by_id(
     )
     .filter(schema::accounts::account_id.eq_any(account_ids))
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-    // SAFETY: infallible error
-    Ok(vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
+    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
         accounts_raw.into_iter().map(AccountWithCodeRaw::from),
-    )
-    .unwrap())
+    )?;
+    Ok(account_infos)
 }
 
 /// Selects and merges account deltas by account id and block range from the DB using the given

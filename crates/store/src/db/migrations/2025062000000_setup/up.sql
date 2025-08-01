@@ -25,7 +25,12 @@ CREATE TABLE accounts (
     PRIMARY KEY (account_id),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
     FOREIGN KEY (code_commitment) REFERENCES account_codes(code_commitment),
-    CONSTRAINT all_null_or_none_null CHECK ((code_commitment IS NOT NULL AND storage IS NOT NULL AND vault IS NOT NULL AND nonce IS NOT NULL) OR (code_commitment IS NULL AND storage IS NULL AND vault IS NULL AND nonce IS NULL))
+    CONSTRAINT all_null_or_none_null CHECK
+        (
+            (code_commitment IS NOT NULL AND storage IS NOT NULL AND vault IS NOT NULL AND nonce IS NOT NULL)
+            OR
+            (code_commitment IS NULL AND storage IS NULL AND vault IS NULL AND nonce IS NULL)
+        )
 ) WITHOUT ROWID;
 
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;

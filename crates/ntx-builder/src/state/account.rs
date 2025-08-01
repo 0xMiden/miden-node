@@ -12,19 +12,24 @@ use miden_objects::{
 
 /// An unconsumed network note that may have failed to execute.
 ///
-/// The block numbers at which the network note was attempted are approximate and may not
+/// The block number at which the network note was attempted are approximate and may not
 /// reflect the exact block number for which the execution attempt failed. The actual block
 /// will likely be soon after the number that is recorded here.
 #[derive(Debug, Clone)]
 pub struct InflightNetworkNote {
     note: NetworkNote,
-    attempted_at: Vec<BlockNumber>,
+    attempt_count: usize,
+    last_attempt: Option<BlockNumber>,
 }
 
 impl InflightNetworkNote {
     /// Creates a new inflight network note.
     pub fn new(note: NetworkNote) -> Self {
-        Self { note, attempted_at: Vec::new() }
+        Self {
+            note,
+            attempt_count: 0,
+            last_attempt: None,
+        }
     }
 
     /// Consumes the inflight network note and returns the inner network note.
@@ -38,18 +43,19 @@ impl InflightNetworkNote {
     }
 
     /// Returns the number of attempts made to execute the network note.
-    pub fn attempts(&self) -> usize {
-        self.attempted_at.len()
+    pub fn attempt_count(&self) -> usize {
+        self.attempt_count
     }
 
     /// Returns the last block number at which the network note was attempted.
     pub fn last_attempt(&self) -> Option<BlockNumber> {
-        self.attempted_at.last().copied()
+        self.last_attempt
     }
 
     /// Registers a failed attempt to execute the network note at the specified block number.
     pub fn fail(&mut self, block_num: BlockNumber) {
-        self.attempted_at.push(block_num);
+        self.last_attempt = Some(block_num);
+        self.attempt_count += 1;
     }
 }
 
@@ -187,7 +193,7 @@ impl AccountState {
     }
 
     pub fn drain_failing_notes(&mut self, max_attempts: usize) {
-        self.available_notes.retain(|_, note| note.attempts() <= max_attempts);
+        self.available_notes.retain(|_, note| note.attempt_count() <= max_attempts);
     }
 
     /// Returns the latest inflight account state.

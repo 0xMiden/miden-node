@@ -145,7 +145,7 @@ impl State {
     ///   - the transaction was submitted successfully, indicated by the associated mempool event
     ///     being submitted
     #[instrument(target = COMPONENT, name = "ntx.state.select_candidate", skip_all)]
-    pub async fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
+    pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
         // Loop through the account queue until we find one that is selectable.
         //
         // Since the queue contains _all_ accounts, including unselectable accounts, we limit our
@@ -165,6 +165,9 @@ impl State {
 
             let account = self.accounts.get_mut(&candidate).expect("queue account must be tracked");
 
+            // Remove notes that have failed too many times.
+            account.drain_failing_notes(Self::MAX_NOTE_ATTEMPTS);
+
             // Skip empty accounts, and prune them.
             // This is how we keep the number of accounts bounded.
             if account.is_empty() {
@@ -175,9 +178,6 @@ impl State {
                 self.queue.pop_back();
                 continue;
             }
-
-            // Remove notes that have failed too many times.
-            account.drain_failing_notes(Self::MAX_NOTE_ATTEMPTS);
 
             // Select notes from the account that can be consumed or are ready for a retry.
             let notes = account
@@ -193,7 +193,11 @@ impl State {
                         .unwrap_or(true);
                     // Filter based on attempts also.
                     can_consume
-                        && Self::backoff_has_passed(note.last_attempt(), block_num, note.attempts())
+                        && Self::backoff_has_passed(
+                            note.last_attempt(),
+                            block_num,
+                            note.attempt_count(),
+                        )
                 })
                 .take(limit.get())
                 .cloned()
@@ -247,10 +251,7 @@ impl State {
         if let Some(account) = self.accounts.get_mut(&candidate.account_id_prefix) {
             account.fail(&candidate.notes, candidate.chain_tip_header.block_num());
         } else {
-            tracing::error!(
-                "failed to find network account with prefix {}",
-                candidate.account_id_prefix
-            );
+            tracing::error!(account.prefix=%candidate.account_id_prefix, "failed network transaction has no local account state");
         }
 
         self.in_progress.remove(&candidate.account_id_prefix);

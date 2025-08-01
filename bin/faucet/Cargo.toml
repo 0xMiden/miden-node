@@ -29,7 +29,7 @@ miden-node-rpc             = { workspace = true }
 miden-node-utils           = { workspace = true }
 miden-objects              = { workspace = true }
 miden-remote-prover-client = { features = ["tx-prover"], workspace = true }
-miden-tx                   = { features = ["async", "concurrent"], workspace = true }
+miden-tx                   = { features = ["concurrent"], workspace = true }
 rand                       = { features = ["thread_rng"], workspace = true }
 rand_chacha                = { version = "0.9" }
 serde                      = { features = ["derive"], version = "1.0" }

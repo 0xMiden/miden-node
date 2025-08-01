@@ -18,7 +18,7 @@ batch-prover = ["dep:miden-objects", "dep:tokio"]
 block-prover = ["dep:miden-objects", "dep:tokio"]
 default      = ["std"]
 std          = ["miden-objects/std", "miden-tx/std"]
-tx-prover    = ["dep:miden-objects", "dep:tokio", "miden-tx/async"]
+tx-prover    = ["dep:miden-objects", "dep:tokio"]
 
 [target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 getrandom             = { features = ["wasm_js"], version = "0.3" }

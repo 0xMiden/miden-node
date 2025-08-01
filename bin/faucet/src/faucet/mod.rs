@@ -27,8 +27,7 @@ use miden_objects::{
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::{
     LocalTransactionProver, ProvingOptions, TransactionExecutor, TransactionExecutorError,
-    TransactionProver, TransactionProverError, auth::BasicAuthenticator,
-    utils::parse_hex_string_as_word,
+    TransactionProverError, auth::BasicAuthenticator, utils::parse_hex_string_as_word,
 };
 use rand::{Rng, rng, rngs::StdRng};
 use serde::Serialize;

@@ -2161,11 +2161,22 @@ dependencies = [
 
 [[package]]
 name = "miden-air"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd7e44193b6aa5a16b15f54c4f54f5bd1e9e834b15790e432bb27a3aafe4c61f"
+checksum = "b3e7ecca25db4e82c5d47141b723fb781f7dbb2e0c410ad86d4a038fa92fb646"
 dependencies = [
- "miden-core",
+ "miden-core 0.17.0",
+ "thiserror 2.0.12",
+ "winter-air",
+ "winter-prover",
+]
+
+[[package]]
+name = "miden-air"
+version = "0.18.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+dependencies = [
+ "miden-core 0.18.0",
  "thiserror 2.0.12",
  "winter-air",
  "winter-prover",
@@ -2173,13 +2184,13 @@ dependencies = [
 
 [[package]]
 name = "miden-assembly"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "257cca0c54d5a14eb607d144f4349b46af56e6ceef0b5e53a92ea2e61f3f1410"
+checksum = "f27e40b30070599f5e7094ada753b2e9f52b3043f0975ece3f98d839584b1c36"
 dependencies = [
  "log",
  "miden-assembly-syntax",
- "miden-core",
+ "miden-core 0.17.0",
  "miden-mast-package",
  "smallvec",
  "thiserror 2.0.12",
@@ -2187,17 +2198,18 @@ dependencies = [
 
 [[package]]
 name = "miden-assembly-syntax"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c58c646de70bcd72529da66398f046672fc7c4f62b603b44db3ed7303bbf732"
+checksum = "2ac58f8f0a91a4fdc14b1d0c0a472815b8865b6d286138b79ed3337a0811eaf0"
 dependencies = [
  "aho-corasick",
  "lalrpop",
  "lalrpop-util",
  "log",
- "miden-core",
- "miden-debug-types",
+ "miden-core 0.17.0",
+ "miden-debug-types 0.17.0",
  "miden-utils-diagnostics",
+ "midenc-hir-type",
  "regex",
  "rustc_version 0.4.1",
  "semver 1.0.26",
@@ -2208,7 +2220,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#3da4d1f2dbd58092a501ba39123afc3f7a80e9f3"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-merge-next-into-pgackst-async-exp#eb5a7430d51bf7d849ea51da77531d4fd834dfc3"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2217,12 +2229,27 @@ dependencies = [
 
 [[package]]
 name = "miden-core"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7768911c8376a584743e070521023ff5107528f797eee76cc0614d48b4cae18"
+checksum = "da49371c783b983975068574fc95fe827e26185596896c9d147d83d436a5a3d1"
 dependencies = [
  "miden-crypto",
- "miden-debug-types",
+ "miden-debug-types 0.17.0",
+ "miden-formatting",
+ "num-derive",
+ "num-traits",
+ "thiserror 2.0.12",
+ "winter-math",
+ "winter-utils",
+]
+
+[[package]]
+name = "miden-core"
+version = "0.18.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+dependencies = [
+ "miden-crypto",
+ "miden-debug-types 0.18.0",
  "miden-formatting",
  "num-derive",
  "num-traits",
@@ -2253,15 +2280,31 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-types"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c82ad285bd63808a30210e155eb53ed599700d1c7b28a734907dd75d18f3d65"
+checksum = "7c76683ad1293b04efe8d0da27631e5122672f1a684ba5a33c8c32340cd3b38a"
 dependencies = [
  "memchr",
  "miden-crypto",
  "miden-formatting",
  "miden-miette",
- "miden-utils-sync",
+ "miden-utils-sync 0.17.0",
+ "paste",
+ "serde",
+ "serde_spanned 1.0.0",
+ "thiserror 2.0.12",
+]
+
+[[package]]
+name = "miden-debug-types"
+version = "0.18.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+dependencies = [
+ "memchr",
+ "miden-crypto",
+ "miden-formatting",
+ "miden-miette",
+ "miden-utils-sync 0.18.0",
  "paste",
  "serde",
  "serde_spanned 1.0.0",
@@ -2318,10 +2361,11 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#3da4d1f2dbd58092a501ba39123afc3f7a80e9f3"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-merge-next-into-pgackst-async-exp#eb5a7430d51bf7d849ea51da77531d4fd834dfc3"
 dependencies = [
  "miden-assembly",
  "miden-objects",
+ "miden-processor",
  "miden-stdlib",
  "regex",
  "thiserror 2.0.12",
@@ -2330,13 +2374,13 @@ dependencies = [
 
 [[package]]
 name = "miden-mast-package"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d8496bae26e51891f63f3448d7e4b3d406f0e81d48928dd0212d4d41dbd8ddfa"
+checksum = "2479acd2c074f99d456206ccbfcdb0bbd991de2e0addefc4d8f4eec9d0b3320a"
 dependencies = [
  "derive_more",
  "miden-assembly-syntax",
- "miden-core",
+ "miden-core 0.17.0",
 ]
 
 [[package]]
@@ -2408,7 +2452,7 @@ dependencies = [
  "assert_matches",
  "futures",
  "itertools",
- "miden-air",
+ "miden-air 0.18.0",
  "miden-block-prover",
  "miden-lib",
  "miden-node-proto",
@@ -2495,7 +2539,7 @@ dependencies = [
  "futures",
  "http 1.3.1",
  "mediatype",
- "miden-air",
+ "miden-air 0.18.0",
  "miden-node-proto",
  "miden-node-proto-build",
  "miden-node-store",
@@ -2560,7 +2604,7 @@ dependencies = [
  "clap 4.5.43",
  "fs-err",
  "futures",
- "miden-air",
+ "miden-air 0.18.0",
  "miden-block-prover",
  "miden-lib",
  "miden-node-block-producer",
@@ -2613,15 +2657,15 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#3da4d1f2dbd58092a501ba39123afc3f7a80e9f3"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-merge-next-into-pgackst-async-exp#eb5a7430d51bf7d849ea51da77531d4fd834dfc3"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
  "miden-assembly",
- "miden-core",
+ "miden-core 0.17.0",
  "miden-crypto",
  "miden-processor",
- "miden-utils-sync",
+ "miden-utils-sync 0.17.0",
  "miden-verifier",
  "rand 0.9.2",
  "rand_xoshiro",
@@ -2634,13 +2678,13 @@ dependencies = [
 
 [[package]]
 name = "miden-processor"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b3d8fb95de53071a391767549a5d6ef7113e121a33f9a63d91e6ae7b2ecfe6e"
+checksum = "35aa73beb8a59b5d3928ca1a98611625aa614caac77e8cacef58e65a871c9b3a"
 dependencies = [
- "miden-air",
- "miden-core",
- "miden-debug-types",
+ "miden-air 0.17.0",
+ "miden-core 0.17.0",
+ "miden-debug-types 0.17.0",
  "miden-utils-diagnostics",
  "thiserror 2.0.12",
  "tokio",
@@ -2650,15 +2694,15 @@ dependencies = [
 
 [[package]]
 name = "miden-prover"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ffabff0a49ab0dbc7a8c7c1d8ea942cdc8744f20594e7ee28fd7bb36c2cad863"
+checksum = "b3fc1938eaec0a25ca1d20da63188b7ec8a1619ed2d0980e2439c265cbe64acc"
 dependencies = [
- "miden-air",
- "miden-debug-types",
+ "miden-air 0.17.0",
+ "miden-debug-types 0.17.0",
  "miden-processor",
  "tracing",
- "winter-maybe-async 0.13.1",
+ "winter-maybe-async",
  "winter-prover",
 ]
 
@@ -2729,20 +2773,22 @@ dependencies = [
 
 [[package]]
 name = "miden-stdlib"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf434d1678ddffb9f2a5f40e00d2342d1a0ecb597f14373edee0ad60360f160f"
+checksum = "d4ee88806a80eaf683f65a9901b89711913596762f35ceccd3b9605547bd905e"
 dependencies = [
  "env_logger",
  "miden-assembly",
- "miden-core",
- "miden-utils-sync",
+ "miden-core 0.17.0",
+ "miden-processor",
+ "miden-utils-sync 0.17.0",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
 name = "miden-testing"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#3da4d1f2dbd58092a501ba39123afc3f7a80e9f3"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-merge-next-into-pgackst-async-exp#eb5a7430d51bf7d849ea51da77531d4fd834dfc3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2755,14 +2801,14 @@ dependencies = [
  "rand 0.9.2",
  "rand_chacha 0.9.0",
  "thiserror 2.0.12",
- "winter-maybe-async 0.13.1",
+ "tokio",
  "winterfell",
 ]
 
 [[package]]
 name = "miden-tx"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#3da4d1f2dbd58092a501ba39123afc3f7a80e9f3"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-merge-next-into-pgackst-async-exp#eb5a7430d51bf7d849ea51da77531d4fd834dfc3"
 dependencies = [
  "async-trait",
  "miden-lib",
@@ -2772,13 +2818,13 @@ dependencies = [
  "miden-verifier",
  "rand 0.9.2",
  "thiserror 2.0.12",
- "winter-maybe-async 0.12.0",
+ "tokio",
 ]
 
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#3da4d1f2dbd58092a501ba39123afc3f7a80e9f3"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-merge-next-into-pgackst-async-exp#eb5a7430d51bf7d849ea51da77531d4fd834dfc3"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -2786,12 +2832,12 @@ dependencies = [
 
 [[package]]
 name = "miden-utils-diagnostics"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ae1f8ff84ebaa13f8c97dc5b24ee0bf424e5d3b262cfa4f35608220a4f5e407"
+checksum = "647705554b5fd19a72cc4d2d3325c1c794e156137b3c17a09b6f69a6b546261d"
 dependencies = [
  "miden-crypto",
- "miden-debug-types",
+ "miden-debug-types 0.17.0",
  "miden-miette",
  "paste",
  "tracing",
@@ -2799,9 +2845,19 @@ dependencies = [
 
 [[package]]
 name = "miden-utils-sync"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a53938d20b1f6efa94f60f475a64814d6913750aed021618a709812008d5bda"
+checksum = "65064174418434e519ac56b0c0c293e89f5ab1f3b45d29de4922ab38fbdbf785"
+dependencies = [
+ "lock_api",
+ "loom",
+ "parking_lot",
+]
+
+[[package]]
+name = "miden-utils-sync"
+version = "0.18.0"
+source = "git+https://github.com/0xMiden/miden-vm?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "lock_api",
  "loom",
@@ -2810,15 +2866,26 @@ dependencies = [
 
 [[package]]
 name = "miden-verifier"
-version = "0.16.4"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f409300fdd18a2da8581da1d38a5b7efc16e19ad267f48c4e74facad778d261e"
+checksum = "9997989e3f883b70c56ebad49d430fa3b996cd0d50a852c0bca2746d652f2390"
 dependencies = [
- "miden-air",
- "miden-core",
+ "miden-air 0.17.0",
+ "miden-core 0.17.0",
  "thiserror 2.0.12",
  "tracing",
  "winter-verifier",
+]
+
+[[package]]
+name = "midenc-hir-type"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e381ba23e4f57ffa0d6039113f6d6004e5b8c7ae6cb909329b48f2ab525e8680"
+dependencies = [
+ "miden-formatting",
+ "smallvec",
+ "thiserror 2.0.12",
 ]
 
 [[package]]
@@ -6184,16 +6251,6 @@ dependencies = [
 
 [[package]]
 name = "winter-maybe-async"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaa132be74e602b707f1dab5a69c38496445e54ee940e7c281c02b15007241bd"
-dependencies = [
- "quote",
- "syn 2.0.104",
-]
-
-[[package]]
-name = "winter-maybe-async"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d31a19dae58475d019850e25b0170e94b16d382fbf6afee9c0e80fdc935e73e"
@@ -6213,7 +6270,7 @@ dependencies = [
  "winter-crypto",
  "winter-fri",
  "winter-math",
- "winter-maybe-async 0.13.1",
+ "winter-maybe-async",
  "winter-utils",
 ]
 
@@ -6473,7 +6530,3 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "miden-tx"
-version = "0.11.0"

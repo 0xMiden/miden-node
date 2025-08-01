@@ -45,15 +45,15 @@ miden-node-utils           = { path = "crates/utils", version = "0.11" }
 miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.11" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "bernhard-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "bernhard-async-experimental", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "bernhard-async-experimental", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "bernhard-merge-next-into-pgackst-async-exp", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "bernhard-merge-next-into-pgackst-async-exp", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { branch = "async-experimental", git = "https://github.com/0xMiden/miden-vm", version = "0.17" }
+miden-air = { branch = "bernhard-future-maybe-send", git = "https://github.com/0xMiden/miden-vm" }
 
 # External dependencies
 anyhow             = { version = "1.0" }

@@ -42,8 +42,6 @@ pub enum NtxError {
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
     Submission(#[source] tonic::Status),
-    #[error("the ntx task panic'd")]
-    Panic(#[source] JoinError),
 }
 
 type NtxResult<T> = Result<T, NtxError>;

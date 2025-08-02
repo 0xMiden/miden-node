@@ -3,8 +3,91 @@ use std::collections::{HashMap, VecDeque};
 use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
 use miden_objects::{
     account::{Account, AccountDelta, AccountId, delta::AccountUpdateDetails},
+    block::BlockNumber,
     note::Nullifier,
 };
+
+// INFLIGHT NETWORK NOTE
+// ================================================================================================
+
+/// An unconsumed network note that may have failed to execute.
+///
+/// The block number at which the network note was attempted are approximate and may not
+/// reflect the exact block number for which the execution attempt failed. The actual block
+/// will likely be soon after the number that is recorded here.
+#[derive(Debug, Clone)]
+pub struct InflightNetworkNote {
+    note: NetworkNote,
+    attempt_count: usize,
+    last_attempt: Option<BlockNumber>,
+}
+
+impl InflightNetworkNote {
+    /// Creates a new inflight network note.
+    pub fn new(note: NetworkNote) -> Self {
+        Self {
+            note,
+            attempt_count: 0,
+            last_attempt: None,
+        }
+    }
+
+    /// Consumes the inflight network note and returns the inner network note.
+    pub fn into_inner(self) -> NetworkNote {
+        self.note
+    }
+
+    /// Returns a reference to the inner network note.
+    pub fn to_inner(&self) -> &NetworkNote {
+        &self.note
+    }
+
+    /// Returns the number of attempts made to execute the network note.
+    pub fn attempt_count(&self) -> usize {
+        self.attempt_count
+    }
+
+    /// Checks if the network note is available for execution.
+    ///
+    /// The note is available if it can be consumed and the backoff period has passed.
+    pub fn is_available(&self, block_num: BlockNumber) -> bool {
+        let can_consume = self
+            .to_inner()
+            .metadata()
+            .execution_hint()
+            .can_be_consumed(block_num)
+            .unwrap_or(true);
+        can_consume && Self::backoff_has_passed(self.last_attempt, block_num, self.attempt_count)
+    }
+
+    /// Checks if the backoff block period has passed.
+    ///
+    /// The number of blocks passed since the last attempt must be greater than or equal to the
+    /// square of the attempt count.
+    fn backoff_has_passed(
+        last_attempt_block_num: Option<BlockNumber>,
+        current_block_num: BlockNumber,
+        attempt_count: usize,
+    ) -> bool {
+        // Compute the number of blocks passed since the last attempt.
+        let last_attempt_block_num =
+            last_attempt_block_num.map(|block_num| block_num.as_usize()).unwrap_or_default();
+        let blocks_passed = current_block_num.as_usize().saturating_sub(last_attempt_block_num);
+        // Compute the backoff threshold based on the attempt count.
+        let backoff_threshold = attempt_count.pow(2);
+        // Check if the backoff period has passed.
+        blocks_passed >= backoff_threshold
+    }
+
+    /// Registers a failed attempt to execute the network note at the specified block number.
+    pub fn fail(&mut self, block_num: BlockNumber) {
+        self.last_attempt = Some(block_num);
+        self.attempt_count += 1;
+    }
+}
+
+// ACCOUNT STATE
+// ================================================================================================
 
 /// Tracks the state of a network account and its notes.
 pub struct AccountState {
@@ -17,7 +100,7 @@ pub struct AccountState {
     inflight: VecDeque<Account>,
 
     /// Unconsumed notes of this account.
-    available_notes: HashMap<Nullifier, NetworkNote>,
+    available_notes: HashMap<Nullifier, InflightNetworkNote>,
 
     /// Notes which have been consumed by transactions that are still inflight.
     nullified_notes: HashMap<Nullifier, NetworkNote>,
@@ -81,7 +164,7 @@ impl AccountState {
 
     /// Adds a new network note making it available for consumption.
     pub fn add_note(&mut self, note: NetworkNote) {
-        self.available_notes.insert(note.nullifier(), note);
+        self.available_notes.insert(note.nullifier(), InflightNetworkNote::new(note));
     }
 
     /// Removes the note completely.
@@ -107,7 +190,7 @@ impl AccountState {
             .remove(&nullifier)
             .expect("note must be available to nullify");
 
-        self.nullified_notes.insert(nullifier, note);
+        self.nullified_notes.insert(nullifier, note.into_inner());
     }
 
     /// Marks a nullifier as being committed, removing the associated note data entirely.
@@ -128,12 +211,17 @@ impl AccountState {
         // The note may already have been fully removed by `revert_note` if the transaction creating
         // the note was reverted before the transaction that consumed it.
         if let Some(note) = self.nullified_notes.remove(&nullifier) {
-            self.available_notes.insert(nullifier, note);
+            self.available_notes.insert(nullifier, InflightNetworkNote::new(note));
         }
     }
 
-    pub fn notes(&self) -> impl Iterator<Item = &NetworkNote> {
+    pub fn notes(&self) -> impl Iterator<Item = &InflightNetworkNote> {
         self.available_notes.values()
+    }
+
+    /// Drains all notes that have failed to be consumed after a certain number of attempts.
+    pub fn drain_failing_notes(&mut self, max_attempts: usize) {
+        self.available_notes.retain(|_, note| note.attempt_count() <= max_attempts);
     }
 
     /// Returns the latest inflight account state.
@@ -153,7 +241,21 @@ impl AccountState {
             && self.available_notes.is_empty()
             && self.nullified_notes.is_empty()
     }
+
+    /// Marks the specified notes as failed.
+    pub fn fail(&mut self, notes: &[InflightNetworkNote], block_num: BlockNumber) {
+        for nullifier in notes.iter().map(|note| note.to_inner().nullifier()) {
+            if let Some(note) = self.available_notes.get_mut(&nullifier) {
+                note.fail(block_num);
+            } else {
+                tracing::warn!(%nullifier, "failed note is not in account's state");
+            }
+        }
+    }
 }
+
+// NETWORK ACCOUNT UPDATE
+// ================================================================================================
 
 #[derive(Clone)]
 pub enum NetworkAccountUpdate {
@@ -182,5 +284,35 @@ impl NetworkAccountUpdate {
             NetworkAccountUpdate::New(account) => account.id(),
             NetworkAccountUpdate::Delta(account_delta) => account_delta.id(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use miden_objects::block::BlockNumber;
+
+    use super::InflightNetworkNote;
+
+    #[rstest::rstest]
+    #[test]
+    #[case::all_zero(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
+    #[case::no_attempts(None, BlockNumber::from(0), 0, true)]
+    #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, true)]
+    #[case::two_attempts(Some(BlockNumber::from(2)), BlockNumber::from(6), 2, true)]
+    #[case::two_attempts_not_passed(Some(BlockNumber::from(2)), BlockNumber::from(5), 2, false)]
+    fn backoff_has_passed(
+        #[case] last_attempt_block_num: Option<BlockNumber>,
+        #[case] current_block_num: BlockNumber,
+        #[case] attempt_count: usize,
+        #[case] backoff_should_have_passed: bool,
+    ) {
+        assert_eq!(
+            backoff_should_have_passed,
+            InflightNetworkNote::backoff_has_passed(
+                last_attempt_block_num,
+                current_block_num,
+                attempt_count
+            )
+        );
     }
 }

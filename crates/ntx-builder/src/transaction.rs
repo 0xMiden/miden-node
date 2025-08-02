@@ -18,7 +18,6 @@ use miden_tx::{
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
     TransactionProverError, auth::UnreachableAuth,
 };
-use rand::seq::SliceRandom;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument, instrument::Instrumented};
 
@@ -64,12 +63,14 @@ impl NtxContext {
     pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
         let TransactionCandidate {
             account,
+            account_id_prefix,
             notes,
             chain_tip_header,
             chain_mmr,
         } = tx;
 
-        tracing::Span::current().set_attribute("account.id", account.id());
+        tracing::Span::current()
+            .set_attribute("account.id_prefix", account_id_prefix.to_string().as_str());
         tracing::Span::current().set_attribute("notes.count", notes.len());
         tracing::Span::current()
             .set_attribute("reference_block.number", chain_tip_header.block_num());
@@ -85,13 +86,12 @@ impl NtxContext {
 
                     rt.block_on(
                         async move {
-                            let mut notes = notes
+                            let notes = notes
                                 .into_iter()
-                                .map(|note| InputNote::Unauthenticated { note: note.into() })
+                                .map(|note| InputNote::Unauthenticated {
+                                    note: note.into_inner().into(),
+                                })
                                 .collect::<Vec<_>>();
-                            // We shuffle the notes here to prevent having a failing note always in
-                            // front.
-                            notes.shuffle(&mut rand::rng());
                             let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
                             let data_store =

@@ -3,7 +3,7 @@ use std::{
     num::NonZeroUsize,
 };
 
-use account::{AccountState, NetworkAccountUpdate};
+use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
 use anyhow::Context;
 use miden_node_proto::domain::{
     account::NetworkAccountPrefix, mempool::MempoolEvent, note::NetworkNote,
@@ -34,12 +34,16 @@ const MAX_BLOCK_COUNT: usize = 4;
 ///
 /// Contains the data pertaining to a specific network account which can be used to build a network
 /// transaction.
+#[derive(Clone)]
 pub struct TransactionCandidate {
     /// The current inflight state of the account.
     pub account: Account,
 
+    /// The account id prefix corresponding to the candidate account.
+    pub account_id_prefix: NetworkAccountPrefix,
+
     /// A set of notes addressed to this network account.
-    pub notes: Vec<NetworkNote>,
+    pub notes: Vec<InflightNetworkNote>,
 
     /// The latest locally committed block header.
     ///
@@ -92,6 +96,9 @@ pub struct State {
 }
 
 impl State {
+    /// Maximum number of attempts to execute a network note.
+    const MAX_NOTE_ATTEMPTS: usize = 10;
+
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
@@ -156,10 +163,12 @@ impl State {
                 continue;
             }
 
-            let account = self.accounts.get(&candidate).expect("queue account must be tracked");
+            let account = self.accounts.get_mut(&candidate).expect("queue account must be tracked");
+
+            // Remove notes that have failed too many times.
+            account.drain_failing_notes(Self::MAX_NOTE_ATTEMPTS);
 
             // Skip empty accounts, and prune them.
-            //
             // This is how we keep the number of accounts bounded.
             if account.is_empty() {
                 // We don't need to prune the inflight transactions because if the account is empty,
@@ -170,7 +179,13 @@ impl State {
                 continue;
             }
 
-            let notes = account.notes().take(limit.get()).cloned().collect::<Vec<_>>();
+            // Select notes from the account that can be consumed or are ready for a retry.
+            let notes = account
+                .notes()
+                .filter(|&note| note.is_available(self.chain_tip_header.block_num()))
+                .take(limit.get())
+                .cloned()
+                .collect::<Vec<_>>();
 
             // Skip accounts with no available notes.
             if notes.is_empty() {
@@ -180,6 +195,7 @@ impl State {
             self.in_progress.insert(candidate);
             return TransactionCandidate {
                 account: account.latest_account(),
+                account_id_prefix: candidate,
                 notes,
                 chain_tip_header: self.chain_tip_header.clone(),
                 chain_mmr: self.chain_mmr.clone(),
@@ -208,15 +224,22 @@ impl State {
 
         // Keep MMR pruned.
         let pruned_block_height =
-            (self.chain_mmr.chain_length().as_usize() - MAX_BLOCK_COUNT) as u32;
+            (self.chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
         self.chain_mmr.prune_to(..pruned_block_height.into());
     }
 
     /// Marks a previously selected candidate account as failed, allowing it to be available for
     /// selection again.
     #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
-    pub fn candidate_failed(&mut self, candidate: NetworkAccountPrefix) {
-        self.in_progress.remove(&candidate);
+    pub fn candidate_failed(&mut self, candidate: &TransactionCandidate) {
+        if let Some(account) = self.accounts.get_mut(&candidate.account_id_prefix) {
+            account.fail(&candidate.notes, candidate.chain_tip_header.block_num());
+        } else {
+            tracing::error!(account.prefix=%candidate.account_id_prefix, "failed network transaction has no local account state");
+        }
+
+        self.in_progress.remove(&candidate.account_id_prefix);
+
         self.inject_telemetry();
     }
 

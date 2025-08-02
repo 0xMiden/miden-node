@@ -13,13 +13,7 @@ use miden_tx::{TransactionProver, TransactionProverError};
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
-use crate::{
-    RemoteProverClientError,
-    remote_prover::{
-        generated,
-        generated::{ProofType, ProvingRequest, ProvingResponse},
-    },
-};
+use crate::{RemoteProverClientError, remote_prover::generated as proto};
 
 // REMOTE TRANSACTION PROVER
 // ================================================================================================
@@ -127,18 +121,18 @@ impl TransactionProver for RemoteTransactionProver {
 // CONVERSIONS
 // ================================================================================================
 
-impl TryFrom<ProvingResponse> for ProvenTransaction {
+impl TryFrom<proto::Proof> for ProvenTransaction {
     type Error = DeserializationError;
 
-    fn try_from(response: ProvingResponse) -> Result<Self, Self::Error> {
+    fn try_from(response: proto::Proof) -> Result<Self, Self::Error> {
         ProvenTransaction::read_from_bytes(&response.payload)
     }
 }
 
-impl From<TransactionWitness> for ProvingRequest {
+impl From<TransactionWitness> for proto::ProofRequest {
     fn from(witness: TransactionWitness) -> Self {
-        ProvingRequest {
-            proof_type: ProofType::Transaction.into(),
+        proto::ProofRequest {
+            proof_type: proto::ProofType::Transaction.into(),
             payload: witness.to_bytes(),
         }
     }

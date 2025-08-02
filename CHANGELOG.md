@@ -1,10 +1,34 @@
 # Changelog
 
+## v0.11.0 (TBD)
+
+### Changes
+
+- [BREAKING] Updated MSRV to 1.88.
+- [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
+### Enhancements
+
+- Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
+- A transaction's account delta is now checked against its commitments in `SubmitProvenTransaction` endpoint ([#1093](https://github.com/0xMiden/miden-node/pull/1093)).
+- Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the mempool ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
+- RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+
+### Changes
+
+- [BREAKING] Updated MSRV to 1.88.
+- [BREAKING] RPC accept header format changed from `application/miden.vnd+grpc.<version>` to `application/vnd.miden; version=<version>` ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+
+### Fixes
+
+- [BREAKING] Integrated proxy status endpoint into main proxy service, removing separate status port.
+- RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+- Stress-test CLI account now properly sets the storage mode and increment nonce in transactions ([#1113](https://github.com/0xMiden/miden-node/pull/1113)).
+
 ## v0.10.1 (2025-07-14)
 
 ### Fixes
 
-- Network accounts are disabled after one transaction ([#1086](https://github.com/0xMiden/miden-node/pull/1086)).
+- Network accounts are no longer disabled after one transaction ([#1086](https://github.com/0xMiden/miden-node/pull/1086)).
 
 ## v0.10.0 (2025-07-10)
 
@@ -49,6 +73,7 @@
 - [BREAKING] Renamed `Note` to `CommittedNote`, and `NetworkNote` to `Note` in the proto messages (#1022).
 - [BREAKING] Limits of store queries per query parameter enforced (#1028).
 - Support gRPC server reflection `v1alpha` (#1036).
+- Migrate from `rusqlite` to `diesel` as a database abstraction (#921)
 
 ### Fixes
 
@@ -87,7 +112,7 @@
 - Added an optional API key request parameter to skip PoW in faucet (#839).
 - Proof-of-Work difficulty is now adjusted based on the number of concurrent requests (#865).
 - Added options for configuring NTB in `bundled` command (#884).
-- [BREAKING] Updated MSRV to 1.87
+- [BREAKING] Updated MSRV to 1.87.
 
 ### Fixes
 

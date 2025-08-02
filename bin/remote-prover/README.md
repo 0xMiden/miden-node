@@ -229,6 +229,7 @@ Each worker status includes:
 You can query the status endpoint using a gRPC client. For example, using `grpcurl`:
 
 ```bash
+# Assuming the proxy is running on port 8084
 grpcurl -plaintext -import-path ./proto -proto proxy_status.proto \
   -d '{}' localhost:8084 proxy_status.ProxyStatusApi.Status
 ```
@@ -254,7 +255,7 @@ Example response:
 }
 ```
 
-The status port can be configured using the `MRP_STATUS_PORT` environment variable or the `--status-port` command-line argument when starting the proxy.
+The status endpoint is integrated into the main proxy service and uses the same port as the proxy. The status information is automatically updated during health checks, ensuring it reflects the current state of all workers.
 
 ## Logging and Tracing
 

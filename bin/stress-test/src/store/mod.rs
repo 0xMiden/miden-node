@@ -4,15 +4,7 @@ use std::{
 };
 
 use futures::{StreamExt, stream};
-use miden_node_proto::generated::{
-    account as account_proto,
-    digest::Digest,
-    requests::{
-        CheckNullifiersByPrefixRequest, GetNotesByIdRequest, SyncNoteRequest, SyncStateRequest,
-    },
-    responses::{CheckNullifiersByPrefixResponse, SyncStateResponse},
-    store::rpc_client::RpcClient,
-};
+use miden_node_proto::generated::{self as proto, rpc_store::rpc_client::RpcClient};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
     account::AccountId,
@@ -29,6 +21,18 @@ use crate::{
 
 mod metrics;
 
+// CONSTANTS
+// ================================================================================================
+
+/// Number of accounts used in each `sync_state` call.
+const ACCOUNTS_PER_SYNC_STATE: usize = 5;
+
+/// Number of accounts used in each `sync_notes` call.
+const ACCOUNTS_PER_SYNC_NOTES: usize = 15;
+
+/// Number of note IDs used in each `check_nullifiers_by_prefix` call.
+const NOTE_IDS_PER_NULLIFIERS_CHECK: usize = 20;
+
 // SYNC STATE
 // ================================================================================================
 
@@ -42,15 +46,18 @@ mod metrics;
 pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     // load accounts from the dump file
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
-    let accounts = fs::read_to_string(accounts_file).await.unwrap();
+    let accounts = fs::read_to_string(&accounts_file)
+        .await
+        .unwrap_or_else(|e| panic!("missing file {}: {e:?}", accounts_file.display()));
     let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
     let (store_client, _) = start_store(data_directory).await;
 
-    // each request will have 3 account ids, 3 note tags and will be sent with block number 0
+    // each request will have 5 account ids, 5 note tags and will be sent with block number 0
     let request = |_| {
         let mut client = store_client.clone();
-        let account_batch: Vec<AccountId> = account_ids.by_ref().take(3).collect();
+        let account_batch: Vec<AccountId> =
+            account_ids.by_ref().take(ACCOUNTS_PER_SYNC_STATE).collect();
         tokio::spawn(async move { sync_state(&mut client, account_batch, 0).await })
     };
 
@@ -62,7 +69,7 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
         .collect::<(Vec<_>, Vec<_>)>()
         .await;
 
-    print_summary(timers_accumulator);
+    print_summary(&timers_accumulator);
 
     #[allow(clippy::cast_precision_loss)]
     let average_notes_per_response =
@@ -77,7 +84,7 @@ pub async fn sync_state(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     account_ids: Vec<AccountId>,
     block_num: u32,
-) -> (Duration, SyncStateResponse) {
+) -> (Duration, proto::rpc_store::SyncStateResponse) {
     let note_tags = account_ids
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
@@ -85,10 +92,10 @@ pub async fn sync_state(
 
     let account_ids = account_ids
         .iter()
-        .map(|id| account_proto::AccountId { id: id.to_bytes() })
+        .map(|id| proto::account::AccountId { id: id.to_bytes() })
         .collect::<Vec<_>>();
 
-    let sync_request = SyncStateRequest { block_num, note_tags, account_ids };
+    let sync_request = proto::rpc_store::SyncStateRequest { block_num, note_tags, account_ids };
 
     let start = Instant::now();
     let response = api_client.sync_state(sync_request).await.unwrap();
@@ -108,15 +115,19 @@ pub async fn sync_state(
 pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concurrency: usize) {
     // load accounts from the dump file
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
-    let accounts = fs::read_to_string(accounts_file).await.unwrap();
+    let accounts = fs::read_to_string(&accounts_file)
+        .await
+        .unwrap_or_else(|e| panic!("missing file {}: {e:?}", accounts_file.display()));
     let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
     let (store_client, _) = start_store(data_directory).await;
 
-    // each request will have 3 note tags and will be sent with block number 0.
+    // each request will have `ACCOUNTS_PER_SYNC_NOTES` note tags and will be sent with block number
+    // 0.
     let request = |_| {
         let mut client = store_client.clone();
-        let account_batch: Vec<AccountId> = account_ids.by_ref().take(3).collect();
+        let account_batch: Vec<AccountId> =
+            account_ids.by_ref().take(ACCOUNTS_PER_SYNC_NOTES).collect();
         tokio::spawn(async move { sync_notes(&mut client, account_batch).await })
     };
 
@@ -128,7 +139,7 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
         .collect::<Vec<_>>()
         .await;
 
-    print_summary(timers_accumulator);
+    print_summary(&timers_accumulator);
 }
 
 /// Sends a single `sync_notes` request to the store and returns the elapsed time.
@@ -142,7 +153,7 @@ pub async fn sync_notes(
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
         .collect::<Vec<_>>();
-    let sync_request = SyncNoteRequest { block_num: 0, note_tags };
+    let sync_request = proto::rpc_store::SyncNotesRequest { block_num: 0, note_tags };
 
     let start = Instant::now();
     api_client.sync_notes(sync_request).await.unwrap();
@@ -169,9 +180,14 @@ pub async fn bench_check_nullifiers_by_prefix(
     let (mut store_client, _) = start_store(data_directory.clone()).await;
 
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
-    let accounts = fs::read_to_string(accounts_file).await.unwrap();
-    let account_ids: Vec<AccountId> =
-        accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).collect();
+    let accounts = fs::read_to_string(&accounts_file)
+        .await
+        .unwrap_or_else(|e| panic!("missing file {}: {e:?}", accounts_file.display()));
+    let account_ids: Vec<AccountId> = accounts
+        .lines()
+        .take(ACCOUNTS_PER_SYNC_STATE)
+        .map(|a| AccountId::from_hex(a).unwrap())
+        .collect();
 
     // get all nullifier prefixes from the store
     let mut nullifier_prefixes: Vec<u32> = vec![];
@@ -180,11 +196,17 @@ pub async fn bench_check_nullifiers_by_prefix(
         // get the accounts notes
         let (_, response) =
             sync_state(&mut store_client, account_ids.clone(), current_block_num).await;
-        let note_ids = response.notes.iter().map(|n| n.note_id.unwrap()).collect::<Vec<Digest>>();
+        let note_ids = response
+            .notes
+            .iter()
+            .map(|n| n.note_id.unwrap())
+            .collect::<Vec<proto::note::NoteId>>();
 
-        // get the notes nullifiers.
+        // get the notes nullifiers, limiting to 20 notes maximum
+        let note_ids_to_fetch =
+            note_ids.iter().take(NOTE_IDS_PER_NULLIFIERS_CHECK).copied().collect::<Vec<_>>();
         let notes = store_client
-            .get_notes_by_id(GetNotesByIdRequest { note_ids })
+            .get_notes_by_id(proto::note::NoteIdList { ids: note_ids_to_fetch })
             .await
             .unwrap()
             .into_inner()
@@ -202,8 +224,16 @@ pub async fn bench_check_nullifiers_by_prefix(
                 .collect::<Vec<u32>>(),
         );
 
-        current_block_num = response.block_header.unwrap().block_num;
-        if response.chain_tip == current_block_num {
+        // Use the response from the first chunk to update block number
+        // (all chunks should return the same block header for the same block_num)
+        let (_, first_response) = sync_state(
+            &mut store_client,
+            account_ids[..1000.min(account_ids.len())].to_vec(),
+            current_block_num,
+        )
+        .await;
+        current_block_num = first_response.block_header.unwrap().block_num;
+        if first_response.chain_tip == current_block_num {
             break;
         }
     }
@@ -226,7 +256,7 @@ pub async fn bench_check_nullifiers_by_prefix(
         .collect::<(Vec<_>, Vec<_>)>()
         .await;
 
-    print_summary(timers_accumulator);
+    print_summary(&timers_accumulator);
 
     #[allow(clippy::cast_precision_loss)]
     let average_nullifiers_per_response =
@@ -240,8 +270,8 @@ pub async fn bench_check_nullifiers_by_prefix(
 async fn check_nullifiers_by_prefix(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers_prefixes: Vec<u32>,
-) -> (Duration, CheckNullifiersByPrefixResponse) {
-    let sync_request = CheckNullifiersByPrefixRequest {
+) -> (Duration, proto::rpc_store::CheckNullifiersByPrefixResponse) {
+    let sync_request = proto::rpc_store::CheckNullifiersByPrefixRequest {
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,
         block_num: 0,

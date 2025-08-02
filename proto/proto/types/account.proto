@@ -1,7 +1,10 @@
 syntax = "proto3";
 package account;
 
-import "digest.proto";
+import "types/primitives.proto";
+
+// ACCOUNT
+// ================================================================================================
 
 // Uniquely identifies a specific account.
 //
@@ -19,14 +22,14 @@ message AccountSummary {
     AccountId account_id = 1;
 
     // The current account commitment or zero if the account does not exist.
-    digest.Digest account_commitment = 2;
+    primitives.Digest account_commitment = 2;
 
     // Block number at which the summary was made.
     uint32 block_num = 3;
 }
 
-// An account info.
-message AccountInfo {
+// An account details.
+message AccountDetails {
     // Account summary.
     AccountSummary summary = 1;
 
@@ -38,14 +41,31 @@ message AccountInfo {
 // An account header.
 message AccountHeader {
     // Vault root hash.
-    digest.Digest vault_root = 1;
+    primitives.Digest vault_root = 1;
 
     // Storage root hash.
-    digest.Digest storage_commitment = 2;
+    primitives.Digest storage_commitment = 2;
 
     // Code root hash.
-    digest.Digest code_commitment = 3;
+    primitives.Digest code_commitment = 3;
 
     // Account nonce.
     uint64 nonce = 4;
+}
+
+// An account witness.
+message AccountWitness {
+    // Account ID for which this proof is requested.
+    account.AccountId account_id = 1;
+
+    // The account ID within the proof, which may be different from the above account ID.
+    // This can happen when the requested account ID's prefix matches the prefix of an existing
+    // account ID in the tree. Then the witness will prove inclusion of this witness ID in the tree.
+    account.AccountId witness_id = 2;
+
+    // The state commitment whose inclusion the witness proves.
+    primitives.Digest commitment = 3;
+
+    // The merkle path of the state commitment in the account tree.
+    primitives.MerklePath path = 4;
 }

@@ -15,20 +15,17 @@ use miden_node_proto::{
         account::{AccountInfo, AccountProofRequest, StorageMapKeysProof},
         batch::BatchInputs,
     },
-    generated::responses::{AccountProofsResponse, AccountStateHeader, StorageSlotMapProof},
+    generated as proto,
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
-    AccountError,
+    AccountError, Word,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
         AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
         NullifierTree, NullifierWitness, ProvenBlock,
     },
-    crypto::{
-        hash::rpo::RpoDigest,
-        merkle::{Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof},
-    },
+    crypto::merkle::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof},
     note::{NoteDetails, NoteId, Nullifier},
     transaction::{OutputNote, PartialBlockchain},
     utils::Serializable,
@@ -42,7 +39,7 @@ use tracing::{info, info_span, instrument};
 use crate::{
     COMPONENT,
     blocks::BlockStore,
-    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate},
+    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate, models::Page},
     errors::{
         ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError,
         GetBlockInputsError, GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError,
@@ -52,11 +49,12 @@ use crate::{
 // STRUCTURES
 // ================================================================================================
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct TransactionInputs {
-    pub account_commitment: RpoDigest,
+    pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
     pub found_unauthenticated_notes: BTreeSet<NoteId>,
+    pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
 /// Container for state that needs to be updated atomically.
@@ -280,7 +278,7 @@ impl State {
                     },
                 };
 
-                let merkle_path = note_tree.get_note_path(note_index);
+                let inclusion_path = note_tree.open(note_index);
 
                 let note_record = NoteRecord {
                     block_num,
@@ -288,7 +286,7 @@ impl State {
                     note_id: note.id().into(),
                     metadata: *note.metadata(),
                     details,
-                    merkle_path,
+                    inclusion_path,
                 };
 
                 Ok((note_record, nullifier))
@@ -599,7 +597,7 @@ impl State {
         let delta = if block_num == state_sync.block_header.block_num() {
             // The client is in sync with the chain tip.
             MmrDelta {
-                forest: block_num.as_usize(),
+                forest: Forest::new(block_num.as_usize()),
                 data: vec![],
             }
         } else {
@@ -617,7 +615,7 @@ impl State {
             inner
                 .blockchain
                 .as_mmr()
-                .get_delta(from_forest, to_forest)
+                .get_delta(Forest::new(from_forest), Forest::new(to_forest))
                 .map_err(StateSyncError::FailedToBuildMmrDelta)?
         };
 
@@ -803,6 +801,20 @@ impl State {
 
         let account_commitment = inner.account_tree.get(account_id);
 
+        let new_account_id_prefix_is_unique = if account_commitment.is_empty() {
+            Some(!inner.account_tree.contains_account_id_prefix(account_id.prefix()))
+        } else {
+            None
+        };
+
+        // Non-unique account Id prefixes for new accounts are not allowed.
+        if let Some(false) = new_account_id_prefix_is_unique {
+            return Ok(TransactionInputs {
+                new_account_id_prefix_is_unique,
+                ..Default::default()
+            });
+        }
+
         let nullifiers = nullifiers
             .iter()
             .map(|nullifier| NullifierInfo {
@@ -818,6 +830,7 @@ impl State {
             account_commitment,
             nullifiers,
             found_unauthenticated_notes,
+            new_account_id_prefix_is_unique,
         })
     }
 
@@ -838,9 +851,10 @@ impl State {
     pub async fn get_account_proofs(
         &self,
         account_requests: Vec<AccountProofRequest>,
-        known_code_commitments: BTreeSet<RpoDigest>,
+        known_code_commitments: BTreeSet<Word>,
         include_headers: bool,
-    ) -> Result<(BlockNumber, Vec<AccountProofsResponse>), DatabaseError> {
+    ) -> Result<(BlockNumber, Vec<proto::rpc_store::account_proofs::AccountProof>), DatabaseError>
+    {
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
@@ -850,7 +864,7 @@ impl State {
             account_requests.iter().map(|req| req.account_id).collect();
 
         let state_headers = if include_headers.not() {
-            BTreeMap::<AccountId, AccountStateHeader>::default()
+            BTreeMap::<AccountId, proto::rpc_store::account_proofs::account_proof::AccountStateHeader>::default()
         } else {
             let infos = self.db.select_accounts_by_ids(account_ids.clone()).await?;
             if account_ids.len() > infos.len() {
@@ -881,7 +895,7 @@ impl State {
                             for map_key in storage_keys {
                                 let proof = storage_map.open(map_key);
 
-                                let slot_map_key = StorageSlotMapProof {
+                                let slot_map_key = proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapProof {
                                     storage_slot: u32::from(*storage_index),
                                     smt_proof: proof.to_bytes(),
                                 };
@@ -898,12 +912,13 @@ impl State {
                         .not()
                         .then(|| details.code().to_bytes());
 
-                    let state_header = AccountStateHeader {
-                        header: Some(AccountHeader::from(details).into()),
-                        storage_header: details.storage().to_header().to_bytes(),
-                        account_code,
-                        storage_maps: storage_slot_map_keys,
-                    };
+                    let state_header =
+                        proto::rpc_store::account_proofs::account_proof::AccountStateHeader {
+                            header: Some(AccountHeader::from(details).into()),
+                            storage_header: details.storage().to_header().to_bytes(),
+                            account_code,
+                            storage_maps: storage_slot_map_keys,
+                        };
 
                     headers_map.insert(account_info.summary.account_id, state_header);
                 }
@@ -920,7 +935,7 @@ impl State {
 
                 let witness_record = AccountWitnessRecord { account_id, witness };
 
-                AccountProofsResponse {
+                proto::rpc_store::account_proofs::AccountProof {
                     witness: Some(witness_record.into()),
                     state_header,
                 }
@@ -997,7 +1012,7 @@ async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitiali
 
 #[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
-    let block_commitments: Vec<RpoDigest> = db
+    let block_commitments: Vec<Word> = db
         .select_all_block_headers()
         .await?
         .iter()

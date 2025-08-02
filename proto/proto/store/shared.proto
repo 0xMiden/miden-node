@@ -1,0 +1,36 @@
+// Shared messages for the store RPC.
+syntax = "proto3";
+package shared;
+
+import "types/account.proto";
+import "types/blockchain.proto";
+import "types/transaction.proto";
+import "types/primitives.proto";
+import "types/note.proto";
+import "google/protobuf/empty.proto";
+
+// GET BLOCK HEADER BY NUMBER
+// ================================================================================================
+
+// Returns the block header corresponding to the requested block number, as well as the merkle
+// path and current forest which validate the block's inclusion in the chain.
+//
+// The Merkle path is an MMR proof for the block's leaf, based on the current chain length.
+message BlockHeaderByNumberRequest {
+    // The target block height, defaults to latest if not provided.
+    optional uint32 block_num = 1;
+    // Whether or not to return authentication data for the block header.
+    optional bool include_mmr_proof = 2;
+}
+
+// Represents the result of getting a block header by block number.
+message BlockHeaderByNumberResponse {
+    // The requested block header.
+    blockchain.BlockHeader block_header = 1;
+
+    // Merkle path to verify the block's inclusion in the MMR at the returned `chain_length`.
+    optional primitives.MerklePath mmr_path = 2;
+
+    // Current chain length.
+    optional fixed32 chain_length = 3;
+}

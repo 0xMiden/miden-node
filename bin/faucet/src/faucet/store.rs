@@ -80,7 +80,7 @@ impl DataStore for FaucetDataStore {
 }
 
 impl MastForestStore for FaucetDataStore {
-    fn get(&self, procedure_hash: &miden_objects::Digest) -> Option<std::sync::Arc<MastForest>> {
+    fn get(&self, procedure_hash: &miden_objects::Word) -> Option<std::sync::Arc<MastForest>> {
         self.mast_store.get(procedure_hash)
     }
 }

@@ -16,7 +16,7 @@ use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProve
 use miden_tx::{
     DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
     NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
-    TransactionProverError,
+    TransactionProverError, auth::UnreachableAuth,
 };
 use rand::seq::SliceRandom;
 use tokio::task::JoinError;
@@ -57,17 +57,22 @@ pub struct NtxContext {
     /// Defaults to local proving if unset. This should be avoided in production as this is
     /// computationally intensive.
     pub prover: Option<RemoteTransactionProver>,
-
-    pub genesis_header: BlockHeader,
 }
 
 impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
-        let TransactionCandidate { account, notes } = tx;
+        let TransactionCandidate {
+            account,
+            notes,
+            chain_tip_header,
+            chain_mmr,
+        } = tx;
 
         tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current().set_attribute("notes.count", notes.len());
+        tracing::Span::current()
+            .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         // Work-around for `TransactionExecutor` not being `Send`.
         tokio::task::spawn_blocking(move || {
@@ -90,7 +95,7 @@ impl NtxContext {
                             let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
                             let data_store =
-                                NtxDataStore::new(account, self.genesis_header.clone());
+                                NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
                             self.filter_notes(&data_store, notes)
                                 .and_then(|notes| self.execute(&data_store, notes))
@@ -125,13 +130,14 @@ impl NtxContext {
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
     ) -> NtxResult<InputNotes<InputNote>> {
-        let executor = TransactionExecutor::new(data_store, None);
+        let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
+            TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 
         let notes = match checker
             .check_notes_consumability(
                 data_store.account.id(),
-                BlockNumber::GENESIS,
+                data_store.reference_header.block_num(),
                 notes.clone(),
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),
@@ -170,12 +176,13 @@ impl NtxContext {
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
     ) -> NtxResult<ExecutedTransaction> {
-        let executor = TransactionExecutor::new(data_store, None);
+        let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
+            TransactionExecutor::new(data_store, None);
 
         executor
             .execute_transaction(
                 data_store.account.id(),
-                BlockNumber::GENESIS,
+                data_store.reference_header.block_num(),
                 notes,
                 TransactionArgs::default(),
                 Arc::new(DefaultSourceManager::default()),
@@ -217,16 +224,22 @@ impl NtxContext {
 /// This is sufficient for executing a network transaction.
 struct NtxDataStore {
     account: Account,
-    genesis_header: BlockHeader,
+    reference_header: BlockHeader,
+    chain_mmr: PartialBlockchain,
     mast_store: TransactionMastStore,
 }
 
 impl NtxDataStore {
-    fn new(account: Account, genesis_header: BlockHeader) -> Self {
+    fn new(account: Account, reference_header: BlockHeader, chain_mmr: PartialBlockchain) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
 
-        Self { account, genesis_header, mast_store }
+        Self {
+            account,
+            reference_header,
+            chain_mmr,
+            mast_store,
+        }
     }
 }
 
@@ -242,7 +255,7 @@ impl DataStore for NtxDataStore {
         }
 
         match ref_blocks.last().copied() {
-            Some(BlockNumber::GENESIS) => {},
+            Some(reference) if reference == self.reference_header.block_num() => {},
             Some(other) => return Err(DataStoreError::BlockNotFound(other)),
             None => return Err(DataStoreError::other("no reference block requested")),
         }
@@ -250,8 +263,8 @@ impl DataStore for NtxDataStore {
         Ok((
             self.account.clone(),
             None,
-            self.genesis_header.clone(),
-            PartialBlockchain::default(),
+            self.reference_header.clone(),
+            self.chain_mmr.clone(),
         ))
     }
 }
@@ -259,7 +272,7 @@ impl DataStore for NtxDataStore {
 impl MastForestStore for NtxDataStore {
     fn get(
         &self,
-        procedure_hash: &miden_objects::Digest,
+        procedure_hash: &miden_objects::Word,
     ) -> Option<std::sync::Arc<miden_objects::MastForest>> {
         self.mast_store.get(procedure_hash)
     }

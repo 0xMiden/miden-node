@@ -4,7 +4,7 @@
 //! data is atomically written, and that reads are consistent.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     ops::Not,
     sync::Arc,
 };
@@ -53,7 +53,7 @@ use crate::{
 pub struct TransactionInputs {
     pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
-    pub found_unauthenticated_notes: BTreeSet<NoteId>,
+    pub found_unauthenticated_notes: HashSet<NoteId>,
     pub new_account_id_prefix_is_unique: Option<bool>,
 }
 

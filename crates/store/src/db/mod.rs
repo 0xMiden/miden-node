@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashSet},
     path::PathBuf,
 };
 
@@ -476,7 +476,7 @@ impl Db {
 
     /// Loads all note IDs matching a certain NoteId from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<BTreeSet<NoteId>> {
+    pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<HashSet<NoteId>> {
         self.select_notes_by_id(note_ids)
             .await
             .map(|notes| notes.into_iter().map(|note| note.note_id.into()).collect())

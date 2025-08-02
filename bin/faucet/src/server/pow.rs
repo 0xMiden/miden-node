@@ -154,7 +154,7 @@ struct ChallengeCache {
     /// Maps API key to the number of submitted challenges.
     challenges_per_key: HashMap<ApiKey, usize>,
     /// Maps account id to the number of submitted challenges.
-    account_ids: BTreeMap<AccountId, usize>,
+    account_ids: HashMap<AccountId, usize>,
 }
 
 impl ChallengeCache {

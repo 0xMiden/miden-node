@@ -42,6 +42,8 @@ pub enum NtxError {
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
     Submission(#[source] tonic::Status),
+    #[error("failed to spawn blocking task")]
+    Spawn(#[source] JoinError),
 }
 
 type NtxResult<T> = Result<T, NtxError>;
@@ -187,7 +189,9 @@ impl NtxContext {
         if let Some(remote) = &self.prover {
             remote.prove(tx.into()).await
         } else {
-            LocalTransactionProver::default().prove(tx.into()).await
+            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
+                .await
+                .map_err(|e| NtxError::Spawn(e))?
         }
         .map_err(NtxError::Proving)
     }

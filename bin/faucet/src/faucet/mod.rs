@@ -71,14 +71,14 @@ impl FaucetProver {
         tx: impl Into<TransactionWitness> + Clone,
     ) -> Result<ProvenTransaction, MintError> {
         match self {
-            Self::Local(prover) => prover.prove(tx.into()).await,
+            Self::Local(prover) => prover.prove(tx.into()),
             Self::Remote(prover) => {
                 let proven_tx = prover.prove(tx.clone().into()).await;
                 match proven_tx {
                     Ok(proven_tx) => Ok(proven_tx),
                     Err(err) => {
                         warn!("failed to prove transaction with remote prover, falling back to local prover: {}", err);
-                        LocalTransactionProver::new(ProvingOptions::default()).prove(tx.into()).await
+                        LocalTransactionProver::new(ProvingOptions::default()).prove(tx.into())
                     }
                 }
             },

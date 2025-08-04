@@ -44,9 +44,9 @@ use crate::{
             AccountRaw, AccountSummaryRaw, BigIntSum, ExpressionMethods, NoteInsertRowRaw,
             NoteRecordRaw, NoteRecordWithScriptRaw, TransactionSummaryRaw,
             conv::{
-                DatabaseTypeConversion, consumed_to_raw_sql, fungible_delta_to_raw_sql,
-                nonce_to_raw_sql, nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce,
-                raw_sql_to_slot, slot_to_raw_sql,
+                SqlTypeConvert, consumed_to_raw_sql, fungible_delta_to_raw_sql, nonce_to_raw_sql,
+                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot,
+                slot_to_raw_sql,
             },
             deserialize_raw_vec, get_nullifier_prefix, serialize_vec, sql_sum_into,
             vec_raw_try_into,
@@ -531,7 +531,7 @@ pub(crate) fn upsert_accounts(
         let val = (
             schema::accounts::account_id.eq(account_id.to_bytes()),
             schema::accounts::network_account_id_prefix
-                .eq(network_account_id_prefix.map(DatabaseTypeConversion::to_raw_sql)),
+                .eq(network_account_id_prefix.map(SqlTypeConvert::to_raw_sql)),
             schema::accounts::account_commitment.eq(update.final_state_commitment().to_bytes()),
             schema::accounts::block_num.eq(block_num.to_raw_sql()),
             schema::accounts::details.eq(full_account.as_ref().map(|account| account.to_bytes())),
@@ -1383,7 +1383,7 @@ pub fn select_block_headers(
     QueryParamBlockLimit::check(blocks.size_hint().0)?;
 
     // SELECT block_header FROM block_headers WHERE block_num IN rarray(?1)
-    let blocks = Vec::from_iter(blocks.map(DatabaseTypeConversion::to_raw_sql));
+    let blocks = Vec::from_iter(blocks.map(SqlTypeConvert::to_raw_sql));
     let raw_block_headers =
         QueryDsl::select(schema::block_headers::table, models::BlockHeaderRaw::as_select())
             .filter(schema::block_headers::block_num.eq_any(blocks))

@@ -39,17 +39,17 @@ pub struct DatabaseTypeConversionError(&'static str);
 /// Convert from and to it's database representation and back
 ///
 /// We do not assume sanity of DB types.
-pub(crate) trait DatabaseTypeConversion: Sized {
+pub(crate) trait SqlTypeConvert: Sized {
     type Raw: Sized;
     type Error: std::error::Error + Send + Sync + 'static;
     fn to_raw_sql(self) -> Self::Raw;
-    fn from_raw_sql(_raw: Self::Raw) -> ::std::result::Result<Self, Self::Error>;
+    fn from_raw_sql(_raw: Self::Raw) -> Result<Self, Self::Error>;
 }
 
-impl DatabaseTypeConversion for BlockNumber {
+impl SqlTypeConvert for BlockNumber {
     type Raw = i64;
     type Error = DatabaseTypeConversionError;
-    fn from_raw_sql(raw: Self::Raw) -> ::std::result::Result<Self, Self::Error> {
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
         #[allow(clippy::cast_sign_loss)]
         if raw <= u32::MAX as i64 {
             Ok(BlockNumber::from(raw as u32))
@@ -62,10 +62,10 @@ impl DatabaseTypeConversion for BlockNumber {
     }
 }
 
-impl DatabaseTypeConversion for NetworkAccountPrefix {
+impl SqlTypeConvert for NetworkAccountPrefix {
     type Raw = i64;
     type Error = DatabaseTypeConversionError;
-    fn from_raw_sql(raw: Self::Raw) -> ::std::result::Result<Self, Self::Error> {
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
         NetworkAccountPrefix::try_from(raw as u32)
             .map_err(|_e| DatabaseTypeConversionError(type_name::<NetworkAccountError>()))
     }
@@ -74,12 +74,12 @@ impl DatabaseTypeConversion for NetworkAccountPrefix {
     }
 }
 
-impl DatabaseTypeConversion for NoteTag {
+impl SqlTypeConvert for NoteTag {
     type Raw = i32;
     type Error = DatabaseTypeConversionError;
 
     #[inline(always)]
-    fn from_raw_sql(raw: Self::Raw) -> ::std::result::Result<Self, Self::Error> {
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
         #[allow(clippy::cast_sign_loss)]
         Ok(NoteTag::from(raw as u32))
     }

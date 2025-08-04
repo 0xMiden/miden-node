@@ -22,6 +22,7 @@ use miden_node_utils::{
 use miden_objects::{
     MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
     account::{AccountId, delta::AccountUpdateDetails},
+    batch::ProvenBatch,
     block::{BlockHeader, BlockNumber},
     transaction::ProvenTransaction,
     utils::serde::Deserializable,
@@ -281,7 +282,7 @@ impl api_server::Api for RpcService {
 
         // Only allow deployment transactions for new network accounts
         if tx.account_id().is_network()
-            && !matches!(tx.account_update().details(), AccountUpdateDetails::New(_))
+            && !tx.account_update().initial_state_commitment().is_empty()
         {
             return Err(Status::invalid_argument(
                 "Network transactions may not be submitted by users yet",
@@ -313,6 +314,32 @@ impl api_server::Api for RpcService {
         })?;
 
         block_producer.clone().submit_proven_transaction(request).await
+    }
+
+    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_batch", skip_all, err)]
+    async fn submit_proven_batch(
+        &self,
+        request: tonic::Request<proto::block_producer::ProvenBatch>,
+    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+        let Some(block_producer) = &self.block_producer else {
+            return Err(Status::unavailable("Batch submission not available in read-only mode"));
+        };
+
+        let request = request.into_inner();
+
+        let batch = ProvenBatch::read_from_bytes(&request.encoded)
+            .map_err(|err| Status::invalid_argument(err.as_report_context("invalid batch")))?;
+
+        // Only allow deployment transactions for new network accounts
+        for tx in batch.transactions().as_slice() {
+            if tx.account_id().is_network() && !tx.initial_state_commitment().is_empty() {
+                return Err(Status::invalid_argument(
+                    "Network transactions may not be submitted by users yet",
+                ));
+            }
+        }
+
+        block_producer.clone().submit_proven_batch(request).await
     }
 
     /// Returns details for public (public) account by id.

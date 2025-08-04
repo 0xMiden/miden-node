@@ -123,6 +123,23 @@ impl From<AddTransactionError> for tonic::Status {
     }
 }
 
+// Submit proven batch by user errors
+// =================================================================================================
+
+#[derive(Debug, Error)]
+pub enum SubmitProvenBatchError {
+    #[error("batch deserialization failed")]
+    Deserialization(#[source] miden_objects::utils::DeserializationError),
+}
+
+impl From<SubmitProvenBatchError> for tonic::Status {
+    fn from(value: SubmitProvenBatchError) -> Self {
+        match value {
+            SubmitProvenBatchError::Deserialization(_) => Self::invalid_argument(value.as_report()),
+        }
+    }
+}
+
 // Batch building errors
 // =================================================================================================
 

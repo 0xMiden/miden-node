@@ -18,6 +18,18 @@ service Api {
     // Submits proven transaction to the Miden network
     rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (SubmitProvenTransactionResponse) {}
 
+    // Submits a proven batch to the Miden network.
+    //
+    // The batch may include transactions which were are:
+    //
+    //   - already in the mempool i.e. previously successfully submitted
+    //   - will be submitted to the mempool in the future
+    //   - won't be submitted to the mempool at all
+    //
+    // All transactions in the batch but not in the mempool must build on the current mempool
+    // state following normal transaction submission rules.
+    rpc SubmitProvenBatch(ProvenBatch) returns (SubmitProvenBatchResponse) {}
+
     // Subscribe to mempool events.
     //
     // The request will be rejected if the caller and the mempool disagree on the current chain tip.
@@ -50,6 +62,20 @@ message BlockProducerStatus {
 message SubmitProvenTransactionResponse {
     // The node's current block height.
     fixed32 block_height = 1;
+}
+
+// SUBMIT PROVEN TRANSACTION
+// ================================================================================================
+
+message SubmitProvenBatchResponse {
+    // The node's current block height.
+    fixed32 block_height = 1;
+}
+
+message ProvenBatch {
+    // Encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::transaction::proven_tx::ProvenTransaction].
+    bytes encoded = 1;
 }
 
 // MEMPOOL SUBSCRIPTION

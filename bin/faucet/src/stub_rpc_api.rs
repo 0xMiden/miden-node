@@ -73,6 +73,15 @@ impl api_server::Api for StubRpcApi {
         }))
     }
 
+    async fn submit_proven_batch(
+        &self,
+        _request: tonic::Request<proto::block_producer::ProvenBatch>,
+    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+        Ok(Response::new(proto::block_producer::SubmitProvenBatchResponse {
+            block_height: 0,
+        }))
+    }
+
     async fn get_account_details(
         &self,
         _request: Request<proto::account::AccountId>,

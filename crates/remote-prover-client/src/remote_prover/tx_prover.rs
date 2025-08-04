@@ -80,36 +80,29 @@ impl RemoteTransactionProver {
     }
 }
 
-#[async_trait::async_trait(?Send)]
-impl TransactionProver for RemoteTransactionProver {
-    async fn prove(
+#[cfg(not(feature = "std"))]
+pub trait AsyncHostFuture<O>: Future<Output = O> {}
+
+#[cfg(not(feature = "std"))]
+impl<T, O> AsyncHostFuture<O> for T where T: Future<Output = O> {}
+
+#[cfg(feature = "std")]
+pub trait AsyncHostFuture<O>: Future<Output = O> + Send {}
+
+#[cfg(feature = "std")]
+impl<T, O> AsyncHostFuture<O> for T where T: Future<Output = O> + Send {}
+
+impl RemoteTransactionProver {
+    pub fn prove(
         &self,
         tx_witness: TransactionWitness,
-    ) -> Result<ProvenTransaction, TransactionProverError> {
-        use miden_objects::utils::Serializable;
-        self.connect().await.map_err(|err| {
-            TransactionProverError::other_with_source("failed to connect to the remote prover", err)
-        })?;
-
-        let mut client = self
-            .client
-            .lock()
-            .await
-            .as_ref()
-            .ok_or_else(|| TransactionProverError::other("client should be connected"))?
-            .clone();
-
-        let request = tonic::Request::new(tx_witness.into());
-
-        let response = client.prove(request).await.map_err(|err| {
-            TransactionProverError::other_with_source("failed to prove transaction", err)
-        })?;
-
-        // Deserialize the response bytes back into a ProvenTransaction.
-        let proven_transaction =
-            ProvenTransaction::try_from(response.into_inner()).map_err(|_| {
-                TransactionProverError::other(
-                    "failed to deserialize received response from remote transaction prover",
+    ) -> impl AsyncHostFuture<Result<ProvenTransaction, TransactionProverError>> + Send {
+        async {
+            use miden_objects::utils::Serializable;
+            self.connect().await.map_err(|err| {
+                TransactionProverError::other_with_source(
+                    "failed to connect to the remote prover",
+                    err,
                 )
             })?;
 

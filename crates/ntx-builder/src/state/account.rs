@@ -62,19 +62,33 @@ impl InflightNetworkNote {
 
     /// Checks if the backoff block period has passed.
     ///
-    /// The number of blocks passed since the last attempt must be greater than or equal to the
-    /// square of the attempt count.
+    /// The number of blocks passed since the last attempt must be greater than or equal to
+    /// e^(0.25 * `attempt_count`).
+    ///
+    /// The expected thresholds are therefore:
+    /// - 1 attempt: 2 blocks
+    /// - 2 attempts: 2 blocks
+    /// - 3 attempts: 3 blocks
+    /// - 10 attempts: 13 blocks
+    /// - 20 attempts: 149 blocks
+    /// - etc...
+    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
     fn backoff_has_passed(
         last_attempt_block_num: Option<BlockNumber>,
         current_block_num: BlockNumber,
         attempt_count: usize,
     ) -> bool {
+        if attempt_count == 0 {
+            return true;
+        }
         // Compute the number of blocks passed since the last attempt.
         let last_attempt_block_num =
             last_attempt_block_num.map(|block_num| block_num.as_usize()).unwrap_or_default();
         let blocks_passed = current_block_num.as_usize().saturating_sub(last_attempt_block_num);
-        // Compute the backoff threshold based on the attempt count.
-        let backoff_threshold = attempt_count.pow(2);
+
+        // Compute the exponential backoff threshold: Δ = e^(0.25 * n).
+        let backoff_threshold = (0.25 * attempt_count as f64).exp().ceil() as usize;
+
         // Check if the backoff period has passed.
         blocks_passed >= backoff_threshold
     }
@@ -297,9 +311,16 @@ mod tests {
     #[test]
     #[case::all_zero(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
     #[case::no_attempts(None, BlockNumber::from(0), 0, true)]
-    #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, true)]
-    #[case::two_attempts(Some(BlockNumber::from(2)), BlockNumber::from(6), 2, true)]
-    #[case::two_attempts_not_passed(Some(BlockNumber::from(2)), BlockNumber::from(5), 2, false)]
+    #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(2), 1, true)]
+    #[case::two_attempts(Some(BlockNumber::from(0)), BlockNumber::from(2), 2, true)]
+    #[case::three_attempts(Some(BlockNumber::from(0)), BlockNumber::from(3), 3, true)]
+    #[case::ten_attempts(Some(BlockNumber::from(0)), BlockNumber::from(13), 10, true)]
+    #[case::twenty_attempts(Some(BlockNumber::from(0)), BlockNumber::from(149), 20, true)]
+    #[case::one_attempt_false(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, false)]
+    #[case::two_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(1), 2, false)]
+    #[case::three_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(2), 3, false)]
+    #[case::ten_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(12), 10, false)]
+    #[case::twenty_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(148), 20, false)]
     fn backoff_has_passed(
         #[case] last_attempt_block_num: Option<BlockNumber>,
         #[case] current_block_num: BlockNumber,

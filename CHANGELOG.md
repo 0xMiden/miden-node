@@ -6,6 +6,7 @@
 
 - [BREAKING] Updated MSRV to 1.88.
 - [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
+- [BREAKING] De-duplicate storage of code in DB (no-migration) ([#1083](https://github.com/0xMiden/miden-node/issue/#1083)).
 
 ### Enhancements
 

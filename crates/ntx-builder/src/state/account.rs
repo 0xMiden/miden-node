@@ -117,7 +117,7 @@ pub struct AccountState {
     available_notes: HashMap<Nullifier, InflightNetworkNote>,
 
     /// Notes which have been consumed by transactions that are still inflight.
-    nullified_notes: HashMap<Nullifier, NetworkNote>,
+    nullified_notes: HashMap<Nullifier, InflightNetworkNote>,
 }
 
 impl AccountState {
@@ -204,7 +204,7 @@ impl AccountState {
             .remove(&nullifier)
             .expect("note must be available to nullify");
 
-        self.nullified_notes.insert(nullifier, note.into_inner());
+        self.nullified_notes.insert(nullifier, note);
     }
 
     /// Marks a nullifier as being committed, removing the associated note data entirely.
@@ -225,7 +225,7 @@ impl AccountState {
         // The note may already have been fully removed by `revert_note` if the transaction creating
         // the note was reverted before the transaction that consumed it.
         if let Some(note) = self.nullified_notes.remove(&nullifier) {
-            self.available_notes.insert(nullifier, InflightNetworkNote::new(note));
+            self.available_notes.insert(nullifier, note);
         }
     }
 

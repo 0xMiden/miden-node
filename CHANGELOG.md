@@ -6,6 +6,7 @@
 
 - [BREAKING] Updated MSRV to 1.88.
 - [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
+
 ### Enhancements
 
 - Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).

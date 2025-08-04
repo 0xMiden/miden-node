@@ -34,27 +34,27 @@ use miden_objects::{Felt, block::BlockNumber, note::NoteTag};
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert a database value to it's in memory type {0}")]
-pub struct DbReprConvError(&'static str);
+pub struct DatabaseTypeConversionError(&'static str);
 
 /// Convert from and to it's database representation and back
 ///
 /// We do not assume sanity of DB types.
-pub(crate) trait DbReprConv: Sized {
+pub(crate) trait DatabaseTypeConversion: Sized {
     type Raw: Sized;
     type Error: std::error::Error + Send + Sync + 'static;
     fn to_raw_sql(self) -> Self::Raw;
     fn from_raw_sql(_raw: Self::Raw) -> ::std::result::Result<Self, Self::Error>;
 }
 
-impl DbReprConv for BlockNumber {
+impl DatabaseTypeConversion for BlockNumber {
     type Raw = i64;
-    type Error = DbReprConvError;
+    type Error = DatabaseTypeConversionError;
     fn from_raw_sql(raw: Self::Raw) -> ::std::result::Result<Self, Self::Error> {
         #[allow(clippy::cast_sign_loss)]
         if raw <= u32::MAX as i64 {
             Ok(BlockNumber::from(raw as u32))
         } else {
-            Err(DbReprConvError(type_name::<BlockNumber>()))
+            Err(DatabaseTypeConversionError(type_name::<BlockNumber>()))
         }
     }
     fn to_raw_sql(self) -> Self::Raw {
@@ -62,21 +62,21 @@ impl DbReprConv for BlockNumber {
     }
 }
 
-impl DbReprConv for NetworkAccountPrefix {
+impl DatabaseTypeConversion for NetworkAccountPrefix {
     type Raw = i64;
-    type Error = DbReprConvError;
+    type Error = DatabaseTypeConversionError;
     fn from_raw_sql(raw: Self::Raw) -> ::std::result::Result<Self, Self::Error> {
         NetworkAccountPrefix::try_from(raw as u32)
-            .map_err(|_e| DbReprConvError(type_name::<NetworkAccountError>()))
+            .map_err(|_e| DatabaseTypeConversionError(type_name::<NetworkAccountError>()))
     }
     fn to_raw_sql(self) -> Self::Raw {
         self.inner() as i64
     }
 }
 
-impl DbReprConv for NoteTag {
+impl DatabaseTypeConversion for NoteTag {
     type Raw = i32;
-    type Error = DbReprConvError;
+    type Error = DatabaseTypeConversionError;
 
     #[inline(always)]
     fn from_raw_sql(raw: Self::Raw) -> ::std::result::Result<Self, Self::Error> {

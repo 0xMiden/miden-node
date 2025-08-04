@@ -19,7 +19,7 @@ use super::{
     Selectable, Sqlite, accounts, block_headers, notes, nullifiers, transactions,
 };
 use crate::db::models::conv::{
-    DbReprConv, aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
+    DatabaseTypeConversion, aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
     execution_mode_to_raw_sql, idx_to_raw_sql, note_type_to_raw_sql,
 };
 

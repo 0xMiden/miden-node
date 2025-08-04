@@ -96,8 +96,8 @@ impl RemoteTransactionProver {
     pub fn prove(
         &self,
         tx_witness: TransactionWitness,
-    ) -> impl AsyncHostFuture<Result<ProvenTransaction, TransactionProverError>> + Send {
-        async {
+    ) -> impl AsyncHostFuture<Result<ProvenTransaction, TransactionProverError>> {
+        async move {
             use miden_objects::utils::Serializable;
             self.connect().await.map_err(|err| {
                 TransactionProverError::other_with_source(

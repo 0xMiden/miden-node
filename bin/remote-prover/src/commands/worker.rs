@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use clap::Parser;
 use miden_node_utils::{
     cors::cors_for_grpc_web_layer,
@@ -27,6 +29,10 @@ pub struct StartWorker {
     /// The type of proof that the worker will be handling
     #[arg(long, env = "MRP_WORKER_PROOF_TYPE")]
     proof_type: ProofType,
+    /// Maximum time allowed for a request to complete. Once exceeded, the request is
+    /// aborted.
+    #[arg(long, default_value = "60s", env = "MRP_TIMEOUT", value_parser = humantime::parse_duration)]
+    pub(crate) timeout: Duration,
 }
 
 impl StartWorker {
@@ -71,6 +77,7 @@ impl StartWorker {
             )
             .layer(cors_for_grpc_web_layer())
             .layer(GrpcWebLayer::new())
+            .timeout(self.timeout)
             .add_service(rpc.api_service)
             .add_service(rpc.status_service)
             .add_service(health_service)

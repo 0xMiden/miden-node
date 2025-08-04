@@ -2,6 +2,7 @@ use std::{
     ops::Not,
     path::{Path, PathBuf},
     sync::Arc,
+    time::Duration,
 };
 
 use anyhow::Context;
@@ -33,6 +34,7 @@ pub struct Store {
     pub ntx_builder_listener: TcpListener,
     pub block_producer_listener: TcpListener,
     pub data_directory: PathBuf,
+    pub timeout: Duration,
 }
 
 impl Store {
@@ -78,7 +80,8 @@ impl Store {
         let rpc_address = self.rpc_listener.local_addr()?;
         let ntx_builder_address = self.ntx_builder_listener.local_addr()?;
         let block_producer_address = self.block_producer_listener.local_addr()?;
-        info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address, block_producer_endpoint=?block_producer_address, ?self.data_directory, "Loading database");
+        info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address,
+            block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.timeout, "Loading database");
 
         let data_directory =
             DataDirectory::load(self.data_directory.clone()).with_context(|| {
@@ -146,6 +149,7 @@ impl Store {
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::StoreRpc)),
                 )
+                .timeout(self.timeout)
                 .add_service(rpc_service)
                 .add_service(reflection_service.clone())
                 .add_service(reflection_service_alpha.clone())
@@ -158,6 +162,7 @@ impl Store {
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::StoreNtxBuilder)),
                 )
+                .timeout(self.timeout)
                 .add_service(ntx_builder_service)
                 .add_service(reflection_service.clone())
                 .add_service(reflection_service_alpha.clone())
@@ -170,6 +175,7 @@ impl Store {
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::BlockProducer)),
                 )
+                .timeout(self.timeout)
                 .add_service(block_producer_service)
                 .add_service(reflection_service)
                 .add_service(reflection_service_alpha)

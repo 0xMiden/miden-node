@@ -25,6 +25,7 @@ const ENV_MAX_BATCHES_PER_BLOCK: &str = "MIDEN_MAX_BATCHES_PER_BLOCK";
 const DEFAULT_BLOCK_INTERVAL: Duration = Duration::from_secs(5);
 const DEFAULT_BATCH_INTERVAL: Duration = Duration::from_secs(2);
 const DEFAULT_NTX_TICKER_INTERVAL: Duration = Duration::from_millis(200);
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Formats a Duration into a human-readable string for display in clap help text.
 fn duration_to_human_readable_string(duration: Duration) -> String {

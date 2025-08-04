@@ -3,7 +3,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     sync::{Arc, Mutex},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use metrics::SeedingMetrics;
@@ -512,6 +512,7 @@ pub async fn start_store(
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
+            timeout: Duration::from_secs(30),
         }
         .serve()
         .await

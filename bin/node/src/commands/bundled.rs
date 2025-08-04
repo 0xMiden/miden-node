@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -11,7 +11,8 @@ use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
 use crate::commands::{
-    BlockProducerConfig, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE, NtxBuilderConfig,
+    BlockProducerConfig, DEFAULT_TIMEOUT, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE,
+    NtxBuilderConfig, duration_to_human_readable_string,
 };
 
 #[derive(clap::Subcommand)]
@@ -60,6 +61,15 @@ pub enum BundledCommand {
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         enable_otel: bool,
+
+        /// Timeout of the requests.
+        #[arg(
+            long = "timeout",
+            default_value = &duration_to_human_readable_string(DEFAULT_TIMEOUT),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
+        )]
+        timeout: Duration,
     },
 }
 
@@ -87,7 +97,8 @@ impl BundledCommand {
                 block_producer,
                 ntx_builder,
                 enable_otel: _,
-            } => Self::start(rpc_url, data_directory, ntx_builder, block_producer).await,
+                timeout,
+            } => Self::start(rpc_url, data_directory, ntx_builder, block_producer, timeout).await,
         }
     }
 
@@ -97,6 +108,7 @@ impl BundledCommand {
         data_directory: PathBuf,
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
+        timeout: Duration,
     ) -> anyhow::Result<()> {
         let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
@@ -145,6 +157,7 @@ impl BundledCommand {
                     block_producer_listener: store_block_producer_listener,
                     ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
+                    timeout,
                 }
                 .serve()
                 .await
@@ -175,6 +188,7 @@ impl BundledCommand {
                         max_batches_per_block: block_producer.max_batches_per_block,
                         max_txs_per_batch: block_producer.max_txs_per_batch,
                         production_checkpoint: checkpoint,
+                        timeout,
                     }
                     .serve()
                     .await
@@ -190,6 +204,7 @@ impl BundledCommand {
                     listener: grpc_rpc,
                     store: store_rpc_address,
                     block_producer: Some(block_producer_address),
+                    timeout,
                 }
                 .serve()
                 .await

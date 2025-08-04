@@ -198,7 +198,7 @@ pub mod ntx_builder_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Returns paginated list of unconsumed network notes.
+        /// Returns a paginated list of unconsumed network notes.
         pub async fn get_unconsumed_network_notes(
             &mut self,
             request: impl tonic::IntoRequest<super::UnconsumedNetworkNotesRequest>,
@@ -346,7 +346,7 @@ pub mod ntx_builder_server {
             tonic::Response<super::super::shared::BlockHeaderByNumberResponse>,
             tonic::Status,
         >;
-        /// Returns paginated list of unconsumed network notes.
+        /// Returns a paginated list of unconsumed network notes.
         async fn get_unconsumed_network_notes(
             &self,
             request: tonic::Request<super::UnconsumedNetworkNotesRequest>,

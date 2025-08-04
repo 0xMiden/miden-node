@@ -17,7 +17,7 @@ service NtxBuilder {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
-    // Returns paginated list of unconsumed network notes.
+    // Returns a paginated list of unconsumed network notes.
     rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
 
     // Returns a paginated list of a network account's unconsumed notes up to a specified block number.

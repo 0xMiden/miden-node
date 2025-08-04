@@ -50,12 +50,9 @@ impl SqlTypeConvert for BlockNumber {
     type Raw = i64;
     type Error = DatabaseTypeConversionError;
     fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
-        #[allow(clippy::cast_sign_loss)]
-        if raw <= u32::MAX as i64 {
-            Ok(BlockNumber::from(raw as u32))
-        } else {
-            Err(DatabaseTypeConversionError(type_name::<BlockNumber>()))
-        }
+        u32::try_from(raw)
+            .map(BlockNumber::from)
+            .map_err(|_| DatabaseTypeConversionError(type_name::<BlockNumber>()))
     }
     fn to_raw_sql(self) -> Self::Raw {
         self.as_u32() as i64

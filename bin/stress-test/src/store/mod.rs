@@ -53,6 +53,8 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
 
     let (store_client, _) = start_store(data_directory).await;
 
+    check_store_status(&store_client).await.unwrap();
+
     // each request will have 5 account ids, 5 note tags and will be sent with block number 0
     let request = |_| {
         let mut client = store_client.clone();
@@ -122,6 +124,8 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
 
     let (store_client, _) = start_store(data_directory).await;
 
+    check_store_status(&store_client).await.unwrap();
+
     // each request will have `ACCOUNTS_PER_SYNC_NOTES` note tags and will be sent with block number
     // 0.
     let request = |_| {
@@ -178,6 +182,8 @@ pub async fn bench_check_nullifiers_by_prefix(
     prefixes_per_request: usize,
 ) {
     let (mut store_client, _) = start_store(data_directory.clone()).await;
+
+    check_store_status(&store_client).await.unwrap();
 
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
     let accounts = fs::read_to_string(&accounts_file)
@@ -280,4 +286,21 @@ async fn check_nullifiers_by_prefix(
     let start = Instant::now();
     let response = api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Retrieves the status of the store components and check that is ready to process requests.
+async fn check_store_status(
+    store_client: &RpcClient<InterceptedService<Channel, OtelInterceptor>>,
+) -> Result<(), String> {
+    // Get status from the store component to confirm that it is ready.
+    let status = store_client.clone().status(()).await.unwrap().into_inner();
+
+    if status.status != "connected" {
+        return Err("Store component failed to start".to_string());
+    }
+
+    Ok(())
 }

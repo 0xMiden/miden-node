@@ -7,7 +7,7 @@ use miden_objects::{
     account::{Account, AccountId},
     assembly::DefaultSourceManager,
     block::{BlockHeader, BlockNumber},
-    note::NoteId,
+    note::{Note, NoteId},
     transaction::{
         ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
         TransactionArgs,
@@ -94,11 +94,10 @@ impl NtxContext {
                         async move {
                             let notes = notes
                                 .into_iter()
-                                .map(|note| InputNote::Unauthenticated {
-                                    note: note.into_inner().into(),
-                                })
-                                .collect::<Vec<_>>();
-                            let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
+                                .map(|note| note.into_inner().into())
+                                .collect::<Vec<Note>>();
+                            let notes = InputNotes::from_unauthenticated_notes(notes)
+                                .map_err(NtxError::InputNotes)?;
 
                             let data_store =
                                 NtxDataStore::new(account, chain_tip_header, chain_mmr);

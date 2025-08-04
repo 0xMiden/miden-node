@@ -57,7 +57,7 @@ impl InflightNetworkNote {
             .execution_hint()
             .can_be_consumed(block_num)
             .unwrap_or(true);
-        can_consume && Self::backoff_has_passed(self.last_attempt, block_num, self.attempt_count)
+        can_consume && Self::backoff_has_passed(block_num, self.last_attempt, self.attempt_count)
     }
 
     /// Checks if the backoff block period has passed.
@@ -74,8 +74,8 @@ impl InflightNetworkNote {
     /// - etc...
     #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
     fn backoff_has_passed(
-        last_attempt_block_num: Option<BlockNumber>,
         current_block_num: BlockNumber,
+        last_attempt_block_num: Option<BlockNumber>,
         attempt_count: usize,
     ) -> bool {
         if attempt_count == 0 {
@@ -330,8 +330,8 @@ mod tests {
         assert_eq!(
             backoff_should_have_passed,
             InflightNetworkNote::backoff_has_passed(
-                last_attempt_block_num,
                 current_block_num,
+                last_attempt_block_num,
                 attempt_count
             )
         );

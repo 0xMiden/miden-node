@@ -41,7 +41,7 @@ workspace = true
 [dependencies]
 async-trait   = { version = "0.1" }
 miden-objects = { optional = true, workspace = true }
-miden-tx      = { optional = true, workspace = true }
+miden-tx      = { workspace = true }
 prost         = { default-features = false, features = ["derive"], version = "0.13" }
 thiserror     = { workspace = true }
 tokio         = { default-features = false, features = ["sync"], optional = true, version = "1.44" }

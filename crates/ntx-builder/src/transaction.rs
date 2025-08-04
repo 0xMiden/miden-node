@@ -1,12 +1,13 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
-use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
     TransactionInputError, Word,
     account::{Account, AccountId},
     assembly::DefaultSourceManager,
     block::{BlockHeader, BlockNumber},
+    note::NoteId,
     transaction::{
         ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
         TransactionArgs,
@@ -33,6 +34,11 @@ pub enum NtxError {
     NoViableNotes,
     #[error("failed to execute transaction")]
     Execution(#[source] TransactionExecutorError),
+    #[error("note consumption check failed")]
+    ConsumptionCheck {
+        failed_note_id: NoteId,
+        successful_notes: Vec<NoteId>,
+    },
     #[error("failed to prove transaction")]
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
@@ -145,19 +151,25 @@ impl NtxContext {
             .await
         {
             Ok(NoteAccountExecution::Success) => notes,
-            Ok(NoteAccountExecution::Failure { successful_notes, error, .. }) => {
-                let notes = successful_notes
-                    .into_iter()
-                    .map(|id| notes.iter().find(|note| note.id() == id).unwrap())
-                    .cloned()
-                    .collect::<Vec<InputNote>>();
-
-                if notes.is_empty() {
-                    let err = error.map_or_else(|| "None".to_string(), |err| err.as_report());
-                    tracing::warn!(%err, "all network notes failed");
+            Ok(NoteAccountExecution::Failure {
+                successful_notes, error, failed_note_id, ..
+            }) => {
+                if let Some(error) = error {
+                    return Err(NtxError::NoteFilter(error));
                 }
+                return Err(NtxError::ConsumptionCheck { successful_notes, failed_note_id });
+                //let notes = successful_notes
+                //    .into_iter()
+                //    .map(|id| notes.iter().find(|note| note.id() == id).unwrap())
+                //    .cloned()
+                //    .collect::<Vec<InputNote>>();
 
-                InputNotes::new_unchecked(notes)
+                //if notes.is_empty() {
+                //    let err = error.map_or_else(|| "None".to_string(), |err| err.as_report());
+                //    tracing::warn!(%err, "all network notes failed");
+                //}
+
+                //InputNotes::new_unchecked(notes)
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
         };

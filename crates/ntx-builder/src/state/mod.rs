@@ -230,6 +230,8 @@ impl State {
 
     /// Marks a previously selected candidate account as failed, allowing it to be available for
     /// selection again.
+    ///
+    /// All notes in the candidate will be marked as failed.
     #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
     pub fn candidate_failed(&mut self, candidate: &TransactionCandidate) {
         if let Some(account) = self.accounts.get_mut(&candidate.account_id_prefix) {

@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::{
     MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, state::TransactionCandidate,
-    store::StoreClient,
+    store::StoreClient, transaction::NtxError,
 };
 
 // NETWORK TRANSACTION BUILDER
@@ -109,11 +109,17 @@ impl NetworkTransactionBuilder {
                         Err(join_handle) => join_handle.id(),
                     };
                     // SAFETY: both inflights should have the same set.
-                    let candidate = inflight_idx.remove(&task_id).unwrap();
+                    let mut candidate = inflight_idx.remove(&task_id).unwrap();
 
                     match completed {
                         // Nothing to do. State will be updated by the eventual mempool event.
                         Ok((_, Ok(_))) => {},
+                        // Inform state if the tx failed.
+                        Ok((_, Err(NtxError::ConsumptionCheck { successful_notes, .. }))) => {
+                            // Filter out successful notes from the candidate's notes.
+                            candidate.notes.retain(|note| !successful_notes.contains(&note.to_inner().id()));
+                            state.candidate_failed(&candidate);
+                        },
                         // Inform state if the tx failed.
                         Ok((_, Err(err))) => {
                             tracing::warn!(err=err.as_report(), "network transaction failed");

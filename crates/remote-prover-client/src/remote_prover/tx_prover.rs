@@ -6,6 +6,7 @@ use core::time::Duration;
 use miden_objects::{
     transaction::{ProvenTransaction, TransactionWitness},
     utils::{Deserializable, DeserializationError, Serializable},
+    vm::AsyncHostFuture,
 };
 use miden_tx::TransactionProverError;
 use tokio::sync::Mutex;
@@ -79,18 +80,6 @@ impl RemoteTransactionProver {
         Ok(())
     }
 }
-
-#[cfg(not(feature = "std"))]
-pub trait AsyncHostFuture<O>: Future<Output = O> {}
-
-#[cfg(not(feature = "std"))]
-impl<T, O> AsyncHostFuture<O> for T where T: Future<Output = O> {}
-
-#[cfg(feature = "std")]
-pub trait AsyncHostFuture<O>: Future<Output = O> + Send {}
-
-#[cfg(feature = "std")]
-impl<T, O> AsyncHostFuture<O> for T where T: Future<Output = O> + Send {}
 
 impl RemoteTransactionProver {
     pub fn prove(

@@ -39,22 +39,22 @@ CREATE TABLE notes (
     script_root              BLOB,
     serial_num               BLOB,
 
-    PRIMARY KEY (block_num, batch_index, note_index),
-    FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
+    PRIMARY KEY (committed_at, batch_index, note_index),
+    FOREIGN KEY (committed_at) REFERENCES block_headers(block_num),
     FOREIGN KEY (sender) REFERENCES accounts(account_id),
     FOREIGN KEY (script_root) REFERENCES note_scripts(script_root),
     CONSTRAINT notes_type_in_enum CHECK (note_type BETWEEN 1 AND 3),
     CONSTRAINT notes_execution_mode_in_enum CHECK (execution_mode BETWEEN 0 AND 1),
-    CONSTRAINT notes_consumed_block_num_is_u32 CHECK (consumed_block_num BETWEEN 0 AND 0xFFFFFFFF),
+    CONSTRAINT notes_consumed_at_is_u32 CHECK (consumed_at BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_batch_index_is_u32 CHECK (batch_index BETWEEN 0 AND 0xFFFFFFFF),
     CONSTRAINT notes_note_index_is_u32 CHECK (note_index BETWEEN 0 AND 0xFFFFFFFF)
 );
 
 CREATE INDEX idx_notes_note_id ON notes(note_id);
-CREATE INDEX idx_notes_sender ON notes(sender, block_num);
-CREATE INDEX idx_notes_tag ON notes(tag, block_num);
+CREATE INDEX idx_notes_sender ON notes(sender, committed_at);
+CREATE INDEX idx_notes_tag ON notes(tag, committed_at);
 CREATE INDEX idx_notes_nullifier ON notes(nullifier);
-CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed_block_num);
+CREATE INDEX idx_unconsumed_network_notes ON notes(execution_mode, consumed_at);
 
 CREATE TABLE note_scripts (
     script_root BLOB NOT NULL,

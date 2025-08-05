@@ -83,7 +83,7 @@ impl NetworkTransactionBuilder {
                         continue;
                     }
 
-                    let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX)else {
+                    let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
                         tracing::debug!("No candidate network transaction available");
                         continue;
                     };

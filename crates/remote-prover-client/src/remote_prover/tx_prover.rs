@@ -6,7 +6,7 @@ use core::time::Duration;
 use miden_objects::{
     transaction::{ProvenTransaction, TransactionWitness},
     utils::{Deserializable, DeserializationError, Serializable},
-    vm::AsyncHostFuture,
+    vm::FutureMaybeSend,
 };
 use miden_tx::TransactionProverError;
 use tokio::sync::Mutex;
@@ -85,7 +85,7 @@ impl RemoteTransactionProver {
     pub fn prove(
         &self,
         tx_witness: TransactionWitness,
-    ) -> impl AsyncHostFuture<Result<ProvenTransaction, TransactionProverError>> {
+    ) -> impl FutureMaybeSend<Result<ProvenTransaction, TransactionProverError>> {
         async move {
             use miden_objects::utils::Serializable;
             self.connect().await.map_err(|err| {

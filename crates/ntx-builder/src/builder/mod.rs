@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::{
     MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, state::TransactionCandidate,
-    store::StoreClient, transaction::NtxError,
+    store::StoreClient,
 };
 
 // NETWORK TRANSACTION BUILDER
@@ -113,12 +113,11 @@ impl NetworkTransactionBuilder {
 
                     match completed {
                         // Nothing to do. State will be updated by the eventual mempool event.
-                        Ok((_, Ok(failed_note_id))) => {
-                            // Filter out successful notes from the candidate's notes.
-                            if let Some(failed_note_id) = failed_note_id {
-                                candidate.notes.retain(|note| note.to_inner().id() != failed_note_id);
-                                state.candidate_failed(&candidate);
-                            }
+                        Ok((_, Ok(None))) => {},
+                        Ok((_, Ok(Some(failed_note_id)))) => {
+                            // Filter out successful notes from the candidate's notes and register them as failed.
+                            candidate.notes.retain(|note| note.to_inner().id() == failed_note_id);
+                            state.candidate_failed(&candidate);
                         },
                         // Inform state if the tx failed.
                         Ok((_, Err(err))) => {

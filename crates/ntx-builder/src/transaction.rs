@@ -163,7 +163,7 @@ impl NtxContext {
                 // If none are successful, abort.
                 if successful_notes.is_empty() {
                     tracing::warn!(
-                        err = %error.as_ref().map_or_else(|| "none".to_string(), |e| e.as_report()),
+                        err = %error.as_ref().map_or_else(|| "none".to_string(), ErrorReport::as_report),
                         "failed to check note consumability",
                     );
                     let error = error.map_or_else(|| "none".to_string(), |e| e.as_report());

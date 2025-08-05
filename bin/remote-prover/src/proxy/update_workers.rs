@@ -3,17 +3,17 @@ use std::sync::Arc;
 
 use miden_node_utils::ErrorReport;
 use miden_remote_prover::COMPONENT;
-use pingora::{
-    apps::{HttpServerApp, HttpServerOptions},
-    http::ResponseHeader,
-    protocols::{Stream, http::ServerSession},
-    server::ShutdownWatch,
-};
+use pingora::apps::{HttpServerApp, HttpServerOptions};
+use pingora::http::ResponseHeader;
+use pingora::protocols::Stream;
+use pingora::protocols::http::ServerSession;
+use pingora::server::ShutdownWatch;
 use tonic::async_trait;
 use tracing::{error, info};
 
 use super::LoadBalancerState;
-use crate::{commands::update_workers::UpdateWorkers, utils::create_response_with_error_message};
+use crate::commands::update_workers::UpdateWorkers;
+use crate::utils::create_response_with_error_message;
 
 /// The Load Balancer Updater Service.
 ///

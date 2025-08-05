@@ -1,42 +1,38 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
-use miden_node_proto::{
-    domain::mempool::MempoolEvent,
-    generated::{self as proto, block_producer::api_server},
-};
+use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_proto::generated::block_producer::api_server;
+use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::block_producer_api_descriptor;
-use miden_node_utils::{
-    formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::{TracedComponent, traced_span_fn},
-};
-use miden_objects::{
-    block::BlockNumber,
-    transaction::ProvenTransaction,
-    utils::serde::Deserializable,
-};
-use tokio::{
-    net::TcpListener,
-    sync::{Barrier, Mutex},
-};
+use miden_node_utils::formatting::{format_input_notes, format_output_notes};
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
+use miden_objects::block::BlockNumber;
+use miden_objects::transaction::ProvenTransaction;
+use miden_objects::utils::serde::Deserializable;
+use tokio::net::TcpListener;
+use tokio::sync::{Barrier, Mutex};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
 use url::Url;
 
+use crate::batch_builder::BatchBuilder;
+use crate::block_builder::BlockBuilder;
+use crate::domain::transaction::AuthenticatedTransaction;
+use crate::errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError};
+use crate::mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool};
+use crate::store::StoreClient;
 use crate::{
     COMPONENT,
     SERVER_MEMPOOL_EXPIRATION_SLACK,
     SERVER_MEMPOOL_STATE_RETENTION,
     SERVER_NUM_BATCH_BUILDERS,
-    batch_builder::BatchBuilder,
-    block_builder::BlockBuilder,
-    domain::transaction::AuthenticatedTransaction,
-    errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
-    mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
-    store::StoreClient,
 };
 
 /// The block producer server.

@@ -30,7 +30,9 @@
 use std::any::type_name;
 
 use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
-use miden_objects::{Felt, block::BlockNumber, note::NoteTag};
+use miden_objects::Felt;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::NoteTag;
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert a database value to it's in memory type {0}")]

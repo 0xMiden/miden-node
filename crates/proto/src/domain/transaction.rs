@@ -1,6 +1,8 @@
-use miden_objects::{Word, transaction::TransactionId};
+use miden_objects::Word;
+use miden_objects::transaction::TransactionId;
 
-use crate::{errors::ConversionError, generated as proto};
+use crate::errors::ConversionError;
+use crate::generated as proto;
 
 // FROM TRANSACTION ID
 // ================================================================================================

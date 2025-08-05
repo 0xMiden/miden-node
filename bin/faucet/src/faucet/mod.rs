@@ -1,38 +1,37 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::collections::VecDeque;
+use std::sync::Arc;
 
 use anyhow::{Context, anyhow};
-use miden_lib::{
-    account::{
-        faucets::BasicFungibleFaucet,
-        interface::{AccountInterface, AccountInterfaceError},
-    },
-    note::create_p2id_note,
+use miden_lib::account::faucets::BasicFungibleFaucet;
+use miden_lib::account::interface::{AccountInterface, AccountInterfaceError};
+use miden_lib::note::create_p2id_note;
+use miden_objects::account::{
+    Account,
+    AccountDelta,
+    AccountFile,
+    AccountId,
+    AuthSecretKey,
+    NetworkId,
 };
-use miden_objects::{
-    AccountError,
-    Felt,
-    NoteError,
-    Word,
-    account::{Account, AccountDelta, AccountFile, AccountId, AuthSecretKey, NetworkId},
-    assembly::DefaultSourceManager,
-    asset::FungibleAsset,
-    block::BlockNumber,
-    crypto::{
-        merkle::{Forest, MmrPeaks, PartialMmr},
-        rand::RpoRandomCoin,
-    },
-    note::Note,
-    transaction::{
-        ExecutedTransaction,
-        InputNotes,
-        PartialBlockchain,
-        ProvenTransaction,
-        TransactionArgs,
-        TransactionId,
-        TransactionWitness,
-    },
+use miden_objects::assembly::DefaultSourceManager;
+use miden_objects::asset::FungibleAsset;
+use miden_objects::block::BlockNumber;
+use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
+use miden_objects::crypto::rand::RpoRandomCoin;
+use miden_objects::note::Note;
+use miden_objects::transaction::{
+    ExecutedTransaction,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
+    TransactionArgs,
+    TransactionId,
+    TransactionWitness,
 };
+use miden_objects::{AccountError, Felt, NoteError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
+use miden_tx::auth::BasicAuthenticator;
+use miden_tx::utils::parse_hex_string_as_word;
 use miden_tx::{
     LocalTransactionProver,
     ProvingOptions,
@@ -40,10 +39,9 @@ use miden_tx::{
     TransactionExecutorError,
     TransactionProver,
     TransactionProverError,
-    auth::BasicAuthenticator,
-    utils::parse_hex_string_as_word,
 };
-use rand::{Rng, rng, rngs::StdRng};
+use rand::rngs::StdRng;
+use rand::{Rng, rng};
 use serde::Serialize;
 use store::FaucetDataStore;
 use tokio::sync::mpsc::Receiver;
@@ -52,10 +50,8 @@ use tracing::{error, info, instrument, warn};
 use updates::{ClientUpdater, MintUpdate, ResponseSender};
 use url::Url;
 
-use crate::{
-    rpc_client::{RpcClient, RpcError},
-    types::{AssetAmount, NoteType},
-};
+use crate::rpc_client::{RpcClient, RpcError};
+use crate::types::{AssetAmount, NoteType};
 
 mod store;
 mod updates;
@@ -535,24 +531,26 @@ impl P2IdNotes {
 
 #[cfg(test)]
 mod tests {
-    use std::{str::FromStr, sync::Mutex, time::Duration};
+    use std::str::FromStr;
+    use std::sync::Mutex;
+    use std::time::Duration;
 
-    use miden_lib::{AuthScheme, account::faucets::create_basic_fungible_faucet};
+    use miden_lib::AuthScheme;
+    use miden_lib::account::faucets::create_basic_fungible_faucet;
     use miden_node_block_producer::errors::{AddTransactionError, VerifyTxError};
     use miden_node_utils::crypto::get_rpo_random_coin;
-    use miden_objects::{
-        Word,
-        account::{AccountIdVersion, AccountStorageMode, AccountType},
-        asset::TokenSymbol,
-        crypto::dsa::rpo_falcon512::SecretKey,
-    };
+    use miden_objects::Word;
+    use miden_objects::account::{AccountIdVersion, AccountStorageMode, AccountType};
+    use miden_objects::asset::TokenSymbol;
+    use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha20Rng;
     use tokio::time::{Instant, sleep};
     use url::Url;
 
     use super::*;
-    use crate::{stub_rpc_api::serve_stub, types::AssetOptions};
+    use crate::stub_rpc_api::serve_stub;
+    use crate::types::AssetOptions;
 
     /// This test ensures that the we are able to parse account mismatch errors
     /// provided by the block-producer.

@@ -1,10 +1,8 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use miden_node_store::{
-    Store,
-    genesis::config::{AccountFileWithName, GenesisConfig},
-};
+use miden_node_store::Store;
+use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 

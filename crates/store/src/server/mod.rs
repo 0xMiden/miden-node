@@ -1,8 +1,6 @@
-use std::{
-    ops::Not,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::ops::Not;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use anyhow::Context;
 use miden_node_proto::generated::{block_producer_store, ntx_builder_store, rpc_store};
@@ -13,20 +11,17 @@ use miden_node_proto_build::{
     store_shared_api_descriptor,
 };
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
-use tokio::{net::TcpListener, task::JoinSet};
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
 
-use crate::{
-    COMPONENT,
-    DATABASE_MAINTENANCE_INTERVAL,
-    GenesisState,
-    blocks::BlockStore,
-    db::Db,
-    server::db_maintenance::DbMaintenance,
-    state::State,
-};
+use crate::blocks::BlockStore;
+use crate::db::Db;
+use crate::server::db_maintenance::DbMaintenance;
+use crate::state::State;
+use crate::{COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GenesisState};
 
 mod api;
 mod block_producer;

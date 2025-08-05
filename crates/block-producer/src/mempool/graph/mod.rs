@@ -1,7 +1,5 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    fmt::{Debug, Display},
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{Debug, Display};
 
 #[cfg(test)]
 mod tests;

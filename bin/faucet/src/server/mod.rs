@@ -1,11 +1,12 @@
-use std::{
-    collections::HashSet,
-    convert::Infallible,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::HashSet;
+use std::convert::Infallible;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
-use axum::{Router, extract::FromRef, response::sse::Event, routing::get};
+use axum::Router;
+use axum::extract::FromRef;
+use axum::response::sse::Event;
+use axum::routing::get;
 use frontend::Metadata;
 use get_tokens::{GetTokensState, get_tokens};
 use http::{HeaderValue, Request};
@@ -13,22 +14,20 @@ use miden_node_utils::grpc::UrlExt;
 use miden_objects::account::AccountId;
 use pow::PoW;
 use sha3::{Digest, Sha3_256};
-use tokio::{net::TcpListener, sync::mpsc};
+use tokio::net::TcpListener;
+use tokio::sync::mpsc;
 use tower::ServiceBuilder;
-use tower_http::{
-    cors::CorsLayer,
-    set_header::SetResponseHeaderLayer,
-    trace::{DefaultOnResponse, TraceLayer},
-};
+use tower_http::cors::CorsLayer;
+use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 use url::Url;
 
-use crate::{
-    COMPONENT,
-    faucet::{FaucetId, MintRequest},
-    server::{get_pow::get_pow, get_tokens::MintRequestError},
-    types::AssetOptions,
-};
+use crate::COMPONENT;
+use crate::faucet::{FaucetId, MintRequest};
+use crate::server::get_pow::get_pow;
+use crate::server::get_tokens::MintRequestError;
+use crate::types::AssetOptions;
 
 mod api_key;
 mod challenge;

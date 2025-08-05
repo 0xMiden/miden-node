@@ -1,5 +1,6 @@
 use anyhow::Context;
-use miden_node_proto::generated::{self as proto, rpc::api_server};
+use miden_node_proto::generated::rpc::api_server;
+use miden_node_proto::generated::{self as proto};
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_testing::MockChain;
 use tokio::net::TcpListener;

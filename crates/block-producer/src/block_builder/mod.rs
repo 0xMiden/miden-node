@@ -1,27 +1,23 @@
 use std::ops::Range;
 
-use futures::{FutureExt, never::Never};
+use futures::FutureExt;
+use futures::never::Never;
 use miden_block_prover::LocalBlockProver;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::{
-    MIN_PROOF_SECURITY_LEVEL,
-    batch::ProvenBatch,
-    block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    note::NoteHeader,
-};
+use miden_objects::MIN_PROOF_SECURITY_LEVEL;
+use miden_objects::batch::ProvenBatch;
+use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
+use miden_objects::note::NoteHeader;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
 use tracing::{Span, info, instrument};
 use url::Url;
 
-use crate::{
-    COMPONENT,
-    TelemetryInjectorExt,
-    errors::BuildBlockError,
-    mempool::SharedMempool,
-    store::StoreClient,
-};
+use crate::errors::BuildBlockError;
+use crate::mempool::SharedMempool;
+use crate::store::StoreClient;
+use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BLOCK BUILDER
 // =================================================================================================

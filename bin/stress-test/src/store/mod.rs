@@ -1,23 +1,19 @@
-use std::{
-    path::PathBuf,
-    time::{Duration, Instant},
-};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use futures::{StreamExt, stream};
-use miden_node_proto::generated::{self as proto, rpc_store::rpc_client::RpcClient};
+use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
+use miden_node_proto::generated::{self as proto};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
-use miden_objects::{
-    account::AccountId,
-    note::{NoteDetails, NoteTag},
-    utils::{Deserializable, Serializable},
-};
+use miden_objects::account::AccountId;
+use miden_objects::note::{NoteDetails, NoteTag};
+use miden_objects::utils::{Deserializable, Serializable};
 use tokio::fs;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::Channel;
 
-use crate::{
-    seeding::{ACCOUNTS_FILENAME, start_store},
-    store::metrics::print_summary,
-};
+use crate::seeding::{ACCOUNTS_FILENAME, start_store};
+use crate::store::metrics::print_summary;
 
 mod metrics;
 

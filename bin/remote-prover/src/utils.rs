@@ -2,13 +2,17 @@ use std::net::TcpListener;
 
 use http::{HeaderMap, HeaderName, HeaderValue};
 use miden_remote_prover::error::RemoteProverError;
-use pingora::{Error, ErrorType, http::ResponseHeader, protocols::http::ServerSession};
+use pingora::http::ResponseHeader;
+use pingora::protocols::http::ServerSession;
+use pingora::{Error, ErrorType};
 use pingora_proxy::Session;
 use prost::Message;
 use tonic::Code;
 use tracing::debug;
 
-use crate::{COMPONENT, commands::PROXY_HOST, proxy::metrics::QUEUE_DROP_COUNT};
+use crate::COMPONENT;
+use crate::commands::PROXY_HOST;
+use crate::proxy::metrics::QUEUE_DROP_COUNT;
 
 // CONSTANTS
 // ================================================================================================

@@ -1,16 +1,12 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
-use miden_node_utils::{ErrorReport, formatting::format_opt};
-use miden_objects::{
-    ProposedBatchError,
-    ProposedBlockError,
-    ProvenBatchError,
-    Word,
-    account::AccountId,
-    block::BlockNumber,
-    note::{NoteId, Nullifier},
-    transaction::TransactionId,
-};
+use miden_node_utils::ErrorReport;
+use miden_node_utils::formatting::format_opt;
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::transaction::TransactionId;
+use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;

@@ -1,29 +1,24 @@
 use std::convert::Infallible;
 
-use axum::{
-    extract::{Query, State},
-    http::StatusCode,
-    response::{
-        IntoResponse,
-        Response,
-        Sse,
-        sse::{Event, KeepAlive},
-    },
-};
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::response::sse::{Event, KeepAlive};
+use axum::response::{IntoResponse, Response, Sse};
 use miden_node_utils::ErrorReport;
-use miden_objects::{AccountIdError, account::AccountId};
+use miden_objects::AccountIdError;
+use miden_objects::account::AccountId;
 use serde::Deserialize;
-use tokio::sync::mpsc::{self, error::TrySendError};
-use tokio_stream::{Stream, wrappers::ReceiverStream};
+use tokio::sync::mpsc::error::TrySendError;
+use tokio::sync::mpsc::{self};
+use tokio_stream::Stream;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, instrument};
 
 use super::Server;
-use crate::{
-    COMPONENT,
-    faucet::MintRequest,
-    server::ApiKey,
-    types::{AssetOptions, NoteType},
-};
+use crate::COMPONENT;
+use crate::faucet::MintRequest;
+use crate::server::ApiKey;
+use crate::types::{AssetOptions, NoteType};
 
 type RequestSender = mpsc::Sender<(MintRequest, mpsc::Sender<Result<Event, Infallible>>)>;
 

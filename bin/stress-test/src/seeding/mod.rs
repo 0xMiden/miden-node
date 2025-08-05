@@ -1,61 +1,49 @@
-use std::{
-    collections::BTreeMap,
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::collections::BTreeMap;
+use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use metrics::SeedingMetrics;
 use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
-use miden_lib::{
-    account::{auth::AuthRpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
-    note::create_p2id_note,
-    utils::Serializable,
-};
+use miden_lib::account::auth::AuthRpoFalcon512;
+use miden_lib::account::faucets::BasicFungibleFaucet;
+use miden_lib::account::wallets::BasicWallet;
+use miden_lib::note::create_p2id_note;
+use miden_lib::utils::Serializable;
 use miden_node_block_producer::store::StoreClient;
-use miden_node_proto::{domain::batch::BatchInputs, generated::rpc_store::rpc_client::RpcClient};
+use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
-use miden_objects::{
-    Felt,
-    ONE,
-    Word,
-    account::{
-        Account,
-        AccountBuilder,
-        AccountId,
-        AccountStorageMode,
-        AccountType,
-        delta::AccountUpdateDetails,
-    },
-    asset::{Asset, FungibleAsset, TokenSymbol},
-    batch::{BatchAccountUpdate, BatchId, ProvenBatch},
-    block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    crypto::{
-        dsa::rpo_falcon512::{PublicKey, SecretKey},
-        rand::RpoRandomCoin,
-    },
-    note::{Note, NoteHeader, NoteId, NoteInclusionProof},
-    transaction::{
-        InputNote,
-        InputNotes,
-        OrderedTransactionHeaders,
-        OutputNote,
-        ProvenTransaction,
-        ProvenTransactionBuilder,
-        TransactionHeader,
-    },
-    vm::ExecutionProof,
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType};
+use miden_objects::asset::{Asset, FungibleAsset, TokenSymbol};
+use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
+use miden_objects::crypto::dsa::rpo_falcon512::{PublicKey, SecretKey};
+use miden_objects::crypto::rand::RpoRandomCoin;
+use miden_objects::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
+use miden_objects::transaction::{
+    InputNote,
+    InputNotes,
+    OrderedTransactionHeaders,
+    OutputNote,
+    ProvenTransaction,
+    ProvenTransactionBuilder,
+    TransactionHeader,
 };
+use miden_objects::vm::ExecutionProof;
+use miden_objects::{Felt, ONE, Word};
 use rand::Rng;
-use rayon::{
-    iter::{IntoParallelIterator, ParallelIterator},
-    prelude::ParallelSlice,
-};
-use tokio::{fs, io::AsyncWriteExt, net::TcpListener, task};
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::prelude::ParallelSlice;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
+use tokio::{fs, task};
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::Channel;
 use winterfell::Proof;
 
 mod metrics;

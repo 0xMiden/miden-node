@@ -1,21 +1,17 @@
-use miden_objects::{
-    Word,
-    crypto::merkle::{
-        Forest,
-        LeafIndex,
-        MerklePath,
-        MmrDelta,
-        SmtLeaf,
-        SmtProof,
-        SparseMerklePath,
-    },
+use miden_objects::Word;
+use miden_objects::crypto::merkle::{
+    Forest,
+    LeafIndex,
+    MerklePath,
+    MmrDelta,
+    SmtLeaf,
+    SmtProof,
+    SparseMerklePath,
 };
 
-use crate::{
-    domain::{convert, try_convert},
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use crate::domain::{convert, try_convert};
+use crate::errors::{ConversionError, MissingFieldHelper};
+use crate::generated as proto;
 
 // MERKLE PATH
 // ================================================================================================

@@ -1,35 +1,29 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::time::Duration;
 
-use http::{
-    HeaderMap,
-    HeaderValue,
-    header::{ACCEPT, CONTENT_TYPE},
-};
-use miden_node_proto::generated::{self as proto, rpc::api_client::ApiClient as ProtoClient};
+use http::header::{ACCEPT, CONTENT_TYPE};
+use http::{HeaderMap, HeaderValue};
+use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
+use miden_node_proto::generated::{self as proto};
 use miden_node_store::{GenesisState, Store};
-use miden_objects::{
-    Felt,
-    Word,
-    account::{
-        AccountDelta,
-        AccountId,
-        AccountIdVersion,
-        AccountStorageDelta,
-        AccountStorageMode,
-        AccountType,
-        AccountVaultDelta,
-        delta::AccountUpdateDetails,
-    },
-    transaction::ProvenTransactionBuilder,
-    utils::Serializable,
-    vm::ExecutionProof,
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{
+    AccountDelta,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageDelta,
+    AccountStorageMode,
+    AccountType,
+    AccountVaultDelta,
 };
+use miden_objects::transaction::ProvenTransactionBuilder;
+use miden_objects::utils::Serializable;
+use miden_objects::vm::ExecutionProof;
+use miden_objects::{Felt, Word};
 use tempfile::TempDir;
-use tokio::{
-    net::TcpListener,
-    runtime::{self, Runtime},
-    task,
-};
+use tokio::net::TcpListener;
+use tokio::runtime::{self, Runtime};
+use tokio::task;
 use url::Url;
 
 use crate::{ApiClient, Rpc};

@@ -3,20 +3,12 @@
     reason = "The parent scope does own it, passing by value avoids additional boilerplate"
 )]
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
-};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
-use diesel::{
-    JoinOnDsl,
-    NullableExpressionMethods,
-    OptionalExtension,
-    SqliteConnection,
-    alias,
-    prelude::Queryable,
-    query_dsl::methods::SelectDsl,
-};
+use diesel::prelude::Queryable;
+use diesel::query_dsl::methods::SelectDsl;
+use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection, alias};
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_utils::limiter::{
@@ -28,32 +20,28 @@ use miden_node_utils::limiter::{
     QueryParamNullifierLimit,
     QueryParamNullifierPrefixLimit,
 };
-use miden_objects::{
-    Felt,
-    LexicographicWord,
-    Word,
-    account::{
-        Account,
-        AccountDelta,
-        AccountId,
-        AccountStorageDelta,
-        AccountVaultDelta,
-        FungibleAssetDelta,
-        NonFungibleAssetDelta,
-        NonFungibleDeltaAction,
-        StorageMapDelta,
-        StorageSlot,
-        delta::AccountUpdateDetails,
-    },
-    asset::{Asset, NonFungibleAsset},
-    block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
-    crypto::merkle::SparseMerklePath,
-    note::{NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier},
-    transaction::OrderedTransactionHeaders,
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{
+    Account,
+    AccountDelta,
+    AccountId,
+    AccountStorageDelta,
+    AccountVaultDelta,
+    FungibleAssetDelta,
+    NonFungibleAssetDelta,
+    NonFungibleDeltaAction,
+    StorageMapDelta,
+    StorageSlot,
 };
+use miden_objects::asset::{Asset, NonFungibleAsset};
+use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber};
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier};
+use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_objects::{Felt, LexicographicWord, Word};
 
+use super::super::models;
 use super::{
-    super::models,
     BoolExpressionMethods,
     DatabaseError,
     NoteSyncRecordRawRow,
@@ -61,46 +49,44 @@ use super::{
     RunQueryDsl,
     SelectableHelper,
 };
-use crate::{
-    db::{
-        NoteRecord,
-        NoteSyncRecord,
-        NoteSyncUpdate,
-        NullifierInfo,
-        Page,
-        StateSyncUpdate,
-        TransactionSummary,
-        models::{
-            AccountCodeRowInsert,
-            AccountRaw,
-            AccountRowInsert,
-            AccountSummaryRaw,
-            AccountWithCodeRaw,
-            BigIntSum,
-            ExpressionMethods,
-            NoteInsertRowRaw,
-            NoteRecordRaw,
-            NoteRecordWithScriptRaw,
-            TransactionSummaryRaw,
-            conv::{
-                SqlTypeConvert,
-                fungible_delta_to_raw_sql,
-                nonce_to_raw_sql,
-                nullifier_prefix_to_raw_sql,
-                raw_sql_to_idx,
-                raw_sql_to_nonce,
-                raw_sql_to_slot,
-                slot_to_raw_sql,
-            },
-            get_nullifier_prefix,
-            serialize_vec,
-            sql_sum_into,
-            vec_raw_try_into,
-        },
-        schema,
-    },
-    errors::{NoteSyncError, StateSyncError},
+use crate::db::models::conv::{
+    SqlTypeConvert,
+    fungible_delta_to_raw_sql,
+    nonce_to_raw_sql,
+    nullifier_prefix_to_raw_sql,
+    raw_sql_to_idx,
+    raw_sql_to_nonce,
+    raw_sql_to_slot,
+    slot_to_raw_sql,
 };
+use crate::db::models::{
+    AccountCodeRowInsert,
+    AccountRaw,
+    AccountRowInsert,
+    AccountSummaryRaw,
+    AccountWithCodeRaw,
+    BigIntSum,
+    ExpressionMethods,
+    NoteInsertRowRaw,
+    NoteRecordRaw,
+    NoteRecordWithScriptRaw,
+    TransactionSummaryRaw,
+    get_nullifier_prefix,
+    serialize_vec,
+    sql_sum_into,
+    vec_raw_try_into,
+};
+use crate::db::{
+    NoteRecord,
+    NoteSyncRecord,
+    NoteSyncUpdate,
+    NullifierInfo,
+    Page,
+    StateSyncUpdate,
+    TransactionSummary,
+    schema,
+};
+use crate::errors::{NoteSyncError, StateSyncError};
 
 /// Select notes matching the tags and account IDs search criteria using the given [Connection].
 ///

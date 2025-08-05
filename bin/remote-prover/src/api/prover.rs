@@ -1,12 +1,10 @@
 use miden_block_prover::LocalBlockProver;
 use miden_node_utils::ErrorReport;
-use miden_objects::{
-    MIN_PROOF_SECURITY_LEVEL,
-    batch::ProposedBatch,
-    block::ProposedBlock,
-    transaction::TransactionWitness,
-    utils::Serializable,
-};
+use miden_objects::MIN_PROOF_SECURITY_LEVEL;
+use miden_objects::batch::ProposedBatch;
+use miden_objects::block::ProposedBlock;
+use miden_objects::transaction::TransactionWitness;
+use miden_objects::utils::Serializable;
 use miden_tx::{LocalTransactionProver, TransactionProver};
 use miden_tx_batch_prover::LocalBatchProver;
 use serde::{Deserialize, Serialize};
@@ -14,10 +12,9 @@ use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
-use crate::{
-    COMPONENT,
-    generated::{self as proto, api_server::Api as ProverApi},
-};
+use crate::COMPONENT;
+use crate::generated::api_server::Api as ProverApi;
+use crate::generated::{self as proto};
 
 /// Specifies the type of proof supported by the remote prover.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -233,22 +230,23 @@ mod test {
     use std::time::Duration;
 
     use miden_node_utils::cors::cors_for_grpc_web_layer;
-    use miden_objects::{
-        asset::{Asset, FungibleAsset},
-        note::NoteType,
-        testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER},
-        transaction::{ProvenTransaction, TransactionWitness},
+    use miden_objects::asset::{Asset, FungibleAsset};
+    use miden_objects::note::NoteType;
+    use miden_objects::testing::account_id::{
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_SENDER,
     };
+    use miden_objects::transaction::{ProvenTransaction, TransactionWitness};
     use miden_testing::{Auth, MockChainBuilder};
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
     use tonic::Request;
     use tonic_web::GrpcWebLayer;
 
-    use crate::{
-        api::ProverRpcApi,
-        generated::{self as proto, api_client::ApiClient, api_server::ApiServer},
-    };
+    use crate::api::ProverRpcApi;
+    use crate::generated::api_client::ApiClient;
+    use crate::generated::api_server::ApiServer;
+    use crate::generated::{self as proto};
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_prove_transaction() {

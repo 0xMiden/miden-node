@@ -3,63 +3,64 @@
 //! The [State] provides data access and modifications methods, its main purpose is to ensure that
 //! data is atomically written, and that reads are consistent.
 
-use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
-    ops::Not,
-    sync::Arc,
-};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::ops::Not;
+use std::sync::Arc;
 
-use miden_node_proto::{
-    AccountWitnessRecord,
-    domain::{
-        account::{AccountInfo, AccountProofRequest, NetworkAccountPrefix, StorageMapKeysProof},
-        batch::BatchInputs,
-    },
-    generated as proto,
+use miden_node_proto::domain::account::{
+    AccountInfo,
+    AccountProofRequest,
+    NetworkAccountPrefix,
+    StorageMapKeysProof,
 };
-use miden_node_utils::{ErrorReport, formatting::format_array};
-use miden_objects::{
-    AccountError,
-    Word,
-    account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
-    block::{
-        AccountTree,
-        AccountWitness,
-        BlockHeader,
-        BlockInputs,
-        BlockNumber,
-        Blockchain,
-        NullifierTree,
-        NullifierWitness,
-        ProvenBlock,
-    },
-    crypto::merkle::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof},
-    note::{NoteDetails, NoteId, Nullifier},
-    transaction::{OutputNote, PartialBlockchain},
-    utils::Serializable,
+use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_proto::{AccountWitnessRecord, generated as proto};
+use miden_node_utils::ErrorReport;
+use miden_node_utils::formatting::format_array;
+use miden_objects::account::{AccountDelta, AccountHeader, AccountId, StorageSlot};
+use miden_objects::block::{
+    AccountTree,
+    AccountWitness,
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    Blockchain,
+    NullifierTree,
+    NullifierWitness,
+    ProvenBlock,
 };
-use tokio::{
-    sync::{Mutex, RwLock, oneshot},
-    time::Instant,
+use miden_objects::crypto::merkle::{
+    Forest,
+    Mmr,
+    MmrDelta,
+    MmrPeaks,
+    MmrProof,
+    PartialMmr,
+    SmtProof,
 };
+use miden_objects::note::{NoteDetails, NoteId, Nullifier};
+use miden_objects::transaction::{OutputNote, PartialBlockchain};
+use miden_objects::utils::Serializable;
+use miden_objects::{AccountError, Word};
+use tokio::sync::{Mutex, RwLock, oneshot};
+use tokio::time::Instant;
 use tracing::{info, info_span, instrument};
 
-use crate::{
-    COMPONENT,
-    blocks::BlockStore,
-    db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate, models::Page},
-    errors::{
-        ApplyBlockError,
-        DatabaseError,
-        GetBatchInputsError,
-        GetBlockHeaderError,
-        GetBlockInputsError,
-        GetCurrentBlockchainDataError,
-        InvalidBlockError,
-        NoteSyncError,
-        StateInitializationError,
-        StateSyncError,
-    },
+use crate::COMPONENT;
+use crate::blocks::BlockStore;
+use crate::db::models::Page;
+use crate::db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate};
+use crate::errors::{
+    ApplyBlockError,
+    DatabaseError,
+    GetBatchInputsError,
+    GetBlockHeaderError,
+    GetBlockInputsError,
+    GetCurrentBlockchainDataError,
+    InvalidBlockError,
+    NoteSyncError,
+    StateInitializationError,
+    StateSyncError,
 };
 // STRUCTURES
 // ================================================================================================

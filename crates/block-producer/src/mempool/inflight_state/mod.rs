@@ -1,16 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use miden_objects::{
-    account::AccountId,
-    block::BlockNumber,
-    note::{NoteId, Nullifier},
-    transaction::TransactionId,
-};
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::transaction::TransactionId;
 
-use crate::{
-    domain::transaction::AuthenticatedTransaction,
-    errors::{AddTransactionError, VerifyTxError},
-};
+use crate::domain::transaction::AuthenticatedTransaction;
+use crate::errors::{AddTransactionError, VerifyTxError};
 
 mod account_state;
 
@@ -385,11 +381,8 @@ mod tests {
     use miden_objects::Word;
 
     use super::*;
-    use crate::test_utils::{
-        MockProvenTxBuilder,
-        mock_account_id,
-        note::{mock_note, mock_output_note},
-    };
+    use crate::test_utils::note::{mock_note, mock_output_note};
+    use crate::test_utils::{MockProvenTxBuilder, mock_account_id};
 
     #[test]
     fn rejects_expired_transaction() {

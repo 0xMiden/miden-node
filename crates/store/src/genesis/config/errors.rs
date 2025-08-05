@@ -1,11 +1,7 @@
 use miden_lib::account::faucets::FungibleFaucetError;
-use miden_objects::{
-    AccountError,
-    AssetError,
-    TokenSymbolError,
-    account::AccountId,
-    asset::TokenSymbol,
-};
+use miden_objects::account::AccountId;
+use miden_objects::asset::TokenSymbol;
+use miden_objects::{AccountError, AssetError, TokenSymbolError};
 
 #[allow(missing_docs, reason = "Error variants must be descriptive by themselves")]
 #[derive(Debug, thiserror::Error)]

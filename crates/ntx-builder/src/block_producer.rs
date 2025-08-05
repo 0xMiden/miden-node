@@ -1,15 +1,19 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::time::Duration;
 
 use futures::{TryStream, TryStreamExt};
-use miden_node_proto::{
-    domain::mempool::MempoolEvent,
-    generated::{self as proto, block_producer::api_client::ApiClient},
-};
-use miden_node_utils::{FlattenResult, tracing::grpc::OtelInterceptor};
-use miden_objects::{block::BlockNumber, transaction::ProvenTransaction};
+use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_proto::generated::block_producer::api_client::ApiClient;
+use miden_node_proto::generated::{self as proto};
+use miden_node_utils::FlattenResult;
+use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_objects::block::BlockNumber;
+use miden_objects::transaction::ProvenTransaction;
 use miden_tx::utils::Serializable;
 use tokio_stream::StreamExt;
-use tonic::{Status, service::interceptor::InterceptedService, transport::Channel};
+use tonic::Status;
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::Channel;
 use tracing::{info, instrument};
 
 use crate::COMPONENT;

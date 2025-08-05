@@ -1,27 +1,25 @@
-use std::{num::NonZeroUsize, time::Duration};
+use std::num::NonZeroUsize;
+use std::time::Duration;
 
-use futures::{FutureExt, TryFutureExt, never::Never};
+use futures::never::Never;
+use futures::{FutureExt, TryFutureExt};
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::{
-    MIN_PROOF_SECURITY_LEVEL,
-    batch::{BatchId, ProposedBatch, ProvenBatch},
-};
+use miden_objects::MIN_PROOF_SECURITY_LEVEL;
+use miden_objects::batch::{BatchId, ProposedBatch, ProvenBatch};
 use miden_remote_prover_client::remote_prover::batch_prover::RemoteBatchProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use rand::Rng;
-use tokio::{task::JoinSet, time};
+use tokio::task::JoinSet;
+use tokio::time;
 use tracing::{Instrument, Span, instrument};
 use url::Url;
 
-use crate::{
-    COMPONENT,
-    TelemetryInjectorExt,
-    domain::transaction::AuthenticatedTransaction,
-    errors::BuildBatchError,
-    mempool::SharedMempool,
-    store::StoreClient,
-};
+use crate::domain::transaction::AuthenticatedTransaction;
+use crate::errors::BuildBatchError;
+use crate::mempool::SharedMempool;
+use crate::store::StoreClient;
+use crate::{COMPONENT, TelemetryInjectorExt};
 
 // BATCH BUILDER
 // ================================================================================================

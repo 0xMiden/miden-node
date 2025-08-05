@@ -989,7 +989,7 @@ pub(crate) fn unconsumed_network_notes(
 /// Returns a paginated batch of network notes for an account that are unconsumed by a specified
 /// block number.
 ///
-/// Notes that have been consumed after the specified block number are included in the result.
+///  Notes that are created or consumed after the specified block are excluded from the result.
 ///
 /// # Returns
 ///
@@ -1009,7 +1009,7 @@ pub(crate) fn unconsumed_network_notes(
 pub(crate) fn select_unconsumed_network_notes_by_tag(
     conn: &mut SqliteConnection,
     tag: u32,
-    latest_block_num: BlockNumber,
+    block_num: BlockNumber,
     mut page: Page,
 ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
     assert_eq!(
@@ -1067,11 +1067,11 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
     )
     .filter(schema::notes::execution_mode.eq(0_i32))
     .filter(schema::notes::tag.eq(tag as i32))
-    .filter(schema::notes::block_num.le(latest_block_num.to_raw_sql()))
+    .filter(schema::notes::block_num.le(block_num.to_raw_sql()))
     .filter(
         schema::notes::consumed_block_num
             .is_null()
-            .or(schema::notes::consumed_block_num.gt(latest_block_num.to_raw_sql())),
+            .or(schema::notes::consumed_block_num.gt(block_num.to_raw_sql())),
     )
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())

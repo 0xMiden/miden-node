@@ -42,11 +42,11 @@ pub struct UnconsumedNetworkNotesForAccountRequest {
     /// The network account ID prefix to filter notes by.
     #[prost(uint32, tag = "3")]
     pub network_account_id_prefix: u32,
-    /// The block number (inclusive) that the notes must be unconsumed by.
+    /// The block number to filter the returned notes by.
     ///
-    /// Notes that are consumed after this block are included in the result.
+    /// Notes that are created or consumed after this block are excluded from the result.
     #[prost(fixed32, tag = "4")]
-    pub unconsumed_by_block_num: u32,
+    pub block_num: u32,
 }
 /// Represents the result of getting the unconsumed network notes.
 #[derive(Clone, PartialEq, ::prost::Message)]

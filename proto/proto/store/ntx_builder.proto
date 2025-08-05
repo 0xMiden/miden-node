@@ -77,10 +77,10 @@ message UnconsumedNetworkNotesForAccountRequest {
      // The network account ID prefix to filter notes by.
      uint32 network_account_id_prefix = 3;
 
-     // The block number (inclusive) that the notes must be unconsumed by.
+     // The block number to filter the returned notes by.
      //
-     // Notes that are consumed after this block are included in the result.
-     fixed32 unconsumed_by_block_num = 4;
+     // Notes that are created or consumed after this block are excluded from the result.
+     fixed32 block_num = 4;
 }
 
 // Represents the result of getting the unconsumed network notes.

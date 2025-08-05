@@ -493,14 +493,14 @@ impl Db {
     pub(crate) async fn select_unconsumed_network_notes_for_account(
         &self,
         network_account_id_prefix: NetworkAccountPrefix,
-        unconsumed_by_block_num: BlockNumber,
+        block_num: BlockNumber,
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page)> {
         self.transact("unconsumed network notes for account", move |conn| {
             models::queries::select_unconsumed_network_notes_by_tag(
                 conn,
                 network_account_id_prefix.into(),
-                unconsumed_by_block_num,
+                block_num,
                 page,
             )
         })

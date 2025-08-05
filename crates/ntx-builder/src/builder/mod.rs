@@ -113,12 +113,12 @@ impl NetworkTransactionBuilder {
 
                     match completed {
                         // Nothing to do. State will be updated by the eventual mempool event.
-                        Ok((_, Ok(_))) => {},
-                        // Inform state if the tx failed.
-                        Ok((_, Err(NtxError::ConsumptionCheck { successful_notes, .. }))) => {
+                        Ok((_, Ok(failed_note_id))) => {
                             // Filter out successful notes from the candidate's notes.
-                            candidate.notes.retain(|note| !successful_notes.contains(&note.to_inner().id()));
-                            state.candidate_failed(&candidate);
+                            if let Some(failed_note_id) = failed_note_id {
+                                candidate.notes.retain(|note| note.to_inner().id() != failed_note_id);
+                                state.candidate_failed(&candidate);
+                            }
                         },
                         // Inform state if the tx failed.
                         Ok((_, Err(err))) => {

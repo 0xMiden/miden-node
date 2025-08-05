@@ -1,7 +1,7 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use futures::TryFutureExt;
-use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
 use miden_objects::{
     TransactionInputError, Word,
     account::{Account, AccountId},
@@ -30,15 +30,10 @@ pub enum NtxError {
     InputNotes(#[source] TransactionInputError),
     #[error("failed to filter notes")]
     NoteFilter(#[source] TransactionExecutorError),
-    #[error("no viable notes")]
-    NoViableNotes,
+    #[error("no viable notes: {0}")]
+    NoViableNotes(String),
     #[error("failed to execute transaction")]
     Execution(#[source] TransactionExecutorError),
-    #[error("note consumption check failed")]
-    ConsumptionCheck {
-        failed_note_id: NoteId,
-        successful_notes: Vec<NoteId>,
-    },
     #[error("failed to prove transaction")]
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
@@ -66,7 +61,7 @@ pub struct NtxContext {
 
 impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
-    pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
+    pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<Option<NoteId>> {
         let TransactionCandidate {
             account,
             account_id_prefix,
@@ -102,11 +97,13 @@ impl NtxContext {
                             let data_store =
                                 NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
-                            self.filter_notes(&data_store, notes)
-                                .and_then(|notes| self.execute(&data_store, notes))
+                            let (notes, failed_note_id) =
+                                self.filter_notes(&data_store, notes).await?;
+                            self.execute(&data_store, notes)
                                 .and_then(|tx| self.prove(tx))
                                 .and_then(|tx| self.submit(tx))
-                                .await
+                                .await?;
+                            Ok(failed_note_id)
                         }
                         .in_current_span(),
                     )
@@ -134,12 +131,12 @@ impl NtxContext {
         &self,
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
-    ) -> NtxResult<InputNotes<InputNote>> {
+    ) -> NtxResult<(InputNotes<InputNote>, Option<NoteId>)> {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 
-        let notes = match checker
+        match checker
             .check_notes_consumability(
                 data_store.account.id(),
                 data_store.reference_header.block_num(),
@@ -149,34 +146,44 @@ impl NtxContext {
             )
             .await
         {
-            Ok(NoteAccountExecution::Success) => notes,
+            Ok(NoteAccountExecution::Success) => Ok((notes, None)),
             Ok(NoteAccountExecution::Failure {
-                successful_notes, error, failed_note_id, ..
+                successful_notes,
+                error,
+                failed_note_id, // kept in case you need it later
+                ..
             }) => {
-                if let Some(error) = error {
-                    return Err(NtxError::NoteFilter(error));
+                // Gather successful notes.
+                let successful_notes = successful_notes
+                    .into_iter()
+                    .filter_map(|id| notes.iter().find(|note| note.id() == id))
+                    .cloned()
+                    .collect::<Vec<_>>();
+
+                // If none are successful, abort.
+                if successful_notes.is_empty() {
+                    tracing::warn!(
+                        err = %error.as_ref().map_or_else(|| "none".to_string(), |e| e.as_report()),
+                        "failed to check note consumability",
+                    );
+                    let error = error.map_or_else(|| "none".to_string(), |e| e.as_report());
+                    return Err(NtxError::NoViableNotes(error));
                 }
-                return Err(NtxError::ConsumptionCheck { successful_notes, failed_note_id });
-                //let notes = successful_notes
-                //    .into_iter()
-                //    .map(|id| notes.iter().find(|note| note.id() == id).unwrap())
-                //    .cloned()
-                //    .collect::<Vec<InputNote>>();
 
-                //if notes.is_empty() {
-                //    let err = error.map_or_else(|| "None".to_string(), |err| err.as_report());
-                //    tracing::warn!(%err, "all network notes failed");
-                //}
+                // If there were some successful notes but still an error, log it
+                let successful_count = successful_notes.len();
+                if let Some(err) = error {
+                    tracing::warn!(
+                        %err,
+                        successful_count,
+                        "failed to check note consumability",
+                    );
+                }
 
-                //InputNotes::new_unchecked(notes)
+                // Return successful and failed note id.
+                Ok((InputNotes::new_unchecked(successful_notes), Some(failed_note_id)))
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
-        };
-
-        if notes.is_empty() {
-            Err(NtxError::NoViableNotes)
-        } else {
-            Ok(notes)
         }
     }
 

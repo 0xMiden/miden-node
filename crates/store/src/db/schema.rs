@@ -46,6 +46,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    account_storage_map_values (account_id, block_num, slot, key, is_latest_update) {
+        account_id -> Binary,
+        block_num -> BigInt,
+        slot -> Integer,
+        key -> Binary,
+        value -> Binary,
+        is_latest_update -> Integer,
+    }
+}
+
+diesel::table! {
     accounts (account_id) {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
@@ -134,6 +145,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     account_fungible_asset_deltas,
     account_non_fungible_asset_updates,
     account_storage_map_updates,
+    account_storage_map_values,
     account_storage_slot_updates,
     accounts,
     block_headers,

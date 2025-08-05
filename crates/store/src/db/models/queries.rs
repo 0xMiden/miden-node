@@ -385,6 +385,15 @@ pub(crate) fn insert_account_delta(
                 key.to_bytes(),
                 value.to_bytes(),
             )?;
+            
+            insert_account_storage_map_value(
+                conn,
+                account_id,
+                block_number,
+                slot,
+                (*key).into(),
+                *value,
+            )?;
         }
     }
 
@@ -415,6 +424,125 @@ pub(crate) fn insert_account_delta(
     }
 
     Ok(())
+}
+
+/// Insert an account storage map value into the DB using the given [`SqliteConnection`].
+///
+/// This function will set `is_latest_update=true` for the new row and update any existing
+/// row with the same `(account_id, slot, key)` tuple to `is_latest_update=false`.
+///
+/// # Returns
+///
+/// The number of affected rows.
+pub(crate) fn insert_account_storage_map_value(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    slot: u8,
+    key: Word,
+    value: Word,
+) -> Result<usize, DatabaseError> {
+    // First, update any existing rows with the same (account_id, slot, key) to set
+    // is_latest_update=false
+    let update_count = diesel::update(schema::account_storage_map_values::table)
+        .filter(
+            schema::account_storage_map_values::account_id
+                .eq(account_id.to_bytes())
+                .and(schema::account_storage_map_values::slot.eq(slot_to_raw_sql(slot)))
+                .and(schema::account_storage_map_values::key.eq(&key.to_bytes())),
+        )
+        .set(schema::account_storage_map_values::is_latest_update.eq(0))
+        .execute(conn)?;
+
+    // Insert the new row with is_latest_update=true
+    let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
+        .values(&[(
+            schema::account_storage_map_values::account_id.eq(account_id.to_bytes()),
+            schema::account_storage_map_values::block_num.eq(block_num.to_raw_sql()),
+            schema::account_storage_map_values::slot.eq(slot_to_raw_sql(slot)),
+            schema::account_storage_map_values::key.eq(key.to_bytes()),
+            schema::account_storage_map_values::value.eq(value.to_bytes()),
+            schema::account_storage_map_values::is_latest_update.eq(1),
+        )])
+        .execute(conn)?;
+
+    Ok(update_count + insert_count)
+}
+
+/// Select account storage map values from the DB using the given [`SqliteConnection`].
+///
+/// # Returns
+///
+/// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account and
+/// block range.
+#[cfg(test)]
+pub(crate) fn select_account_storage_map_values(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: Option<BlockNumber>,
+) -> Result<Vec<(u8, Word, Word, bool)>, DatabaseError> {
+    let base = SelectDsl::select(
+        schema::account_storage_map_values::table,
+        (
+            schema::account_storage_map_values::slot,
+            schema::account_storage_map_values::key,
+            schema::account_storage_map_values::value,
+            schema::account_storage_map_values::is_latest_update,
+        ),
+    )
+    .filter(schema::account_storage_map_values::account_id.eq(account_id.to_bytes()));
+
+    let mut query = base.into_boxed();
+
+    if let Some(block_num) = block_num {
+        query =
+            query.filter(schema::account_storage_map_values::block_num.eq(block_num.to_raw_sql()));
+    }
+
+    let results: Vec<(i32, Vec<u8>, Vec<u8>, i32)> = query.load(conn)?;
+
+    results
+        .into_iter()
+        .map(|(slot, key, value, is_latest_update)| -> Result<(u8, Word, Word, bool), DatabaseError> {
+            let key = Word::read_from_bytes(&key)?;
+            let value = Word::read_from_bytes(&value)?;
+            Ok((raw_sql_to_slot(slot), key, value, is_latest_update != 0))
+        })
+        .collect()
+}
+
+/// Select the latest account storage map values (where `is_latest_update`=true) from the DB.
+///
+/// # Returns
+///
+/// A vector of tuples containing (slot, key, value) for the latest values only.
+#[cfg(test)]
+pub(crate) fn select_latest_account_storage_map_values(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+) -> Result<Vec<(u8, Word, Word)>, DatabaseError> {
+    let results: Vec<(i32, Vec<u8>, Vec<u8>)> = SelectDsl::select(
+        schema::account_storage_map_values::table.filter(
+            schema::account_storage_map_values::account_id
+                .eq(account_id.to_bytes())
+                .and(schema::account_storage_map_values::is_latest_update.eq(1)),
+        ),
+        (
+            schema::account_storage_map_values::slot,
+            schema::account_storage_map_values::key,
+            schema::account_storage_map_values::value,
+        ),
+    )
+    .load(conn)?;
+
+    results
+        .into_iter()
+        .map(|(slot, key, value)| -> Result<(u8, Word, Word), DatabaseError> {
+            let key = Word::read_from_bytes(&key)?;
+            let value = Word::read_from_bytes(&value)?;
+            Ok((raw_sql_to_slot(slot), key, value))
+        })
+        .collect()
 }
 
 /// Builds an [`AccountDelta`] from the given [`Account`].

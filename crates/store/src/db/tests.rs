@@ -1174,11 +1174,11 @@ fn notes() {
     assert_eq!(note_1.details, None);
 }
 
-
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn sql_account_storage_map_values_insertion() {
     use std::collections::BTreeMap;
+
     use miden_objects::account::StorageMapDelta;
 
     let mut conn = create_db();
@@ -1189,7 +1189,8 @@ fn sql_account_storage_map_values_insertion() {
     create_block(conn, block1);
     create_block(conn, block2);
 
-    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let account_id =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
 
     let slot = 3u8;
     let key1 = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
@@ -1203,18 +1204,24 @@ fn sql_account_storage_map_values_insertion() {
     map1.insert(key2.into(), value2);
     let maps1: BTreeMap<_, _> = [(slot, map1)].into_iter().collect();
     let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
-    let delta1 = AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
+    let delta1 =
+        AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
     queries::insert_account_delta(conn, account_id, block1, &delta1).unwrap();
 
     let v1 = queries::select_account_storage_map_values(conn, account_id, Some(block1)).unwrap();
     assert_eq!(v1.len(), 2, "expect 2 initial rows");
-    assert!(v1.iter().all(|(s, _, _, is_latest)| *s == slot && *is_latest), "initial rows should be latest");
+    assert!(
+        v1.iter().all(|(s, _, _, is_latest)| *s == slot && *is_latest),
+        "initial rows should be latest"
+    );
 
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1.into(), value3);
     let maps2: BTreeMap<_, _> = [(slot, map2)].into_iter().collect();
     let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
-    let delta2 = AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2)).unwrap();
+    let delta2 =
+        AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
+            .unwrap();
     queries::insert_account_delta(conn, account_id, block2, &delta2).unwrap();
 
     let all = queries::select_account_storage_map_values(conn, account_id, None).unwrap();
@@ -1226,7 +1233,8 @@ fn sql_account_storage_map_values_insertion() {
     assert!(latest.contains(&(slot, key2, value2)), "key2 should stay the same");
 
     assert!(
-        all.iter().any(|(s, k, v, is_latest)| *s == slot && *k == key1 && *v == value1 && !*is_latest),
+        all.iter()
+            .any(|(s, k, v, is_latest)| *s == slot && *k == key1 && *v == value1 && !*is_latest),
         "old key1 value should be not-latest"
     );
 }

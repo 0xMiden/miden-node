@@ -385,7 +385,7 @@ pub(crate) fn insert_account_delta(
                 key.to_bytes(),
                 value.to_bytes(),
             )?;
-            
+
             insert_account_storage_map_value(
                 conn,
                 account_id,

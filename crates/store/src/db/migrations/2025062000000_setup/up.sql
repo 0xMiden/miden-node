@@ -21,7 +21,7 @@ CREATE TABLE accounts (
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
 
 CREATE TABLE notes (
-    block_num                INTEGER NOT NULL,
+    committed_at             INTEGER NOT NULL, -- Block number when the note was committed
     batch_index              INTEGER NOT NULL, -- Index of batch in block, starting from 0
     note_index               INTEGER NOT NULL, -- Index of note in batch, starting from 0
     note_id                  BLOB    NOT NULL,
@@ -32,7 +32,7 @@ CREATE TABLE notes (
     aux                      INTEGER NOT NULL,
     execution_hint           INTEGER NOT NULL,
     inclusion_path           BLOB NOT NULL,    -- Serialized sparse Merkle path of the note in the block's note tree
-    consumed_block_num       INTEGER,
+    consumed_at              INTEGER,          -- Block number when the note was consumed
     nullifier                BLOB,             -- Only known for public notes, null for private notes
     assets                   BLOB,
     inputs                   BLOB,

@@ -154,7 +154,7 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
 #[diesel(table_name = notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteSyncRecordRawRow {
-    pub block_num: i64, // BlockNumber
+    pub committed_at: i64, // BlockNumber
     #[diesel(embed)]
     pub block_note_index: BlockNoteIndexRaw,
     pub note_id: Vec<u8>, // BlobDigest
@@ -167,7 +167,7 @@ pub struct NoteSyncRecordRawRow {
 impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteSyncRecord, Self::Error> {
-        let block_num = BlockNumber::from_raw_sql(self.block_num)?;
+        let block_num = BlockNumber::from_raw_sql(self.committed_at)?;
         let note_index = self.block_note_index.try_into()?;
 
         let note_id = Word::read_from_bytes(&self.note_id[..])?;
@@ -222,7 +222,7 @@ pub struct NoteDetailsRaw {
 // mildly.
 #[derive(Debug, Clone, PartialEq, Queryable)]
 pub struct NoteRecordWithScriptRaw {
-    pub block_num: i64,
+    pub committed_at: i64,
 
     pub batch_index: i32,
     pub note_index: i32, // index within batch
@@ -250,7 +250,7 @@ pub struct NoteRecordWithScriptRaw {
 impl From<(NoteRecordRaw, Option<Vec<u8>>)> for NoteRecordWithScriptRaw {
     fn from((note, script): (NoteRecordRaw, Option<Vec<u8>>)) -> Self {
         let NoteRecordRaw {
-            block_num,
+            committed_at,
             batch_index,
             note_index,
             note_id,
@@ -265,7 +265,7 @@ impl From<(NoteRecordRaw, Option<Vec<u8>>)> for NoteRecordWithScriptRaw {
             inclusion_path,
         } = note;
         Self {
-            block_num,
+            committed_at,
             batch_index,
             note_index,
             note_id,
@@ -289,7 +289,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
         // let (raw, script) = self;
         let raw = self;
         let NoteRecordWithScriptRaw {
-            block_num,
+            committed_at,
 
             batch_index,
             note_index,
@@ -321,7 +321,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
         let details = NoteDetailsRaw { assets, inputs, serial_num };
 
         let metadata = metadata.try_into()?;
-        let block_num = BlockNumber::from_raw_sql(block_num)?;
+        let committed_at = BlockNumber::from_raw_sql(committed_at)?;
         let note_id = Word::read_from_bytes(&note_id[..])?;
         let script = script.map(|script| NoteScript::read_from_bytes(&script[..])).transpose()?;
         let details = if let NoteDetailsRaw {
@@ -344,7 +344,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
         let inclusion_path = SparseMerklePath::read_from_bytes(&inclusion_path[..])?;
         let note_index = index.try_into()?;
         Ok(NoteRecord {
-            block_num,
+            block_num: committed_at,
             note_index,
             note_id,
             metadata,
@@ -358,7 +358,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
 #[diesel(table_name = notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteRecordRaw {
-    pub block_num: i64,
+    pub committed_at: i64,
 
     pub batch_index: i32,
     pub note_index: i32, // index within batch
@@ -409,7 +409,7 @@ where
 #[derive(Debug, Clone, PartialEq, Insertable)]
 #[diesel(table_name = notes)]
 pub struct NoteInsertRowRaw {
-    pub block_num: i64,
+    pub committed_at: i64,
 
     pub batch_index: i32,
     pub note_index: i32, // index within batch
@@ -422,7 +422,7 @@ pub struct NoteInsertRowRaw {
     pub aux: i64,
     pub execution_hint: i64,
 
-    pub consumed_block_num: Option<i64>,
+    pub consumed_at: Option<i64>,
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
     pub serial_num: Option<Vec<u8>>,
@@ -435,7 +435,7 @@ pub struct NoteInsertRowRaw {
 impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
         Self {
-            block_num: note.block_num.to_raw_sql(),
+            committed_at: note.block_num.to_raw_sql(),
             batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
             note_index: idx_to_raw_sql(note.note_index.note_idx_in_batch()),
             note_id: note.note_id.to_bytes(),
@@ -446,7 +446,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
             aux: aux_to_raw_sql(note.metadata.aux()),
             execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
             inclusion_path: note.inclusion_path.to_bytes(),
-            consumed_block_num: None::<i64>, // New notes are always unconsumed.
+            consumed_at: None::<i64>, // New notes are always unconsumed.
             nullifier: nullifier.as_ref().map(Nullifier::to_bytes), /* Beware: `Option<T>` also implements `to_bytes`, but this is not what you want. */
             assets: note.details.as_ref().map(|d| d.assets().to_bytes()),
             inputs: note.details.as_ref().map(|d| d.inputs().to_bytes()),

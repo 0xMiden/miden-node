@@ -112,14 +112,14 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 
     // find block_num: select notes since block by tag and sender
     let Some(desired_block_num): Option<i64> =
-        SelectDsl::select(schema::notes::table, schema::notes::block_num)
+        SelectDsl::select(schema::notes::table, schema::notes::committed_at)
             .filter(
                 schema::notes::tag
                     .eq_any(&desired_note_tags[..])
                     .or(schema::notes::sender.eq_any(&desired_senders[..])),
             )
-            .filter(schema::notes::block_num.gt(start_block_num))
-            .order_by(schema::notes::block_num.asc())
+            .filter(schema::notes::committed_at.gt(start_block_num))
+            .order_by(schema::notes::committed_at.asc())
             .limit(1)
             .get_result(conn)
             .optional()?
@@ -129,7 +129,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 
     let notes = SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
             // find the next block which contains at least one note with a matching tag or sender
-            .filter(schema::notes::block_num.eq(
+            .filter(schema::notes::committed_at.eq(
                 &desired_block_num
             ))
             // filter the block's notes and return only the ones matching the requested tags or senders
@@ -204,7 +204,7 @@ pub(crate) fn select_note_inclusion_proofs(
     let raw_notes = SelectDsl::select(
         schema::notes::table,
         (
-            schema::notes::block_num,
+            schema::notes::committed_at,
             schema::notes::note_id,
             schema::notes::batch_index,
             schema::notes::note_index,
@@ -212,7 +212,7 @@ pub(crate) fn select_note_inclusion_proofs(
         ),
     )
     .filter(schema::notes::note_id.eq_any(noted_ids_serialized))
-    .order_by(schema::notes::block_num.asc())
+    .order_by(schema::notes::committed_at.asc())
     .load::<(i64, Vec<u8>, i32, i32, Vec<u8>)>(conn)?;
 
     Result::<BTreeMap<_, _>, _>::from_iter(raw_notes.iter().map(
@@ -683,7 +683,7 @@ pub(crate) fn select_all_notes(
     );
     let raw: Vec<_> =
         SelectDsl::select(q, (NoteRecordRaw::as_select(), schema::note_scripts::script.nullable()))
-            .order(schema::notes::block_num.asc())
+            .order(schema::notes::committed_at.asc())
             .load::<(NoteRecordRaw, Option<Vec<u8>>)>(conn)?;
     let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRaw>(
         raw.into_iter().map(NoteRecordWithScriptRaw::from),
@@ -732,7 +732,7 @@ pub(crate) fn insert_nullifiers_for_block(
 
     let mut count = diesel::update(schema::notes::table)
         .filter(schema::notes::nullifier.eq_any(&serialized_nullifiers))
-        .set(schema::notes::consumed_block_num.eq(Some(block_num.to_raw_sql())))
+        .set(schema::notes::consumed_at.eq(Some(block_num.to_raw_sql())))
         .execute(conn)?;
 
     count += diesel::insert_into(schema::nullifiers::table)
@@ -966,7 +966,7 @@ pub(crate) fn unconsumed_network_notes(
         ),
     )
     .filter(schema::notes::execution_mode.eq(0_i32))
-    .filter(schema::notes::consumed_block_num.is_null())
+    .filter(schema::notes::consumed_at.is_null())
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())
     .limit(page.size.get() as i64 + 1)
@@ -1067,11 +1067,11 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
     )
     .filter(schema::notes::execution_mode.eq(0_i32))
     .filter(schema::notes::tag.eq(tag as i32))
-    .filter(schema::notes::block_num.le(block_num.to_raw_sql()))
+    .filter(schema::notes::committed_at.le(block_num.to_raw_sql()))
     .filter(
-        schema::notes::consumed_block_num
+        schema::notes::consumed_at
             .is_null()
-            .or(schema::notes::consumed_block_num.gt(block_num.to_raw_sql())),
+            .or(schema::notes::consumed_at.gt(block_num.to_raw_sql())),
     )
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())

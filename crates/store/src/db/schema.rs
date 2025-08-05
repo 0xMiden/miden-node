@@ -70,8 +70,8 @@ diesel::table! {
 }
 
 diesel::table! {
-    notes (block_num, batch_index, note_index) {
-        block_num -> BigInt,
+    notes (committed_at, batch_index, note_index) {
+        committed_at -> BigInt,
         batch_index -> Integer,
         note_index -> Integer,
         note_id -> Binary,
@@ -82,7 +82,7 @@ diesel::table! {
         aux -> BigInt,
         execution_hint -> BigInt,
         inclusion_path -> Binary,
-        consumed_block_num -> Nullable<BigInt>,
+        consumed_at -> Nullable<BigInt>,
         nullifier -> Nullable<Binary>,
         assets -> Nullable<Binary>,
         inputs -> Nullable<Binary>,
@@ -111,7 +111,7 @@ diesel::joinable!(account_deltas -> accounts (account_id));
 diesel::joinable!(account_deltas -> block_headers (block_num));
 diesel::joinable!(accounts -> block_headers (block_num));
 diesel::joinable!(notes -> accounts (sender));
-diesel::joinable!(notes -> block_headers (block_num));
+diesel::joinable!(notes -> block_headers (committed_at));
 diesel::joinable!(notes -> note_scripts (script_root));
 diesel::joinable!(nullifiers -> block_headers (block_num));
 diesel::joinable!(transactions -> accounts (account_id));

@@ -9,10 +9,23 @@ use miden_lib::{
 };
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::{
-    Felt, FieldElement, ONE, Word, ZERO,
+    Felt,
+    FieldElement,
+    ONE,
+    Word,
+    ZERO,
     account::{
-        Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
-        AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
+        Account,
+        AccountBuilder,
+        AccountDelta,
+        AccountFile,
+        AccountId,
+        AccountStorageDelta,
+        AccountStorageMode,
+        AccountType,
+        AccountVaultDelta,
+        AuthSecretKey,
+        FungibleAssetDelta,
         NonFungibleAssetDelta,
     },
     asset::{FungibleAsset, TokenSymbol},

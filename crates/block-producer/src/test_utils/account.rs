@@ -1,7 +1,8 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use miden_objects::{
-    Hasher, Word,
+    Hasher,
+    Word,
     account::{AccountId, AccountIdVersion, AccountStorageMode, AccountType},
 };
 

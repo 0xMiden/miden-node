@@ -3,7 +3,10 @@ use std::ops::Range;
 use itertools::Itertools;
 use miden_air::HashFunction;
 use miden_objects::{
-    Felt, Hasher, ONE, Word,
+    Felt,
+    Hasher,
+    ONE,
+    Word,
     account::AccountId,
     block::BlockNumber,
     note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier},

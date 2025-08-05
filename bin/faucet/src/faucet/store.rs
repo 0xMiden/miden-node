@@ -1,7 +1,8 @@
 use std::{collections::BTreeSet, sync::Mutex};
 
 use miden_objects::{
-    MastForest, Word,
+    MastForest,
+    Word,
     account::{Account, AccountId},
     block::{BlockHeader, BlockNumber},
     transaction::{PartialBlockchain, TransactionScript},

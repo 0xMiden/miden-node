@@ -1,7 +1,13 @@
 use miden_objects::{
     Word,
     crypto::merkle::{
-        Forest, LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof, SparseMerklePath,
+        Forest,
+        LeafIndex,
+        MerklePath,
+        MmrDelta,
+        SmtLeaf,
+        SmtProof,
+        SparseMerklePath,
     },
 };
 

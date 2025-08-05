@@ -386,7 +386,8 @@ mod tests {
 
     use super::*;
     use crate::test_utils::{
-        MockProvenTxBuilder, mock_account_id,
+        MockProvenTxBuilder,
+        mock_account_id,
         note::{mock_note, mock_output_note},
     };
 

@@ -7,8 +7,10 @@ use std::{
 use anyhow::Context;
 use miden_node_proto::generated::{block_producer_store, ntx_builder_store, rpc_store};
 use miden_node_proto_build::{
-    store_block_producer_api_descriptor, store_ntx_builder_api_descriptor,
-    store_rpc_api_descriptor, store_shared_api_descriptor,
+    store_block_producer_api_descriptor,
+    store_ntx_builder_api_descriptor,
+    store_rpc_api_descriptor,
+    store_shared_api_descriptor,
 };
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use tokio::{net::TcpListener, task::JoinSet};
@@ -17,8 +19,13 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, instrument};
 
 use crate::{
-    COMPONENT, DATABASE_MAINTENANCE_INTERVAL, GenesisState, blocks::BlockStore, db::Db,
-    server::db_maintenance::DbMaintenance, state::State,
+    COMPONENT,
+    DATABASE_MAINTENANCE_INTERVAL,
+    GenesisState,
+    blocks::BlockStore,
+    db::Db,
+    server::db_maintenance::DbMaintenance,
+    state::State,
 };
 
 mod api;

@@ -6,7 +6,9 @@ use std::{
 use account::{AccountState, NetworkAccountUpdate};
 use anyhow::Context;
 use miden_node_proto::domain::{
-    account::NetworkAccountPrefix, mempool::MempoolEvent, note::NetworkNote,
+    account::NetworkAccountPrefix,
+    mempool::MempoolEvent,
+    note::NetworkNote,
 };
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{

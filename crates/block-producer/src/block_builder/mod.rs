@@ -16,7 +16,10 @@ use tracing::{Span, info, instrument};
 use url::Url;
 
 use crate::{
-    COMPONENT, TelemetryInjectorExt, errors::BuildBlockError, mempool::SharedMempool,
+    COMPONENT,
+    TelemetryInjectorExt,
+    errors::BuildBlockError,
+    mempool::SharedMempool,
     store::StoreClient,
 };
 

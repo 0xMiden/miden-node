@@ -7,8 +7,16 @@ use std::{
 use async_trait::async_trait;
 use bytes::Bytes;
 use metrics::{
-    QUEUE_LATENCY, QUEUE_SIZE, RATE_LIMIT_VIOLATIONS, RATE_LIMITED_REQUESTS, REQUEST_COUNT,
-    REQUEST_FAILURE_COUNT, REQUEST_LATENCY, REQUEST_RETRIES, WORKER_BUSY, WORKER_COUNT,
+    QUEUE_LATENCY,
+    QUEUE_SIZE,
+    RATE_LIMIT_VIOLATIONS,
+    RATE_LIMITED_REQUESTS,
+    REQUEST_COUNT,
+    REQUEST_FAILURE_COUNT,
+    REQUEST_LATENCY,
+    REQUEST_RETRIES,
+    WORKER_BUSY,
+    WORKER_COUNT,
     WORKER_REQUEST_COUNT,
 };
 use miden_remote_prover::{
@@ -37,8 +45,10 @@ use crate::{
         update_workers::{Action, UpdateWorkers},
     },
     utils::{
-        create_queue_full_response, create_response_with_error_message,
-        create_too_many_requests_response, write_grpc_response_to_session,
+        create_queue_full_response,
+        create_response_with_error_message,
+        create_too_many_requests_response,
+        write_grpc_response_to_session,
     },
 };
 

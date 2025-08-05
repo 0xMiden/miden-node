@@ -2,7 +2,10 @@ use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
 use miden_node_utils::{ErrorReport, formatting::format_opt};
 use miden_objects::{
-    ProposedBatchError, ProposedBlockError, ProvenBatchError, Word,
+    ProposedBatchError,
+    ProposedBlockError,
+    ProvenBatchError,
+    Word,
     account::AccountId,
     block::BlockNumber,
     note::{NoteId, Nullifier},

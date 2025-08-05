@@ -8,25 +8,49 @@ use std::{
 
 use diesel::{Connection, SqliteConnection};
 use miden_lib::{
-    account::auth::AuthRpoFalcon512, note::create_p2id_note, transaction::TransactionKernel,
+    account::auth::AuthRpoFalcon512,
+    note::create_p2id_note,
+    transaction::TransactionKernel,
 };
 use miden_node_proto::domain::account::AccountSummary;
 use miden_objects::{
-    EMPTY_WORD, Felt, FieldElement, Word, ZERO,
+    EMPTY_WORD,
+    Felt,
+    FieldElement,
+    Word,
+    ZERO,
     account::{
-        Account, AccountBuilder, AccountComponent, AccountDelta, AccountId, AccountIdVersion,
-        AccountStorageDelta, AccountStorageMode, AccountType, AccountVaultDelta, StorageSlot,
+        Account,
+        AccountBuilder,
+        AccountComponent,
+        AccountDelta,
+        AccountId,
+        AccountIdVersion,
+        AccountStorageDelta,
+        AccountStorageMode,
+        AccountType,
+        AccountVaultDelta,
+        StorageSlot,
         delta::AccountUpdateDetails,
     },
     asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails},
     block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
     crypto::{dsa::rpo_falcon512::PublicKey, merkle::SparseMerklePath, rand::RpoRandomCoin},
     note::{
-        Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
+        Note,
+        NoteDetails,
+        NoteExecutionHint,
+        NoteId,
+        NoteMetadata,
+        NoteTag,
+        NoteType,
+        Nullifier,
     },
     testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+        ACCOUNT_ID_PRIVATE_SENDER,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+        ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     },
     transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId},
 };

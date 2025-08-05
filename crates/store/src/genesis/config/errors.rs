@@ -1,6 +1,10 @@
 use miden_lib::account::faucets::FungibleFaucetError;
 use miden_objects::{
-    AccountError, AssetError, TokenSymbolError, account::AccountId, asset::TokenSymbol,
+    AccountError,
+    AssetError,
+    TokenSymbolError,
+    account::AccountId,
+    asset::TokenSymbol,
 };
 
 #[allow(missing_docs, reason = "Error variants must be descriptive by themselves")]

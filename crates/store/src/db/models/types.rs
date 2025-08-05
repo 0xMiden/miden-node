@@ -3,26 +3,46 @@ use diesel::prelude::{AsChangeset, Insertable};
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::{self as proto, domain::account::AccountSummary};
 use miden_objects::{
-    Felt, Word,
+    Felt,
+    Word,
     account::{Account, AccountCode, AccountId, AccountStorage},
     asset::AssetVault,
     block::{BlockHeader, BlockNoteIndex, BlockNumber},
     crypto::merkle::SparseMerklePath,
     note::{
-        NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
-        NoteScript, NoteTag, NoteType, Nullifier,
+        NoteAssets,
+        NoteDetails,
+        NoteExecutionHint,
+        NoteInputs,
+        NoteMetadata,
+        NoteRecipient,
+        NoteScript,
+        NoteTag,
+        NoteType,
+        Nullifier,
     },
     transaction::TransactionId,
 };
 
 use super::{
-    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
-    Selectable, Sqlite,
+    DatabaseError,
+    NoteRecord,
+    NoteSyncRecord,
+    NullifierInfo,
+    Queryable,
+    QueryableByName,
+    Selectable,
+    Sqlite,
 };
 use crate::db::{
     models::conv::{
-        SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
-        idx_to_raw_sql, note_type_to_raw_sql, raw_sql_to_nonce,
+        SqlTypeConvert,
+        aux_to_raw_sql,
+        execution_hint_to_raw_sql,
+        execution_mode_to_raw_sql,
+        idx_to_raw_sql,
+        note_type_to_raw_sql,
+        raw_sql_to_nonce,
     },
     schema,
 };

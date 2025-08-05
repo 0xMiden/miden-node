@@ -8,7 +8,8 @@ use miden_objects::{
 };
 
 use crate::{
-    AccountWitnessRecord, NullifierWitnessRecord,
+    AccountWitnessRecord,
+    NullifierWitnessRecord,
     errors::{ConversionError, MissingFieldHelper},
     generated as proto,
 };

@@ -1,9 +1,17 @@
 use miden_objects::{
-    Felt, Word,
+    Felt,
+    Word,
     crypto::merkle::SparseMerklePath,
     note::{
-        Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
-        NoteType, Nullifier,
+        Note,
+        NoteDetails,
+        NoteExecutionHint,
+        NoteId,
+        NoteInclusionProof,
+        NoteMetadata,
+        NoteTag,
+        NoteType,
+        Nullifier,
     },
     utils::{Deserializable, Serializable},
 };

@@ -3,7 +3,12 @@ use miden_objects::{
     Word,
     account::{Account, delta::AccountUpdateDetails},
     block::{
-        AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock,
+        AccountTree,
+        BlockAccountUpdate,
+        BlockHeader,
+        BlockNoteTree,
+        BlockNumber,
+        ProvenBlock,
     },
     crypto::merkle::{Forest, MmrPeaks, Smt},
     note::Nullifier,

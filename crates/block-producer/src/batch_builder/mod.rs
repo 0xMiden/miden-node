@@ -15,8 +15,12 @@ use tracing::{Instrument, Span, instrument};
 use url::Url;
 
 use crate::{
-    COMPONENT, TelemetryInjectorExt, domain::transaction::AuthenticatedTransaction,
-    errors::BuildBatchError, mempool::SharedMempool, store::StoreClient,
+    COMPONENT,
+    TelemetryInjectorExt,
+    domain::transaction::AuthenticatedTransaction,
+    errors::BuildBatchError,
+    mempool::SharedMempool,
+    store::StoreClient,
 };
 
 // BATCH BUILDER

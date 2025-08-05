@@ -7,7 +7,8 @@ use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SpanExporter
 use tracing::subscriber::Subscriber;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{
-    Layer, Registry,
+    Layer,
+    Registry,
     layer::{Filter, SubscriberExt},
 };
 

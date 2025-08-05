@@ -12,7 +12,9 @@ use miden_node_utils::{
     tracing::grpc::{TracedComponent, traced_span_fn},
 };
 use miden_objects::{
-    block::BlockNumber, transaction::ProvenTransaction, utils::serde::Deserializable,
+    block::BlockNumber,
+    transaction::ProvenTransaction,
+    utils::serde::Deserializable,
 };
 use tokio::{
     net::TcpListener,
@@ -25,7 +27,9 @@ use tracing::{debug, error, info, instrument};
 use url::Url;
 
 use crate::{
-    COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION,
+    COMPONENT,
+    SERVER_MEMPOOL_EXPIRATION_SLACK,
+    SERVER_MEMPOOL_STATE_RETENTION,
     SERVER_NUM_BATCH_BUILDERS,
     batch_builder::BatchBuilder,
     block_builder::BlockBuilder,

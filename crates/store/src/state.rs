@@ -19,11 +19,19 @@ use miden_node_proto::{
 };
 use miden_node_utils::{ErrorReport, formatting::format_array};
 use miden_objects::{
-    AccountError, Word,
+    AccountError,
+    Word,
     account::{AccountDelta, AccountHeader, AccountId, StorageSlot},
     block::{
-        AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain,
-        NullifierTree, NullifierWitness, ProvenBlock,
+        AccountTree,
+        AccountWitness,
+        BlockHeader,
+        BlockInputs,
+        BlockNumber,
+        Blockchain,
+        NullifierTree,
+        NullifierWitness,
+        ProvenBlock,
     },
     crypto::merkle::{Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof},
     note::{NoteDetails, NoteId, Nullifier},
@@ -41,9 +49,16 @@ use crate::{
     blocks::BlockStore,
     db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate, models::Page},
     errors::{
-        ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError,
-        GetBlockInputsError, GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError,
-        StateInitializationError, StateSyncError,
+        ApplyBlockError,
+        DatabaseError,
+        GetBatchInputsError,
+        GetBlockHeaderError,
+        GetBlockInputsError,
+        GetCurrentBlockchainDataError,
+        InvalidBlockError,
+        NoteSyncError,
+        StateInitializationError,
+        StateSyncError,
     },
 };
 // STRUCTURES

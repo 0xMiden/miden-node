@@ -1,8 +1,11 @@
 use miden_block_prover::LocalBlockProver;
 use miden_node_utils::ErrorReport;
 use miden_objects::{
-    MIN_PROOF_SECURITY_LEVEL, batch::ProposedBatch, block::ProposedBlock,
-    transaction::TransactionWitness, utils::Serializable,
+    MIN_PROOF_SECURITY_LEVEL,
+    batch::ProposedBatch,
+    block::ProposedBlock,
+    transaction::TransactionWitness,
+    utils::Serializable,
 };
 use miden_tx::{LocalTransactionProver, TransactionProver};
 use miden_tx_batch_prover::LocalBatchProver;

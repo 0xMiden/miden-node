@@ -14,13 +14,18 @@ use miden_node_proto::{
 use miden_node_utils::{
     ErrorReport,
     limiter::{
-        QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
+        QueryParamAccountIdLimit,
+        QueryParamLimiter,
+        QueryParamNoteIdLimit,
+        QueryParamNoteTagLimit,
         QueryParamNullifierLimit,
     },
     tracing::grpc::OtelInterceptor,
 };
 use miden_objects::{
-    MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
+    MAX_NUM_FOREIGN_ACCOUNTS,
+    MIN_PROOF_SECURITY_LEVEL,
+    Word,
     account::{AccountId, delta::AccountUpdateDetails},
     block::{BlockHeader, BlockNumber},
     transaction::ProvenTransaction,
@@ -28,7 +33,11 @@ use miden_objects::{
 };
 use miden_tx::TransactionVerifier;
 use tonic::{
-    IntoRequest, Request, Response, Status, service::interceptor::InterceptedService,
+    IntoRequest,
+    Request,
+    Response,
+    Status,
+    service::interceptor::InterceptedService,
     transport::Channel,
 };
 use tracing::{debug, info, instrument};

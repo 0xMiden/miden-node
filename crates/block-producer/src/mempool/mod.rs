@@ -6,7 +6,9 @@ use inflight_state::InflightState;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::{
-    MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH,
+    MAX_ACCOUNTS_PER_BATCH,
+    MAX_INPUT_NOTES_PER_BATCH,
+    MAX_OUTPUT_NOTES_PER_BATCH,
     batch::{BatchId, ProvenBatch},
     block::{BlockHeader, BlockNumber},
     transaction::TransactionId,
@@ -18,8 +20,11 @@ use transaction_expiration::TransactionExpirations;
 use transaction_graph::TransactionGraph;
 
 use crate::{
-    COMPONENT, DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH,
-    domain::transaction::AuthenticatedTransaction, errors::AddTransactionError,
+    COMPONENT,
+    DEFAULT_MAX_BATCHES_PER_BLOCK,
+    DEFAULT_MAX_TXS_PER_BATCH,
+    domain::transaction::AuthenticatedTransaction,
+    errors::AddTransactionError,
 };
 
 mod batch_graph;

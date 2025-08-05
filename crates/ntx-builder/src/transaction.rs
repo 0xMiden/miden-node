@@ -3,20 +3,33 @@ use std::{collections::BTreeSet, sync::Arc};
 use futures::TryFutureExt;
 use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
 use miden_objects::{
-    TransactionInputError, Word,
+    TransactionInputError,
+    Word,
     account::{Account, AccountId},
     assembly::DefaultSourceManager,
     block::{BlockHeader, BlockNumber},
     transaction::{
-        ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
+        ExecutedTransaction,
+        InputNote,
+        InputNotes,
+        PartialBlockchain,
+        ProvenTransaction,
         TransactionArgs,
     },
 };
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::{
-    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
-    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
-    TransactionProverError, auth::UnreachableAuth,
+    DataStore,
+    DataStoreError,
+    LocalTransactionProver,
+    MastForestStore,
+    NoteAccountExecution,
+    NoteConsumptionChecker,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionMastStore,
+    TransactionProverError,
+    auth::UnreachableAuth,
 };
 use rand::seq::SliceRandom;
 use tokio::task::JoinError;

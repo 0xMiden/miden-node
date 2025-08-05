@@ -4,7 +4,12 @@ use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::{
-    AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError, Word,
+    AccountDeltaError,
+    AccountError,
+    AccountTreeError,
+    NoteError,
+    NullifierTreeError,
+    Word,
     account::AccountId,
     block::BlockNumber,
     crypto::{merkle::MmrError, utils::DeserializationError},
@@ -333,8 +338,16 @@ mod compile_tests {
     use std::marker::PhantomData;
 
     use super::{
-        AccountDeltaError, AccountError, DatabaseError, DatabaseSetupError, DeserializationError,
-        GenesisError, NetworkAccountError, NoteError, RecvError, StateInitializationError,
+        AccountDeltaError,
+        AccountError,
+        DatabaseError,
+        DatabaseSetupError,
+        DeserializationError,
+        GenesisError,
+        NetworkAccountError,
+        NoteError,
+        RecvError,
+        StateInitializationError,
     };
 
     /// Ensure all enum variants remain compat with the desired

@@ -10,7 +10,8 @@ use miden_remote_prover::{
     api::ProofType,
     error::RemoteProverError,
     generated::{
-        ProxyWorkerStatus, remote_prover::worker_status_api_client::WorkerStatusApiClient,
+        ProxyWorkerStatus,
+        remote_prover::worker_status_api_client::WorkerStatusApiClient,
     },
 };
 use pingora::lb::Backend;

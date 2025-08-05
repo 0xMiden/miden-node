@@ -19,9 +19,15 @@ use miden_node_proto::{domain::batch::BatchInputs, generated::rpc_store::rpc_cli
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::{
-    Felt, ONE, Word,
+    Felt,
+    ONE,
+    Word,
     account::{
-        Account, AccountBuilder, AccountId, AccountStorageMode, AccountType,
+        Account,
+        AccountBuilder,
+        AccountId,
+        AccountStorageMode,
+        AccountType,
         delta::AccountUpdateDetails,
     },
     asset::{Asset, FungibleAsset, TokenSymbol},
@@ -33,8 +39,13 @@ use miden_objects::{
     },
     note::{Note, NoteHeader, NoteId, NoteInclusionProof},
     transaction::{
-        InputNote, InputNotes, OrderedTransactionHeaders, OutputNote, ProvenTransaction,
-        ProvenTransactionBuilder, TransactionHeader,
+        InputNote,
+        InputNotes,
+        OrderedTransactionHeaders,
+        OutputNote,
+        ProvenTransaction,
+        ProvenTransactionBuilder,
+        TransactionHeader,
     },
     vm::ExecutionProof,
 };

@@ -11,7 +11,10 @@ use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
 use crate::commands::{
-    BlockProducerConfig, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE, NtxBuilderConfig,
+    BlockProducerConfig,
+    ENV_ENABLE_OTEL,
+    ENV_GENESIS_CONFIG_FILE,
+    NtxBuilderConfig,
 };
 
 #[derive(clap::Subcommand)]

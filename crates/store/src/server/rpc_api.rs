@@ -7,7 +7,11 @@ use miden_node_proto::{
     try_convert,
 };
 use miden_objects::{
-    Word, account::AccountId, block::BlockNumber, note::NoteId, utils::Serializable,
+    Word,
+    account::AccountId,
+    block::BlockNumber,
+    note::NoteId,
+    utils::Serializable,
 };
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
@@ -15,7 +19,11 @@ use tracing::{debug, info, instrument};
 use crate::{
     COMPONENT,
     server::api::{
-        StoreApi, internal_error, read_account_id, read_account_ids, validate_nullifiers,
+        StoreApi,
+        internal_error,
+        read_account_id,
+        read_account_ids,
+        validate_nullifiers,
     },
 };
 

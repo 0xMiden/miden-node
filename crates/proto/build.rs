@@ -1,12 +1,17 @@
 use std::{
-    env, fs,
+    env,
+    fs,
     path::{Path, PathBuf},
 };
 
 use anyhow::Context;
 use miden_node_proto_build::{
-    block_producer_api_descriptor, rpc_api_descriptor, store_block_producer_api_descriptor,
-    store_ntx_builder_api_descriptor, store_rpc_api_descriptor, store_shared_api_descriptor,
+    block_producer_api_descriptor,
+    rpc_api_descriptor,
+    store_block_producer_api_descriptor,
+    store_ntx_builder_api_descriptor,
+    store_rpc_api_descriptor,
+    store_shared_api_descriptor,
 };
 use tonic_build::FileDescriptorSet;
 

@@ -1,16 +1,24 @@
 use std::{net::SocketAddr, time::Duration};
 
 use http::{
-    HeaderMap, HeaderValue,
+    HeaderMap,
+    HeaderValue,
     header::{ACCEPT, CONTENT_TYPE},
 };
 use miden_node_proto::generated::{self as proto, rpc::api_client::ApiClient as ProtoClient};
 use miden_node_store::{GenesisState, Store};
 use miden_objects::{
-    Felt, Word,
+    Felt,
+    Word,
     account::{
-        AccountDelta, AccountId, AccountIdVersion, AccountStorageDelta, AccountStorageMode,
-        AccountType, AccountVaultDelta, delta::AccountUpdateDetails,
+        AccountDelta,
+        AccountId,
+        AccountIdVersion,
+        AccountStorageDelta,
+        AccountStorageMode,
+        AccountType,
+        AccountVaultDelta,
+        delta::AccountUpdateDetails,
     },
     transaction::ProvenTransactionBuilder,
     utils::Serializable,

@@ -15,8 +15,8 @@ CREATE TABLE account_codes (
 CREATE TABLE accounts (
     account_id                              BLOB NOT NULL,
     network_account_id_prefix               INTEGER NULL, -- 30-bit account ID prefix, only filled for network accounts
-    account_commitment                      BLOB NOT NULL,
     block_num                               INTEGER NOT NULL,
+    account_commitment                      BLOB NOT NULL,
     code_commitment                         BLOB,
     storage                                 BLOB,
     vault                                   BLOB,

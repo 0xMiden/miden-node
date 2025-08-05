@@ -50,7 +50,7 @@ diesel::table! {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
         account_commitment -> Binary,
-        code_commitment -> Binary, // double check if this can ever be the case, I don't think so
+        code_commitment -> Nullable<Binary>,
         storage -> Nullable<Binary>,
         vault -> Nullable<Binary>,
         nonce -> Nullable<BigInt>,

@@ -510,10 +510,10 @@ pub(crate) struct AccountCodeRowInsert {
 pub(crate) struct AccountRowInsert {
     pub(crate) account_id: Vec<u8>,
     pub(crate) network_account_id_prefix: Option<i64>,
-    pub(crate) account_commitment: Vec<u8>,
     pub(crate) block_num: i64,
-    pub(crate) nonce: Option<i64>,
+    pub(crate) account_commitment: Vec<u8>,
+    pub(crate) code_commitment: Option<Vec<u8>>,
     pub(crate) storage: Option<Vec<u8>>,
     pub(crate) vault: Option<Vec<u8>>,
-    pub(crate) code_commitment: Option<Vec<u8>>,
+    pub(crate) nonce: Option<i64>,
 }

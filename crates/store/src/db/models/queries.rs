@@ -481,15 +481,18 @@ pub(crate) fn upsert_accounts(
         account_id: AccountId,
     ) -> Result<Vec<Account>, DatabaseError> {
         let account_id = account_id.to_bytes();
-        let accounts =
-            SelectDsl::select(
-                schema::accounts::table.left_join(schema::account_codes::table.on(
-                    schema::accounts::code_commitment.eq(schema::account_codes::code_commitment),
-                )),
-                (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-            )
-            .filter(schema::accounts::account_id.eq(account_id))
-            .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+        let accounts = SelectDsl::select(
+            schema::accounts::table.left_join(
+                schema::account_codes::table.on(schema::accounts::code_commitment
+                    .eq(schema::account_codes::code_commitment.nullable())),
+            ),
+            (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+        )
+        .filter(schema::accounts::account_id.eq(account_id))
+        .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+
+        // SELECT .. FROM accounts LEFT JOIN account_codes
+        // ON accounts.code_commitment == account_codes.code_commitment
 
         let accounts = Result::from_iter(accounts.into_iter().filter_map(|x| {
             let account_with_code = AccountWithCodeRaw::from(x);
@@ -860,10 +863,9 @@ pub(crate) fn select_account(
     //
 
     let raw = SelectDsl::select(
-        schema::accounts::table.left_join(
-            schema::account_codes::table
-                .on(schema::accounts::code_commitment.eq(schema::account_codes::code_commitment)),
-        ),
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
@@ -897,10 +899,9 @@ pub(crate) fn select_account_by_id_prefix(
     // WHERE
     //     network_account_id_prefix = ?1;
     let maybe_info = SelectDsl::select(
-        schema::accounts::table.left_join(
-            schema::account_codes::table
-                .on(schema::account_codes::code_commitment.eq(schema::accounts::code_commitment)),
-        ),
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
@@ -1154,10 +1155,9 @@ pub(crate) fn select_all_accounts(
     //     block_num ASC;
 
     let accounts_raw = QueryDsl::select(
-        schema::accounts::table.left_join(
-            schema::account_codes::table
-                .on(schema::accounts::code_commitment.eq(schema::account_codes::code_commitment)),
-        ),
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
         (models::AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
@@ -1176,10 +1176,9 @@ pub(crate) fn select_accounts_by_id(
     let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
 
     let accounts_raw = SelectDsl::select(
-        schema::accounts::table.left_join(
-            schema::account_codes::table
-                .on(schema::accounts::code_commitment.eq(schema::account_codes::code_commitment)),
-        ),
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .filter(schema::accounts::account_id.eq_any(account_ids))

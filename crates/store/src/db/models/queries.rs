@@ -989,7 +989,7 @@ pub(crate) fn unconsumed_network_notes(
 /// Returns a paginated batch of network notes for an account that are unconsumed by a specified
 /// block number.
 ///
-/// Notes that have been consumed after the specified block number are excluded from the result.
+/// Notes that have been consumed after the specified block number are included in the result.
 ///
 /// # Returns
 ///

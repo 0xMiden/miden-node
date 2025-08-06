@@ -1,4 +1,5 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -8,7 +9,10 @@ use url::Url;
 
 use super::{ENV_BLOCK_PRODUCER_URL, ENV_STORE_BLOCK_PRODUCER_URL};
 use crate::commands::{
-    BlockProducerConfig, DEFAULT_TIMEOUT, ENV_ENABLE_OTEL, duration_to_human_readable_string,
+    BlockProducerConfig,
+    DEFAULT_TIMEOUT,
+    ENV_ENABLE_OTEL,
+    duration_to_human_readable_string,
 };
 
 #[derive(clap::Subcommand)]

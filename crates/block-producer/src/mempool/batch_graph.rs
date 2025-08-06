@@ -1,15 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use miden_objects::{
-    account::AccountId,
-    batch::{BatchId, ProvenBatch},
-    transaction::TransactionId,
-};
+use miden_objects::account::AccountId;
+use miden_objects::batch::{BatchId, ProvenBatch};
+use miden_objects::transaction::TransactionId;
 
-use super::{
-    BlockBudget, BudgetStatus,
-    graph::{DependencyGraph, GraphError},
-};
+use super::graph::{DependencyGraph, GraphError};
+use super::{BlockBudget, BudgetStatus};
 
 // BATCH GRAPH
 // ================================================================================================

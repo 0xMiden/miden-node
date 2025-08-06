@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use clap::Parser;
-use miden_remote_prover::{COMPONENT, api::ProofType};
+use miden_remote_prover::COMPONENT;
+use miden_remote_prover::api::ProofType;
 use proxy::StartProxy;
 use tracing::instrument;
 use update_workers::{AddWorkers, RemoveWorkers, UpdateWorkers};

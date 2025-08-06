@@ -1,30 +1,28 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::{Display, Formatter},
-    net::SocketAddr,
-    num::NonZeroU32,
-};
+use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
+use std::net::SocketAddr;
+use std::num::NonZeroU32;
 
 use itertools::Itertools;
-use miden_node_proto::{
-    AccountState,
-    domain::batch::BatchInputs,
-    errors::{ConversionError, MissingFieldHelper},
-    generated::{self as proto, block_producer_store::block_producer_client as store_client},
-};
-use miden_node_utils::{formatting::format_opt, tracing::grpc::OtelInterceptor};
-use miden_objects::{
-    Word,
-    account::AccountId,
-    block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock},
-    note::{NoteId, Nullifier},
-    transaction::ProvenTransaction,
-    utils::Serializable,
-};
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use miden_node_proto::AccountState;
+use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
+use miden_node_proto::generated::block_producer_store::block_producer_client as store_client;
+use miden_node_proto::generated::{self as proto};
+use miden_node_utils::formatting::format_opt;
+use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_objects::Word;
+use miden_objects::account::AccountId;
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
+use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::transaction::ProvenTransaction;
+use miden_objects::utils::Serializable;
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::Channel;
 use tracing::{debug, info, instrument};
 
-use crate::{COMPONENT, errors::StoreError};
+use crate::COMPONENT;
+use crate::errors::StoreError;
 
 // TRANSACTION INPUTS
 // ================================================================================================

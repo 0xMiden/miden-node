@@ -1,29 +1,32 @@
-use std::{
-    collections::VecDeque,
-    sync::{Arc, LazyLock},
-    time::{Duration, Instant},
-};
+use std::collections::VecDeque;
+use std::sync::{Arc, LazyLock};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use bytes::Bytes;
 use metrics::{
-    QUEUE_LATENCY, QUEUE_SIZE, RATE_LIMIT_VIOLATIONS, RATE_LIMITED_REQUESTS, REQUEST_COUNT,
-    REQUEST_FAILURE_COUNT, REQUEST_LATENCY, REQUEST_RETRIES, WORKER_BUSY, WORKER_COUNT,
+    QUEUE_LATENCY,
+    QUEUE_SIZE,
+    RATE_LIMIT_VIOLATIONS,
+    RATE_LIMITED_REQUESTS,
+    REQUEST_COUNT,
+    REQUEST_FAILURE_COUNT,
+    REQUEST_LATENCY,
+    REQUEST_RETRIES,
+    WORKER_BUSY,
+    WORKER_COUNT,
     WORKER_REQUEST_COUNT,
 };
-use miden_remote_prover::{
-    COMPONENT,
-    api::ProofType,
-    error::RemoteProverError,
-    generated::remote_prover::{ProxyStatus, ProxyWorkerStatus},
-};
-use pingora::{
-    http::ResponseHeader,
-    prelude::*,
-    protocols::Digest,
-    upstreams::peer::{ALPN, Peer},
-};
-use pingora_core::{Result, upstreams::peer::HttpPeer};
+use miden_remote_prover::COMPONENT;
+use miden_remote_prover::api::ProofType;
+use miden_remote_prover::error::RemoteProverError;
+use miden_remote_prover::generated::remote_prover::{ProxyStatus, ProxyWorkerStatus};
+use pingora::http::ResponseHeader;
+use pingora::prelude::*;
+use pingora::protocols::Digest;
+use pingora::upstreams::peer::{ALPN, Peer};
+use pingora_core::Result;
+use pingora_core::upstreams::peer::HttpPeer;
 use pingora_limits::rate::Rate;
 use pingora_proxy::{FailToProxy, ProxyHttp, Session};
 use tokio::sync::RwLock;
@@ -31,15 +34,13 @@ use tracing::{Span, debug, error, info, info_span, warn};
 use uuid::Uuid;
 use worker::Worker;
 
-use crate::{
-    commands::{
-        ProxyConfig,
-        update_workers::{Action, UpdateWorkers},
-    },
-    utils::{
-        create_queue_full_response, create_response_with_error_message,
-        create_too_many_requests_response, write_grpc_response_to_session,
-    },
+use crate::commands::ProxyConfig;
+use crate::commands::update_workers::{Action, UpdateWorkers};
+use crate::utils::{
+    create_queue_full_response,
+    create_response_with_error_message,
+    create_too_many_requests_response,
+    write_grpc_response_to_session,
 };
 
 mod health_check;

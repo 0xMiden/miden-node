@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -6,13 +9,19 @@ use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
-use tokio::{net::TcpListener, sync::Barrier, task::JoinSet};
+use tokio::net::TcpListener;
+use tokio::sync::Barrier;
+use tokio::task::JoinSet;
 use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
 use crate::commands::{
-    BlockProducerConfig, DEFAULT_TIMEOUT, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE,
-    NtxBuilderConfig, duration_to_human_readable_string,
+    BlockProducerConfig,
+    DEFAULT_TIMEOUT,
+    ENV_ENABLE_OTEL,
+    ENV_GENESIS_CONFIG_FILE,
+    NtxBuilderConfig,
+    duration_to_human_readable_string,
 };
 
 #[derive(clap::Subcommand)]

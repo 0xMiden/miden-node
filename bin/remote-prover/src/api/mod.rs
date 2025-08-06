@@ -1,6 +1,7 @@
 use tokio::net::TcpListener;
 
-use crate::generated::{api_server::ApiServer, worker_status_api_server::WorkerStatusApiServer};
+use crate::generated::api_server::ApiServer;
+use crate::generated::worker_status_api_server::WorkerStatusApiServer;
 
 pub(crate) mod prover;
 mod status;

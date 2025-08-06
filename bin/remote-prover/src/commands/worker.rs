@@ -1,15 +1,11 @@
 use std::time::Duration;
 
 use clap::Parser;
-use miden_node_utils::{
-    cors::cors_for_grpc_web_layer,
-    tracing::grpc::{TracedComponent, traced_span_fn},
-};
-use miden_remote_prover::{
-    COMPONENT,
-    api::{ProofType, RpcListener},
-    generated::api_server::ApiServer,
-};
+use miden_node_utils::cors::cors_for_grpc_web_layer;
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
+use miden_remote_prover::COMPONENT;
+use miden_remote_prover::api::{ProofType, RpcListener};
+use miden_remote_prover::generated::api_server::ApiServer;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_health::server::health_reporter;

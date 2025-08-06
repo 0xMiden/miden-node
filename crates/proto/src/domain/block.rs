@@ -1,17 +1,12 @@
 use std::collections::BTreeMap;
 
-use miden_objects::{
-    block::{BlockHeader, BlockInputs, NullifierWitness},
-    note::{NoteId, NoteInclusionProof},
-    transaction::PartialBlockchain,
-    utils::{Deserializable, Serializable},
-};
+use miden_objects::block::{BlockHeader, BlockInputs, NullifierWitness};
+use miden_objects::note::{NoteId, NoteInclusionProof};
+use miden_objects::transaction::PartialBlockchain;
+use miden_objects::utils::{Deserializable, Serializable};
 
-use crate::{
-    AccountWitnessRecord, NullifierWitnessRecord,
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use crate::errors::{ConversionError, MissingFieldHelper};
+use crate::{AccountWitnessRecord, NullifierWitnessRecord, generated as proto};
 
 // BLOCK HEADER
 // ================================================================================================

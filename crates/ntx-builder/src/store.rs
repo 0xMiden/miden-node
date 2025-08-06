@@ -1,20 +1,19 @@
 use std::time::Duration;
 
-use miden_node_proto::{
-    domain::{account::NetworkAccountPrefix, note::NetworkNote},
-    errors::ConversionError,
-    generated::{self as proto, ntx_builder_store::ntx_builder_client as store_client},
-    try_convert,
-};
+use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::note::NetworkNote;
+use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::ntx_builder_store::ntx_builder_client as store_client;
+use miden_node_proto::generated::{self as proto};
+use miden_node_proto::try_convert;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
-use miden_objects::{
-    account::Account,
-    block::BlockHeader,
-    crypto::merkle::{Forest, MmrPeaks, PartialMmr},
-};
+use miden_objects::account::Account;
+use miden_objects::block::BlockHeader;
+use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::Channel;
 use tracing::{info, instrument};
 use url::Url;
 

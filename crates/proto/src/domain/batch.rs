@@ -1,16 +1,12 @@
 use std::collections::BTreeMap;
 
-use miden_objects::{
-    block::BlockHeader,
-    note::{NoteId, NoteInclusionProof},
-    transaction::PartialBlockchain,
-    utils::{Deserializable, Serializable},
-};
+use miden_objects::block::BlockHeader;
+use miden_objects::note::{NoteId, NoteInclusionProof};
+use miden_objects::transaction::PartialBlockchain;
+use miden_objects::utils::{Deserializable, Serializable};
 
-use crate::{
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use crate::errors::{ConversionError, MissingFieldHelper};
+use crate::generated as proto;
 
 /// Data required for a transaction batch.
 #[derive(Clone, Debug)]

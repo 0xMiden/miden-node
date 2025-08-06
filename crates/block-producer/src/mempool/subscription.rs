@@ -1,13 +1,10 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    ops::Mul,
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::ops::Mul;
 
-use miden_node_proto::domain::{mempool::MempoolEvent, note::NetworkNote};
-use miden_objects::{
-    block::{BlockHeader, BlockNumber},
-    transaction::{OutputNote, TransactionId},
-};
+use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_proto::domain::note::NetworkNote;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::transaction::{OutputNote, TransactionId};
 use tokio::sync::mpsc;
 
 use crate::domain::transaction::AuthenticatedTransaction;

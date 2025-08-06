@@ -1,21 +1,23 @@
-use std::{
-    path::{Path, PathBuf},
-    time::Duration,
-};
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_store::{
-    Store,
-    genesis::config::{AccountFileWithName, GenesisConfig},
-};
+use miden_node_store::Store;
+use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{
-    ENV_DATA_DIRECTORY, ENV_STORE_BLOCK_PRODUCER_URL, ENV_STORE_NTX_BUILDER_URL, ENV_STORE_RPC_URL,
+    ENV_DATA_DIRECTORY,
+    ENV_STORE_BLOCK_PRODUCER_URL,
+    ENV_STORE_NTX_BUILDER_URL,
+    ENV_STORE_RPC_URL,
 };
 use crate::commands::{
-    DEFAULT_TIMEOUT, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE, duration_to_human_readable_string,
+    DEFAULT_TIMEOUT,
+    ENV_ENABLE_OTEL,
+    ENV_GENESIS_CONFIG_FILE,
+    duration_to_human_readable_string,
 };
 
 #[allow(clippy::large_enum_variant, reason = "single use enum")]

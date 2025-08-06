@@ -1,13 +1,12 @@
-use std::{net::SocketAddr, time::Duration};
+use std::net::SocketAddr;
+use std::time::Duration;
 
 use accept::AcceptHeaderLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
 use miden_node_proto_build::rpc_api_descriptor;
-use miden_node_utils::{
-    cors::cors_for_grpc_web_layer,
-    tracing::grpc::{TracedComponent, traced_span_fn},
-};
+use miden_node_utils::cors::cors_for_grpc_web_layer;
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;

@@ -3,7 +3,8 @@
 #![recursion_limit = "256"]
 
 use clap::{Parser, Subcommand};
-use miden_node_utils::{logging::OpenTelemetry, version::LongVersion};
+use miden_node_utils::logging::OpenTelemetry;
+use miden_node_utils::version::LongVersion;
 
 mod commands;
 

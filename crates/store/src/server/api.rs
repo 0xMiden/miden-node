@@ -1,17 +1,18 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
-use miden_node_proto::{errors::ConversionError, generated as proto};
+use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated as proto;
 use miden_node_utils::ErrorReport;
-use miden_objects::{
-    Word,
-    account::AccountId,
-    block::BlockNumber,
-    note::{NoteId, Nullifier},
-};
+use miden_objects::Word;
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::{NoteId, Nullifier};
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
-use crate::{COMPONENT, state::State};
+use crate::COMPONENT;
+use crate::state::State;
 
 // STORE API
 // ================================================================================================

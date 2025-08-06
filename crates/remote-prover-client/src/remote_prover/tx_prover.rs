@@ -1,19 +1,16 @@
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    sync::Arc,
-};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use core::time::Duration;
 
-use miden_objects::{
-    transaction::{ProvenTransaction, TransactionWitness},
-    utils::{Deserializable, DeserializationError, Serializable},
-};
+use miden_objects::transaction::{ProvenTransaction, TransactionWitness};
+use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use miden_tx::{TransactionProver, TransactionProverError};
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
-use crate::{RemoteProverClientError, remote_prover::generated as proto};
+use crate::RemoteProverClientError;
+use crate::remote_prover::generated as proto;
 
 // REMOTE TRANSACTION PROVER
 // ================================================================================================

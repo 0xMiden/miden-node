@@ -1,19 +1,22 @@
-use miden_objects::{
-    Felt, Word,
-    crypto::merkle::SparseMerklePath,
-    note::{
-        Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
-        NoteType, Nullifier,
-    },
-    utils::{Deserializable, Serializable},
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{
+    Note,
+    NoteDetails,
+    NoteExecutionHint,
+    NoteId,
+    NoteInclusionProof,
+    NoteMetadata,
+    NoteTag,
+    NoteType,
+    Nullifier,
 };
+use miden_objects::utils::{Deserializable, Serializable};
+use miden_objects::{Felt, Word};
 use thiserror::Error;
 
 use super::account::NetworkAccountPrefix;
-use crate::{
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use crate::errors::{ConversionError, MissingFieldHelper};
+use crate::generated as proto;
 
 impl TryFrom<proto::note::NoteMetadata> for NoteMetadata {
     type Error = ConversionError;

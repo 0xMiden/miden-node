@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
-use miden_objects::{Word, transaction::TransactionId};
+use miden_objects::Word;
+use miden_objects::transaction::TransactionId;
 
 // IN-FLIGHT ACCOUNT STATE
 // ================================================================================================

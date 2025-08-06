@@ -1,9 +1,8 @@
-use std::{any::type_name, num::TryFromIntError};
+use std::any::type_name;
+use std::num::TryFromIntError;
 
-use miden_objects::{
-    crypto::merkle::{SmtLeafError, SmtProofError},
-    utils::DeserializationError,
-};
+use miden_objects::crypto::merkle::{SmtLeafError, SmtProofError};
+use miden_objects::utils::DeserializationError;
 use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;

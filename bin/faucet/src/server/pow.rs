@@ -1,15 +1,15 @@
-use std::{
-    collections::{BTreeMap, HashMap},
-    num::NonZeroUsize,
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::collections::{BTreeMap, HashMap};
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use miden_objects::account::AccountId;
 use tokio::time::{Duration, interval};
 
 use super::challenge::Challenge;
-use crate::server::{ApiKey, get_pow::PowRequest, get_tokens::MintRequestError};
+use crate::server::ApiKey;
+use crate::server::get_pow::PowRequest;
+use crate::server::get_tokens::MintRequestError;
 
 // POW
 // ================================================================================================
@@ -154,7 +154,7 @@ struct ChallengeCache {
     /// Maps API key to the number of submitted challenges.
     challenges_per_key: HashMap<ApiKey, usize>,
     /// Maps account id to the number of submitted challenges.
-    account_ids: BTreeMap<AccountId, usize>,
+    account_ids: HashMap<AccountId, usize>,
 }
 
 impl ChallengeCache {

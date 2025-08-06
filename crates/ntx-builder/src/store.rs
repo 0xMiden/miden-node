@@ -1,17 +1,14 @@
 use std::time::Duration;
 
-use miden_node_proto::{
-    clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient},
-    domain::{account::NetworkAccountPrefix, note::NetworkNote},
-    errors::ConversionError,
-    generated::{self as proto},
-    try_convert,
-};
-use miden_objects::{
-    account::Account,
-    block::BlockHeader,
-    crypto::merkle::{Forest, MmrPeaks, PartialMmr},
-};
+use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
+use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::note::NetworkNote;
+use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::{self as proto};
+use miden_node_proto::try_convert;
+use miden_objects::account::Account;
+use miden_objects::block::BlockHeader;
+use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tracing::{info, instrument};

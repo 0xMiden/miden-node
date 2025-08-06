@@ -1,15 +1,11 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::{
-    clients::{Builder, Rpc as RpcClientMarker, RpcClient as InnerRpcClient},
-    generated as proto,
-};
-use miden_objects::{
-    account::Account,
-    block::{BlockHeader, BlockNumber},
-    transaction::ProvenTransaction,
-};
+use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient as InnerRpcClient};
+use miden_node_proto::generated as proto;
+use miden_objects::account::Account;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::transaction::ProvenTransaction;
 use miden_tx::utils::{Deserializable, Serializable};
 use url::Url;
 

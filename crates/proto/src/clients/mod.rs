@@ -19,16 +19,16 @@
 //! # }
 //! ```
 
-use std::{collections::HashMap, time::Duration};
+use std::collections::HashMap;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
-use tonic::{
-    Request, Status,
-    metadata::AsciiMetadataValue,
-    service::{Interceptor, interceptor::InterceptedService},
-    transport::{Channel, Endpoint},
-};
+use tonic::metadata::AsciiMetadataValue;
+use tonic::service::Interceptor;
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::{Channel, Endpoint};
+use tonic::{Request, Status};
 
 use crate::generated;
 

@@ -1,30 +1,24 @@
-use std::{
-    collections::{HashMap, HashSet},
-    fmt::{Display, Formatter},
-    num::NonZeroU32,
-};
+use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
+use std::num::NonZeroU32;
 
 use itertools::Itertools;
-use miden_node_proto::{
-    AccountState,
-    clients::{Builder, StoreBlockProducer, StoreBlockProducerClient},
-    domain::batch::BatchInputs,
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use miden_node_proto::clients::{Builder, StoreBlockProducer, StoreBlockProducerClient};
+use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
+use miden_node_proto::{AccountState, generated as proto};
 use miden_node_utils::formatting::format_opt;
-use miden_objects::{
-    Word,
-    account::AccountId,
-    block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock},
-    note::{NoteId, Nullifier},
-    transaction::ProvenTransaction,
-    utils::Serializable,
-};
+use miden_objects::Word;
+use miden_objects::account::AccountId;
+use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
+use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::transaction::ProvenTransaction;
+use miden_objects::utils::Serializable;
 use tracing::{debug, info, instrument};
 use url::Url;
 
-use crate::{COMPONENT, errors::StoreError};
+use crate::COMPONENT;
+use crate::errors::StoreError;
 
 // TRANSACTION INPUTS
 // ================================================================================================

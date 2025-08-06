@@ -1,20 +1,19 @@
 use clap::Parser;
-use miden_remote_prover::{COMPONENT, error::RemoteProverError};
-use pingora::{
-    apps::HttpServerOptions,
-    prelude::{Opt, background_service},
-    server::{Server, configuration::ServerConf},
-    services::listening::Service,
-};
+use miden_remote_prover::COMPONENT;
+use miden_remote_prover::error::RemoteProverError;
+use pingora::apps::HttpServerOptions;
+use pingora::prelude::{Opt, background_service};
+use pingora::server::Server;
+use pingora::server::configuration::ServerConf;
+use pingora::services::listening::Service;
 use pingora_proxy::http_proxy_service;
 use tracing::{info, warn};
 
 use super::ProxyConfig;
-use crate::{
-    commands::PROXY_HOST,
-    proxy::{LoadBalancer, LoadBalancerState, update_workers::LoadBalancerUpdateService},
-    utils::check_port_availability,
-};
+use crate::commands::PROXY_HOST;
+use crate::proxy::update_workers::LoadBalancerUpdateService;
+use crate::proxy::{LoadBalancer, LoadBalancerState};
+use crate::utils::check_port_availability;
 
 /// Starts the proxy.
 ///

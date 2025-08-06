@@ -27,19 +27,70 @@
     reason = "This is the one file where we map the signed database types to the working types"
 )]
 
-use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_objects::{Felt, note::NoteTag};
+use std::any::type_name;
 
-#[inline(always)]
-pub(crate) fn raw_sql_to_consumed(raw: i32) -> bool {
-    debug_assert!(raw == 1 || raw == 0);
-    raw == 1
+use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
+use miden_objects::Felt;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::NoteTag;
+
+#[derive(Debug, thiserror::Error)]
+#[error("failed to convert a database value to it's in memory type {0}")]
+pub struct DatabaseTypeConversionError(&'static str);
+
+/// Convert from and to it's database representation and back
+///
+/// We do not assume sanity of DB types.
+pub(crate) trait SqlTypeConvert: Sized {
+    type Raw: Sized;
+    type Error: std::error::Error + Send + Sync + 'static;
+    fn to_raw_sql(self) -> Self::Raw;
+    fn from_raw_sql(_raw: Self::Raw) -> Result<Self, Self::Error>;
 }
 
-#[inline(always)]
-pub(crate) fn consumed_to_raw_sql(consumed: bool) -> i32 {
-    consumed as u8 as i32
+impl SqlTypeConvert for BlockNumber {
+    type Raw = i64;
+    type Error = DatabaseTypeConversionError;
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+        u32::try_from(raw)
+            .map(BlockNumber::from)
+            .map_err(|_| DatabaseTypeConversionError(type_name::<BlockNumber>()))
+    }
+    fn to_raw_sql(self) -> Self::Raw {
+        self.as_u32() as i64
+    }
 }
+
+impl SqlTypeConvert for NetworkAccountPrefix {
+    type Raw = i64;
+    type Error = DatabaseTypeConversionError;
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+        NetworkAccountPrefix::try_from(raw as u32)
+            .map_err(|_e| DatabaseTypeConversionError(type_name::<NetworkAccountError>()))
+    }
+    fn to_raw_sql(self) -> Self::Raw {
+        self.inner() as i64
+    }
+}
+
+impl SqlTypeConvert for NoteTag {
+    type Raw = i32;
+    type Error = DatabaseTypeConversionError;
+
+    #[inline(always)]
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+        #[allow(clippy::cast_sign_loss)]
+        Ok(NoteTag::from(raw as u32))
+    }
+
+    #[inline(always)]
+    fn to_raw_sql(self) -> Self::Raw {
+        u32::from(self) as i32
+    }
+}
+
+// Raw type conversions - eventually introduce wrapper types
+// ===========================================================
 
 #[inline(always)]
 pub(crate) fn raw_sql_to_nullifier_prefix(raw: i32) -> u16 {
@@ -49,15 +100,6 @@ pub(crate) fn raw_sql_to_nullifier_prefix(raw: i32) -> u16 {
 #[inline(always)]
 pub(crate) fn nullifier_prefix_to_raw_sql(prefix: u16) -> i32 {
     prefix as i32
-}
-
-#[inline(always)]
-pub(crate) fn network_account_prefix_to_raw_sql(prefix: NetworkAccountPrefix) -> i64 {
-    prefix.inner() as i64
-}
-#[inline(always)]
-pub(crate) fn raw_sql_to_network_account_prefix(raw: i64) -> NetworkAccountPrefix {
-    NetworkAccountPrefix::try_from(raw as u32).unwrap()
 }
 
 #[inline(always)]
@@ -97,16 +139,6 @@ pub(crate) fn raw_sql_to_note_type(raw: i32) -> u8 {
 #[inline(always)]
 pub(crate) fn note_type_to_raw_sql(note_type_: u8) -> i32 {
     note_type_ as i32
-}
-
-#[inline(always)]
-#[allow(clippy::cast_sign_loss)]
-pub(crate) fn raw_sql_to_tag(raw: i32) -> NoteTag {
-    NoteTag::from(raw as u32)
-}
-#[inline(always)]
-pub(crate) fn tag_to_raw_sql(tag: NoteTag) -> i32 {
-    u32::from(tag) as i32
 }
 
 #[inline(always)]

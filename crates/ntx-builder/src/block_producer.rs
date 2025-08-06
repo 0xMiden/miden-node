@@ -1,13 +1,16 @@
 use std::time::Duration;
 
 use futures::{TryStream, TryStreamExt};
-use miden_node_proto::{
-    clients::{BlockProducer, BlockProducerClient as InnerBlockProducerClient, Builder},
-    domain::mempool::MempoolEvent,
-    generated::{self as proto},
+use miden_node_proto::clients::{
+    BlockProducer,
+    BlockProducerClient as InnerBlockProducerClient,
+    Builder,
 };
+use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_proto::generated::{self as proto};
 use miden_node_utils::FlattenResult;
-use miden_objects::{block::BlockNumber, transaction::ProvenTransaction};
+use miden_objects::block::BlockNumber;
+use miden_objects::transaction::ProvenTransaction;
 use miden_tx::utils::Serializable;
 use tokio_stream::StreamExt;
 use tonic::Status;

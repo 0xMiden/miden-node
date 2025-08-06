@@ -1,9 +1,11 @@
-use miden_objects::{Word, block::BlockNumber};
+use miden_objects::Word;
+use miden_objects::block::BlockNumber;
 use pretty_assertions::assert_eq;
 use serial_test::serial;
 
 use super::*;
-use crate::test_utils::{MockProvenTxBuilder, batch::TransactionBatchConstructor};
+use crate::test_utils::MockProvenTxBuilder;
+use crate::test_utils::batch::TransactionBatchConstructor;
 
 impl Mempool {
     fn for_tests() -> Self {

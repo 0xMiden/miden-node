@@ -1,6 +1,8 @@
-use std::{convert::Infallible, str::FromStr};
+use std::convert::Infallible;
+use std::str::FromStr;
 
-use miden_objects::{NetworkIdError, account::NetworkId};
+use miden_objects::NetworkIdError;
+use miden_objects::account::NetworkId;
 use serde::{Deserialize, Serialize};
 
 // NETWORK

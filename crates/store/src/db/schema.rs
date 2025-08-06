@@ -50,8 +50,18 @@ diesel::table! {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
         account_commitment -> Binary,
+        code_commitment -> Nullable<Binary>,
+        storage -> Nullable<Binary>,
+        vault -> Nullable<Binary>,
+        nonce -> Nullable<BigInt>,
         block_num -> BigInt,
-        details -> Nullable<Binary>,
+    }
+}
+
+diesel::table! {
+    account_codes (code_commitment) {
+        code_commitment -> Binary,
+        code -> Binary,
     }
 }
 
@@ -70,8 +80,8 @@ diesel::table! {
 }
 
 diesel::table! {
-    notes (block_num, batch_index, note_index) {
-        block_num -> BigInt,
+    notes (committed_at, batch_index, note_index) {
+        committed_at -> BigInt,
         batch_index -> Integer,
         note_index -> Integer,
         note_id -> Binary,
@@ -82,7 +92,7 @@ diesel::table! {
         aux -> BigInt,
         execution_hint -> BigInt,
         inclusion_path -> Binary,
-        consumed -> Integer,
+        consumed_at -> Nullable<BigInt>,
         nullifier -> Nullable<Binary>,
         assets -> Nullable<Binary>,
         inputs -> Nullable<Binary>,
@@ -109,9 +119,10 @@ diesel::table! {
 
 diesel::joinable!(account_deltas -> accounts (account_id));
 diesel::joinable!(account_deltas -> block_headers (block_num));
+diesel::joinable!(accounts -> account_codes (code_commitment));
 diesel::joinable!(accounts -> block_headers (block_num));
 diesel::joinable!(notes -> accounts (sender));
-diesel::joinable!(notes -> block_headers (block_num));
+diesel::joinable!(notes -> block_headers (committed_at));
 diesel::joinable!(notes -> note_scripts (script_root));
 diesel::joinable!(nullifiers -> block_headers (block_num));
 diesel::joinable!(transactions -> accounts (account_id));
@@ -119,6 +130,7 @@ diesel::joinable!(transactions -> block_headers (block_num));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_deltas,
+    account_codes,
     account_fungible_asset_deltas,
     account_non_fungible_asset_updates,
     account_storage_map_updates,

@@ -1,6 +1,8 @@
-use std::collections::{BTreeSet, HashMap, hash_map::Entry};
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap};
 
-use miden_objects::{block::BlockNumber, transaction::TransactionId};
+use miden_objects::block::BlockNumber;
+use miden_objects::transaction::TransactionId;
 
 /// Tracks transactions and their expiration block heights.
 ///

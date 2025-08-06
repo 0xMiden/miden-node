@@ -1,11 +1,10 @@
-use std::{
-    ops::{Deref, DerefMut},
-    time::Duration,
-};
+use std::ops::{Deref, DerefMut};
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::Channel;
 use url::Url;
 
 use super::MetadataInterceptor;

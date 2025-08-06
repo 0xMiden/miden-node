@@ -1,18 +1,13 @@
-use std::{
-    sync::LazyLock,
-    time::{Duration, Instant},
-};
+use std::sync::LazyLock;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use miden_node_utils::ErrorReport;
-use miden_remote_prover::{
-    COMPONENT,
-    api::ProofType,
-    error::RemoteProverError,
-    generated::{
-        ProxyWorkerStatus, remote_prover::worker_status_api_client::WorkerStatusApiClient,
-    },
-};
+use miden_remote_prover::COMPONENT;
+use miden_remote_prover::api::ProofType;
+use miden_remote_prover::error::RemoteProverError;
+use miden_remote_prover::generated::ProxyWorkerStatus;
+use miden_remote_prover::generated::remote_prover::worker_status_api_client::WorkerStatusApiClient;
 use pingora::lb::Backend;
 use semver::{Version, VersionReq};
 use serde::Serialize;

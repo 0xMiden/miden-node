@@ -1,5 +1,7 @@
 use miden_remote_prover::COMPONENT;
-use pingora::{prelude::sleep, server::ShutdownWatch, services::background::BackgroundService};
+use pingora::prelude::sleep;
+use pingora::server::ShutdownWatch;
+use pingora::services::background::BackgroundService;
 use tonic::async_trait;
 use tracing::{debug_span, error};
 

@@ -1,14 +1,13 @@
 // CONVERSIONS
 // ================================================================================================
 
-use miden_objects::{
-    batch::ProposedBatch,
-    block::ProposedBlock,
-    transaction::{ProvenTransaction, TransactionWitness},
-};
+use miden_objects::batch::ProposedBatch;
+use miden_objects::block::ProposedBlock;
+use miden_objects::transaction::{ProvenTransaction, TransactionWitness};
 use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
-use crate::{api::ProofType, generated as proto};
+use crate::api::ProofType;
+use crate::generated as proto;
 
 impl From<ProvenTransaction> for proto::Proof {
     fn from(value: ProvenTransaction) -> Self {

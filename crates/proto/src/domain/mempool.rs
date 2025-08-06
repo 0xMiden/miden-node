@@ -1,18 +1,14 @@
 use std::collections::BTreeSet;
 
-use miden_objects::{
-    account::delta::AccountUpdateDetails,
-    block::BlockHeader,
-    note::Nullifier,
-    transaction::TransactionId,
-    utils::{Deserializable, Serializable},
-};
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::block::BlockHeader;
+use miden_objects::note::Nullifier;
+use miden_objects::transaction::TransactionId;
+use miden_objects::utils::{Deserializable, Serializable};
 
 use super::note::NetworkNote;
-use crate::{
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use crate::errors::{ConversionError, MissingFieldHelper};
+use crate::generated as proto;
 
 #[derive(Debug, Clone)]
 pub enum MempoolEvent {

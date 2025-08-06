@@ -1,9 +1,8 @@
 use tonic::{Request, Response, Status};
 
-use crate::{
-    api::prover::ProofType,
-    generated::{self as proto, worker_status_api_server::WorkerStatusApi},
-};
+use crate::api::prover::ProofType;
+use crate::generated::worker_status_api_server::WorkerStatusApi;
+use crate::generated::{self as proto};
 
 pub struct StatusRpcApi {
     proof_type: ProofType,

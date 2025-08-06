@@ -1,9 +1,9 @@
-use miden_objects::{Word, crypto::merkle::SmtProof, note::Nullifier};
+use miden_objects::Word;
+use miden_objects::crypto::merkle::SmtProof;
+use miden_objects::note::Nullifier;
 
-use crate::{
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use crate::errors::{ConversionError, MissingFieldHelper};
+use crate::generated as proto;
 
 // FROM NULLIFIER
 // ================================================================================================

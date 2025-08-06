@@ -65,7 +65,7 @@ pub struct BlockProducer {
     pub production_checkpoint: Arc<Barrier>,
     /// Maximum time allowed for a request to complete. Once exceeded, the request is
     /// aborted.
-    pub timeout: Duration,
+        pub grpc_timeout: Duration,
 }
 
 impl BlockProducer {
@@ -150,7 +150,9 @@ impl BlockProducer {
             .spawn({
                 let mempool = mempool.clone();
                 async move {
-                    BlockProducerRpcServer::new(mempool, store).serve(listener, self.timeout).await
+                    BlockProducerRpcServer::new(mempool, store)
+                        .serve(listener, self.grpc_timeout)
+                        .await
                 }
             })
             .id();

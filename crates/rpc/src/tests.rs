@@ -132,7 +132,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
             ntx_builder_listener,
             block_producer_listener,
             data_directory: data_directory.path().to_path_buf(),
-            timeout: Duration::from_secs(10),
+            grpc_timeout: Duration::from_secs(10),
         }
         .serve()
         .await
@@ -283,7 +283,7 @@ async fn start_rpc() -> (ApiClient, std::net::SocketAddr, std::net::SocketAddr) 
             listener: rpc_listener,
             store: store_addr,
             block_producer: Some(block_producer_addr),
-            timeout: Duration::from_secs(30),
+            grpc_timeout: Duration::from_secs(30),
         }
         .serve()
         .await
@@ -319,7 +319,7 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
-            timeout: Duration::from_secs(30),
+            grpc_timeout: Duration::from_secs(30),
         }
         .serve()
         .await

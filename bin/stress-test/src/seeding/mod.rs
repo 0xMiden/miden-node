@@ -512,7 +512,7 @@ pub async fn start_store(
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
-            timeout: Duration::from_secs(30),
+            grpc_timeout: Duration::from_secs(30),
         }
         .serve()
         .await

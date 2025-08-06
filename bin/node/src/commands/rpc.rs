@@ -32,14 +32,16 @@ pub enum RpcCommand {
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         enable_otel: bool,
 
-        /// Timeout of the requests.
+        /// Maximum duration a gRPC request is allocated before being dropped by the server.
+        ///
+        /// This may occur if the server is overloaded or due to an internal bug.
         #[arg(
-            long = "timeout",
+            long = "grpc.timeout",
             default_value = &duration_to_human_readable_string(DEFAULT_TIMEOUT),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]
-        timeout: Duration,
+        grpc_timeout: Duration,
     },
 }
 
@@ -50,7 +52,7 @@ impl RpcCommand {
             store_url,
             block_producer_url,
             enable_otel: _,
-            timeout,
+            grpc_timeout,
         } = self;
 
         let store = store_url
@@ -68,10 +70,15 @@ impl RpcCommand {
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        Rpc { listener, store, block_producer, timeout }
-            .serve()
-            .await
-            .context("Serving RPC")
+        Rpc {
+            listener,
+            store,
+            block_producer,
+            grpc_timeout,
+        }
+        .serve()
+        .await
+        .context("Serving RPC")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

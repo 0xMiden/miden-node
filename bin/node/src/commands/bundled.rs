@@ -62,14 +62,16 @@ pub enum BundledCommand {
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         enable_otel: bool,
 
-        /// Timeout of the requests.
+        /// Maximum duration a gRPC request is allocated before being dropped by the server.
+        ///
+        /// This may occur if the server is overloaded or due to an internal bug.
         #[arg(
-            long = "timeout",
+            long = "grpc.timeout",
             default_value = &duration_to_human_readable_string(DEFAULT_TIMEOUT),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]
-        timeout: Duration,
+        grpc_timeout: Duration,
     },
 }
 
@@ -97,8 +99,11 @@ impl BundledCommand {
                 block_producer,
                 ntx_builder,
                 enable_otel: _,
-                timeout,
-            } => Self::start(rpc_url, data_directory, ntx_builder, block_producer, timeout).await,
+                grpc_timeout,
+            } => {
+                Self::start(rpc_url, data_directory, ntx_builder, block_producer, grpc_timeout)
+                    .await
+            },
         }
     }
 
@@ -108,7 +113,7 @@ impl BundledCommand {
         data_directory: PathBuf,
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
-        timeout: Duration,
+        grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
         let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
@@ -157,7 +162,7 @@ impl BundledCommand {
                     block_producer_listener: store_block_producer_listener,
                     ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
-                    timeout,
+                    grpc_timeout,
                 }
                 .serve()
                 .await
@@ -188,7 +193,7 @@ impl BundledCommand {
                         max_batches_per_block: block_producer.max_batches_per_block,
                         max_txs_per_batch: block_producer.max_txs_per_batch,
                         production_checkpoint: checkpoint,
-                        timeout,
+                        grpc_timeout,
                     }
                     .serve()
                     .await
@@ -204,7 +209,7 @@ impl BundledCommand {
                     listener: grpc_rpc,
                     store: store_rpc_address,
                     block_producer: Some(block_producer_address),
-                    timeout,
+                    grpc_timeout,
                 }
                 .serve()
                 .await

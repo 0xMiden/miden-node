@@ -67,14 +67,16 @@ pub enum StoreCommand {
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         enable_otel: bool,
 
-        /// Timeout of the requests.
+        /// Maximum duration a gRPC request is allocated before being dropped by the server.
+        ///
+        /// This may occur if the server is overloaded or due to an internal bug.
         #[arg(
-            long = "timeout",
+            long = "grpc.timeout",
             default_value = &duration_to_human_readable_string(DEFAULT_TIMEOUT),
             value_parser = humantime::parse_duration,
             value_name = "DURATION"
         )]
-        timeout: Duration,
+        grpc_timeout: Duration,
     },
 }
 
@@ -95,10 +97,16 @@ impl StoreCommand {
                 block_producer_url,
                 data_directory,
                 enable_otel: _,
-                timeout,
+                grpc_timeout,
             } => {
-                Self::start(rpc_url, ntx_builder_url, block_producer_url, data_directory, timeout)
-                    .await
+                Self::start(
+                    rpc_url,
+                    ntx_builder_url,
+                    block_producer_url,
+                    data_directory,
+                    grpc_timeout,
+                )
+                .await
             },
         }
     }
@@ -116,7 +124,7 @@ impl StoreCommand {
         ntx_builder_url: Url,
         block_producer_url: Url,
         data_directory: PathBuf,
-        timeout: Duration,
+        grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
         let rpc_listener = rpc_url
             .to_socket()
@@ -144,7 +152,7 @@ impl StoreCommand {
             ntx_builder_listener,
             block_producer_listener,
             data_directory,
-            timeout,
+            grpc_timeout,
         }
         .serve()
         .await

@@ -62,6 +62,28 @@ impl MetadataInterceptor {
         Ok(self)
     }
 }
+// COMBINED INTERCEPTOR (OTEL + METADATA)
+// ================================================================================================
+
+#[derive(Clone)]
+pub struct OtelAndMetadataInterceptor {
+    otel: OtelInterceptor,
+    metadata: MetadataInterceptor,
+}
+
+impl OtelAndMetadataInterceptor {
+    pub fn new(otel: OtelInterceptor, metadata: MetadataInterceptor) -> Self {
+        Self { otel, metadata }
+    }
+}
+
+impl Interceptor for OtelAndMetadataInterceptor {
+    fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
+        // Apply OTEL first so tracing context propagates, then attach metadata headers
+        let req = self.otel.call(request)?;
+        self.metadata.call(req)
+    }
+}
 
 impl Interceptor for MetadataInterceptor {
     fn call(&mut self, request: Request<()>) -> Result<Request<()>, Status> {
@@ -77,7 +99,7 @@ impl Interceptor for MetadataInterceptor {
 // ================================================================================================
 
 pub type RpcClient =
-    generated::rpc::api_client::ApiClient<InterceptedService<Channel, MetadataInterceptor>>;
+    generated::rpc::api_client::ApiClient<InterceptedService<Channel, OtelAndMetadataInterceptor>>;
 pub type BlockProducerClient =
     generated::block_producer::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
 pub type StoreNtxBuilderClient = generated::ntx_builder_store::ntx_builder_client::NtxBuilderClient<
@@ -137,14 +159,15 @@ impl GrpcClientBuilder for Rpc {
     type Service = RpcClient;
 
     fn with_interceptor(channel: Channel, config: &ClientConfig) -> Self::Service {
-        // For RPC, include Accept header only if version was explicitly provided.
-        let mut interceptor = MetadataInterceptor::default();
+        // Include Accept header only if version was explicitly provided; still combine with OTEL.
+        let mut metadata = MetadataInterceptor::default();
         if let Some(version) = config.metadata_version.as_deref() {
-            interceptor = interceptor
+            metadata = metadata
                 .with_accept_metadata(version, config.metadata_genesis.as_deref())
                 .expect("Failed to create metadata interceptor");
         }
-        generated::rpc::api_client::ApiClient::with_interceptor(channel, interceptor)
+        let combined = OtelAndMetadataInterceptor::new(OtelInterceptor, metadata);
+        generated::rpc::api_client::ApiClient::with_interceptor(channel, combined)
     }
 }
 

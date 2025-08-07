@@ -102,13 +102,17 @@ impl SubscriptionProvider {
 
     pub(super) fn block_committed(&mut self, header: BlockHeader, txs: Vec<TransactionId>) {
         self.chain_tip = header.block_num();
-        txs.iter().for_each(|tx| self.inflight_txs.remove(tx));
+        for tx in &txs {
+            self.inflight_txs.remove(tx);
+        }
 
         Self::send_event(&mut self.subscription, MempoolEvent::BlockCommitted { header, txs });
     }
 
     pub(super) fn txs_reverted(&mut self, txs: BTreeSet<TransactionId>) {
-        txs.iter().for_each(|tx| self.inflight_txs.remove(tx));
+        for tx in &txs {
+            self.inflight_txs.remove(tx);
+        }
         Self::send_event(&mut self.subscription, MempoolEvent::TransactionsReverted(txs));
     }
 

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use miden_objects::block::{BlockHeader, BlockInputs, NullifierWitness};
+use miden_objects::account::{AccountId, AccountIdVersion};
+use miden_objects::block::{BlockHeader, BlockInputs, FeeParameters, NullifierWitness};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
 use miden_objects::utils::{Deserializable, Serializable};
@@ -86,11 +87,25 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 .proof_commitment
                 .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
                 .try_into()?,
+            fee_stub(),
             value.timestamp,
         ))
     }
 }
 
+// FIXME XXX TODO
+fn fee_stub() -> FeeParameters {
+    FeeParameters::new(
+        AccountId::dummy(
+            [0_u8; 15],
+            AccountIdVersion::Version0,
+            miden_objects::account::AccountType::FungibleFaucet,
+            miden_objects::account::AccountStorageMode::Network,
+        ),
+        0_u32,
+    )
+    .unwrap()
+}
 // BLOCK INPUTS
 // ================================================================================================
 

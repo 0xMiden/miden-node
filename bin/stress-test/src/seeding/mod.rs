@@ -367,6 +367,17 @@ fn create_consume_note_txs(
         .collect()
 }
 
+// FIXME XXX TODO
+fn fee_value_stub() -> FungibleAsset {
+    let faucet = AccountId::dummy(
+        [0_u8; 15],
+        miden_objects::account::AccountIdVersion::Version0,
+        miden_objects::account::AccountType::FungibleFaucet,
+        miden_objects::account::AccountStorageMode::Network,
+    );
+    FungibleAsset::new(faucet, 0).unwrap()
+}
+
 /// Creates a transaction that creates an account and consumes the given input note.
 ///
 /// The account is updated with the assets from the input note, and the nonce is incremented.
@@ -396,6 +407,7 @@ fn create_consume_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
+        fee_value_stub(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )
@@ -429,6 +441,7 @@ fn create_emit_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
+        fee_value_stub(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )

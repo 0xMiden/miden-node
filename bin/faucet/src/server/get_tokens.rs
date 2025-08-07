@@ -168,10 +168,10 @@ impl RawMintRequest {
 
         // Check the API key, if provided
         let api_key = self.api_key.as_deref().map(ApiKey::decode).transpose()?;
-        if let Some(api_key) = &api_key {
-            if !server.api_keys.contains(api_key) {
-                return Err(MintRequestError::InvalidApiKey(api_key.encode()));
-            }
+        if let Some(api_key) = &api_key
+            && !server.api_keys.contains(api_key)
+        {
+            return Err(MintRequestError::InvalidApiKey(api_key.encode()));
         }
 
         // Validate Challenge and nonce

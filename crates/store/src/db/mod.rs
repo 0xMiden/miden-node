@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::Serializable;
-use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
+use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
 use miden_objects::account::{AccountDelta, AccountId};
@@ -394,7 +394,7 @@ impl Db {
 
     /// Loads all note IDs matching a certain NoteId from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<BTreeSet<NoteId>> {
+    pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<HashSet<NoteId>> {
         self.select_notes_by_id(note_ids)
             .await
             .map(|notes| notes.into_iter().map(|note| note.note_id.into()).collect())
@@ -474,6 +474,28 @@ impl Db {
     ) -> Result<(Vec<NoteRecord>, Page)> {
         self.transact("unconsumed network notes", move |conn| {
             models::queries::unconsumed_network_notes(conn, page)
+        })
+        .await
+    }
+
+    /// Loads the network notes for an account that are unconsumed by a specified block number.
+    /// Pagination is used to limit the number of notes returned.
+    pub(crate) async fn select_unconsumed_network_notes_for_account(
+        &self,
+        network_account_id_prefix: NetworkAccountPrefix,
+        block_num: BlockNumber,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page)> {
+        // Network notes sent to a specific account have their tags set to the prefix of the target
+        // account ID. So we can convert the ID prefix into a note tag to query the notes for a
+        // given account.
+        self.transact("unconsumed network notes for account", move |conn| {
+            models::queries::select_unconsumed_network_notes_by_tag(
+                conn,
+                network_account_id_prefix.into(),
+                block_num,
+                page,
+            )
         })
         .await
     }

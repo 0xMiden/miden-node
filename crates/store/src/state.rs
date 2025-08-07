@@ -3,11 +3,16 @@
 //! The [State] provides data access and modifications methods, its main purpose is to ensure that
 //! data is atomically written, and that reads are consistent.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::Not;
 use std::sync::Arc;
 
-use miden_node_proto::domain::account::{AccountInfo, AccountProofRequest, StorageMapKeysProof};
+use miden_node_proto::domain::account::{
+    AccountInfo,
+    AccountProofRequest,
+    NetworkAccountPrefix,
+    StorageMapKeysProof,
+};
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::{AccountWitnessRecord, generated as proto};
 use miden_node_utils::ErrorReport;
@@ -64,7 +69,7 @@ use crate::errors::{
 pub struct TransactionInputs {
     pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
-    pub found_unauthenticated_notes: BTreeSet<NoteId>,
+    pub found_unauthenticated_notes: HashSet<NoteId>,
     pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
@@ -994,6 +999,19 @@ impl State {
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db.select_unconsumed_network_notes(page).await
+    }
+
+    /// Returns the network notes for an account that are unconsumed by a specified block number,
+    /// along with the next pagination token.
+    pub async fn get_unconsumed_network_notes_for_account(
+        &self,
+        network_account_id_prefix: NetworkAccountPrefix,
+        block_num: BlockNumber,
+        page: Page,
+    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+        self.db
+            .select_unconsumed_network_notes_for_account(network_account_id_prefix, block_num, page)
+            .await
     }
 }
 

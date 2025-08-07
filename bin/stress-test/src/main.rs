@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
+use miden_node_utils::logging::OpenTelemetry;
 use seeding::seed_store;
 use store::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state};
 
@@ -69,6 +70,9 @@ pub enum Endpoint {
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+
+    // Configure tracing with optional OpenTelemetry exporting support.
+    miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled).unwrap();
 
     match cli.command {
         Command::SeedStore {

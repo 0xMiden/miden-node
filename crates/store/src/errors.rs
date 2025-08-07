@@ -23,6 +23,7 @@ use tokio::sync::oneshot::error::RecvError;
 use tonic::Status;
 
 use crate::db::manager::ConnectionManagerError;
+use crate::db::models::conv::DatabaseTypeConversionError;
 
 // DATABASE ERRORS
 // =================================================================================================
@@ -31,6 +32,8 @@ use crate::db::manager::ConnectionManagerError;
 pub enum DatabaseError {
     // ERRORS WITH AUTOMATIC CONVERSIONS FROM NESTED ERROR TYPES
     // ---------------------------------------------------------------------------------------------
+    #[error("account is incomplete")]
+    AccountIncomplete,
     #[error("account error")]
     AccountError(#[from] AccountError),
     #[error("account delta error")]
@@ -101,6 +104,8 @@ pub enum DatabaseError {
     UnsupportedDatabaseVersion,
     #[error(transparent)]
     ConnectionManager(#[from] ConnectionManagerError),
+    #[error(transparent)]
+    SqlValueConversion(#[from] DatabaseTypeConversionError),
 }
 
 impl DatabaseError {

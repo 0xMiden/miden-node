@@ -34,7 +34,7 @@ format-check: ## Runs Format using nightly toolchain but only in check mode
 
 
 .PHONY: machete
-toml: ## Runs machete to find unused dependencies
+machete: ## Runs machete to find unused dependencies
 	cargo machete
 
 

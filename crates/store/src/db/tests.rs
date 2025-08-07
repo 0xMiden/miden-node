@@ -408,6 +408,7 @@ fn sql_unconsumed_network_notes() {
         make_account_and_note(conn, block_num, [0u8; 32], AccountStorageMode::Public),
         make_account_and_note(conn, block_num, [1u8; 32], AccountStorageMode::Network),
     ];
+    let network_account_id = account_notes[1].0;
 
     // Create some notes, of which half are network notes.
     let notes = (0..N)
@@ -456,6 +457,17 @@ fn sql_unconsumed_network_notes() {
     )
     .unwrap();
     assert_eq!(result, network_notes);
+    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+        conn,
+        NoteTag::from_account_id(network_account_id).into(),
+        block_num,
+        Page {
+            token: None,
+            size: NonZeroUsize::new(N as usize * 10).unwrap(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result, network_notes);
 
     // Check pagination works as expected.
     let limit = 5;
@@ -465,6 +477,17 @@ fn sql_unconsumed_network_notes() {
     };
     network_notes.chunks(limit).for_each(|expected| {
         let (result, new_page) = queries::unconsumed_network_notes(conn, page).unwrap();
+        page = new_page;
+        assert_eq!(result, expected);
+    });
+    network_notes.chunks(limit).for_each(|expected| {
+        let (result, new_page) = queries::select_unconsumed_network_notes_by_tag(
+            conn,
+            NoteTag::from_account_id(network_account_id).into(),
+            block_num,
+            page,
+        )
+        .unwrap();
         page = new_page;
         assert_eq!(result, expected);
     });
@@ -490,6 +513,97 @@ fn sql_unconsumed_network_notes() {
     };
     let (result, _) = queries::unconsumed_network_notes(conn, page).unwrap();
     assert_eq!(result, expected);
+    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+        conn,
+        NoteTag::from_account_id(network_account_id).into(),
+        block_num,
+        page,
+    )
+    .unwrap();
+    assert_eq!(result, expected);
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn sql_unconsumed_network_notes_for_account() {
+    let mut conn = create_db();
+
+    // Create account.
+    let account_note =
+        make_account_and_note(&mut conn, 0.into(), [1u8; 32], AccountStorageMode::Network);
+
+    // Create 2 blocks.
+    create_block(&mut conn, 0.into());
+    create_block(&mut conn, 1.into());
+
+    // Create an unconsumed note in each block.
+    let notes = (0..2)
+        .map(|i: u32| {
+            let note = NoteRecord {
+                block_num: 0.into(), // Created on same block.
+                note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
+                note_id: num_to_word(i.into()),
+                metadata: NoteMetadata::new(
+                    account_note.0,
+                    NoteType::Public,
+                    NoteTag::from_account_id(account_note.0),
+                    NoteExecutionHint::none(),
+                    Felt::default(),
+                )
+                .unwrap(),
+                details: None,
+                inclusion_path: SparseMerklePath::default(),
+            };
+            (note, Some(num_to_nullifier(i.into())))
+        })
+        .collect::<Vec<_>>();
+    queries::insert_scripts(&mut conn, notes.iter().map(|(note, _)| note)).unwrap();
+    queries::insert_notes(&mut conn, &notes).unwrap();
+
+    // Both notes are unconsumed, query should return both notes on both blocks.
+    (0..2).for_each(|i: u32| {
+        let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+            &mut conn,
+            NoteTag::from_account_id(account_note.0).into(),
+            i.into(),
+            Page {
+                token: None,
+                size: NonZeroUsize::new(10).unwrap(),
+            },
+        )
+        .unwrap();
+        assert_eq!(result.len(), 2);
+    });
+
+    // Consume the 2nd note on the 2nd block.
+    queries::insert_nullifiers_for_block(&mut conn, &[notes[1].1.unwrap()], 1.into()).unwrap();
+
+    // Query against first block should return both notes.
+    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+        &mut conn,
+        NoteTag::from_account_id(account_note.0).into(),
+        0.into(),
+        Page {
+            token: None,
+            size: NonZeroUsize::new(10).unwrap(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result.len(), 2);
+
+    // Query against second block should return only first note.
+    let (result, _) = queries::select_unconsumed_network_notes_by_tag(
+        &mut conn,
+        NoteTag::from_account_id(account_note.0).into(),
+        1.into(),
+        Page {
+            token: None,
+            size: NonZeroUsize::new(10).unwrap(),
+        },
+    )
+    .unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].note_id, num_to_word(0));
 }
 
 #[test]

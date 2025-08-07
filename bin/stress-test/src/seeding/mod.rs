@@ -17,6 +17,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
+use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType};
 use miden_objects::asset::{Asset, FungibleAsset, TokenSymbol};
 use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
@@ -152,7 +153,7 @@ async fn generate_blocks(
         // create public accounts and notes that mint assets for these accounts
         let (pub_accounts, pub_notes) = create_accounts_and_notes(
             num_public_accounts,
-            AccountStorageMode::Private,
+            AccountStorageMode::Public,
             &key_pair,
             &rng,
             faucet.id(),
@@ -317,8 +318,8 @@ fn create_faucet() -> Account {
     let (new_faucet, _seed) = AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
-        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .build()
         .unwrap();
     new_faucet
@@ -368,7 +369,7 @@ fn create_consume_note_txs(
 
 /// Creates a transaction that creates an account and consumes the given input note.
 ///
-/// The account is updated with the assets from the input note, and the nonce is set to 1.
+/// The account is updated with the assets from the input note, and the nonce is incremented.
 fn create_consume_note_tx(
     block_ref: &BlockHeader,
     mut account: Account,
@@ -380,13 +381,18 @@ fn create_consume_note_tx(
         account.vault_mut().add_asset(*asset).unwrap();
     });
 
-    let (id, vault, sorage, code, _) = account.into_parts();
-    let updated_account = Account::from_parts(id, vault, sorage, code, ONE);
+    account.increment_nonce(ONE).unwrap();
+
+    let details = if account.is_public() {
+        AccountUpdateDetails::New(account.clone())
+    } else {
+        AccountUpdateDetails::Private
+    };
 
     ProvenTransactionBuilder::new(
-        updated_account.id(),
+        account.id(),
         init_hash,
-        updated_account.commitment(),
+        account.commitment(),
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
@@ -394,6 +400,7 @@ fn create_consume_note_tx(
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )
     .add_input_notes(vec![input_note])
+    .account_update_details(details)
     .build()
     .unwrap()
 }
@@ -413,13 +420,12 @@ fn create_emit_note_tx(
         .set_item(0, [slot[0], slot[1], slot[2], slot[3] + Felt::new(10)].into())
         .unwrap();
 
-    let (id, vault, sorage, code, nonce) = faucet.clone().into_parts();
-    let updated_faucet = Account::from_parts(id, vault, sorage, code, nonce + ONE);
+    faucet.increment_nonce(ONE).unwrap();
 
     ProvenTransactionBuilder::new(
-        updated_faucet.id(),
+        faucet.id(),
         initial_account_hash,
-        updated_faucet.commitment(),
+        faucet.commitment(),
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),

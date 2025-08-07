@@ -1,6 +1,5 @@
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::{Deserializable, DeserializationError, Serializable};
-use miden_objects::block::BlockNumber;
 use miden_objects::note::Nullifier;
 
 use crate::errors::DatabaseError;
@@ -32,47 +31,9 @@ pub(crate) fn serialize_vec<'a, D: Serializable + 'a>(
     Vec::<_>::from_iter(raw.into_iter().map(<D as Serializable>::to_bytes))
 }
 
-// TODO once all integers are wrapper types, use something like
-// trait FlatAndBloat {
-//     type Raw = i64;
-//     fn to_raw_sql(self) -> Self::Raw;
-//     fn from_raw_sql(Self::Raw) -> Self;
-// }
-
-/// Convert the database type `BigInt` into a blocknumber
-///
-/// Attention: We use `u32` as actual in-memory representation, since this will
-/// suffice well beyond all our lifetimes.
-pub(crate) fn raw_sql_to_block_number(raw: impl Into<i64>) -> BlockNumber {
-    let raw = raw.into();
-    debug_assert!(raw <= u32::MAX as i64);
-    #[allow(clippy::cast_sign_loss)]
-    BlockNumber::from(raw as u32)
-}
-
-/// Convert the in-memory type `BlockNumber` into the database type `BigInt`
-///
-/// Attention: We use `u32` as actual in-memory representation, since this will
-/// suffice well beyond all our lifetimes.
-pub(crate) fn block_number_to_raw_sql(block_num: BlockNumber) -> i64 {
-    block_num.as_u32() as i64
-}
-
 /// Returns the high 16 bits of the provided nullifier.
 pub fn get_nullifier_prefix(nullifier: &Nullifier) -> u16 {
     (nullifier.most_significant_felt().as_int() >> 48) as u16
-}
-
-/// Checks if a table exists in the database.
-#[allow(dead_code)]
-pub fn table_exists(conn: &mut SqliteConnection, table_name: &str) -> Result<bool, DatabaseError> {
-    conn.transaction(|conn| {
-        let count =
-            diesel::sql_query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $1")
-                .bind::<diesel::sql_types::Text, &str>(table_name)
-                .execute(conn)?;
-        Ok::<bool, DatabaseError>(count > 0)
-    })
 }
 
 /// Converts a slice of length `N` to an array, returns `None` if invariant

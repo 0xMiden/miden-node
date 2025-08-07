@@ -6,6 +6,7 @@
 
 - [BREAKING] Updated MSRV to 1.88.
 - [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
+- [BREAKING] De-duplicate storage of code in DB (no-migration) ([#1083](https://github.com/0xMiden/miden-node/issue/#1083)).
 
 ### Enhancements
 
@@ -24,6 +25,8 @@
 
 - [BREAKING] Integrated proxy status endpoint into main proxy service, removing separate status port.
 - RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+- Stress-test CLI account now properly sets the storage mode and increment nonce in transactions ([#1113](https://github.com/0xMiden/miden-node/pull/1113)).
+- [BREAKING] Update `notes` table schema to have a nullable `consumed_block_num` ([#1100](https://github.com/0xMiden/miden-node/pull/1100)).
 
 ## v0.10.1 (2025-07-14)
 

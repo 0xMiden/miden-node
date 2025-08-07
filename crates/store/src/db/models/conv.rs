@@ -30,7 +30,9 @@
 use std::any::type_name;
 
 use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
-use miden_objects::{Felt, block::BlockNumber, note::NoteTag};
+use miden_objects::Felt;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::NoteTag;
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert a database value to it's in memory type {0}")]
@@ -89,17 +91,6 @@ impl SqlTypeConvert for NoteTag {
 
 // Raw type conversions - eventually introduce wrapper types
 // ===========================================================
-
-#[inline(always)]
-pub(crate) fn raw_sql_to_consumed(raw: i32) -> bool {
-    debug_assert!(raw == 1 || raw == 0);
-    raw == 1
-}
-
-#[inline(always)]
-pub(crate) fn consumed_to_raw_sql(consumed: bool) -> i32 {
-    consumed as u8 as i32
-}
 
 #[inline(always)]
 pub(crate) fn raw_sql_to_nullifier_prefix(raw: i32) -> u16 {

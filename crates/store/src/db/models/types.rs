@@ -1,57 +1,115 @@
 use bigdecimal::BigDecimal;
-use diesel::prelude::Insertable;
+use diesel::prelude::{AsChangeset, Insertable};
 use miden_lib::utils::{Deserializable, Serializable};
-use miden_node_proto::{self as proto, domain::account::AccountSummary};
-use miden_objects::{
-    Felt, Word,
-    account::{Account, AccountId},
-    block::{BlockHeader, BlockNoteIndex, BlockNumber},
-    crypto::merkle::SparseMerklePath,
-    note::{
-        NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
-        NoteScript, NoteTag, NoteType, Nullifier,
-    },
-    transaction::TransactionId,
+use miden_node_proto::domain::account::AccountSummary;
+use miden_node_proto::{self as proto};
+use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
+use miden_objects::asset::AssetVault;
+use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber};
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{
+    NoteAssets,
+    NoteDetails,
+    NoteExecutionHint,
+    NoteInputs,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteTag,
+    NoteType,
+    Nullifier,
 };
+use miden_objects::transaction::TransactionId;
+use miden_objects::{Felt, Word};
 
 use super::{
-    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
-    Selectable, Sqlite, accounts, block_headers, notes, nullifiers, transactions,
+    DatabaseError,
+    NoteRecord,
+    NoteSyncRecord,
+    NullifierInfo,
+    Queryable,
+    QueryableByName,
+    Selectable,
+    Sqlite,
 };
 use crate::db::models::conv::{
-    SqlTypeConvert, aux_to_raw_sql, consumed_to_raw_sql, execution_hint_to_raw_sql,
-    execution_mode_to_raw_sql, idx_to_raw_sql, note_type_to_raw_sql,
+    SqlTypeConvert,
+    aux_to_raw_sql,
+    execution_hint_to_raw_sql,
+    execution_mode_to_raw_sql,
+    idx_to_raw_sql,
+    note_type_to_raw_sql,
+    raw_sql_to_nonce,
 };
+use crate::db::schema;
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = accounts)]
+#[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct AccountRaw {
     pub account_id: Vec<u8>,
     pub account_commitment: Vec<u8>,
     pub block_num: i64,
-    pub details: Option<Vec<u8>>,
+    pub storage: Option<Vec<u8>>,
+    pub vault: Option<Vec<u8>>,
+    pub nonce: Option<i64>,
 }
 
-impl TryInto<proto::domain::account::AccountInfo> for AccountRaw {
+#[derive(Debug, Clone, QueryableByName)]
+pub struct AccountWithCodeRaw {
+    #[diesel(embed)]
+    pub account: AccountRaw,
+    #[diesel(embed)]
+    pub code: Option<Vec<u8>>,
+}
+
+impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRaw {
+    fn from((account, code): (AccountRaw, Option<Vec<u8>>)) -> Self {
+        Self { account, code }
+    }
+}
+
+impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
         use proto::domain::account::{AccountInfo, AccountSummary};
-        let account_id = AccountId::read_from_bytes(&self.account_id[..])?;
-        let account_commitment = Word::read_from_bytes(&self.account_commitment[..])?;
-        let block_num = BlockNumber::from_raw_sql(self.block_num)?;
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
+        let block_num = BlockNumber::from_raw_sql(self.account.block_num)?;
         let summary = AccountSummary {
             account_id,
             account_commitment,
             block_num,
         };
-        let details = self.details.as_deref().map(Account::read_from_bytes).transpose()?;
-        Ok(AccountInfo { summary, details })
+        let maybe_account = self.try_into()?;
+        Ok(AccountInfo { summary, details: maybe_account })
+    }
+}
+
+impl TryInto<Option<Account>> for AccountWithCodeRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<Option<Account>, Self::Error> {
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+
+        let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
+            (self.account.vault, self.account.storage, self.account.nonce, self.code)
+        {
+            let vault = AssetVault::read_from_bytes(&vault)?;
+            let storage = AccountStorage::read_from_bytes(&storage)?;
+            let code = AccountCode::read_from_bytes(&code)?;
+            let nonce = raw_sql_to_nonce(nonce);
+            let nonce = Felt::new(nonce);
+            Some(Account::from_parts(account_id, vault, storage, code, nonce))
+        } else {
+            // a private account
+            None
+        };
+        Ok(details)
     }
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = nullifiers)]
+#[diesel(table_name = schema::nullifiers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NullifierWithoutPrefixRawRow {
     pub nullifier: Vec<u8>,
@@ -68,7 +126,7 @@ impl TryInto<NullifierInfo> for NullifierWithoutPrefixRawRow {
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
-#[diesel(table_name = block_headers)]
+#[diesel(table_name = schema::block_headers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct BlockHeaderRaw {
     #[allow(dead_code)]
@@ -84,7 +142,7 @@ impl TryInto<BlockHeader> for BlockHeaderRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Queryable, Selectable, QueryableByName)]
-#[diesel(table_name = transactions)]
+#[diesel(table_name = schema::transactions)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct TransactionSummaryRaw {
     account_id: Vec<u8>,
@@ -104,7 +162,7 @@ impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteMetadataRaw {
     note_type: i32,
@@ -130,7 +188,7 @@ impl TryInto<NoteMetadata> for NoteMetadataRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct BlockNoteIndexRaw {
     pub batch_index: i32,
@@ -151,10 +209,10 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteSyncRecordRawRow {
-    pub block_num: i64, // BlockNumber
+    pub committed_at: i64, // BlockNumber
     #[diesel(embed)]
     pub block_note_index: BlockNoteIndexRaw,
     pub note_id: Vec<u8>, // BlobDigest
@@ -167,7 +225,7 @@ pub struct NoteSyncRecordRawRow {
 impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteSyncRecord, Self::Error> {
-        let block_num = BlockNumber::from_raw_sql(self.block_num)?;
+        let block_num = BlockNumber::from_raw_sql(self.committed_at)?;
         let note_index = self.block_note_index.try_into()?;
 
         let note_id = Word::read_from_bytes(&self.note_id[..])?;
@@ -184,7 +242,7 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = accounts)]
+#[diesel(table_name = schema::accounts)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct AccountSummaryRaw {
     account_id: Vec<u8>,         // AccountId,
@@ -208,7 +266,7 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteDetailsRaw {
     pub assets: Option<Vec<u8>>,
@@ -222,7 +280,7 @@ pub struct NoteDetailsRaw {
 // mildly.
 #[derive(Debug, Clone, PartialEq, Queryable)]
 pub struct NoteRecordWithScriptRaw {
-    pub block_num: i64,
+    pub committed_at: i64,
 
     pub batch_index: i32,
     pub note_index: i32, // index within batch
@@ -250,7 +308,7 @@ pub struct NoteRecordWithScriptRaw {
 impl From<(NoteRecordRaw, Option<Vec<u8>>)> for NoteRecordWithScriptRaw {
     fn from((note, script): (NoteRecordRaw, Option<Vec<u8>>)) -> Self {
         let NoteRecordRaw {
-            block_num,
+            committed_at,
             batch_index,
             note_index,
             note_id,
@@ -265,7 +323,7 @@ impl From<(NoteRecordRaw, Option<Vec<u8>>)> for NoteRecordWithScriptRaw {
             inclusion_path,
         } = note;
         Self {
-            block_num,
+            committed_at,
             batch_index,
             note_index,
             note_id,
@@ -289,7 +347,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
         // let (raw, script) = self;
         let raw = self;
         let NoteRecordWithScriptRaw {
-            block_num,
+            committed_at,
 
             batch_index,
             note_index,
@@ -321,7 +379,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
         let details = NoteDetailsRaw { assets, inputs, serial_num };
 
         let metadata = metadata.try_into()?;
-        let block_num = BlockNumber::from_raw_sql(block_num)?;
+        let committed_at = BlockNumber::from_raw_sql(committed_at)?;
         let note_id = Word::read_from_bytes(&note_id[..])?;
         let script = script.map(|script| NoteScript::read_from_bytes(&script[..])).transpose()?;
         let details = if let NoteDetailsRaw {
@@ -344,7 +402,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
         let inclusion_path = SparseMerklePath::read_from_bytes(&inclusion_path[..])?;
         let note_index = index.try_into()?;
         Ok(NoteRecord {
-            block_num,
+            block_num: committed_at,
             note_index,
             note_id,
             metadata,
@@ -355,10 +413,10 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
 pub struct NoteRecordRaw {
-    pub block_num: i64,
+    pub committed_at: i64,
 
     pub batch_index: i32,
     pub note_index: i32, // index within batch
@@ -407,9 +465,9 @@ where
 }
 
 #[derive(Debug, Clone, PartialEq, Insertable)]
-#[diesel(table_name = notes)]
+#[diesel(table_name = schema::notes)]
 pub struct NoteInsertRowRaw {
-    pub block_num: i64,
+    pub committed_at: i64,
 
     pub batch_index: i32,
     pub note_index: i32, // index within batch
@@ -422,7 +480,7 @@ pub struct NoteInsertRowRaw {
     pub aux: i64,
     pub execution_hint: i64,
 
-    pub consumed: i32,
+    pub consumed_at: Option<i64>,
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
     pub serial_num: Option<Vec<u8>>,
@@ -435,7 +493,7 @@ pub struct NoteInsertRowRaw {
 impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
         Self {
-            block_num: note.block_num.to_raw_sql(),
+            committed_at: note.block_num.to_raw_sql(),
             batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
             note_index: idx_to_raw_sql(note.note_index.note_idx_in_batch()),
             note_id: note.note_id.to_bytes(),
@@ -446,7 +504,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
             aux: aux_to_raw_sql(note.metadata.aux()),
             execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
             inclusion_path: note.inclusion_path.to_bytes(),
-            consumed: consumed_to_raw_sql(false), // New notes are always unconsumed.
+            consumed_at: None::<i64>, // New notes are always unconsumed.
             nullifier: nullifier.as_ref().map(Nullifier::to_bytes), /* Beware: `Option<T>` also implements `to_bytes`, but this is not what you want. */
             assets: note.details.as_ref().map(|d| d.assets().to_bytes()),
             inputs: note.details.as_ref().map(|d| d.inputs().to_bytes()),
@@ -454,4 +512,24 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
             serial_num: note.details.as_ref().map(|d| d.serial_num().to_bytes()),
         }
     }
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = schema::account_codes)]
+pub(crate) struct AccountCodeRowInsert {
+    pub(crate) code_commitment: Vec<u8>,
+    pub(crate) code: Vec<u8>,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::accounts)]
+pub(crate) struct AccountRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) network_account_id_prefix: Option<i64>,
+    pub(crate) block_num: i64,
+    pub(crate) account_commitment: Vec<u8>,
+    pub(crate) code_commitment: Option<Vec<u8>>,
+    pub(crate) storage: Option<Vec<u8>>,
+    pub(crate) vault: Option<Vec<u8>>,
+    pub(crate) nonce: Option<i64>,
 }

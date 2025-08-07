@@ -3,58 +3,90 @@
     reason = "The parent scope does own it, passing by value avoids additional boilerplate"
 )]
 
-use std::{
-    borrow::Cow,
-    collections::{BTreeMap, BTreeSet},
-};
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
 
-use diesel::{
-    JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection, alias,
-    prelude::Queryable, query_dsl::methods::SelectDsl,
-};
+use diesel::prelude::Queryable;
+use diesel::query_dsl::methods::SelectDsl;
+use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection, alias};
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_utils::limiter::{
-    QueryParamAccountIdLimit, QueryParamBlockLimit, QueryParamLimiter, QueryParamNoteIdLimit,
-    QueryParamNoteTagLimit, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
+    QueryParamAccountIdLimit,
+    QueryParamBlockLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+    QueryParamNullifierLimit,
+    QueryParamNullifierPrefixLimit,
 };
-use miden_objects::{
-    Felt, LexicographicWord, Word,
-    account::{
-        Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta,
-        FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction, StorageMapDelta,
-        StorageSlot, delta::AccountUpdateDetails,
-    },
-    asset::{Asset, NonFungibleAsset},
-    block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber},
-    crypto::merkle::SparseMerklePath,
-    note::{NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier},
-    transaction::OrderedTransactionHeaders,
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{
+    Account,
+    AccountDelta,
+    AccountId,
+    AccountStorageDelta,
+    AccountVaultDelta,
+    FungibleAssetDelta,
+    NonFungibleAssetDelta,
+    NonFungibleDeltaAction,
+    StorageMapDelta,
+    StorageSlot,
 };
+use miden_objects::asset::{Asset, NonFungibleAsset};
+use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber};
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier};
+use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_objects::{Felt, LexicographicWord, Word};
 
+use super::super::models;
 use super::{
-    super::models, BoolExpressionMethods, DatabaseError, NoteSyncRecordRawRow, QueryDsl,
-    RunQueryDsl, SelectableHelper,
+    BoolExpressionMethods,
+    DatabaseError,
+    NoteSyncRecordRawRow,
+    QueryDsl,
+    RunQueryDsl,
+    SelectableHelper,
 };
-use crate::{
-    db::{
-        NoteRecord, NoteSyncRecord, NoteSyncUpdate, NullifierInfo, Page, StateSyncUpdate,
-        TransactionSummary,
-        models::{
-            AccountRaw, AccountSummaryRaw, BigIntSum, ExpressionMethods, NoteInsertRowRaw,
-            NoteRecordRaw, NoteRecordWithScriptRaw, TransactionSummaryRaw,
-            conv::{
-                SqlTypeConvert, consumed_to_raw_sql, fungible_delta_to_raw_sql, nonce_to_raw_sql,
-                nullifier_prefix_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce, raw_sql_to_slot,
-                slot_to_raw_sql,
-            },
-            deserialize_raw_vec, get_nullifier_prefix, serialize_vec, sql_sum_into,
-            vec_raw_try_into,
-        },
-        schema,
-    },
-    errors::{NoteSyncError, StateSyncError},
+use crate::db::models::conv::{
+    SqlTypeConvert,
+    fungible_delta_to_raw_sql,
+    nonce_to_raw_sql,
+    nullifier_prefix_to_raw_sql,
+    raw_sql_to_idx,
+    raw_sql_to_nonce,
+    raw_sql_to_slot,
+    slot_to_raw_sql,
 };
+use crate::db::models::{
+    AccountCodeRowInsert,
+    AccountRaw,
+    AccountRowInsert,
+    AccountSummaryRaw,
+    AccountWithCodeRaw,
+    BigIntSum,
+    ExpressionMethods,
+    NoteInsertRowRaw,
+    NoteRecordRaw,
+    NoteRecordWithScriptRaw,
+    TransactionSummaryRaw,
+    get_nullifier_prefix,
+    serialize_vec,
+    sql_sum_into,
+    vec_raw_try_into,
+};
+use crate::db::{
+    NoteRecord,
+    NoteSyncRecord,
+    NoteSyncUpdate,
+    NullifierInfo,
+    Page,
+    StateSyncUpdate,
+    TransactionSummary,
+    schema,
+};
+use crate::errors::{NoteSyncError, StateSyncError};
 
 /// Select notes matching the tags and account IDs search criteria using the given [Connection].
 ///
@@ -112,14 +144,14 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 
     // find block_num: select notes since block by tag and sender
     let Some(desired_block_num): Option<i64> =
-        SelectDsl::select(schema::notes::table, schema::notes::block_num)
+        SelectDsl::select(schema::notes::table, schema::notes::committed_at)
             .filter(
                 schema::notes::tag
                     .eq_any(&desired_note_tags[..])
                     .or(schema::notes::sender.eq_any(&desired_senders[..])),
             )
-            .filter(schema::notes::block_num.gt(start_block_num))
-            .order_by(schema::notes::block_num.asc())
+            .filter(schema::notes::committed_at.gt(start_block_num))
+            .order_by(schema::notes::committed_at.asc())
             .limit(1)
             .get_result(conn)
             .optional()?
@@ -129,7 +161,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 
     let notes = SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
             // find the next block which contains at least one note with a matching tag or sender
-            .filter(schema::notes::block_num.eq(
+            .filter(schema::notes::committed_at.eq(
                 &desired_block_num
             ))
             // filter the block's notes and return only the ones matching the requested tags or senders
@@ -204,7 +236,7 @@ pub(crate) fn select_note_inclusion_proofs(
     let raw_notes = SelectDsl::select(
         schema::notes::table,
         (
-            schema::notes::block_num,
+            schema::notes::committed_at,
             schema::notes::note_id,
             schema::notes::batch_index,
             schema::notes::note_index,
@@ -212,7 +244,7 @@ pub(crate) fn select_note_inclusion_proofs(
         ),
     )
     .filter(schema::notes::note_id.eq_any(noted_ids_serialized))
-    .order_by(schema::notes::block_num.asc())
+    .order_by(schema::notes::committed_at.asc())
     .load::<(i64, Vec<u8>, i32, i32, Vec<u8>)>(conn)?;
 
     Result::<BTreeMap<_, _>, _>::from_iter(raw_notes.iter().map(
@@ -481,11 +513,23 @@ pub(crate) fn upsert_accounts(
         account_id: AccountId,
     ) -> Result<Vec<Account>, DatabaseError> {
         let account_id = account_id.to_bytes();
-        let account_details_serialized =
-            SelectDsl::select(schema::accounts::table, schema::accounts::details.assume_not_null())
-                .filter(schema::accounts::account_id.eq(account_id))
-                .get_results::<Vec<u8>>(conn)?;
-        let accounts = deserialize_raw_vec::<_, Account>(account_details_serialized)?;
+        let accounts = SelectDsl::select(
+            schema::accounts::table.left_join(
+                schema::account_codes::table.on(schema::accounts::code_commitment
+                    .eq(schema::account_codes::code_commitment.nullable())),
+            ),
+            (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+        )
+        .filter(schema::accounts::account_id.eq(account_id))
+        .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+
+        // SELECT .. FROM accounts LEFT JOIN account_codes
+        // ON accounts.code_commitment == account_codes.code_commitment
+
+        let accounts = Result::from_iter(accounts.into_iter().filter_map(|x| {
+            let account_with_code = AccountWithCodeRaw::from(x);
+            account_with_code.try_into().transpose()
+        }))?;
         Ok(accounts)
     }
 
@@ -528,20 +572,38 @@ pub(crate) fn upsert_accounts(
             },
         };
 
-        let val = (
-            schema::accounts::account_id.eq(account_id.to_bytes()),
-            schema::accounts::network_account_id_prefix
-                .eq(network_account_id_prefix.map(SqlTypeConvert::to_raw_sql)),
-            schema::accounts::account_commitment.eq(update.final_state_commitment().to_bytes()),
-            schema::accounts::block_num.eq(block_num.to_raw_sql()),
-            schema::accounts::details.eq(full_account.as_ref().map(|account| account.to_bytes())),
-        );
-        let v = val.clone();
+        if let Some(code) = full_account.as_ref().map(|account| account.code()) {
+            let code_value = AccountCodeRowInsert {
+                code_commitment: code.commitment().to_bytes(),
+                code: code.to_bytes(),
+            };
+            diesel::insert_into(schema::account_codes::table)
+                .values(&code_value)
+                .on_conflict(schema::account_codes::code_commitment)
+                .do_nothing()
+                .execute(conn)?;
+        }
+
+        let account_value = AccountRowInsert {
+            account_id: account_id.to_bytes(),
+            network_account_id_prefix: network_account_id_prefix
+                .map(NetworkAccountPrefix::to_raw_sql),
+            account_commitment: update.final_state_commitment().to_bytes(),
+            block_num: block_num.to_raw_sql(),
+            nonce: full_account.as_ref().map(|account| nonce_to_raw_sql(account.nonce())),
+            storage: full_account.as_ref().map(|account| account.storage().to_bytes()),
+            vault: full_account.as_ref().map(|account| account.vault().to_bytes()),
+            code_commitment: full_account
+                .as_ref()
+                .map(|account| account.code().commitment().to_bytes()),
+        };
+
+        let v = account_value.clone();
         let inserted = diesel::insert_into(schema::accounts::table)
             .values(&v)
             .on_conflict(schema::accounts::account_id)
             .do_update()
-            .set(val)
+            .set(account_value)
             .execute(conn)?;
 
         debug_assert_eq!(inserted, 1);
@@ -683,7 +745,7 @@ pub(crate) fn select_all_notes(
     );
     let raw: Vec<_> =
         SelectDsl::select(q, (NoteRecordRaw::as_select(), schema::note_scripts::script.nullable()))
-            .order(schema::notes::block_num.asc())
+            .order(schema::notes::committed_at.asc())
             .load::<(NoteRecordRaw, Option<Vec<u8>>)>(conn)?;
     let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRaw>(
         raw.into_iter().map(NoteRecordWithScriptRaw::from),
@@ -732,7 +794,7 @@ pub(crate) fn insert_nullifiers_for_block(
 
     let mut count = diesel::update(schema::notes::table)
         .filter(schema::notes::nullifier.eq_any(&serialized_nullifiers))
-        .set(schema::notes::consumed.eq(consumed_to_raw_sql(true)))
+        .set(schema::notes::consumed_at.eq(Some(block_num.to_raw_sql())))
         .execute(conn)?;
 
     count += diesel::insert_into(schema::nullifiers::table)
@@ -831,12 +893,18 @@ pub(crate) fn select_account(
     // WHERE
     //     account_id = ?1;
     //
-    let info = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
-        .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-        .get_result::<models::AccountRaw>(conn)
-        .optional()?
-        .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-    let info = info.try_into()?;
+
+    let raw = SelectDsl::select(
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
+    .optional()?
+    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    let info: AccountInfo = AccountWithCodeRaw::from(raw).try_into()?;
     Ok(info)
 }
 
@@ -862,14 +930,21 @@ pub(crate) fn select_account_by_id_prefix(
     //     accounts
     // WHERE
     //     network_account_id_prefix = ?1;
-    let maybe_info = SelectDsl::select(schema::accounts::table, AccountRaw::as_select())
-        .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
-        .get_result::<AccountRaw>(conn)
-        .optional()
-        .map_err(DatabaseError::Diesel)?;
+    let maybe_info = SelectDsl::select(
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
+    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
+    .optional()
+    .map_err(DatabaseError::Diesel)?;
 
-    let result: Result<Option<AccountInfo>, DatabaseError> =
-        maybe_info.map(std::convert::TryInto::<AccountInfo>::try_into).transpose();
+    let result: Result<Option<AccountInfo>, DatabaseError> = maybe_info
+        .map(AccountWithCodeRaw::from)
+        .map(std::convert::TryInto::<AccountInfo>::try_into)
+        .transpose();
 
     result
 }
@@ -929,7 +1004,7 @@ pub(crate) fn unconsumed_network_notes(
     // FROM notes
     // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
     // WHERE
-    //     execution_mode = 0 AND consumed = FALSE AND rowid >= ?
+    //     execution_mode = 0 AND consumed_block_num = NULL AND rowid >= ?
     // ORDER BY rowid
     // LIMIT ?
     #[allow(
@@ -966,7 +1041,113 @@ pub(crate) fn unconsumed_network_notes(
         ),
     )
     .filter(schema::notes::execution_mode.eq(0_i32))
-    .filter(schema::notes::consumed.eq(consumed_to_raw_sql(false)))
+    .filter(schema::notes::consumed_at.is_null())
+    .filter(rowid_sel_ge)
+    .order(rowid_sel.asc())
+    .limit(page.size.get() as i64 + 1)
+    .load::<RawLoadedTuple>(conn)?;
+
+    let mut notes = Vec::with_capacity(page.size.into());
+    for raw_item in raw {
+        let (raw_item, row_id) = split_into_raw_note_record_and_implicit_row_id(raw_item);
+        page.token = None;
+        if notes.len() == page.size.get() {
+            page.token = Some(row_id as u64);
+            break;
+        }
+        notes.push(TryInto::<NoteRecord>::try_into(raw_item)?);
+    }
+
+    Ok((notes, page))
+}
+
+/// Returns a paginated batch of network notes for an account that are unconsumed by a specified
+/// block number.
+///
+///  Notes that are created or consumed after the specified block are excluded from the result.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+//
+// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+// statements
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "We need custom SQL statements which has given types that we need to convert"
+)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "Lines will be reduced when schema is updated to simplify logic"
+)]
+pub(crate) fn select_unconsumed_network_notes_by_tag(
+    conn: &mut SqliteConnection,
+    tag: u32,
+    block_num: BlockNumber,
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
+    let rowid_sel_ge =
+        diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
+            .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
+
+    // SELECT {}, rowid
+    // FROM notes
+    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+    // WHERE
+    //  execution_mode = 0 AND tag = ?1 AND
+    //  block_num <= ?2 AND
+    //  (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
+    // ORDER BY rowid
+    // LIMIT ?
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    type RawLoadedTuple = (
+        NoteRecordRaw,
+        Option<Vec<u8>>, // script
+        i64,             // rowid (from sql::<BigInt>("notes.rowid"))
+    );
+
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    fn split_into_raw_note_record_and_implicit_row_id(
+        tuple: RawLoadedTuple,
+    ) -> (NoteRecordWithScriptRaw, i64) {
+        let (note, script, row) = tuple;
+        let combined = NoteRecordWithScriptRaw::from((note, script));
+        (combined, row)
+    }
+
+    let raw = SelectDsl::select(
+        schema::notes::table.left_join(
+            schema::note_scripts::table
+                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+        ),
+        (
+            NoteRecordRaw::as_select(),
+            schema::note_scripts::script.nullable(),
+            rowid_sel.clone(),
+        ),
+    )
+    .filter(schema::notes::execution_mode.eq(0_i32))
+    .filter(schema::notes::tag.eq(tag as i32))
+    .filter(schema::notes::committed_at.le(block_num.to_raw_sql()))
+    .filter(
+        schema::notes::consumed_at
+            .is_null()
+            .or(schema::notes::consumed_at.gt(block_num.to_raw_sql())),
+    )
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())
     .limit(page.size.get() as i64 + 1)
@@ -1004,9 +1185,18 @@ pub(crate) fn select_all_accounts(
     //     accounts
     // ORDER BY
     //     block_num ASC;
-    let accounts_raw =
-        QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()).load(conn)?;
-    vec_raw_try_into(accounts_raw)
+
+    let accounts_raw = QueryDsl::select(
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
+        (models::AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
+        accounts_raw.into_iter().map(AccountWithCodeRaw::from),
+    )?;
+    Ok(account_infos)
 }
 
 pub(crate) fn select_accounts_by_id(
@@ -1017,12 +1207,18 @@ pub(crate) fn select_accounts_by_id(
 
     let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
 
-    let accounts_raw = QueryDsl::filter(
-        QueryDsl::select(schema::accounts::table, models::AccountRaw::as_select()),
-        schema::accounts::account_id.eq_any(account_ids),
+    let accounts_raw = SelectDsl::select(
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
-    .load(conn)?;
-    vec_raw_try_into(accounts_raw)
+    .filter(schema::accounts::account_id.eq_any(account_ids))
+    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
+        accounts_raw.into_iter().map(AccountWithCodeRaw::from),
+    )?;
+    Ok(account_infos)
 }
 
 /// Selects and merges account deltas by account id and block range from the DB using the given

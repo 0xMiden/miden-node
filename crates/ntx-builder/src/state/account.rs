@@ -1,10 +1,10 @@
 use std::collections::{HashMap, VecDeque};
 
-use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
-use miden_objects::{
-    account::{Account, AccountDelta, AccountId, delta::AccountUpdateDetails},
-    note::Nullifier,
-};
+use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::note::NetworkNote;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{Account, AccountDelta, AccountId};
+use miden_objects::note::Nullifier;
 
 /// Tracks the state of a network account and its notes.
 pub struct AccountState {

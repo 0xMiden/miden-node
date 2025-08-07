@@ -1,4 +1,5 @@
-use std::{fs, io::Write};
+use std::fs;
+use std::io::Write;
 
 use miden_node_proto_build::remote_prover_api_descriptor;
 use miette::IntoDiagnostic;

@@ -1,10 +1,13 @@
-use std::{io::ErrorKind, ops::Not, path::PathBuf};
+use std::io::ErrorKind;
+use std::ops::Not;
+use std::path::PathBuf;
 
 use miden_lib::utils::Serializable;
 use miden_objects::block::BlockNumber;
 use tracing::instrument;
 
-use crate::{COMPONENT, genesis::GenesisBlock};
+use crate::COMPONENT;
+use crate::genesis::GenesisBlock;
 
 #[derive(Debug)]
 pub struct BlockStore {

@@ -1,15 +1,19 @@
 use miden_lib::transaction::TransactionKernel;
-use miden_objects::{
-    Word,
-    account::{Account, delta::AccountUpdateDetails},
-    block::{
-        AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock,
-    },
-    crypto::merkle::{Forest, MmrPeaks, Smt},
-    note::Nullifier,
-    transaction::OrderedTransactionHeaders,
-    utils::serde::{ByteReader, Deserializable, DeserializationError},
+use miden_objects::Word;
+use miden_objects::account::Account;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::block::{
+    AccountTree,
+    BlockAccountUpdate,
+    BlockHeader,
+    BlockNoteTree,
+    BlockNumber,
+    ProvenBlock,
 };
+use miden_objects::crypto::merkle::{Forest, MmrPeaks, Smt};
+use miden_objects::note::Nullifier;
+use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
 
 use crate::errors::GenesisError;
 

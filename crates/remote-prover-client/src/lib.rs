@@ -6,10 +6,8 @@
 #[macro_use]
 extern crate alloc;
 
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-};
+use alloc::boxed::Box;
+use alloc::string::{String, ToString};
 use core::error::Error as CoreError;
 
 #[cfg(feature = "std")]

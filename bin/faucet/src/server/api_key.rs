@@ -1,4 +1,5 @@
-use base64::{Engine, prelude::BASE64_STANDARD};
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
@@ -57,7 +58,8 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha20Rng;
 
-    use crate::server::{ApiKey, api_key::API_KEY_PREFIX};
+    use crate::server::ApiKey;
+    use crate::server::api_key::API_KEY_PREFIX;
 
     #[test]
     fn api_key_encode_and_decode() {

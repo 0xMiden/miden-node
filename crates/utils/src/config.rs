@@ -1,9 +1,7 @@
 use std::path::Path;
 
-use figment::{
-    Figment,
-    providers::{Format, Toml},
-};
+use figment::Figment;
+use figment::providers::{Format, Toml};
 use serde::Deserialize;
 
 pub const DEFAULT_NODE_RPC_PORT: u16 = 57291;

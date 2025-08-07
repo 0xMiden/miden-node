@@ -1,19 +1,16 @@
-use alloc::{
-    string::{String, ToString},
-    sync::Arc,
-    vec::Vec,
-};
+use alloc::string::{String, ToString};
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::time::Duration;
 
-use miden_objects::{
-    batch::{ProposedBatch, ProvenBatch},
-    transaction::{OutputNote, ProvenTransaction, TransactionHeader, TransactionId},
-    utils::{Deserializable, DeserializationError, Serializable},
-};
+use miden_objects::batch::{ProposedBatch, ProvenBatch};
+use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionHeader, TransactionId};
+use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use tokio::sync::Mutex;
 
 use super::generated::api_client::ApiClient;
-use crate::{RemoteProverClientError, remote_prover::generated as proto};
+use crate::RemoteProverClientError;
+use crate::remote_prover::generated as proto;
 
 // REMOTE BATCH PROVER
 // ================================================================================================

@@ -1,9 +1,7 @@
 use std::time::Duration;
 
-use miden_objects::{
-    account::AccountId,
-    utils::{Deserializable, Serializable},
-};
+use miden_objects::account::AccountId;
+use miden_objects::utils::{Deserializable, Serializable};
 use miden_tx::utils::{ToHex, hex_to_bytes};
 use serde::{Serialize, Serializer};
 use sha3::{Digest, Sha3_256};

@@ -20,6 +20,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -45,8 +46,15 @@ impl MetadataInterceptor {
     /// Adds or overwrites HTTP ACCEPT metadata to the interceptor.
     ///
     /// Provided version string must be ASCII.
-    pub fn with_accept_metadata(mut self, version: &str) -> Result<Self, anyhow::Error> {
-        let accept_value = format!("application/vnd.miden; version={version}");
+    pub fn with_accept_metadata(
+        mut self,
+        version: &str,
+        genesis: Option<&str>,
+    ) -> Result<Self, anyhow::Error> {
+        let mut accept_value = format!("application/vnd.miden; version={version}");
+        if let Some(genesis) = genesis {
+            write!(accept_value, "; genesis={genesis}")?;
+        }
         self.metadata.insert("accept", AsciiMetadataValue::try_from(accept_value)?);
         Ok(self)
     }
@@ -115,6 +123,8 @@ pub struct Builder {
     pub with_timeout: Option<Duration>,
     /// Optional version string to include in request metadata.
     pub metadata_version: Option<String>,
+    /// Optional genesis commitment string to include in request metadata.
+    pub metadata_genesis: Option<String>,
 }
 
 impl Builder {
@@ -160,6 +170,20 @@ impl Builder {
     #[must_use]
     pub fn with_metadata_version(mut self, version: String) -> Self {
         self.metadata_version = Some(version);
+        self
+    }
+
+    /// Sets the genesis commitment string to include in request metadata.
+    ///
+    /// This genesis is used by the [`MetadataInterceptor`] to set the `Accept` header
+    /// in gRPC requests. If not set, no genesis will be included.
+    ///
+    /// # Arguments
+    ///
+    /// * `genesis` - The genesis commitment string to include in request metadata
+    #[must_use]
+    pub fn with_metadata_genesis(mut self, genesis: String) -> Self {
+        self.metadata_genesis = Some(genesis);
         self
     }
 
@@ -301,7 +325,7 @@ impl GrpcClientBuilder for Rpc {
         // Use version from builder or default
         let version = builder.metadata_version.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
         let interceptor = MetadataInterceptor::default()
-            .with_accept_metadata(version)
+            .with_accept_metadata(version, builder.metadata_genesis.as_deref())
             .expect("Failed to create metadata interceptor");
 
         generated::rpc::api_client::ApiClient::with_interceptor(channel, interceptor)

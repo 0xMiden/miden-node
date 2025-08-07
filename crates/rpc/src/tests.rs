@@ -16,6 +16,8 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
 };
+use miden_objects::asset::FungibleAsset;
+use miden_objects::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;
 use miden_objects::vm::ExecutionProof;
@@ -186,6 +188,11 @@ async fn rpc_server_has_web_support() {
     store_runtime.shutdown_background();
 }
 
+fn test_fee() -> FungibleAsset {
+    let faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    FungibleAsset::new(faucet, 0).unwrap()
+}
+
 #[tokio::test]
 async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Start the RPC.
@@ -213,6 +220,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         [22; 32].try_into().unwrap(), // delta commitment
         0.into(),
         Word::default(),
+        test_fee(),
         u32::MAX.into(),
         ExecutionProof::new_dummy(),
     )

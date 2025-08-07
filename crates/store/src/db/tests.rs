@@ -30,6 +30,7 @@ use miden_objects::block::{
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
+    FeeParameters,
 };
 use miden_objects::crypto::dsa::rpo_falcon512::PublicKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
@@ -67,6 +68,11 @@ fn create_db() -> SqliteConnection {
     conn
 }
 
+fn test_fee_params() -> FeeParameters {
+    let faucet: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    FeeParameters::new(faucet, 0).unwrap()
+}
+
 fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
     let block_header = BlockHeader::new(
         1_u8.into(),
@@ -79,6 +85,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(8),
         num_to_word(9),
         num_to_word(10),
+        test_fee_params(),
         11_u8.into(),
     );
 
@@ -954,6 +961,7 @@ fn db_block_header() {
         num_to_word(8),
         num_to_word(9),
         num_to_word(10),
+        test_fee_params(),
         11_u8.into(),
     );
     // test insertion
@@ -985,6 +993,7 @@ fn db_block_header() {
         num_to_word(18),
         num_to_word(19),
         num_to_word(20),
+        test_fee_params(),
         21_u8.into(),
     );
 

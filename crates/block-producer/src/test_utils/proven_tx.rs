@@ -3,8 +3,10 @@ use std::ops::Range;
 use itertools::Itertools;
 use miden_air::HashFunction;
 use miden_objects::account::AccountId;
+use miden_objects::asset::FungibleAsset;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier};
+use miden_objects::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
 use miden_objects::transaction::{
     InputNote,
     OutputNote,
@@ -27,6 +29,12 @@ pub struct MockProvenTxBuilder {
     output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
+    fee: FungibleAsset,
+}
+
+fn test_fee() -> FungibleAsset {
+    let faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    FungibleAsset::new(faucet, 0).unwrap()
 }
 
 impl MockProvenTxBuilder {
@@ -68,6 +76,7 @@ impl MockProvenTxBuilder {
             output_notes: None,
             input_notes: None,
             nullifiers: None,
+            fee: test_fee(),
         }
     }
 
@@ -141,6 +150,7 @@ impl MockProvenTxBuilder {
             Word::empty(),
             BlockNumber::from(0),
             Word::empty(),
+            self.fee,
             self.expiration_block_num,
             ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
         )

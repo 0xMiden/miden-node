@@ -1,19 +1,17 @@
 use std::num::{NonZero, TryFromIntError};
 
-use miden_node_proto::{
-    domain::account::{AccountInfo, NetworkAccountPrefix},
-    generated::{self as proto, ntx_builder_store::ntx_builder_server},
-};
+use miden_node_proto::domain::account::{AccountInfo, NetworkAccountPrefix};
+use miden_node_proto::generated::ntx_builder_store::ntx_builder_server;
+use miden_node_proto::generated::{self as proto};
 use miden_node_utils::ErrorReport;
-use miden_objects::{block::BlockNumber, note::Note};
+use miden_objects::block::BlockNumber;
+use miden_objects::note::Note;
 use tonic::{Request, Response, Status};
 use tracing::instrument;
 
-use crate::{
-    COMPONENT,
-    db::models::Page,
-    server::api::{StoreApi, internal_error, invalid_argument},
-};
+use crate::COMPONENT;
+use crate::db::models::Page;
+use crate::server::api::{StoreApi, internal_error, invalid_argument};
 
 // NTX BUILDER ENDPOINTS
 // ================================================================================================

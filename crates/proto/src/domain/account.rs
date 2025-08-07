@@ -1,20 +1,16 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
-use miden_objects::{
-    Word,
-    account::{Account, AccountHeader, AccountId},
-    block::{AccountWitness, BlockNumber},
-    note::{NoteExecutionMode, NoteTag},
-    utils::{Deserializable, DeserializationError, Serializable},
-};
+use miden_objects::Word;
+use miden_objects::account::{Account, AccountHeader, AccountId};
+use miden_objects::block::{AccountWitness, BlockNumber};
+use miden_objects::note::{NoteExecutionMode, NoteTag};
+use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
 
 use super::try_convert;
-use crate::{
-    errors::{ConversionError, MissingFieldHelper},
-    generated as proto,
-};
+use crate::errors::{ConversionError, MissingFieldHelper};
+use crate::generated as proto;
 
 // ACCOUNT ID
 // ================================================================================================

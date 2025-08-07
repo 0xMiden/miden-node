@@ -1,16 +1,20 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::{sync::Barrier, time};
+use tokio::sync::Barrier;
+use tokio::time;
 use url::Url;
 
-use crate::{
-    MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, state::TransactionCandidate,
-    store::StoreClient,
-};
+use crate::MAX_IN_PROGRESS_TXS;
+use crate::block_producer::BlockProducerClient;
+use crate::state::TransactionCandidate;
+use crate::store::StoreClient;
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================

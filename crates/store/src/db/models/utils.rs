@@ -1,6 +1,7 @@
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::{Deserializable, DeserializationError, Serializable};
-use miden_objects::{block::BlockNumber, note::Nullifier};
+use miden_objects::block::BlockNumber;
+use miden_objects::note::Nullifier;
 
 use crate::errors::DatabaseError;
 

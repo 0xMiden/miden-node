@@ -1,15 +1,22 @@
-use std::{any::type_name, io};
+use std::any::type_name;
+use std::io;
 
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_utils::limiter::QueryLimitError;
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
+use miden_objects::crypto::merkle::MmrError;
+use miden_objects::crypto::utils::DeserializationError;
+use miden_objects::note::Nullifier;
+use miden_objects::transaction::OutputNote;
 use miden_objects::{
-    AccountDeltaError, AccountError, AccountTreeError, NoteError, NullifierTreeError, Word,
-    account::AccountId,
-    block::BlockNumber,
-    crypto::{merkle::MmrError, utils::DeserializationError},
-    note::Nullifier,
-    transaction::OutputNote,
+    AccountDeltaError,
+    AccountError,
+    AccountTreeError,
+    NoteError,
+    NullifierTreeError,
+    Word,
 };
 use thiserror::Error;
 use tokio::sync::oneshot::error::RecvError;
@@ -329,8 +336,16 @@ mod compile_tests {
     use std::marker::PhantomData;
 
     use super::{
-        AccountDeltaError, AccountError, DatabaseError, DatabaseSetupError, DeserializationError,
-        GenesisError, NetworkAccountError, NoteError, RecvError, StateInitializationError,
+        AccountDeltaError,
+        AccountError,
+        DatabaseError,
+        DatabaseSetupError,
+        DeserializationError,
+        GenesisError,
+        NetworkAccountError,
+        NoteError,
+        RecvError,
+        StateInitializationError,
     };
 
     /// Ensure all enum variants remain compat with the desired

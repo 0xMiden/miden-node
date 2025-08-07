@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
-use tonic::{metadata::AsciiMetadataValue, service::Interceptor};
+use tonic::metadata::AsciiMetadataValue;
+use tonic::service::Interceptor;
 
 /// Interceptor designed to inject required metadata into all [`super::ApiClient`] requests.
 #[derive(Default, Clone)]

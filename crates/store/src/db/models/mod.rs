@@ -20,11 +20,14 @@
 
 use std::num::NonZeroUsize;
 
-use diesel::{prelude::*, sqlite::Sqlite};
+use diesel::prelude::*;
+use diesel::sqlite::Sqlite;
 
 use crate::{
     db::{
-        NoteRecord, NoteSyncRecord, NullifierInfo,
+        NoteRecord,
+        NoteSyncRecord,
+        NullifierInfo,
         schema::{
             // the list of tables
             // referenced in `#[diesel(table_name = _)]`

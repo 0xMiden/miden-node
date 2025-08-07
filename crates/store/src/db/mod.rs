@@ -1,36 +1,26 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    path::PathBuf,
-};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
 use miden_lib::utils::Serializable;
-use miden_node_proto::{
-    domain::account::{AccountInfo, AccountSummary},
-    generated as proto,
-};
-use miden_objects::{
-    Word,
-    account::{AccountDelta, AccountId},
-    block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock},
-    crypto::merkle::SparseMerklePath,
-    note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier},
-    transaction::TransactionId,
-};
+use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
+use miden_node_proto::generated as proto;
+use miden_objects::Word;
+use miden_objects::account::{AccountDelta, AccountId};
+use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier};
+use miden_objects::transaction::TransactionId;
 use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
 
-use crate::{
-    COMPONENT,
-    db::{
-        manager::{ConnectionManager, configure_connection_on_creation},
-        migrations::apply_migrations,
-        models::{Page, queries},
-    },
-    errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError},
-    genesis::GenesisBlock,
-};
+use crate::COMPONENT;
+use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
+use crate::db::migrations::apply_migrations;
+use crate::db::models::{Page, queries};
+use crate::errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError};
+use crate::genesis::GenesisBlock;
 
 pub(crate) mod manager;
 

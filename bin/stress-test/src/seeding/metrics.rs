@@ -1,9 +1,7 @@
-use std::{
-    fmt::Display,
-    path::{Path, PathBuf},
-    process::Command,
-    time::Duration,
-};
+use std::fmt::Display;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::time::Duration;
 
 const SQLITE_TABLES: [&str; 12] = [
     "account_deltas",

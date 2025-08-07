@@ -1,21 +1,39 @@
 use bigdecimal::BigDecimal;
 use miden_lib::utils::Deserializable;
-use miden_node_proto::{self as proto, domain::account::AccountSummary};
-use miden_objects::{
-    Felt, Word,
-    account::{Account, AccountId},
-    block::{BlockHeader, BlockNoteIndex},
-    crypto::merkle::SparseMerklePath,
-    note::{
-        NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
-        NoteScript, NoteTag, NoteType, Nullifier,
-    },
-    transaction::TransactionId,
+use miden_node_proto::domain::account::AccountSummary;
+use miden_node_proto::{self as proto};
+use miden_objects::account::{Account, AccountId};
+use miden_objects::block::{BlockHeader, BlockNoteIndex};
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{
+    NoteAssets,
+    NoteDetails,
+    NoteExecutionHint,
+    NoteInputs,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteTag,
+    NoteType,
+    Nullifier,
 };
+use miden_objects::transaction::TransactionId;
+use miden_objects::{Felt, Word};
 
 use super::{
-    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
-    Selectable, Sqlite, accounts, block_headers, notes, nullifiers, raw_sql_to_block_number,
+    DatabaseError,
+    NoteRecord,
+    NoteSyncRecord,
+    NullifierInfo,
+    Queryable,
+    QueryableByName,
+    Selectable,
+    Sqlite,
+    accounts,
+    block_headers,
+    notes,
+    nullifiers,
+    raw_sql_to_block_number,
     transactions,
 };
 

@@ -28,7 +28,8 @@
 )]
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_objects::{Felt, note::NoteTag};
+use miden_objects::Felt;
+use miden_objects::note::NoteTag;
 
 #[inline(always)]
 pub(crate) fn raw_sql_to_consumed(raw: i32) -> bool {

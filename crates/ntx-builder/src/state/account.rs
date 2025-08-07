@@ -1,11 +1,11 @@
 use std::collections::{HashMap, VecDeque};
 
-use miden_node_proto::domain::{account::NetworkAccountPrefix, note::NetworkNote};
-use miden_objects::{
-    account::{Account, AccountDelta, AccountId, delta::AccountUpdateDetails},
-    block::BlockNumber,
-    note::Nullifier,
-};
+use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::note::NetworkNote;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{Account, AccountDelta, AccountId};
+use miden_objects::block::BlockNumber;
+use miden_objects::note::Nullifier;
 
 // INFLIGHT NETWORK NOTE
 // ================================================================================================

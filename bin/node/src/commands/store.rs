@@ -1,15 +1,16 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use miden_node_store::{
-    Store,
-    genesis::config::{AccountFileWithName, GenesisConfig},
-};
+use miden_node_store::Store;
+use miden_node_store::genesis::config::{AccountFileWithName, GenesisConfig};
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{
-    ENV_DATA_DIRECTORY, ENV_STORE_BLOCK_PRODUCER_URL, ENV_STORE_NTX_BUILDER_URL, ENV_STORE_RPC_URL,
+    ENV_DATA_DIRECTORY,
+    ENV_STORE_BLOCK_PRODUCER_URL,
+    ENV_STORE_NTX_BUILDER_URL,
+    ENV_STORE_RPC_URL,
 };
 use crate::commands::{ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE};
 

@@ -1,28 +1,43 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use futures::TryFutureExt;
-use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
-use miden_objects::{
-    TransactionInputError, Word,
-    account::{Account, AccountId},
-    assembly::DefaultSourceManager,
-    block::{BlockHeader, BlockNumber},
-    note::{Note, NoteId},
-    transaction::{
-        ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
-        TransactionArgs,
-    },
+use miden_node_utils::ErrorReport;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_objects::account::{Account, AccountId};
+use miden_objects::assembly::DefaultSourceManager;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::note::{Note, NoteId};
+use miden_objects::transaction::{
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
+    TransactionArgs,
 };
+use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
+use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
-    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
-    TransactionProverError, auth::UnreachableAuth,
+    DataStore,
+    DataStoreError,
+    LocalTransactionProver,
+    MastForestStore,
+    NoteAccountExecution,
+    NoteConsumptionChecker,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionMastStore,
+    TransactionProverError,
 };
 use tokio::task::JoinError;
-use tracing::{Instrument, instrument, instrument::Instrumented};
+use tracing::instrument::Instrumented;
+use tracing::{Instrument, instrument};
 
-use crate::{COMPONENT, block_producer::BlockProducerClient, state::TransactionCandidate};
+use crate::COMPONENT;
+use crate::block_producer::BlockProducerClient;
+use crate::state::TransactionCandidate;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {

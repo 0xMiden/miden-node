@@ -1,4 +1,5 @@
-use miden_objects::{Felt, Word, crypto::rand::RpoRandomCoin};
+use miden_objects::crypto::rand::RpoRandomCoin;
+use miden_objects::{Felt, Word};
 use rand::Rng;
 
 /// Creates a new RPO Random Coin with random seed

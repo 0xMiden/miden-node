@@ -45,12 +45,12 @@ miden-node-utils           = { path = "crates/utils", version = "0.11" }
 miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.11" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-objects         = { path = "../miden-base-bernhard-merge-next-into-pgackst-async-exp/crates/miden-objects", default-features = false }
-miden-tx              = { path = "../miden-base-bernhard-merge-next-into-pgackst-async-exp/crates/miden-tx", default-features = false }
-miden-block-prover    = { path = "../miden-base-bernhard-merge-next-into-pgackst-async-exp/crates/miden-block-prover" }
-miden-lib             = { path = "../miden-base-bernhard-merge-next-into-pgackst-async-exp/crates/miden-lib" }
-miden-testing         = { path = "../miden-base-bernhard-merge-next-into-pgackst-async-exp/crates/miden-testing" }
-miden-tx-batch-prover = { path = "../miden-base-bernhard-merge-next-into-pgackst-async-exp/crates/miden-tx-batch-prover" }
+miden-block-prover    = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "bernhard-merge-next-into-pgackst-async-exp", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "bernhard-merge-next-into-pgackst-async-exp", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { branch = "bernhard-future-maybe-send", git = "https://github.com/0xMiden/miden-vm" }

@@ -268,7 +268,7 @@ impl Db {
         .await
     }
 
-    /// Search for a [BlockHeader] from the database by its `block_num`.
+    /// Search for a [`BlockHeader`] from the database by its `block_num`.
     ///
     /// When `block_number` is [None], the latest block header is returned.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
@@ -371,7 +371,7 @@ impl Db {
         .await
     }
 
-    /// Loads all the Note's matching a certain NoteId from the database.
+    /// Loads all the [`Note`]s matching a certain [`NoteId`] from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
         self.transact("note by id", move |conn| {
@@ -392,7 +392,7 @@ impl Db {
         .await
     }
 
-    /// Loads all note IDs matching a certain NoteId from the database.
+    /// Loads all note IDs matching a certain [`NoteId`] from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<HashSet<NoteId>> {
         self.select_notes_by_id(note_ids)
@@ -403,7 +403,7 @@ impl Db {
     /// Inserts the data of a new block into the DB.
     ///
     /// `allow_acquire` and `acquire_done` are used to synchronize writes to the DB with writes to
-    /// the in-memory trees. Further details available on [super::state::State::apply_block].
+    /// the in-memory trees. Further details available on [`super::state::State::apply_block`].
     // TODO: This span is logged in a root span, we should connect it to the parent one.
     #[instrument(target = COMPONENT, skip_all, err)]
     pub async fn apply_block(

@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use std::num::NonZeroU32;
 
 use itertools::Itertools;
-use miden_node_proto::clients::{Builder, StoreBlockProducer, StoreBlockProducerClient};
+use miden_node_proto::clients::{Builder, StoreBlockProducer, StoreBlockProducerClient, WantsTls};
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
 use miden_node_proto::{AccountState, generated as proto};
@@ -128,8 +128,12 @@ impl StoreClient {
     pub fn new(store_url: &Url) -> Self {
         // SAFETY: The store_url is always valid as it is a user-provided URL that has been
         // validated.
-        let store = Builder::new()
-            .with_address(store_url.to_string())
+        let store = Builder::<WantsTls>::new(store_url.to_string())
+            .expect("Failed to initialize store endpoint")
+            .without_tls()
+            .without_timeout()
+            .without_metadata_version()
+            .without_metadata_genesis()
             .connect_lazy::<StoreBlockProducer>()
             .expect("Failed to build client");
 

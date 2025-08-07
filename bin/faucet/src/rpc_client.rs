@@ -1,7 +1,12 @@
 use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient as InnerRpcClient};
+use miden_node_proto::clients::{
+    Builder,
+    Rpc as RpcClientMarker,
+    RpcClient as InnerRpcClient,
+    WantsTls,
+};
 use miden_node_proto::generated as proto;
 use miden_objects::account::Account;
 use miden_objects::block::{BlockHeader, BlockNumber};
@@ -32,10 +37,11 @@ impl RpcClient {
     ///
     /// The connection is lazy and will re-establish in the background on disconnection.
     pub fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
-        let client = Builder::new()
-            .with_address(url.to_string())
-            .with_tls()
+        let client = Builder::<WantsTls>::new(url.to_string())?
+            .with_tls()?
             .with_timeout(Duration::from_millis(timeout_ms))
+            .without_metadata_version()
+            .without_metadata_genesis()
             .connect_lazy::<RpcClientMarker>()?;
 
         Ok(Self { inner: client })

@@ -7,6 +7,7 @@ use miden_node_proto::clients::{
     Builder,
     StoreRpc,
     StoreRpcClient,
+    WantsTls,
 };
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc::api_server::{self, Api};
@@ -46,8 +47,12 @@ impl RpcService {
         let store = {
             // SAFETY: The store_url is always valid as it is a user-provided URL that has been
             // validated.
-            let store = Builder::new()
-                .with_address(store_url.to_string())
+            let store = Builder::<WantsTls>::new(store_url.to_string())
+                .expect("Failed to initialize store endpoint")
+                .without_tls()
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
                 .connect_lazy::<StoreRpc>()
                 .expect("Failed to build client");
             info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
@@ -57,8 +62,12 @@ impl RpcService {
         let block_producer = block_producer_url.map(|block_producer_url| {
             // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has
             // been validated.
-            let block_producer = Builder::new()
-                .with_address(block_producer_url.to_string())
+            let block_producer = Builder::<WantsTls>::new(block_producer_url.to_string())
+                .expect("Failed to initialize block-producer endpoint")
+                .without_tls()
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
                 .connect_lazy::<BlockProducer>()
                 .expect("Failed to build client");
             info!(

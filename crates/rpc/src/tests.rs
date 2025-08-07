@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
-use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient};
+use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient, WantsTls};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::{GenesisState, Store};
@@ -83,10 +83,12 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         let url = rpc_addr.to_string();
         // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-        let mut rpc_client: RpcClient = Builder::new()
-            .with_address(url.to_string())
+        let mut rpc_client: RpcClient = Builder::<WantsTls>::new(url.to_string())
+            .expect("Failed to initialize rpc endpoint")
+            .without_tls()
             .with_timeout(Duration::from_secs(10))
             .with_metadata_version(version.to_string())
+            .without_metadata_genesis()
             .connect::<RpcClientMarker>()
             .await
             .unwrap();
@@ -303,9 +305,12 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
     let url = rpc_addr.to_string();
     // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
-    let rpc_client: RpcClient = Builder::new()
-        .with_address(url.to_string())
+    let rpc_client: RpcClient = Builder::<WantsTls>::new(url.to_string())
+        .expect("Failed to initialize rpc endpoint")
+        .without_tls()
         .with_timeout(Duration::from_secs(10))
+        .without_metadata_version()
+        .without_metadata_genesis()
         .connect::<RpcClientMarker>()
         .await
         .expect("Failed to build client");

@@ -5,6 +5,7 @@ use miden_node_proto::clients::{
     BlockProducer,
     BlockProducerClient as InnerBlockProducerClient,
     Builder,
+    WantsTls,
 };
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::{self as proto};
@@ -35,8 +36,12 @@ impl BlockProducerClient {
     pub fn new(block_producer_url: &Url) -> Self {
         // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has been
         // validated.
-        let block_producer = Builder::new()
-            .with_address(block_producer_url.to_string())
+        let block_producer = Builder::<WantsTls>::new(block_producer_url.to_string())
+            .expect("Failed to initialize block-producer endpoint")
+            .without_tls()
+            .without_timeout()
+            .without_metadata_version()
+            .without_metadata_genesis()
             .connect_lazy::<BlockProducer>()
             .expect("Failed to build client");
 

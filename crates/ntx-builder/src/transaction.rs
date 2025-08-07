@@ -11,6 +11,7 @@ use miden_objects::transaction::{
     ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
     TransactionArgs,
 };
+use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
@@ -92,7 +93,7 @@ impl NtxContext {
                 notes.shuffle(&mut rand::rng());
                 let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                let data_store = NtxDataStore::new(account, self.genesis_header.clone());
+                let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
                 let notes = self.filter_notes(&data_store, notes).await?;
                 let executed = self.execute(&data_store, notes).await?;
@@ -242,7 +243,6 @@ impl DataStore for NtxDataStore {
     ) -> impl FutureMaybeSend<
         Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
     > {
-        let genesis_header = self.genesis_header.clone();
         let account = self.account.clone();
         async move {
             if account.id() != account_id {

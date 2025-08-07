@@ -20,9 +20,12 @@ use miden_objects::transaction::{
 };
 use miden_objects::{AccountError, Felt, NoteError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use miden_tx::TransactionExecutor;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::parse_hex_string_as_word;
+use miden_tx::{
+    LocalTransactionProver, ProvingOptions, TransactionExecutor, TransactionExecutorError,
+    TransactionProverError,
+};
 use rand::rngs::StdRng;
 use rand::{Rng, rng};
 use serde::Serialize;

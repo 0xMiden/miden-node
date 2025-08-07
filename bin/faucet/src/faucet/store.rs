@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use miden_objects::account::{Account, AccountId};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::transaction::{PartialBlockchain, TransactionScript};
+use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{MastForest, Word};
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 

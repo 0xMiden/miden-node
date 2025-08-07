@@ -430,10 +430,10 @@ impl State {
         block_num: Option<BlockNumber>,
     ) -> Result<Option<(BlockHeader, MmrPeaks)>, GetCurrentBlockchainDataError> {
         let blockchain = &self.inner.read().await.blockchain;
-        if let Some(number) = block_num {
-            if number == self.latest_block_num().await {
-                return Ok(None);
-            }
+        if let Some(number) = block_num
+            && number == self.latest_block_num().await
+        {
+            return Ok(None);
         }
 
         // SAFETY: `select_block_header_by_block_num` will always return `Some(chain_tip_header)`

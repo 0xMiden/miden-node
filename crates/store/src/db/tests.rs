@@ -1216,7 +1216,7 @@ fn sql_account_storage_map_values_insertion() {
     );
 
     let mut map2 = StorageMapDelta::default();
-    map2.insert(key1.into(), value3);
+    map2.insert(key1, value3);
     let maps2: BTreeMap<_, _> = [(slot, map2)].into_iter().collect();
     let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
     let delta2 =

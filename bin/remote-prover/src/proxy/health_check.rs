@@ -5,7 +5,7 @@ use tracing::{debug_span, error};
 
 use super::LoadBalancerState;
 
-/// Implement the BackgroundService trait for the LoadBalancer
+/// Implement the `BackgroundService` trait for the `LoadBalancer`
 ///
 /// A [BackgroundService] can be run as part of a Pingora application to add supporting logic that
 /// exists outside of the request/response lifecycle.

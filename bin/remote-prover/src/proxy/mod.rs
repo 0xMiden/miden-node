@@ -349,21 +349,21 @@ pub struct LoadBalancer(pub Arc<LoadBalancerState>);
 /// Implements load-balancing of incoming requests across a pool of workers.
 ///
 /// At the backend-level, a request lifecycle works as follows:
-/// - When a new requests arrives, [LoadBalancer::request_filter()] method is called. In this method
-///   we apply IP-based rate-limiting to the request and check if the request queue is full. In this
-///   method we also handle the special case update workers request.
-/// - Next, the [Self::upstream_peer()] method is called. We use it to figure out which worker will
-///   process the request. Inside `upstream_peer()`, we add the request to the queue of requests.
-///   Once the request gets to the front of the queue, we forward it to an available worker. This
-///   step is also in charge of setting the SNI, timeouts, and enabling HTTP/2. Finally, we
-///   establish a connection with the worker.
+/// - When a new requests arrives, [`LoadBalancer::request_filter()`] method is called. In this
+///   method we apply IP-based rate-limiting to the request and check if the request queue is full.
+///   In this method we also handle the special case update workers request.
+/// - Next, the [`Self::upstream_peer()`] method is called. We use it to figure out which worker
+///   will process the request. Inside `upstream_peer()`, we add the request to the queue of
+///   requests. Once the request gets to the front of the queue, we forward it to an available
+///   worker. This step is also in charge of setting the SNI, timeouts, and enabling HTTP/2.
+///   Finally, we establish a connection with the worker.
 /// - Before sending the request to the upstream server and if the connection succeed, the
-///   [Self::upstream_request_filter()] method is called. In this method, we ensure that the correct
-///   headers are forwarded for gRPC requests.
-/// - If the connection fails, the [Self::fail_to_connect()] method is called. In this method, we
-///   retry the request [self.max_retries_per_request] times.
+///   [`Self::upstream_request_filter()`] method is called. In this method, we ensure that the
+///   correct headers are forwarded for gRPC requests.
+/// - If the connection fails, the [`Self::fail_to_connect()`] method is called. In this method, we
+///   retry the request [`self.max_retries_per_request`] times.
 /// - Once the worker processes the request (either successfully or with a failure),
-///   [Self::logging()] method is called. In this method, we log the request lifecycle and set the
+///   [`Self::logging()`] method is called. In this method, we log the request lifecycle and set the
 ///   worker as available.
 #[async_trait]
 impl ProxyHttp for LoadBalancer {
@@ -445,14 +445,14 @@ impl ProxyHttp for LoadBalancer {
         Ok(false)
     }
 
-    /// Returns [HttpPeer] corresponding to the worker that will handle the current request.
+    /// Returns [`HttpPeer`] corresponding to the worker that will handle the current request.
     ///
     /// Here we enqueue the request and wait for it to be at the front of the queue and a worker
     /// becomes available, then we dequeue the request and process it. We then set the SNI,
     /// timeouts, and enable HTTP/2.
     ///
     /// Note that the request will be assigned a worker here, and the worker will be removed from
-    /// the list of available workers once it reaches the [Self::logging] method.
+    /// the list of available workers once it reaches the [`Self::logging`] method.
     #[tracing::instrument(name = "proxy.upstream_peer", parent = &ctx.parent_span, skip(_session))]
     async fn upstream_peer(
         &self,
@@ -511,7 +511,7 @@ impl ProxyHttp for LoadBalancer {
     ///
     /// Here we ensure that the correct headers are forwarded for gRPC requests.
     ///
-    /// This method is called right after [Self::upstream_peer()] returns a [HttpPeer] and a
+    /// This method is called right after [`Self::upstream_peer()`] returns a [`HttpPeer`] and a
     /// connection is established with the worker.
     #[tracing::instrument(name = "proxy.upstream_request_filter", parent = &_ctx.parent_span, skip(_session))]
     async fn upstream_request_filter(
@@ -524,11 +524,11 @@ impl ProxyHttp for LoadBalancer {
         Self::CTX: Send + Sync,
     {
         // Check if it's a gRPC request
-        if let Some(content_type) = upstream_request.headers.get("content-type") {
-            if content_type == "application/grpc" {
-                // Ensure the correct host and gRPC headers are forwarded
-                upstream_request.insert_header("content-type", "application/grpc")?;
-            }
+        if let Some(content_type) = upstream_request.headers.get("content-type")
+            && content_type == "application/grpc"
+        {
+            // Ensure the correct host and gRPC headers are forwarded
+            upstream_request.insert_header("content-type", "application/grpc")?;
         }
 
         Ok(())

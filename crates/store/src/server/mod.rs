@@ -36,6 +36,9 @@ pub struct Store {
     pub ntx_builder_listener: TcpListener,
     pub block_producer_listener: TcpListener,
     pub data_directory: PathBuf,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
 }
 

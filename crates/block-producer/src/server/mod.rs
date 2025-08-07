@@ -63,8 +63,9 @@ pub struct BlockProducer {
     /// The block-producers gRPC endpoint will be available before this point, so this lets the
     /// mempool synchronize its event stream without risking a race condition.
     pub production_checkpoint: Arc<Barrier>,
-    /// Maximum time allowed for a request to complete. Once exceeded, the request is
-    /// aborted.
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
 }
 

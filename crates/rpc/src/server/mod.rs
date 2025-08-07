@@ -28,6 +28,9 @@ pub struct Rpc {
     pub listener: TcpListener,
     pub store: SocketAddr,
     pub block_producer: Option<SocketAddr>,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
 }
 

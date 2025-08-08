@@ -49,6 +49,7 @@ pub struct GenesisConfig {
     timestamp: u32,
     wallet: Vec<WalletConfig>,
     fungible_faucet: Vec<FungibleFaucetConfig>,
+    native_fee_symbol: String,
 }
 
 impl Default for GenesisConfig {
@@ -69,6 +70,7 @@ impl Default for GenesisConfig {
                 storage_mode: StorageMode::Public,
                 symbol: "MIDEN".to_owned(),
             }],
+            native_fee_symbol: "MIDEN".to_owned(),
         }
     }
 }
@@ -92,7 +94,10 @@ impl GenesisConfig {
             timestamp,
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
+            native_fee_symbol,
         } = self;
+
+        let _ = TokenSymbol::new(&native_fee_symbol)?;
 
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
@@ -150,6 +155,11 @@ impl GenesisConfig {
             // Do _not_ collect the account, only after we know all wallet assets
             // we know the remaining supply in the faucets.
         }
+
+        let native_asset_account_id = faucet_accounts
+            .get(&native_fee_symbol)
+            .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(native_fee_symbol))?
+            .id();
 
         // Track all adjustments, one per faucet account id
         let mut faucet_issuance = HashMap::<AccountId, u64>::new();
@@ -269,6 +279,7 @@ impl GenesisConfig {
 
         Ok((
             GenesisState {
+                native_asset_account_id,
                 accounts: all_accounts,
                 version,
                 timestamp,

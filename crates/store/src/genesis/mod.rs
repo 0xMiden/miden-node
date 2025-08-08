@@ -26,6 +26,7 @@ pub mod config;
 /// Represents the state at genesis, which will be used to derive the genesis block.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenesisState {
+    pub native_asset_account_id: AccountId,
     pub accounts: Vec<Account>,
     pub version: u32,
     pub timestamp: u32,
@@ -46,8 +47,18 @@ impl GenesisBlock {
 }
 
 impl GenesisState {
-    pub fn new(accounts: Vec<Account>, version: u32, timestamp: u32) -> Self {
-        Self { accounts, version, timestamp }
+    pub fn new(
+        native_asset_account_id: AccountId,
+        accounts: Vec<Account>,
+        version: u32,
+        timestamp: u32,
+    ) -> Self {
+        Self {
+            native_asset_account_id,
+            accounts,
+            version,
+            timestamp,
+        }
     }
 
     /// Returns the block header and the account SMT
@@ -92,7 +103,7 @@ impl GenesisState {
             Word::empty(),
             TransactionKernel::kernel_commitment(),
             Word::empty(),
-            fee_stub(),
+            FeeParameters::new(self.native_asset_account_id, 0)?,
             self.timestamp,
         );
 
@@ -109,13 +120,6 @@ impl GenesisState {
     }
 }
 
-// FIXME XXX TODO
-fn fee_stub() -> FeeParameters {
-    // public fungible faucet ID
-    let faucet_id: AccountId = 0x00aa_0000_0000_bc20_0000_bc00_0000_de00.try_into().unwrap();
-    FeeParameters::new(faucet_id, 0).unwrap()
-}
-
 // SERIALIZATION
 // ================================================================================================
 
@@ -126,7 +130,8 @@ impl Deserializable for GenesisState {
 
         let version = source.read_u32()?;
         let timestamp = source.read_u32()?;
+        let native_asset_account_id = source.read::<AccountId>()?;
 
-        Ok(Self::new(accounts, version, timestamp))
+        Ok(Self::new(native_asset_account_id, accounts, version, timestamp))
     }
 }

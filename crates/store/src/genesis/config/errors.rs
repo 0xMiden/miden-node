@@ -45,4 +45,6 @@ pub enum GenesisConfigError {
     },
     #[error("Total issuance overflowed u64")]
     IssuanceOverflow,
+    #[error("missing fee faucet for native asset {0}")]
+    MissingFeeFaucet(String),
 }

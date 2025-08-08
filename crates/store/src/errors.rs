@@ -14,6 +14,7 @@ use miden_objects::{
     AccountDeltaError,
     AccountError,
     AccountTreeError,
+    FeeError,
     NoteError,
     NullifierTreeError,
     Word,
@@ -186,6 +187,8 @@ pub enum GenesisError {
     AccountTree(#[source] AccountTreeError),
     #[error("failed to deserialize genesis file")]
     GenesisFileDeserialization(#[from] DeserializationError),
+    #[error("fee cannot be created")]
+    Fee(#[from] FeeError),
 }
 
 // ENDPOINT ERRORS

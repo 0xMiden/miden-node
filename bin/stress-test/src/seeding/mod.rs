@@ -75,7 +75,7 @@ pub async fn seed_store(
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
-    let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
+    let genesis_state = GenesisState::new(faucet.id(), vec![faucet.clone()], 1, 1);
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store

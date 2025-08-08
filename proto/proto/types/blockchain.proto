@@ -4,6 +4,18 @@ package blockchain;
 import "types/account.proto";
 import "types/primitives.proto";
 
+// FEE PARAMETERS
+// ================================================================================================
+
+// Represents fee parameters for block processing.
+message FeeParameters {
+    // The account ID that receives the fees.
+    account.AccountId account_id = 1;
+    
+    // The fee amount as a 32-bit number.
+    fixed32 amount = 2;
+}
+
 // BLOCK
 // ================================================================================================
 
@@ -67,4 +79,7 @@ message BlockHeader {
 
     // The time when the block was created.
     fixed32 timestamp = 11;
+    
+    // Fee parameters for block processing.
+    FeeParameters fee_parameters = 12;
 }

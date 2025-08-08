@@ -26,6 +26,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
             proof_commitment: Some(header.proof_commitment().into()),
             timestamp: header.timestamp(),
+            fee_parameters: None, // TODO: Add fee parameters support to domain type
         }
     }
 }

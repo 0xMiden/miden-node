@@ -78,20 +78,19 @@ impl InflightNetworkNote {
         last_attempt: Option<BlockNumber>,
         attempts: usize,
     ) -> bool {
-        if attempt_count == 0 {
+        if attempts == 0 {
             return true;
         }
         // Compute the number of blocks passed since the last attempt.
-        let blocks_passed = last_attempt_block_num
-            .map(|last| current_block_num.checked_sub(last))
-            .flatten()
+        let blocks_passed = last_attempt
+            .and_then(|last| chain_tip.checked_sub(last.as_u32()))
             .unwrap_or_default();
 
         // Compute the exponential backoff threshold: Δ = e^(0.25 * n).
-        let backoff_threshold = (0.25 * attempt_count as f64).exp().ceil() as usize;
+        let backoff_threshold = (0.25 * attempts as f64).exp().ceil() as usize;
 
         // Check if the backoff period has passed.
-        blocks_passed >= backoff_threshold
+        blocks_passed.as_usize() >= backoff_threshold
     }
 
     /// Registers a failed attempt to execute the network note at the specified block number.

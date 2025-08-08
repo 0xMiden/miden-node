@@ -3,11 +3,9 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use miden_objects::{
-    transaction::{ProvenTransaction, TransactionWitness},
-    utils::{Deserializable, DeserializationError, Serializable},
-    vm::FutureMaybeSend,
-};
+use miden_objects::transaction::{ProvenTransaction, TransactionWitness};
+use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
+use miden_objects::vm::FutureMaybeSend;
 use miden_tx::TransactionProverError;
 use tokio::sync::Mutex;
 

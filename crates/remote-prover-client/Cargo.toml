@@ -39,7 +39,6 @@ tonic-web = { optional = true, version = "0.13" }
 workspace = true
 
 [dependencies]
-async-trait   = { version = "0.1" }
 miden-objects = { optional = true, workspace = true }
 miden-tx      = { workspace = true }
 prost         = { default-features = false, features = ["derive"], version = "0.13" }

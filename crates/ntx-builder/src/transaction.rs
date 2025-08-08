@@ -7,7 +7,11 @@ use miden_objects::account::{Account, AccountId};
 use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::transaction::{
-    ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
     TransactionArgs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -15,8 +19,15 @@ use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteConsumptionChecker,
-    NoteConsumptionInfo, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
+    DataStore,
+    DataStoreError,
+    LocalTransactionProver,
+    MastForestStore,
+    NoteConsumptionChecker,
+    NoteConsumptionInfo,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionMastStore,
     TransactionProverError,
 };
 use rand::seq::SliceRandom;
@@ -93,9 +104,9 @@ impl NtxContext {
 
                 let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
-                let notes = self.filter_notes(&data_store, notes).await?;
-                let executed = self.execute(&data_store, notes).await?;
-                let proven = self.prove(executed).await?;
+                let notes = Box::pin(self.filter_notes(&data_store, notes)).await?;
+                let executed = Box::pin(self.execute(&data_store, notes)).await?;
+                let proven = Box::pin(self.prove(executed)).await?;
                 self.submit(proven).await?;
                 Ok(())
             }
@@ -124,14 +135,13 @@ impl NtxContext {
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 
-        let notes = match checker
-            .check_notes_consumability(
-                data_store.account.id(),
-                data_store.reference_header.block_num(),
-                notes.clone(),
-                TransactionArgs::default(),
-            )
-            .await
+        let notes = match Box::pin(checker.check_notes_consumability(
+            data_store.account.id(),
+            data_store.reference_header.block_num(),
+            notes.clone(),
+            TransactionArgs::default(),
+        ))
+        .await
         {
             Ok(NoteConsumptionInfo { successful, failed, .. }) => {
                 let notes = successful
@@ -167,16 +177,15 @@ impl NtxContext {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
 
-        executor
-            .execute_transaction(
-                data_store.account.id(),
-                data_store.reference_header.block_num(),
-                notes,
-                TransactionArgs::default(),
-                Arc::new(DefaultSourceManager::default()),
-            )
-            .await
-            .map_err(NtxError::Execution)
+        Box::pin(executor.execute_transaction(
+            data_store.account.id(),
+            data_store.reference_header.block_num(),
+            notes,
+            TransactionArgs::default(),
+            Arc::new(DefaultSourceManager::default()),
+        ))
+        .await
+        .map_err(NtxError::Execution)
     }
 
     /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
@@ -188,7 +197,7 @@ impl NtxContext {
         } else {
             tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
                 .await
-                .map_err(|e| NtxError::Spawn(e))?
+                .map_err(NtxError::Spawn)?
         }
         .map_err(NtxError::Proving)
     }

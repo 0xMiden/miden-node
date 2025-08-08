@@ -301,7 +301,7 @@ mod test {
             .build()
             .unwrap();
 
-        let executed_transaction = tx_context.execute().unwrap();
+        let executed_transaction = Box::pin(tx_context.execute()).await.unwrap();
 
         let transaction_witness = TransactionWitness::from(executed_transaction);
 

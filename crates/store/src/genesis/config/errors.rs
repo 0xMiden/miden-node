@@ -1,5 +1,5 @@
 use miden_lib::account::faucets::FungibleFaucetError;
-use miden_lib::account::wallets::{BasicWallet, BasicWalletError};
+use miden_lib::account::wallets::BasicWalletError;
 use miden_objects::account::AccountId;
 use miden_objects::asset::TokenSymbol;
 use miden_objects::{AccountError, AssetError, TokenSymbolError};

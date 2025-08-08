@@ -14,27 +14,27 @@ mod tests;
 ///
 /// # Node lifecycle
 /// ```text
-///                                    │                           
-///                                    │                           
-///                      insert_pending│                           
-///                              ┌─────▼─────┐                     
-///                              │  pending  │────┐                
-///                              └─────┬─────┘    │                
-///                                    │          │                
-///                     promote_pending│          │                
-///                              ┌─────▼─────┐    │                
-///                   ┌──────────► in queue  │────│                
-///                   │          └─────┬─────┘    │                
-///   revert_processed│                │          │                
-///                   │    process_root│          │                
-///                   │          ┌─────▼─────┐    │                
-///                   └──────────┼ processed │────│                
-///                              └─────┬─────┘    │                
-///                                    │          │                
+///                                    │
+///                                    │
+///                      insert_pending│
+///                              ┌─────▼─────┐
+///                              │  pending  │────┐
+///                              └─────┬─────┘    │
+///                                    │          │
+///                     promote_pending│          │
+///                              ┌─────▼─────┐    │
+///                   ┌──────────► in queue  │────│
+///                   │          └─────┬─────┘    │
+///   revert_processed│                │          │
+///                   │    process_root│          │
+///                   │          ┌─────▼─────┐    │
+///                   └──────────┼ processed │────│
+///                              └─────┬─────┘    │
+///                                    │          │
 ///                     prune_processed│          │purge_subgraphs
-///                              ┌─────▼─────┐    │                
-///                              │  <null>   ◄────┘                
-///                              └───────────┘                     
+///                              ┌─────▼─────┐    │
+///                              │  <null>   ◄────┘
+///                              └───────────┘
 /// ```
 #[derive(Clone, PartialEq, Eq)]
 pub struct DependencyGraph<K, V> {
@@ -405,7 +405,7 @@ impl<K: Ord + Copy + Display + Debug, V: Clone> DependencyGraph<K, V> {
         self.vertices.get(key)
     }
 
-    /// Returns the parents of the node, or [None] if the node does not exist.
+    /// Returns the parents of the node, or `None` if the node does not exist.
     pub fn parents(&self, key: &K) -> Option<&BTreeSet<K>> {
         self.parents.get(key)
     }

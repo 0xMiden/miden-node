@@ -1,4 +1,5 @@
 use miden_lib::transaction::TransactionKernel;
+use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountId};
 use miden_objects::block::{
@@ -14,7 +15,6 @@ use miden_objects::crypto::merkle::{Forest, MmrPeaks, Smt};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
-use miden_objects::{Felt, Word};
 
 use crate::errors::GenesisError;
 
@@ -111,7 +111,9 @@ impl GenesisState {
 
 // FIXME XXX TODO
 fn fee_stub() -> FeeParameters {
-    FeeParameters::new(AccountId::new_unchecked(<[Felt; 2]>::default()), 0_u32).unwrap()
+    // public fungible faucet ID
+    let faucet_id: AccountId = 0x00aa00000000bc200000bc000000de00.try_into().unwrap();
+    FeeParameters::new(faucet_id, 0).unwrap()
 }
 
 // SERIALIZATION

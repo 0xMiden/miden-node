@@ -85,8 +85,9 @@ impl NtxContext {
             chain_mmr,
         } = tx;
 
+        tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current()
-            .set_attribute("account.id_prefix", account_id_prefix.to_string().as_str());
+            .set_attribute("account.id.network_prefix", account_id_prefix.to_string().as_str());
         tracing::Span::current().set_attribute("notes.count", notes.len());
         tracing::Span::current()
             .set_attribute("reference_block.number", chain_tip_header.block_num());

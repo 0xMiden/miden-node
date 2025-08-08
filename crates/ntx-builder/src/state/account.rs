@@ -74,9 +74,9 @@ impl InflightNetworkNote {
     /// - etc...
     #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
     fn backoff_has_passed(
-        current_block_num: BlockNumber,
-        last_attempt_block_num: Option<BlockNumber>,
-        attempt_count: usize,
+        chain_tip: BlockNumber,
+        last_attempt: Option<BlockNumber>,
+        attempts: usize,
     ) -> bool {
         if attempt_count == 0 {
             return true;

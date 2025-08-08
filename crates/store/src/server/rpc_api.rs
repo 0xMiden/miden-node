@@ -206,9 +206,9 @@ impl rpc_server::Rpc for StoreApi {
         }))
     }
 
-    /// Returns a list of Note's for the specified NoteId's.
+    /// Returns a list of `Note`'s for the specified `NoteId`'s.
     ///
-    /// If the list is empty or no Note matched the requested NoteId and empty list is returned.
+    /// If the list is empty or no Note matched the requested `NoteId` and empty list is returned.
     #[instrument(
         parent = None,
         target = COMPONENT,

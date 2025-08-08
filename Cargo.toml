@@ -53,7 +53,7 @@ miden-tx              = { branch = "bernhard-merge-next-into-pgackst-async-exp",
 miden-tx-batch-prover = { branch = "bernhard-merge-next-into-pgackst-async-exp", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { branch = "next", git = "https://github.com/0xMiden/miden-vm", version = "0.18" }
+miden-air = { version = "0.17" }
 
 # External dependencies
 anyhow             = { version = "1.0" }

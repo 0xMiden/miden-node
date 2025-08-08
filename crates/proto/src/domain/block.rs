@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use miden_node_utils::ErrorReport;
 use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockInputs, FeeParameters, NullifierWitness};
 use miden_objects::note::{NoteId, NoteInclusionProof};
@@ -8,6 +9,46 @@ use miden_objects::utils::{Deserializable, Serializable};
 
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::{AccountWitnessRecord, NullifierWitnessRecord, generated as proto};
+
+// FEE PARAMETERS
+// ================================================================================================
+
+impl From<&FeeParameters> for proto::blockchain::FeeParameters {
+    fn from(fee_params: &FeeParameters) -> Self {
+        Self {
+            native_asset_account_id: Some(fee_params.native_asset_id().into()),
+            base_fee: fee_params.verification_base_fee(),
+        }
+    }
+}
+
+impl From<FeeParameters> for proto::blockchain::FeeParameters {
+    fn from(fee_params: FeeParameters) -> Self {
+        (&fee_params).into()
+    }
+}
+
+impl TryFrom<&proto::blockchain::FeeParameters> for FeeParameters {
+    type Error = ConversionError;
+
+    fn try_from(value: &proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
+        let account_id = value
+            .native_asset_account_id
+            .clone()
+            .ok_or(proto::blockchain::FeeParameters::missing_field("account_id"))?
+            .try_into()?;
+        
+        Ok(FeeParameters::new(account_id, value.base_fee)?)
+    }
+}
+
+impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
+    type Error = ConversionError;
+
+    fn try_from(value: proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
+        (&value).try_into()
+    }
+}
 
 // BLOCK HEADER
 // ================================================================================================
@@ -26,7 +67,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
             proof_commitment: Some(header.proof_commitment().into()),
             timestamp: header.timestamp(),
-            fee_parameters: None, // TODO: Add fee parameters support to domain type
+            fee_parameters: Some(header.fee_parameters().into())
         }
     }
 }
@@ -88,17 +129,13 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 .proof_commitment
                 .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
                 .try_into()?,
-            fee_stub(),
+            value
+                .fee_parameters
+                .ok_or(proto::blockchain::BlockHeader::missing_field("fee_parameters"))?
+                .try_into()?,
             value.timestamp,
         ))
     }
-}
-
-// FIXME XXX TODO
-fn fee_stub() -> FeeParameters {
-    // public fungible faucet ID
-    let faucet_id: AccountId = 0x00aa00000000bc200000bc000000de00.try_into().unwrap();
-    FeeParameters::new(faucet_id, 0).unwrap()
 }
 
 // BLOCK INPUTS

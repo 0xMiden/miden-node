@@ -3,12 +3,15 @@ use std::num::TryFromIntError;
 
 use miden_objects::crypto::merkle::{SmtLeafError, SmtProofError};
 use miden_objects::utils::DeserializationError;
+use miden_objects::FeeError;
 use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;
 
 #[derive(Debug, Error)]
 pub enum ConversionError {
+    #[error("fee parameters error")]
+    FeeError(#[from] FeeError),
     #[error("hex error")]
     HexError(#[from] hex::FromHexError),
     #[error("note error")]

@@ -4,18 +4,6 @@ package blockchain;
 import "types/account.proto";
 import "types/primitives.proto";
 
-// FEE PARAMETERS
-// ================================================================================================
-
-// Represents fee parameters for block processing.
-message FeeParameters {
-    // The account ID that receives the fees.
-    account.AccountId account_id = 1;
-    
-    // The fee amount as a 32-bit number.
-    fixed32 amount = 2;
-}
-
 // BLOCK
 // ================================================================================================
 
@@ -83,3 +71,16 @@ message BlockHeader {
     // Fee parameters for block processing.
     FeeParameters fee_parameters = 12;
 }
+
+// FEE PARAMETERS
+// ================================================================================================
+
+// Represents fee parameters for block processing.
+message FeeParameters {
+    // The account ID that identifies the native asset.
+    account.AccountId native_asset_account_id = 1;
+    
+    // The fee amount as a 32-bit number.
+    fixed32 base_fee = 2;
+}
+

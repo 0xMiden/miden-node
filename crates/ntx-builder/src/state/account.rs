@@ -236,7 +236,7 @@ impl AccountState {
 
     /// Drains all notes that have failed to be consumed after a certain number of attempts.
     pub fn drain_failing_notes(&mut self, max_attempts: usize) {
-        self.available_notes.retain(|_, note| note.attempt_count() <= max_attempts);
+        self.available_notes.retain(|_, note| note.attempt_count() < max_attempts);
     }
 
     /// Returns the latest inflight account state.

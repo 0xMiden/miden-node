@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use miden_objects::account::{AccountId, AccountIdVersion};
+use miden_objects::Felt;
+use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockInputs, FeeParameters, NullifierWitness};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
@@ -95,17 +96,9 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
 
 // FIXME XXX TODO
 fn fee_stub() -> FeeParameters {
-    FeeParameters::new(
-        AccountId::dummy(
-            [0_u8; 15],
-            AccountIdVersion::Version0,
-            miden_objects::account::AccountType::FungibleFaucet,
-            miden_objects::account::AccountStorageMode::Network,
-        ),
-        0_u32,
-    )
-    .unwrap()
+    FeeParameters::new(AccountId::new_unchecked(<[Felt; 2]>::default()), 0_u32).unwrap()
 }
+
 // BLOCK INPUTS
 // ================================================================================================
 

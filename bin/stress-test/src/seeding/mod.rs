@@ -201,6 +201,7 @@ async fn generate_blocks(
         let batch_inputs =
             get_batch_inputs(store_client, prev_block.header(), &notes, &mut metrics).await;
         consume_notes_txs = create_consume_note_txs(
+            faucet.id(),
             prev_block.header(),
             accounts,
             notes,
@@ -348,6 +349,7 @@ fn create_batch(txs: &[ProvenTransaction], block_ref: &BlockHeader) -> ProvenBat
 
 /// For each pair of account and note, creates a transaction that consumes the note.
 fn create_consume_note_txs(
+    faucet_id: AccountId,
     block_ref: &BlockHeader,
     accounts: Vec<Account>,
     notes: Vec<Note>,
@@ -359,6 +361,7 @@ fn create_consume_note_txs(
         .map(|(account, note)| {
             let inclusion_proof = note_proofs.get(&note.id()).unwrap();
             create_consume_note_tx(
+                faucet_id,
                 block_ref,
                 account,
                 InputNote::authenticated(note, inclusion_proof.clone()),
@@ -367,17 +370,11 @@ fn create_consume_note_txs(
         .collect()
 }
 
-// FIXME XXX TODO
-fn fee_value_stub() -> FungibleAsset {
-    // public fungible faucet ID
-    let faucet_id: AccountId = 0x00aa_0000_0000_bc20_0000_bc00_0000_de00.try_into().unwrap();
-    FungibleAsset::new(faucet_id, 0).unwrap()
-}
-
 /// Creates a transaction that creates an account and consumes the given input note.
 ///
 /// The account is updated with the assets from the input note, and the nonce is incremented.
 fn create_consume_note_tx(
+    faucet_id: AccountId,
     block_ref: &BlockHeader,
     mut account: Account,
     input_note: InputNote,
@@ -403,7 +400,7 @@ fn create_consume_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
-        fee_value_stub(),
+        fee_asset(faucet_id),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )
@@ -420,6 +417,7 @@ fn create_emit_note_tx(
     faucet: &mut Account,
     output_notes: Vec<Note>,
 ) -> ProvenTransaction {
+    let faucet_id = faucet.id();
     let initial_account_hash = faucet.commitment();
 
     let slot = faucet.storage().get_item(2).unwrap();
@@ -437,7 +435,7 @@ fn create_emit_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
-        fee_value_stub(),
+        fee_asset(faucet_id),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )

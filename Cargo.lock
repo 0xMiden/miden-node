@@ -1377,9 +1377,9 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
-version = "0.15.4"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5971ac85611da7067dbfcabef3c70ebb5606018acd9e2a3903a0da507521e0d5"
+checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
 dependencies = [
  "allocator-api2",
  "equivalent",
@@ -1819,7 +1819,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
 dependencies = [
  "equivalent",
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -2114,7 +2114,7 @@ version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f8cc7106155f10bdf99a6f379688f543ad6596a415375b36a59a054ceda1198"
 dependencies = [
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
 ]
 
 [[package]]
@@ -2162,7 +2162,7 @@ dependencies = [
 [[package]]
 name = "miden-air"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "miden-core",
  "thiserror 2.0.12",
@@ -2173,7 +2173,7 @@ dependencies = [
 [[package]]
 name = "miden-assembly"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "log",
  "miden-assembly-syntax",
@@ -2186,7 +2186,7 @@ dependencies = [
 [[package]]
 name = "miden-assembly-syntax"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "aho-corasick",
  "lalrpop",
@@ -2215,7 +2215,7 @@ dependencies = [
 [[package]]
 name = "miden-core"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "miden-crypto",
  "miden-debug-types",
@@ -2250,7 +2250,7 @@ dependencies = [
 [[package]]
 name = "miden-debug-types"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "memchr",
  "miden-crypto",
@@ -2326,7 +2326,7 @@ dependencies = [
 [[package]]
 name = "miden-mast-package"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "derive_more",
  "miden-assembly-syntax",
@@ -2628,7 +2628,7 @@ dependencies = [
 [[package]]
 name = "miden-processor"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "miden-air",
  "miden-core",
@@ -2643,7 +2643,7 @@ dependencies = [
 [[package]]
 name = "miden-prover"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "miden-air",
  "miden-debug-types",
@@ -2721,7 +2721,7 @@ dependencies = [
 [[package]]
 name = "miden-stdlib"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "env_logger",
  "miden-assembly",
@@ -2736,7 +2736,6 @@ name = "miden-testing"
 version = "0.11.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "itertools",
  "miden-block-prover",
  "miden-lib",
@@ -2754,7 +2753,6 @@ dependencies = [
 name = "miden-tx"
 version = "0.11.0"
 dependencies = [
- "async-trait",
  "miden-lib",
  "miden-objects",
  "miden-processor",
@@ -2776,7 +2774,7 @@ dependencies = [
 [[package]]
 name = "miden-utils-diagnostics"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "miden-crypto",
  "miden-debug-types",
@@ -2788,7 +2786,7 @@ dependencies = [
 [[package]]
 name = "miden-utils-sync"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "lock_api",
  "loom",
@@ -2798,7 +2796,7 @@ dependencies = [
 [[package]]
 name = "miden-verifier"
 version = "0.18.0"
-source = "git+https://github.com/0xMiden/miden-vm.git?branch=bernhard-future-maybe-send#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
+source = "git+https://github.com/0xMiden/miden-vm.git?branch=next#a2d1a0a85ffbf13da70641210a1518fb1597c65f"
 dependencies = [
  "miden-air",
  "miden-core",
@@ -3509,7 +3507,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32f1c33f6ce9ca9b8e81190796f7d4d543d1ab2a310097d884ebe48ce5d33c4d"
 dependencies = [
  "arrayvec",
- "hashbrown 0.15.4",
+ "hashbrown 0.15.5",
  "parking_lot",
  "rand 0.8.5",
 ]
@@ -4561,9 +4559,9 @@ checksum = "56199f7ddabf13fe5074ce809e7d3f42b42ae711800501b5b16ea82ad029c39d"
 
 [[package]]
 name = "slab"
-version = "0.4.10"
+version = "0.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04dc19736151f35336d325007ac991178d504a119863a2fcb3758cdb5e52c50d"
+checksum = "7a2ae44ef20feb57a68b23d846850f861394c2e02dc425a50098ae8c90267589"
 
 [[package]]
 name = "smallvec"

@@ -53,7 +53,7 @@ miden-testing         = { path = "../miden-base-bernhard-merge-next-into-pgackst
 miden-tx-batch-prover = { path = "../miden-base-bernhard-merge-next-into-pgackst-async-exp/crates/miden-tx-batch-prover" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { branch = "bernhard-future-maybe-send", git = "https://github.com/0xMiden/miden-vm" }
+miden-air = { version = "0.18", branch = "next", git = "https://github.com/0xMiden/miden-vm" }
 
 # External dependencies
 anyhow             = { version = "1.0" }

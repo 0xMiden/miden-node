@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use futures::TryFutureExt;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId};
@@ -16,13 +15,12 @@ use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
-    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
+    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteConsumptionChecker,
+    NoteConsumptionInfo, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
     TransactionProverError,
 };
 use rand::seq::SliceRandom;
 use tokio::task::JoinError;
-use tracing::instrument::Instrumented;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
@@ -132,23 +130,21 @@ impl NtxContext {
                 data_store.reference_header.block_num(),
                 notes.clone(),
                 TransactionArgs::default(),
-                Arc::new(DefaultSourceManager::default()),
             )
             .await
         {
-            Ok(NoteAccountExecution::Success) => notes,
-            Ok(NoteAccountExecution::Failure { successful_notes, error, .. }) => {
-                let notes = successful_notes
+            Ok(NoteConsumptionInfo { successful, failed, .. }) => {
+                let notes = successful
                     .into_iter()
-                    .map(|id| notes.iter().find(|note| note.id() == id).unwrap())
+                    .filter_map(|success| notes.iter().find(|note| note.id() == success.id()))
                     .cloned()
                     .collect::<Vec<InputNote>>();
-
-                if notes.is_empty() {
-                    let err = error.map_or_else(|| "None".to_string(), |err| err.as_report());
-                    tracing::warn!(%err, "all network notes failed");
+                // TODO revisit verbosity once we scale up to many more notes
+                for failed in failed {
+                    let err = failed.error.as_report();
+                    let note_id = failed.note.id();
+                    tracing::warn!(%note_id, %err, "note failed");
                 }
-
                 InputNotes::new_unchecked(notes)
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),

@@ -30,7 +30,7 @@ pub struct MaybeBlockNumber {
     pub block_num: ::core::option::Option<u32>,
 }
 /// Represents a block header.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BlockHeader {
     /// Specifies the version of the protocol.
     #[prost(uint32, tag = "1")]
@@ -65,4 +65,17 @@ pub struct BlockHeader {
     /// The time when the block was created.
     #[prost(fixed32, tag = "11")]
     pub timestamp: u32,
+    /// Fee parameters for block processing.
+    #[prost(message, optional, tag = "12")]
+    pub fee_parameters: ::core::option::Option<FeeParameters>,
+}
+/// Represents fee parameters for block processing.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FeeParameters {
+    /// The account ID that identifies the native asset.
+    #[prost(message, optional, tag = "1")]
+    pub native_asset_account_id: ::core::option::Option<super::account::AccountId>,
+    /// The fee amount as a 32-bit number.
+    #[prost(fixed32, tag = "2")]
+    pub base_fee: u32,
 }

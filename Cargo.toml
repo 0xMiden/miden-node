@@ -1,7 +1,7 @@
 [workspace]
 members = [
   "bin/faucet",
-  "bin/node", 
+  "bin/node",
   "bin/remote-prover",
   "bin/stress-test",
   "crates/block-producer",

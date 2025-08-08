@@ -370,7 +370,7 @@ fn create_consume_note_txs(
 // FIXME XXX TODO
 fn fee_value_stub() -> FungibleAsset {
     // public fungible faucet ID
-    let faucet_id: AccountId = 0x00aa00000000bc200000bc000000de00.try_into().unwrap();
+    let faucet_id: AccountId = 0x00aa_0000_0000_bc20_0000_bc00_0000_de00.try_into().unwrap();
     FungibleAsset::new(faucet_id, 0).unwrap()
 }
 

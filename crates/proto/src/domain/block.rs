@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use miden_node_utils::ErrorReport;
-use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockInputs, FeeParameters, NullifierWitness};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
@@ -37,7 +35,7 @@ impl TryFrom<&proto::blockchain::FeeParameters> for FeeParameters {
             .clone()
             .ok_or(proto::blockchain::FeeParameters::missing_field("account_id"))?
             .try_into()?;
-        
+
         Ok(FeeParameters::new(account_id, value.base_fee)?)
     }
 }
@@ -67,7 +65,7 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
             proof_commitment: Some(header.proof_commitment().into()),
             timestamp: header.timestamp(),
-            fee_parameters: Some(header.fee_parameters().into())
+            fee_parameters: Some(header.fee_parameters().into()),
         }
     }
 }

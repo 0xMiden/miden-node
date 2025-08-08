@@ -1,7 +1,6 @@
 use miden_lib::transaction::TransactionKernel;
-use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountId, AccountIdVersion};
+use miden_objects::account::{Account, AccountId};
 use miden_objects::block::{
     AccountTree,
     BlockAccountUpdate,
@@ -15,6 +14,7 @@ use miden_objects::crypto::merkle::{Forest, MmrPeaks, Smt};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
+use miden_objects::{Felt, Word};
 
 use crate::errors::GenesisError;
 
@@ -111,16 +111,7 @@ impl GenesisState {
 
 // FIXME XXX TODO
 fn fee_stub() -> FeeParameters {
-    FeeParameters::new(
-        AccountId::dummy(
-            [0_u8; 15],
-            AccountIdVersion::Version0,
-            miden_objects::account::AccountType::FungibleFaucet,
-            miden_objects::account::AccountStorageMode::Network,
-        ),
-        0_u32,
-    )
-    .unwrap()
+    FeeParameters::new(AccountId::new_unchecked(<[Felt; 2]>::default()), 0_u32).unwrap()
 }
 
 // SERIALIZATION

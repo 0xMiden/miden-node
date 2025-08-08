@@ -369,12 +369,7 @@ fn create_consume_note_txs(
 
 // FIXME XXX TODO
 fn fee_value_stub() -> FungibleAsset {
-    let faucet = AccountId::dummy(
-        [0_u8; 15],
-        miden_objects::account::AccountIdVersion::Version0,
-        miden_objects::account::AccountType::FungibleFaucet,
-        miden_objects::account::AccountStorageMode::Network,
-    );
+    let faucet = AccountId::new_unchecked(<[Felt; 2]>::default());
     FungibleAsset::new(faucet, 0).unwrap()
 }
 

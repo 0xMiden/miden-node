@@ -1,6 +1,6 @@
-timestamp = 1717344256
-version   = 1
 native_fee_symbol = "MIDEN"
+timestamp         = 1717344256
+version           = 1
 
 [[fungible_faucet]]
 decimals     = 3

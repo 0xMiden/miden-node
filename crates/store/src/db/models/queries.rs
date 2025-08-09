@@ -388,7 +388,7 @@ pub(crate) fn insert_account_delta(
         account_id: AccountId,
         block_num: BlockNumber,
         vault_key: Vec<u8>,
-        is_remove: i32,
+        is_remove: bool,
     ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_non_fungible_asset_updates::table)
             .values(&[(
@@ -434,8 +434,8 @@ pub(crate) fn insert_account_delta(
         // TODO consider moving this out into a `TryFrom<u8/bool>` and `Into<u8/bool>`
         // respectively.
         let is_remove = match action {
-            NonFungibleDeltaAction::Add => 0,
-            NonFungibleDeltaAction::Remove => 1,
+            NonFungibleDeltaAction::Add => false,
+            NonFungibleDeltaAction::Remove => true,
         };
         insert_non_fungible_asset_update_stmt(
             conn,
@@ -1275,22 +1275,16 @@ pub(crate) fn select_account_delta(
 
     let mut non_fungible_delta = NonFungibleAssetDelta::default();
     for NonFungibleAssetDeltaEntry {
-        vault_key: vault_key_asset,
-        is_remove: action,
-        ..
+        vault_key: vault_key_asset, is_remove, ..
     } in non_fungible_asset_updates
     {
         let asset = NonFungibleAsset::read_from_bytes(&vault_key_asset)
             .map_err(|err| DatabaseError::DataCorrupted(err.to_string()))?;
 
-        match action {
-            0 => non_fungible_delta.add(asset)?,
-            1 => non_fungible_delta.remove(asset)?,
-            _ => {
-                return Err(DatabaseError::DataCorrupted(format!(
-                    "Invalid non-fungible asset delta action: {action}"
-                )));
-            },
+        if is_remove {
+            non_fungible_delta.remove(asset)?;
+        } else {
+            non_fungible_delta.add(asset)?;
         }
     }
 
@@ -1517,7 +1511,7 @@ pub(crate) fn select_fungible_asset_deltas_stmt(
 pub(crate) struct NonFungibleAssetDeltaEntry {
     pub(crate) block_num: i64,
     pub(crate) vault_key: Vec<u8>,
-    pub(crate) is_remove: i32,
+    pub(crate) is_remove: bool,
 }
 
 pub(crate) fn select_non_fungible_asset_updates_stmt(

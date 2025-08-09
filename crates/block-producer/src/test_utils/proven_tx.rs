@@ -1,7 +1,6 @@
 use std::ops::Range;
 
 use itertools::Itertools;
-use miden_air::HashFunction;
 use miden_objects::account::AccountId;
 use miden_objects::asset::FungibleAsset;
 use miden_objects::block::BlockNumber;
@@ -16,7 +15,6 @@ use miden_objects::transaction::{
 use miden_objects::vm::ExecutionProof;
 use miden_objects::{Felt, Hasher, ONE, Word};
 use rand::Rng;
-use winterfell::Proof;
 
 use super::MockPrivateAccount;
 use crate::domain::transaction::AuthenticatedTransaction;
@@ -152,7 +150,7 @@ impl MockProvenTxBuilder {
             Word::empty(),
             self.fee,
             self.expiration_block_num,
-            ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
+            ExecutionProof::new_dummy(),
         )
         .add_input_notes(self.input_notes.unwrap_or_default())
         .add_input_notes(self.nullifiers.unwrap_or_default())

@@ -64,12 +64,12 @@ message BlockHeader {
 
     // A commitment to all transaction kernels supported by this block.
     primitives.Digest tx_kernel_commitment = 10;
-
-    // The time when the block was created.
-    fixed32 timestamp = 11;
     
     // Fee parameters for block processing.
-    FeeParameters fee_parameters = 12;
+    FeeParameters fee_parameters = 11;
+
+    // The time when the block was created.
+    fixed32 timestamp = 12;
 }
 
 // FEE PARAMETERS

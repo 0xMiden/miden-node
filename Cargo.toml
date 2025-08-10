@@ -89,6 +89,7 @@ url                = { features = ["serde"], version = "2.5" }
 pedantic = { level = "warn", priority = -1 }
 
 cast_possible_truncation     = "allow" # Overly many instances especially regarding indices.
+collapsible-if               = "allow" # Too new to enforce.
 from_iter_instead_of_collect = "allow" # at times `FromIter` is much more readable
 ignored_unit_patterns        = "allow" # Stylistic choice.
 large_types_passed_by_value  = "allow" # Triggered by BlockHeader being Copy + 334 bytes.
@@ -96,5 +97,6 @@ missing_errors_doc           = "allow" # TODO: fixup and enable this.
 missing_panics_doc           = "allow" # TODO: fixup and enable this.
 module_name_repetitions      = "allow" # Many triggers, and is a stylistic choice.
 must_use_candidate           = "allow" # This marks many fn's which isn't helpful.
+needless_for_each            = "allow" # Context dependent if that's useful.
 should_panic_without_expect  = "allow" # We don't care about the specific panic message.
 # End of pedantic lints.

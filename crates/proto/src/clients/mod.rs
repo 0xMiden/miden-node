@@ -237,9 +237,7 @@ impl GrpcClientBuilder for StoreRpc {
 /// ```
 #[derive(Clone, Debug)]
 pub struct Builder<State> {
-    address: String,
-    tls_enabled: Option<bool>,
-    timeout: Option<Duration>,
+    endpoint: Endpoint,
     metadata_version: Option<String>,
     metadata_genesis: Option<String>,
     _state: PhantomData<State>,
@@ -260,9 +258,7 @@ impl<State> Builder<State> {
     /// Convenience function to cast the state type and carry internal configuration forward.
     fn next_state<Next>(self) -> Builder<Next> {
         Builder {
-            address: self.address,
-            tls_enabled: self.tls_enabled,
-            timeout: self.timeout,
+            endpoint: self.endpoint,
             metadata_version: self.metadata_version,
             metadata_genesis: self.metadata_genesis,
             _state: PhantomData::<Next>,
@@ -277,13 +273,11 @@ impl Builder<WantsTls> {
         let address = url.into();
         // Basic upfront validation using `Endpoint::from_shared` path; let `Builder` do full checks
         // later to keep logic in one place.
-        let _ = Endpoint::from_shared(address.clone())
+        let endpoint = Endpoint::from_shared(address.clone())
             .context("Failed to create endpoint from address")?;
 
         Ok(Builder {
-            address,
-            tls_enabled: None,
-            timeout: None,
+            endpoint,
             metadata_version: None,
             metadata_genesis: None,
             _state: PhantomData,
@@ -291,30 +285,30 @@ impl Builder<WantsTls> {
     }
 
     /// Explicitly disable TLS.
-    pub fn without_tls(mut self) -> Builder<WantsTimeout> {
-        self.tls_enabled = Some(false);
+    pub fn without_tls(self) -> Builder<WantsTimeout> {
         self.next_state()
     }
 
     /// Explicitly enable TLS.
     pub fn with_tls(mut self) -> Result<Builder<WantsTimeout>> {
-        // We only record the decision here; the actual TLS wiring is performed by the underlying
-        // `Builder` during `connect()` to keep the logic centralized.
-        self.tls_enabled = Some(true);
+        self.endpoint = self
+            .endpoint
+            .tls_config(ClientTlsConfig::new().with_native_roots())
+            .context("Failed to configure TLS")?;
+
         Ok(self.next_state())
     }
 }
 
 impl Builder<WantsTimeout> {
     /// Explicitly disable request timeout.
-    pub fn without_timeout(mut self) -> Builder<WantsVersion> {
-        self.timeout = None;
+    pub fn without_timeout(self) -> Builder<WantsVersion> {
         self.next_state()
     }
 
     /// Explicitly configure a request timeout.
     pub fn with_timeout(mut self, duration: Duration) -> Builder<WantsVersion> {
-        self.timeout = Some(duration);
+        self.endpoint = self.endpoint.timeout(duration);
         self.next_state()
     }
 }
@@ -353,17 +347,7 @@ impl Builder<WantsConnection> {
     where
         T: GrpcClientBuilder,
     {
-        let mut endpoint = Endpoint::from_shared(self.address)
-            .context("Failed to create endpoint from address")?;
-        if let Some(timeout) = self.timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-        if self.tls_enabled.expect("TLS decision must be made before connect") {
-            endpoint = endpoint
-                .tls_config(ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-        let channel = endpoint.connect().await?;
+        let channel = self.endpoint.connect().await?;
         let cfg = ClientConfig {
             metadata_version: self.metadata_version,
             metadata_genesis: self.metadata_genesis,
@@ -372,25 +356,15 @@ impl Builder<WantsConnection> {
     }
 
     /// Establish a lazy connection and return a client that will connect on first use.
-    pub fn connect_lazy<T>(self) -> Result<T::Service>
+    pub fn connect_lazy<T>(self) -> T::Service
     where
         T: GrpcClientBuilder,
     {
-        let mut endpoint = Endpoint::from_shared(self.address)
-            .context("Failed to create endpoint from address")?;
-        if let Some(timeout) = self.timeout {
-            endpoint = endpoint.timeout(timeout);
-        }
-        if self.tls_enabled.expect("TLS decision must be made before connect") {
-            endpoint = endpoint
-                .tls_config(ClientTlsConfig::new().with_native_roots())
-                .context("Failed to configure TLS")?;
-        }
-        let channel = endpoint.connect_lazy();
+        let channel = self.endpoint.connect_lazy();
         let cfg = ClientConfig {
             metadata_version: self.metadata_version,
             metadata_genesis: self.metadata_genesis,
         };
-        Ok(T::with_interceptor(channel, &cfg))
+        T::with_interceptor(channel, &cfg)
     }
 }

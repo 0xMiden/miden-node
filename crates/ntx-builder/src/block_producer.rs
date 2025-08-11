@@ -41,8 +41,7 @@ impl BlockProducerClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<BlockProducer>()
-            .expect("Failed to build client");
+            .connect_lazy::<BlockProducer>();
 
         info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Block producer client initialized");
 

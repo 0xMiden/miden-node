@@ -37,8 +37,7 @@ impl StoreClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<StoreNtxBuilder>()
-            .expect("Failed to build client");
+            .connect_lazy::<StoreNtxBuilder>();
 
         info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
 

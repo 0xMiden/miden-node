@@ -37,7 +37,7 @@ impl RpcClient {
             .with_timeout(Duration::from_millis(timeout_ms))
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<RpcClientMarker>()?;
+            .connect_lazy::<RpcClientMarker>();
 
         Ok(Self { inner: client })
     }

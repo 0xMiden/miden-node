@@ -1,4 +1,45 @@
-use super::*;
+use std::borrow::Cow;
+use std::collections::BTreeMap;
+
+use diesel::query_dsl::methods::SelectDsl;
+use diesel::query_dsl::{QueryDsl, RunQueryDsl};
+use diesel::{JoinOnDsl, NullableExpressionMethods, SelectableHelper, SqliteConnection};
+use miden_lib::utils::Serializable;
+use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{
+    Account,
+    AccountDelta,
+    AccountId,
+    AccountStorageDelta,
+    AccountVaultDelta,
+    FungibleAssetDelta,
+    NonFungibleAssetDelta,
+    NonFungibleDeltaAction,
+    StorageSlot,
+};
+use miden_objects::asset::Asset;
+use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
+use miden_objects::note::Nullifier;
+use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_objects::{Felt, LexicographicWord, Word};
+
+use super::DatabaseError;
+use crate::db::models::conv::{
+    SqlTypeConvert,
+    fungible_delta_to_raw_sql,
+    nonce_to_raw_sql,
+    slot_to_raw_sql,
+};
+use crate::db::models::{
+    AccountCodeRowInsert,
+    AccountRaw,
+    AccountRowInsert,
+    AccountWithCodeRaw,
+    ExpressionMethods,
+    NoteInsertRowRaw,
+};
+use crate::db::{NoteRecord, schema};
 
 /// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
 ///

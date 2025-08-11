@@ -1,4 +1,12 @@
-use super::*;
+use diesel::query_dsl::methods::SelectDsl;
+use diesel::{OptionalExtension, SelectableHelper, SqliteConnection};
+use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
+use miden_objects::block::{BlockHeader, BlockNumber};
+
+use super::{DatabaseError, QueryDsl, RunQueryDsl};
+use crate::db::models::conv::SqlTypeConvert;
+use crate::db::models::{self, ExpressionMethods, vec_raw_try_into};
+use crate::db::schema;
 
 /// Select a [`BlockHeader`] from the DB by its `block_num` using the given [`SqliteConnection`].
 ///

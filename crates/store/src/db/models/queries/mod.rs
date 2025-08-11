@@ -3,42 +3,19 @@
     reason = "The parent scope does own it, passing by value avoids additional boilerplate"
 )]
 
-use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
-
 use diesel::prelude::Queryable;
 use diesel::query_dsl::methods::SelectDsl;
-use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection, alias};
-use miden_lib::utils::{Deserializable, Serializable};
-use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
+use diesel::{OptionalExtension, SqliteConnection, alias};
+use miden_lib::utils::Serializable;
 use miden_node_utils::limiter::{
-    QueryParamAccountIdLimit,
-    QueryParamBlockLimit,
     QueryParamLimiter,
-    QueryParamNoteIdLimit,
-    QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
     QueryParamNullifierPrefixLimit,
 };
-use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
-    Account,
-    AccountDelta,
-    AccountId,
-    AccountStorageDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-    StorageMapDelta,
-    StorageSlot,
-};
-use miden_objects::asset::{Asset, NonFungibleAsset};
-use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNumber};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{NoteExecutionMode, NoteId, NoteInclusionProof, Nullifier};
+use miden_objects::account::AccountId;
+use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
+use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
-use miden_objects::{Felt, LexicographicWord, Word};
 
 use super::super::models;
 use super::{
@@ -49,55 +26,27 @@ use super::{
     RunQueryDsl,
     SelectableHelper,
 };
-use crate::db::models::conv::{
-    SqlTypeConvert,
-    fungible_delta_to_raw_sql,
-    nonce_to_raw_sql,
-    nullifier_prefix_to_raw_sql,
-    raw_sql_to_idx,
-    raw_sql_to_nonce,
-    raw_sql_to_slot,
-    slot_to_raw_sql,
-};
+use crate::db::models::conv::{SqlTypeConvert, nullifier_prefix_to_raw_sql, raw_sql_to_nonce};
 use crate::db::models::{
-    AccountCodeRowInsert,
-    AccountRaw,
-    AccountRowInsert,
-    AccountSummaryRaw,
-    AccountWithCodeRaw,
     BigIntSum,
     ExpressionMethods,
-    NoteInsertRowRaw,
-    NoteRecordRaw,
-    NoteRecordWithScriptRaw,
-    TransactionSummaryRaw,
     get_nullifier_prefix,
-    serialize_vec,
     sql_sum_into,
     vec_raw_try_into,
 };
-use crate::db::{
-    NoteRecord,
-    NoteSyncRecord,
-    NoteSyncUpdate,
-    NullifierInfo,
-    Page,
-    StateSyncUpdate,
-    TransactionSummary,
-    schema,
-};
-use crate::errors::{NoteSyncError, StateSyncError};
+use crate::db::{NoteRecord, NullifierInfo, StateSyncUpdate, schema};
+use crate::errors::StateSyncError;
 
 mod transactions;
 pub use transactions::*;
 mod block_headers;
 pub use block_headers::*;
 mod notes;
-pub use notes::*;
+pub(crate) use notes::*;
 mod accounts;
 pub use accounts::*;
 mod insertions;
-pub use insertions::*;
+pub(crate) use insertions::*;
 
 /// Select all nullifiers from the DB
 ///

@@ -1,4 +1,38 @@
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use diesel::query_dsl::methods::SelectDsl;
+use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection};
+use miden_lib::utils::Deserializable;
+use miden_node_utils::limiter::{
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+};
+use miden_objects::account::AccountId;
+use miden_objects::block::{BlockNoteIndex, BlockNumber};
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{NoteExecutionMode, NoteId, NoteInclusionProof};
+
+use super::{
+    BoolExpressionMethods,
+    DatabaseError,
+    NoteSyncRecordRawRow,
+    QueryDsl,
+    RunQueryDsl,
+    SelectableHelper,
+};
+use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_idx};
+use crate::db::models::queries::select_block_header_by_block_num;
+use crate::db::models::{
+    ExpressionMethods,
+    NoteRecordRaw,
+    NoteRecordWithScriptRaw,
+    serialize_vec,
+    vec_raw_try_into,
+};
+use crate::db::{NoteRecord, NoteSyncRecord, NoteSyncUpdate, Page, schema};
+use crate::errors::NoteSyncError;
 
 /// Select notes matching the tags and account IDs search criteria using the given
 /// [`SqliteConnection`].

@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient, WantsTls};
+use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
@@ -31,7 +31,7 @@ impl StoreClient {
     /// Creates a new store client with a lazy connection.
     pub fn new(store_url: &Url) -> Self {
         // SAFETY: The store_url is always valid as it is created from a `Url`.
-        let store = Builder::<WantsTls>::new(store_url.to_string())
+        let store = Builder::new(store_url.to_string())
             .expect("Failed to initialize store endpoint")
             .without_tls()
             .without_timeout()

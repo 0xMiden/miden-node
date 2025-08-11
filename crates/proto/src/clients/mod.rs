@@ -10,7 +10,7 @@
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Create a store client with OTEL and TLS
-//! let client: StoreNtxBuilderClient = Builder::<WantsTls>::new("https://store.example.com")?
+//! let client: StoreNtxBuilderClient = Builder::new("https://store.example.com")?
 //!     .with_tls()?                 // or `.without_tls()`
 //!     .without_timeout()           // or `.with_timeout(Duration::from_secs(10))`
 //!     .without_metadata_version()  // or `.with_metadata_version("1.0".into())`
@@ -225,7 +225,7 @@ impl GrpcClientBuilder for StoreRpc {
 /// use std::time::Duration;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let client: RpcClient = Builder::<WantsTls>::new("https://rpc.example.com:8080")?
+/// let client: RpcClient = Builder::new("https://rpc.example.com:8080")?
 ///     .with_tls()?                        // or `.without_tls()`
 ///     .with_timeout(Duration::from_secs(5)) // or `.without_timeout()`
 ///     .with_metadata_version("1.0".into()) // or `.without_metadata_version()`

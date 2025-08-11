@@ -406,7 +406,7 @@ fn create_consume_note_tx(
         block_ref.commitment(),
         FungibleAsset::new(
             block_ref.fee_parameters().native_asset_id(),
-            block_ref.fee_parameters().verification_base_fee() as u64,
+            u64::from(block_ref.fee_parameters().verification_base_fee()),
         )
         .unwrap(),
         u32::MAX.into(),
@@ -444,7 +444,7 @@ fn create_emit_note_tx(
         block_ref.commitment(),
         FungibleAsset::new(
             block_ref.fee_parameters().native_asset_id(),
-            block_ref.fee_parameters().verification_base_fee() as u64,
+            u64::from(block_ref.fee_parameters().verification_base_fee()),
         )
         .unwrap(),
         u32::MAX.into(),

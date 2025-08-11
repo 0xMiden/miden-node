@@ -201,8 +201,8 @@ impl BundledCommand {
                     .context("Failed to parse URL")?;
                 Rpc {
                     listener: grpc_rpc,
-                    store: store_url,
-                    block_producer: Some(block_producer_url),
+                    store_url,
+                    block_producer_url: Some(block_producer_url),
                 }
                 .serve()
                 .await

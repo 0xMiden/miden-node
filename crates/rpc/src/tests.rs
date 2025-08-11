@@ -295,8 +295,8 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         let block_producer_url = Url::parse(&format!("http://{block_producer_addr}")).unwrap();
         Rpc {
             listener: rpc_listener,
-            store: store_url,
-            block_producer: Some(block_producer_url),
+            store_url,
+            block_producer_url: Some(block_producer_url),
         }
         .serve()
         .await

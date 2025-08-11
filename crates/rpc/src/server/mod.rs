@@ -24,8 +24,8 @@ mod api;
 /// Requests will fail if the components are not available.
 pub struct Rpc {
     pub listener: TcpListener,
-    pub store: Url,
-    pub block_producer: Option<Url>,
+    pub store_url: Url,
+    pub block_producer_url: Option<Url>,
 }
 
 impl Rpc {
@@ -34,9 +34,9 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Initializing server");
+        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store_url, block_producer=?self.block_producer_url, "Initializing server");
 
-        let api = api::RpcService::new(&self.store, self.block_producer);
+        let api = api::RpcService::new(&self.store_url, self.block_producer_url);
 
         let genesis = api
             .get_genesis_header_with_retry()

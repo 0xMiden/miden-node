@@ -46,14 +46,10 @@ impl RpcCommand {
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        Rpc {
-            listener,
-            store: store_url,
-            block_producer: block_producer_url,
-        }
-        .serve()
-        .await
-        .context("Serving RPC")
+        Rpc { listener, store_url, block_producer_url }
+            .serve()
+            .await
+            .context("Serving RPC")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

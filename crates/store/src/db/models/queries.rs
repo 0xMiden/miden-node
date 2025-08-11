@@ -88,7 +88,8 @@ use crate::db::{
 };
 use crate::errors::{NoteSyncError, StateSyncError};
 
-/// Select notes matching the tags and account IDs search criteria using the given [Connection].
+/// Select notes matching the tags and account IDs search criteria using the given
+/// [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -179,7 +180,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
     vec_raw_try_into(notes)
 }
 
-/// Select a [`BlockHeader`] from the DB by its `block_num` using the given [Connection].
+/// Select a [`BlockHeader`] from the DB by its `block_num` using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -207,7 +208,7 @@ pub(crate) fn select_block_header_by_block_num(
     row.map(std::convert::TryInto::try_into).transpose()
 }
 
-/// Select note inclusion proofs matching the `NoteId`, using the given [Connection].
+/// Select note inclusion proofs matching the `NoteId`, using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -388,7 +389,7 @@ pub(crate) fn insert_account_delta(
         account_id: AccountId,
         block_num: BlockNumber,
         vault_key: Vec<u8>,
-        is_remove: i32,
+        is_remove: bool,
     ) -> Result<usize, DatabaseError> {
         let count = diesel::insert_into(schema::account_non_fungible_asset_updates::table)
             .values(&[(
@@ -434,8 +435,8 @@ pub(crate) fn insert_account_delta(
         // TODO consider moving this out into a `TryFrom<u8/bool>` and `Into<u8/bool>`
         // respectively.
         let is_remove = match action {
-            NonFungibleDeltaAction::Add => 0,
-            NonFungibleDeltaAction::Remove => 1,
+            NonFungibleDeltaAction::Add => false,
+            NonFungibleDeltaAction::Remove => true,
         };
         insert_non_fungible_asset_update_stmt(
             conn,
@@ -874,7 +875,8 @@ pub(crate) fn select_nullifiers_by_prefix(
     vec_raw_try_into(nullifiers_raw)
 }
 
-/// Select the latest account details by account id from the DB using the given [Connection].
+/// Select the latest account details by account id from the DB using the given
+/// [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -909,10 +911,11 @@ pub(crate) fn select_account(
 }
 
 // TODO: Handle account prefix collision in a more robust way
-/// Select the latest account details by account ID prefix from the DB using the given [Connection]
-/// This method is meant to be used by the network transaction builder. Because network notes get
-/// matched through accounts through the account's 30-bit prefix, it is possible that multiple
-/// accounts match against a single prefix. In this scenario, the first account is returned.
+/// Select the latest account details by account ID prefix from the DB using the given
+/// [`SqliteConnection`] This method is meant to be used by the network transaction builder. Because
+/// network notes get matched through accounts through the account's 30-bit prefix, it is possible
+/// that multiple accounts match against a single prefix. In this scenario, the first account is
+/// returned.
 ///
 /// # Returns
 ///
@@ -949,7 +952,7 @@ pub(crate) fn select_account_by_id_prefix(
     result
 }
 
-/// Select all account commitments from the DB using the given [Connection].
+/// Select all account commitments from the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -1167,7 +1170,7 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
     Ok((notes, page))
 }
 
-/// Select all accounts from the DB using the given [Connection].
+/// Select all accounts from the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -1222,7 +1225,7 @@ pub(crate) fn select_accounts_by_id(
 }
 
 /// Selects and merges account deltas by account id and block range from the DB using the given
-/// [Connection].
+/// [`SqliteConnection`].
 ///
 /// # Note:
 ///
@@ -1275,22 +1278,16 @@ pub(crate) fn select_account_delta(
 
     let mut non_fungible_delta = NonFungibleAssetDelta::default();
     for NonFungibleAssetDeltaEntry {
-        vault_key: vault_key_asset,
-        is_remove: action,
-        ..
+        vault_key: vault_key_asset, is_remove, ..
     } in non_fungible_asset_updates
     {
         let asset = NonFungibleAsset::read_from_bytes(&vault_key_asset)
             .map_err(|err| DatabaseError::DataCorrupted(err.to_string()))?;
 
-        match action {
-            0 => non_fungible_delta.add(asset)?,
-            1 => non_fungible_delta.remove(asset)?,
-            _ => {
-                return Err(DatabaseError::DataCorrupted(format!(
-                    "Invalid non-fungible asset delta action: {action}"
-                )));
-            },
+        if is_remove {
+            non_fungible_delta.remove(asset)?;
+        } else {
+            non_fungible_delta.add(asset)?;
         }
     }
 
@@ -1517,7 +1514,7 @@ pub(crate) fn select_fungible_asset_deltas_stmt(
 pub(crate) struct NonFungibleAssetDeltaEntry {
     pub(crate) block_num: i64,
     pub(crate) vault_key: Vec<u8>,
-    pub(crate) is_remove: i32,
+    pub(crate) is_remove: bool,
 }
 
 pub(crate) fn select_non_fungible_asset_updates_stmt(
@@ -1559,7 +1556,7 @@ pub(crate) fn select_non_fungible_asset_updates_stmt(
     Ok(entries)
 }
 
-/// Select all the given block headers from the DB using the given [Connection].
+/// Select all the given block headers from the DB using the given [`SqliteConnection`].
 ///
 /// # Note
 ///
@@ -1587,7 +1584,7 @@ pub fn select_block_headers(
     vec_raw_try_into(raw_block_headers)
 }
 
-/// Select all block headers from the DB using the given [Connection].
+/// Select all block headers from the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
 ///
@@ -1660,8 +1657,8 @@ pub(crate) fn get_note_sync(
     Ok(NoteSyncUpdate { notes, block_header })
 }
 
-/// Select [`AccountSummary`] from the DB using the given [Connection], given that the account
-/// update was done between `(block_start, block_end]`.
+/// Select [`AccountSummary`] from the DB using the given [`SqliteConnection`], given that the
+/// account update was done between `(block_start, block_end]`.
 ///
 /// # Returns
 ///

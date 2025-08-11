@@ -443,16 +443,15 @@ impl Faucet {
     ) -> MintResult<ExecutedTransaction> {
         let executor =
             TransactionExecutor::new(self.data_store.as_ref(), Some(&self.authenticator));
-        executor
-            .execute_transaction(
-                self.id.account_id,
-                BlockNumber::GENESIS,
-                InputNotes::default(),
-                tx_args,
-                Arc::new(DefaultSourceManager::default()),
-            )
-            .await
-            .map_err(MintError::Execution)
+        Box::pin(executor.execute_transaction(
+            self.id.account_id,
+            BlockNumber::GENESIS,
+            InputNotes::default(),
+            tx_args,
+            Arc::new(DefaultSourceManager::default()),
+        ))
+        .await
+        .map_err(MintError::Execution)
     }
 
     async fn submit_transaction(

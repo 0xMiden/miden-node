@@ -43,7 +43,7 @@ pub struct RpcService {
 }
 
 impl RpcService {
-    pub(super) fn new(store_url: &Url, block_producer_url: Option<Url>) -> Self {
+    pub(super) fn new(store_url: &Url, block_producer_url: Option<&Url>) -> Self {
         let store = {
             // SAFETY: The store_url is always valid as it is a user-provided URL that has been
             // validated.

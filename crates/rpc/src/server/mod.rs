@@ -34,9 +34,7 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store_url, block_producer=?self.block_producer_url, "Initializing server");
-
-        let api = api::RpcService::new(&self.store_url, self.block_producer_url);
+        let api = api::RpcService::new(&self.store_url, self.block_producer_url.as_ref());
 
         let genesis = api
             .get_genesis_header_with_retry()
@@ -57,6 +55,8 @@ impl Rpc {
             .register_file_descriptor_set(rpc_api_descriptor())
             .build_v1alpha()
             .context("failed to build reflection service")?;
+
+        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store_url, block_producer=?self.block_producer_url, "Server initialized");
 
         let rpc_version = env!("CARGO_PKG_VERSION");
         let rpc_version =

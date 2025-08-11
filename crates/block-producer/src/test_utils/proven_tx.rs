@@ -5,7 +5,7 @@ use miden_objects::account::AccountId;
 use miden_objects::asset::FungibleAsset;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier};
-use miden_objects::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_objects::transaction::{
     InputNote,
     OutputNote,
@@ -31,7 +31,7 @@ pub struct MockProvenTxBuilder {
 }
 
 fn test_fee() -> FungibleAsset {
-    let faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let faucet = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
     FungibleAsset::new(faucet, 0).unwrap()
 }
 

@@ -46,6 +46,7 @@ use miden_objects::note::{
     Nullifier,
 };
 use miden_objects::testing::account_id::{
+    ACCOUNT_ID_NATIVE_ASSET_FAUCET,
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -69,7 +70,7 @@ fn create_db() -> SqliteConnection {
 }
 
 fn test_fee_params() -> FeeParameters {
-    let faucet: AccountId = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let faucet: AccountId = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
     FeeParameters::new(faucet, 0).unwrap()
 }
 

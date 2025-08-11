@@ -18,7 +18,7 @@ use miden_objects::account::{
     AccountVaultDelta,
 };
 use miden_objects::asset::FungibleAsset;
-use miden_objects::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;
 use miden_objects::vm::ExecutionProof;
@@ -190,7 +190,7 @@ async fn rpc_server_has_web_support() {
 }
 
 fn test_fee() -> FungibleAsset {
-    let faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let faucet = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
     FungibleAsset::new(faucet, 0).unwrap()
 }
 

@@ -46,7 +46,7 @@ pub enum Action {
     Remove,
 }
 
-/// Update workers in the proxy performing the specified [Action]
+/// Update workers in the proxy performing the specified [`Action`]
 #[derive(Debug, Parser, Clone, Serialize, Deserialize)]
 pub struct UpdateWorkers {
     pub action: Action,

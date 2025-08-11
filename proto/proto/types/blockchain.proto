@@ -64,7 +64,7 @@ message BlockHeader {
 
     // A commitment to all transaction kernels supported by this block.
     primitives.Digest tx_kernel_commitment = 10;
-    
+
     // Fee parameters for block processing.
     FeeParameters fee_parameters = 11;
 
@@ -75,12 +75,10 @@ message BlockHeader {
 // FEE PARAMETERS
 // ================================================================================================
 
-// Represents fee parameters for block processing.
+// Definition of the fee parameters.
 message FeeParameters {
-    // The account ID that identifies the native asset.
-    account.AccountId native_asset_account_id = 1;
-    
-    // The fee amount as a 32-bit number.
-    fixed32 base_fee = 2;
+    // Respective faucet `AccountId`.
+    account.AccountId native_asset_id = 1;
+    // Verification base fee.
+    fixed32 verification_base_fee = 2;
 }
-

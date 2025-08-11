@@ -69,13 +69,13 @@ pub struct BlockHeader {
     #[prost(fixed32, tag = "12")]
     pub timestamp: u32,
 }
-/// Represents fee parameters for block processing.
+/// Definition of the fee parameters.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FeeParameters {
-    /// The account ID that identifies the native asset.
+    /// Respective faucet `AccountId`.
     #[prost(message, optional, tag = "1")]
-    pub native_asset_account_id: ::core::option::Option<super::account::AccountId>,
-    /// The fee amount as a 32-bit number.
+    pub native_asset_id: ::core::option::Option<super::account::AccountId>,
+    /// Verification base fee.
     #[prost(fixed32, tag = "2")]
-    pub base_fee: u32,
+    pub verification_base_fee: u32,
 }

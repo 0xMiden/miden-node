@@ -2,7 +2,7 @@ use miden_lib::account::faucets::FungibleFaucetError;
 use miden_lib::account::wallets::BasicWalletError;
 use miden_objects::account::AccountId;
 use miden_objects::asset::TokenSymbol;
-use miden_objects::{AccountError, AssetError, TokenSymbolError};
+use miden_objects::{AccountError, AssetError, FeeError, TokenSymbolError};
 
 #[allow(missing_docs, reason = "Error variants must be descriptive by themselves")]
 #[derive(Debug, thiserror::Error)]
@@ -45,4 +45,12 @@ pub enum GenesisConfigError {
     },
     #[error("Total issuance overflowed u64")]
     IssuanceOverflow,
+    #[error("missing fee faucet for native asset {0}")]
+    MissingFeeFaucet(String),
+    #[error("fee error")]
+    FeeError(#[from] FeeError),
+    #[error("faucet account of {0} is not a fungible faucet")]
+    NativeAssetFaucetIsNotPublic(String),
+    #[error("faucet account of {0} is not public")]
+    NativeAssetFaucitIsNotAFungibleFaucet(String),
 }

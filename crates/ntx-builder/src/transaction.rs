@@ -91,7 +91,6 @@ impl NtxContext {
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         async move {
-            // Work-around for `TransactionExecutor` not being `Send`.
             async move {
                 let mut notes = notes
                     .into_iter()

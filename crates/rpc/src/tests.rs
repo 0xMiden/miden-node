@@ -5,7 +5,8 @@ use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
-use miden_node_store::{GenesisState, Store};
+use miden_node_store::Store;
+use miden_node_store::genesis::config::GenesisConfig;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     AccountDelta,
@@ -17,7 +18,7 @@ use miden_objects::account::{
     AccountVaultDelta,
 };
 use miden_objects::asset::FungibleAsset;
-use miden_objects::testing::account_id::ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET;
+use miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;
 use miden_objects::vm::ExecutionProof;
@@ -189,7 +190,7 @@ async fn rpc_server_has_web_support() {
 }
 
 fn test_fee() -> FungibleAsset {
-    let faucet = ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET.try_into().unwrap();
+    let faucet = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
     FungibleAsset::new(faucet, 0).unwrap()
 }
 
@@ -307,7 +308,8 @@ async fn start_rpc() -> (ApiClient, std::net::SocketAddr, std::net::SocketAddr) 
 async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
     // Start the store.
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
-    let genesis_state = GenesisState::new(vec![], 1, 1);
+
+    let (genesis_state, _) = GenesisConfig::default().into_state().unwrap();
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();
     let rpc_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");

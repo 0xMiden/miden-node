@@ -353,7 +353,7 @@ pub mod api_client {
                 .insert(GrpcMethod::new("rpc.Api", "SubmitProvenTransaction"));
             self.inner.unary(req, path, codec).await
         }
-        /// Submits a proven batch to the Miden network.
+        /// Submits a proven batch of transactions to the Miden network.
         ///
         /// The batch may include transactions which were are:
         ///
@@ -365,7 +365,9 @@ pub mod api_client {
         /// state following normal transaction submission rules.
         pub async fn submit_proven_batch(
             &mut self,
-            request: impl tonic::IntoRequest<super::super::block_producer::ProvenBatch>,
+            request: impl tonic::IntoRequest<
+                super::super::transaction::ProvenTransactionBatch,
+            >,
         ) -> std::result::Result<
             tonic::Response<super::super::block_producer::SubmitProvenBatchResponse>,
             tonic::Status,
@@ -552,7 +554,7 @@ pub mod api_server {
             >,
             tonic::Status,
         >;
-        /// Submits a proven batch to the Miden network.
+        /// Submits a proven batch of transactions to the Miden network.
         ///
         /// The batch may include transactions which were are:
         ///
@@ -564,7 +566,7 @@ pub mod api_server {
         /// state following normal transaction submission rules.
         async fn submit_proven_batch(
             &self,
-            request: tonic::Request<super::super::block_producer::ProvenBatch>,
+            request: tonic::Request<super::super::transaction::ProvenTransactionBatch>,
         ) -> std::result::Result<
             tonic::Response<super::super::block_producer::SubmitProvenBatchResponse>,
             tonic::Status,
@@ -1156,7 +1158,7 @@ pub mod api_server {
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::block_producer::ProvenBatch,
+                        super::super::transaction::ProvenTransactionBatch,
                     > for SubmitProvenBatchSvc<T> {
                         type Response = super::super::block_producer::SubmitProvenBatchResponse;
                         type Future = BoxFuture<
@@ -1166,7 +1168,7 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::block_producer::ProvenBatch,
+                                super::super::transaction::ProvenTransactionBatch,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);

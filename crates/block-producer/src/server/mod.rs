@@ -235,7 +235,7 @@ impl api_server::Api for BlockProducerRpcServer {
 
     async fn submit_proven_batch(
         &self,
-        request: tonic::Request<proto::block_producer::ProvenBatch>,
+        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
     ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
         self.submit_proven_batch(request.into_inner())
              .await
@@ -387,7 +387,7 @@ impl BlockProducerRpcServer {
      )]
     async fn submit_proven_batch(
         &self,
-        request: proto::block_producer::ProvenBatch,
+        request: proto::transaction::ProvenTransactionBatch,
     ) -> Result<proto::block_producer::SubmitProvenBatchResponse, SubmitProvenBatchError> {
         let _batch = ProvenBatch::read_from_bytes(&request.encoded)
             .map_err(SubmitProvenBatchError::Deserialization)?;

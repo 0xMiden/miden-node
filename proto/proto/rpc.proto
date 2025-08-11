@@ -51,7 +51,7 @@ service Api {
     // Submits proven transaction to the Miden network.
     rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (block_producer.SubmitProvenTransactionResponse) {}
 
-    // Submits a proven batch to the Miden network.
+    // Submits a proven batch of transactions to the Miden network.
     //
     // The batch may include transactions which were are:
     //
@@ -61,7 +61,7 @@ service Api {
     //
     // All transactions in the batch but not in the mempool must build on the current mempool
     // state following normal transaction submission rules.
-    rpc SubmitProvenBatch(block_producer.ProvenBatch) returns (block_producer.SubmitProvenBatchResponse) {}
+    rpc SubmitProvenBatch(transaction.ProvenTransactionBatch) returns (block_producer.SubmitProvenBatchResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //

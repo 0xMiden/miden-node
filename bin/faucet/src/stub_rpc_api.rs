@@ -76,7 +76,7 @@ impl api_server::Api for StubRpcApi {
 
     async fn submit_proven_batch(
         &self,
-        _request: tonic::Request<proto::block_producer::ProvenBatch>,
+        _request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
     ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
         Ok(Response::new(proto::block_producer::SubmitProvenBatchResponse {
             block_height: 0,

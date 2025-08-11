@@ -315,7 +315,7 @@ impl api_server::Api for RpcService {
     #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_batch", skip_all, err)]
     async fn submit_proven_batch(
         &self,
-        request: tonic::Request<proto::block_producer::ProvenBatch>,
+        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
     ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
         let Some(block_producer) = &self.block_producer else {
             return Err(Status::unavailable("Batch submission not available in read-only mode"));

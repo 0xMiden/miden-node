@@ -22,13 +22,6 @@ pub struct SubmitProvenBatchResponse {
     #[prost(fixed32, tag = "1")]
     pub block_height: u32,
 }
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ProvenBatch {
-    /// Encoded using \[winter_utils::Serializable\] implementation for
-    /// \[miden_objects::transaction::proven_tx::ProvenTransaction\].
-    #[prost(bytes = "vec", tag = "1")]
-    pub encoded: ::prost::alloc::vec::Vec<u8>,
-}
 /// Request to subscribe to mempool events.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MempoolSubscriptionRequest {
@@ -253,7 +246,9 @@ pub mod api_client {
         /// state following normal transaction submission rules.
         pub async fn submit_proven_batch(
             &mut self,
-            request: impl tonic::IntoRequest<super::ProvenBatch>,
+            request: impl tonic::IntoRequest<
+                super::super::transaction::ProvenTransactionBatch,
+            >,
         ) -> std::result::Result<
             tonic::Response<super::SubmitProvenBatchResponse>,
             tonic::Status,
@@ -352,7 +347,7 @@ pub mod api_server {
         /// state following normal transaction submission rules.
         async fn submit_proven_batch(
             &self,
-            request: tonic::Request<super::ProvenBatch>,
+            request: tonic::Request<super::super::transaction::ProvenTransactionBatch>,
         ) -> std::result::Result<
             tonic::Response<super::SubmitProvenBatchResponse>,
             tonic::Status,
@@ -547,8 +542,11 @@ pub mod api_server {
                 "/block_producer.Api/SubmitProvenBatch" => {
                     #[allow(non_camel_case_types)]
                     struct SubmitProvenBatchSvc<T: Api>(pub Arc<T>);
-                    impl<T: Api> tonic::server::UnaryService<super::ProvenBatch>
-                    for SubmitProvenBatchSvc<T> {
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::transaction::ProvenTransactionBatch,
+                    > for SubmitProvenBatchSvc<T> {
                         type Response = super::SubmitProvenBatchResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -556,7 +554,9 @@ pub mod api_server {
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::ProvenBatch>,
+                            request: tonic::Request<
+                                super::super::transaction::ProvenTransactionBatch,
+                            >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {

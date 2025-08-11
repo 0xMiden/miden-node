@@ -43,7 +43,7 @@ impl BlockProducerClient {
             .without_metadata_genesis()
             .connect_lazy::<BlockProducer>();
 
-        info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Block producer client initialized");
+        info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Block producer client initialized with lazy connection");
 
         Self { client: block_producer }
     }

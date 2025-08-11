@@ -160,7 +160,7 @@ impl GenesisConfig {
             // we know the remaining supply in the faucets.
         }
 
-        // Translate the fee paramters
+        // Translate the fee parameters
         let native_asset_account = faucet_accounts
             .get(&fee_parameters.symbol)
             .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol.clone()))?;

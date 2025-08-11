@@ -129,7 +129,7 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
                 .try_into()?,
             FeeParameters::try_from(value.fee_parameters.ok_or(
-                proto::blockchain::FeeParameters::missing_field(stringify!(fee_paramters)),
+                proto::blockchain::FeeParameters::missing_field(stringify!(fee_parameters)),
             )?)?,
             value.timestamp,
         ))

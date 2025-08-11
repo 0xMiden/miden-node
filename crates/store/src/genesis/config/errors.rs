@@ -49,4 +49,8 @@ pub enum GenesisConfigError {
     MissingFeeFaucet(String),
     #[error("fee error")]
     FeeError(#[from] FeeError),
+    #[error("faucet account of {0} is not a fungible faucet")]
+    NativeAssetFaucetIsNotPublic(String),
+    #[error("faucet account of {0} is not public")]
+    NativeAssetFaucitIsNotAFungibleFaucet(String),
 }

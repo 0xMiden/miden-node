@@ -165,8 +165,14 @@ impl GenesisConfig {
             .get(&fee_parameters.symbol)
             .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol.clone()))?;
         if native_asset_account.account_type() != AccountType::FungibleFaucet {
-            return Err(GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol));
+            return Err(GenesisConfigError::NativeAssetFaucitIsNotAFungibleFaucet(
+                fee_parameters.symbol,
+            ));
         }
+        if !native_asset_account.is_public() {
+            return Err(GenesisConfigError::NativeAssetFaucetIsNotPublic(fee_parameters.symbol));
+        }
+
         let native_asset_account_id = native_asset_account.id();
         let fee_parameters =
             FeeParameters::new(native_asset_account_id, fee_parameters.verification_base_fee)?;

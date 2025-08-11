@@ -62,21 +62,20 @@ pub struct BlockHeader {
     /// A commitment to all transaction kernels supported by this block.
     #[prost(message, optional, tag = "10")]
     pub tx_kernel_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// The time when the block was created.
-    #[prost(fixed32, tag = "11")]
-    pub timestamp: u32,
-    /// The relevant faucet account id to use for fee handling.
-    #[prost(message, optional, tag = "12")]
+    /// Fee parameters for block processing.
+    #[prost(message, optional, tag = "11")]
     pub fee_parameters: ::core::option::Option<FeeParameters>,
+    /// The time when the block was created.
+    #[prost(fixed32, tag = "12")]
+    pub timestamp: u32,
 }
-
-/// Represents fee parameters for block processing.
+/// Definition of the fee parameters.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FeeParameters {
-    /// The account ID that identifies the native asset.
+    /// Respective faucet `AccountId`.
     #[prost(message, optional, tag = "1")]
     pub native_asset_id: ::core::option::Option<super::account::AccountId>,
-    /// The fee amount as a 32-bit number.
+    /// Verification base fee.
     #[prost(fixed32, tag = "2")]
     pub verification_base_fee: u32,
 }

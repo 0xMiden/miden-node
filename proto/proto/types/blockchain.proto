@@ -80,5 +80,5 @@ message FeeParameters {
     // Respective faucet `AccountId`.
     account.AccountId native_asset_id = 1;
     // Verification base fee.
-    uint32 verification_base_fee = 2;
+    fixed32 verification_base_fee = 2;
 }

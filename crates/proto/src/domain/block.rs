@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockInputs, FeeParameters, NullifierWitness};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
@@ -127,22 +128,9 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 .proof_commitment
                 .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
                 .try_into()?,
-<<<<<<< HEAD
-            value
-                .fee_parameters
-                .ok_or(proto::blockchain::BlockHeader::missing_field("fee_parameters"))?
-                .try_into()?,
-=======
-            FeeParameters::new(
-                value
-                    .native_fee
-                    .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(
-                        proof_commitment
-                    )))?
-                    .try_into()?,
-                0,
-            )?,
->>>>>>> 907b2f2d (add fee account to proto)
+            FeeParameters::try_from(value.fee_parameters.ok_or(
+                proto::blockchain::FeeParameters::missing_field(stringify!(fee_paramters)),
+            )?)?,
             value.timestamp,
         ))
     }
@@ -228,5 +216,43 @@ impl TryFrom<proto::block_producer_store::BlockInputs> for BlockInputs {
             nullifier_witnesses,
             unauthenticated_note_proofs,
         ))
+    }
+}
+
+// FEE PARAMETERS
+// ================================================================================================
+
+impl TryFrom<&proto::blockchain::FeeParameters> for FeeParameters {
+    type Error = ConversionError;
+    fn try_from(fee_params: &proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
+        let account_id = fee_params
+            .native_asset_id
+            .clone()
+            .ok_or(proto::blockchain::FeeParameters::missing_field(stringify!(native_asset_id)))?;
+        let native_asset_id = AccountId::try_from(account_id)?;
+        let fee_params = FeeParameters::new(native_asset_id, fee_params.verification_base_fee)?;
+        Ok(fee_params)
+    }
+}
+
+impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
+    type Error = ConversionError;
+    fn try_from(fee_params: proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
+        Self::try_from(&fee_params)
+    }
+}
+
+impl From<FeeParameters> for proto::blockchain::FeeParameters {
+    fn from(value: FeeParameters) -> Self {
+        Self::from(&value)
+    }
+}
+
+impl From<&FeeParameters> for proto::blockchain::FeeParameters {
+    fn from(value: &FeeParameters) -> Self {
+        Self {
+            native_asset_id: Some(value.native_asset_id().into()),
+            verification_base_fee: value.verification_base_fee(),
+        }
     }
 }

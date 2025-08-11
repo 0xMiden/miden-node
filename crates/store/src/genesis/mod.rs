@@ -1,7 +1,7 @@
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::Word;
+use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountId};
 use miden_objects::block::{
     AccountTree,
     BlockAccountUpdate,
@@ -26,7 +26,7 @@ pub mod config;
 /// Represents the state at genesis, which will be used to derive the genesis block.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenesisState {
-    pub native_asset_account_id: AccountId,
+    pub fee_parameters: FeeParameters,
     pub accounts: Vec<Account>,
     pub version: u32,
     pub timestamp: u32,
@@ -48,13 +48,13 @@ impl GenesisBlock {
 
 impl GenesisState {
     pub fn new(
-        native_asset_account_id: AccountId,
+        fee_parameters: FeeParameters,
         accounts: Vec<Account>,
         version: u32,
         timestamp: u32,
     ) -> Self {
         Self {
-            native_asset_account_id,
+            fee_parameters,
             accounts,
             version,
             timestamp,
@@ -103,7 +103,7 @@ impl GenesisState {
             Word::empty(),
             TransactionKernel::kernel_commitment(),
             Word::empty(),
-            FeeParameters::new(self.native_asset_account_id, 0)?,
+            self.fee_parameters,
             self.timestamp,
         );
 
@@ -130,8 +130,8 @@ impl Deserializable for GenesisState {
 
         let version = source.read_u32()?;
         let timestamp = source.read_u32()?;
-        let native_asset_account_id = source.read::<AccountId>()?;
+        let fee_parameters = source.read::<FeeParameters>()?;
 
-        Ok(Self::new(native_asset_account_id, accounts, version, timestamp))
+        Ok(Self::new(fee_parameters, accounts, version, timestamp))
     }
 }

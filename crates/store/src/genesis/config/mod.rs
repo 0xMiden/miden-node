@@ -23,6 +23,7 @@ use miden_objects::account::{
     NonFungibleAssetDelta,
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
+use miden_objects::block::FeeParameters;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use miden_objects::{Felt, FieldElement, ONE, Word, ZERO};
 use rand::distr::weighted::Weight;
@@ -159,6 +160,7 @@ impl GenesisConfig {
             // we know the remaining supply in the faucets.
         }
 
+        // Translate the fee paramters
         let native_asset_account = faucet_accounts
             .get(&fee_parameters.symbol)
             .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol.clone()))?;
@@ -166,6 +168,8 @@ impl GenesisConfig {
             return Err(GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol));
         }
         let native_asset_account_id = native_asset_account.id();
+        let fee_parameters =
+            FeeParameters::new(native_asset_account_id, fee_parameters.verification_base_fee)?;
 
         // Track all adjustments, one per faucet account id
         let mut faucet_issuance = HashMap::<AccountId, u64>::new();
@@ -285,7 +289,7 @@ impl GenesisConfig {
 
         Ok((
             GenesisState {
-                native_asset_account_id,
+                fee_parameters,
                 accounts: all_accounts,
                 version,
                 timestamp,

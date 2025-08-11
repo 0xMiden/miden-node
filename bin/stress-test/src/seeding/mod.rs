@@ -21,7 +21,14 @@ use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType};
 use miden_objects::asset::{Asset, FungibleAsset, TokenSymbol};
 use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
+use miden_objects::block::{
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    FeeParameters,
+    ProposedBlock,
+    ProvenBlock,
+};
 use miden_objects::crypto::dsa::rpo_falcon512::{PublicKey, SecretKey};
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
@@ -75,7 +82,8 @@ pub async fn seed_store(
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
-    let genesis_state = GenesisState::new(faucet.id(), vec![faucet.clone()], 1, 1);
+    let fee_params = FeeParameters::new(faucet.id(), 0).unwrap();
+    let genesis_state = GenesisState::new(fee_params, vec![faucet.clone()], 1, 1);
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store

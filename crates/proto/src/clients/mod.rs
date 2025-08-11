@@ -1,6 +1,6 @@
 //! gRPC client builder utilities for Miden node.
 //!
-//! This module provides a unified type-state [`Builder`] for creating various gRPC clients with
+//! This module provides a unified type-safe [`Builder`] for creating various gRPC clients with
 //! explicit configuration decisions for TLS, timeout, and metadata.
 //!
 //! # Examples
@@ -209,10 +209,10 @@ impl GrpcClientBuilder for StoreRpc {
     }
 }
 
-// STRICT TYPE-STATE BUILDER (NO DEFAULTS)
+// STRICT TYPE-SAFE BUILDER (NO DEFAULTS)
 // ================================================================================================
 
-/// A type-state builder that forces the caller to make an explicit decision for each
+/// A type-safe builder that forces the caller to make an explicit decision for each
 /// configuration item (TLS, timeout, metadata version, metadata genesis) before connecting.
 ///
 /// This builder replaces the previous defaulted builder. Callers must explicitly choose TLS,

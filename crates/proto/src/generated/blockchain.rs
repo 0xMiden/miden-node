@@ -68,6 +68,9 @@ pub struct BlockHeader {
     /// The time when the block was created.
     #[prost(fixed32, tag = "12")]
     pub timestamp: u32,
+    /// The relevant faucet account id to use for fee handling.
+    #[prost(message, optional, tag = "12")]
+    pub native_fee: ::core::option::Option<super::account::AccountId>,
 }
 /// Represents fee parameters for block processing.
 #[derive(Clone, PartialEq, ::prost::Message)]

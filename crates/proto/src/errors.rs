@@ -39,6 +39,8 @@ pub enum ConversionError {
     },
     #[error("MMR error")]
     MmrError(#[from] miden_objects::crypto::merkle::MmrError),
+    #[error("fee error")]
+    FeeError(#[from] miden_objects::FeeError),
     #[error("failed to deserialize {entity}")]
     DeserializationError {
         entity: &'static str,

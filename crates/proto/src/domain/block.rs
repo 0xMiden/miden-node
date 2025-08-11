@@ -127,10 +127,22 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 .proof_commitment
                 .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
                 .try_into()?,
+<<<<<<< HEAD
             value
                 .fee_parameters
                 .ok_or(proto::blockchain::BlockHeader::missing_field("fee_parameters"))?
                 .try_into()?,
+=======
+            FeeParameters::new(
+                value
+                    .native_fee
+                    .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(
+                        proof_commitment
+                    )))?
+                    .try_into()?,
+                0,
+            )?,
+>>>>>>> 907b2f2d (add fee account to proto)
             value.timestamp,
         ))
     }

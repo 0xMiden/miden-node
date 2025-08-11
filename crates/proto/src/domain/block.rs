@@ -9,46 +9,6 @@ use miden_objects::utils::{Deserializable, Serializable};
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::{AccountWitnessRecord, NullifierWitnessRecord, generated as proto};
 
-// FEE PARAMETERS
-// ================================================================================================
-
-impl From<&FeeParameters> for proto::blockchain::FeeParameters {
-    fn from(fee_params: &FeeParameters) -> Self {
-        Self {
-            native_asset_account_id: Some(fee_params.native_asset_id().into()),
-            base_fee: fee_params.verification_base_fee(),
-        }
-    }
-}
-
-impl From<FeeParameters> for proto::blockchain::FeeParameters {
-    fn from(fee_params: FeeParameters) -> Self {
-        (&fee_params).into()
-    }
-}
-
-impl TryFrom<&proto::blockchain::FeeParameters> for FeeParameters {
-    type Error = ConversionError;
-
-    fn try_from(value: &proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
-        let account_id = value
-            .native_asset_account_id
-            .clone()
-            .ok_or(proto::blockchain::FeeParameters::missing_field("account_id"))?
-            .try_into()?;
-
-        Ok(FeeParameters::new(account_id, value.base_fee)?)
-    }
-}
-
-impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
-    type Error = ConversionError;
-
-    fn try_from(value: proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
-        (&value).try_into()
-    }
-}
-
 // BLOCK HEADER
 // ================================================================================================
 

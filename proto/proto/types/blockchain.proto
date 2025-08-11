@@ -4,17 +4,6 @@ package blockchain;
 import "types/account.proto";
 import "types/primitives.proto";
 
-// FEE PARAMETERS
-// ================================================================================================
-
-// Definition of the fee parameters.
-message FeeParameters {
-    // Respective faucet `AccountId`.
-    account.AccountId native_asset_id = 1;
-    // Verification base fee.
-    uint32 verification_base_fee = 2;
-}
-
 // BLOCK
 // ================================================================================================
 
@@ -75,30 +64,21 @@ message BlockHeader {
 
     // A commitment to all transaction kernels supported by this block.
     primitives.Digest tx_kernel_commitment = 10;
-    
+
     // Fee parameters for block processing.
     FeeParameters fee_parameters = 11;
 
     // The time when the block was created.
-<<<<<<< HEAD
     fixed32 timestamp = 12;
-=======
-    fixed32 timestamp = 11;
-
-    // The relevant faucet account id to use for fee handling.
-    FeeParameters fee_parameters = 12;
->>>>>>> d57bb3cc (introduce FeeParameters)
 }
 
 // FEE PARAMETERS
 // ================================================================================================
 
-// Represents fee parameters for block processing.
+// Definition of the fee parameters.
 message FeeParameters {
-    // The account ID that identifies the native asset.
-    account.AccountId native_asset_account_id = 1;
-    
-    // The fee amount as a 32-bit number.
-    fixed32 base_fee = 2;
+    // Respective faucet `AccountId`.
+    account.AccountId native_asset_id = 1;
+    // Verification base fee.
+    uint32 verification_base_fee = 2;
 }
-

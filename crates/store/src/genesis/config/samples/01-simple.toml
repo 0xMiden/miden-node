@@ -12,13 +12,6 @@ max_supply   = 100_000_000
 storage_mode = "public"
 symbol       = "MIDEN"
 
-
-[[fungible_faucet]]
-decimals     = 3
-max_supply   = 100_000_000
-storage_mode = "public"
-symbol       = "MIDEN"
-
 [[wallet]]
 assets       = [{ amount = 999_000, symbol = "MIDEN" }]
 storage_mode = "private"

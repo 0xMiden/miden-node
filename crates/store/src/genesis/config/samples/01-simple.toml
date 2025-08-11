@@ -1,6 +1,17 @@
-native_fee_symbol = "MIDEN"
 timestamp         = 1717344256
 version           = 1
+
+
+[fee_parameters]
+fee_asset_symbol      = "MIDEN"
+verification_base_fee = 0
+
+[[fungible_faucet]]
+decimals     = 3
+max_supply   = 100_000_000
+storage_mode = "public"
+symbol       = "MIDEN"
+
 
 [[fungible_faucet]]
 decimals     = 3

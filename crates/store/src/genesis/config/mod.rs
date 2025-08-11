@@ -47,9 +47,9 @@ mod tests;
 pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
+    fee_parameters: FeeParameterConfig,
     wallet: Vec<WalletConfig>,
     fungible_faucet: Vec<FungibleFaucetConfig>,
-    native_fee_symbol: String,
 }
 
 impl Default for GenesisConfig {
@@ -64,13 +64,16 @@ impl Default for GenesisConfig {
             )
             .expect("Timestamp should fit into u32"),
             wallet: vec![],
+            fee_parameters: FeeParameterConfig {
+                symbol: "MIDEN".to_owned(),
+                verification_base_fee: 0u32,
+            },
             fungible_faucet: vec![FungibleFaucetConfig {
                 max_supply: 100_000_000_000_000_000u64,
                 decimals: 6u8,
                 storage_mode: StorageMode::Public,
                 symbol: "MIDEN".to_owned(),
             }],
-            native_fee_symbol: "MIDEN".to_owned(),
         }
     }
 }
@@ -94,10 +97,10 @@ impl GenesisConfig {
             timestamp,
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
-            native_fee_symbol,
+            fee_parameters,
         } = self;
 
-        let _ = TokenSymbol::new(&native_fee_symbol)?;
+        let _ = TokenSymbol::new(&fee_parameters.symbol)?;
 
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
@@ -156,10 +159,13 @@ impl GenesisConfig {
             // we know the remaining supply in the faucets.
         }
 
-        let native_asset_account_id = faucet_accounts
-            .get(&native_fee_symbol)
-            .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(native_fee_symbol))?
-            .id();
+        let native_asset_account = faucet_accounts
+            .get(&fee_parameters.symbol)
+            .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol.clone()))?;
+        if native_asset_account.account_type() != AccountType::FungibleFaucet {
+            return Err(GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol));
+        }
+        let native_asset_account_id = native_asset_account.id();
 
         // Track all adjustments, one per faucet account id
         let mut faucet_issuance = HashMap::<AccountId, u64>::new();
@@ -287,6 +293,22 @@ impl GenesisConfig {
             AccountSecrets { secrets },
         ))
     }
+}
+
+// FEE PARAMETER CONFIG
+// ================================================================================================
+
+/// Represents a the fee parameters using the given asset
+///
+/// A faucet providing the `symbol` token moste exist.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FeeParameterConfig {
+    // TODO eventually directly parse to `TokenSymbol`
+    /// Token symbol to use for base fees.
+    symbol: String,
+    /// Verification base fee, in units of smallest denomination.
+    verification_base_fee: u32,
 }
 
 // FUNGIBLE FAUCET CONFIG

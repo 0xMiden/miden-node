@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use futures::TryFutureExt;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId};
@@ -112,11 +111,11 @@ impl NtxContext {
                             let data_store =
                                 NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
-                            self.filter_notes(&data_store, notes)
-                                .and_then(|notes| self.execute(&data_store, notes))
-                                .and_then(|tx| self.prove(tx))
-                                .and_then(|tx| self.submit(tx))
-                                .await
+                            let notes = Box::pin(self.filter_notes(&data_store, notes)).await?;
+                            let executed = Box::pin(self.execute(&data_store, notes)).await?;
+                            let proven = Box::pin(self.prove(executed)).await?;
+                            self.submit(proven).await?;
+                            Ok(())
                         }
                         .in_current_span(),
                     )
@@ -149,15 +148,14 @@ impl NtxContext {
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 
-        let notes = match checker
-            .check_notes_consumability(
-                data_store.account.id(),
-                data_store.reference_header.block_num(),
-                notes.clone(),
-                TransactionArgs::default(),
-                Arc::new(DefaultSourceManager::default()),
-            )
-            .await
+        let notes = match Box::pin(checker.check_notes_consumability(
+            data_store.account.id(),
+            data_store.reference_header.block_num(),
+            notes.clone(),
+            TransactionArgs::default(),
+            Arc::new(DefaultSourceManager::default()),
+        ))
+        .await
         {
             Ok(NoteAccountExecution::Success) => notes,
             Ok(NoteAccountExecution::Failure { successful_notes, error, .. }) => {
@@ -194,16 +192,15 @@ impl NtxContext {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
 
-        executor
-            .execute_transaction(
-                data_store.account.id(),
-                data_store.reference_header.block_num(),
-                notes,
-                TransactionArgs::default(),
-                Arc::new(DefaultSourceManager::default()),
-            )
-            .await
-            .map_err(NtxError::Execution)
+        Box::pin(executor.execute_transaction(
+            data_store.account.id(),
+            data_store.reference_header.block_num(),
+            notes,
+            TransactionArgs::default(),
+            Arc::new(DefaultSourceManager::default()),
+        ))
+        .await
+        .map_err(NtxError::Execution)
     }
 
     /// Delegates the transaction proof to the remote prover if configured, otherwise performs the

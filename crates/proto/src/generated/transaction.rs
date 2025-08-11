@@ -7,6 +7,13 @@ pub struct ProvenTransaction {
     #[prost(bytes = "vec", tag = "1")]
     pub transaction: ::prost::alloc::vec::Vec<u8>,
 }
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProvenTransactionBatch {
+    /// Encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::transaction::proven_tx::ProvenTransaction\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub encoded: ::prost::alloc::vec::Vec<u8>,
+}
 /// Represents a transaction ID.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct TransactionId {

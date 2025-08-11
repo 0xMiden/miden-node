@@ -11,6 +11,7 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
+use miden_objects::batch::ProvenBatch;
 use miden_objects::block::BlockNumber;
 use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::serde::Deserializable;
@@ -25,7 +26,13 @@ use url::Url;
 use crate::batch_builder::BatchBuilder;
 use crate::block_builder::BlockBuilder;
 use crate::domain::transaction::AuthenticatedTransaction;
-use crate::errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError};
+use crate::errors::{
+    AddTransactionError,
+    BlockProducerError,
+    StoreError,
+    SubmitProvenBatchError,
+    VerifyTxError,
+};
 use crate::mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool};
 use crate::store::StoreClient;
 use crate::{
@@ -234,6 +241,17 @@ impl api_server::Api for BlockProducerRpcServer {
              .map_err(Into::into)
     }
 
+    async fn submit_proven_batch(
+        &self,
+        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
+    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+        self.submit_proven_batch(request.into_inner())
+             .await
+             .map(tonic::Response::new)
+             // This Status::from mapping takes care of hiding internal errors.
+             .map_err(Into::into)
+    }
+
     #[instrument(
          target = COMPONENT,
          name = "block_producer.server.status",
@@ -368,5 +386,21 @@ impl BlockProducerRpcServer {
                 block_height: block_height.as_u32(),
             }
         })
+    }
+
+    #[instrument(
+         target = COMPONENT,
+         name = "block_producer.server.submit_proven_batch",
+         skip_all,
+         err
+     )]
+    async fn submit_proven_batch(
+        &self,
+        request: proto::transaction::ProvenTransactionBatch,
+    ) -> Result<proto::block_producer::SubmitProvenBatchResponse, SubmitProvenBatchError> {
+        let _batch = ProvenBatch::read_from_bytes(&request.encoded)
+            .map_err(SubmitProvenBatchError::Deserialization)?;
+
+        todo!();
     }
 }

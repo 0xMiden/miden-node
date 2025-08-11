@@ -171,10 +171,8 @@ impl BundledCommand {
         let block_producer_id = join_set
             .spawn({
                 let checkpoint = Arc::clone(&checkpoint);
-                // SAFETY: The store_block_producer_address is always valid as it is created from a
-                // `SocketAddr`.
-                let store_url =
-                    Url::parse(&format!("http://{store_block_producer_address}")).unwrap();
+                let store_url = Url::parse(&format!("http://{store_block_producer_address}"))
+                    .context("Failed to parse URL")?;
                 async move {
                     BlockProducer {
                         block_producer_address,
@@ -197,13 +195,10 @@ impl BundledCommand {
         // Start RPC component.
         let rpc_id = join_set
             .spawn(async move {
-                // SAFETY: The store_rpc_address is always valid as it is created from a
-                // `SocketAddr`.
-                let store_url = Url::parse(&format!("http://{store_rpc_address}")).unwrap();
-                // SAFETY: The block_producer_address is always valid as it is created from a
-                // `SocketAddr`.
-                let block_producer_url =
-                    Url::parse(&format!("http://{block_producer_address}")).unwrap();
+                let store_url = Url::parse(&format!("http://{store_rpc_address}"))
+                    .context("Failed to parse URL")?;
+                let block_producer_url = Url::parse(&format!("http://{block_producer_address}"))
+                    .context("Failed to parse URL")?;
                 Rpc {
                     listener: grpc_rpc,
                     store: store_url,
@@ -223,17 +218,15 @@ impl BundledCommand {
         ]);
 
         // Start network transaction builder. The endpoint is available after loading completes.
-        // SAFETY: socket addr yields valid URLs
-        let store_ntx_builder_url =
-            Url::parse(&format!("http://{store_ntx_builder_address}")).unwrap();
+        let store_ntx_builder_url = Url::parse(&format!("http://{store_ntx_builder_address}"))
+            .context("Failed to parse URL")?;
 
         if should_start_ntb {
             let id = join_set
                 .spawn(async move {
-                    // SAFETY: The block_producer_address is always valid as it is created from a
-                    // `SocketAddr`.
                     let block_producer_url =
-                        Url::parse(&format!("http://{block_producer_address}")).unwrap();
+                        Url::parse(&format!("http://{block_producer_address}"))
+                            .context("Failed to parse URL")?;
                     NetworkTransactionBuilder {
                         store_url: store_ntx_builder_url,
                         block_producer_url,

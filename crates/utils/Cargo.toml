@@ -23,6 +23,7 @@ testing = ["dep:tokio", "miden-objects/testing"]
 [dependencies]
 anyhow                = { workspace = true }
 figment               = { features = ["env", "toml"], version = "0.10" }
+futures               = { workspace = true }
 http                  = { workspace = true }
 itertools             = { workspace = true }
 miden-objects         = { workspace = true }
@@ -33,12 +34,16 @@ rand                  = { workspace = true }
 serde                 = { features = ["derive"], version = "1.0" }
 thiserror             = { workspace = true }
 tonic                 = { workspace = true }
-tower-http            = { workspace = true }
+tower-http            = { workspace = true, features = ["catch-panic"]}
 tracing               = { workspace = true }
 tracing-forest        = { features = ["chrono"], optional = true, version = "0.1" }
 tracing-opentelemetry = { version = "0.31" }
 tracing-subscriber    = { workspace = true }
 url                   = { workspace = true }
+serde_json                = { version = "1.0" }
+miden-node-panic-macro = { workspace = true }
+http-body-util = { version = "0.1" }
+bytes = { version = "1.10" }
 
 # Optional dependencies enabled by `vergen` feature.
 # This must match the version expected by `vergen-gitcl`.

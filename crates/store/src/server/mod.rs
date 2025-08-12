@@ -10,6 +10,7 @@ use miden_node_proto_build::{
     store_rpc_api_descriptor,
     store_shared_api_descriptor,
 };
+use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -144,6 +145,7 @@ impl Store {
         // Build the gRPC server with the API services and trace layer.
         join_set.spawn(
             tonic::transport::Server::builder()
+                .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
                 .layer(
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::StoreRpc)),
@@ -156,6 +158,7 @@ impl Store {
 
         join_set.spawn(
             tonic::transport::Server::builder()
+                .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
                 .layer(
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::StoreNtxBuilder)),
@@ -168,6 +171,7 @@ impl Store {
 
         join_set.spawn(
             tonic::transport::Server::builder()
+                .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
                 .layer(
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::BlockProducer)),

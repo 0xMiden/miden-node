@@ -1,5 +1,6 @@
 use clap::Parser;
 use miden_node_utils::cors::cors_for_grpc_web_layer;
+use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use miden_remote_prover::COMPONENT;
 use miden_remote_prover::api::{ProofType, RpcListener};
@@ -61,6 +62,7 @@ impl StartWorker {
 
         tonic::transport::Server::builder()
             .accept_http1(true)
+            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(
                 TraceLayer::new_for_grpc()
                     .make_span_with(traced_span_fn(TracedComponent::RemoteProver)),

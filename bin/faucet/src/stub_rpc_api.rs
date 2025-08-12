@@ -132,6 +132,7 @@ pub async fn serve_stub(endpoint: &Url) -> anyhow::Result<()> {
 
     tonic::transport::Server::builder()
         .accept_http1(true)
+        .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
         .layer(cors_for_grpc_web_layer())
         .layer(GrpcWebLayer::new())
         .add_service(api_service)

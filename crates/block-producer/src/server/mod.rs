@@ -10,6 +10,7 @@ use miden_node_proto::generated::block_producer::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
+use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::BlockNumber;
@@ -325,6 +326,7 @@ impl BlockProducerRpcServer {
 
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
+            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(
                 TraceLayer::new_for_grpc()
                     .make_span_with(traced_span_fn(TracedComponent::StoreBlockProducer)),

@@ -16,6 +16,7 @@ use miden_node_utils::limiter::{
     QueryParamNoteTagLimit,
     QueryParamNullifierLimit,
 };
+use miden_node_utils::panic::handle_panic;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::AccountId;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -445,35 +446,40 @@ impl api_server::Api for RpcService {
         &self,
         request: Request<()>,
     ) -> Result<Response<proto::rpc::RpcStatus>, Status> {
-        debug!(target: COMPONENT, request = ?request);
+        panic!("before");
+        handle_panic(async {
+            debug!(target: COMPONENT, request = ?request);
 
-        let store_status =
-            self.store.clone().status(Request::new(())).await.map(Response::into_inner).ok();
-        let block_producer_status = if let Some(block_producer) = &self.block_producer {
-            block_producer
-                .clone()
-                .status(Request::new(()))
-                .await
-                .map(Response::into_inner)
-                .ok()
-        } else {
-            None
-        };
+            let store_status =
+                self.store.clone().status(Request::new(())).await.map(Response::into_inner).ok();
+            let block_producer_status = if let Some(block_producer) = &self.block_producer {
+                block_producer
+                    .clone()
+                    .status(Request::new(()))
+                    .await
+                    .map(Response::into_inner)
+                    .ok()
+            } else {
+                None
+            };
 
-        Ok(Response::new(proto::rpc::RpcStatus {
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            store: store_status.or(Some(proto::rpc_store::StoreStatus {
-                status: "unreachable".to_string(),
-                chain_tip: 0,
-                version: "-".to_string(),
-            })),
-            block_producer: block_producer_status.or(Some(
-                proto::block_producer::BlockProducerStatus {
+            Ok(Response::new(proto::rpc::RpcStatus {
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                store: store_status.or(Some(proto::rpc_store::StoreStatus {
                     status: "unreachable".to_string(),
+                    chain_tip: 0,
                     version: "-".to_string(),
-                },
-            )),
-        }))
+                })),
+                block_producer: block_producer_status.or(Some(
+                    proto::block_producer::BlockProducerStatus {
+                        status: "unreachable".to_string(),
+                        version: "-".to_string(),
+                    },
+                )),
+            }))
+        })
+        .await
+        .into()
     }
 }
 

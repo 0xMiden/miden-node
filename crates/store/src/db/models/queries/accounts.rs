@@ -6,6 +6,7 @@ use diesel::{
     JoinOnDsl,
     NullableExpressionMethods,
     OptionalExtension,
+    Queryable,
     SqliteConnection,
     alias,
 };
@@ -26,22 +27,15 @@ use miden_objects::asset::NonFungibleAsset;
 use miden_objects::block::BlockNumber;
 
 use super::{DatabaseError, QueryDsl, RunQueryDsl, SelectableHelper};
-use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_slot};
-use crate::db::models::queries::{
-    FungibleAssetDeltaEntry,
-    NonFungibleAssetDeltaEntry,
-    StorageMapUpdateEntry,
-    select_fungible_asset_deltas_stmt,
-    select_non_fungible_asset_updates_stmt,
-    select_nonce_stmt,
-    select_slot_updates_stmt,
-};
+use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_nonce, raw_sql_to_slot};
 use crate::db::models::{
     AccountRaw,
     AccountSummaryRaw,
     AccountWithCodeRaw,
+    BigIntSum,
     ExpressionMethods,
     serialize_vec,
+    sql_sum_into,
     vec_raw_try_into,
 };
 use crate::db::schema;
@@ -528,7 +522,7 @@ pub(crate) fn select_fungible_asset_deltas_stmt(
 pub(crate) struct NonFungibleAssetDeltaEntry {
     pub(crate) block_num: i64,
     pub(crate) vault_key: Vec<u8>,
-    pub(crate) is_remove: i32,
+    pub(crate) is_remove: bool,
 }
 
 pub(crate) fn select_non_fungible_asset_updates_stmt(

@@ -1,7 +1,12 @@
 use diesel::prelude::Queryable;
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
-    ExpressionMethods, QueryDsl, QueryableByName, RunQueryDsl, Selectable, SqliteConnection,
+    ExpressionMethods,
+    QueryDsl,
+    QueryableByName,
+    RunQueryDsl,
+    Selectable,
+    SqliteConnection,
 };
 use miden_lib::utils::Deserializable;
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};

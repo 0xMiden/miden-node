@@ -4,8 +4,16 @@ use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
 use diesel::{
-    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
-    OptionalExtension, QueryDsl, RunQueryDsl, Selectable, SelectableHelper, SqliteConnection,
+    BoolExpressionMethods,
+    ExpressionMethods,
+    JoinOnDsl,
+    NullableExpressionMethods,
+    OptionalExtension,
+    QueryDsl,
+    RunQueryDsl,
+    Selectable,
+    SelectableHelper,
+    SqliteConnection,
     alias,
 };
 use miden_lib::utils::{Deserializable, Serializable};
@@ -13,8 +21,16 @@ use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
 use miden_objects::account::{
-    Account, AccountCode, AccountDelta, AccountId, AccountStorage, AccountStorageDelta,
-    AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta, StorageMapDelta,
+    Account,
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    AccountStorage,
+    AccountStorageDelta,
+    AccountVaultDelta,
+    FungibleAssetDelta,
+    NonFungibleAssetDelta,
+    StorageMapDelta,
 };
 use miden_objects::asset::{AssetVault, NonFungibleAsset};
 use miden_objects::block::BlockNumber;

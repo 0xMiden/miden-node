@@ -5,14 +5,25 @@ use diesel::prelude::{AsChangeset, Insertable};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::query_dsl::{QueryDsl, RunQueryDsl};
 use diesel::{
-    ExpressionMethods, JoinOnDsl, NullableExpressionMethods, SelectableHelper, SqliteConnection,
+    ExpressionMethods,
+    JoinOnDsl,
+    NullableExpressionMethods,
+    SelectableHelper,
+    SqliteConnection,
 };
 use miden_lib::utils::Serializable;
 use miden_node_proto as proto;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta, FungibleAssetDelta,
-    NonFungibleAssetDelta, NonFungibleDeltaAction, StorageSlot,
+    Account,
+    AccountDelta,
+    AccountId,
+    AccountStorageDelta,
+    AccountVaultDelta,
+    FungibleAssetDelta,
+    NonFungibleAssetDelta,
+    NonFungibleDeltaAction,
+    StorageSlot,
 };
 use miden_objects::asset::Asset;
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
@@ -23,8 +34,14 @@ use miden_objects::{Felt, LexicographicWord, Word};
 use super::accounts::{AccountRaw, AccountWithCodeRaw};
 use super::{DatabaseError, NoteRecord};
 use crate::db::models::conv::{
-    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
-    fungible_delta_to_raw_sql, idx_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
+    SqlTypeConvert,
+    aux_to_raw_sql,
+    execution_hint_to_raw_sql,
+    execution_mode_to_raw_sql,
+    fungible_delta_to_raw_sql,
+    idx_to_raw_sql,
+    nonce_to_raw_sql,
+    note_type_to_raw_sql,
     slot_to_raw_sql,
 };
 use crate::db::schema;

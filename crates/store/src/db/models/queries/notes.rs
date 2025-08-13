@@ -1,7 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use diesel::prelude::{
-    BoolExpressionMethods, ExpressionMethods, Queryable, QueryableByName, Selectable,
+    BoolExpressionMethods,
+    ExpressionMethods,
+    Queryable,
+    QueryableByName,
+    Selectable,
     SelectableHelper,
 };
 use diesel::query_dsl::methods::SelectDsl;
@@ -10,14 +14,27 @@ use diesel::sqlite::Sqlite;
 use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection};
 use miden_lib::utils::Deserializable;
 use miden_node_utils::limiter::{
-    QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
 };
 use miden_objects::account::AccountId;
 use miden_objects::block::{BlockNoteIndex, BlockNumber};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
-    NoteAssets, NoteDetails, NoteExecutionHint, NoteExecutionMode, NoteId, NoteInclusionProof,
-    NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag, NoteType,
+    NoteAssets,
+    NoteDetails,
+    NoteExecutionHint,
+    NoteExecutionMode,
+    NoteId,
+    NoteInclusionProof,
+    NoteInputs,
+    NoteMetadata,
+    NoteRecipient,
+    NoteScript,
+    NoteTag,
+    NoteType,
 };
 use miden_objects::{Felt, Word};
 

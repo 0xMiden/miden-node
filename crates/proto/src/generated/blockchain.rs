@@ -75,7 +75,7 @@ pub struct FeeParameters {
     /// The faucet account ID which is used for native fee assets.
     #[prost(message, optional, tag = "1")]
     pub native_asset_id: ::core::option::Option<super::account::AccountId>,
-    /// / The base fee (in base units) capturing the cost for the verification of a transaction.
+    /// The base fee (in base units) capturing the cost for the verification of a transaction.
     #[prost(fixed32, tag = "2")]
     pub verification_base_fee: u32,
 }

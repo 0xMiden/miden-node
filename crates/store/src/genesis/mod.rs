@@ -54,8 +54,8 @@ impl GenesisState {
         timestamp: u32,
     ) -> Self {
         Self {
-            fee_parameters,
             accounts,
+            fee_parameters,
             version,
             timestamp,
         }

@@ -1,7 +1,9 @@
 use proc_macro::TokenStream;
 
+/// Procedural macro to wrap a main function returning `anyhow::Result<()>` so as to catch and
+/// handle panics.
 #[proc_macro_attribute]
-pub fn handle_panic_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut func = syn::parse_macro_input!(item as syn::ItemFn);
     let original_body = func.block;
 

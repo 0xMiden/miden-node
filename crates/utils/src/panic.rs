@@ -4,22 +4,23 @@ use std::panic::AssertUnwindSafe;
 use futures::FutureExt;
 use http::{Response, StatusCode, header};
 use http_body_util::Full;
-pub use miden_node_panic_macro::handle_panic_fn;
+pub use miden_node_panic_macro::main;
 pub use tower_http::catch_panic::CatchPanicLayer;
 
-/// ...
+/// Wraps a future and handles any panics that occur during its execution.
+///
+/// Returns a result containing the future's output or an error if a panic occurred. Should be used
+/// through the associated procedural macro [`miden_node_panic_macro::main`].
 pub async fn handle_panic<F, T, E>(future: F) -> anyhow::Result<Result<T, E>>
 where
-    F: Future<Output = Result<T, E>> + Send,
-    T: Send,
-    E: Send,
+    F: Future<Output = Result<T, E>>,
 {
     match AssertUnwindSafe(future).catch_unwind().await {
         Ok(result) => Ok(result),
         Err(err) => {
             let err = stringify_panic_error(err);
-            tracing::error!("panic occurred: {err}");
-            Err(anyhow::anyhow!("panic occurred: {}", err))
+            tracing::error!("panic: {err}");
+            Err(anyhow::anyhow!("panic: {err}"))
         },
     }
 }
@@ -41,7 +42,8 @@ pub fn catch_panic_layer_fn(err: Box<dyn Any + Send + 'static>) -> Response<Full
         .unwrap()
 }
 
-pub fn stringify_panic_error(err: Box<dyn Any + Send + 'static>) -> String {
+/// Converts a dynamic panic-related error into a string.
+fn stringify_panic_error(err: Box<dyn Any + Send + 'static>) -> String {
     if let Some(&msg) = err.downcast_ref::<&str>() {
         msg.to_string()
     } else if let Ok(msg) = err.downcast::<String>() {

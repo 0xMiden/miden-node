@@ -1,6 +1,5 @@
 use std::str::FromStr;
 
-use anyhow::Result;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_otlp::WithTonicConfig;
 use opentelemetry_sdk::propagation::TraceContextPropagator;
@@ -30,7 +29,7 @@ impl OpenTelemetry {
 ///
 /// The open-telemetry configuration is controlled via environment variables as defined in the
 /// [specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/exporter.md#opentelemetry-protocol-exporter)
-pub fn setup_tracing(otel: OpenTelemetry) -> Result<()> {
+pub fn setup_tracing(otel: OpenTelemetry) -> anyhow::Result<()> {
     if otel.is_enabled() {
         opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
     }
@@ -65,7 +64,7 @@ pub fn setup_tracing(otel: OpenTelemetry) -> Result<()> {
 /// be interleaved during runtime. Also, the global exporter could be re-initialized in
 /// the middle of a concurrently running test.
 #[cfg(feature = "testing")]
-pub fn setup_test_tracing() -> Result<(
+pub fn setup_test_tracing() -> anyhow::Result<(
     tokio::sync::mpsc::UnboundedReceiver<opentelemetry_sdk::trace::SpanData>,
     tokio::sync::mpsc::UnboundedReceiver<()>,
 )> {

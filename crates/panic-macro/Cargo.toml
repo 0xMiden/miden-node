@@ -6,9 +6,9 @@ version = "0.11.0"
 [lib]
 proc-macro = true
 
+[lints]
+workspace = true
+
 [dependencies]
-anyhow  = { workspace = true }
-futures = { workspace = true }
-quote   = "1"
-syn     = { features = ["full"], version = "2" }
-tracing = { workspace = true }
+quote = "1"
+syn   = { features = ["full"], version = "2" }

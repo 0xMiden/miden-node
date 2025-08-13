@@ -35,7 +35,6 @@ opentelemetry-otlp     = { default-features = false, features = ["grpc-tonic", "
 opentelemetry_sdk      = { features = ["rt-tokio", "testing"], version = "0.30" }
 rand                   = { workspace = true }
 serde                  = { features = ["derive"], version = "1.0" }
-serde_json             = { version = "1.0" }
 thiserror              = { workspace = true }
 tonic                  = { workspace = true }
 tower-http             = { features = ["catch-panic"], workspace = true }

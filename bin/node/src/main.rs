@@ -4,6 +4,7 @@
 
 use clap::{Parser, Subcommand};
 use miden_node_utils::logging::OpenTelemetry;
+use miden_node_utils::panic;
 use miden_node_utils::version::LongVersion;
 
 mod commands;
@@ -69,7 +70,7 @@ impl Command {
 // MAIN
 // ================================================================================================
 
-#[miden_node_utils::panic::handle_panic_fn]
+#[panic::main]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();

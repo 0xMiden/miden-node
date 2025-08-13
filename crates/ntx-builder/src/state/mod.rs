@@ -204,7 +204,7 @@ impl State {
 
         // Keep MMR pruned.
         let pruned_block_height =
-            (self.chain_mmr.chain_length().as_usize() - MAX_BLOCK_COUNT) as u32;
+            (self.chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
         self.chain_mmr.prune_to(..pruned_block_height.into());
     }
 

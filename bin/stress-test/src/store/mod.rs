@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use futures::{StreamExt, stream};
 use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
 use miden_node_proto::generated::{self as proto};
+use miden_node_store::state::State;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::AccountId;
 use miden_objects::note::{NoteDetails, NoteTag};
@@ -286,6 +287,16 @@ async fn check_nullifiers_by_prefix(
     let start = Instant::now();
     let response = api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
+}
+
+// LOAD STATE
+// ================================================================================================
+
+pub async fn load_state(data_directory: &Path) {
+    let start = Instant::now();
+    let _state = State::load(data_directory).await.unwrap();
+    let elapsed = start.elapsed();
+    println!("State loaded in {elapsed:?}");
 }
 
 // HELPERS

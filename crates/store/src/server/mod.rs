@@ -82,22 +82,8 @@ impl Store {
         let block_producer_address = self.block_producer_listener.local_addr()?;
         info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address, block_producer_endpoint=?block_producer_address, ?self.data_directory, "Loading database");
 
-        let data_directory =
-            DataDirectory::load(self.data_directory.clone()).with_context(|| {
-                format!("failed to load data directory at {}", self.data_directory.display())
-            })?;
-
-        let block_store =
-            Arc::new(BlockStore::load(data_directory.block_store_dir()).with_context(|| {
-                format!("failed to load block store at {}", self.data_directory.display())
-            })?);
-
-        let database_filepath = data_directory.database_path();
-        let db = Db::load(database_filepath.clone()).await.with_context(|| {
-            format!("failed to load database at {}", database_filepath.display())
-        })?;
-
-        let state = Arc::new(State::load(db, block_store).await.context("failed to load state")?);
+        let state =
+            Arc::new(State::load(&self.data_directory).await.context("failed to load state")?);
 
         let db_maintenance_service =
             DbMaintenance::new(Arc::clone(&state), DATABASE_MAINTENANCE_INTERVAL);

@@ -5,8 +5,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::Not;
+use std::path::Path;
 use std::sync::Arc;
 
+use anyhow::Context;
 use miden_node_proto::domain::account::{
     AccountInfo,
     AccountProofRequest,
@@ -46,7 +48,6 @@ use tokio::sync::{Mutex, RwLock, oneshot};
 use tokio::time::Instant;
 use tracing::{info, info_span, instrument};
 
-use crate::COMPONENT;
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate};
@@ -62,6 +63,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
+use crate::{COMPONENT, DataDirectory};
 // STRUCTURES
 // ================================================================================================
 
@@ -111,10 +113,25 @@ pub struct State {
 impl State {
     /// Loads the state from the `db`.
     #[instrument(target = COMPONENT, skip_all)]
-    pub async fn load(
-        mut db: Db,
-        block_store: Arc<BlockStore>,
-    ) -> Result<Self, StateInitializationError> {
+    pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
+        let data_directory = DataDirectory::load(data_path.to_path_buf())
+            .with_context(|| format!("failed to load data directory at {}", data_path.display()))
+            .unwrap();
+
+        let block_store = Arc::new(
+            BlockStore::load(data_directory.block_store_dir())
+                .with_context(|| {
+                    format!("failed to load block store at {}", data_directory.display())
+                })
+                .unwrap(),
+        );
+
+        let database_filepath = data_directory.database_path();
+        let mut db = Db::load(database_filepath.clone())
+            .await
+            .with_context(|| format!("failed to load database at {}", database_filepath.display()))
+            .unwrap();
+
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
         let chain_mmr = load_mmr(&mut db).await?;
         let account_tree = load_accounts(&mut db).await?;
@@ -1054,7 +1071,21 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 #[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
+    let len = account_data.len();
 
-    AccountTree::with_entries(account_data)
-        .map_err(StateInitializationError::FailedToCreateAccountsTree)
+    let now = Instant::now();
+
+    let account_tree = AccountTree::with_entries(account_data)
+        .map_err(StateInitializationError::FailedToCreateAccountsTree)?;
+
+    let elapsed = now.elapsed().as_secs();
+
+    info!(
+        num_of_leaves = len,
+        tree_construction = elapsed,
+        COMPONENT,
+        "Loaded account tree"
+    );
+
+    Ok(account_tree)
 }

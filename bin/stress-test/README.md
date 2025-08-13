@@ -22,6 +22,7 @@ The endpoints that you can test are:
 - `sync_state`
 - `sync_notes`
 - `check_nullifiers_by_prefix`
+- `load_state`
 
 Each benchmark accepts options to control the number of iterations and concurrency level.
 
@@ -136,6 +137,13 @@ P95 request latency: 747.333µs
 P99 request latency: 873.083µs
 P99.9 request latency: 2.289709ms
 Average nullifiers per response: 21.0348
+```
+
+- load-state
+``` bash
+$ miden-node-stress-test benchmark-store --data-directory ./data load-state
+
+State loaded in 41.494029542s
 ```
 
 ## License

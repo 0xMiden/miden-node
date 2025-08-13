@@ -13,14 +13,14 @@ BUILD_PROTO=BUILD_PROTO=1
 
 .PHONY: clippy
 clippy: ## Runs Clippy with configs
-	cargo clippy --locked --all-targets --all-features --workspace --exclude miden-remote-prover -- -D warnings # miden-tx async feature on.
-	cargo clippy --locked --all-targets --all-features -p miden-remote-prover -- -D warnings # miden-tx async feature off.
+	cargo clippy --locked --all-targets --all-features --workspace -- -D warnings
+	cargo clippy --locked --all-targets --all-features -p miden-remote-prover -- -D warnings
 
 
 .PHONY: fix
 fix: ## Runs Fix with configs
-	cargo fix --allow-staged --allow-dirty --all-targets --all-features --workspace --exclude miden-remote-prover # miden-tx async feature on.
-	cargo fix --allow-staged --allow-dirty --all-targets --all-features -p miden-remote-prover # miden-tx async feature off.
+	cargo fix --allow-staged --allow-dirty --all-targets --all-features --workspace
+	cargo fix --allow-staged --allow-dirty --all-targets --all-features -p miden-remote-prover
 
 
 .PHONY: format
@@ -73,15 +73,13 @@ book: ## Builds the book & serves documentation site
 
 .PHONY: test
 test:  ## Runs all tests
-	cargo nextest run --all-features --workspace --exclude miden-remote-prover # miden-tx async feature on.
-	cargo nextest run --all-features -p miden-remote-prover # miden-tx async feature off.
+	cargo nextest run --all-features --workspace
 
 # --- checking ------------------------------------------------------------------------------------
 
 .PHONY: check
 check: ## Check all targets and features for errors without code generation
-	${BUILD_PROTO} cargo check --all-features --all-targets --locked --workspace --exclude miden-remote-prover # miden-tx async feature on.
-	${BUILD_PROTO} cargo check --all-features --all-targets --locked -p miden-remote-prover  # miden-tx async feature off
+	${BUILD_PROTO} cargo check --all-features --all-targets --locked --workspace
 
 # --- building ------------------------------------------------------------------------------------
 

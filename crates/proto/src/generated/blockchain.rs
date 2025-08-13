@@ -72,10 +72,10 @@ pub struct BlockHeader {
 /// Definition of the fee parameters.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FeeParameters {
-    /// Respective faucet `AccountId`.
+    /// The faucet account ID which is used for native fee assets.
     #[prost(message, optional, tag = "1")]
     pub native_asset_id: ::core::option::Option<super::account::AccountId>,
-    /// Verification base fee.
+    /// / The base fee (in base units) capturing the cost for the verification of a transaction.
     #[prost(fixed32, tag = "2")]
     pub verification_base_fee: u32,
 }

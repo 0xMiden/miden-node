@@ -6,7 +6,10 @@ use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier};
 use miden_objects::transaction::{
-    InputNote, OutputNote, ProvenTransaction, ProvenTransactionBuilder,
+    InputNote,
+    OutputNote,
+    ProvenTransaction,
+    ProvenTransactionBuilder,
 };
 use miden_objects::vm::ExecutionProof;
 use miden_objects::{Felt, Hasher, ONE, Word};

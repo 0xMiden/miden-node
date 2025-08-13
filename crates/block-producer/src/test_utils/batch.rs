@@ -4,7 +4,10 @@ use miden_objects::Word;
 use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
 use miden_objects::block::BlockNumber;
 use miden_objects::transaction::{
-    InputNotes, OrderedTransactionHeaders, ProvenTransaction, TransactionHeader,
+    InputNotes,
+    OrderedTransactionHeaders,
+    ProvenTransaction,
+    TransactionHeader,
 };
 
 use crate::test_utils::MockProvenTxBuilder;

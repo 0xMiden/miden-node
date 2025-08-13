@@ -9,8 +9,17 @@ use miden_lib::account::wallets::create_basic_wallet;
 use miden_lib::transaction::memory;
 use miden_node_utils::crypto::get_rpo_random_coin;
 use miden_objects::account::{
-    Account, AccountBuilder, AccountDelta, AccountFile, AccountId, AccountStorageDelta,
-    AccountStorageMode, AccountType, AccountVaultDelta, AuthSecretKey, FungibleAssetDelta,
+    Account,
+    AccountBuilder,
+    AccountDelta,
+    AccountFile,
+    AccountId,
+    AccountStorageDelta,
+    AccountStorageMode,
+    AccountType,
+    AccountVaultDelta,
+    AuthSecretKey,
+    FungibleAssetDelta,
     NonFungibleAssetDelta,
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};

@@ -1,32 +1,18 @@
-use bigdecimal::BigDecimal;
 use diesel::query_dsl::methods::SelectDsl;
-use diesel::{SelectableHelper, SqliteConnection};
-use miden_lib::utils::Serializable;
-use miden_node_proto::domain::account::AccountSummary;
-use miden_node_proto::{self as proto};
+use diesel::{
+    ExpressionMethods, QueryDsl, Queryable, QueryableByName, RunQueryDsl, Selectable,
+    SelectableHelper, SqliteConnection,
+};
+use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     QueryParamLimiter, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
 };
-use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
-use miden_objects::asset::AssetVault;
 use miden_objects::block::BlockNumber;
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
-    NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
-    NoteScript, NoteTag, NoteType, Nullifier,
-};
-use miden_objects::transaction::TransactionId;
-use miden_objects::{Felt, Word};
+use miden_objects::note::Nullifier;
 
-use super::{
-    DatabaseError, NoteRecord, NullifierInfo, QueryDsl, Queryable, QueryableByName, RunQueryDsl,
-    Selectable, Sqlite,
-};
-use crate::db::models::conv::{
-    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
-    idx_to_raw_sql, note_type_to_raw_sql, nullifier_prefix_to_raw_sql, raw_sql_to_nonce,
-};
-use crate::db::models::{ExpressionMethods, get_nullifier_prefix, vec_raw_try_into};
+use super::DatabaseError;
+use crate::db::models::conv::{SqlTypeConvert, nullifier_prefix_to_raw_sql};
+use crate::db::models::utils::{get_nullifier_prefix, vec_raw_try_into};
 use crate::db::{NullifierInfo, schema};
 
 /// Returns nullifiers filtered by prefix and block creation height.

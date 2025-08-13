@@ -8,10 +8,7 @@ use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 
-use super::{
-    BoolExpressionMethods, DatabaseError, NoteSyncRecordRawRow, QueryDsl, RunQueryDsl,
-    SelectableHelper,
-};
+use super::DatabaseError;
 use crate::db::models::conv::SqlTypeConvert;
 use crate::db::{NoteRecord, StateSyncUpdate};
 use crate::errors::StateSyncError;

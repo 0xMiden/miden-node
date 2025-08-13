@@ -8,7 +8,10 @@ use std::ops::Not;
 use std::sync::Arc;
 
 use miden_node_proto::domain::account::{
-    AccountInfo, AccountProofRequest, NetworkAccountPrefix, StorageMapKeysProof,
+    AccountInfo,
+    AccountProofRequest,
+    NetworkAccountPrefix,
+    StorageMapKeysProof,
 };
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::{AccountWitnessRecord, generated as proto};
@@ -16,11 +19,24 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountDelta, AccountHeader, AccountId, StorageSlot};
 use miden_objects::block::{
-    AccountTree, AccountWitness, BlockHeader, BlockInputs, BlockNumber, Blockchain, NullifierTree,
-    NullifierWitness, ProvenBlock,
+    AccountTree,
+    AccountWitness,
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    Blockchain,
+    NullifierTree,
+    NullifierWitness,
+    ProvenBlock,
 };
 use miden_objects::crypto::merkle::{
-    Forest, Mmr, MmrDelta, MmrPeaks, MmrProof, PartialMmr, SmtProof,
+    Forest,
+    Mmr,
+    MmrDelta,
+    MmrPeaks,
+    MmrProof,
+    PartialMmr,
+    SmtProof,
 };
 use miden_objects::note::{NoteDetails, NoteId, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
@@ -35,8 +51,15 @@ use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate};
 use crate::errors::{
-    ApplyBlockError, DatabaseError, GetBatchInputsError, GetBlockHeaderError, GetBlockInputsError,
-    GetCurrentBlockchainDataError, InvalidBlockError, NoteSyncError, StateInitializationError,
+    ApplyBlockError,
+    DatabaseError,
+    GetBatchInputsError,
+    GetBlockHeaderError,
+    GetBlockInputsError,
+    GetCurrentBlockchainDataError,
+    InvalidBlockError,
+    NoteSyncError,
+    StateInitializationError,
     StateSyncError,
 };
 // STRUCTURES

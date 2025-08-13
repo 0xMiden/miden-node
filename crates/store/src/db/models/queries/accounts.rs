@@ -1,18 +1,27 @@
+use std::collections::BTreeMap;
+
 use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
 use diesel::{
-    ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, Selectable,
-    SelectableHelper, SqliteConnection,
+    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, NullableExpressionMethods,
+    OptionalExtension, QueryDsl, RunQueryDsl, Selectable, SelectableHelper, SqliteConnection,
+    alias,
 };
 use miden_lib::utils::{Deserializable, Serializable};
+use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
-use miden_objects::account::{AccountCode, AccountId, AccountStorage};
-use miden_objects::asset::AssetVault;
+use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
+use miden_objects::account::{
+    Account, AccountCode, AccountDelta, AccountId, AccountStorage, AccountStorageDelta,
+    AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta, StorageMapDelta,
+};
+use miden_objects::asset::{AssetVault, NonFungibleAsset};
 use miden_objects::block::BlockNumber;
 use miden_objects::{Felt, Word};
 
-use crate::db::models::conv::raw_sql_to_nonce;
+use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_nonce, raw_sql_to_slot};
+use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::schema;
 use crate::errors::DatabaseError;
 
@@ -25,7 +34,7 @@ use crate::errors::DatabaseError;
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-) -> Result<AccountInfo, DatabaseError> {
+) -> Result<proto::domain::account::AccountInfo, DatabaseError> {
     // SELECT
     //     account_id,
     //     account_commitment,
@@ -47,7 +56,7 @@ pub(crate) fn select_account(
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-    let info: AccountInfo = AccountWithCodeRaw::from(raw).try_into()?;
+    let info = AccountWithCodeRaw::from(raw).try_into()?;
     Ok(info)
 }
 
@@ -543,7 +552,7 @@ pub(crate) fn select_non_fungible_asset_updates_stmt(
 /// A type to represent a `sum(BigInt)`
 // TODO: make this a type, but it's unclear how that should work
 // See: <https://github.com/diesel-rs/diesel/discussions/4684>
-pub type BigIntSum = BigDecimal;
+pub type BigIntSum = bigdecimal::BigDecimal;
 
 /// Impractical conversion required for `diesel-rs` `sum(BigInt)` results.
 pub fn sql_sum_into<T, E>(
@@ -599,6 +608,7 @@ impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
     type Error = DatabaseError;
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
         use proto::domain::account::{AccountInfo, AccountSummary};
+
         let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
         let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
         let block_num = BlockNumber::from_raw_sql(self.account.block_num)?;

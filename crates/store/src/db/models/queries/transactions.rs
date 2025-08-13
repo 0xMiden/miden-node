@@ -1,33 +1,17 @@
-use bigdecimal::BigDecimal;
-use diesel::SqliteConnection;
-use diesel::prelude::{AsChangeset, Insertable};
+use diesel::prelude::Queryable;
 use diesel::query_dsl::methods::SelectDsl;
-use miden_lib::utils::{Deserializable, Serializable};
-use miden_node_proto::domain::account::AccountSummary;
-use miden_node_proto::{self as proto};
+use diesel::{
+    ExpressionMethods, QueryDsl, QueryableByName, RunQueryDsl, Selectable, SqliteConnection,
+};
+use miden_lib::utils::Deserializable;
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
-use miden_objects::asset::AssetVault;
-use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
-    NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
-    NoteScript, NoteTag, NoteType, Nullifier,
-};
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
 use miden_objects::transaction::TransactionId;
-use miden_objects::{Felt, Word};
 
-use super::{
-    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, QueryDsl, Queryable, QueryableByName,
-    RunQueryDsl, Selectable, Sqlite,
-};
-use crate::db::models::conv::{
-    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
-    idx_to_raw_sql, note_type_to_raw_sql, raw_sql_to_nonce,
-};
-use crate::db::models::{
-    ExpressionMethods, TransactionSummaryRaw, serialize_vec, vec_raw_try_into,
-};
+use super::DatabaseError;
+use crate::db::models::conv::SqlTypeConvert;
+use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{TransactionSummary, schema};
 
 pub fn select_transactions_by_accounts_and_block_range(

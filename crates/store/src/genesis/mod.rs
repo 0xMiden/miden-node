@@ -3,7 +3,12 @@ use miden_objects::Word;
 use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::{
-    AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock,
+    AccountTree,
+    BlockAccountUpdate,
+    BlockHeader,
+    BlockNoteTree,
+    BlockNumber,
+    ProvenBlock,
 };
 use miden_objects::crypto::merkle::{Forest, MmrPeaks, Smt};
 use miden_objects::note::Nullifier;

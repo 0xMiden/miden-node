@@ -8,28 +8,21 @@ use diesel::query_dsl::methods::SelectDsl;
 use diesel::query_dsl::{QueryDsl, RunQueryDsl};
 use diesel::sqlite::Sqlite;
 use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection};
-use miden_lib::utils::{Deserializable, Serializable};
-use miden_node_proto::domain::account::AccountSummary;
-use miden_node_proto::{self as proto};
+use miden_lib::utils::Deserializable;
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
 };
-use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
-use miden_objects::asset::AssetVault;
-use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber};
+use miden_objects::account::AccountId;
+use miden_objects::block::{BlockNoteIndex, BlockNumber};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
     NoteAssets, NoteDetails, NoteExecutionHint, NoteExecutionMode, NoteId, NoteInclusionProof,
     NoteInputs, NoteMetadata, NoteRecipient, NoteScript, NoteTag, NoteType,
 };
-use miden_objects::transaction::TransactionId;
 use miden_objects::{Felt, Word};
 
 use super::DatabaseError;
-use crate::db::models::conv::{
-    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
-    idx_to_raw_sql, note_type_to_raw_sql, raw_sql_to_idx, raw_sql_to_nonce,
-};
+use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_idx};
 use crate::db::models::queries::select_block_header_by_block_num;
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{NoteRecord, NoteSyncRecord, NoteSyncUpdate, Page, schema};

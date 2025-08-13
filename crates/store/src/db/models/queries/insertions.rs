@@ -1,43 +1,33 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-use bigdecimal::BigDecimal;
 use diesel::prelude::{AsChangeset, Insertable};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::query_dsl::{QueryDsl, RunQueryDsl};
-use diesel::{JoinOnDsl, NullableExpressionMethods, SelectableHelper, SqliteConnection};
-use miden_lib::utils::{Deserializable, Serializable, Serializable};
-use miden_node_proto::domain::account::{AccountSummary, NetworkAccountPrefix};
-use miden_node_proto::{self as proto};
+use diesel::{
+    ExpressionMethods, JoinOnDsl, NullableExpressionMethods, SelectableHelper, SqliteConnection,
+};
+use miden_lib::utils::Serializable;
+use miden_node_proto as proto;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    Account, AccountCode, AccountDelta, AccountId, AccountId, AccountStorage, AccountStorageDelta,
-    AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction,
-    StorageSlot,
+    Account, AccountDelta, AccountId, AccountStorageDelta, AccountVaultDelta, FungibleAssetDelta,
+    NonFungibleAssetDelta, NonFungibleDeltaAction, StorageSlot,
 };
-use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::{
-    BlockAccountUpdate, BlockHeader, BlockHeader, BlockNoteIndex, BlockNumber, BlockNumber,
-};
-use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{
-    NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
-    NoteScript, NoteTag, NoteType, Nullifier, Nullifier,
-};
-use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
-use miden_objects::{Felt, LexicographicWord, Word, Word};
+use miden_objects::asset::Asset;
+use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
+use miden_objects::note::Nullifier;
+use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_objects::{Felt, LexicographicWord, Word};
 
-use super::{
-    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
-    Selectable, Sqlite,
-};
+use super::accounts::{AccountRaw, AccountWithCodeRaw};
+use super::{DatabaseError, NoteRecord};
 use crate::db::models::conv::{
     SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
     fungible_delta_to_raw_sql, idx_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
-    raw_sql_to_nonce, slot_to_raw_sql,
+    slot_to_raw_sql,
 };
-use crate::db::models::{AccountRaw, AccountWithCodeRaw, ExpressionMethods};
-use crate::db::{NoteRecord, schema, schema};
+use crate::db::schema;
 
 /// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
 ///
@@ -285,6 +275,8 @@ pub(crate) fn upsert_accounts(
     accounts: &[BlockAccountUpdate],
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
+    use proto::domain::account::NetworkAccountPrefix;
+
     fn select_details_stmt(
         conn: &mut SqliteConnection,
         account_id: AccountId,

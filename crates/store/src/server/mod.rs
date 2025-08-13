@@ -5,8 +5,10 @@ use std::sync::Arc;
 use anyhow::Context;
 use miden_node_proto::generated::{block_producer_store, ntx_builder_store, rpc_store};
 use miden_node_proto_build::{
-    store_block_producer_api_descriptor, store_ntx_builder_api_descriptor,
-    store_rpc_api_descriptor, store_shared_api_descriptor,
+    store_block_producer_api_descriptor,
+    store_ntx_builder_api_descriptor,
+    store_rpc_api_descriptor,
+    store_shared_api_descriptor,
 };
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use tokio::net::TcpListener;

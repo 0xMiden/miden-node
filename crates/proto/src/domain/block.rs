@@ -185,11 +185,9 @@ impl TryFrom<proto::block_producer_store::BlockInputs> for BlockInputs {
 impl TryFrom<proto::blockchain::FeeParameters> for FeeParameters {
     type Error = ConversionError;
     fn try_from(fee_params: proto::blockchain::FeeParameters) -> Result<Self, Self::Error> {
-        let account_id = fee_params
-            .native_asset_id
-            .clone()
-            .ok_or(proto::blockchain::FeeParameters::missing_field(stringify!(native_asset_id)))?;
-        let native_asset_id = AccountId::try_from(account_id)?;
+        let native_asset_id = fee_params.native_asset_id.map(AccountId::try_from).ok_or(
+            proto::blockchain::FeeParameters::missing_field(stringify!(native_asset_id)),
+        )??;
         let fee_params = FeeParameters::new(native_asset_id, fee_params.verification_base_fee)?;
         Ok(fee_params)
     }

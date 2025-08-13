@@ -351,7 +351,7 @@ pub(crate) fn select_all_accounts(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
         )),
-        (models::AccountRaw::as_select(), schema::account_codes::code.nullable()),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
     let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(

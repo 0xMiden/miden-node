@@ -51,7 +51,7 @@ tokio-stream          = { features = ["net"], version = "0.1" }
 tonic                 = { default-features = false, features = ["codegen", "prost", "router", "transport"], version = "0.13" }
 tonic-health          = { version = "0.13" }
 tonic-web             = { version = "0.13" }
-tower-http            = { features = ["trace", "catch-panic"], workspace = true }
+tower-http            = { features = ["trace"], workspace = true }
 tracing               = { version = "0.1" }
 uuid                  = { features = ["v4"], version = "1.16" }
 

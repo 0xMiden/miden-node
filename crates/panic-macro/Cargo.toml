@@ -1,14 +1,14 @@
 [package]
-name = "miden-node-panic-macro"
-version = "0.11.0"
 edition = "2021"
+name    = "miden-node-panic-macro"
+version = "0.11.0"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-quote = "1"
-syn = { version = "2", features = ["full"] }
-anyhow = { workspace = true}
-futures = { workspace = true}
+anyhow  = { workspace = true }
+futures = { workspace = true }
+quote   = "1"
+syn     = { features = ["full"], version = "2" }
 tracing = { workspace = true }

@@ -69,7 +69,7 @@ impl Command {
 // MAIN
 // ================================================================================================
 
-#[utils::handle_panic_fn]
+#[miden_node_utils::panic::handle_panic_fn]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();

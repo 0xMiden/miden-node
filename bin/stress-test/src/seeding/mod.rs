@@ -42,7 +42,7 @@ use miden_objects::transaction::{
     TransactionHeader,
 };
 use miden_objects::vm::ExecutionProof;
-use miden_objects::{Felt, ONE, Word};
+use miden_objects::{AssetError, Felt, ONE, Word};
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::prelude::ParallelSlice;
@@ -256,6 +256,14 @@ async fn apply_block(
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Extract the payable fee as `FungibleAsset` from the given `BlockHeader`.
+fn fee_from_block(block_ref: &BlockHeader) -> Result<FungibleAsset, AssetError> {
+    FungibleAsset::new(
+        block_ref.fee_parameters().native_asset_id(),
+        u64::from(block_ref.fee_parameters().verification_base_fee()),
+    )
+}
+
 /// Creates `num_accounts` accounts, and for each one creates a note that mint assets.
 ///
 /// Returns a tuple with:
@@ -404,11 +412,7 @@ fn create_consume_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
-        FungibleAsset::new(
-            block_ref.fee_parameters().native_asset_id(),
-            u64::from(block_ref.fee_parameters().verification_base_fee()),
-        )
-        .unwrap(),
+        fee_from_block(block_ref).unwrap(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )

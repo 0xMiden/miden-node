@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use itertools::Itertools;
+use miden_node_utils::fee::test_fee;
 use miden_objects::account::AccountId;
 use miden_objects::asset::FungibleAsset;
 use miden_objects::block::BlockNumber;
@@ -28,11 +29,6 @@ pub struct MockProvenTxBuilder {
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
     fee: FungibleAsset,
-}
-
-fn test_fee() -> FungibleAsset {
-    let faucet = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
-    FungibleAsset::new(faucet, 0).unwrap()
 }
 
 impl MockProvenTxBuilder {

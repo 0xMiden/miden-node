@@ -9,6 +9,7 @@ use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::note::create_p2id_note;
 use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::domain::account::AccountSummary;
+use miden_node_utils::fee::test_fee_params;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     Account,
@@ -30,7 +31,6 @@ use miden_objects::block::{
     BlockNoteIndex,
     BlockNoteTree,
     BlockNumber,
-    FeeParameters,
 };
 use miden_objects::crypto::dsa::rpo_falcon512::PublicKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
@@ -46,7 +46,6 @@ use miden_objects::note::{
     Nullifier,
 };
 use miden_objects::testing::account_id::{
-    ACCOUNT_ID_NATIVE_ASSET_FAUCET,
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
@@ -67,11 +66,6 @@ fn create_db() -> SqliteConnection {
     let mut conn = SqliteConnection::establish(":memory:").expect("In memory sqlite always works");
     apply_migrations(&mut conn).expect("Migrations always work on an empty database");
     conn
-}
-
-fn test_fee_params() -> FeeParameters {
-    let faucet: AccountId = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
-    FeeParameters::new(faucet, 0).unwrap()
 }
 
 fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {

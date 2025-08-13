@@ -7,6 +7,7 @@ use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
+use miden_node_utils::fee::test_fee;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     AccountDelta,
@@ -187,11 +188,6 @@ async fn rpc_server_has_web_support() {
     assert!(headers.get("access-control-expose-headers").is_some());
     assert!(headers.get("vary").is_some());
     store_runtime.shutdown_background();
-}
-
-fn test_fee() -> FungibleAsset {
-    let faucet = ACCOUNT_ID_NATIVE_ASSET_FAUCET.try_into().unwrap();
-    FungibleAsset::new(faucet, 0).unwrap()
 }
 
 #[tokio::test]

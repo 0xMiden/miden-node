@@ -152,7 +152,7 @@ impl NtxContext {
                 for failed in failed {
                     let err = failed.error.as_report();
                     let note_id = failed.note.id();
-                    tracing::warn!(%note_id, %err, "note failed");
+                    tracing::debug!(%note_id, %err, "note failed");
                 }
                 InputNotes::new_unchecked(notes)
             },

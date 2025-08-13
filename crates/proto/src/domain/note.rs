@@ -1,14 +1,7 @@
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
-    Note,
-    NoteDetails,
-    NoteExecutionHint,
-    NoteId,
-    NoteInclusionProof,
-    NoteMetadata,
-    NoteTag,
-    NoteType,
-    Nullifier,
+    Note, NoteDetails, NoteExecutionHint, NoteId, NoteInclusionProof, NoteMetadata, NoteTag,
+    NoteType, Nullifier,
 };
 use miden_objects::utils::{Deserializable, Serializable};
 use miden_objects::{Felt, Word};

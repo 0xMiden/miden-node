@@ -1,10 +1,13 @@
-use diesel::query_dsl::methods::SelectDsl;
+use diesel::prelude::{AsChangeset, Insertable};
 use diesel::{OptionalExtension, SelectableHelper, SqliteConnection};
-use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
+use miden_node_utils::limiter::QueryParamBlockLimit;
 use miden_objects::block::{BlockHeader, BlockNumber};
 
-use super::{DatabaseError, QueryDsl, RunQueryDsl};
-use crate::db::models::conv::SqlTypeConvert;
+use super::{DatabaseError, QueryDsl, Queryable, QueryableByName, Selectable, Sqlite};
+use crate::db::models::conv::{
+    aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql, idx_to_raw_sql,
+    note_type_to_raw_sql, raw_sql_to_nonce,
+};
 use crate::db::models::{self, ExpressionMethods, vec_raw_try_into};
 use crate::db::schema;
 
@@ -78,4 +81,20 @@ pub fn select_all_block_headers(
             .order(schema::block_headers::block_num.asc())
             .load::<models::BlockHeaderRaw>(conn)?;
     vec_raw_try_into(raw_block_headers)
+}
+
+#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
+#[diesel(table_name = schema::block_headers)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct BlockHeaderRaw {
+    #[allow(dead_code)]
+    pub block_num: i64,
+    pub block_header: Vec<u8>,
+}
+impl TryInto<BlockHeader> for BlockHeaderRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<BlockHeader, Self::Error> {
+        let block_header = BlockHeader::read_from_bytes(&self.block_header[..])?;
+        Ok(block_header)
+    }
 }

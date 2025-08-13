@@ -1,45 +1,43 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
+use bigdecimal::BigDecimal;
+use diesel::prelude::{AsChangeset, Insertable};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::query_dsl::{QueryDsl, RunQueryDsl};
 use diesel::{JoinOnDsl, NullableExpressionMethods, SelectableHelper, SqliteConnection};
-use miden_lib::utils::Serializable;
-use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_lib::utils::{Deserializable, Serializable, Serializable};
+use miden_node_proto::domain::account::{AccountSummary, NetworkAccountPrefix};
+use miden_node_proto::{self as proto};
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    Account,
-    AccountDelta,
-    AccountId,
-    AccountStorageDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
+    Account, AccountCode, AccountDelta, AccountId, AccountId, AccountStorage, AccountStorageDelta,
+    AccountVaultDelta, FungibleAssetDelta, NonFungibleAssetDelta, NonFungibleDeltaAction,
     StorageSlot,
 };
-use miden_objects::asset::Asset;
-use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::OrderedTransactionHeaders;
-use miden_objects::{Felt, LexicographicWord, Word};
+use miden_objects::asset::{Asset, AssetVault};
+use miden_objects::block::{
+    BlockAccountUpdate, BlockHeader, BlockHeader, BlockNoteIndex, BlockNumber, BlockNumber,
+};
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{
+    NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
+    NoteScript, NoteTag, NoteType, Nullifier, Nullifier,
+};
+use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
+use miden_objects::{Felt, LexicographicWord, Word, Word};
 
-use super::DatabaseError;
+use super::{
+    DatabaseError, NoteRecord, NoteSyncRecord, NullifierInfo, Queryable, QueryableByName,
+    Selectable, Sqlite,
+};
 use crate::db::models::conv::{
-    SqlTypeConvert,
-    fungible_delta_to_raw_sql,
-    nonce_to_raw_sql,
-    slot_to_raw_sql,
+    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
+    fungible_delta_to_raw_sql, idx_to_raw_sql, nonce_to_raw_sql, note_type_to_raw_sql,
+    raw_sql_to_nonce, slot_to_raw_sql,
 };
-use crate::db::models::{
-    AccountCodeRowInsert,
-    AccountRaw,
-    AccountRowInsert,
-    AccountWithCodeRaw,
-    ExpressionMethods,
-    NoteInsertRowRaw,
-};
-use crate::db::{NoteRecord, schema};
+use crate::db::models::{AccountRaw, AccountWithCodeRaw, ExpressionMethods};
+use crate::db::{NoteRecord, schema, schema};
 
 /// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
 ///
@@ -477,4 +475,74 @@ pub(crate) fn insert_transactions(
         })))
         .execute(conn)?;
     Ok(count)
+}
+
+#[derive(Debug, Clone, PartialEq, Insertable)]
+#[diesel(table_name = schema::notes)]
+pub struct NoteInsertRowRaw {
+    pub committed_at: i64,
+
+    pub batch_index: i32,
+    pub note_index: i32, // index within batch
+
+    pub note_id: Vec<u8>,
+
+    pub note_type: i32,
+    pub sender: Vec<u8>, // AccountId
+    pub tag: i32,
+    pub aux: i64,
+    pub execution_hint: i64,
+
+    pub consumed_at: Option<i64>,
+    pub assets: Option<Vec<u8>>,
+    pub inputs: Option<Vec<u8>>,
+    pub serial_num: Option<Vec<u8>>,
+    pub nullifier: Option<Vec<u8>>,
+    pub script_root: Option<Vec<u8>>,
+    pub execution_mode: i32,
+    pub inclusion_path: Vec<u8>,
+}
+
+impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
+    fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
+        Self {
+            committed_at: note.block_num.to_raw_sql(),
+            batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
+            note_index: idx_to_raw_sql(note.note_index.note_idx_in_batch()),
+            note_id: note.note_id.to_bytes(),
+            note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
+            sender: note.metadata.sender().to_bytes(),
+            tag: note.metadata.tag().to_raw_sql(),
+            execution_mode: execution_mode_to_raw_sql(note.metadata.tag().execution_mode() as i32),
+            aux: aux_to_raw_sql(note.metadata.aux()),
+            execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
+            inclusion_path: note.inclusion_path.to_bytes(),
+            consumed_at: None::<i64>, // New notes are always unconsumed.
+            nullifier: nullifier.as_ref().map(Nullifier::to_bytes), /* Beware: `Option<T>` also implements `to_bytes`, but this is not what you want. */
+            assets: note.details.as_ref().map(|d| d.assets().to_bytes()),
+            inputs: note.details.as_ref().map(|d| d.inputs().to_bytes()),
+            script_root: note.details.as_ref().map(|d| d.script().root().to_bytes()),
+            serial_num: note.details.as_ref().map(|d| d.serial_num().to_bytes()),
+        }
+    }
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = schema::account_codes)]
+pub(crate) struct AccountCodeRowInsert {
+    pub(crate) code_commitment: Vec<u8>,
+    pub(crate) code: Vec<u8>,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::accounts)]
+pub(crate) struct AccountRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) network_account_id_prefix: Option<i64>,
+    pub(crate) block_num: i64,
+    pub(crate) account_commitment: Vec<u8>,
+    pub(crate) code_commitment: Option<Vec<u8>>,
+    pub(crate) storage: Option<Vec<u8>>,
+    pub(crate) vault: Option<Vec<u8>>,
+    pub(crate) nonce: Option<i64>,
 }

@@ -1,12 +1,6 @@
 use miden_objects::Word;
 use miden_objects::crypto::merkle::{
-    Forest,
-    LeafIndex,
-    MerklePath,
-    MmrDelta,
-    SmtLeaf,
-    SmtProof,
-    SparseMerklePath,
+    Forest, LeafIndex, MerklePath, MmrDelta, SmtLeaf, SmtProof, SparseMerklePath,
 };
 
 use crate::domain::{convert, try_convert};

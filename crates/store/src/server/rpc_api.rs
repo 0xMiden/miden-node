@@ -14,11 +14,7 @@ use tracing::{debug, info, instrument};
 
 use crate::COMPONENT;
 use crate::server::api::{
-    StoreApi,
-    internal_error,
-    read_account_id,
-    read_account_ids,
-    validate_nullifiers,
+    StoreApi, internal_error, read_account_id, read_account_ids, validate_nullifiers,
 };
 
 // CLIENT ENDPOINTS

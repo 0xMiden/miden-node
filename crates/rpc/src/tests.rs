@@ -8,13 +8,8 @@ use miden_node_proto::generated::{self as proto};
 use miden_node_store::{GenesisState, Store};
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    AccountDelta,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageDelta,
-    AccountStorageMode,
-    AccountType,
-    AccountVaultDelta,
+    AccountDelta, AccountId, AccountIdVersion, AccountStorageDelta, AccountStorageMode,
+    AccountType, AccountVaultDelta,
 };
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;

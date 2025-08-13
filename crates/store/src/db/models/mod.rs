@@ -29,10 +29,8 @@ use crate::errors::DatabaseError;
 pub(crate) mod conv;
 
 pub mod queries;
-mod types;
 pub(crate) mod utils;
 
-pub use types::*;
 pub(crate) use utils::*;
 
 /// The page token and size to query from the DB.

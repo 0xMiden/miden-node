@@ -27,18 +27,12 @@ use crate::batch_builder::BatchBuilder;
 use crate::block_builder::BlockBuilder;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{
-    AddTransactionError,
-    BlockProducerError,
-    StoreError,
-    SubmitProvenBatchError,
-    VerifyTxError,
+    AddTransactionError, BlockProducerError, StoreError, SubmitProvenBatchError, VerifyTxError,
 };
 use crate::mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool};
 use crate::store::StoreClient;
 use crate::{
-    COMPONENT,
-    SERVER_MEMPOOL_EXPIRATION_SLACK,
-    SERVER_MEMPOOL_STATE_RETENTION,
+    COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION,
     SERVER_NUM_BATCH_BUILDERS,
 };
 

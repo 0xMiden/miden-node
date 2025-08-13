@@ -1,17 +1,32 @@
+use bigdecimal::BigDecimal;
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{SelectableHelper, SqliteConnection};
 use miden_lib::utils::Serializable;
+use miden_node_proto::domain::account::AccountSummary;
+use miden_node_proto::{self as proto};
 use miden_node_utils::limiter::{
-    QueryParamLimiter,
-    QueryParamNullifierLimit,
-    QueryParamNullifierPrefixLimit,
+    QueryParamLimiter, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
 };
+use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
+use miden_objects::asset::AssetVault;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::note::{
+    NoteAssets, NoteDetails, NoteExecutionHint, NoteInputs, NoteMetadata, NoteRecipient,
+    NoteScript, NoteTag, NoteType, Nullifier,
+};
+use miden_objects::transaction::TransactionId;
+use miden_objects::{Felt, Word};
 
-use super::{DatabaseError, QueryDsl, RunQueryDsl};
-use crate::db::models::conv::{SqlTypeConvert, nullifier_prefix_to_raw_sql};
-use crate::db::models::{self, ExpressionMethods, get_nullifier_prefix, vec_raw_try_into};
+use super::{
+    DatabaseError, NoteRecord, NullifierInfo, QueryDsl, Queryable, QueryableByName, RunQueryDsl,
+    Selectable, Sqlite,
+};
+use crate::db::models::conv::{
+    SqlTypeConvert, aux_to_raw_sql, execution_hint_to_raw_sql, execution_mode_to_raw_sql,
+    idx_to_raw_sql, note_type_to_raw_sql, nullifier_prefix_to_raw_sql, raw_sql_to_nonce,
+};
+use crate::db::models::{ExpressionMethods, get_nullifier_prefix, vec_raw_try_into};
 use crate::db::{NullifierInfo, schema};
 
 /// Returns nullifiers filtered by prefix and block creation height.
@@ -45,14 +60,12 @@ pub(crate) fn select_nullifiers_by_prefix(
     //     block_num ASC
 
     let prefixes = nullifier_prefixes.iter().map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
-    let nullifiers_raw = SelectDsl::select(
-        schema::nullifiers::table,
-        models::NullifierWithoutPrefixRawRow::as_select(),
-    )
-    .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
-    .filter(schema::nullifiers::block_num.ge(block_num.to_raw_sql()))
-    .order(schema::nullifiers::block_num.asc())
-    .load::<models::NullifierWithoutPrefixRawRow>(conn)?;
+    let nullifiers_raw =
+        SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
+            .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
+            .filter(schema::nullifiers::block_num.ge(block_num.to_raw_sql()))
+            .order(schema::nullifiers::block_num.asc())
+            .load::<NullifierWithoutPrefixRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }
 
@@ -65,11 +78,9 @@ pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
     // SELECT nullifier, block_num FROM nullifiers ORDER BY block_num ASC
-    let nullifiers_raw = SelectDsl::select(
-        schema::nullifiers::table,
-        models::NullifierWithoutPrefixRawRow::as_select(),
-    )
-    .load::<models::NullifierWithoutPrefixRawRow>(conn)?;
+    let nullifiers_raw =
+        SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
+            .load::<NullifierWithoutPrefixRawRow>(conn)?;
     vec_raw_try_into(nullifiers_raw)
 }
 
@@ -114,4 +125,21 @@ pub(crate) fn insert_nullifiers_for_block(
         .execute(conn)?;
 
     Ok(count)
+}
+
+#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
+#[diesel(table_name = schema::nullifiers)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct NullifierWithoutPrefixRawRow {
+    pub nullifier: Vec<u8>,
+    pub block_num: i64,
+}
+
+impl TryInto<NullifierInfo> for NullifierWithoutPrefixRawRow {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<NullifierInfo, Self::Error> {
+        let nullifier = Nullifier::read_from_bytes(&self.nullifier)?;
+        let block_num = BlockNumber::from_raw_sql(self.block_num)?;
+        Ok(NullifierInfo { nullifier, block_num })
+    }
 }

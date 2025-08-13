@@ -9,11 +9,7 @@ use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 
 use super::{
-    BoolExpressionMethods,
-    DatabaseError,
-    NoteSyncRecordRawRow,
-    QueryDsl,
-    RunQueryDsl,
+    BoolExpressionMethods, DatabaseError, NoteSyncRecordRawRow, QueryDsl, RunQueryDsl,
     SelectableHelper,
 };
 use crate::db::models::conv::SqlTypeConvert;

@@ -10,9 +10,7 @@ use miden_objects::batch::{BatchId, ProvenBatch};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::transaction::TransactionId;
 use miden_objects::{
-    MAX_ACCOUNTS_PER_BATCH,
-    MAX_INPUT_NOTES_PER_BATCH,
-    MAX_OUTPUT_NOTES_PER_BATCH,
+    MAX_ACCOUNTS_PER_BATCH, MAX_INPUT_NOTES_PER_BATCH, MAX_OUTPUT_NOTES_PER_BATCH,
 };
 use subscription::SubscriptionProvider;
 use tokio::sync::{Mutex, MutexGuard, mpsc};

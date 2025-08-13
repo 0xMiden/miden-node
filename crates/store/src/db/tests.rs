@@ -11,44 +11,22 @@ use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountDelta,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageDelta,
-    AccountStorageMode,
-    AccountType,
-    AccountVaultDelta,
-    StorageSlot,
+    Account, AccountBuilder, AccountComponent, AccountDelta, AccountId, AccountIdVersion,
+    AccountStorageDelta, AccountStorageMode, AccountType, AccountVaultDelta, StorageSlot,
 };
 use miden_objects::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
 use miden_objects::block::{
-    BlockAccountUpdate,
-    BlockHeader,
-    BlockNoteIndex,
-    BlockNoteTree,
-    BlockNumber,
+    BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber,
 };
 use miden_objects::crypto::dsa::rpo_falcon512::PublicKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{
-    Note,
-    NoteDetails,
-    NoteExecutionHint,
-    NoteId,
-    NoteMetadata,
-    NoteTag,
-    NoteType,
-    Nullifier,
+    Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
 };
 use miden_objects::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId};
 use miden_objects::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};

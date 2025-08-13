@@ -7,26 +7,15 @@ use miden_objects::account::{Account, AccountId};
 use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::transaction::{
-    ExecutedTransaction,
-    InputNote,
-    InputNotes,
-    PartialBlockchain,
-    ProvenTransaction,
+    ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
     TransactionArgs,
 };
 use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore,
-    DataStoreError,
-    LocalTransactionProver,
-    MastForestStore,
-    NoteAccountExecution,
-    NoteConsumptionChecker,
-    TransactionExecutor,
-    TransactionExecutorError,
-    TransactionMastStore,
+    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
+    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
     TransactionProverError,
 };
 use rand::seq::SliceRandom;

@@ -233,8 +233,7 @@ mod test {
     use miden_objects::asset::{Asset, FungibleAsset};
     use miden_objects::note::NoteType;
     use miden_objects::testing::account_id::{
-        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_SENDER,
+        ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER,
     };
     use miden_objects::transaction::{ProvenTransaction, TransactionWitness};
     use miden_testing::{Auth, MockChainBuilder};

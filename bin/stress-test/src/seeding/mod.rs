@@ -26,13 +26,8 @@ use miden_objects::crypto::dsa::rpo_falcon512::{PublicKey, SecretKey};
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
 use miden_objects::transaction::{
-    InputNote,
-    InputNotes,
-    OrderedTransactionHeaders,
-    OutputNote,
-    ProvenTransaction,
-    ProvenTransactionBuilder,
-    TransactionHeader,
+    InputNote, InputNotes, OrderedTransactionHeaders, OutputNote, ProvenTransaction,
+    ProvenTransactionBuilder, TransactionHeader,
 };
 use miden_objects::vm::ExecutionProof;
 use miden_objects::{Felt, ONE, Word};

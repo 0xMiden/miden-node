@@ -1,44 +1,20 @@
-use std::collections::BTreeMap;
-
+use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
+use diesel::sqlite::Sqlite;
 use diesel::{
-    BoolExpressionMethods,
-    JoinOnDsl,
-    NullableExpressionMethods,
-    OptionalExtension,
-    Queryable,
-    SqliteConnection,
-    alias,
+    ExpressionMethods, JoinOnDsl, NullableExpressionMethods, QueryDsl, Selectable,
+    SelectableHelper, SqliteConnection,
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
-use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::Word;
-use miden_objects::account::{
-    AccountDelta,
-    AccountId,
-    AccountStorageDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    StorageMapDelta,
-};
-use miden_objects::asset::NonFungibleAsset;
+use miden_objects::account::{AccountCode, AccountId, AccountStorage};
+use miden_objects::asset::AssetVault;
 use miden_objects::block::BlockNumber;
+use miden_objects::{Felt, Word};
 
-use super::{DatabaseError, QueryDsl, RunQueryDsl, SelectableHelper};
-use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_nonce, raw_sql_to_slot};
-use crate::db::models::{
-    AccountRaw,
-    AccountSummaryRaw,
-    AccountWithCodeRaw,
-    BigIntSum,
-    ExpressionMethods,
-    serialize_vec,
-    sql_sum_into,
-    vec_raw_try_into,
-};
+use crate::db::models::conv::raw_sql_to_nonce;
 use crate::db::schema;
+use crate::errors::DatabaseError;
 
 /// Select the latest account details by account id from the DB using the given
 /// [`SqliteConnection`].
@@ -562,4 +538,122 @@ pub(crate) fn select_non_fungible_asset_updates_stmt(
     .order(schema::account_non_fungible_asset_updates::block_num.asc())
     .get_results(conn)?;
     Ok(entries)
+}
+
+/// A type to represent a `sum(BigInt)`
+// TODO: make this a type, but it's unclear how that should work
+// See: <https://github.com/diesel-rs/diesel/discussions/4684>
+pub type BigIntSum = BigDecimal;
+
+/// Impractical conversion required for `diesel-rs` `sum(BigInt)` results.
+pub fn sql_sum_into<T, E>(
+    sum: &BigIntSum,
+    table: &'static str,
+    column: &'static str,
+) -> Result<T, DatabaseError>
+where
+    E: std::error::Error + Send + Sync + 'static,
+    T: TryFrom<bigdecimal::num_bigint::BigInt, Error = E>,
+{
+    let (val, exponent) = sum.as_bigint_and_exponent();
+    debug_assert_eq!(
+        exponent, 0,
+        "We only sum(integers), hence there must never be a decimal result"
+    );
+    let val = T::try_from(val).map_err(|e| DatabaseError::ColumnSumExceedsLimit {
+        table,
+        column,
+        limit: "<T>::MAX",
+        source: Box::new(e),
+    })?;
+    Ok::<_, DatabaseError>(val)
+}
+
+#[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
+#[diesel(table_name = schema::accounts)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct AccountRaw {
+    pub account_id: Vec<u8>,
+    pub account_commitment: Vec<u8>,
+    pub block_num: i64,
+    pub storage: Option<Vec<u8>>,
+    pub vault: Option<Vec<u8>>,
+    pub nonce: Option<i64>,
+}
+
+#[derive(Debug, Clone, QueryableByName)]
+pub struct AccountWithCodeRaw {
+    #[diesel(embed)]
+    pub account: AccountRaw,
+    #[diesel(embed)]
+    pub code: Option<Vec<u8>>,
+}
+
+impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRaw {
+    fn from((account, code): (AccountRaw, Option<Vec<u8>>)) -> Self {
+        Self { account, code }
+    }
+}
+
+impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
+        use proto::domain::account::{AccountInfo, AccountSummary};
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account.account_commitment[..])?;
+        let block_num = BlockNumber::from_raw_sql(self.account.block_num)?;
+        let summary = AccountSummary {
+            account_id,
+            account_commitment,
+            block_num,
+        };
+        let maybe_account = self.try_into()?;
+        Ok(AccountInfo { summary, details: maybe_account })
+    }
+}
+
+impl TryInto<Option<Account>> for AccountWithCodeRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<Option<Account>, Self::Error> {
+        let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;
+
+        let details = if let (Some(vault), Some(storage), Some(nonce), Some(code)) =
+            (self.account.vault, self.account.storage, self.account.nonce, self.code)
+        {
+            let vault = AssetVault::read_from_bytes(&vault)?;
+            let storage = AccountStorage::read_from_bytes(&storage)?;
+            let code = AccountCode::read_from_bytes(&code)?;
+            let nonce = raw_sql_to_nonce(nonce);
+            let nonce = Felt::new(nonce);
+            Some(Account::from_parts(account_id, vault, storage, code, nonce))
+        } else {
+            // a private account
+            None
+        };
+        Ok(details)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Selectable, Queryable, QueryableByName)]
+#[diesel(table_name = schema::accounts)]
+#[diesel(check_for_backend(Sqlite))]
+pub struct AccountSummaryRaw {
+    account_id: Vec<u8>,         // AccountId,
+    account_commitment: Vec<u8>, //RpoDigest,
+    block_num: i64,              //BlockNumber,
+}
+
+impl TryInto<AccountSummary> for AccountSummaryRaw {
+    type Error = DatabaseError;
+    fn try_into(self) -> Result<AccountSummary, Self::Error> {
+        let account_id = AccountId::read_from_bytes(&self.account_id[..])?;
+        let account_commitment = Word::read_from_bytes(&self.account_commitment[..])?;
+        let block_num = BlockNumber::from_raw_sql(self.block_num)?;
+
+        Ok(AccountSummary {
+            account_id,
+            account_commitment,
+            block_num,
+        })
+    }
 }

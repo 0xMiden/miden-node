@@ -52,8 +52,8 @@ pub enum NtxError {
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
     Submission(#[source] tonic::Status),
-    #[error("failed to spawn blocking task")]
-    Spawn(#[source] JoinError),
+    #[error("the ntx task panic'd")]
+    Panic(#[source] JoinError),
 }
 
 type NtxResult<T> = Result<T, NtxError>;
@@ -196,7 +196,7 @@ impl NtxContext {
         } else {
             tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
                 .await
-                .map_err(NtxError::Spawn)?
+                .map_err(NtxError::Panic)?
         }
         .map_err(NtxError::Proving)
     }

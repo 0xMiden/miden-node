@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 mod blocks;
-mod db;
+pub mod db;
 mod errors;
 pub mod genesis;
 mod server;

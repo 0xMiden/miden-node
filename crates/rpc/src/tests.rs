@@ -18,8 +18,6 @@ use miden_objects::account::{
     AccountType,
     AccountVaultDelta,
 };
-use miden_objects::asset::FungibleAsset;
-use miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;
 use miden_objects::vm::ExecutionProof;

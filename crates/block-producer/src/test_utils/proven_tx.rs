@@ -6,7 +6,6 @@ use miden_objects::account::AccountId;
 use miden_objects::asset::FungibleAsset;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier};
-use miden_objects::testing::account_id::ACCOUNT_ID_NATIVE_ASSET_FAUCET;
 use miden_objects::transaction::{
     InputNote,
     OutputNote,

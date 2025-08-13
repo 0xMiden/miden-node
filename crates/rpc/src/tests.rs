@@ -5,7 +5,9 @@ use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
-use miden_node_store::{GenesisState, Store};
+use miden_node_store::Store;
+use miden_node_store::genesis::config::GenesisConfig;
+use miden_node_utils::fee::test_fee;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     AccountDelta,
@@ -213,6 +215,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         [22; 32].try_into().unwrap(), // delta commitment
         0.into(),
         Word::default(),
+        test_fee(),
         u32::MAX.into(),
         ExecutionProof::new_dummy(),
     )
@@ -299,7 +302,8 @@ async fn start_rpc() -> (ApiClient, std::net::SocketAddr, std::net::SocketAddr) 
 async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
     // Start the store.
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
-    let genesis_state = GenesisState::new(vec![], 1, 1);
+
+    let (genesis_state, _) = GenesisConfig::default().into_state().unwrap();
     Store::bootstrap(genesis_state.clone(), data_directory.path()).expect("store should bootstrap");
     let dir = data_directory.path().to_path_buf();
     let rpc_listener = TcpListener::bind(store_addr).await.expect("store should bind a port");

@@ -53,7 +53,7 @@ miden-tx              = { branch = "next", default-features = false, git = "http
 miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { version = "0.16" }
+miden-air = { version = "0.17" }
 
 # External dependencies
 anyhow             = { version = "1.0" }

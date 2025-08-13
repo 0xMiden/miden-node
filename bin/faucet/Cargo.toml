@@ -29,7 +29,7 @@ miden-node-rpc             = { workspace = true }
 miden-node-utils           = { workspace = true }
 miden-objects              = { workspace = true }
 miden-remote-prover-client = { features = ["tx-prover"], workspace = true }
-miden-tx                   = { features = ["async", "concurrent"], workspace = true }
+miden-tx                   = { features = ["concurrent"], workspace = true }
 rand                       = { features = ["thread_rng"], workspace = true }
 rand_chacha                = { version = "0.9" }
 serde                      = { features = ["derive"], version = "1.0" }
@@ -52,7 +52,7 @@ miden-node-utils = { features = ["vergen"], workspace = true }
 fantoccini                = { version = "0.22" }
 miden-node-block-producer = { features = ["testing"], workspace = true }
 miden-objects             = { features = ["testing"], workspace = true }
-miden-testing             = { features = ["async"], workspace = true }
+miden-testing             = { workspace = true }
 serde_json                = { version = "1.0" }
 tokio                     = { features = ["process"], workspace = true }
 tokio-stream              = { features = ["net"], workspace = true }

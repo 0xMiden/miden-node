@@ -1,6 +1,11 @@
 timestamp = 1717344256
 version   = 1
 
+
+[fee_parameters]
+symbol                = "MIDEN"
+verification_base_fee = 0
+
 [[fungible_faucet]]
 decimals     = 3
 max_supply   = 100_000_000

@@ -23,6 +23,7 @@ use miden_objects::account::{
     NonFungibleAssetDelta,
 };
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
+use miden_objects::block::FeeParameters;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use miden_objects::{Felt, FieldElement, ONE, Word, ZERO};
 use rand::distr::weighted::Weight;
@@ -47,6 +48,7 @@ mod tests;
 pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
+    fee_parameters: FeeParameterConfig,
     wallet: Vec<WalletConfig>,
     fungible_faucet: Vec<FungibleFaucetConfig>,
 }
@@ -63,6 +65,10 @@ impl Default for GenesisConfig {
             )
             .expect("Timestamp should fit into u32"),
             wallet: vec![],
+            fee_parameters: FeeParameterConfig {
+                symbol: "MIDEN".to_owned(),
+                verification_base_fee: 0u32,
+            },
             fungible_faucet: vec![FungibleFaucetConfig {
                 max_supply: 100_000_000_000_000_000u64,
                 decimals: 6u8,
@@ -92,7 +98,10 @@ impl GenesisConfig {
             timestamp,
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
+            fee_parameters,
         } = self;
+
+        let _ = TokenSymbol::new(&fee_parameters.symbol)?;
 
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
@@ -150,6 +159,23 @@ impl GenesisConfig {
             // Do _not_ collect the account, only after we know all wallet assets
             // we know the remaining supply in the faucets.
         }
+
+        // Translate the fee parameters
+        let native_asset_account = faucet_accounts
+            .get(&fee_parameters.symbol)
+            .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol.clone()))?;
+        if native_asset_account.account_type() != AccountType::FungibleFaucet {
+            return Err(GenesisConfigError::NativeAssetFaucitIsNotAFungibleFaucet(
+                fee_parameters.symbol,
+            ));
+        }
+        if !native_asset_account.is_public() {
+            return Err(GenesisConfigError::NativeAssetFaucetIsNotPublic(fee_parameters.symbol));
+        }
+
+        let native_asset_account_id = native_asset_account.id();
+        let fee_parameters =
+            FeeParameters::new(native_asset_account_id, fee_parameters.verification_base_fee)?;
 
         // Track all adjustments, one per faucet account id
         let mut faucet_issuance = HashMap::<AccountId, u64>::new();
@@ -269,6 +295,7 @@ impl GenesisConfig {
 
         Ok((
             GenesisState {
+                fee_parameters,
                 accounts: all_accounts,
                 version,
                 timestamp,
@@ -276,6 +303,22 @@ impl GenesisConfig {
             AccountSecrets { secrets },
         ))
     }
+}
+
+// FEE PARAMETER CONFIG
+// ================================================================================================
+
+/// Represents a the fee parameters using the given asset
+///
+/// A faucet providing the `symbol` token moste exist.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FeeParameterConfig {
+    // TODO eventually directly parse to `TokenSymbol`
+    /// Token symbol to use for base fees.
+    symbol: String,
+    /// Verification base fee, in units of smallest denomination.
+    verification_base_fee: u32,
 }
 
 // FUNGIBLE FAUCET CONFIG

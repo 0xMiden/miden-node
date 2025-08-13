@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_possible_wrap,
+    reason = "We will not approach the item count where i64 and usize cause issues"
+)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use diesel::prelude::{

@@ -223,9 +223,10 @@ pub(crate) fn select_account_delta(
         let asset = NonFungibleAsset::read_from_bytes(&vault_key_asset)
             .map_err(|err| DatabaseError::DataCorrupted(err.to_string()))?;
 
-        match is_remove {
-            false => non_fungible_delta.add(asset)?,
-            true => non_fungible_delta.remove(asset)?,
+        if is_remove {
+            non_fungible_delta.remove(asset)?;
+        } else {
+            non_fungible_delta.add(asset)?;
         }
     }
 

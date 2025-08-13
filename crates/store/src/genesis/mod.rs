@@ -26,8 +26,8 @@ pub mod config;
 /// Represents the state at genesis, which will be used to derive the genesis block.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenesisState {
-    pub fee_parameters: FeeParameters,
     pub accounts: Vec<Account>,
+    pub fee_parameters: FeeParameters,
     pub version: u32,
     pub timestamp: u32,
 }
@@ -48,8 +48,8 @@ impl GenesisBlock {
 
 impl GenesisState {
     pub fn new(
-        fee_parameters: FeeParameters,
         accounts: Vec<Account>,
+        fee_parameters: FeeParameters,
         version: u32,
         timestamp: u32,
     ) -> Self {
@@ -132,6 +132,6 @@ impl Deserializable for GenesisState {
         let timestamp = source.read_u32()?;
         let fee_parameters = source.read::<FeeParameters>()?;
 
-        Ok(Self::new(fee_parameters, accounts, version, timestamp))
+        Ok(Self::new(accounts, fee_parameters, version, timestamp))
     }
 }

@@ -77,8 +77,8 @@ message BlockHeader {
 
 // Definition of the fee parameters.
 message FeeParameters {
-    // Respective faucet `AccountId`.
+    // The faucet account ID which is used for native fee assets.
     account.AccountId native_asset_id = 1;
-    // Verification base fee.
+    /// The base fee (in base units) capturing the cost for the verification of a transaction.
     fixed32 verification_base_fee = 2;
 }

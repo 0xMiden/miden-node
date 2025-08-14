@@ -44,7 +44,6 @@ use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
 use miden_objects::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
-use tokio::time::Instant;
 use tracing::{info, info_span, instrument};
 
 use crate::blocks::BlockStore;
@@ -1032,22 +1031,9 @@ impl State {
 #[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitializationError> {
     let nullifiers = db.select_all_nullifiers().await?;
-    let len = nullifiers.len();
 
-    let now = Instant::now();
-    let nullifier_tree = NullifierTree::with_entries(
-        nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)),
-    )
-    .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
-    let elapsed = now.elapsed().as_secs();
-
-    info!(
-        num_of_leaves = len,
-        tree_construction = elapsed,
-        COMPONENT,
-        "Loaded nullifier tree"
-    );
-    Ok(nullifier_tree)
+    NullifierTree::with_entries(nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)))
+        .map_err(StateInitializationError::FailedToCreateNullifierTree)
 }
 
 #[instrument(level = "debug", target = COMPONENT, skip_all)]
@@ -1065,21 +1051,7 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 #[instrument(level = "debug", target = COMPONENT, skip_all)]
 async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
-    let len = account_data.len();
 
-    let now = Instant::now();
-
-    let account_tree = AccountTree::with_entries(account_data)
-        .map_err(StateInitializationError::FailedToCreateAccountsTree)?;
-
-    let elapsed = now.elapsed().as_secs();
-
-    info!(
-        num_of_leaves = len,
-        tree_construction = elapsed,
-        COMPONENT,
-        "Loaded account tree"
-    );
-
-    Ok(account_tree)
+    AccountTree::with_entries(account_data)
+        .map_err(StateInitializationError::FailedToCreateAccountsTree)
 }

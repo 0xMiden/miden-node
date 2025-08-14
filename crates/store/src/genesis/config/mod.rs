@@ -50,7 +50,7 @@ mod tests;
 pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
-    fee_parameters: FeeParameterConfig,
+    native_faucet: NativeFaucet,
     wallet: Vec<WalletConfig>,
     fungible_faucet: Vec<FungibleFaucetConfig>,
 }
@@ -68,16 +68,13 @@ impl Default for GenesisConfig {
             )
             .expect("Timestamp should fit into u32"),
             wallet: vec![],
-            fee_parameters: FeeParameterConfig {
-                symbol: miden.clone(),
-                verification_base_fee: 0u32,
-            },
-            fungible_faucet: vec![FungibleFaucetConfig {
+            native_faucet: NativeFaucet {
                 max_supply: 100_000_000_000_000_000u64,
                 decimals: 6u8,
-                storage_mode: StorageMode::Public,
                 symbol: miden.clone(),
-            }],
+                fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
+            },
+            fungible_faucet: vec![],
         }
     }
 }
@@ -101,7 +98,7 @@ impl GenesisConfig {
             timestamp,
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
-            fee_parameters,
+            native_faucet,
         } = self;
 
         let mut wallet_accounts = Vec::<Account>::new();
@@ -112,37 +109,22 @@ impl GenesisConfig {
         // accounts/sign transactions
         let mut secrets = Vec::new();
 
+        let (native_faucet_account, native_faucet_account_seed, native_secret_key) =
+            create_fungible_faucet(native_faucet.to_faucet_config())?;
+
+        let symbol = native_faucet.symbol.clone();
+
+        secrets.push((
+            format!("native_faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
+            native_faucet_account.id(),
+            native_secret_key,
+            native_faucet_account_seed,
+        ));
+
         // First setup all the faucets
-        for FungibleFaucetConfig {
-            symbol,
-            decimals,
-            max_supply,
-            storage_mode,
-        } in fungible_faucet_configs
-        {
-            let mut rng = ChaCha20Rng::from_seed(rand::random());
-            let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-            let auth = AuthRpoFalcon512::new(secret_key.public_key());
-            let init_seed: [u8; 32] = rng.random();
-
-            let account_type = AccountType::FungibleFaucet;
-
-            let max_supply = Felt::try_from(max_supply)
-                .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
-
-            let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
-
-            let account_storage_mode = storage_mode.into();
-
-            // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
-            let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
-                .account_type(account_type)
-                .storage_mode(account_storage_mode)
-                .with_auth_component(auth)
-                .with_component(component)
-                .build()?;
-
-            debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
+        for fungible_faucet_config in fungible_faucet_configs {
+            let (faucet_account, faucet_account_seed, secret_key) =
+                create_fungible_faucet(fungible_faucet_config)?;
 
             if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol });
@@ -154,27 +136,14 @@ impl GenesisConfig {
                 secret_key,
                 faucet_account_seed,
             ));
-
             // Do _not_ collect the account, only after we know all wallet assets
             // we know the remaining supply in the faucets.
         }
 
-        // Translate the fee parameters
-        let native_asset_account = faucet_accounts
-            .get(&fee_parameters.symbol)
-            .ok_or_else(|| GenesisConfigError::MissingFeeFaucet(fee_parameters.symbol.clone()))?;
-        if native_asset_account.account_type() != AccountType::FungibleFaucet {
-            return Err(GenesisConfigError::NativeAssetFaucitIsNotAFungibleFaucet(
-                fee_parameters.symbol,
-            ));
-        }
-        if !native_asset_account.is_public() {
-            return Err(GenesisConfigError::NativeAssetFaucetIsNotPublic(fee_parameters.symbol));
-        }
-
-        let native_asset_account_id = native_asset_account.id();
-        let fee_parameters =
-            FeeParameters::new(native_asset_account_id, fee_parameters.verification_base_fee)?;
+        let fee_parameters = FeeParameters::new(
+            native_faucet_account.id(),
+            native_faucet.fee_parameters.verification_base_fee,
+        )?;
 
         // Track all adjustments, one per faucet account id
         let mut faucet_issuance = HashMap::<AccountId, u64>::new();
@@ -304,6 +273,39 @@ impl GenesisConfig {
     }
 }
 
+// NATIVE FAUCET
+// ================================================================================================
+
+/// Declare the native fungible asset
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NativeFaucet {
+    /// Token symbol to use for fees.
+    symbol: TokenSymbolStr,
+
+    decimals: u8,
+    /// Max supply in full token units
+    ///
+    /// It will be converted internally to the smallest representable unit,
+    /// using based `10.powi(decimals)` as a multiplier.
+    max_supply: u64,
+    /// Fee parameters
+    #[serde(alias = "fee")]
+    fee_parameters: FeeParameterConfig,
+}
+
+impl NativeFaucet {
+    fn to_faucet_config(&self) -> FungibleFaucetConfig {
+        let NativeFaucet { symbol, decimals, max_supply, .. } = self;
+        FungibleFaucetConfig {
+            symbol: symbol.clone(),
+            decimals: *decimals,
+            max_supply: *max_supply,
+            storage_mode: StorageMode::Public,
+        }
+    }
+}
+
 // FEE PARAMETER CONFIG
 // ================================================================================================
 
@@ -313,8 +315,6 @@ impl GenesisConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FeeParameterConfig {
-    /// Token symbol to use for base fees.
-    symbol: TokenSymbolStr,
     /// Verification base fee, in units of smallest denomination.
     verification_base_fee: u32,
 }
@@ -473,6 +473,43 @@ fn prepare_fungible_asset_update(
     })?;
 
     Ok(wallet_asset_delta)
+}
+
+/// Create a fungible faucet from a config entry
+fn create_fungible_faucet(
+    config: FungibleFaucetConfig,
+) -> Result<(Account, Word, SecretKey), GenesisConfigError> {
+    let FungibleFaucetConfig {
+        symbol,
+        decimals,
+        max_supply,
+        storage_mode,
+    } = config;
+    let mut rng = ChaCha20Rng::from_seed(rand::random());
+    let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+    let auth = AuthRpoFalcon512::new(secret_key.public_key());
+    let init_seed: [u8; 32] = rng.random();
+
+    let account_type = AccountType::FungibleFaucet;
+
+    let max_supply = Felt::try_from(max_supply)
+        .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
+
+    let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
+
+    let account_storage_mode = storage_mode.into();
+
+    // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
+    let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
+        .account_type(account_type)
+        .storage_mode(account_storage_mode)
+        .with_auth_component(auth)
+        .with_component(component)
+        .build()?;
+
+    debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
+
+    Ok((faucet_account, faucet_account_seed, secret_key))
 }
 
 /// Wrapper type used for configuration representation.

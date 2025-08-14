@@ -129,8 +129,7 @@ impl GenesisConfig {
             let max_supply = Felt::try_from(max_supply)
                 .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
 
-            let component =
-                BasicFungibleFaucet::new(symbol.as_ref().clone(), decimals, max_supply)?;
+            let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
 
             let account_storage_mode = storage_mode.into();
 
@@ -546,11 +545,11 @@ use serde::de::Visitor;
 
 struct TokenSymbolVisitor;
 
-impl<'de> Visitor<'de> for TokenSymbolVisitor {
+impl Visitor<'_> for TokenSymbolVisitor {
     type Value = TokenSymbolStr;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a 3 to 5 ascii digits")
+        formatter.write_str("3 to 5 ascii digits")
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
@@ -559,6 +558,6 @@ impl<'de> Visitor<'de> for TokenSymbolVisitor {
     {
         let encoded = TokenSymbol::new(v).map_err(|e| E::custom(format!("{e}")))?;
         let raw = v.to_string();
-        Ok(TokenSymbolStr { encoded, raw })
+        Ok(TokenSymbolStr { raw, encoded })
     }
 }

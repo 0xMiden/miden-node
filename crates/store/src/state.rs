@@ -8,7 +8,6 @@ use std::ops::Not;
 use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::Context;
 use miden_node_proto::domain::account::{
     AccountInfo,
     AccountProofRequest,
@@ -115,22 +114,17 @@ impl State {
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
         let data_directory = DataDirectory::load(data_path.to_path_buf())
-            .with_context(|| format!("failed to load data directory at {}", data_path.display()))
-            .unwrap();
+            .map_err(StateInitializationError::DataDirectoryLoadError)?;
 
         let block_store = Arc::new(
             BlockStore::load(data_directory.block_store_dir())
-                .with_context(|| {
-                    format!("failed to load block store at {}", data_directory.display())
-                })
-                .unwrap(),
+                .map_err(StateInitializationError::BlockStoreLoadError)?,
         );
 
         let database_filepath = data_directory.database_path();
         let mut db = Db::load(database_filepath.clone())
             .await
-            .with_context(|| format!("failed to load database at {}", database_filepath.display()))
-            .unwrap();
+            .map_err(StateInitializationError::DatabaseLoadError)?;
 
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
         let chain_mmr = load_mmr(&mut db).await?;

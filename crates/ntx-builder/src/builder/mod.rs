@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -116,10 +116,14 @@ impl NetworkTransactionBuilder {
                     let mut candidate = inflight_idx.remove(&task_id).unwrap();
 
                     match completed {
-                        // Nothing to do. State will be updated by the eventual mempool event.
+                        // Inform state of failed notes.
                         Ok((_, Ok(failed))) => {
+                            // TODO: Analyze errors provided for each failed note to determine what to do here.
                             // Filter out successful notes from the candidate's notes and register them as failed.
-                            candidate.notes.retain(|note| failed.iter().any(|input_note| input_note.id() == note.to_inner().id()));
+                            let failed_note_ids = failed.iter().map(|note| note.note.id()).collect::<HashSet<_>>();
+                            candidate.notes.retain(|note| {
+                                failed_note_ids.contains(&note.to_inner().id())
+                            });
                             state.notes_failed(&candidate);
                         },
                         // Inform state if the tx failed.

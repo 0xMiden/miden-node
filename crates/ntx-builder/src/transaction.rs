@@ -21,6 +21,7 @@ use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     DataStore,
     DataStoreError,
+    FailedNote,
     LocalTransactionProver,
     MastForestStore,
     NoteConsumptionChecker,
@@ -77,7 +78,7 @@ impl NtxContext {
     pub fn execute_transaction(
         self,
         tx: TransactionCandidate,
-    ) -> impl FutureMaybeSend<NtxResult<InputNotes<InputNote>>> {
+    ) -> impl FutureMaybeSend<NtxResult<Vec<FailedNote>>> {
         let TransactionCandidate {
             account,
             account_id_prefix,
@@ -127,7 +128,7 @@ impl NtxContext {
         &self,
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
-    ) -> NtxResult<(InputNotes<InputNote>, InputNotes<InputNote>)> {
+    ) -> NtxResult<(InputNotes<InputNote>, Vec<FailedNote>)> {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
@@ -153,16 +154,8 @@ impl NtxContext {
                     return Err(NtxError::NoViableNotes());
                 }
 
-                // TODO: do something with error? Return errors instead of InputNotes?
-                // Map failed notes to input notes.
-                let failed = failed
-                    .into_iter()
-                    .filter_map(|id| notes.iter().find(|&note| note.id() == id.note.id()))
-                    .cloned()
-                    .collect::<Vec<_>>();
-
                 // Return successful and failed note id.
-                Ok((InputNotes::new_unchecked(successful), InputNotes::new_unchecked(failed)))
+                Ok((InputNotes::new_unchecked(successful), failed))
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
         }

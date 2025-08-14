@@ -57,6 +57,7 @@ pub struct GenesisConfig {
 
 impl Default for GenesisConfig {
     fn default() -> Self {
+        let miden = TokenSymbolStr::from_str("MIDEN").unwrap();
         Self {
             version: 1_u32,
             timestamp: u32::try_from(
@@ -68,14 +69,14 @@ impl Default for GenesisConfig {
             .expect("Timestamp should fit into u32"),
             wallet: vec![],
             fee_parameters: FeeParameterConfig {
-                symbol: TokenSymbolStr::from_str("MIDEN").unwrap(),
+                symbol: miden.clone(),
                 verification_base_fee: 0u32,
             },
             fungible_faucet: vec![FungibleFaucetConfig {
                 max_supply: 100_000_000_000_000_000u64,
                 decimals: 6u8,
                 storage_mode: StorageMode::Public,
-                symbol: TokenSymbolStr::from_str("MIDEN").unwrap(),
+                symbol: miden.clone(),
             }],
         }
     }

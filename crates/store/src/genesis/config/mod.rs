@@ -549,7 +549,7 @@ impl Visitor<'_> for TokenSymbolVisitor {
     type Value = TokenSymbolStr;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("3 to 5 ascii digits")
+        formatter.write_str("1 to 6 uppercase ascii letters")
     }
 
     fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>

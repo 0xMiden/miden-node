@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Parser;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -85,14 +86,14 @@ impl UpdateWorkers {
 
         // Check status code
         if !response.status().is_success() {
-            return Err(anyhow::anyhow!("Request failed with status code: {}", response.status()));
+            anyhow::bail!("Request failed with status code: {}", response.status());
         }
 
         // Read the X-Worker-Count header
         let workers_count = response
             .headers()
             .get("X-Worker-Count")
-            .ok_or(anyhow::anyhow!("Missing X-Worker-Count header"))?
+            .context("Missing X-Worker-Count header")?
             .to_str()?;
 
         println!("New number of workers: {workers_count}");

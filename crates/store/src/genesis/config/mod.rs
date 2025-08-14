@@ -293,7 +293,6 @@ pub struct NativeFaucet {
     /// using based `10.powi(decimals)` as a multiplier.
     max_supply: u64,
     /// Fee parameters
-    #[serde(alias = "fee")]
     fee_parameters: FeeParameterConfig,
 }
 

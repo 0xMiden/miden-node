@@ -101,6 +101,8 @@ impl GenesisConfig {
             native_faucet,
         } = self;
 
+        let symbol = native_faucet.symbol.clone();
+
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
         let mut faucet_accounts = HashMap::<TokenSymbolStr, Account>::new();
@@ -112,7 +114,7 @@ impl GenesisConfig {
         let (native_faucet_account, native_faucet_account_seed, native_secret_key) =
             create_fungible_faucet(native_faucet.to_faucet_config())?;
 
-        let symbol = native_faucet.symbol.clone();
+        faucet_accounts.insert(symbol.clone(), native_faucet_account.clone());
 
         secrets.push((
             format!("native_faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
@@ -123,6 +125,7 @@ impl GenesisConfig {
 
         // First setup all the faucets
         for fungible_faucet_config in fungible_faucet_configs {
+            let symbol = fungible_faucet_config.symbol.clone();
             let (faucet_account, faucet_account_seed, secret_key) =
                 create_fungible_faucet(fungible_faucet_config)?;
 

@@ -22,7 +22,7 @@ diesel::table! {
         account_id -> Binary,
         block_num -> BigInt,
         vault_key -> Binary,
-        is_remove -> Integer, // TODO consider migration to Boolean?
+        is_remove -> Bool,
     }
 }
 

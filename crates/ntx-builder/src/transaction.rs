@@ -1,12 +1,11 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId};
 use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::{Note, NoteId};
+use miden_objects::note::Note;
 use miden_objects::transaction::{
     ExecutedTransaction,
     InputNote,
@@ -15,6 +14,7 @@ use miden_objects::transaction::{
     ProvenTransaction,
     TransactionArgs,
 };
+use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
@@ -23,15 +23,14 @@ use miden_tx::{
     DataStoreError,
     LocalTransactionProver,
     MastForestStore,
-    NoteAccountExecution,
     NoteConsumptionChecker,
+    NoteConsumptionInfo,
     TransactionExecutor,
     TransactionExecutorError,
     TransactionMastStore,
     TransactionProverError,
 };
 use tokio::task::JoinError;
-use tracing::instrument::Instrumented;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
@@ -44,8 +43,8 @@ pub enum NtxError {
     InputNotes(#[source] TransactionInputError),
     #[error("failed to filter notes")]
     NoteFilter(#[source] TransactionExecutorError),
-    #[error("no viable notes: {0}")]
-    NoViableNotes(String),
+    #[error("no viable notes")]
+    NoViableNotes(),
     #[error("failed to execute transaction")]
     Execution(#[source] TransactionExecutorError),
     #[error("failed to prove transaction")]
@@ -75,7 +74,10 @@ pub struct NtxContext {
 
 impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
-    pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<Option<NoteId>> {
+    pub fn execute_transaction(
+        self,
+        tx: TransactionCandidate,
+    ) -> impl FutureMaybeSend<NtxResult<InputNotes<InputNote>>> {
         let TransactionCandidate {
             account,
             account_id_prefix,
@@ -83,7 +85,6 @@ impl NtxContext {
             chain_tip_header,
             chain_mmr,
         } = tx;
-
         tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current()
             .set_attribute("account.id.network_prefix", account_id_prefix.to_string().as_str());
@@ -91,45 +92,25 @@ impl NtxContext {
         tracing::Span::current()
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
-        // Work-around for `TransactionExecutor` not being `Send`.
-        tokio::task::spawn_blocking(move || {
-            {
-                {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("runtime should be built");
+        async move {
+            async move {
+                let notes =
+                    notes.into_iter().map(|note| note.into_inner().into()).collect::<Vec<Note>>();
+                let notes =
+                    InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
 
-                    rt.block_on(
-                        async move {
-                            let notes = notes
-                                .into_iter()
-                                .map(|note| note.into_inner().into())
-                                .collect::<Vec<Note>>();
-                            let notes = InputNotes::from_unauthenticated_notes(notes)
-                                .map_err(NtxError::InputNotes)?;
+                let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
-                            let data_store =
-                                NtxDataStore::new(account, chain_tip_header, chain_mmr);
-
-                            let (notes, failed_note_id) =
-                                Box::pin(self.filter_notes(&data_store, notes).await?);
-                            self.execute(&data_store, notes)
-                                .and_then(|tx| self.prove(tx))
-                                .and_then(|tx| self.submit(tx))
-                                .await?;
-                            Ok(failed_note_id)
-                        }
-                        .in_current_span(),
-                    )
-                }
+                let (successful, failed) = self.filter_notes(&data_store, notes).await?;
+                let executed = Box::pin(self.execute(&data_store, successful)).await?;
+                let proven = Box::pin(self.prove(executed)).await?;
+                self.submit(proven).await?;
+                Ok(failed)
             }
             .in_current_span()
-        })
-        .await
-        .map_err(NtxError::Panic)
-        .and_then(Instrumented::into_inner)
-        .inspect_err(|err| tracing::Span::current().set_error(err))
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+        }
     }
 
     /// Returns a set of input notes which can be successfully executed against the network account.
@@ -146,7 +127,7 @@ impl NtxContext {
         &self,
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
-    ) -> NtxResult<(InputNotes<InputNote>, Option<NoteId>)> {
+    ) -> NtxResult<(InputNotes<InputNote>, InputNotes<InputNote>)> {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
@@ -156,46 +137,32 @@ impl NtxContext {
             data_store.reference_header.block_num(),
             notes.clone(),
             TransactionArgs::default(),
-            Arc::new(DefaultSourceManager::default()),
         ))
         .await
         {
-            Ok(NoteAccountExecution::Success) => Ok((notes, None)),
-            Ok(NoteAccountExecution::Failure {
-                successful_notes,
-                error,
-                failed_note_id, // kept in case you need it later
-                ..
-            }) => {
-                // Gather successful notes.
-                let successful_notes = successful_notes
+            Ok(NoteConsumptionInfo { successful, failed, .. }) => {
+                // Map successful notes to input notes.
+                let successful = successful
                     .into_iter()
-                    .filter_map(|id| notes.iter().find(|note| note.id() == id))
+                    .filter_map(|id| notes.iter().find(|&note| note.id() == id.id()))
                     .cloned()
                     .collect::<Vec<_>>();
 
                 // If none are successful, abort.
-                if successful_notes.is_empty() {
-                    tracing::warn!(
-                        err = %error.as_ref().map_or_else(|| "none".to_string(), ErrorReport::as_report),
-                        "failed to check note consumability",
-                    );
-                    let error = error.map_or_else(|| "none".to_string(), |e| e.as_report());
-                    return Err(NtxError::NoViableNotes(error));
+                if successful.is_empty() {
+                    return Err(NtxError::NoViableNotes());
                 }
 
-                // If there were some successful notes but still an error, log it
-                let successful_count = successful_notes.len();
-                if let Some(err) = error {
-                    tracing::warn!(
-                        %err,
-                        successful_count,
-                        "failed to check note consumability",
-                    );
-                }
+                // TODO: do something with error? Return errors instead of InputNotes?
+                // Map failed notes to input notes.
+                let failed = failed
+                    .into_iter()
+                    .filter_map(|id| notes.iter().find(|&note| note.id() == id.note.id()))
+                    .cloned()
+                    .collect::<Vec<_>>();
 
                 // Return successful and failed note id.
-                Ok((InputNotes::new_unchecked(successful_notes), Some(failed_note_id)))
+                Ok((InputNotes::new_unchecked(successful), InputNotes::new_unchecked(failed)))
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
         }
@@ -226,12 +193,12 @@ impl NtxContext {
     /// proof locally.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
     async fn prove(&self, tx: ExecutedTransaction) -> NtxResult<ProvenTransaction> {
-        use miden_tx::TransactionProver;
-
         if let Some(remote) = &self.prover {
             remote.prove(tx.into()).await
         } else {
-            LocalTransactionProver::default().prove(tx.into()).await
+            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
+                .await
+                .map_err(NtxError::Panic)?
         }
         .map_err(NtxError::Proving)
     }
@@ -274,29 +241,29 @@ impl NtxDataStore {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl DataStore for NtxDataStore {
-    async fn get_transaction_inputs(
+    fn get_transaction_inputs(
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
-        if self.account.id() != account_id {
-            return Err(DataStoreError::AccountNotFound(account_id));
-        }
+    ) -> impl FutureMaybeSend<
+        Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
+    > {
+        let account = self.account.clone();
+        async move {
+            if account.id() != account_id {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
 
-        match ref_blocks.last().copied() {
-            Some(reference) if reference == self.reference_header.block_num() => {},
-            Some(other) => return Err(DataStoreError::BlockNotFound(other)),
-            None => return Err(DataStoreError::other("no reference block requested")),
-        }
+            match ref_blocks.last().copied() {
+                Some(reference) if reference == self.reference_header.block_num() => {},
 
-        Ok((
-            self.account.clone(),
-            None,
-            self.reference_header.clone(),
-            self.chain_mmr.clone(),
-        ))
+                Some(other) => return Err(DataStoreError::BlockNotFound(other)),
+                None => return Err(DataStoreError::other("no reference block requested")),
+            }
+
+            Ok((account, None, self.reference_header.clone(), self.chain_mmr.clone()))
+        }
     }
 }
 

@@ -371,7 +371,7 @@ impl Db {
         .await
     }
 
-    /// Loads all the Note's matching a certain `NoteId` from the database.
+    /// Loads all the [`Note`]s matching a certain [`NoteId`] from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_id(&self, note_ids: Vec<NoteId>) -> Result<Vec<NoteRecord>> {
         self.transact("note by id", move |conn| {
@@ -392,7 +392,7 @@ impl Db {
         .await
     }
 
-    /// Loads all note IDs matching a certain `NoteId` from the database.
+    /// Loads all note IDs matching a certain [`NoteId`] from the database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<HashSet<NoteId>> {
         self.select_notes_by_id(note_ids)

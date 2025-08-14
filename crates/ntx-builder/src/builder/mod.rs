@@ -117,11 +117,10 @@ impl NetworkTransactionBuilder {
 
                     match completed {
                         // Nothing to do. State will be updated by the eventual mempool event.
-                        Ok((_, Ok(None))) => {},
-                        Ok((_, Ok(Some(failed_note_id)))) => {
+                        Ok((_, Ok(failed))) => {
                             // Filter out successful notes from the candidate's notes and register them as failed.
-                            candidate.notes.retain(|note| note.to_inner().id() == failed_note_id);
-                            state.candidate_failed(&candidate);
+                            candidate.notes.retain(|note| failed.iter().any(|input_note| input_note.id() == note.to_inner().id()));
+                            state.notes_failed(&candidate);
                         },
                         // Inform state if the tx failed.
                         Ok((_, Err(err))) => {

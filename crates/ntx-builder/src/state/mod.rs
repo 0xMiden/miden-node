@@ -224,6 +224,19 @@ impl State {
         self.chain_mmr.prune_to(..pruned_block_height.into());
     }
 
+    /// Marks notes of a previously selected candidate as failed.
+    ///
+    /// All notes in the candidate will be marked as failed. Does not remove the candidate from the
+    /// in-progress pool.
+    #[instrument(target = COMPONENT, name = "ntx.state.notes_failed", skip_all)]
+    pub fn notes_failed(&mut self, candidate: &TransactionCandidate) {
+        if let Some(account) = self.accounts.get_mut(&candidate.account_id_prefix) {
+            account.fail(&candidate.notes, candidate.chain_tip_header.block_num());
+        } else {
+            tracing::error!(account.prefix=%candidate.account_id_prefix, "failed network notes have no local account state");
+        }
+    }
+
     /// Marks a previously selected candidate account as failed, allowing it to be available for
     /// selection again.
     ///

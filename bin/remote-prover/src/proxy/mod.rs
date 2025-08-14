@@ -339,9 +339,9 @@ impl RequestContext {
 // LOAD BALANCER
 // ================================================================================================
 
-/// Wrapper around the load balancer that implements the `ProxyHttp` trait
+/// Wrapper around the load balancer that implements the [`ProxyHttp`] trait
 ///
-/// This wrapper is used to implement the `ProxyHttp` trait for `Arc<LoadBalancer>`.
+/// This wrapper is used to implement the [`ProxyHttp`] trait for [`Arc<LoadBalancer>`].
 /// This is necessary because we want to share the load balancer between the proxy server and the
 /// health check background service.
 #[derive(Debug)]
@@ -525,11 +525,11 @@ impl ProxyHttp for LoadBalancer {
         Self::CTX: Send + Sync,
     {
         // Check if it's a gRPC request
-        if let Some(content_type) = upstream_request.headers.get("content-type") {
-            if content_type == "application/grpc" {
-                // Ensure the correct host and gRPC headers are forwarded
-                upstream_request.insert_header("content-type", "application/grpc")?;
-            }
+        if let Some(content_type) = upstream_request.headers.get("content-type")
+            && content_type == "application/grpc"
+        {
+            // Ensure the correct host and gRPC headers are forwarded
+            upstream_request.insert_header("content-type", "application/grpc")?;
         }
 
         Ok(())

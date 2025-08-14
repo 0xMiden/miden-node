@@ -30,7 +30,7 @@ pub struct MaybeBlockNumber {
     pub block_num: ::core::option::Option<u32>,
 }
 /// Represents a block header.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BlockHeader {
     /// Specifies the version of the protocol.
     #[prost(uint32, tag = "1")]
@@ -62,7 +62,20 @@ pub struct BlockHeader {
     /// A commitment to all transaction kernels supported by this block.
     #[prost(message, optional, tag = "10")]
     pub tx_kernel_commitment: ::core::option::Option<super::primitives::Digest>,
+    /// Fee parameters for block processing.
+    #[prost(message, optional, tag = "11")]
+    pub fee_parameters: ::core::option::Option<FeeParameters>,
     /// The time when the block was created.
-    #[prost(fixed32, tag = "11")]
+    #[prost(fixed32, tag = "12")]
     pub timestamp: u32,
+}
+/// Definition of the fee parameters.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FeeParameters {
+    /// The faucet account ID which is used for native fee assets.
+    #[prost(message, optional, tag = "1")]
+    pub native_asset_id: ::core::option::Option<super::account::AccountId>,
+    /// The base fee (in base units) capturing the cost for the verification of a transaction.
+    #[prost(fixed32, tag = "2")]
+    pub verification_base_fee: u32,
 }

@@ -2,12 +2,6 @@
 
 ## v0.11.0 (TBD)
 
-### Changes
-
-- [BREAKING] Updated MSRV to 1.88.
-- [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
-- [BREAKING] De-duplicate storage of code in DB (no-migration) ([#1083](https://github.com/0xMiden/miden-node/issue/#1083)).
-
 ### Enhancements
 
 - Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
@@ -20,7 +14,10 @@
 ### Changes
 
 - [BREAKING] Updated MSRV to 1.88.
+- [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
+- [BREAKING] De-duplicate storage of code in DB (no-migration) ([#1083](https://github.com/0xMiden/miden-node/issue/#1083)).
 - [BREAKING] RPC accept header format changed from `application/miden.vnd+grpc.<version>` to `application/vnd.miden; version=<version>` ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+- [BREAKING] Integrated `FeeParameters` into block headers. ([#1122](https://github.com/0xMiden/miden-node/pull/1122)).
 
 ### Fixes
 

@@ -18,7 +18,7 @@ workspace = true
 # Enables depedencies intended for build script generation of version metadata.
 vergen = ["dep:vergen", "dep:vergen-gitcl"]
 # Enables utility functions for testing traces created by some other crate's stack.
-testing = ["dep:tokio"]
+testing = ["dep:tokio", "miden-objects/testing"]
 
 [dependencies]
 anyhow                = { workspace = true }

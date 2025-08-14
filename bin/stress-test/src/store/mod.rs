@@ -9,6 +9,7 @@ use miden_objects::account::AccountId;
 use miden_objects::note::{NoteDetails, NoteTag};
 use miden_objects::utils::{Deserializable, Serializable};
 use tokio::fs;
+use tokio::time::sleep;
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::Channel;
 
@@ -29,6 +30,9 @@ const ACCOUNTS_PER_SYNC_NOTES: usize = 15;
 /// Number of note IDs used in each `check_nullifiers_by_prefix` call.
 const NOTE_IDS_PER_NULLIFIERS_CHECK: usize = 20;
 
+/// Number of attempts the benchmark will make to reach the store before proceeding.
+const STORE_STATUS_RETRIES: usize = 10;
+
 // SYNC STATE
 // ================================================================================================
 
@@ -48,6 +52,8 @@ pub async fn bench_sync_state(data_directory: PathBuf, iterations: usize, concur
     let mut account_ids = accounts.lines().map(|a| AccountId::from_hex(a).unwrap()).cycle();
 
     let (store_client, _) = start_store(data_directory).await;
+
+    wait_for_store(&store_client).await.unwrap();
 
     // each request will have 5 account ids, 5 note tags and will be sent with block number 0
     let request = |_| {
@@ -118,6 +124,8 @@ pub async fn bench_sync_notes(data_directory: PathBuf, iterations: usize, concur
 
     let (store_client, _) = start_store(data_directory).await;
 
+    wait_for_store(&store_client).await.unwrap();
+
     // each request will have `ACCOUNTS_PER_SYNC_NOTES` note tags and will be sent with block number
     // 0.
     let request = |_| {
@@ -174,6 +182,8 @@ pub async fn bench_check_nullifiers_by_prefix(
     prefixes_per_request: usize,
 ) {
     let (mut store_client, _) = start_store(data_directory.clone()).await;
+
+    wait_for_store(&store_client).await.unwrap();
 
     let accounts_file = data_directory.join(ACCOUNTS_FILENAME);
     let accounts = fs::read_to_string(&accounts_file)
@@ -276,4 +286,29 @@ async fn check_nullifiers_by_prefix(
     let start = Instant::now();
     let response = api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Waits for the store to be ready and accepting requests.
+///
+/// Periodically checks the store’s status endpoint until it reports `"connected"`.
+/// Returns an error if the status does not become `"connected"` after
+/// [`STORE_STATUS_RETRIES`] attempts.
+async fn wait_for_store(
+    store_client: &RpcClient<InterceptedService<Channel, OtelInterceptor>>,
+) -> Result<(), String> {
+    for _ in 0..STORE_STATUS_RETRIES {
+        // Get status from the store component to confirm that it is ready.
+        let status = store_client.clone().status(()).await.unwrap().into_inner();
+
+        if status.status == "connected" {
+            return Ok(());
+        }
+
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    Err("Store component failed to start".to_string())
 }

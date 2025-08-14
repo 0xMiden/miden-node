@@ -493,19 +493,15 @@ fn create_fungible_faucet(
     let auth = AuthRpoFalcon512::new(secret_key.public_key());
     let init_seed: [u8; 32] = rng.random();
 
-    let account_type = AccountType::FungibleFaucet;
-
     let max_supply = Felt::try_from(max_supply)
         .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
 
     let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
 
-    let account_storage_mode = storage_mode.into();
-
     // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
     let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
-        .account_type(account_type)
-        .storage_mode(account_storage_mode)
+        .account_type(AccountType::FungibleFaucet)
+        .storage_mode(storage_mode.into())
         .with_auth_component(auth)
         .with_component(component)
         .build()?;

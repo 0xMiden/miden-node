@@ -36,7 +36,6 @@ opt-level = 2
 # Workspace crates.
 miden-node-block-producer  = { path = "crates/block-producer", version = "0.11" }
 miden-node-ntx-builder     = { path = "crates/ntx-builder", version = "0.11" }
-miden-node-panic-macro     = { path = "crates/panic-macro", version = "0.11" }
 miden-node-proto           = { path = "crates/proto", version = "0.11" }
 miden-node-proto-build     = { path = "proto", version = "0.11" }
 miden-node-rpc             = { path = "crates/rpc", version = "0.11" }

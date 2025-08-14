@@ -29,6 +29,8 @@ impl OpenTelemetry {
 ///
 /// The open-telemetry configuration is controlled via environment variables as defined in the
 /// [specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/exporter.md#opentelemetry-protocol-exporter)
+///
+/// Registers a panic hook so that panic errors are reported to the open-telemetry exporter.
 pub fn setup_tracing(otel: OpenTelemetry) -> anyhow::Result<()> {
     if otel.is_enabled() {
         opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
@@ -52,7 +54,13 @@ pub fn setup_tracing(otel: OpenTelemetry) -> anyhow::Result<()> {
     let subscriber = Registry::default()
         .with(stdout_layer().with_filter(env_or_default_filter()))
         .with(otel_layer.with_filter(env_or_default_filter()));
-    tracing::subscriber::set_global_default(subscriber).map_err(Into::into)
+    tracing::subscriber::set_global_default(subscriber).map_err(Into::<anyhow::Error>::into)?;
+
+    // Register panic hook now that tracing is initialized.
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!("{info}");
+    }));
+    Ok(())
 }
 
 /// Initializes tracing to a test exporter.

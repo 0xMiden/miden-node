@@ -2459,14 +2459,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-node-panic-macro"
-version = "0.11.0"
-dependencies = [
- "quote",
- "syn 2.0.104",
-]
-
-[[package]]
 name = "miden-node-proto"
 version = "0.11.0"
 dependencies = [
@@ -2597,11 +2589,9 @@ dependencies = [
  "anyhow",
  "bytes",
  "figment",
- "futures",
  "http 1.3.1",
  "http-body-util",
  "itertools",
- "miden-node-panic-macro",
  "miden-objects",
  "opentelemetry",
  "opentelemetry-otlp",

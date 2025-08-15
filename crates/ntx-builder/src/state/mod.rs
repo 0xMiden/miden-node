@@ -226,8 +226,7 @@ impl State {
 
     /// Marks notes of a previously selected candidate as failed.
     ///
-    /// All notes in the candidate will be marked as failed. Does not remove the candidate from the
-    /// in-progress pool.
+    /// Does not remove the candidate from the in-progress pool.
     #[instrument(target = COMPONENT, name = "ntx.state.notes_failed", skip_all)]
     pub fn notes_failed(
         &mut self,

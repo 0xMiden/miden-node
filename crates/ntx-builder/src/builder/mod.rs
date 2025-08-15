@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,8 +13,8 @@ use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
 use crate::block_producer::BlockProducerClient;
-use crate::state::TransactionCandidate;
 use crate::store::StoreClient;
+use crate::transaction::NtxError;
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -92,13 +92,14 @@ impl NetworkTransactionBuilder {
                         continue;
                     };
 
+                    let indexed_candidate = (candidate.account_id_prefix, candidate.chain_tip_header.block_num());
                     let task_id = inflight.spawn({
                         let context = context.clone();
-                        context.execute_transaction(TransactionCandidate::clone(&candidate))
+                        context.execute_transaction(candidate)
                     }).id();
 
                     // SAFETY: This is definitely a network account.
-                    inflight_idx.insert(task_id, candidate);
+                    inflight_idx.insert(task_id, indexed_candidate);
                 },
                 event = mempool_events.try_next() => {
                     let event = event
@@ -113,27 +114,27 @@ impl NetworkTransactionBuilder {
                         Err(join_handle) => join_handle.id(),
                     };
                     // SAFETY: both inflights should have the same set.
-                    let mut candidate = inflight_idx.remove(&task_id).unwrap();
+                    let (candidate, block_num) = inflight_idx.remove(&task_id).unwrap();
 
                     match completed {
-                        // Inform state of failed notes.
+                        // Some notes failed.
                         Ok((_, Ok(failed))) => {
-                            // TODO: Analyze errors provided for each failed note to determine what to do here.
-                            // Filter out successful notes from the candidate's notes and register them as failed.
-                            let failed_note_ids = failed.iter().map(|note| note.note.id()).collect::<HashSet<_>>();
-                            candidate.notes.retain(|note| {
-                                failed_note_ids.contains(&note.to_inner().id())
-                            });
-                            state.notes_failed(&candidate);
+                            let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
+                            state.notes_failed(candidate,
+                                               notes.as_slice(),
+                                               block_num);
                         },
-                        // Inform state if the tx failed.
+                        // Transaction execution failed.
                         Ok((_, Err(err))) => {
                             tracing::warn!(err=err.as_report(), "network transaction failed");
-                            state.candidate_failed(&candidate);
+                            if let NtxError::NoViableNotes = err {
+                                state.candidate_failed(candidate);
+                            }
                         },
+                        // Unexpected error occurred.
                         Err(err) => {
-                            tracing::warn!(err=err.as_report(), "network transaction panic'd");
-                            state.candidate_failed(&candidate);
+                            tracing::warn!(err=err.as_report(), "network transaction panicked");
+                            state.candidate_failed(candidate);
                         }
                     }
                 }

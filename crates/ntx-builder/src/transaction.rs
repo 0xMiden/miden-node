@@ -45,7 +45,7 @@ pub enum NtxError {
     #[error("failed to filter notes")]
     NoteFilter(#[source] TransactionExecutorError),
     #[error("no viable notes")]
-    NoViableNotes(),
+    NoViableNotes,
     #[error("failed to execute transaction")]
     Execution(#[source] TransactionExecutorError),
     #[error("failed to prove transaction")]
@@ -151,10 +151,11 @@ impl NtxContext {
 
                 // If none are successful, abort.
                 if successful.is_empty() {
-                    return Err(NtxError::NoViableNotes());
+                    return Err(NtxError::NoViableNotes);
                 }
 
-                // Return successful and failed note id.
+                // SAFETY: All notes are known to be valid as they are derived from pre-existing
+                // ones.
                 Ok((InputNotes::new_unchecked(successful), failed))
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),

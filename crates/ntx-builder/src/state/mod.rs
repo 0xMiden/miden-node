@@ -11,7 +11,7 @@ use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::Nullifier;
+use miden_objects::note::{Note, Nullifier};
 use miden_objects::transaction::{PartialBlockchain, TransactionId};
 use tracing::instrument;
 
@@ -229,11 +229,17 @@ impl State {
     /// All notes in the candidate will be marked as failed. Does not remove the candidate from the
     /// in-progress pool.
     #[instrument(target = COMPONENT, name = "ntx.state.notes_failed", skip_all)]
-    pub fn notes_failed(&mut self, candidate: &TransactionCandidate) {
-        if let Some(account) = self.accounts.get_mut(&candidate.account_id_prefix) {
-            account.fail(&candidate.notes, candidate.chain_tip_header.block_num());
+    pub fn notes_failed(
+        &mut self,
+        candidate: NetworkAccountPrefix,
+        notes: &[Note],
+        block_num: BlockNumber,
+    ) {
+        if let Some(account) = self.accounts.get_mut(&candidate) {
+            let nullifiers = notes.iter().map(Note::nullifier).collect::<Vec<_>>();
+            account.fail_notes(nullifiers.as_slice(), block_num);
         } else {
-            tracing::error!(account.prefix=%candidate.account_id_prefix, "failed network notes have no local account state");
+            tracing::error!(account.prefix=%candidate, "failed network notes have no local account state");
         }
     }
 
@@ -242,14 +248,8 @@ impl State {
     ///
     /// All notes in the candidate will be marked as failed.
     #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
-    pub fn candidate_failed(&mut self, candidate: &TransactionCandidate) {
-        if let Some(account) = self.accounts.get_mut(&candidate.account_id_prefix) {
-            account.fail(&candidate.notes, candidate.chain_tip_header.block_num());
-        } else {
-            tracing::error!(account.prefix=%candidate.account_id_prefix, "failed network transaction has no local account state");
-        }
-
-        self.in_progress.remove(&candidate.account_id_prefix);
+    pub fn candidate_failed(&mut self, candidate: NetworkAccountPrefix) {
+        self.in_progress.remove(&candidate);
 
         self.inject_telemetry();
     }

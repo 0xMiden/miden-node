@@ -257,9 +257,9 @@ impl AccountState {
     }
 
     /// Marks the specified notes as failed.
-    pub fn fail(&mut self, notes: &[InflightNetworkNote], block_num: BlockNumber) {
-        for nullifier in notes.iter().map(|note| note.to_inner().nullifier()) {
-            if let Some(note) = self.available_notes.get_mut(&nullifier) {
+    pub fn fail_notes(&mut self, nullifiers: &[Nullifier], block_num: BlockNumber) {
+        for nullifier in nullifiers {
+            if let Some(note) = self.available_notes.get_mut(nullifier) {
                 note.fail(block_num);
             } else {
                 tracing::warn!(%nullifier, "failed note is not in account's state");

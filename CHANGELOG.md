@@ -21,6 +21,7 @@
   - Configure `NativeFaucet`, which determines the native asset used to pay fees
   - Configure the base verification fee
   - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
+- [BREAKING] `GetAccountProofs` endpoint uses a `PartialSmt` for proofs. ([#1158](https://github.com/0xMiden/miden-node/pull/1158)).
 
 ### Fixes
 

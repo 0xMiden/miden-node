@@ -127,8 +127,11 @@ impl NetworkTransactionBuilder {
                         // Transaction execution failed.
                         Ok((_, Err(err))) => {
                             tracing::warn!(err=err.as_report(), "network transaction failed");
-                            if let NtxError::NoViableNotes = err {
-                                state.candidate_failed(candidate);
+                            if let NtxError::AllNotesFailed(failed) = err {
+                                let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
+                                state.notes_failed(candidate,
+                                                   notes.as_slice(),
+                                                   block_num);
                             }
                         },
                         // Unexpected error occurred.

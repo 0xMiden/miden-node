@@ -7,11 +7,7 @@ use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
-    ExecutedTransaction,
-    InputNote,
-    InputNotes,
-    PartialBlockchain,
-    ProvenTransaction,
+    ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
     TransactionArgs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -19,17 +15,9 @@ use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore,
-    DataStoreError,
-    FailedNote,
-    LocalTransactionProver,
-    MastForestStore,
-    NoteConsumptionChecker,
-    NoteConsumptionInfo,
-    TransactionExecutor,
-    TransactionExecutorError,
-    TransactionMastStore,
-    TransactionProverError,
+    DataStore, DataStoreError, FailedNote, LocalTransactionProver, MastForestStore,
+    NoteConsumptionChecker, NoteConsumptionInfo, TransactionExecutor, TransactionExecutorError,
+    TransactionMastStore, TransactionProverError,
 };
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
@@ -44,8 +32,8 @@ pub enum NtxError {
     InputNotes(#[source] TransactionInputError),
     #[error("failed to filter notes")]
     NoteFilter(#[source] TransactionExecutorError),
-    #[error("no viable notes")]
-    NoViableNotes,
+    #[error("all notes failed to be executed")]
+    AllNotesFailed(Vec<FailedNote>),
     #[error("failed to execute transaction")]
     Execution(#[source] TransactionExecutorError),
     #[error("failed to prove transaction")]
@@ -151,7 +139,7 @@ impl NtxContext {
 
                 // If none are successful, abort.
                 if successful.is_empty() {
-                    return Err(NtxError::NoViableNotes);
+                    return Err(NtxError::AllNotesFailed(failed));
                 }
 
                 // SAFETY: All notes are known to be valid as they are derived from pre-existing

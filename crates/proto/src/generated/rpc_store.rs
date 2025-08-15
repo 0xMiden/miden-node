@@ -99,11 +99,9 @@ pub mod account_proofs {
             /// the current one.
             #[prost(bytes = "vec", optional, tag = "3")]
             pub account_code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-            /// Storage slots information for this account
-            #[prost(message, repeated, tag = "4")]
-            pub storage_maps: ::prost::alloc::vec::Vec<
-                account_state_header::StorageSlotMapProof,
-            >,
+            /// A sparse merkle tree, including all relevant merkle proofs for storage entries
+            #[prost(bytes = "vec", tag = "5")]
+            pub partial_smt: ::prost::alloc::vec::Vec<u8>,
         }
         /// Nested message and enum types in `AccountStateHeader`.
         pub mod account_state_header {

@@ -151,8 +151,8 @@ message AccountProofs {
             // the current one.
             optional bytes account_code = 3;
 
-            // Storage slots information for this account
-            repeated StorageSlotMapProof storage_maps = 4;
+            // A sparse merkle tree, including all relevant merkle proofs for storage entries
+            bytes partial_smt = 5;
         }
 
         // The account witness for the current state commitment of one account ID.

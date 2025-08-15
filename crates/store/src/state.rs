@@ -36,6 +36,7 @@ use miden_objects::crypto::merkle::{
     MmrPeaks,
     MmrProof,
     PartialMmr,
+    PartialSmt,
     SmtProof,
 };
 use miden_objects::note::{NoteDetails, NoteId, Nullifier};
@@ -900,8 +901,7 @@ impl State {
                     .expect("retrieved accounts were validated against request");
 
                 if let Some(details) = &account_info.details {
-                    let mut storage_slot_map_keys = Vec::new();
-
+                    let mut partial = PartialSmt::new();
                     for StorageMapKeysProof { storage_index, storage_keys } in
                         &request.storage_requests
                     {
@@ -910,12 +910,7 @@ impl State {
                         {
                             for map_key in storage_keys {
                                 let proof = storage_map.open(map_key);
-
-                                let slot_map_key = proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapProof {
-                                    storage_slot: u32::from(*storage_index),
-                                    smt_proof: proof.to_bytes(),
-                                };
-                                storage_slot_map_keys.push(slot_map_key);
+                                partial.add_proof(proof)?;
                             }
                         } else {
                             return Err(AccountError::StorageSlotNotMap(*storage_index).into());
@@ -933,7 +928,7 @@ impl State {
                             header: Some(AccountHeader::from(details).into()),
                             storage_header: details.storage().to_header().to_bytes(),
                             account_code,
-                            storage_maps: storage_slot_map_keys,
+                            partial_smt: partial.to_bytes(),
                         };
 
                     headers_map.insert(account_info.summary.account_id, state_header);

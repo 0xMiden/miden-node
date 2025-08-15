@@ -56,7 +56,7 @@ service Rpc {
     // The response includes each note's metadata and inclusion proof.
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
-    // tip of the chain. 
+    // tip of the chain.
     rpc SyncNotes(SyncNotesRequest) returns (SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
@@ -155,8 +155,8 @@ message AccountProofs {
             // the current one.
             optional bytes account_code = 3;
 
-            // Storage slots information for this account
-            repeated StorageSlotMapProof storage_maps = 4;
+            // A sparse merkle tree, including all relevant merkle proofs for storage entries
+            bytes partial_smt = 5;
         }
 
         // The account witness for the current state commitment of one account ID.

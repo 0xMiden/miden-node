@@ -7,11 +7,7 @@ use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
-    ExecutedTransaction,
-    InputNote,
-    InputNotes,
-    PartialBlockchain,
-    ProvenTransaction,
+    ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
     TransactionArgs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -19,17 +15,9 @@ use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore,
-    DataStoreError,
-    FailedNote,
-    LocalTransactionProver,
-    MastForestStore,
-    NoteConsumptionChecker,
-    NoteConsumptionInfo,
-    TransactionExecutor,
-    TransactionExecutorError,
-    TransactionMastStore,
-    TransactionProverError,
+    DataStore, DataStoreError, FailedNote, LocalTransactionProver, MastForestStore,
+    NoteConsumptionChecker, NoteConsumptionInfo, TransactionExecutor, TransactionExecutorError,
+    TransactionMastStore, TransactionProverError,
 };
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
@@ -74,6 +62,10 @@ pub struct NtxContext {
 }
 
 impl NtxContext {
+    /// Executes and proves a transaction.
+    ///
+    /// The transaction's notes are filtered before execution is performed. If any notes are filtered
+    /// out, they are returned as [`FailedNote`]s.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub fn execute_transaction(
         self,

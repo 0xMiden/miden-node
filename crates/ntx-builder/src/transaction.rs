@@ -101,15 +101,24 @@ impl NtxContext {
         }
     }
 
-    /// Returns a set of input notes which can be successfully executed against the network account.
+    /// Filters a collection of notes, returning only those that can be successfully executed
+    /// against the given network account.
     ///
-    /// The returned set is guaranteed to be non-empty.
+    /// This function performs a consumability check on each provided note and partitions them into
+    /// two sets:
+    /// - Successful notes: notes that can be executed and are returned wrapped in [`InputNotes`].
+    /// - Failed notes: notes that cannot be executed.
+    ///
+    /// # Guarantees
+    ///
+    /// - On success, the returned [`InputNotes`] set is guaranteed to be non-empty.
+    /// - The original ordering of notes is not preserved.
     ///
     /// # Errors
     ///
-    /// Returns an error if
-    /// - execution fails unexpectedly
-    /// - no notes are viable
+    /// Returns an [`NtxError`] if:
+    /// - The consumability check fails unexpectedly.
+    /// - All notes fail the check (i.e., no note is consumable).
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.filter_notes", skip_all, err)]
     async fn filter_notes(
         &self,

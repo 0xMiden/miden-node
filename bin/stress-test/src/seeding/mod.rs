@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
 use miden_air::HashFunction;
@@ -20,7 +20,14 @@ use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType};
 use miden_objects::asset::{Asset, FungibleAsset, TokenSymbol};
 use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
-use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
+use miden_objects::block::{
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    FeeParameters,
+    ProposedBlock,
+    ProvenBlock,
+};
 use miden_objects::crypto::dsa::rpo_falcon512::{PublicKey, SecretKey};
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
@@ -34,7 +41,7 @@ use miden_objects::transaction::{
     TransactionHeader,
 };
 use miden_objects::vm::ExecutionProof;
-use miden_objects::{Felt, ONE, Word};
+use miden_objects::{AssetError, Felt, ONE, Word};
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rayon::prelude::ParallelSlice;
@@ -75,7 +82,8 @@ pub async fn seed_store(
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
-    let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
+    let fee_params = FeeParameters::new(faucet.id(), 0).unwrap();
+    let genesis_state = GenesisState::new(vec![faucet.clone()], fee_params, 1, 1);
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
@@ -248,6 +256,14 @@ async fn apply_block(
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Extract the payable fee as `FungibleAsset` from the given `BlockHeader`.
+fn fee_from_block(block_ref: &BlockHeader) -> Result<FungibleAsset, AssetError> {
+    FungibleAsset::new(
+        block_ref.fee_parameters().native_asset_id(),
+        u64::from(block_ref.fee_parameters().verification_base_fee()),
+    )
+}
+
 /// Creates `num_accounts` accounts, and for each one creates a note that mint assets.
 ///
 /// Returns a tuple with:
@@ -396,6 +412,7 @@ fn create_consume_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
+        fee_from_block(block_ref).unwrap(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )
@@ -429,6 +446,11 @@ fn create_emit_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
+        FungibleAsset::new(
+            block_ref.fee_parameters().native_asset_id(),
+            u64::from(block_ref.fee_parameters().verification_base_fee()),
+        )
+        .unwrap(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )
@@ -511,6 +533,7 @@ pub async fn start_store(
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
+            grpc_timeout: Duration::from_secs(30),
         }
         .serve()
         .await

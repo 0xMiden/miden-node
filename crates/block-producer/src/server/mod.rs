@@ -70,6 +70,10 @@ pub struct BlockProducer {
     /// The block-producers gRPC endpoint will be available before this point, so this lets the
     /// mempool synchronize its event stream without risking a race condition.
     pub production_checkpoint: Arc<Barrier>,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
+    pub grpc_timeout: Duration,
 }
 
 impl BlockProducer {
@@ -153,7 +157,11 @@ impl BlockProducer {
         let rpc_id = tasks
             .spawn({
                 let mempool = mempool.clone();
-                async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await }
+                async move {
+                    BlockProducerRpcServer::new(mempool, store)
+                        .serve(listener, self.grpc_timeout)
+                        .await
+                }
             })
             .id();
         self.production_checkpoint.wait().await;
@@ -308,7 +316,7 @@ impl BlockProducerRpcServer {
         Self { mempool: Mutex::new(mempool), store }
     }
 
-    async fn serve(self, listener: TcpListener) -> anyhow::Result<()> {
+    async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())
             .build_v1()
@@ -329,6 +337,7 @@ impl BlockProducerRpcServer {
                 TraceLayer::new_for_grpc()
                     .make_span_with(traced_span_fn(TracedComponent::StoreBlockProducer)),
             )
+            .timeout(timeout)
             .add_service(api_server::ApiServer::new(self))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)

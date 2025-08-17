@@ -8,6 +8,7 @@ use miden_objects::block::{
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
+    FeeParameters,
     ProvenBlock,
 };
 use miden_objects::crypto::merkle::{Forest, MmrPeaks, Smt};
@@ -26,6 +27,7 @@ pub mod config;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenesisState {
     pub accounts: Vec<Account>,
+    pub fee_parameters: FeeParameters,
     pub version: u32,
     pub timestamp: u32,
 }
@@ -45,8 +47,18 @@ impl GenesisBlock {
 }
 
 impl GenesisState {
-    pub fn new(accounts: Vec<Account>, version: u32, timestamp: u32) -> Self {
-        Self { accounts, version, timestamp }
+    pub fn new(
+        accounts: Vec<Account>,
+        fee_parameters: FeeParameters,
+        version: u32,
+        timestamp: u32,
+    ) -> Self {
+        Self {
+            accounts,
+            fee_parameters,
+            version,
+            timestamp,
+        }
     }
 
     /// Returns the block header and the account SMT
@@ -91,6 +103,7 @@ impl GenesisState {
             Word::empty(),
             TransactionKernel::kernel_commitment(),
             Word::empty(),
+            self.fee_parameters,
             self.timestamp,
         );
 
@@ -117,7 +130,8 @@ impl Deserializable for GenesisState {
 
         let version = source.read_u32()?;
         let timestamp = source.read_u32()?;
+        let fee_parameters = source.read::<FeeParameters>()?;
 
-        Ok(Self::new(accounts, version, timestamp))
+        Ok(Self::new(accounts, fee_parameters, version, timestamp))
     }
 }

@@ -1,10 +1,12 @@
+use std::time::Duration;
+
 use anyhow::Context;
 use miden_node_rpc::Rpc;
 use miden_node_utils::grpc::UrlExt;
 use url::Url;
 
 use super::{ENV_BLOCK_PRODUCER_URL, ENV_RPC_URL, ENV_STORE_RPC_URL};
-use crate::commands::ENV_ENABLE_OTEL;
+use crate::commands::{DEFAULT_TIMEOUT, ENV_ENABLE_OTEL, duration_to_human_readable_string};
 
 #[derive(clap::Subcommand)]
 pub enum RpcCommand {
@@ -29,6 +31,17 @@ pub enum RpcCommand {
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         enable_otel: bool,
+
+        /// Maximum duration a gRPC request is allocated before being dropped by the server.
+        ///
+        /// This may occur if the server is overloaded or due to an internal bug.
+        #[arg(
+            long = "grpc.timeout",
+            default_value = &duration_to_human_readable_string(DEFAULT_TIMEOUT),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
+        )]
+        grpc_timeout: Duration,
     },
 }
 
@@ -39,6 +52,7 @@ impl RpcCommand {
             store_url,
             block_producer_url,
             enable_otel: _,
+            grpc_timeout,
         } = self;
 
         let listener = url.to_socket().context("Failed to extract socket address from RPC URL")?;
@@ -46,10 +60,15 @@ impl RpcCommand {
             .await
             .context("Failed to bind to RPC's gRPC URL")?;
 
-        Rpc { listener, store_url, block_producer_url }
-            .serve()
-            .await
-            .context("Serving RPC")
+        Rpc {
+            listener,
+            store_url,
+            block_producer_url,
+            grpc_timeout,
+        }
+        .serve()
+        .await
+        .context("Serving RPC")
     }
 
     pub fn is_open_telemetry_enabled(&self) -> bool {

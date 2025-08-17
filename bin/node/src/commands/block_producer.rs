@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -7,7 +8,12 @@ use tokio::sync::Barrier;
 use url::Url;
 
 use super::{ENV_BLOCK_PRODUCER_URL, ENV_STORE_BLOCK_PRODUCER_URL};
-use crate::commands::{BlockProducerConfig, ENV_ENABLE_OTEL};
+use crate::commands::{
+    BlockProducerConfig,
+    DEFAULT_TIMEOUT,
+    ENV_ENABLE_OTEL,
+    duration_to_human_readable_string,
+};
 
 #[derive(clap::Subcommand)]
 pub enum BlockProducerCommand {
@@ -30,6 +36,17 @@ pub enum BlockProducerCommand {
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         enable_otel: bool,
+
+        /// Maximum duration a gRPC request is allocated before being dropped by the server.
+        ///
+        /// This may occur if the server is overloaded or due to an internal bug.
+        #[arg(
+            long = "grpc.timeout",
+            default_value = &duration_to_human_readable_string(DEFAULT_TIMEOUT),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
+        )]
+        grpc_timeout: Duration,
     },
 }
 
@@ -40,6 +57,7 @@ impl BlockProducerCommand {
             store_url,
             block_producer,
             enable_otel: _,
+            grpc_timeout,
         } = self;
 
         let block_producer_address =
@@ -69,6 +87,7 @@ impl BlockProducerCommand {
             max_txs_per_batch: block_producer.max_txs_per_batch,
             max_batches_per_block: block_producer.max_batches_per_block,
             production_checkpoint: Arc::new(Barrier::new(1)),
+            grpc_timeout,
         }
         .serve()
         .await
@@ -105,6 +124,7 @@ mod tests {
                 max_batches_per_block: miden_objects::MAX_BATCHES_PER_BLOCK + 1, // Invalid value
             },
             enable_otel: false,
+            grpc_timeout: Duration::from_secs(10),
         };
         let result = cmd.handle().await;
         assert!(result.is_err());
@@ -128,6 +148,7 @@ mod tests {
                 max_batches_per_block: 8,
             },
             enable_otel: false,
+            grpc_timeout: Duration::from_secs(10),
         };
         let result = cmd.handle().await;
         assert!(result.is_err());

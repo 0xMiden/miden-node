@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use accept::AcceptHeaderLayer;
 use anyhow::Context;
 use miden_node_proto::generated::rpc::api_server;
@@ -26,6 +28,10 @@ pub struct Rpc {
     pub listener: TcpListener,
     pub store_url: Url,
     pub block_producer_url: Option<Url>,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
+    pub grpc_timeout: Duration,
 }
 
 impl Rpc {
@@ -64,6 +70,7 @@ impl Rpc {
 
         tonic::transport::Server::builder()
             .accept_http1(true)
+            .timeout(self.grpc_timeout)
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
             .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(cors_for_grpc_web_layer())

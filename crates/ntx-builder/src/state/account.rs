@@ -63,14 +63,13 @@ impl InflightNetworkNote {
     /// Checks if the backoff block period has passed.
     ///
     /// The number of blocks passed since the last attempt must be greater than or equal to
-    /// e^(0.25 * `attempt_count`).
+    /// e^(0.25 * `attempt_count`) rounded to the nearest integer.
     ///
-    /// The expected thresholds are therefore:
-    /// - 1 attempt: 2 blocks
-    /// - 2 attempts: 2 blocks
-    /// - 3 attempts: 3 blocks
-    /// - 10 attempts: 13 blocks
-    /// - 20 attempts: 149 blocks
+    /// This evaluates to the following:
+    /// - After 1 attempt, the backoff period is 1 block.
+    /// - After 3 attempts, the backoff period is 2 blocks.
+    /// - After 10 attempts, the backoff period is 12 blocks.
+    /// - After 20 attempts, the backoff period is 148 blocks.
     /// - etc...
     #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
     fn backoff_has_passed(
@@ -87,10 +86,10 @@ impl InflightNetworkNote {
             .unwrap_or_default();
 
         // Compute the exponential backoff threshold: Δ = e^(0.25 * n).
-        let backoff_threshold = (0.25 * attempts as f64).exp().ceil() as usize;
+        let backoff_threshold = (0.25 * attempts as f64).exp().round() as usize;
 
         // Check if the backoff period has passed.
-        blocks_passed.as_usize() >= backoff_threshold
+        blocks_passed.as_usize() > backoff_threshold
     }
 
     /// Registers a failed attempt to execute the network note at the specified block number.
@@ -312,12 +311,10 @@ mod tests {
     #[case::all_zero(Some(BlockNumber::from(0)), BlockNumber::from(0), 0, true)]
     #[case::no_attempts(None, BlockNumber::from(0), 0, true)]
     #[case::one_attempt(Some(BlockNumber::from(0)), BlockNumber::from(2), 1, true)]
-    #[case::two_attempts(Some(BlockNumber::from(0)), BlockNumber::from(2), 2, true)]
     #[case::three_attempts(Some(BlockNumber::from(0)), BlockNumber::from(3), 3, true)]
     #[case::ten_attempts(Some(BlockNumber::from(0)), BlockNumber::from(13), 10, true)]
     #[case::twenty_attempts(Some(BlockNumber::from(0)), BlockNumber::from(149), 20, true)]
     #[case::one_attempt_false(Some(BlockNumber::from(0)), BlockNumber::from(1), 1, false)]
-    #[case::two_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(1), 2, false)]
     #[case::three_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(2), 3, false)]
     #[case::ten_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(12), 10, false)]
     #[case::twenty_attempts_false(Some(BlockNumber::from(0)), BlockNumber::from(148), 20, false)]

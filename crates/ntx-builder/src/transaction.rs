@@ -94,12 +94,9 @@ impl NtxContext {
 
         async move {
             async move {
-                let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
-                let notes =
-                    InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
-
                 let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
+                let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed)).await?;
@@ -125,11 +122,13 @@ impl NtxContext {
     async fn filter_notes(
         &self,
         data_store: &NtxDataStore,
-        notes: InputNotes<InputNote>,
+        notes: Vec<Note>,
     ) -> NtxResult<(InputNotes<InputNote>, Vec<FailedNote>)> {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
+
+        let notes = InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
 
         match Box::pin(checker.check_notes_consumability(
             data_store.account.id(),

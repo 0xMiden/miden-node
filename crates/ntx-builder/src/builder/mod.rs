@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::Barrier;
@@ -91,7 +92,9 @@ impl NetworkTransactionBuilder {
                         continue;
                     };
 
-                    let indexed_candidate = (candidate.account_id_prefix, candidate.chain_tip_header.block_num());
+                    let network_account_prefix = NetworkAccountPrefix::try_from(candidate.account.id())
+                                                 .expect("all accounts managed by NTB are network accounts");
+                    let indexed_candidate = (network_account_prefix, candidate.chain_tip_header.block_num());
                     let task_id = inflight.spawn({
                         let context = context.clone();
                         context.execute_transaction(candidate)
@@ -102,8 +105,8 @@ impl NetworkTransactionBuilder {
                 },
                 event = mempool_events.try_next() => {
                     let event = event
-                        .context("mempool event stream ended")?
-                        .context("mempool event stream failed")?;
+                                .context("mempool event stream ended")?
+                                .context("mempool event stream failed")?;
                     state.mempool_update(event).await.context("failed to update state")?;
                 },
                 completed = inflight.join_next_with_id() => {

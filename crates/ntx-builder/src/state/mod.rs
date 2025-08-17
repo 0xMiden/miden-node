@@ -35,9 +35,6 @@ pub struct TransactionCandidate {
     /// The current inflight state of the account.
     pub account: Account,
 
-    /// The account id prefix corresponding to the candidate account.
-    pub account_id_prefix: NetworkAccountPrefix,
-
     /// A set of notes addressed to this network account.
     pub notes: Vec<InflightNetworkNote>,
 
@@ -191,7 +188,6 @@ impl State {
             self.in_progress.insert(candidate);
             return TransactionCandidate {
                 account: account.latest_account(),
-                account_id_prefix: candidate,
                 notes,
                 chain_tip_header: self.chain_tip_header.clone(),
                 chain_mmr: self.chain_mmr.clone(),

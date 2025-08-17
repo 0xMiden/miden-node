@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::time::Duration;
 
 use accept::AcceptHeaderLayer;
 use anyhow::Context;
@@ -12,6 +12,7 @@ use tonic_reflection::server;
 use tonic_web::GrpcWebLayer;
 use tower_http::trace::TraceLayer;
 use tracing::info;
+use url::Url;
 
 use crate::COMPONENT;
 
@@ -25,8 +26,12 @@ mod api;
 /// Requests will fail if the components are not available.
 pub struct Rpc {
     pub listener: TcpListener,
-    pub store: SocketAddr,
-    pub block_producer: Option<SocketAddr>,
+    pub store_url: Url,
+    pub block_producer_url: Option<Url>,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
+    pub grpc_timeout: Duration,
 }
 
 impl Rpc {
@@ -35,7 +40,7 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        let api = api::RpcService::new(self.store, self.block_producer);
+        let api = api::RpcService::new(&self.store_url, self.block_producer_url.as_ref());
 
         let genesis = api
             .get_genesis_header_with_retry()
@@ -57,7 +62,7 @@ impl Rpc {
             .build_v1alpha()
             .context("failed to build reflection service")?;
 
-        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store, block_producer=?self.block_producer, "Server initialized");
+        info!(target: COMPONENT, endpoint=?self.listener, store=%self.store_url, block_producer=?self.block_producer_url, "Server initialized");
 
         let rpc_version = env!("CARGO_PKG_VERSION");
         let rpc_version =
@@ -65,6 +70,7 @@ impl Rpc {
 
         tonic::transport::Server::builder()
             .accept_http1(true)
+            .timeout(self.grpc_timeout)
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
             .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(cors_for_grpc_web_layer())

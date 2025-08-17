@@ -31,4 +31,5 @@ rand                      = { workspace = true }
 rayon                     = { version = "1.10" }
 tokio                     = { workspace = true }
 tonic                     = { workspace = true }
+url                       = { workspace = true }
 winterfell                = { version = "0.13" }

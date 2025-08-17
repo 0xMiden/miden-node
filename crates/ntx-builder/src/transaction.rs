@@ -171,11 +171,8 @@ impl NtxContext {
         {
             Ok(NoteConsumptionInfo { successful, failed, .. }) => {
                 // Map successful notes to input notes.
-                let successful = successful
-                    .into_iter()
-                    .filter_map(|id| notes.iter().find(|&note| note.id() == id.id()))
-                    .cloned()
-                    .collect::<Vec<_>>();
+                let successful = InputNotes::from_unauthenticated_notes(successful)
+                    .map_err(NtxError::InputNotes)?;
 
                 // If none are successful, abort.
                 if successful.is_empty() {
@@ -184,7 +181,7 @@ impl NtxContext {
 
                 // SAFETY: All notes are known to be valid as they are derived from pre-existing
                 // ones.
-                Ok((InputNotes::new_unchecked(successful), failed))
+                Ok((successful, failed))
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
         }

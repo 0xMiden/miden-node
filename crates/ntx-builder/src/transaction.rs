@@ -95,8 +95,7 @@ impl NtxContext {
 
         async move {
             async move {
-                let notes =
-                    notes.into_iter().map(|note| note.into_inner().into()).collect::<Vec<Note>>();
+                let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let notes =
                     InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
 

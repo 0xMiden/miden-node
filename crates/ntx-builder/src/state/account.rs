@@ -5,7 +5,7 @@ use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountDelta, AccountId};
 use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
+use miden_objects::note::{Note, Nullifier};
 
 // INFLIGHT NETWORK NOTE
 // ================================================================================================
@@ -64,6 +64,12 @@ impl InflightNetworkNote {
     pub fn fail(&mut self, block_num: BlockNumber) {
         self.last_attempt = Some(block_num);
         self.attempt_count += 1;
+    }
+}
+
+impl From<InflightNetworkNote> for Note {
+    fn from(value: InflightNetworkNote) -> Self {
+        value.into_inner().into()
     }
 }
 

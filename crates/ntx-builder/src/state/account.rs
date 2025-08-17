@@ -57,39 +57,7 @@ impl InflightNetworkNote {
             .execution_hint()
             .can_be_consumed(block_num)
             .unwrap_or(true);
-        can_consume && Self::backoff_has_passed(block_num, self.last_attempt, self.attempt_count)
-    }
-
-    /// Checks if the backoff block period has passed.
-    ///
-    /// The number of blocks passed since the last attempt must be greater than or equal to
-    /// e^(0.25 * `attempt_count`) rounded to the nearest integer.
-    ///
-    /// This evaluates to the following:
-    /// - After 1 attempt, the backoff period is 1 block.
-    /// - After 3 attempts, the backoff period is 2 blocks.
-    /// - After 10 attempts, the backoff period is 12 blocks.
-    /// - After 20 attempts, the backoff period is 148 blocks.
-    /// - etc...
-    #[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
-    fn backoff_has_passed(
-        chain_tip: BlockNumber,
-        last_attempt: Option<BlockNumber>,
-        attempts: usize,
-    ) -> bool {
-        if attempts == 0 {
-            return true;
-        }
-        // Compute the number of blocks passed since the last attempt.
-        let blocks_passed = last_attempt
-            .and_then(|last| chain_tip.checked_sub(last.as_u32()))
-            .unwrap_or_default();
-
-        // Compute the exponential backoff threshold: Δ = e^(0.25 * n).
-        let backoff_threshold = (0.25 * attempts as f64).exp().round() as usize;
-
-        // Check if the backoff period has passed.
-        blocks_passed.as_usize() > backoff_threshold
+        can_consume && has_backoff_passed(block_num, self.last_attempt, self.attempt_count)
     }
 
     /// Registers a failed attempt to execute the network note at the specified block number.
@@ -232,8 +200,8 @@ impl AccountState {
         self.available_notes.values()
     }
 
-    /// Drains all notes that have failed to be consumed after a certain number of attempts.
-    pub fn drain_failing_notes(&mut self, max_attempts: usize) {
+    /// Drops all notes that have failed to be consumed after a certain number of attempts.
+    pub fn drop_failing_notes(&mut self, max_attempts: usize) {
         self.available_notes.retain(|_, note| note.attempt_count() < max_attempts);
     }
 
@@ -300,11 +268,44 @@ impl NetworkAccountUpdate {
     }
 }
 
+// HELPERS
+// ================================================================================================
+
+/// Checks if the backoff block period has passed.
+///
+/// The number of blocks passed since the last attempt must be greater than or equal to
+/// e^(0.25 * `attempt_count`) rounded to the nearest integer.
+///
+/// This evaluates to the following:
+/// - After 1 attempt, the backoff period is 1 block.
+/// - After 3 attempts, the backoff period is 2 blocks.
+/// - After 10 attempts, the backoff period is 12 blocks.
+/// - After 20 attempts, the backoff period is 148 blocks.
+/// - etc...
+#[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
+fn has_backoff_passed(
+    chain_tip: BlockNumber,
+    last_attempt: Option<BlockNumber>,
+    attempts: usize,
+) -> bool {
+    if attempts == 0 {
+        return true;
+    }
+    // Compute the number of blocks passed since the last attempt.
+    let blocks_passed = last_attempt
+        .and_then(|last| chain_tip.checked_sub(last.as_u32()))
+        .unwrap_or_default();
+
+    // Compute the exponential backoff threshold: Δ = e^(0.25 * n).
+    let backoff_threshold = (0.25 * attempts as f64).exp().round() as usize;
+
+    // Check if the backoff period has passed.
+    blocks_passed.as_usize() > backoff_threshold
+}
+
 #[cfg(test)]
 mod tests {
     use miden_objects::block::BlockNumber;
-
-    use super::InflightNetworkNote;
 
     #[rstest::rstest]
     #[test]
@@ -326,11 +327,7 @@ mod tests {
     ) {
         assert_eq!(
             backoff_should_have_passed,
-            InflightNetworkNote::backoff_has_passed(
-                current_block_num,
-                last_attempt_block_num,
-                attempt_count
-            )
+            super::has_backoff_passed(current_block_num, last_attempt_block_num, attempt_count)
         );
     }
 }

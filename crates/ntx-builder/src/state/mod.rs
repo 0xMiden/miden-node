@@ -162,7 +162,7 @@ impl State {
             let account = self.accounts.get_mut(&candidate).expect("queue account must be tracked");
 
             // Remove notes that have failed too many times.
-            account.drain_failing_notes(Self::MAX_NOTE_ATTEMPTS);
+            account.drop_failing_notes(Self::MAX_NOTE_ATTEMPTS);
 
             // Skip empty accounts, and prune them.
             // This is how we keep the number of accounts bounded.

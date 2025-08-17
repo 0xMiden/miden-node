@@ -11,7 +11,7 @@ pub use tower_http::catch_panic::CatchPanicLayer;
 pub fn catch_panic_layer_fn(err: Box<dyn Any + Send + 'static>) -> Response<Full<bytes::Bytes>> {
     // Log the panic error details.
     let err = stringify_panic_error(err);
-    tracing::error!("panic: {err}");
+    tracing::error!(panic = true, "{err}");
 
     // Return generic error response.
     Response::builder()

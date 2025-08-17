@@ -58,7 +58,7 @@ pub fn setup_tracing(otel: OpenTelemetry) -> anyhow::Result<()> {
 
     // Register panic hook now that tracing is initialized.
     std::panic::set_hook(Box::new(|info| {
-        tracing::error!("{info}");
+        tracing::error!(panic = true, "{info}");
     }));
     Ok(())
 }

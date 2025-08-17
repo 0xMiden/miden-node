@@ -1,6 +1,7 @@
 use std::ops::Not;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::generated::{block_producer_store, ntx_builder_store, rpc_store};
@@ -36,6 +37,10 @@ pub struct Store {
     pub ntx_builder_listener: TcpListener,
     pub block_producer_listener: TcpListener,
     pub data_directory: PathBuf,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
+    pub grpc_timeout: Duration,
 }
 
 impl Store {
@@ -81,7 +86,8 @@ impl Store {
         let rpc_address = self.rpc_listener.local_addr()?;
         let ntx_builder_address = self.ntx_builder_listener.local_addr()?;
         let block_producer_address = self.block_producer_listener.local_addr()?;
-        info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address, block_producer_endpoint=?block_producer_address, ?self.data_directory, "Loading database");
+        info!(target: COMPONENT, rpc_endpoint=?rpc_address, ntx_builder_endpoint=?ntx_builder_address,
+            block_producer_endpoint=?block_producer_address, ?self.data_directory, ?self.grpc_timeout, "Loading database");
 
         let data_directory =
             DataDirectory::load(self.data_directory.clone()).with_context(|| {
@@ -150,6 +156,7 @@ impl Store {
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::StoreRpc)),
                 )
+                .timeout(self.grpc_timeout)
                 .add_service(rpc_service)
                 .add_service(reflection_service.clone())
                 .add_service(reflection_service_alpha.clone())
@@ -163,6 +170,7 @@ impl Store {
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::StoreNtxBuilder)),
                 )
+                .timeout(self.grpc_timeout)
                 .add_service(ntx_builder_service)
                 .add_service(reflection_service.clone())
                 .add_service(reflection_service_alpha.clone())
@@ -176,6 +184,7 @@ impl Store {
                     TraceLayer::new_for_grpc()
                         .make_span_with(traced_span_fn(TracedComponent::BlockProducer)),
                 )
+                .timeout(self.grpc_timeout)
                 .add_service(block_producer_service)
                 .add_service(reflection_service)
                 .add_service(reflection_service_alpha)

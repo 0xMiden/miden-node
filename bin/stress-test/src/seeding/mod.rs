@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
 use miden_air::HashFunction;
@@ -533,6 +533,7 @@ pub async fn start_store(
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
+            grpc_timeout: Duration::from_secs(30),
         }
         .serve()
         .await

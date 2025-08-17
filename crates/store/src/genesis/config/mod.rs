@@ -1,6 +1,7 @@
 //! Describe a subset of the genesis manifest in easily human readable format
 
 use std::collections::HashMap;
+use std::str::FromStr;
 
 use miden_lib::AuthScheme;
 use miden_lib::account::auth::AuthRpoFalcon512;
@@ -25,10 +26,11 @@ use miden_objects::account::{
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
 use miden_objects::block::FeeParameters;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
-use miden_objects::{Felt, FieldElement, ONE, Word, ZERO};
+use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, Word, ZERO};
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::GenesisState;
 
@@ -55,6 +57,7 @@ pub struct GenesisConfig {
 
 impl Default for GenesisConfig {
     fn default() -> Self {
+        let miden = TokenSymbolStr::from_str("MIDEN").unwrap();
         Self {
             version: 1_u32,
             timestamp: u32::try_from(
@@ -66,14 +69,14 @@ impl Default for GenesisConfig {
             .expect("Timestamp should fit into u32"),
             wallet: vec![],
             fee_parameters: FeeParameterConfig {
-                symbol: "MIDEN".to_owned(),
+                symbol: miden.clone(),
                 verification_base_fee: 0u32,
             },
             fungible_faucet: vec![FungibleFaucetConfig {
                 max_supply: 100_000_000_000_000_000u64,
                 decimals: 6u8,
                 storage_mode: StorageMode::Public,
-                symbol: "MIDEN".to_owned(),
+                symbol: miden.clone(),
             }],
         }
     }
@@ -101,11 +104,9 @@ impl GenesisConfig {
             fee_parameters,
         } = self;
 
-        let _ = TokenSymbol::new(&fee_parameters.symbol)?;
-
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
-        let mut faucet_accounts = HashMap::<String, Account>::new();
+        let mut faucet_accounts = HashMap::<TokenSymbolStr, Account>::new();
 
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
@@ -124,14 +125,12 @@ impl GenesisConfig {
             let auth = AuthRpoFalcon512::new(secret_key.public_key());
             let init_seed: [u8; 32] = rng.random();
 
-            let token_symbol = TokenSymbol::new(&symbol)?;
-
             let account_type = AccountType::FungibleFaucet;
 
             let max_supply = Felt::try_from(max_supply)
                 .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
 
-            let component = BasicFungibleFaucet::new(token_symbol, decimals, max_supply)?;
+            let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
 
             let account_storage_mode = storage_mode.into();
 
@@ -146,11 +145,11 @@ impl GenesisConfig {
             debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
 
             if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
-                return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol: token_symbol });
+                return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol });
             }
 
             secrets.push((
-                format!("faucet_{symbol}.mac", symbol = symbol.to_lowercase()),
+                format!("faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
                 faucet_account.id(),
                 secret_key,
                 faucet_account_seed,
@@ -283,7 +282,7 @@ impl GenesisConfig {
             if max_supply < total_issuance {
                 return Err(GenesisConfigError::MaxIssuanceExceeded {
                     max_supply,
-                    symbol: TokenSymbol::new(&symbol)?,
+                    symbol,
                     total_issuance,
                 });
             }
@@ -314,9 +313,8 @@ impl GenesisConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FeeParameterConfig {
-    // TODO eventually directly parse to `TokenSymbol`
     /// Token symbol to use for base fees.
-    symbol: String,
+    symbol: TokenSymbolStr,
     /// Verification base fee, in units of smallest denomination.
     verification_base_fee: u32,
 }
@@ -328,8 +326,7 @@ pub struct FeeParameterConfig {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FungibleFaucetConfig {
-    // TODO eventually directly parse to `TokenSymbol`
-    symbol: String,
+    symbol: TokenSymbolStr,
     decimals: u8,
     /// Max supply in full token units
     ///
@@ -356,7 +353,7 @@ pub struct WalletConfig {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct AssetEntry {
-    symbol: String,
+    symbol: TokenSymbolStr,
     /// The amount of full token units the given asset is populated with
     amount: u64,
 }
@@ -440,14 +437,13 @@ impl AccountSecrets {
 /// Track the negative adjustments for the respective faucets.
 fn prepare_fungible_asset_update(
     assets: impl IntoIterator<Item = AssetEntry>,
-    faucets: &HashMap<String, Account>,
+    faucets: &HashMap<TokenSymbolStr, Account>,
     faucet_issuance: &mut HashMap<AccountId, u64>,
 ) -> Result<FungibleAssetDelta, GenesisConfigError> {
     let assets =
         Result::<Vec<_>, _>::from_iter(assets.into_iter().map(|AssetEntry { amount, symbol }| {
-            let token_symbol = TokenSymbol::new(&symbol)?;
             let faucet_account = faucets.get(&symbol).ok_or_else(|| {
-                GenesisConfigError::MissingFaucetDefinition { symbol: token_symbol }
+                GenesisConfigError::MissingFaucetDefinition { symbol: symbol.clone() }
             })?;
 
             Ok::<_, GenesisConfigError>(FungibleAsset::new(faucet_account.id(), amount)?)
@@ -477,4 +473,92 @@ fn prepare_fungible_asset_update(
     })?;
 
     Ok(wallet_asset_delta)
+}
+
+/// Wrapper type used for configuration representation.
+///
+/// Required since `Felt` does not implement `Hash` or `Eq`, but both are useful and necessary for a
+/// coherent model construction.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TokenSymbolStr {
+    /// The raw representation, used for `Hash` and `Eq`.
+    raw: String,
+    /// Maintain the duality with the actual implementation.
+    encoded: TokenSymbol,
+}
+
+impl AsRef<TokenSymbol> for TokenSymbolStr {
+    fn as_ref(&self) -> &TokenSymbol {
+        &self.encoded
+    }
+}
+
+impl std::fmt::Display for TokenSymbolStr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.raw)
+    }
+}
+
+impl FromStr for TokenSymbolStr {
+    // note: we re-use the error type
+    type Err = TokenSymbolError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self {
+            encoded: TokenSymbol::new(s)?,
+            raw: s.to_string(),
+        })
+    }
+}
+
+impl Eq for TokenSymbolStr {}
+
+impl From<TokenSymbolStr> for TokenSymbol {
+    fn from(value: TokenSymbolStr) -> Self {
+        value.encoded
+    }
+}
+
+impl std::hash::Hash for TokenSymbolStr {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.raw.hash::<H>(state);
+    }
+}
+
+impl Serialize for TokenSymbolStr {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.raw)
+    }
+}
+
+impl<'de> Deserialize<'de> for TokenSymbolStr {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        deserializer.deserialize_str(TokenSymbolVisitor)
+    }
+}
+
+use serde::de::Visitor;
+
+struct TokenSymbolVisitor;
+
+impl Visitor<'_> for TokenSymbolVisitor {
+    type Value = TokenSymbolStr;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("1 to 6 uppercase ascii letters")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        let encoded = TokenSymbol::new(v).map_err(|e| E::custom(format!("{e}")))?;
+        let raw = v.to_string();
+        Ok(TokenSymbolStr { raw, encoded })
+    }
 }

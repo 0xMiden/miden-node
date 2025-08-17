@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use accept::AcceptHeaderLayer;
 use anyhow::Context;
@@ -28,6 +29,10 @@ pub struct Rpc {
     pub listener: TcpListener,
     pub store: SocketAddr,
     pub block_producer: Option<SocketAddr>,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
+    pub grpc_timeout: Duration,
 }
 
 impl Rpc {
@@ -66,6 +71,7 @@ impl Rpc {
 
         tonic::transport::Server::builder()
             .accept_http1(true)
+            .timeout(self.grpc_timeout)
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
             .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))

@@ -8,6 +8,7 @@
 - A transaction's account delta is now checked against its commitments in `SubmitProvenTransaction` endpoint ([#1093](https://github.com/0xMiden/miden-node/pull/1093)).
 - Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the mempool ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
 - RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+- gRPC server timeout is now configurable (defaults to `10s`) ([#1133](https://github.com/0xMiden/miden-node/pull/1133))
 
 ### Changes
 

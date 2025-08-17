@@ -7,7 +7,11 @@ use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
-    ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
     TransactionArgs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -15,9 +19,17 @@ use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore, DataStoreError, FailedNote, LocalTransactionProver, MastForestStore,
-    NoteConsumptionChecker, NoteConsumptionInfo, TransactionExecutor, TransactionExecutorError,
-    TransactionMastStore, TransactionProverError,
+    DataStore,
+    DataStoreError,
+    FailedNote,
+    LocalTransactionProver,
+    MastForestStore,
+    NoteConsumptionChecker,
+    NoteConsumptionInfo,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionMastStore,
+    TransactionProverError,
 };
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
@@ -62,10 +74,28 @@ pub struct NtxContext {
 }
 
 impl NtxContext {
-    /// Executes and proves a transaction.
+    /// Executes a transaction end-to-end: filtering, executin, proving, and submitted to the block
+    /// producer.
     ///
-    /// The transaction's notes are filtered before execution is performed. If any notes are filtered
-    /// out, they are returned as [`FailedNote`]s.
+    /// The provided [`TransactionCandidate`] is processed in the following stages:
+    /// 1. Note filtering – all input notes are checked for consumability. Any notes that cannot be
+    ///    executed are returned as [`FailedNote`]s.
+    /// 2. Execution – the remaining notes are executed against the account state.
+    /// 3. Proving – a proof is generated for the executed transaction.
+    /// 4. Submission – the proven transaction is submitted to the block producer.
+    ///
+    /// # Returns
+    ///
+    /// On success, returns the list of [`FailedNote`]s representing notes that were
+    /// filtered out before execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`NtxError`] if any step of the pipeline fails, including:
+    /// - Note filtering (e.g., all notes fail consumability checks).
+    /// - Transaction execution.
+    /// - Proof generation.
+    /// - Submission to the network.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub fn execute_transaction(
         self,

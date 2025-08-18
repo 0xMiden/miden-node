@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient as InnerRpcClient};
 use miden_node_proto::generated as proto;
-use miden_node_rpc::ApiClient;
 use miden_objects::account::Account;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::transaction::ProvenTransaction;
@@ -19,8 +19,12 @@ pub enum RpcError {
     ResponseParsing(#[source] anyhow::Error),
 }
 
+// CLIENT
+// ================================================================================================
+
+/// Client used to interact with an RPC endpoint on a Miden node.
 pub struct RpcClient {
-    inner: ApiClient,
+    inner: InnerRpcClient,
 }
 
 impl RpcClient {
@@ -28,7 +32,12 @@ impl RpcClient {
     ///
     /// The connection is lazy and will re-establish in the background on disconnection.
     pub fn connect_lazy(url: &Url, timeout_ms: u64) -> Result<Self, anyhow::Error> {
-        let client = ApiClient::connect_lazy(url, Duration::from_millis(timeout_ms), None)?;
+        let client = Builder::new(url.to_string())?
+            .with_tls()?
+            .with_timeout(Duration::from_millis(timeout_ms))
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .connect_lazy::<RpcClientMarker>();
 
         Ok(Self { inner: client })
     }

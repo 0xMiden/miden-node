@@ -43,7 +43,7 @@ impl StartProxy {
     /// - The Pingora configuration fails.
     /// - The server cannot be started.
     #[tracing::instrument(target = COMPONENT, name = "proxy.execute")]
-    pub async fn execute(&self) -> Result<(), String> {
+    pub async fn execute(&self) -> anyhow::Result<()> {
         // Check if all required ports are available
         check_port_availability(self.proxy_config.port, "Proxy")?;
         check_port_availability(self.proxy_config.control_port, "Control")?;
@@ -122,9 +122,7 @@ impl StartProxy {
         server.add_service(health_check_service);
         server.add_service(update_workers_service);
         server.add_service(lb);
-        tokio::task::spawn_blocking(|| server.run_forever())
-            .await
-            .map_err(|err| err.to_string())?;
+        tokio::task::spawn_blocking(|| server.run_forever()).await?;
 
         Ok(())
     }

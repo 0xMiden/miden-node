@@ -14,20 +14,21 @@ fn parsing_yields_expected_default_values() -> TestResult {
     let (state, _secrets) = gcfg.into_state()?;
     let _ = state;
     // faucets always precede wallet accounts
-    let faucet = state.accounts[0].clone();
-    let wallet1 = state.accounts[1].clone();
-    let wallet2 = state.accounts[2].clone();
+    let native_faucet = state.accounts[0].clone();
+    let _excess = state.accounts[1].clone();
+    let wallet1 = state.accounts[2].clone();
+    let wallet2 = state.accounts[3].clone();
 
-    assert!(faucet.is_faucet());
+    assert!(native_faucet.is_faucet());
     assert!(wallet1.is_regular_account());
     assert!(wallet2.is_regular_account());
 
-    assert_eq!(faucet.nonce(), ONE);
+    assert_eq!(native_faucet.nonce(), ONE);
     assert_eq!(wallet1.nonce(), ONE);
     assert_eq!(wallet2.nonce(), ONE);
 
     {
-        let faucet = BasicFungibleFaucet::try_from(faucet.clone()).unwrap();
+        let faucet = BasicFungibleFaucet::try_from(native_faucet.clone()).unwrap();
 
         assert_eq!(faucet.max_supply(), Felt::new(100_000_000));
         assert_eq!(faucet.decimals(), 3);
@@ -35,16 +36,16 @@ fn parsing_yields_expected_default_values() -> TestResult {
     }
 
     // check account balance, and ensure ordering is retained
-    assert_matches!(wallet1.vault().get_balance(faucet.id()), Ok(val) => {
+    assert_matches!(wallet1.vault().get_balance(native_faucet.id()), Ok(val) => {
         assert_eq!(val, 999_000);
     });
-    assert_matches!(wallet2.vault().get_balance(faucet.id()), Ok(val) => {
+    assert_matches!(wallet2.vault().get_balance(native_faucet.id()), Ok(val) => {
         assert_eq!(val, 777);
     });
 
     // check total issuance of the faucet
     assert_eq!(
-        faucet.storage().get_item(memory::FAUCET_STORAGE_DATA_SLOT).unwrap()[3],
+        native_faucet.storage().get_item(memory::FAUCET_STORAGE_DATA_SLOT).unwrap()[3],
         Felt::new(999_777),
         "Issuance mismatch"
     );

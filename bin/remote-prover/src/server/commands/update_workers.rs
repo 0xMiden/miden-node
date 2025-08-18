@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Parser;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -69,8 +70,8 @@ impl UpdateWorkers {
     /// - If the request fails.
     /// - If the status code is not successful.
     /// - If the X-Worker-Count header is missing.
-    pub async fn execute(&self) -> Result<(), String> {
-        let query_params = serde_qs::to_string(&self).map_err(|err| err.to_string())?;
+    pub async fn execute(&self) -> anyhow::Result<()> {
+        let query_params = serde_qs::to_string(&self)?;
 
         println!("Action: {:?}, with workers: {:?}", self.action, self.workers);
 
@@ -78,26 +79,22 @@ impl UpdateWorkers {
         let url = format!("http://{}:{}?{}", PROXY_HOST, self.control_port, query_params);
 
         // Create an HTTP/2 client
-        let client = Client::builder()
-            .http2_prior_knowledge()
-            .build()
-            .map_err(|err| err.to_string())?;
+        let client = Client::builder().http2_prior_knowledge().build()?;
 
         // Make the request
-        let response = client.get(url).send().await.map_err(|err| err.to_string())?;
+        let response = client.get(url).send().await?;
 
         // Check status code
         if !response.status().is_success() {
-            return Err(format!("Request failed with status code: {}", response.status()));
+            anyhow::bail!("Request failed with status code: {}", response.status());
         }
 
         // Read the X-Worker-Count header
         let workers_count = response
             .headers()
             .get("X-Worker-Count")
-            .ok_or("Missing X-Worker-Count header")?
-            .to_str()
-            .map_err(|err| err.to_string())?;
+            .context("Missing X-Worker-Count header")?
+            .to_str()?;
 
         println!("New number of workers: {workers_count}");
 

@@ -1,15 +1,20 @@
 use miden_lib::transaction::TransactionKernel;
-use miden_objects::{
-    Word,
-    account::{Account, delta::AccountUpdateDetails},
-    block::{
-        AccountTree, BlockAccountUpdate, BlockHeader, BlockNoteTree, BlockNumber, ProvenBlock,
-    },
-    crypto::merkle::{Forest, MmrPeaks, Smt},
-    note::Nullifier,
-    transaction::OrderedTransactionHeaders,
-    utils::serde::{ByteReader, Deserializable, DeserializationError},
+use miden_objects::Word;
+use miden_objects::account::Account;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::block::{
+    AccountTree,
+    BlockAccountUpdate,
+    BlockHeader,
+    BlockNoteTree,
+    BlockNumber,
+    FeeParameters,
+    ProvenBlock,
 };
+use miden_objects::crypto::merkle::{Forest, MmrPeaks, Smt};
+use miden_objects::note::Nullifier;
+use miden_objects::transaction::OrderedTransactionHeaders;
+use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
 
 use crate::errors::GenesisError;
 
@@ -22,6 +27,7 @@ pub mod config;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GenesisState {
     pub accounts: Vec<Account>,
+    pub fee_parameters: FeeParameters,
     pub version: u32,
     pub timestamp: u32,
 }
@@ -41,8 +47,18 @@ impl GenesisBlock {
 }
 
 impl GenesisState {
-    pub fn new(accounts: Vec<Account>, version: u32, timestamp: u32) -> Self {
-        Self { accounts, version, timestamp }
+    pub fn new(
+        accounts: Vec<Account>,
+        fee_parameters: FeeParameters,
+        version: u32,
+        timestamp: u32,
+    ) -> Self {
+        Self {
+            accounts,
+            fee_parameters,
+            version,
+            timestamp,
+        }
     }
 
     /// Returns the block header and the account SMT
@@ -87,6 +103,7 @@ impl GenesisState {
             Word::empty(),
             TransactionKernel::kernel_commitment(),
             Word::empty(),
+            self.fee_parameters,
             self.timestamp,
         );
 
@@ -113,7 +130,8 @@ impl Deserializable for GenesisState {
 
         let version = source.read_u32()?;
         let timestamp = source.read_u32()?;
+        let fee_parameters = source.read::<FeeParameters>()?;
 
-        Ok(Self::new(accounts, version, timestamp))
+        Ok(Self::new(accounts, fee_parameters, version, timestamp))
     }
 }

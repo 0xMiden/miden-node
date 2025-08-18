@@ -1,76 +1,76 @@
-use std::{net::SocketAddr, time::Duration};
+use std::time::Duration;
 
 use anyhow::Context;
-use miden_node_proto::{
-    errors::ConversionError,
-    generated::{
-        self as proto,
-        block_producer::api_client as block_producer_client,
-        rpc::api_server::{self, Api},
-        rpc_store::rpc_client as store_client,
-    },
-    try_convert,
+use miden_node_proto::clients::{
+    BlockProducer,
+    BlockProducerClient,
+    Builder,
+    StoreRpc,
+    StoreRpcClient,
 };
-use miden_node_utils::{
-    ErrorReport,
-    limiter::{
-        QueryParamAccountIdLimit, QueryParamLimiter, QueryParamNoteIdLimit, QueryParamNoteTagLimit,
-        QueryParamNullifierLimit,
-    },
-    tracing::grpc::OtelInterceptor,
+use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::rpc::api_server::{self, Api};
+use miden_node_proto::generated::{self as proto};
+use miden_node_proto::try_convert;
+use miden_node_utils::ErrorReport;
+use miden_node_utils::limiter::{
+    QueryParamAccountIdLimit,
+    QueryParamLimiter,
+    QueryParamNoteIdLimit,
+    QueryParamNoteTagLimit,
+    QueryParamNullifierLimit,
 };
-use miden_objects::{
-    MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word,
-    account::{AccountId, delta::AccountUpdateDetails},
-    block::{BlockHeader, BlockNumber},
-    transaction::ProvenTransaction,
-    utils::serde::Deserializable,
-};
+use miden_objects::account::AccountId;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::batch::ProvenBatch;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::transaction::ProvenTransaction;
+use miden_objects::utils::serde::Deserializable;
+use miden_objects::{MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
-use tonic::{
-    IntoRequest, Request, Response, Status, service::interceptor::InterceptedService,
-    transport::Channel,
-};
+use tonic::{IntoRequest, Request, Response, Status};
 use tracing::{debug, info, instrument};
+use url::Url;
 
 use crate::COMPONENT;
 
 // RPC SERVICE
 // ================================================================================================
 
-type StoreClient = store_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
-type BlockProducerClient =
-    block_producer_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
-
 pub struct RpcService {
-    store: StoreClient,
+    store: StoreRpcClient,
     block_producer: Option<BlockProducerClient>,
 }
 
 impl RpcService {
-    pub(super) fn new(
-        store_address: SocketAddr,
-        block_producer_address: Option<SocketAddr>,
-    ) -> Self {
+    pub(super) fn new(store_url: &Url, block_producer_url: Option<&Url>) -> Self {
         let store = {
-            let store_url = format!("http://{store_address}");
-            // SAFETY: The store_url is always valid as it is created from a `SocketAddr`.
-            let channel = tonic::transport::Endpoint::try_from(store_url).unwrap().connect_lazy();
-            let store = store_client::RpcClient::with_interceptor(channel, OtelInterceptor);
-            info!(target: COMPONENT, store_endpoint = %store_address, "Store client initialized");
+            // SAFETY: The store_url is always valid as it is a user-provided URL that has been
+            // validated.
+            let store = Builder::new(store_url.to_string())
+                .expect("Failed to initialize store endpoint")
+                .without_tls()
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
+                .connect_lazy::<StoreRpc>();
+            info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
             store
         };
 
-        let block_producer = block_producer_address.map(|block_producer_address| {
-            let block_producer_url = format!("http://{block_producer_address}");
-            // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
-            let channel =
-                tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
-            let block_producer =
-                block_producer_client::ApiClient::with_interceptor(channel, OtelInterceptor);
+        let block_producer = block_producer_url.map(|block_producer_url| {
+            // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has
+            // been validated.
+            let block_producer = Builder::new(block_producer_url.to_string())
+                .expect("Failed to initialize block-producer endpoint")
+                .without_tls()
+                .without_timeout()
+                .without_metadata_version()
+                .without_metadata_genesis()
+                .connect_lazy::<BlockProducer>();
             info!(
                 target: COMPONENT,
-                block_producer_endpoint = %block_producer_address,
+                block_producer_endpoint = %block_producer_url,
                 "Block producer client initialized",
             );
             block_producer
@@ -281,7 +281,7 @@ impl api_server::Api for RpcService {
 
         // Only allow deployment transactions for new network accounts
         if tx.account_id().is_network()
-            && !matches!(tx.account_update().details(), AccountUpdateDetails::New(_))
+            && !tx.account_update().initial_state_commitment().is_empty()
         {
             return Err(Status::invalid_argument(
                 "Network transactions may not be submitted by users yet",
@@ -313,6 +313,32 @@ impl api_server::Api for RpcService {
         })?;
 
         block_producer.clone().submit_proven_transaction(request).await
+    }
+
+    #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_batch", skip_all, err)]
+    async fn submit_proven_batch(
+        &self,
+        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
+    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+        let Some(block_producer) = &self.block_producer else {
+            return Err(Status::unavailable("Batch submission not available in read-only mode"));
+        };
+
+        let request = request.into_inner();
+
+        let batch = ProvenBatch::read_from_bytes(&request.encoded)
+            .map_err(|err| Status::invalid_argument(err.as_report_context("invalid batch")))?;
+
+        // Only allow deployment transactions for new network accounts
+        for tx in batch.transactions().as_slice() {
+            if tx.account_id().is_network() && !tx.initial_state_commitment().is_empty() {
+                return Err(Status::invalid_argument(
+                    "Network transactions may not be submitted by users yet",
+                ));
+            }
+        }
+
+        block_producer.clone().submit_proven_batch(request).await
     }
 
     /// Returns details for public (public) account by id.

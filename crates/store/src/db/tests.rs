@@ -1,47 +1,66 @@
 #![allow(clippy::similar_names, reason = "naming dummy test values is hard")]
 #![allow(clippy::too_many_lines, reason = "test code can be long")]
 
-use std::{
-    num::NonZeroUsize,
-    sync::{Arc, Mutex},
-};
+use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 
 use diesel::{Connection, SqliteConnection};
-use miden_lib::{
-    account::auth::AuthRpoFalcon512, note::create_p2id_note, transaction::TransactionKernel,
-};
+use miden_lib::account::auth::AuthRpoFalcon512;
+use miden_lib::note::create_p2id_note;
+use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::domain::account::AccountSummary;
-use miden_objects::{
-    EMPTY_WORD, Felt, FieldElement, Word, ZERO,
-    account::{
-        Account, AccountBuilder, AccountComponent, AccountDelta, AccountId, AccountIdVersion,
-        AccountStorageDelta, AccountStorageMode, AccountType, AccountVaultDelta, StorageSlot,
-        delta::AccountUpdateDetails,
-    },
-    asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails},
-    block::{BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber},
-    crypto::{dsa::rpo_falcon512::PublicKey, merkle::SparseMerklePath, rand::RpoRandomCoin},
-    note::{
-        Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
-    },
-    testing::account_id::{
-        ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-        ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET, ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
-    },
-    transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId},
+use miden_node_utils::fee::test_fee_params;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{
+    Account,
+    AccountBuilder,
+    AccountComponent,
+    AccountDelta,
+    AccountId,
+    AccountIdVersion,
+    AccountStorageDelta,
+    AccountStorageMode,
+    AccountType,
+    AccountVaultDelta,
+    StorageSlot,
 };
+use miden_objects::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_objects::block::{
+    BlockAccountUpdate,
+    BlockHeader,
+    BlockNoteIndex,
+    BlockNoteTree,
+    BlockNumber,
+};
+use miden_objects::crypto::dsa::rpo_falcon512::PublicKey;
+use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::crypto::rand::RpoRandomCoin;
+use miden_objects::note::{
+    Note,
+    NoteDetails,
+    NoteExecutionHint,
+    NoteId,
+    NoteMetadata,
+    NoteTag,
+    NoteType,
+    Nullifier,
+};
+use miden_objects::testing::account_id::{
+    ACCOUNT_ID_PRIVATE_SENDER,
+    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+};
+use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId};
+use miden_objects::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
 use pretty_assertions::assert_eq;
 use rand::Rng;
 
 use super::{AccountInfo, NoteRecord, NullifierInfo};
-use crate::{
-    db::{
-        TransactionSummary,
-        migrations::apply_migrations,
-        models::{Page, queries, utils},
-    },
-    errors::DatabaseError,
-};
+use crate::db::TransactionSummary;
+use crate::db::migrations::apply_migrations;
+use crate::db::models::{Page, queries, utils};
+use crate::errors::DatabaseError;
 
 fn create_db() -> SqliteConnection {
     let mut conn = SqliteConnection::establish(":memory:").expect("In memory sqlite always works");
@@ -61,6 +80,7 @@ fn create_block(conn: &mut SqliteConnection, block_num: BlockNumber) {
         num_to_word(8),
         num_to_word(9),
         num_to_word(10),
+        test_fee_params(),
         11_u8.into(),
     );
 
@@ -936,6 +956,7 @@ fn db_block_header() {
         num_to_word(8),
         num_to_word(9),
         num_to_word(10),
+        test_fee_params(),
         11_u8.into(),
     );
     // test insertion
@@ -967,6 +988,7 @@ fn db_block_header() {
         num_to_word(18),
         num_to_word(19),
         num_to_word(20),
+        test_fee_params(),
         21_u8.into(),
     );
 

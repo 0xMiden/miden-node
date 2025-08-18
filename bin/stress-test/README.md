@@ -107,35 +107,35 @@ Current results of the store stress-tests:
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-state
 
-Average request latency: 68.031821ms
-P50 request latency: 1.027125ms
-P95 request latency: 1.615ms
-P99 request latency: 2.838417ms
-P99.9 request latency: 41.842534834s
-Average notes per response: 1.323
+Average request latency: 1.120061ms
+P50 request latency: 1.106042ms
+P95 request latency: 1.530708ms
+P99 request latency: 1.919209ms
+P99.9 request latency: 5.795125ms
+Average notes per response: 1.3159
 ```
 
 - sync-notes
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-notes
 
-Average request latency: 67.092947ms
-P50 request latency: 627.5µs
-P95 request latency: 1.106583ms
-P99 request latency: 1.54125ms
-P99.9 request latency: 41.511792833s
+Average request latency: 653.751µs
+P50 request latency: 606.417µs
+P95 request latency: 1.044666ms
+P99 request latency: 1.528667ms
+P99.9 request latency: 5.247875ms
 ```
 
 - check-nullifiers-by-prefix
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 check-nullifiers-by-prefix --prefixes 10
 
-Average request latency: 526.395µs
-P50 request latency: 509.458µs
-P95 request latency: 762.583µs
-P99 request latency: 891.75µs
-P99.9 request latency: 2.265ms
-Average nullifiers per response: 24.6875
+Average request latency: 519.239µs
+P50 request latency: 503.708µs
+P95 request latency: 747.333µs
+P99 request latency: 873.083µs
+P99.9 request latency: 2.289709ms
+Average nullifiers per response: 21.0348
 ```
 
 ## License

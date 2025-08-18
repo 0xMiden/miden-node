@@ -1,6 +1,8 @@
 use anyhow::Context;
-use miden_node_proto::generated::{self as proto, rpc::api_server};
+use miden_node_proto::generated::rpc::api_server;
+use miden_node_proto::generated::{self as proto};
 use miden_node_utils::cors::cors_for_grpc_web_layer;
+use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_testing::MockChain;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -73,6 +75,15 @@ impl api_server::Api for StubRpcApi {
         }))
     }
 
+    async fn submit_proven_batch(
+        &self,
+        _request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
+    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+        Ok(Response::new(proto::block_producer::SubmitProvenBatchResponse {
+            block_height: 0,
+        }))
+    }
+
     async fn get_account_details(
         &self,
         _request: Request<proto::account::AccountId>,
@@ -122,6 +133,7 @@ pub async fn serve_stub(endpoint: &Url) -> anyhow::Result<()> {
 
     tonic::transport::Server::builder()
         .accept_http1(true)
+        .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
         .layer(cors_for_grpc_web_layer())
         .layer(GrpcWebLayer::new())
         .add_service(api_service)

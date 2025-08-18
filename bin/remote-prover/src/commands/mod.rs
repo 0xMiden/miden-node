@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use clap::Parser;
-use miden_remote_prover::{COMPONENT, api::ProofType};
+use miden_remote_prover::COMPONENT;
+use miden_remote_prover::api::ProofType;
 use proxy::StartProxy;
 use tracing::instrument;
 use update_workers::{AddWorkers, RemoveWorkers, UpdateWorkers};
@@ -106,7 +107,7 @@ pub enum Command {
 /// CLI entry point
 impl Cli {
     #[instrument(target = COMPONENT, name = "cli.execute", skip_all, ret(level = "info"), err)]
-    pub async fn execute(&self) -> Result<(), String> {
+    pub async fn execute(&self) -> anyhow::Result<()> {
         match &self.action {
             // For the `StartWorker` command, we need to create a new runtime and run the worker
             Command::StartWorker(worker_init) => worker_init.execute().await,

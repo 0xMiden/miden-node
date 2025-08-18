@@ -1,4 +1,7 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_block_producer::BlockProducer;
@@ -6,12 +9,19 @@ use miden_node_ntx_builder::NetworkTransactionBuilder;
 use miden_node_rpc::Rpc;
 use miden_node_store::Store;
 use miden_node_utils::grpc::UrlExt;
-use tokio::{net::TcpListener, sync::Barrier, task::JoinSet};
+use tokio::net::TcpListener;
+use tokio::sync::Barrier;
+use tokio::task::JoinSet;
 use url::Url;
 
 use super::{ENV_DATA_DIRECTORY, ENV_RPC_URL};
 use crate::commands::{
-    BlockProducerConfig, ENV_ENABLE_OTEL, ENV_GENESIS_CONFIG_FILE, NtxBuilderConfig,
+    BlockProducerConfig,
+    DEFAULT_TIMEOUT,
+    ENV_ENABLE_OTEL,
+    ENV_GENESIS_CONFIG_FILE,
+    NtxBuilderConfig,
+    duration_to_human_readable_string,
 };
 
 #[derive(clap::Subcommand)]
@@ -60,6 +70,17 @@ pub enum BundledCommand {
         /// OpenTelemetry documentation. See our operator manual for further details.
         #[arg(long = "enable-otel", default_value_t = false, env = ENV_ENABLE_OTEL, value_name = "BOOL")]
         enable_otel: bool,
+
+        /// Maximum duration a gRPC request is allocated before being dropped by the server.
+        ///
+        /// This may occur if the server is overloaded or due to an internal bug.
+        #[arg(
+            long = "grpc.timeout",
+            default_value = &duration_to_human_readable_string(DEFAULT_TIMEOUT),
+            value_parser = humantime::parse_duration,
+            value_name = "DURATION"
+        )]
+        grpc_timeout: Duration,
     },
 }
 
@@ -87,7 +108,11 @@ impl BundledCommand {
                 block_producer,
                 ntx_builder,
                 enable_otel: _,
-            } => Self::start(rpc_url, data_directory, ntx_builder, block_producer).await,
+                grpc_timeout,
+            } => {
+                Self::start(rpc_url, data_directory, ntx_builder, block_producer, grpc_timeout)
+                    .await
+            },
         }
     }
 
@@ -97,6 +122,7 @@ impl BundledCommand {
         data_directory: PathBuf,
         ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
+        grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
         let should_start_ntb = !ntx_builder.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
@@ -145,6 +171,7 @@ impl BundledCommand {
                     block_producer_listener: store_block_producer_listener,
                     ntx_builder_listener: store_ntx_builder_listener,
                     data_directory: data_directory_clone,
+                    grpc_timeout,
                 }
                 .serve()
                 .await
@@ -164,10 +191,12 @@ impl BundledCommand {
         let block_producer_id = join_set
             .spawn({
                 let checkpoint = Arc::clone(&checkpoint);
+                let store_url = Url::parse(&format!("http://{store_block_producer_address}"))
+                    .context("Failed to parse URL")?;
                 async move {
                     BlockProducer {
                         block_producer_address,
-                        store_address: store_block_producer_address,
+                        store_url,
                         batch_prover_url: block_producer.batch_prover_url,
                         block_prover_url: block_producer.block_prover_url,
                         batch_interval: block_producer.batch_interval,
@@ -175,6 +204,7 @@ impl BundledCommand {
                         max_batches_per_block: block_producer.max_batches_per_block,
                         max_txs_per_batch: block_producer.max_txs_per_batch,
                         production_checkpoint: checkpoint,
+                        grpc_timeout,
                     }
                     .serve()
                     .await
@@ -186,10 +216,15 @@ impl BundledCommand {
         // Start RPC component.
         let rpc_id = join_set
             .spawn(async move {
+                let store_url = Url::parse(&format!("http://{store_rpc_address}"))
+                    .context("Failed to parse URL")?;
+                let block_producer_url = Url::parse(&format!("http://{block_producer_address}"))
+                    .context("Failed to parse URL")?;
                 Rpc {
                     listener: grpc_rpc,
-                    store: store_rpc_address,
-                    block_producer: Some(block_producer_address),
+                    store_url,
+                    block_producer_url: Some(block_producer_url),
+                    grpc_timeout,
                 }
                 .serve()
                 .await
@@ -205,16 +240,18 @@ impl BundledCommand {
         ]);
 
         // Start network transaction builder. The endpoint is available after loading completes.
-        // SAFETY: socket addr yields valid URLs
-        let store_ntx_builder_url =
-            Url::parse(&format!("http://{store_ntx_builder_address}")).unwrap();
+        let store_ntx_builder_url = Url::parse(&format!("http://{store_ntx_builder_address}"))
+            .context("Failed to parse URL")?;
 
         if should_start_ntb {
             let id = join_set
                 .spawn(async move {
+                    let block_producer_url =
+                        Url::parse(&format!("http://{block_producer_address}"))
+                            .context("Failed to parse URL")?;
                     NetworkTransactionBuilder {
                         store_url: store_ntx_builder_url,
-                        block_producer_address,
+                        block_producer_url,
                         tx_prover_url: ntx_builder.tx_prover_url,
                         ticker_interval: ntx_builder.ticker_interval,
                         bp_checkpoint: checkpoint,

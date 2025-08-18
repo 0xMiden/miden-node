@@ -135,7 +135,7 @@ CREATE TABLE account_non_fungible_asset_updates (
     account_id  BLOB NOT NULL,
     block_num   INTEGER NOT NULL,
     vault_key   BLOB NOT NULL,
-    is_remove   INTEGER NOT NULL, -- 0 - add, 1 - remove
+    is_remove   BOOLEAN NOT NULL,
 
     PRIMARY KEY (account_id, block_num, vault_key),
     FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)

@@ -1,11 +1,11 @@
-use std::{collections::BTreeSet, sync::Mutex};
+use std::collections::BTreeSet;
+use std::sync::Mutex;
 
-use miden_objects::{
-    MastForest, Word,
-    account::{Account, AccountId},
-    block::{BlockHeader, BlockNumber},
-    transaction::{PartialBlockchain, TransactionScript},
-};
+use miden_objects::account::{Account, AccountId};
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::transaction::{PartialBlockchain, TransactionScript};
+use miden_objects::vm::FutureMaybeSend;
+use miden_objects::{MastForest, Word};
 use miden_tx::{DataStore, DataStoreError, MastForestStore, TransactionMastStore};
 
 pub struct FaucetDataStore {
@@ -58,24 +58,28 @@ impl FaucetDataStore {
     }
 }
 
-#[async_trait::async_trait(?Send)]
+#[async_trait::async_trait]
 impl DataStore for FaucetDataStore {
-    async fn get_transaction_inputs(
+    fn get_transaction_inputs(
         &self,
         account_id: AccountId,
         _ref_blocks: BTreeSet<BlockNumber>,
-    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
-        let account = self.faucet_account.lock().expect("Poisoned lock");
-        if account_id != account.id() {
-            return Err(DataStoreError::AccountNotFound(account_id));
-        }
+    ) -> impl FutureMaybeSend<
+        Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
+    > {
+        async move {
+            let account = self.faucet_account.lock().expect("Poisoned lock");
+            if account_id != account.id() {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
 
-        Ok((
-            account.clone(),
-            account.is_new().then_some(self.init_seed).flatten(),
-            self.block_header.clone(),
-            self.partial_block_chain.clone(),
-        ))
+            Ok((
+                account.clone(),
+                account.is_new().then_some(self.init_seed).flatten(),
+                self.block_header.clone(),
+                self.partial_block_chain.clone(),
+            ))
+        }
     }
 }
 

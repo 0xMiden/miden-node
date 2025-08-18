@@ -26,11 +26,18 @@
     clippy::cast_sign_loss,
     reason = "This is the one file where we map the signed database types to the working types"
 )]
+#![allow(
+    clippy::cast_possible_wrap,
+    reason = "We will not approach the item count where i64 and usize casting will cause issues
+    on relevant platforms"
+)]
 
 use std::any::type_name;
 
 use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
-use miden_objects::{Felt, block::BlockNumber, note::NoteTag};
+use miden_objects::Felt;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::NoteTag;
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert a database value to it's in memory type {0}")]
@@ -55,7 +62,7 @@ impl SqlTypeConvert for BlockNumber {
             .map_err(|_| DatabaseTypeConversionError(type_name::<BlockNumber>()))
     }
     fn to_raw_sql(self) -> Self::Raw {
-        self.as_u32() as i64
+        i64::from(self.as_u32())
     }
 }
 
@@ -67,7 +74,7 @@ impl SqlTypeConvert for NetworkAccountPrefix {
             .map_err(|_e| DatabaseTypeConversionError(type_name::<NetworkAccountError>()))
     }
     fn to_raw_sql(self) -> Self::Raw {
-        self.inner() as i64
+        i64::from(self.inner())
     }
 }
 
@@ -97,7 +104,7 @@ pub(crate) fn raw_sql_to_nullifier_prefix(raw: i32) -> u16 {
 }
 #[inline(always)]
 pub(crate) fn nullifier_prefix_to_raw_sql(prefix: u16) -> i32 {
-    prefix as i32
+    i32::from(prefix)
 }
 
 #[inline(always)]
@@ -117,7 +124,7 @@ pub(crate) fn raw_sql_to_slot(raw: i32) -> u8 {
 }
 #[inline(always)]
 pub(crate) fn slot_to_raw_sql(slot: u8) -> i32 {
-    slot as i32
+    i32::from(slot)
 }
 
 #[inline(always)]
@@ -135,8 +142,8 @@ pub(crate) fn raw_sql_to_note_type(raw: i32) -> u8 {
     raw as u8
 }
 #[inline(always)]
-pub(crate) fn note_type_to_raw_sql(note_type_: u8) -> i32 {
-    note_type_ as i32
+pub(crate) fn note_type_to_raw_sql(note_type: u8) -> i32 {
+    i32::from(note_type)
 }
 
 #[inline(always)]

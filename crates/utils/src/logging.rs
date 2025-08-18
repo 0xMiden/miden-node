@@ -1,15 +1,13 @@
 use std::str::FromStr;
 
-use anyhow::Result;
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry_otlp::WithTonicConfig;
-use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::SpanExporter};
+use opentelemetry_sdk::propagation::TraceContextPropagator;
+use opentelemetry_sdk::trace::SpanExporter;
 use tracing::subscriber::Subscriber;
 use tracing_opentelemetry::OpenTelemetryLayer;
-use tracing_subscriber::{
-    Layer, Registry,
-    layer::{Filter, SubscriberExt},
-};
+use tracing_subscriber::layer::{Filter, SubscriberExt};
+use tracing_subscriber::{Layer, Registry};
 
 /// Configures [`setup_tracing`] to enable or disable the open-telemetry exporter.
 #[derive(Clone, Copy)]
@@ -31,7 +29,9 @@ impl OpenTelemetry {
 ///
 /// The open-telemetry configuration is controlled via environment variables as defined in the
 /// [specification](https://github.com/open-telemetry/opentelemetry-specification/blob/main/specification/protocol/exporter.md#opentelemetry-protocol-exporter)
-pub fn setup_tracing(otel: OpenTelemetry) -> Result<()> {
+///
+/// Registers a panic hook so that panic errors are reported to the open-telemetry exporter.
+pub fn setup_tracing(otel: OpenTelemetry) -> anyhow::Result<()> {
     if otel.is_enabled() {
         opentelemetry::global::set_text_map_propagator(TraceContextPropagator::new());
     }
@@ -54,7 +54,13 @@ pub fn setup_tracing(otel: OpenTelemetry) -> Result<()> {
     let subscriber = Registry::default()
         .with(stdout_layer().with_filter(env_or_default_filter()))
         .with(otel_layer.with_filter(env_or_default_filter()));
-    tracing::subscriber::set_global_default(subscriber).map_err(Into::into)
+    tracing::subscriber::set_global_default(subscriber).map_err(Into::<anyhow::Error>::into)?;
+
+    // Register panic hook now that tracing is initialized.
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!(panic = true, "{info}");
+    }));
+    Ok(())
 }
 
 /// Initializes tracing to a test exporter.
@@ -66,7 +72,7 @@ pub fn setup_tracing(otel: OpenTelemetry) -> Result<()> {
 /// be interleaved during runtime. Also, the global exporter could be re-initialized in
 /// the middle of a concurrently running test.
 #[cfg(feature = "testing")]
-pub fn setup_test_tracing() -> Result<(
+pub fn setup_test_tracing() -> anyhow::Result<(
     tokio::sync::mpsc::UnboundedReceiver<opentelemetry_sdk::trace::SpanData>,
     tokio::sync::mpsc::UnboundedReceiver<()>,
 )> {
@@ -131,10 +137,8 @@ where
 /// Panics if `RUST_LOG` fails to parse.
 fn env_or_default_filter<S>() -> Box<dyn Filter<S> + Send + Sync + 'static> {
     use tracing::level_filters::LevelFilter;
-    use tracing_subscriber::{
-        EnvFilter,
-        filter::{FilterExt, Targets},
-    };
+    use tracing_subscriber::EnvFilter;
+    use tracing_subscriber::filter::{FilterExt, Targets};
 
     // `tracing` does not allow differentiating between invalid and missing env var so we manually
     // do this instead. The alternative is to silently ignore parsing errors which I think is worse.

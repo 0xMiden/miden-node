@@ -13,27 +13,15 @@
 //! The first step in debugging should always be using the fully qualified
 //! calling syntext when dealing with diesel.
 
-// TODO provide helper functions to limit the scope of these
-#![allow(clippy::cast_possible_wrap)]
-#![allow(clippy::cast_possible_truncation)]
-#![allow(clippy::cast_lossless)]
-
 use std::num::NonZeroUsize;
 
-use diesel::{prelude::*, sqlite::Sqlite};
-
-use crate::{
-    db::{NoteRecord, NoteSyncRecord, NullifierInfo},
-    errors::DatabaseError,
-};
+use crate::errors::DatabaseError;
 
 pub(crate) mod conv;
 
 pub mod queries;
-mod types;
 pub(crate) mod utils;
 
-pub use types::*;
 pub(crate) use utils::*;
 
 /// The page token and size to query from the DB.

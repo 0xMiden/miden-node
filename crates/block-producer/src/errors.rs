@@ -1,13 +1,12 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
-use miden_node_utils::{ErrorReport, formatting::format_opt};
-use miden_objects::{
-    ProposedBatchError, ProposedBlockError, ProvenBatchError, Word,
-    account::AccountId,
-    block::BlockNumber,
-    note::{NoteId, Nullifier},
-    transaction::TransactionId,
-};
+use miden_node_utils::ErrorReport;
+use miden_node_utils::formatting::format_opt;
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::transaction::TransactionId;
+use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
 use miden_remote_prover_client::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
@@ -119,6 +118,23 @@ impl From<AddTransactionError> for tonic::Status {
             // Internal errors which should not be communicated to the user.
             AddTransactionError::VerificationFailed(VerifyTxError::StoreConnectionFailed(_))
             | AddTransactionError::StaleInputs { .. } => Self::internal("Internal error"),
+        }
+    }
+}
+
+// Submit proven batch by user errors
+// =================================================================================================
+
+#[derive(Debug, Error)]
+pub enum SubmitProvenBatchError {
+    #[error("batch deserialization failed")]
+    Deserialization(#[source] miden_objects::utils::DeserializationError),
+}
+
+impl From<SubmitProvenBatchError> for tonic::Status {
+    fn from(value: SubmitProvenBatchError) -> Self {
+        match value {
+            SubmitProvenBatchError::Deserialization(_) => Self::invalid_argument(value.as_report()),
         }
     }
 }

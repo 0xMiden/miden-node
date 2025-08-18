@@ -1,14 +1,19 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::{sync::Barrier, time};
+use tokio::sync::Barrier;
+use tokio::time;
 use url::Url;
 
-use crate::{MAX_IN_PROGRESS_TXS, block_producer::BlockProducerClient, store::StoreClient};
+use crate::MAX_IN_PROGRESS_TXS;
+use crate::block_producer::BlockProducerClient;
+use crate::store::StoreClient;
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -23,7 +28,7 @@ pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
     pub store_url: Url,
     /// Address of the block producer gRPC server.
-    pub block_producer_address: SocketAddr,
+    pub block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
@@ -39,7 +44,7 @@ pub struct NetworkTransactionBuilder {
 impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(&self.store_url);
-        let block_producer = BlockProducerClient::new(self.block_producer_address);
+        let block_producer = BlockProducerClient::new(&self.block_producer_url);
 
         let mut state = crate::state::State::load(store.clone())
             .await

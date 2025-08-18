@@ -1,26 +1,22 @@
-use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque, hash_map::Entry},
-    num::NonZeroUsize,
-};
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::num::NonZeroUsize;
 
 use account::{AccountState, NetworkAccountUpdate};
 use anyhow::Context;
-use miden_node_proto::domain::{
-    account::NetworkAccountPrefix, mempool::MempoolEvent, note::NetworkNote,
-};
+use miden_node_proto::domain::account::NetworkAccountPrefix;
+use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_proto::domain::note::NetworkNote;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::{
-    account::{Account, delta::AccountUpdateDetails},
-    block::{BlockHeader, BlockNumber},
-    note::Nullifier,
-    transaction::{PartialBlockchain, TransactionId},
-};
+use miden_objects::account::Account;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::note::Nullifier;
+use miden_objects::transaction::{PartialBlockchain, TransactionId};
 use tracing::instrument;
 
-use crate::{
-    COMPONENT,
-    store::{StoreClient, StoreError},
-};
+use crate::COMPONENT;
+use crate::store::{StoreClient, StoreError};
 
 mod account;
 
@@ -208,7 +204,7 @@ impl State {
 
         // Keep MMR pruned.
         let pruned_block_height =
-            (self.chain_mmr.chain_length().as_usize() - MAX_BLOCK_COUNT) as u32;
+            (self.chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
         self.chain_mmr.prune_to(..pruned_block_height.into());
     }
 

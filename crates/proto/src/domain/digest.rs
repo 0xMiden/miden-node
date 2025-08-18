@@ -1,9 +1,11 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use hex::{FromHex, ToHex};
-use miden_objects::{Felt, StarkField, Word, note::NoteId};
+use miden_objects::note::NoteId;
+use miden_objects::{Felt, StarkField, Word};
 
-use crate::{errors::ConversionError, generated as proto};
+use crate::errors::ConversionError;
+use crate::generated as proto;
 
 // CONSTANTS
 // ================================================================================================

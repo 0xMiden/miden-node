@@ -1,20 +1,19 @@
 use clap::Parser;
-use miden_remote_prover::{COMPONENT, error::RemoteProverError};
-use pingora::{
-    apps::HttpServerOptions,
-    prelude::{Opt, background_service},
-    server::{Server, configuration::ServerConf},
-    services::listening::Service,
-};
+use miden_remote_prover::COMPONENT;
+use miden_remote_prover::error::RemoteProverError;
+use pingora::apps::HttpServerOptions;
+use pingora::prelude::{Opt, background_service};
+use pingora::server::Server;
+use pingora::server::configuration::ServerConf;
+use pingora::services::listening::Service;
 use pingora_proxy::http_proxy_service;
 use tracing::{info, warn};
 
 use super::ProxyConfig;
-use crate::{
-    commands::PROXY_HOST,
-    proxy::{LoadBalancer, LoadBalancerState, update_workers::LoadBalancerUpdateService},
-    utils::check_port_availability,
-};
+use crate::commands::PROXY_HOST;
+use crate::proxy::update_workers::LoadBalancerUpdateService;
+use crate::proxy::{LoadBalancer, LoadBalancerState};
+use crate::utils::check_port_availability;
 
 /// Starts the proxy.
 ///
@@ -44,7 +43,7 @@ impl StartProxy {
     /// - The Pingora configuration fails.
     /// - The server cannot be started.
     #[tracing::instrument(target = COMPONENT, name = "proxy.execute")]
-    pub async fn execute(&self) -> Result<(), String> {
+    pub async fn execute(&self) -> anyhow::Result<()> {
         // Check if all required ports are available
         check_port_availability(self.proxy_config.port, "Proxy")?;
         check_port_availability(self.proxy_config.control_port, "Control")?;
@@ -123,9 +122,7 @@ impl StartProxy {
         server.add_service(health_check_service);
         server.add_service(update_workers_service);
         server.add_service(lb);
-        tokio::task::spawn_blocking(|| server.run_forever())
-            .await
-            .map_err(|err| err.to_string())?;
+        tokio::task::spawn_blocking(|| server.run_forever()).await?;
 
         Ok(())
     }

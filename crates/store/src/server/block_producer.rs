@@ -1,25 +1,25 @@
 use std::convert::Infallible;
 
-use miden_node_proto::{
-    generated::{self as proto, block_producer_store::block_producer_server},
-    try_convert,
-};
+use miden_node_proto::generated::block_producer_store::block_producer_server;
+use miden_node_proto::generated::{self as proto};
+use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
-use miden_objects::{
-    Word,
-    block::{BlockNumber, ProvenBlock},
-    note::NoteId,
-    utils::Deserializable,
-};
+use miden_objects::Word;
+use miden_objects::block::{BlockNumber, ProvenBlock};
+use miden_objects::note::NoteId;
+use miden_objects::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
-use crate::{
-    COMPONENT,
-    server::api::{
-        StoreApi, internal_error, read_account_id, read_account_ids, read_block_numbers,
-        validate_notes, validate_nullifiers,
-    },
+use crate::COMPONENT;
+use crate::server::api::{
+    StoreApi,
+    internal_error,
+    read_account_id,
+    read_account_ids,
+    read_block_numbers,
+    validate_notes,
+    validate_nullifiers,
 };
 
 // BLOCK PRODUCER ENDPOINTS

@@ -1,22 +1,24 @@
 use std::collections::BTreeSet;
 
-use miden_node_proto::{
-    convert,
-    domain::account::{AccountInfo, AccountProofRequest},
-    generated::{self as proto, rpc_store::rpc_server},
-    try_convert,
-};
-use miden_objects::{
-    Word, account::AccountId, block::BlockNumber, note::NoteId, utils::Serializable,
-};
+use miden_node_proto::domain::account::{AccountInfo, AccountProofRequest};
+use miden_node_proto::generated::rpc_store::rpc_server;
+use miden_node_proto::generated::{self as proto};
+use miden_node_proto::{convert, try_convert};
+use miden_objects::Word;
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::NoteId;
+use miden_objects::utils::Serializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
-use crate::{
-    COMPONENT,
-    server::api::{
-        StoreApi, internal_error, read_account_id, read_account_ids, validate_nullifiers,
-    },
+use crate::COMPONENT;
+use crate::server::api::{
+    StoreApi,
+    internal_error,
+    read_account_id,
+    read_account_ids,
+    validate_nullifiers,
 };
 
 // CLIENT ENDPOINTS
@@ -204,9 +206,10 @@ impl rpc_server::Rpc for StoreApi {
         }))
     }
 
-    /// Returns a list of Note's for the specified `NoteId`'s.
+    /// Returns a list of [`Note`]s for the specified [`NoteId`]s.
     ///
-    /// If the list is empty or no Note matched the requested `NoteId` and empty list is returned.
+    /// If the list is empty or no [`Note`] matched the requested [`NoteId`] and empty list is
+    /// returned.
     #[instrument(
         parent = None,
         target = COMPONENT,

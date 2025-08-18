@@ -1,17 +1,20 @@
 use std::ops::Range;
 
 use itertools::Itertools;
-use miden_air::HashFunction;
-use miden_objects::{
-    Felt, Hasher, ONE, Word,
-    account::AccountId,
-    block::BlockNumber,
-    note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier},
-    transaction::{InputNote, OutputNote, ProvenTransaction, ProvenTransactionBuilder},
-    vm::ExecutionProof,
+use miden_node_utils::fee::test_fee;
+use miden_objects::account::AccountId;
+use miden_objects::asset::FungibleAsset;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::{Note, NoteExecutionHint, NoteHeader, NoteMetadata, NoteType, Nullifier};
+use miden_objects::transaction::{
+    InputNote,
+    OutputNote,
+    ProvenTransaction,
+    ProvenTransactionBuilder,
 };
+use miden_objects::vm::ExecutionProof;
+use miden_objects::{Felt, Hasher, ONE, Word};
 use rand::Rng;
-use winterfell::Proof;
 
 use super::MockPrivateAccount;
 use crate::domain::transaction::AuthenticatedTransaction;
@@ -24,6 +27,7 @@ pub struct MockProvenTxBuilder {
     output_notes: Option<Vec<OutputNote>>,
     input_notes: Option<Vec<InputNote>>,
     nullifiers: Option<Vec<Nullifier>>,
+    fee: FungibleAsset,
 }
 
 impl MockProvenTxBuilder {
@@ -65,6 +69,7 @@ impl MockProvenTxBuilder {
             output_notes: None,
             input_notes: None,
             nullifiers: None,
+            fee: test_fee(),
         }
     }
 
@@ -138,8 +143,9 @@ impl MockProvenTxBuilder {
             Word::empty(),
             BlockNumber::from(0),
             Word::empty(),
+            self.fee,
             self.expiration_block_num,
-            ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
+            ExecutionProof::new_dummy(),
         )
         .add_input_notes(self.input_notes.unwrap_or_default())
         .add_input_notes(self.nullifiers.unwrap_or_default())

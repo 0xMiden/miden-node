@@ -1,14 +1,14 @@
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
+use std::sync::Arc;
 
-use miden_objects::{
-    Word,
-    account::AccountId,
-    block::BlockNumber,
-    note::{NoteId, Nullifier},
-    transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate},
-};
+use miden_objects::Word;
+use miden_objects::account::AccountId;
+use miden_objects::block::BlockNumber;
+use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate};
 
-use crate::{errors::VerifyTxError, store::TransactionInputs};
+use crate::errors::VerifyTxError;
+use crate::store::TransactionInputs;
 
 /// A transaction who's proof has been verified, and which has been authenticated against the store.
 ///

@@ -1,38 +1,46 @@
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
-use miden_node_proto::{
-    domain::mempool::MempoolEvent,
-    generated::{self as proto, block_producer::api_server},
-};
+use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_proto::generated::block_producer::api_server;
+use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::block_producer_api_descriptor;
-use miden_node_utils::{
-    formatting::{format_input_notes, format_output_notes},
-    tracing::grpc::{TracedComponent, traced_span_fn},
-};
-use miden_objects::{
-    block::BlockNumber, transaction::ProvenTransaction, utils::serde::Deserializable,
-};
-use tokio::{
-    net::TcpListener,
-    sync::{Barrier, Mutex},
-};
+use miden_node_utils::formatting::{format_input_notes, format_output_notes};
+use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
+use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
+use miden_objects::batch::ProvenBatch;
+use miden_objects::block::BlockNumber;
+use miden_objects::transaction::ProvenTransaction;
+use miden_objects::utils::serde::Deserializable;
+use tokio::net::TcpListener;
+use tokio::sync::{Barrier, Mutex};
 use tokio_stream::wrappers::{ReceiverStream, TcpListenerStream};
 use tonic::Status;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, instrument};
 use url::Url;
 
+use crate::batch_builder::BatchBuilder;
+use crate::block_builder::BlockBuilder;
+use crate::domain::transaction::AuthenticatedTransaction;
+use crate::errors::{
+    AddTransactionError,
+    BlockProducerError,
+    StoreError,
+    SubmitProvenBatchError,
+    VerifyTxError,
+};
+use crate::mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool};
+use crate::store::StoreClient;
 use crate::{
-    COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION,
+    COMPONENT,
+    SERVER_MEMPOOL_EXPIRATION_SLACK,
+    SERVER_MEMPOOL_STATE_RETENTION,
     SERVER_NUM_BATCH_BUILDERS,
-    batch_builder::BatchBuilder,
-    block_builder::BlockBuilder,
-    domain::transaction::AuthenticatedTransaction,
-    errors::{AddTransactionError, BlockProducerError, StoreError, VerifyTxError},
-    mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool},
-    store::StoreClient,
 };
 
 /// The block producer server.
@@ -45,7 +53,7 @@ pub struct BlockProducer {
     /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
-    pub store_address: SocketAddr,
+    pub store_url: Url,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -63,6 +71,10 @@ pub struct BlockProducer {
     /// The block-producers gRPC endpoint will be available before this point, so this lets the
     /// mempool synchronize its event stream without risking a race condition.
     pub production_checkpoint: Arc<Barrier>,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
+    pub grpc_timeout: Duration,
 }
 
 impl BlockProducer {
@@ -72,8 +84,8 @@ impl BlockProducer {
     ///       a fatal error is encountered.
     #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
-        let store = StoreClient::new(self.store_address);
+        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
+        let store = StoreClient::new(&self.store_url);
 
         // retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
@@ -86,7 +98,7 @@ impl BlockProducer {
                         .min(Duration::from_secs(30));
 
                     error!(
-                        store = %self.store_address,
+                        store = %self.store_url,
                         ?backoff,
                         %retries_counter,
                         %err,
@@ -146,7 +158,11 @@ impl BlockProducer {
         let rpc_id = tasks
             .spawn({
                 let mempool = mempool.clone();
-                async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await }
+                async move {
+                    BlockProducerRpcServer::new(mempool, store)
+                        .serve(listener, self.grpc_timeout)
+                        .await
+                }
             })
             .id();
         self.production_checkpoint.wait().await;
@@ -226,6 +242,17 @@ impl api_server::Api for BlockProducerRpcServer {
              .map_err(Into::into)
     }
 
+    async fn submit_proven_batch(
+        &self,
+        request: tonic::Request<proto::transaction::ProvenTransactionBatch>,
+    ) -> Result<tonic::Response<proto::block_producer::SubmitProvenBatchResponse>, Status> {
+        self.submit_proven_batch(request.into_inner())
+             .await
+             .map(tonic::Response::new)
+             // This Status::from mapping takes care of hiding internal errors.
+             .map_err(Into::into)
+    }
+
     #[instrument(
          target = COMPONENT,
          name = "block_producer.server.status",
@@ -290,7 +317,7 @@ impl BlockProducerRpcServer {
         Self { mempool: Mutex::new(mempool), store }
     }
 
-    async fn serve(self, listener: TcpListener) -> anyhow::Result<()> {
+    async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())
             .build_v1()
@@ -307,10 +334,12 @@ impl BlockProducerRpcServer {
 
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
+            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(
                 TraceLayer::new_for_grpc()
                     .make_span_with(traced_span_fn(TracedComponent::StoreBlockProducer)),
             )
+            .timeout(timeout)
             .add_service(api_server::ApiServer::new(self))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
@@ -359,5 +388,21 @@ impl BlockProducerRpcServer {
                 block_height: block_height.as_u32(),
             }
         })
+    }
+
+    #[instrument(
+         target = COMPONENT,
+         name = "block_producer.server.submit_proven_batch",
+         skip_all,
+         err
+     )]
+    async fn submit_proven_batch(
+        &self,
+        request: proto::transaction::ProvenTransactionBatch,
+    ) -> Result<proto::block_producer::SubmitProvenBatchResponse, SubmitProvenBatchError> {
+        let _batch = ProvenBatch::read_from_bytes(&request.encoded)
+            .map_err(SubmitProvenBatchError::Deserialization)?;
+
+        todo!();
     }
 }

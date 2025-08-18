@@ -1,12 +1,11 @@
-use axum::{
-    Json,
-    extract::State,
-    response::{Html, IntoResponse, Response},
-};
+use axum::Json;
+use axum::extract::State;
+use axum::response::{Html, IntoResponse, Response};
 use axum_extra::response::{Css, JavaScript};
 use http::header::{self};
 
-use crate::{faucet::FaucetId, types::AssetOptions};
+use crate::faucet::FaucetId;
+use crate::types::AssetOptions;
 
 /// Describes the faucet metadata.
 ///

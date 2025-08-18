@@ -14,6 +14,12 @@ message ProvenTransaction {
     bytes transaction = 1;
 }
 
+message ProvenTransactionBatch {
+    // Encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::transaction::proven_tx::ProvenTransaction].
+    bytes encoded = 1;
+}
+
 // Represents a transaction ID.
 message TransactionId {
     // The transaction ID.

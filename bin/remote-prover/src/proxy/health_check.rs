@@ -1,13 +1,15 @@
 use miden_remote_prover::COMPONENT;
-use pingora::{prelude::sleep, server::ShutdownWatch, services::background::BackgroundService};
+use pingora::prelude::sleep;
+use pingora::server::ShutdownWatch;
+use pingora::services::background::BackgroundService;
 use tonic::async_trait;
 use tracing::{debug_span, error};
 
 use super::LoadBalancerState;
 
-/// Implement the `BackgroundService` trait for the `LoadBalancer`
+/// Implement the [`BackgroundService`] trait for the [`LoadBalancerState`].
 ///
-/// A [BackgroundService] can be run as part of a Pingora application to add supporting logic that
+/// A [`BackgroundService`] can be run as part of a Pingora application to add supporting logic that
 /// exists outside of the request/response lifecycle.
 ///
 /// We use this implementation to periodically check the health of the workers and update the list

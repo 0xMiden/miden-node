@@ -1,50 +1,56 @@
-use std::{
-    collections::BTreeMap,
-    net::SocketAddr,
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
 use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
-use miden_lib::{
-    account::{auth::AuthRpoFalcon512, faucets::BasicFungibleFaucet, wallets::BasicWallet},
-    note::create_p2id_note,
-    utils::Serializable,
-};
+use miden_lib::account::auth::AuthRpoFalcon512;
+use miden_lib::account::faucets::BasicFungibleFaucet;
+use miden_lib::account::wallets::BasicWallet;
+use miden_lib::note::create_p2id_note;
+use miden_lib::utils::Serializable;
 use miden_node_block_producer::store::StoreClient;
-use miden_node_proto::{domain::batch::BatchInputs, generated::rpc_store::rpc_client::RpcClient};
+use miden_node_proto::domain::batch::BatchInputs;
+use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
-use miden_objects::{
-    Felt, ONE, Word,
-    account::{
-        Account, AccountBuilder, AccountId, AccountStorageMode, AccountType,
-        delta::AccountUpdateDetails,
-    },
-    asset::{Asset, FungibleAsset, TokenSymbol},
-    batch::{BatchAccountUpdate, BatchId, ProvenBatch},
-    block::{BlockHeader, BlockInputs, BlockNumber, ProposedBlock, ProvenBlock},
-    crypto::{
-        dsa::rpo_falcon512::{PublicKey, SecretKey},
-        rand::RpoRandomCoin,
-    },
-    note::{Note, NoteHeader, NoteId, NoteInclusionProof},
-    transaction::{
-        InputNote, InputNotes, OrderedTransactionHeaders, OutputNote, ProvenTransaction,
-        ProvenTransactionBuilder, TransactionHeader,
-    },
-    vm::ExecutionProof,
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType};
+use miden_objects::asset::{Asset, FungibleAsset, TokenSymbol};
+use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
+use miden_objects::block::{
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    FeeParameters,
+    ProposedBlock,
+    ProvenBlock,
 };
+use miden_objects::crypto::dsa::rpo_falcon512::{PublicKey, SecretKey};
+use miden_objects::crypto::rand::RpoRandomCoin;
+use miden_objects::note::{Note, NoteHeader, NoteId, NoteInclusionProof};
+use miden_objects::transaction::{
+    InputNote,
+    InputNotes,
+    OrderedTransactionHeaders,
+    OutputNote,
+    ProvenTransaction,
+    ProvenTransactionBuilder,
+    TransactionHeader,
+};
+use miden_objects::vm::ExecutionProof;
+use miden_objects::{AssetError, Felt, ONE, Word};
 use rand::Rng;
-use rayon::{
-    iter::{IntoParallelIterator, ParallelIterator},
-    prelude::ParallelSlice,
-};
-use tokio::{fs, io::AsyncWriteExt, net::TcpListener, task};
-use tonic::{service::interceptor::InterceptedService, transport::Channel};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use rayon::prelude::ParallelSlice;
+use tokio::io::AsyncWriteExt;
+use tokio::net::TcpListener;
+use tokio::{fs, task};
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::Channel;
+use url::Url;
 use winterfell::Proof;
 
 mod metrics;
@@ -76,12 +82,13 @@ pub async fn seed_store(
 
     // generate the faucet account and the genesis state
     let faucet = create_faucet();
-    let genesis_state = GenesisState::new(vec![faucet.clone()], 1, 1);
+    let fee_params = FeeParameters::new(faucet.id(), 0).unwrap();
+    let genesis_state = GenesisState::new(vec![faucet.clone()], fee_params, 1, 1);
     Store::bootstrap(genesis_state.clone(), &data_directory).expect("store should bootstrap");
 
     // start the store
-    let (_, store_addr) = start_store(data_directory.clone()).await;
-    let store_client = StoreClient::new(store_addr);
+    let (_, store_url) = start_store(data_directory.clone()).await;
+    let store_client = StoreClient::new(&store_url);
 
     // start generating blocks
     let accounts_filepath = data_directory.join(ACCOUNTS_FILENAME);
@@ -249,6 +256,14 @@ async fn apply_block(
 // HELPER FUNCTIONS
 // ================================================================================================
 
+/// Extract the payable fee as `FungibleAsset` from the given `BlockHeader`.
+fn fee_from_block(block_ref: &BlockHeader) -> Result<FungibleAsset, AssetError> {
+    FungibleAsset::new(
+        block_ref.fee_parameters().native_asset_id(),
+        u64::from(block_ref.fee_parameters().verification_base_fee()),
+    )
+}
+
 /// Creates `num_accounts` accounts, and for each one creates a note that mint assets.
 ///
 /// Returns a tuple with:
@@ -397,6 +412,7 @@ fn create_consume_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
+        fee_from_block(block_ref).unwrap(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )
@@ -430,6 +446,11 @@ fn create_emit_note_tx(
         Word::empty(),
         block_ref.block_num(),
         block_ref.commitment(),
+        FungibleAsset::new(
+            block_ref.fee_parameters().native_asset_id(),
+            u64::from(block_ref.fee_parameters().verification_base_fee()),
+        )
+        .unwrap(),
         u32::MAX.into(),
         ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
     )
@@ -487,10 +508,10 @@ async fn get_block_inputs(
 
 /// Runs the store with the given data directory. Returns a tuple with:
 /// - a gRPC client to access the store
-/// - the address of the store
+/// - the URL of the store
 pub async fn start_store(
     data_directory: PathBuf,
-) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, SocketAddr) {
+) -> (RpcClient<InterceptedService<Channel, OtelInterceptor>>, Url) {
     let rpc_listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind store RPC gRPC endpoint");
@@ -512,6 +533,7 @@ pub async fn start_store(
             ntx_builder_listener,
             block_producer_listener,
             data_directory: dir,
+            grpc_timeout: Duration::from_secs(30),
         }
         .serve()
         .await
@@ -524,5 +546,7 @@ pub async fn start_store(
         .await
         .expect("Failed to connect to store");
 
-    (RpcClient::with_interceptor(channel, OtelInterceptor), store_block_producer_addr)
+    // SAFETY: The store_block_producer_addr is always valid as it is created from a `SocketAddr`.
+    let store_url = Url::parse(&format!("http://{store_block_producer_addr}")).unwrap();
+    (RpcClient::with_interceptor(channel, OtelInterceptor), store_url)
 }

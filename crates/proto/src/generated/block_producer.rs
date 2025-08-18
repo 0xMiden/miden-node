@@ -16,6 +16,12 @@ pub struct SubmitProvenTransactionResponse {
     #[prost(fixed32, tag = "1")]
     pub block_height: u32,
 }
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct SubmitProvenBatchResponse {
+    /// The node's current block height.
+    #[prost(fixed32, tag = "1")]
+    pub block_height: u32,
+}
 /// Request to subscribe to mempool events.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct MempoolSubscriptionRequest {
@@ -228,6 +234,42 @@ pub mod api_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Submits a proven batch to the Miden network.
+        ///
+        /// The batch may include transactions which were are:
+        ///
+        ///   - already in the mempool i.e. previously successfully submitted
+        ///   - will be submitted to the mempool in the future
+        ///   - won't be submitted to the mempool at all
+        ///
+        /// All transactions in the batch but not in the mempool must build on the current mempool
+        /// state following normal transaction submission rules.
+        pub async fn submit_proven_batch(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::transaction::ProvenTransactionBatch,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::SubmitProvenBatchResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/block_producer.Api/SubmitProvenBatch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("block_producer.Api", "SubmitProvenBatch"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Subscribe to mempool events.
         ///
         /// The request will be rejected if the caller and the mempool disagree on the current chain tip.
@@ -291,6 +333,23 @@ pub mod api_server {
             request: tonic::Request<super::super::transaction::ProvenTransaction>,
         ) -> std::result::Result<
             tonic::Response<super::SubmitProvenTransactionResponse>,
+            tonic::Status,
+        >;
+        /// Submits a proven batch to the Miden network.
+        ///
+        /// The batch may include transactions which were are:
+        ///
+        ///   - already in the mempool i.e. previously successfully submitted
+        ///   - will be submitted to the mempool in the future
+        ///   - won't be submitted to the mempool at all
+        ///
+        /// All transactions in the batch but not in the mempool must build on the current mempool
+        /// state following normal transaction submission rules.
+        async fn submit_proven_batch(
+            &self,
+            request: tonic::Request<super::super::transaction::ProvenTransactionBatch>,
+        ) -> std::result::Result<
+            tonic::Response<super::SubmitProvenBatchResponse>,
             tonic::Status,
         >;
         /// Server streaming response type for the MempoolSubscription method.
@@ -465,6 +524,54 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SubmitProvenTransactionSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/block_producer.Api/SubmitProvenBatch" => {
+                    #[allow(non_camel_case_types)]
+                    struct SubmitProvenBatchSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::transaction::ProvenTransactionBatch,
+                    > for SubmitProvenBatchSvc<T> {
+                        type Response = super::SubmitProvenBatchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::transaction::ProvenTransactionBatch,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::submit_proven_batch(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SubmitProvenBatchSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

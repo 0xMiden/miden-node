@@ -1,28 +1,42 @@
-use std::{collections::BTreeSet, sync::Arc};
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
-use futures::TryFutureExt;
-use miden_node_utils::{ErrorReport, tracing::OpenTelemetrySpanExt};
-use miden_objects::{
-    TransactionInputError, Word,
-    account::{Account, AccountId},
-    assembly::DefaultSourceManager,
-    block::{BlockHeader, BlockNumber},
-    transaction::{
-        ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
-        TransactionArgs,
-    },
+use miden_node_utils::ErrorReport;
+use miden_node_utils::tracing::OpenTelemetrySpanExt;
+use miden_objects::account::{Account, AccountId};
+use miden_objects::assembly::DefaultSourceManager;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::transaction::{
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
+    TransactionArgs,
 };
+use miden_objects::vm::FutureMaybeSend;
+use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
+use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore, DataStoreError, LocalTransactionProver, MastForestStore, NoteAccountExecution,
-    NoteConsumptionChecker, TransactionExecutor, TransactionExecutorError, TransactionMastStore,
-    TransactionProverError, auth::UnreachableAuth,
+    DataStore,
+    DataStoreError,
+    LocalTransactionProver,
+    MastForestStore,
+    NoteConsumptionChecker,
+    NoteConsumptionInfo,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionMastStore,
+    TransactionProverError,
 };
 use rand::seq::SliceRandom;
 use tokio::task::JoinError;
-use tracing::{Instrument, instrument, instrument::Instrumented};
+use tracing::{Instrument, instrument};
 
-use crate::{COMPONENT, block_producer::BlockProducerClient, state::TransactionCandidate};
+use crate::COMPONENT;
+use crate::block_producer::BlockProducerClient;
+use crate::state::TransactionCandidate;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {
@@ -61,58 +75,44 @@ pub struct NtxContext {
 
 impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
-    pub async fn execute_transaction(self, tx: TransactionCandidate) -> NtxResult<()> {
+    pub fn execute_transaction(
+        self,
+        tx: TransactionCandidate,
+    ) -> impl FutureMaybeSend<NtxResult<()>> {
         let TransactionCandidate {
             account,
             notes,
             chain_tip_header,
             chain_mmr,
         } = tx;
-
         tracing::Span::current().set_attribute("account.id", account.id());
         tracing::Span::current().set_attribute("notes.count", notes.len());
         tracing::Span::current()
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
-        // Work-around for `TransactionExecutor` not being `Send`.
-        tokio::task::spawn_blocking(move || {
-            {
-                {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .expect("runtime should be built");
+        async move {
+            async move {
+                let mut notes = notes
+                    .into_iter()
+                    .map(|note| InputNote::Unauthenticated { note: note.into() })
+                    .collect::<Vec<_>>();
+                // We shuffle the notes here to prevent having a failing note always in
+                // front.
+                notes.shuffle(&mut rand::rng());
+                let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
 
-                    rt.block_on(
-                        async move {
-                            let mut notes = notes
-                                .into_iter()
-                                .map(|note| InputNote::Unauthenticated { note: note.into() })
-                                .collect::<Vec<_>>();
-                            // We shuffle the notes here to prevent having a failing note always in
-                            // front.
-                            notes.shuffle(&mut rand::rng());
-                            let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
+                let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
-                            let data_store =
-                                NtxDataStore::new(account, chain_tip_header, chain_mmr);
-
-                            self.filter_notes(&data_store, notes)
-                                .and_then(|notes| self.execute(&data_store, notes))
-                                .and_then(|tx| self.prove(tx))
-                                .and_then(|tx| self.submit(tx))
-                                .await
-                        }
-                        .in_current_span(),
-                    )
-                }
+                let notes = Box::pin(self.filter_notes(&data_store, notes)).await?;
+                let executed = Box::pin(self.execute(&data_store, notes)).await?;
+                let proven = Box::pin(self.prove(executed)).await?;
+                self.submit(proven).await?;
+                Ok(())
             }
             .in_current_span()
-        })
-        .await
-        .map_err(NtxError::Panic)
-        .and_then(Instrumented::into_inner)
-        .inspect_err(|err| tracing::Span::current().set_error(err))
+            .await
+            .inspect_err(|err| tracing::Span::current().set_error(err))
+        }
     }
 
     /// Returns a set of input notes which can be successfully executed against the network account.
@@ -134,29 +134,26 @@ impl NtxContext {
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 
-        let notes = match checker
-            .check_notes_consumability(
-                data_store.account.id(),
-                data_store.reference_header.block_num(),
-                notes.clone(),
-                TransactionArgs::default(),
-                Arc::new(DefaultSourceManager::default()),
-            )
-            .await
+        let notes = match Box::pin(checker.check_notes_consumability(
+            data_store.account.id(),
+            data_store.reference_header.block_num(),
+            notes.clone(),
+            TransactionArgs::default(),
+        ))
+        .await
         {
-            Ok(NoteAccountExecution::Success) => notes,
-            Ok(NoteAccountExecution::Failure { successful_notes, error, .. }) => {
-                let notes = successful_notes
+            Ok(NoteConsumptionInfo { successful, failed, .. }) => {
+                let notes = successful
                     .into_iter()
-                    .map(|id| notes.iter().find(|note| note.id() == id).unwrap())
+                    .filter_map(|success| notes.iter().find(|note| note.id() == success.id()))
                     .cloned()
                     .collect::<Vec<InputNote>>();
-
-                if notes.is_empty() {
-                    let err = error.map_or_else(|| "None".to_string(), |err| err.as_report());
-                    tracing::warn!(%err, "all network notes failed");
+                // TODO revisit verbosity once we scale up to many more notes
+                for failed in failed {
+                    let err = failed.error.as_report();
+                    let note_id = failed.note.id();
+                    tracing::debug!(%note_id, %err, "note failed");
                 }
-
                 InputNotes::new_unchecked(notes)
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
@@ -179,28 +176,27 @@ impl NtxContext {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
 
-        executor
-            .execute_transaction(
-                data_store.account.id(),
-                data_store.reference_header.block_num(),
-                notes,
-                TransactionArgs::default(),
-                Arc::new(DefaultSourceManager::default()),
-            )
-            .await
-            .map_err(NtxError::Execution)
+        Box::pin(executor.execute_transaction(
+            data_store.account.id(),
+            data_store.reference_header.block_num(),
+            notes,
+            TransactionArgs::default(),
+            Arc::new(DefaultSourceManager::default()),
+        ))
+        .await
+        .map_err(NtxError::Execution)
     }
 
     /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
     /// proof locally.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
     async fn prove(&self, tx: ExecutedTransaction) -> NtxResult<ProvenTransaction> {
-        use miden_tx::TransactionProver;
-
         if let Some(remote) = &self.prover {
             remote.prove(tx.into()).await
         } else {
-            LocalTransactionProver::default().prove(tx.into()).await
+            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
+                .await
+                .map_err(NtxError::Panic)?
         }
         .map_err(NtxError::Proving)
     }
@@ -243,29 +239,29 @@ impl NtxDataStore {
     }
 }
 
-#[async_trait::async_trait(?Send)]
 impl DataStore for NtxDataStore {
-    async fn get_transaction_inputs(
+    fn get_transaction_inputs(
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError> {
-        if self.account.id() != account_id {
-            return Err(DataStoreError::AccountNotFound(account_id));
-        }
+    ) -> impl FutureMaybeSend<
+        Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
+    > {
+        let account = self.account.clone();
+        async move {
+            if account.id() != account_id {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
 
-        match ref_blocks.last().copied() {
-            Some(reference) if reference == self.reference_header.block_num() => {},
-            Some(other) => return Err(DataStoreError::BlockNotFound(other)),
-            None => return Err(DataStoreError::other("no reference block requested")),
-        }
+            match ref_blocks.last().copied() {
+                Some(reference) if reference == self.reference_header.block_num() => {},
 
-        Ok((
-            self.account.clone(),
-            None,
-            self.reference_header.clone(),
-            self.chain_mmr.clone(),
-        ))
+                Some(other) => return Err(DataStoreError::BlockNotFound(other)),
+                None => return Err(DataStoreError::other("no reference block requested")),
+            }
+
+            Ok((account, None, self.reference_header.clone(), self.chain_mmr.clone()))
+        }
     }
 }
 

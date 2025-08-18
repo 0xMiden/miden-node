@@ -1,10 +1,13 @@
 pub mod config;
 pub mod cors;
 pub mod crypto;
+#[cfg(feature = "testing")]
+pub mod fee;
 pub mod formatting;
 pub mod grpc;
 pub mod limiter;
 pub mod logging;
+pub mod panic;
 pub mod tracing;
 pub mod version;
 

@@ -1,9 +1,8 @@
-use std::{
-    str::FromStr,
-    task::{Context as StdContext, Poll},
-};
+use std::str::FromStr;
+use std::task::{Context as StdContext, Poll};
 
-use futures::{FutureExt, future::BoxFuture};
+use futures::FutureExt;
+use futures::future::BoxFuture;
 use http::header::{ACCEPT, ToStrError};
 use mediatype::{Name, ReadParams};
 use miden_node_utils::{ErrorReport, FlattenResult};

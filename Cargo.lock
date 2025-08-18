@@ -2587,8 +2587,10 @@ name = "miden-node-utils"
 version = "0.11.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "figment",
  "http 1.3.1",
+ "http-body-util",
  "itertools",
  "miden-objects",
  "opentelemetry",
@@ -5263,6 +5265,7 @@ dependencies = [
  "futures-util",
  "http 1.3.1",
  "http-body",
+ "http-body-util",
  "iri-string",
  "pin-project-lite",
  "tower",

@@ -7,7 +7,11 @@ use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
-    ExecutedTransaction, InputNote, InputNotes, PartialBlockchain, ProvenTransaction,
+    ExecutedTransaction,
+    InputNote,
+    InputNotes,
+    PartialBlockchain,
+    ProvenTransaction,
     TransactionArgs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -15,9 +19,17 @@ use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
-    DataStore, DataStoreError, FailedNote, LocalTransactionProver, MastForestStore,
-    NoteConsumptionChecker, NoteConsumptionInfo, TransactionExecutor, TransactionExecutorError,
-    TransactionMastStore, TransactionProverError,
+    DataStore,
+    DataStoreError,
+    FailedNote,
+    LocalTransactionProver,
+    MastForestStore,
+    NoteConsumptionChecker,
+    NoteConsumptionInfo,
+    TransactionExecutor,
+    TransactionExecutorError,
+    TransactionMastStore,
+    TransactionProverError,
 };
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
@@ -40,7 +52,7 @@ pub enum NtxError {
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
     Submission(#[source] tonic::Status),
-    #[error("the ntx task panic'd")]
+    #[error("the ntx task panicked")]
     Panic(#[source] JoinError),
 }
 

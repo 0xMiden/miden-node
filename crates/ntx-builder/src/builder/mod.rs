@@ -129,11 +129,21 @@ impl NetworkTransactionBuilder {
                         // Transaction execution failed.
                         Ok((_, Err(err))) => {
                             tracing::warn!(err=err.as_report(), "network transaction failed");
-                            if let NtxError::AllNotesFailed(failed) = err {
-                                let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                                state.notes_failed(candidate,
-                                                   notes.as_slice(),
-                                                   block_num);
+                            match err {
+                                NtxError::AllNotesFailed(failed) => {
+                                    let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
+                                    state.notes_failed(candidate,
+                                                       notes.as_slice(),
+                                                       block_num);
+                                },
+                                NtxError::InputNotes(_)
+                                | NtxError::NoteFilter(_)
+                                | NtxError::Execution(_)
+                                | NtxError::Proving(_)
+                                | NtxError::Submission(_)
+                                | NtxError::Panic(_) => {
+                                    state.candidate_failed(candidate);
+                                },
                             }
                         },
                         // Unexpected error occurred.

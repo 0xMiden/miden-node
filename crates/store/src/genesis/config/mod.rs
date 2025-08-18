@@ -51,6 +51,7 @@ pub struct GenesisConfig {
     version: u32,
     timestamp: u32,
     native_faucet: NativeFaucet,
+    fee_parameters: FeeParameterConfig,
     wallet: Vec<WalletConfig>,
     fungible_faucet: Vec<FungibleFaucetConfig>,
 }
@@ -72,8 +73,8 @@ impl Default for GenesisConfig {
                 max_supply: 100_000_000_000_000_000u64,
                 decimals: 6u8,
                 symbol: miden.clone(),
-                fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             },
+            fee_parameters: FeeParameterConfig { verification_base_fee: 0 },
             fungible_faucet: vec![],
         }
     }
@@ -96,9 +97,10 @@ impl GenesisConfig {
         let GenesisConfig {
             version,
             timestamp,
+            native_faucet,
+            fee_parameters,
             fungible_faucet: fungible_faucet_configs,
             wallet: wallet_configs,
-            native_faucet,
         } = self;
 
         let symbol = native_faucet.symbol.clone();
@@ -111,23 +113,13 @@ impl GenesisConfig {
         // accounts/sign transactions
         let mut secrets = Vec::new();
 
-        let (native_faucet_account, native_faucet_account_seed, native_secret_key) =
-            create_fungible_faucet(native_faucet.to_faucet_config())?;
-
-        faucet_accounts.insert(symbol.clone(), native_faucet_account.clone());
-
-        secrets.push((
-            format!("native_faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
-            native_faucet_account.id(),
-            native_secret_key,
-            native_faucet_account_seed,
-        ));
-
         // First setup all the faucets
-        for fungible_faucet_config in fungible_faucet_configs {
+        for fungible_faucet_config in std::iter::once(native_faucet.to_faucet_config())
+            .chain(fungible_faucet_configs.into_iter())
+        {
             let symbol = fungible_faucet_config.symbol.clone();
             let (faucet_account, faucet_account_seed, secret_key) =
-                create_fungible_faucet(fungible_faucet_config)?;
+                fungible_faucet_config.build_account()?;
 
             if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol });
@@ -143,10 +135,13 @@ impl GenesisConfig {
             // we know the remaining supply in the faucets.
         }
 
-        let fee_parameters = FeeParameters::new(
-            native_faucet_account.id(),
-            native_faucet.fee_parameters.verification_base_fee,
-        )?;
+        let native_faucet_account_id = faucet_accounts
+            .get(&symbol)
+            .expect("Parsing guarnatees the existence of a native faucet.")
+            .id();
+
+        let fee_parameters =
+            FeeParameters::new(native_faucet_account_id, fee_parameters.verification_base_fee)?;
 
         // Track all adjustments, one per faucet account id
         let mut faucet_issuance = HashMap::<AccountId, u64>::new();
@@ -292,8 +287,6 @@ pub struct NativeFaucet {
     /// It will be converted internally to the smallest representable unit,
     /// using based `10.powi(decimals)` as a multiplier.
     max_supply: u64,
-    /// Fee parameters
-    fee_parameters: FeeParameterConfig,
 }
 
 impl NativeFaucet {
@@ -337,6 +330,39 @@ pub struct FungibleFaucetConfig {
     max_supply: u64,
     #[serde(default)]
     storage_mode: StorageMode,
+}
+
+impl FungibleFaucetConfig {
+    /// Create a fungible faucet from a config entry
+    fn build_account(self) -> Result<(Account, Word, SecretKey), GenesisConfigError> {
+        let FungibleFaucetConfig {
+            symbol,
+            decimals,
+            max_supply,
+            storage_mode,
+        } = self;
+        let mut rng = ChaCha20Rng::from_seed(rand::random());
+        let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
+        let auth = AuthRpoFalcon512::new(secret_key.public_key());
+        let init_seed: [u8; 32] = rng.random();
+
+        let max_supply = Felt::try_from(max_supply)
+            .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
+
+        let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
+
+        // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
+        let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
+            .account_type(AccountType::FungibleFaucet)
+            .storage_mode(storage_mode.into())
+            .with_auth_component(auth)
+            .with_component(component)
+            .build()?;
+
+        debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
+
+        Ok((faucet_account, faucet_account_seed, secret_key))
+    }
 }
 
 // WALLET CONFIG
@@ -475,39 +501,6 @@ fn prepare_fungible_asset_update(
     })?;
 
     Ok(wallet_asset_delta)
-}
-
-/// Create a fungible faucet from a config entry
-fn create_fungible_faucet(
-    config: FungibleFaucetConfig,
-) -> Result<(Account, Word, SecretKey), GenesisConfigError> {
-    let FungibleFaucetConfig {
-        symbol,
-        decimals,
-        max_supply,
-        storage_mode,
-    } = config;
-    let mut rng = ChaCha20Rng::from_seed(rand::random());
-    let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-    let auth = AuthRpoFalcon512::new(secret_key.public_key());
-    let init_seed: [u8; 32] = rng.random();
-
-    let max_supply = Felt::try_from(max_supply)
-        .expect("The `Felt::MODULUS` is _always_ larger than the `max_supply`");
-
-    let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
-
-    // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
-    let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
-        .account_type(AccountType::FungibleFaucet)
-        .storage_mode(storage_mode.into())
-        .with_auth_component(auth)
-        .with_component(component)
-        .build()?;
-
-    debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
-
-    Ok((faucet_account, faucet_account_seed, secret_key))
 }
 
 /// Wrapper type used for configuration representation.

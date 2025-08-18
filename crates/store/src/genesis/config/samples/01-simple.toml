@@ -6,7 +6,7 @@ decimals   = 3
 max_supply = 100_000_000
 symbol     = "MIDEN"
 
-[native_faucet.fee_parameters]
+[fee_parameters]
 verification_base_fee = 0
 
 [[fungible_faucet]]

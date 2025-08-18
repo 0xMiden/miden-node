@@ -174,8 +174,7 @@ impl State {
 
             // Select notes from the account that can be consumed or are ready for a retry.
             let notes = account
-                .notes()
-                .filter(|&note| note.is_available(self.chain_tip_header.block_num()))
+                .available_notes(&self.chain_tip_header.block_num())
                 .take(limit.get())
                 .cloned()
                 .collect::<Vec<_>>();

@@ -114,6 +114,20 @@ impl AccountState {
         }
     }
 
+    /// Returns an iterator over inflight notes managed by the account.
+    pub fn notes(&self) -> impl Iterator<Item = &InflightNetworkNote> {
+        self.available_notes.values()
+    }
+
+    /// Returns an iterator over inflight notes that are not currently within their respective
+    /// backoff periods based on block number.
+    pub fn available_notes(
+        &self,
+        block_num: &BlockNumber,
+    ) -> impl Iterator<Item = &InflightNetworkNote> {
+        self.notes().filter(|&note| note.is_available(*block_num))
+    }
+
     /// Appends a delta to the set of inflight account updates.
     pub fn add_delta(&mut self, delta: &AccountDelta) {
         let mut state = self.latest_account();
@@ -200,10 +214,6 @@ impl AccountState {
         if let Some(note) = self.nullified_notes.remove(&nullifier) {
             self.available_notes.insert(nullifier, note);
         }
-    }
-
-    pub fn notes(&self) -> impl Iterator<Item = &InflightNetworkNote> {
-        self.available_notes.values()
     }
 
     /// Drops all notes that have failed to be consumed after a certain number of attempts.

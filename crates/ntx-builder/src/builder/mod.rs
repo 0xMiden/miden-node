@@ -122,9 +122,7 @@ impl NetworkTransactionBuilder {
                         // Some notes failed.
                         Ok((_, Ok(failed))) => {
                             let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                            state.notes_failed(candidate,
-                                               notes.as_slice(),
-                                               block_num);
+                            state.notes_failed(candidate, notes.as_slice(), block_num);
                         },
                         // Transaction execution failed.
                         Ok((_, Err(err))) => {
@@ -132,9 +130,7 @@ impl NetworkTransactionBuilder {
                             match err {
                                 NtxError::AllNotesFailed(failed) => {
                                     let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                                    state.notes_failed(candidate,
-                                                       notes.as_slice(),
-                                                       block_num);
+                                    state.notes_failed(candidate, notes.as_slice(), block_num);
                                 },
                                 NtxError::InputNotes(_)
                                 | NtxError::NoteFilter(_)

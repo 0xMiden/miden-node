@@ -923,7 +923,7 @@ impl State {
                                 let proof = storage_map.open(map_key);
                                 partials
                                     .entry(*storage_index)
-                                    .or_insert_with(|| PartialSmt::new())
+                                    .or_insert_with(PartialSmt::new)
                                     .add_proof(proof)?;
                             }
                         } else {
@@ -943,7 +943,7 @@ impl State {
                             storage_header: details.storage().to_header().to_bytes(),
                             account_code,
                             partial_storage_smts: Vec::from_iter(partials.into_iter().map(|(slot, partial_smt)| proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapPartialSmt {
-                                storage_slot: slot as u32,
+                                storage_slot: u32::from(slot),
                                 partial_smt: partial_smt.to_bytes(),
                             })),
                         };

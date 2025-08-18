@@ -7,7 +7,7 @@ use miden_lib::utils::Serializable;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
-use miden_objects::account::{AccountDelta, AccountId};
+use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier};
@@ -433,23 +433,6 @@ impl Db {
             acquire_done.blocking_recv()?;
 
             Ok(())
-        })
-        .await
-    }
-
-    /// Merges all account deltas from the DB for given account ID and block range.
-    /// Note, that `from_block` is exclusive and `to_block` is inclusive.
-    ///
-    /// Returns `Ok(None)` if no deltas were found in the DB for the specified account within
-    /// the given block range.
-    pub(crate) async fn select_account_state_delta(
-        &self,
-        account_id: AccountId,
-        from_block: BlockNumber,
-        to_block: BlockNumber,
-    ) -> Result<Option<AccountDelta>> {
-        self.transact("select account state data", move |conn| {
-            models::queries::select_account_delta(conn, account_id, from_block, to_block)
         })
         .await
     }

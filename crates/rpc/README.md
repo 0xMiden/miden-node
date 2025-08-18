@@ -17,7 +17,6 @@ The full gRPC method definitions can be found in the [proto](../proto/README.md)
 - [CheckNullifiersByPrefix](#checknullifiersbyprefix)
 - [GetAccountDetails](#getaccountdetails)
 - [GetAccountProofs](#getaccountproofs)
-- [GetAccountStateDelta](#getaccountstatedelta)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetNotesById](#getnotesbyid)
@@ -37,7 +36,7 @@ Returns a nullifier proof for each of the requested nullifiers.
 
 ### CheckNullifiersByPrefix
 
-Returns a list of nullifiers recorded in the node that match the specified prefixes and were created at or after 
+Returns a list of nullifiers recorded in the node that match the specified prefixes and were created at or after
 the given block height.
 
 Only 16-bit prefixes are supported at this time.
@@ -56,11 +55,6 @@ Returns the latest state proofs of the specified accounts.
 
 ---
 
-### GetAccountStateDelta
-
-Returns delta of the account states in the range from `from_block_num` (exclusive) to `to_block_num` (inclusive).
-
----
 
 ### GetBlockByNumber
 
@@ -113,7 +107,7 @@ number in the chain. Client is expected to repeat these requests in a loop until
 Each request also returns info about new notes, accounts, etc. created. It also returns Chain MMR delta that can be
 used to update the state of Chain MMR. This includes both chain MMR peaks and chain MMR nodes.
 
-For preserving some degree of privacy, note tags contain only high part of hashes. Thus, returned data contains excessive 
+For preserving some degree of privacy, note tags contain only high part of hashes. Thus, returned data contains excessive
 notes, client can make additional filtering of that data on its side.
 ---
 

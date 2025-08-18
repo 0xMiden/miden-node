@@ -388,25 +388,6 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "rpc.server.get_account_state_delta",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_state_delta(
-        &self,
-        request: Request<proto::rpc_store::AccountStateDeltaRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountStateDelta>, Status> {
-        let request = request.into_inner();
-
-        debug!(target: COMPONENT, ?request);
-
-        self.store.clone().get_account_state_delta(request).await
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
         name = "rpc.server.get_account_proofs",
         skip_all,
         ret(level = "debug"),

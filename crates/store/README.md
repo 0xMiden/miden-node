@@ -17,7 +17,6 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 - [CheckNullifiersByPrefix](#checknullifiersbyprefix)
 - [GetAccountDetails](#getaccountdetails)
 - [GetAccountProofs](#getaccountproofs)
-- [GetAccountStateDelta](#getaccountstatedelta)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetBlockInputs](#getblockinputs)
@@ -59,12 +58,6 @@ Returns the latest state of an account with the specified ID.
 ### GetAccountProofs
 
 Returns the latest state proofs of the specified accounts.
-
----
-
-### GetAccountStateDelta
-
-Returns delta of the account states in the range from `from_block_num` (exclusive) to `to_block_num` (inclusive).
 
 ---
 

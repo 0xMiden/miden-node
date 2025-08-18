@@ -7,7 +7,7 @@ use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
 use miden_objects::transaction::TransactionId;
 use miden_objects::{ProposedBatchError, ProposedBlockError, ProvenBatchError, Word};
-use miden_remote_prover_client::RemoteProverClientError;
+use miden_remote_prover::RemoteProverClientError;
 use thiserror::Error;
 use tokio::task::JoinError;
 

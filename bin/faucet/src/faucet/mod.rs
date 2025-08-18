@@ -29,7 +29,7 @@ use miden_objects::transaction::{
     TransactionWitness,
 };
 use miden_objects::{AccountError, Felt, NoteError, Word};
-use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
+use miden_remote_prover::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::BasicAuthenticator;
 use miden_tx::utils::parse_hex_string_as_word;
 use miden_tx::{

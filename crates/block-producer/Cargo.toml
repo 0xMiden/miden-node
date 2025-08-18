@@ -19,27 +19,27 @@ testing        = []
 tracing-forest = ["miden-node-utils/tracing-forest"]
 
 [dependencies]
-anyhow                     = { workspace = true }
-futures                    = { workspace = true }
-itertools                  = { workspace = true }
-miden-block-prover         = { workspace = true }
-miden-lib                  = { workspace = true }
-miden-node-proto           = { workspace = true }
-miden-node-proto-build     = { features = ["internal"], workspace = true }
-miden-node-utils           = { features = ["testing"], workspace = true }
-miden-objects              = { default-features = true, workspace = true }
-miden-remote-prover-client = { features = ["batch-prover", "block-prover"], workspace = true }
-miden-tx                   = { default-features = true, workspace = true }
-miden-tx-batch-prover      = { workspace = true }
-rand                       = { version = "0.9" }
-thiserror                  = { workspace = true }
-tokio                      = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
-tokio-stream               = { features = ["net"], workspace = true }
-tonic                      = { features = ["transport"], workspace = true }
-tonic-reflection           = { workspace = true }
-tower-http                 = { features = ["util"], workspace = true }
-tracing                    = { workspace = true }
-url                        = { workspace = true }
+anyhow                 = { workspace = true }
+futures                = { workspace = true }
+itertools              = { workspace = true }
+miden-block-prover     = { workspace = true }
+miden-lib              = { workspace = true }
+miden-node-proto       = { workspace = true }
+miden-node-proto-build = { features = ["internal"], workspace = true }
+miden-node-utils       = { features = ["testing"], workspace = true }
+miden-objects          = { default-features = true, workspace = true }
+miden-remote-prover    = { features = ["batch-prover", "block-prover"], workspace = true }
+miden-tx               = { default-features = true, workspace = true }
+miden-tx-batch-prover  = { workspace = true }
+rand                   = { version = "0.9" }
+thiserror              = { workspace = true }
+tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
+tokio-stream           = { features = ["net"], workspace = true }
+tonic                  = { features = ["transport"], workspace = true }
+tonic-reflection       = { workspace = true }
+tower-http             = { features = ["util"], workspace = true }
+tracing                = { workspace = true }
+url                    = { workspace = true }
 
 [dev-dependencies]
 assert_matches        = { workspace = true }

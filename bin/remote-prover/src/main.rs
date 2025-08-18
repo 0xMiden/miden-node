@@ -1,12 +1,10 @@
+use commands::Cli;
 use miden_node_utils::logging::{OpenTelemetry, setup_tracing};
 use miden_remote_prover::COMPONENT;
+// Use modules from the library
+use miden_remote_prover::server::commands;
 use tracing::info;
-
-use crate::commands::Cli;
-
-pub(crate) mod commands;
-pub(crate) mod proxy;
-pub(crate) mod utils;
+// Utils moved to server module
 
 #[tokio::main]
 async fn main() -> Result<(), String> {

@@ -12,48 +12,115 @@ rust-version.workspace = true
 version.workspace      = true
 
 [[bin]]
-name = "miden-remote-prover"
-path = "src/main.rs"
+name              = "miden-remote-prover"
+path              = "src/main.rs"
+required-features = ["server"]
 
 [features]
-concurrent = ["miden-tx/concurrent"]
-default    = ["concurrent"]
+# Default features
+default = ["concurrent", "server"]
+
+# Core functionality
+concurrent = ["miden-tx?/concurrent"]
+std        = ["miden-objects?/std", "miden-tx?/std"]
+
+# Client features
+batch-prover = ["client"]
+block-prover = ["client"]
+client       = ["dep:miden-objects", "dep:tokio"]
+tx-prover    = ["client", "dep:miden-tx"]
+
+# Server features
+server = [
+  "dep:anyhow",
+  "dep:async-trait",
+  "dep:axum",
+  "dep:bytes",
+  "dep:clap",
+  "dep:http",
+  "dep:humantime",
+  "dep:miden-block-prover",
+  "dep:miden-node-utils",
+  "dep:miden-objects",
+  "dep:miden-tx",
+  "dep:miden-tx-batch-prover",
+  "dep:pingora",
+  "dep:pingora-core",
+  "dep:pingora-limits",
+  "dep:pingora-proxy",
+  "dep:prometheus",
+  "dep:reqwest",
+  "dep:semver",
+  "dep:serde",
+  "dep:serde_qs",
+  "dep:tokio",
+  "dep:tokio-stream",
+  "dep:tonic-health",
+  "dep:tonic-web",
+  "dep:tower-http",
+  "dep:tracing",
+  "dep:uuid",
+  "std",
+]
+
+# Optional server features
+metrics = ["dep:prometheus", "server"]
 
 [lints]
 workspace = true
 
 [dependencies]
-anyhow                = { workspace = true }
-async-trait           = { version = "0.1" }
-axum                  = { version = "0.8" }
-bytes                 = { version = "1.0" }
-clap                  = { features = ["derive", "env"], version = "4.5" }
-http                  = { workspace = true }
-humantime             = { workspace = true }
-miden-block-prover    = { workspace = true }
-miden-node-utils      = { workspace = true }
-miden-objects         = { features = ["std"], workspace = true }
-miden-tx              = { features = ["std"], workspace = true }
-miden-tx-batch-prover = { features = ["std"], workspace = true }
-pingora               = { features = ["lb"], version = "0.5" }
-pingora-core          = { version = "0.5" }
-pingora-limits        = { version = "0.5" }
-pingora-proxy         = { version = "0.5" }
-prometheus            = { version = "0.14" }
-prost                 = { default-features = false, features = ["derive"], version = "0.13" }
-reqwest               = { version = "0.12" }
-semver                = { version = "1.0" }
-serde                 = { features = ["derive"], version = "1.0" }
-serde_qs              = { version = "0.15" }
-thiserror             = { workspace = true }
-tokio                 = { features = ["full"], workspace = true }
-tokio-stream          = { features = ["net"], version = "0.1" }
-tonic                 = { default-features = false, features = ["codegen", "prost", "router", "transport"], version = "0.13" }
-tonic-health          = { version = "0.13" }
-tonic-web             = { version = "0.13" }
-tower-http            = { features = ["trace"], workspace = true }
-tracing               = { version = "0.1" }
-uuid                  = { features = ["v4"], version = "1.16" }
+# Shared core dependencies (always present)
+prost     = { default-features = false, features = ["derive"], version = "0.13" }
+thiserror = { workspace = true }
+tonic     = { default-features = false, features = ["codegen", "prost"], version = "0.13" }
+
+# Client dependencies (feature-gated)
+miden-objects = { optional = true, workspace = true }
+miden-tx      = { optional = true, workspace = true }
+tokio         = { default-features = false, features = ["sync"], optional = true, version = "1.44" }
+
+# Server dependencies (feature-gated)
+anyhow                = { optional = true, workspace = true }
+async-trait           = { optional = true, version = "0.1" }
+axum                  = { optional = true, version = "0.8" }
+bytes                 = { optional = true, version = "1.0" }
+clap                  = { features = ["derive", "env"], optional = true, version = "4.5" }
+http                  = { optional = true, workspace = true }
+humantime             = { optional = true, workspace = true }
+miden-block-prover    = { optional = true, workspace = true }
+miden-node-utils      = { optional = true, workspace = true }
+miden-tx-batch-prover = { optional = true, workspace = true }
+pingora               = { features = ["lb"], optional = true, version = "0.5" }
+pingora-core          = { optional = true, version = "0.5" }
+pingora-limits        = { optional = true, version = "0.5" }
+pingora-proxy         = { optional = true, version = "0.5" }
+prometheus            = { optional = true, version = "0.14" }
+reqwest               = { optional = true, version = "0.12" }
+semver                = { optional = true, version = "1.0" }
+serde                 = { features = ["derive"], optional = true, version = "1.0" }
+serde_qs              = { optional = true, version = "0.15" }
+tokio-stream          = { features = ["net"], optional = true, version = "0.1" }
+tonic-health          = { optional = true, version = "0.13" }
+tonic-web             = { optional = true, version = "0.13" }
+tower-http            = { features = ["trace"], optional = true, workspace = true }
+tracing               = { optional = true, version = "0.1" }
+uuid                  = { features = ["v4"], optional = true, version = "1.16" }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom             = { features = ["wasm_js"], version = "0.3" }
+tonic-web-wasm-client = { default-features = false, version = "0.7" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Additional tonic features for non-WASM
+tonic = { default-features = false, features = [
+  "codegen",
+  "prost",
+  "router",
+  "tls-native-roots",
+  "tls-ring",
+  "transport",
+], version = "0.13" }
 
 [dev-dependencies]
 miden-lib     = { features = ["testing"], workspace = true }

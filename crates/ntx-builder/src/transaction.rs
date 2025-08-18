@@ -16,7 +16,7 @@ use miden_objects::transaction::{
 };
 use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
-use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
+use miden_remote_prover::remote_prover::tx_prover::RemoteTransactionProver;
 use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     DataStore,

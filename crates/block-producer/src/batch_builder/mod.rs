@@ -7,7 +7,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::{BatchId, ProposedBatch, ProvenBatch};
-use miden_remote_prover_client::remote_prover::batch_prover::RemoteBatchProver;
+use miden_remote_prover::remote_prover::batch_prover::RemoteBatchProver;
 use miden_tx_batch_prover::LocalBatchProver;
 use rand::Rng;
 use tokio::task::JoinSet;

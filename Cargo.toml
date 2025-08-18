@@ -7,7 +7,7 @@ members = [
   "crates/block-producer",
   "crates/ntx-builder",
   "crates/proto",
-  "crates/remote-prover-client",
+
   "crates/rpc",
   "crates/store",
   "crates/test-macro",
@@ -34,15 +34,15 @@ opt-level = 2
 
 [workspace.dependencies]
 # Workspace crates.
-miden-node-block-producer  = { path = "crates/block-producer", version = "0.11" }
-miden-node-ntx-builder     = { path = "crates/ntx-builder", version = "0.11" }
-miden-node-proto           = { path = "crates/proto", version = "0.11" }
-miden-node-proto-build     = { path = "proto", version = "0.11" }
-miden-node-rpc             = { path = "crates/rpc", version = "0.11" }
-miden-node-store           = { path = "crates/store", version = "0.11" }
-miden-node-test-macro      = { path = "crates/test-macro" }
-miden-node-utils           = { path = "crates/utils", version = "0.11" }
-miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.11" }
+miden-node-block-producer = { path = "crates/block-producer", version = "0.11" }
+miden-node-ntx-builder    = { path = "crates/ntx-builder", version = "0.11" }
+miden-node-proto          = { path = "crates/proto", version = "0.11" }
+miden-node-proto-build    = { path = "proto", version = "0.11" }
+miden-node-rpc            = { path = "crates/rpc", version = "0.11" }
+miden-node-store          = { path = "crates/store", version = "0.11" }
+miden-node-test-macro     = { path = "crates/test-macro" }
+miden-node-utils          = { path = "crates/utils", version = "0.11" }
+miden-remote-prover       = { path = "bin/remote-prover", version = "0.11" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
 miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }

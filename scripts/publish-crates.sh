@@ -29,7 +29,7 @@ miden-node-proto-build
 miden-node-proto
 miden-node-store
 miden-remote-prover
-miden-remote-prover-client
+
 miden-node-block-producer
 miden-node-ntx-builder
 miden-node-rpc

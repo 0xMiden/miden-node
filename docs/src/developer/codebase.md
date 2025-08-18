@@ -10,8 +10,7 @@ instead simply serve to enforce code organisation and decoupling.
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `node`                    | The node executable. Configure and run the node and its components.                                                                                      |
 | `faucet`                  | A reference faucet app implementation used by the official Miden faucet.                                                                                 |
-| `remote-prover`           | Remote prover executables. Includes workers and proxies.                                                                                                 |
-| `remote-prover-client`    | Remote prover client implementation.                                                                                                                     |
+| `remote-prover`           | Unified remote prover crate with both server (workers, proxies) and client implementations. Supports feature-gated builds for different use cases.    |
 | `block-producer`          | Block-producer component implementation.                                                                                                                 |
 | `store`                   | Store component implementation.                                                                                                                          |
 | `ntx-builder`             | Network transaction builder component implementation.                                                                                                    |

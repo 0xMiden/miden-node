@@ -125,9 +125,9 @@ impl State {
             .await
             .map_err(StateInitializationError::DatabaseLoadError)?;
 
-        let nullifier_tree = load_nullifier_tree(&mut db).await?;
         let chain_mmr = load_mmr(&mut db).await?;
         let account_tree = load_account_tree(&mut db).await?;
+        let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
         let inner = RwLock::new(InnerState {
             nullifier_tree,

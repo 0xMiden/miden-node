@@ -127,7 +127,7 @@ impl State {
 
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
         let chain_mmr = load_mmr(&mut db).await?;
-        let account_tree = load_accounts(&mut db).await?;
+        let account_tree = load_account_tree(&mut db).await?;
 
         let inner = RwLock::new(InnerState {
             nullifier_tree,
@@ -1028,7 +1028,7 @@ impl State {
 // UTILITIES
 // ================================================================================================
 
-#[instrument(level = "debug", target = COMPONENT, skip_all)]
+#[instrument(level = "info", target = COMPONENT, skip_all)]
 async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitializationError> {
     let nullifiers = db.select_all_nullifiers().await?;
 
@@ -1036,7 +1036,7 @@ async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitiali
         .map_err(StateInitializationError::FailedToCreateNullifierTree)
 }
 
-#[instrument(level = "debug", target = COMPONENT, skip_all)]
+#[instrument(level = "info", target = COMPONENT, skip_all)]
 async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     let block_commitments: Vec<Word> = db
         .select_all_block_headers()
@@ -1048,8 +1048,8 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     Ok(block_commitments.into())
 }
 
-#[instrument(level = "debug", target = COMPONENT, skip_all)]
-async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
+#[instrument(level = "info", target = COMPONENT, skip_all)]
+async fn load_account_tree(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     AccountTree::with_entries(account_data)

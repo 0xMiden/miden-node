@@ -138,6 +138,8 @@ message AccountProofs {
                 uint32 storage_slot = 1;
 
                 // Merkle proofs of the map value as partial sparse merkle tree for compression.
+                // The respective rust types is `SparseMerkleTree` and the transformation to and from
+                // bytes is done via the traits `Serializable::to_bytes` and `Deserializable::from_bytes`.
                 bytes partial_smt = 2;
             }
 

@@ -167,8 +167,6 @@ impl NtxContext {
                     return Err(NtxError::AllNotesFailed(failed));
                 }
 
-                // SAFETY: All notes are known to be valid as they are derived from pre-existing
-                // ones.
                 Ok((successful, failed))
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),

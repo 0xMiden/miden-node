@@ -137,7 +137,7 @@ impl GenesisConfig {
 
         let native_faucet_account_id = faucet_accounts
             .get(&symbol)
-            .expect("Parsing guarnatees the existence of a native faucet.")
+            .expect("Parsing guarantees the existence of a native faucet.")
             .id();
 
         let fee_parameters =

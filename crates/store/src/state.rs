@@ -942,7 +942,10 @@ impl State {
                             header: Some(AccountHeader::from(details).into()),
                             storage_header: details.storage().to_header().to_bytes(),
                             account_code,
-                            partial_storage_smts: partials.to_bytes(),
+                            partial_storage_smts: Vec::from_iter(partials.into_iter().map(|(slot, partial_smt)| proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapPartialSmt {
+                                storage_slot: slot as u32,
+                                partial_smt: partial_smt.to_bytes(),
+                            })),
                         };
 
                     headers_map.insert(account_info.summary.account_id, state_header);

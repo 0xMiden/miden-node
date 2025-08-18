@@ -137,10 +137,9 @@ impl NetworkTransactionBuilder {
                                 | NtxError::Execution(_)
                                 | NtxError::Proving(_)
                                 | NtxError::Submission(_)
-                                | NtxError::Panic(_) => {
-                                    state.candidate_failed(candidate);
-                                },
+                                | NtxError::Panic(_) => {},
                             }
+                            state.candidate_failed(candidate);
                         },
                         // Unexpected error occurred.
                         Err(err) => {

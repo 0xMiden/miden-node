@@ -114,18 +114,13 @@ impl AccountState {
         }
     }
 
-    /// Returns an iterator over inflight notes managed by the account.
-    pub fn notes(&self) -> impl Iterator<Item = &InflightNetworkNote> {
-        self.available_notes.values()
-    }
-
     /// Returns an iterator over inflight notes that are not currently within their respective
     /// backoff periods based on block number.
     pub fn available_notes(
         &self,
         block_num: &BlockNumber,
     ) -> impl Iterator<Item = &InflightNetworkNote> {
-        self.notes().filter(|&note| note.is_available(*block_num))
+        self.available_notes.values().filter(|&note| note.is_available(*block_num))
     }
 
     /// Appends a delta to the set of inflight account updates.

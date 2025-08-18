@@ -1,44 +1,51 @@
-use std::net::SocketAddr;
 use std::time::Duration;
 
 use futures::{TryStream, TryStreamExt};
+use miden_node_proto::clients::{
+    BlockProducer,
+    BlockProducerClient as InnerBlockProducerClient,
+    Builder,
+};
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_node_proto::generated::block_producer::api_client::ApiClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::FlattenResult;
-use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::block::BlockNumber;
 use miden_objects::transaction::ProvenTransaction;
 use miden_tx::utils::Serializable;
 use tokio_stream::StreamExt;
 use tonic::Status;
-use tonic::service::interceptor::InterceptedService;
-use tonic::transport::Channel;
 use tracing::{info, instrument};
+use url::Url;
 
 use crate::COMPONENT;
 
-type InnerClient = ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+// CLIENT
+// ================================================================================================
 
 /// Interface to the block producer's gRPC API.
 ///
 /// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
 #[derive(Clone, Debug)]
 pub struct BlockProducerClient {
-    inner: InnerClient,
+    client: InnerBlockProducerClient,
 }
 
 impl BlockProducerClient {
     /// Creates a new block producer client with a lazy connection.
-    pub fn new(block_producer_address: SocketAddr) -> Self {
-        // SAFETY: The block_producer_url is always valid as it is created from a `SocketAddr`.
-        let block_producer_url = format!("http://{block_producer_address}");
-        let channel =
-            tonic::transport::Endpoint::try_from(block_producer_url).unwrap().connect_lazy();
-        let block_producer = ApiClient::with_interceptor(channel, OtelInterceptor);
-        info!(target: COMPONENT, block_producer_endpoint = %block_producer_address, "Store client initialized");
+    pub fn new(block_producer_url: &Url) -> Self {
+        // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has been
+        // validated.
+        let block_producer = Builder::new(block_producer_url.to_string())
+            .expect("Failed to initialize block-producer endpoint")
+            .without_tls()
+            .without_timeout()
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .connect_lazy::<BlockProducer>();
 
-        Self { inner: block_producer }
+        info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Block producer client initialized with lazy connection");
+
+        Self { client: block_producer }
     }
 
     #[instrument(target = COMPONENT, name = "block_producer.client.submit_proven_transaction", skip_all, err)]
@@ -48,7 +55,7 @@ impl BlockProducerClient {
     ) -> Result<(), Status> {
         let request = proto::transaction::ProvenTransaction { transaction: proven_tx.to_bytes() };
 
-        self.inner.clone().submit_proven_transaction(request).await?;
+        self.client.clone().submit_proven_transaction(request).await?;
 
         Ok(())
     }
@@ -88,7 +95,7 @@ impl BlockProducerClient {
     ) -> Result<impl TryStream<Ok = MempoolEvent, Error = Status>, Status> {
         let request =
             proto::block_producer::MempoolSubscriptionRequest { chain_tip: chain_tip.as_u32() };
-        let stream = self.inner.clone().mempool_subscription(request).await?;
+        let stream = self.client.clone().mempool_subscription(request).await?;
 
         let stream = stream
             .into_inner()

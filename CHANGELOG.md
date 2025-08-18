@@ -9,6 +9,7 @@
 - Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the mempool ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
 - RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - Added benchmark CLI sub-command for the `miden-store` component to measure the state load time ([#1154](https://github.com/0xMiden/miden-node/pull/1154)).
+- gRPC server timeout is now configurable (defaults to `10s`) ([#1133](https://github.com/0xMiden/miden-node/pull/1133))
 
 ### Changes
 
@@ -17,6 +18,10 @@
 - [BREAKING] De-duplicate storage of code in DB (no-migration) ([#1083](https://github.com/0xMiden/miden-node/issue/#1083)).
 - [BREAKING] RPC accept header format changed from `application/miden.vnd+grpc.<version>` to `application/vnd.miden; version=<version>` ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - [BREAKING] Integrated `FeeParameters` into block headers. ([#1122](https://github.com/0xMiden/miden-node/pull/1122)).
+- [BREAKING] Genesis configuration now supports fees ([#1157](https://github.com/0xMiden/miden-node/pull/1157)).
+  - Configure `NativeFaucet`, which determines the native asset used to pay fees
+  - Configure the base verification fee
+  - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
 
 ### Fixes
 

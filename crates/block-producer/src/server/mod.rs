@@ -10,6 +10,7 @@ use miden_node_proto::generated::block_producer::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::block_producer_api_descriptor;
 use miden_node_utils::formatting::{format_input_notes, format_output_notes};
+use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
 use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::BlockNumber;
@@ -52,7 +53,7 @@ pub struct BlockProducer {
     /// The address of the block producer component.
     pub block_producer_address: SocketAddr,
     /// The address of the store component.
-    pub store_address: SocketAddr,
+    pub store_url: Url,
     /// The address of the batch prover component.
     pub batch_prover_url: Option<Url>,
     /// The address of the block prover component.
@@ -70,6 +71,10 @@ pub struct BlockProducer {
     /// The block-producers gRPC endpoint will be available before this point, so this lets the
     /// mempool synchronize its event stream without risking a race condition.
     pub production_checkpoint: Arc<Barrier>,
+    /// Server-side timeout for an individual gRPC request.
+    ///
+    /// If the handler takes longer than this duration, the server cancels the call.
+    pub grpc_timeout: Duration,
 }
 
 impl BlockProducer {
@@ -79,8 +84,8 @@ impl BlockProducer {
     ///       a fatal error is encountered.
     #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
-        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_address, "Initializing server");
-        let store = StoreClient::new(self.store_address);
+        info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
+        let store = StoreClient::new(&self.store_url);
 
         // retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
@@ -93,7 +98,7 @@ impl BlockProducer {
                         .min(Duration::from_secs(30));
 
                     error!(
-                        store = %self.store_address,
+                        store = %self.store_url,
                         ?backoff,
                         %retries_counter,
                         %err,
@@ -153,7 +158,11 @@ impl BlockProducer {
         let rpc_id = tasks
             .spawn({
                 let mempool = mempool.clone();
-                async move { BlockProducerRpcServer::new(mempool, store).serve(listener).await }
+                async move {
+                    BlockProducerRpcServer::new(mempool, store)
+                        .serve(listener, self.grpc_timeout)
+                        .await
+                }
             })
             .id();
         self.production_checkpoint.wait().await;
@@ -308,7 +317,7 @@ impl BlockProducerRpcServer {
         Self { mempool: Mutex::new(mempool), store }
     }
 
-    async fn serve(self, listener: TcpListener) -> anyhow::Result<()> {
+    async fn serve(self, listener: TcpListener, timeout: Duration) -> anyhow::Result<()> {
         let reflection_service = tonic_reflection::server::Builder::configure()
             .register_file_descriptor_set(block_producer_api_descriptor())
             .build_v1()
@@ -325,10 +334,12 @@ impl BlockProducerRpcServer {
 
         // Build the gRPC server with the API service and trace layer.
         tonic::transport::Server::builder()
+            .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(
                 TraceLayer::new_for_grpc()
                     .make_span_with(traced_span_fn(TracedComponent::StoreBlockProducer)),
             )
+            .timeout(timeout)
             .add_service(api_server::ApiServer::new(self))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)

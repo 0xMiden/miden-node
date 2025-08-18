@@ -22,8 +22,10 @@ testing = ["dep:tokio", "miden-objects/testing"]
 
 [dependencies]
 anyhow                = { workspace = true }
+bytes                 = { version = "1.10" }
 figment               = { features = ["env", "toml"], version = "0.10" }
 http                  = { workspace = true }
+http-body-util        = { version = "0.1" }
 itertools             = { workspace = true }
 miden-objects         = { workspace = true }
 opentelemetry         = { version = "0.30" }
@@ -33,7 +35,7 @@ rand                  = { workspace = true }
 serde                 = { features = ["derive"], version = "1.0" }
 thiserror             = { workspace = true }
 tonic                 = { workspace = true }
-tower-http            = { workspace = true }
+tower-http            = { features = ["catch-panic"], workspace = true }
 tracing               = { workspace = true }
 tracing-forest        = { features = ["chrono"], optional = true, version = "0.1" }
 tracing-opentelemetry = { version = "0.31" }

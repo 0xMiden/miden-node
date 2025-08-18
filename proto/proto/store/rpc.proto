@@ -155,11 +155,8 @@ message AccountProofs {
             // the current one.
             optional bytes account_code = 3;
 
-            // A sparse merkle tree, including all relevant merkle proofs for storage entries.
-            bytes partial_smt = 5;
-
-            // Lookup table for leaf to storage index.
-            bytes leaf_to_storage_index = 6;
+            // A sparse merkle tree per storage slot, including all relevant merkle proofs for storage entries.
+            bytes partial_storage_smts = 5;
         }
 
         // The account witness for the current state commitment of one account ID.

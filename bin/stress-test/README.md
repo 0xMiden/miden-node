@@ -24,9 +24,9 @@ The endpoints that you can test are:
 - `sync_notes`
 - `check_nullifiers_by_prefix`
 
-Each benchmark accepts options to control the number of iterations and concurrency level.
+Most benchmarks accept options to control the number of iterations and concurrency level. The `load_state` endpoint is different - it simply measures the one-time startup cost of loading the state from disk.
 
-**Note on Concurrency**: The concurrency parameter controls how many requests are sent in parallel to the store. Since these benchmarks run against a local store (no network overhead), higher concurrency values can help identify bottlenecks in the store's internal processing. The latency measurements exclude network time and represent pure store processing time.
+**Note on Concurrency**: For the endpoints that support it (`sync_state`, `sync_notes`, `check_nullifiers_by_prefix`), the concurrency parameter controls how many requests are sent in parallel to the store. Since these benchmarks run against a local store (no network overhead), higher concurrency values can help identify bottlenecks in the store's internal processing. The latency measurements exclude network time and represent pure store processing time.
 
 Example usage:
 

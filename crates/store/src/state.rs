@@ -902,6 +902,7 @@ impl State {
 
                 if let Some(details) = &account_info.details {
                     let mut partial = PartialSmt::new();
+                    let mut leaf_to_storage_index = BTreeMap::new();
                     for StorageMapKeysProof { storage_index, storage_keys } in
                         &request.storage_requests
                     {
@@ -910,6 +911,7 @@ impl State {
                         {
                             for map_key in storage_keys {
                                 let proof = storage_map.open(map_key);
+                                leaf_to_storage_index.insert(proof.leaf().index(), *storage_index);
                                 partial.add_proof(proof)?;
                             }
                         } else {
@@ -929,6 +931,7 @@ impl State {
                             storage_header: details.storage().to_header().to_bytes(),
                             account_code,
                             partial_smt: partial.to_bytes(),
+                            leaf_to_storage_index: leaf_to_storage_index.to_bytes(),
                         };
 
                     headers_map.insert(account_info.summary.account_id, state_header);

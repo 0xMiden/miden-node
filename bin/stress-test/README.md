@@ -19,10 +19,10 @@ The store file will then be located at `./data/miden-store.sqlite3`.
 This command allows to run stress tests against the Store component. These tests use the dump file with accounts ids created when seeding the store, so be sure to run the `seed-store` command beforehand.
 
 The endpoints that you can test are:
+- `load_state`
 - `sync_state`
 - `sync_notes`
 - `check_nullifiers_by_prefix`
-- `load_state`
 
 Each benchmark accepts options to control the number of iterations and concurrency level.
 
@@ -104,6 +104,13 @@ Current results of the store stress-tests:
 
 **Performance Note**: The latency measurements below represent pure store processing time (no network overhead).
 
+- load-state
+``` bash
+$ miden-node-stress-test benchmark-store --data-directory ./data load-state
+
+State loaded in 41.494029542s
+```
+
 - sync-state
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-state
@@ -137,13 +144,6 @@ P95 request latency: 747.333µs
 P99 request latency: 873.083µs
 P99.9 request latency: 2.289709ms
 Average nullifiers per response: 21.0348
-```
-
-- load-state
-``` bash
-$ miden-node-stress-test benchmark-store --data-directory ./data load-state
-
-State loaded in 41.494029542s
 ```
 
 ## License

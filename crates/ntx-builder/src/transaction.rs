@@ -130,7 +130,7 @@ impl NtxContext {
     /// # Guarantees
     ///
     /// - On success, the returned [`InputNotes`] set is guaranteed to be non-empty.
-    /// - The original ordering of notes is not preserved.
+    /// - The original ordering of notes is not preserved if any notes have failed.
     ///
     /// # Errors
     ///

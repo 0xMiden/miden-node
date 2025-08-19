@@ -75,6 +75,9 @@ service Rpc {
     // part of hashes. Thus, returned data contains excessive notes and nullifiers, client can make
     // additional filtering of that data on its side.
     rpc SyncState(SyncStateRequest) returns (SyncStateResponse) {}
+
+    // Returns storage map updates for specified account and storage slots within a block range.
+    rpc SyncStorageMaps(SyncStorageMapsRequest) returns (SyncStorageMapsResponse) {}
 }
 
 // STORE STATUS
@@ -316,4 +319,49 @@ message SyncNotesResponse {
 
     // List of all notes together with the Merkle paths from `response.block_header.note_root`.
     repeated note.NoteSyncRecord notes = 4;
+}
+
+// SYNC STORAGE MAP
+// ================================================================================================
+
+// Storage map synchronization request.
+//
+// Allows clients to sync storage map values for specific public accounts within a block range,
+// with support for cursor-based pagination to handle large storage maps.
+message SyncStorageMapsRequest {
+    // Block number to start sending updates from (inclusive).
+    fixed32 block_from = 1;
+
+    // Block number up to which to sync. If not specified, syncs up to the latest block.
+    //
+    // If specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    // otherwise an error will be returned.
+    optional fixed32 block_to = 2;
+    
+    // Account for which we want to sync storage maps.
+    account.AccountId account_id = 3;
+}
+
+message SyncStorageMapsResponse {
+    // The block number of the last row included in this response.
+    // For chunked responses, this may be less than request.block_to.
+    fixed32 block_num = 1;
+
+    // Current chain tip
+    fixed32 chain_tip = 2;
+
+    // The list of storage map updates.
+    repeated StorageMapUpdate updates = 3;
+}
+
+// Represents a single storage map update.
+message StorageMapUpdate {
+    // Slot index ([0..255]).
+    uint32 slot_index = 1;
+    
+    // The storage map key.
+    bytes key = 2;
+        
+    // The storage map value.
+    bytes value = 3;
 }

@@ -459,6 +459,91 @@ pub(crate) fn select_slot_updates_stmt(
     Ok(results)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageMapValue {
+    pub slot_index: u8,
+    pub key: Word,
+    pub value: Word,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StorageMapValuesPage {
+    /// Highest block number included in `rows`. If the page is empty, this will be `block_from`.
+    pub last_block_included: BlockNumber,
+    /// Storage map values
+    pub values: Vec<StorageMapValue>,
+}
+
+/// Select account storage map values from the DB using the given [`SqliteConnection`].
+///
+/// # Returns
+///
+/// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account.
+/// Each row contains one of:
+///
+/// - the historical value for a slot and key specifically on block `block_to`
+/// - the latest updated value for the slot and key combination, alongside the block number in which
+///   it was updated
+pub(crate) fn select_account_storage_map_values(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_from: BlockNumber,
+    block_to: BlockNumber,
+) -> Result<StorageMapValuesPage, DatabaseError> {
+    use schema::account_storage_map_values as t;
+
+    // SELECT
+    //   block_num,
+    //   slot,
+    //   key,
+    //   value
+    // FROM account_storage_map_values
+    // WHERE account_id = ?1
+    //   AND block_num >= ?2
+    //   AND (block_num = ?3 OR is_latest_update = 1)
+    // ORDER BY block_num ASC, slot ASC, key ASC
+    // LIMIT :row_limit;
+
+    // TODO: These limits should be given by the protocol
+    pub const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
+    pub const ROW_OVERHEAD_BYTES: usize = size_of::<Word>() + size_of::<Word>() + size_of::<u8>(); // key + value + slot_idx
+    pub const ROW_LIMIT: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+
+    let mut raw: Vec<(i64, i32, Vec<u8>, Vec<u8>)> =
+        SelectDsl::select(t::table, (t::block_num, t::slot, t::key, t::value))
+            .filter(t::block_num.ge(block_from.to_raw_sql()))
+            .filter(t::account_id.eq(account_id.to_bytes()))
+            .filter(t::block_num.eq(block_to.to_raw_sql()).or(t::is_latest_update.eq(true)))
+            .order((t::block_num.asc(), t::slot.asc(), t::key.asc()))
+            .limit(i64::try_from(ROW_LIMIT).expect("const value is safe to convert"))
+            .load(conn)?;
+
+    // Discard the last block in the response (assumes more than one block may be present)
+    let mut last_block_included = block_to;
+    if raw.len() == ROW_LIMIT {
+        // NOTE: If the query contains at least one more row than the amount of storage map updates
+        // allowed in a single block for an account, then the response is guaranteed to have at
+        // least two blocks
+        if let Some(last_bn) = raw.last().map(|r| r.0) {
+            raw.retain(|(bn, ..)| *bn != last_bn);
+            last_block_included = BlockNumber::from_raw_sql(last_bn.saturating_sub(1))?;
+        }
+    }
+
+    let values: Vec<StorageMapValue> = raw
+        .into_iter()
+        .map(|(_, slot, key, value)| -> Result<StorageMapValue, DatabaseError> {
+            Ok(StorageMapValue {
+                slot_index: raw_sql_to_slot(slot),
+                key: Word::read_from_bytes(&key)?,
+                value: Word::read_from_bytes(&value)?,
+            })
+        })
+        .collect::<Result<_, _>>()?;
+
+    Ok(StorageMapValuesPage { last_block_included, values })
+}
+
 #[derive(Debug, PartialEq, Eq, Clone, Queryable)]
 pub(crate) struct StorageMapUpdateEntry {
     pub(crate) slot: i32,

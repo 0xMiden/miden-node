@@ -271,6 +271,51 @@ pub struct SyncNotesResponse {
     #[prost(message, repeated, tag = "4")]
     pub notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
 }
+/// Storage map synchronization request.
+///
+/// Allows clients to sync storage map values for specific public accounts within a block range,
+/// with support for cursor-based pagination to handle large storage maps.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncStorageMapsRequest {
+    /// Block number to start sending updates from (inclusive).
+    #[prost(fixed32, tag = "1")]
+    pub block_from: u32,
+    /// Block number up to which to sync. If not specified, syncs up to the latest block.
+    ///
+    /// If specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    /// otherwise an error will be returned.
+    #[prost(fixed32, optional, tag = "2")]
+    pub block_to: ::core::option::Option<u32>,
+    /// Account for which we want to sync storage maps.
+    #[prost(message, optional, tag = "3")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncStorageMapsResponse {
+    /// The block number of the last row included in this response.
+    /// For chunked responses, this may be less than request.block_to.
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
+    /// Current chain tip
+    #[prost(fixed32, tag = "2")]
+    pub chain_tip: u32,
+    /// The list of storage map updates.
+    #[prost(message, repeated, tag = "3")]
+    pub updates: ::prost::alloc::vec::Vec<StorageMapUpdate>,
+}
+/// Represents a single storage map update.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct StorageMapUpdate {
+    /// Slot index (\[0..255\]).
+    #[prost(uint32, tag = "1")]
+    pub slot_index: u32,
+    /// The storage map key.
+    #[prost(bytes = "vec", tag = "2")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+    /// The storage map value.
+    #[prost(bytes = "vec", tag = "3")]
+    pub value: ::prost::alloc::vec::Vec<u8>,
+}
 /// Generated client implementations.
 pub mod rpc_client {
     #![allow(
@@ -651,6 +696,31 @@ pub mod rpc_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc_store.Rpc", "SyncState"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns storage map updates for specified account and storage slots within a block range.
+        pub async fn sync_storage_maps(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SyncStorageMapsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SyncStorageMapsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rpc_store.Rpc/SyncStorageMaps",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("rpc_store.Rpc", "SyncStorageMaps"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -772,6 +842,14 @@ pub mod rpc_server {
             request: tonic::Request<super::SyncStateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SyncStateResponse>,
+            tonic::Status,
+        >;
+        /// Returns storage map updates for specified account and storage slots within a block range.
+        async fn sync_storage_maps(
+            &self,
+            request: tonic::Request<super::SyncStorageMapsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SyncStorageMapsResponse>,
             tonic::Status,
         >;
     }
@@ -1327,6 +1405,51 @@ pub mod rpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SyncStateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rpc_store.Rpc/SyncStorageMaps" => {
+                    #[allow(non_camel_case_types)]
+                    struct SyncStorageMapsSvc<T: Rpc>(pub Arc<T>);
+                    impl<
+                        T: Rpc,
+                    > tonic::server::UnaryService<super::SyncStorageMapsRequest>
+                    for SyncStorageMapsSvc<T> {
+                        type Response = super::SyncStorageMapsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SyncStorageMapsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Rpc>::sync_storage_maps(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SyncStorageMapsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

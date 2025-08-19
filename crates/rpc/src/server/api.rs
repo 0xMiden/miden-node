@@ -215,6 +215,23 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
+        name = "rpc.server.sync_storage_maps",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_storage_maps(
+        &self,
+        request: Request<proto::rpc_store::SyncStorageMapsRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncStorageMapsResponse>, Status> {
+        debug!(target: COMPONENT, request = ?request.get_ref());
+
+        self.store.clone().sync_storage_maps(request).await
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
         name = "rpc.server.sync_notes",
         skip_all,
         ret(level = "debug"),

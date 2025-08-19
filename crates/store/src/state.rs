@@ -49,6 +49,7 @@ use tracing::{info, info_span, instrument};
 use crate::COMPONENT;
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
+use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate};
 use crate::errors::{
     ApplyBlockError,
@@ -970,6 +971,16 @@ impl State {
         to_block: BlockNumber,
     ) -> Result<Option<AccountDelta>, DatabaseError> {
         self.db.select_account_state_delta(account_id, from_block, to_block).await
+    }
+
+    /// Returns storage map values for syncing within a block range.
+    pub(crate) async fn get_storage_map_sync_values(
+        &self,
+        account_id: AccountId,
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<StorageMapValuesPage, DatabaseError> {
+        self.db.select_storage_map_sync_values(account_id, block_from, block_to).await
     }
 
     /// Loads a block from the block store. Return `Ok(None)` if the block is not found.

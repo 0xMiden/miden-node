@@ -59,6 +59,7 @@ use rand::Rng;
 use super::{AccountInfo, NoteRecord, NullifierInfo};
 use crate::db::TransactionSummary;
 use crate::db::migrations::apply_migrations;
+use crate::db::models::queries::StorageMapValue;
 use crate::db::models::{Page, queries, utils};
 use crate::errors::DatabaseError;
 
@@ -1194,6 +1195,146 @@ fn notes() {
     let note_1 = res[1].clone();
     assert_eq!(note_0.details, note.details);
     assert_eq!(note_1.details, None);
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn sql_account_storage_map_values_insertion() {
+    use std::collections::BTreeMap;
+
+    use miden_objects::account::StorageMapDelta;
+
+    let mut conn = create_db();
+    let conn = &mut conn;
+
+    let block1: BlockNumber = 1.into();
+    let block2: BlockNumber = 2.into();
+    create_block(conn, block1);
+    create_block(conn, block2);
+
+    let account_id =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
+
+    let slot = 3u8;
+    let key1 = Word::from([1u32, 2, 3, 4]);
+    let key2 = Word::from([5u32, 6, 7, 8]);
+    let value1 = Word::from([10u32, 11, 12, 13]);
+    let value2 = Word::from([20u32, 21, 22, 23]);
+    let value3 = Word::from([30u32, 31, 32, 33]);
+
+    // Insert at block 1
+    let mut map1 = StorageMapDelta::default();
+    map1.insert(key1, value1);
+    map1.insert(key2, value2);
+    let maps1: BTreeMap<_, _> = [(slot, map1)].into_iter().collect();
+    let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
+    let delta1 =
+        AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
+    queries::insert_account_delta(conn, account_id, block1, &delta1).unwrap();
+
+    let storage_map_page =
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block1)
+            .unwrap();
+    assert_eq!(storage_map_page.values.len(), 2, "expect 2 initial rows");
+
+    // Update key1 at block 2
+    let mut map2 = StorageMapDelta::default();
+    map2.insert(key1, value3);
+    let maps2 = BTreeMap::from_iter([(slot, map2)]);
+    let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
+    let delta2 =
+        AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
+            .unwrap();
+    queries::insert_account_delta(conn, account_id, block2, &delta2).unwrap();
+
+    // With block_to = block2, we get rows where (bn == block2) OR (is_latest_update = 1).
+    let storage_map_values =
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block2)
+            .unwrap();
+
+    assert_eq!(storage_map_values.values.len(), 2, "two rows (one per key)");
+    // key1 should now be value3 at block2; key2 remains value2 at block1
+    assert!(
+        storage_map_values
+            .values
+            .iter()
+            .any(|val| val.slot_index == slot && val.key == key1 && val.value == value3),
+        "key1 should point to new value at block2"
+    );
+    assert!(
+        storage_map_values
+            .values
+            .iter()
+            .any(|val| val.slot_index == slot && val.key == key2 && val.value == value2),
+        "key2 should stay the same (from block1)"
+    );
+}
+
+#[test]
+fn select_storage_map_sync_values() {
+    let mut conn = create_db();
+    let account_id =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let slot = 5u8;
+
+    let key1 = num_to_word(1);
+    let key2 = num_to_word(2);
+    let key3 = num_to_word(3);
+    let value1 = num_to_word(10);
+    let value2 = num_to_word(20);
+    let value3 = num_to_word(30);
+
+    let block1 = BlockNumber::from(1);
+    let block2 = BlockNumber::from(2);
+    let block3 = BlockNumber::from(3);
+
+    // Insert data across multiple blocks using individual inserts
+    // Block 1: key1 -> value1, key2 -> value2
+    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key1, value1)
+        .unwrap();
+    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key2, value2)
+        .unwrap();
+
+    // Block 2: key2 -> value3 (update), key3 -> value3 (new)
+    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key2, value3)
+        .unwrap();
+    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key3, value3)
+        .unwrap();
+
+    // Block 3: key1 -> value2 (update)
+    queries::insert_account_storage_map_value(&mut conn, account_id, block3, slot, key1, value2)
+        .unwrap();
+
+    let page = queries::select_account_storage_map_values(
+        &mut conn,
+        account_id,
+        BlockNumber::from(0),
+        block3,
+    )
+    .unwrap();
+
+    assert_eq!(page.values.len(), 3, "should return latest values");
+
+    // Compare ordered by key using a tuple view to avoid relying on the concrete struct name
+    let expected = vec![
+        StorageMapValue {
+            slot_index: slot,
+            key: key2,
+            value: value3,
+        }, // block2
+        StorageMapValue {
+            slot_index: slot,
+            key: key3,
+            value: value3,
+        }, // block2
+        StorageMapValue {
+            slot_index: slot,
+            key: key1,
+            value: value2,
+        }, // block3
+    ];
+
+    assert_eq!(page.values, expected, "should return latest values ordered by key");
 }
 
 // UTILITIES

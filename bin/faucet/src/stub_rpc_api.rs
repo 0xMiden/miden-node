@@ -15,6 +15,13 @@ pub struct StubRpcApi;
 
 #[tonic::async_trait]
 impl api_server::Api for StubRpcApi {
+    async fn status(
+        &self,
+        _request: tonic::Request<()>,
+    ) -> std::result::Result<tonic::Response<proto::rpc::RpcStatus>, tonic::Status> {
+        unimplemented!()
+    }
+
     async fn check_nullifiers(
         &self,
         _request: Request<proto::rpc_store::NullifierList>,
@@ -111,11 +118,13 @@ impl api_server::Api for StubRpcApi {
     ) -> Result<Response<proto::rpc_store::AccountProofs>, Status> {
         unimplemented!()
     }
-
-    async fn status(
+    async fn sync_storage_maps(
         &self,
-        _request: Request<()>,
-    ) -> Result<Response<proto::rpc::RpcStatus>, Status> {
+        _request: tonic::Request<proto::rpc_store::SyncStorageMapsRequest>,
+    ) -> std::result::Result<
+        tonic::Response<proto::rpc_store::SyncStorageMapsResponse>,
+        tonic::Status,
+    > {
         unimplemented!()
     }
 }

@@ -23,6 +23,7 @@ deadpool-sync          = { version = "0.1" }
 diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
 diesel_migrations      = { features = ["sqlite"], version = "2.2" }
 hex                    = { version = "0.4" }
+indexmap               = { workspace = true }
 miden-lib              = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
@@ -44,7 +45,7 @@ tracing                = { workspace = true }
 assert_matches        = { workspace = true }
 miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
-miden-node-utils      = { features = ["tracing-forest"], workspace = true }
+miden-node-utils      = { features = ["testing", "tracing-forest"], workspace = true }
 miden-objects         = { default-features = true, features = ["testing"], workspace = true }
 pretty_assertions     = { workspace = true }
 rand                  = { workspace = true }

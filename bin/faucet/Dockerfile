@@ -7,6 +7,11 @@ COPY ./bin ./bin
 COPY ./crates ./crates
 COPY ./proto ./proto
 
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    build-essential
+
 RUN cargo install --path bin/faucet --locked
 
 RUN miden-faucet create-faucet-account \

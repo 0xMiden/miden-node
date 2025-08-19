@@ -10,7 +10,8 @@ COPY ./proto ./proto
 RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
-    build-essential
+    build-essential \
+    cmake
 
 RUN cargo install --path bin/faucet --locked
 

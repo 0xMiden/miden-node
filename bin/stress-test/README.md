@@ -40,9 +40,11 @@ miden-node-stress-test benchmark-store \
 
 ### Results
 
+The following results were obtained using a store with 100k accounts, half of which are public.
+
 Using the store seed command:
 ```bash
-# Using 1M accounts, half are public
+# Using 100k accounts, half are public
 $ miden-node-stress-test seed-store --data-directory data --num-accounts 100000 --public-accounts-percentage 50
 
 Total time: 235.452 seconds
@@ -104,11 +106,14 @@ Current results of the store stress-tests:
 
 **Performance Note**: The latency measurements below represent pure store processing time (no network overhead).
 
+*The following results were obtained after seeding the store with the command used previously.*
+
 - load-state
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data load-state
 
-State loaded in 41.494029542s
+State loaded in 42.959271667s
+Database contains 99961 accounts and 99960 nullifiers
 ```
 
 - sync-state

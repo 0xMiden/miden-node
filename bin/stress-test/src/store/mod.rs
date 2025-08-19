@@ -296,7 +296,33 @@ pub async fn load_state(data_directory: &Path) {
     let start = Instant::now();
     let _state = State::load(data_directory).await.unwrap();
     let elapsed = start.elapsed();
+
+    // Get database path and run SQL commands to count records
+    let data_directory =
+        miden_node_store::DataDirectory::load(data_directory.to_path_buf()).unwrap();
+    let database_filepath = data_directory.database_path();
+
+    // Use sqlite3 command to count records
+    let account_count = std::process::Command::new("sqlite3")
+        .arg(database_filepath.to_str().unwrap())
+        .arg("SELECT COUNT(*) FROM accounts;")
+        .output()
+        .map_or_else(
+            |_| "unknown".to_string(),
+            |output| String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        );
+
+    let nullifier_count = std::process::Command::new("sqlite3")
+        .arg(database_filepath.to_str().unwrap())
+        .arg("SELECT COUNT(*) FROM nullifiers;")
+        .output()
+        .map_or_else(
+            |_| "unknown".to_string(),
+            |output| String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        );
+
     println!("State loaded in {elapsed:?}");
+    println!("Database contains {account_count} accounts and {nullifier_count} nullifiers");
 }
 
 // HELPERS

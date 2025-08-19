@@ -1,6 +1,7 @@
 //! Describe a subset of the genesis manifest in easily human readable format
 
-use std::collections::HashMap;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
 use miden_lib::AuthScheme;
@@ -107,7 +108,7 @@ impl GenesisConfig {
 
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
-        let mut faucet_accounts = HashMap::<TokenSymbolStr, Account>::new();
+        let mut faucet_accounts = BTreeMap::<TokenSymbolStr, Account>::new();
 
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
@@ -144,7 +145,7 @@ impl GenesisConfig {
             FeeParameters::new(native_faucet_account_id, fee_parameters.verification_base_fee)?;
 
         // Track all adjustments, one per faucet account id
-        let mut faucet_issuance = HashMap::<AccountId, u64>::new();
+        let mut faucet_issuance = BTreeMap::<AccountId, u64>::new();
 
         let zero_padding_width = usize::ilog10(std::cmp::max(10, wallet_configs.len())) as usize;
 
@@ -465,8 +466,8 @@ impl AccountSecrets {
 /// Track the negative adjustments for the respective faucets.
 fn prepare_fungible_asset_update(
     assets: impl IntoIterator<Item = AssetEntry>,
-    faucets: &HashMap<TokenSymbolStr, Account>,
-    faucet_issuance: &mut HashMap<AccountId, u64>,
+    faucets: &BTreeMap<TokenSymbolStr, Account>,
+    faucet_issuance: &mut BTreeMap<AccountId, u64>,
 ) -> Result<FungibleAssetDelta, GenesisConfigError> {
     let assets =
         Result::<Vec<_>, _>::from_iter(assets.into_iter().map(|AssetEntry { amount, symbol }| {
@@ -543,6 +544,18 @@ impl Eq for TokenSymbolStr {}
 impl From<TokenSymbolStr> for TokenSymbol {
     fn from(value: TokenSymbolStr) -> Self {
         value.encoded
+    }
+}
+
+impl Ord for TokenSymbolStr {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.raw.cmp(&other.raw)
+    }
+}
+
+impl PartialOrd for TokenSymbolStr {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

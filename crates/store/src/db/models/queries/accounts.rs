@@ -516,40 +516,6 @@ pub(crate) fn select_account_storage_map_values(
         .collect()
 }
 
-/// Select the latest account storage map values (where `is_latest_update`=true) from the DB.
-///
-/// # Returns
-///
-/// A vector of tuples containing (slot, key, value) for the latest values only.
-#[cfg(test)]
-pub(crate) fn select_latest_account_storage_map_values(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-) -> Result<Vec<(u8, Word, Word)>, DatabaseError> {
-    let results: Vec<(i32, Vec<u8>, Vec<u8>)> = SelectDsl::select(
-        schema::account_storage_map_values::table.filter(
-            schema::account_storage_map_values::account_id
-                .eq(account_id.to_bytes())
-                .and(schema::account_storage_map_values::is_latest_update),
-        ),
-        (
-            schema::account_storage_map_values::slot,
-            schema::account_storage_map_values::key,
-            schema::account_storage_map_values::value,
-        ),
-    )
-    .load(conn)?;
-
-    results
-        .into_iter()
-        .map(|(slot, key, value)| -> Result<(u8, Word, Word), DatabaseError> {
-            let key = Word::read_from_bytes(&key)?;
-            let value = Word::read_from_bytes(&value)?;
-            Ok((raw_sql_to_slot(slot), key, value))
-        })
-        .collect()
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Queryable)]
 pub(crate) struct StorageMapUpdateEntry {
     pub(crate) slot: i32,

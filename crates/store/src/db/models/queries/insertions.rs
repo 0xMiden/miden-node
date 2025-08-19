@@ -311,32 +311,39 @@ pub(crate) fn insert_account_storage_map_value(
     key: Word,
     value: Word,
 ) -> Result<usize, DatabaseError> {
-    // First, update any existing rows with the same (account_id, slot, key) to set
-    // is_latest_update=false
-    let update_count = diesel::update(schema::account_storage_map_values::table)
-        .filter(
-            schema::account_storage_map_values::account_id
-                .eq(account_id.to_bytes())
-                .and(schema::account_storage_map_values::slot.eq(slot_to_raw_sql(slot)))
-                .and(schema::account_storage_map_values::key.eq(&key.to_bytes()))
-                .and(schema::account_storage_map_values::is_latest_update.eq(true)),
-        )
-        .set(schema::account_storage_map_values::is_latest_update.eq(false))
-        .execute(conn)?;
+    let account_id = account_id.to_bytes();
+    let key = key.to_bytes();
+    let value = value.to_bytes();
+    let slot_idx = slot_to_raw_sql(slot);
+    let block_num = block_num.to_raw_sql();
 
-    // Insert the new row with is_latest_update=true
-    let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
-        .values(&[(
-            schema::account_storage_map_values::account_id.eq(account_id.to_bytes()),
-            schema::account_storage_map_values::block_num.eq(block_num.to_raw_sql()),
-            schema::account_storage_map_values::slot.eq(slot_to_raw_sql(slot)),
-            schema::account_storage_map_values::key.eq(key.to_bytes()),
-            schema::account_storage_map_values::value.eq(value.to_bytes()),
-            schema::account_storage_map_values::is_latest_update.eq(true),
-        )])
-        .execute(conn)?;
+    diesel::Connection::transaction(conn, |conn| {
+        // First, update any existing rows with the same (account_id, slot, key) to set
+        // is_latest_update=false
+        let update_count = diesel::update(schema::account_storage_map_values::table)
+            .filter(
+                schema::account_storage_map_values::account_id
+                    .eq(&account_id)
+                    .and(schema::account_storage_map_values::slot.eq(slot_idx))
+                    .and(schema::account_storage_map_values::key.eq(&key))
+                    .and(schema::account_storage_map_values::is_latest_update.eq(true)),
+            )
+            .set(schema::account_storage_map_values::is_latest_update.eq(false))
+            .execute(conn)?;
 
-    Ok(update_count + insert_count)
+        let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
+            .values((
+                schema::account_storage_map_values::account_id.eq(&account_id),
+                schema::account_storage_map_values::block_num.eq(block_num),
+                schema::account_storage_map_values::slot.eq(slot_idx),
+                schema::account_storage_map_values::key.eq(&key),
+                schema::account_storage_map_values::value.eq(&value),
+                schema::account_storage_map_values::is_latest_update.eq(true),
+            ))
+            .execute(conn)?;
+
+        Ok(update_count + insert_count)
+    })
 }
 
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!

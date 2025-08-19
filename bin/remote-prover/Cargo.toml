@@ -73,7 +73,6 @@ workspace = true
 # Shared core dependencies (always present)
 prost     = { default-features = false, features = ["derive"], version = "0.13" }
 thiserror = { workspace = true }
-tonic     = { default-features = false, features = ["codegen", "prost"], version = "0.13" }
 
 # Client dependencies (feature-gated)
 miden-objects = { optional = true, workspace = true }

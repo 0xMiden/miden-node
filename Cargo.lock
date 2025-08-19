@@ -2467,6 +2467,7 @@ dependencies = [
  "miden-node-proto-build",
  "miden-node-utils",
  "miden-objects",
+ "pretty_assertions",
  "proptest",
  "prost",
  "prost-build",

@@ -114,20 +114,10 @@ pub mod account_proofs {
                 #[prost(uint32, tag = "1")]
                 pub storage_slot: u32,
                 /// Merkle proofs of the map value as partial sparse merkle tree for compression.
-                /// The respective rust types is `SparseMerkleTree` and the transformation to and from
-                /// bytes is done via the traits `Serializable::to_bytes` and `Deserializable::from_bytes`.
-                #[prost(bytes = "vec", tag = "2")]
-                pub partial_smt: ::prost::alloc::vec::Vec<u8>,
-            }
-            /// Represents a single storage slot with the requested keys and their respective values.
-            #[derive(Clone, PartialEq, ::prost::Message)]
-            pub struct StorageSlotMapProof {
-                /// The storage slot index (\[0..255\]).
-                #[prost(uint32, tag = "1")]
-                pub storage_slot: u32,
-                /// Merkle proof of the map value
-                #[prost(bytes = "vec", tag = "2")]
-                pub smt_proof: ::prost::alloc::vec::Vec<u8>,
+                #[prost(message, optional, tag = "2")]
+                pub partial_smt: ::core::option::Option<
+                    super::super::super::super::primitives::PartialSmt,
+                >,
             }
         }
     }

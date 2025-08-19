@@ -25,7 +25,8 @@ thiserror        = { workspace = true }
 tonic            = { workspace = true }
 
 [dev-dependencies]
-proptest = { version = "1.7" }
+proptest          = { version = "1.7" }
+pretty_assertions = { workspace = true}
 
 [build-dependencies]
 anyhow                 = { workspace = true }

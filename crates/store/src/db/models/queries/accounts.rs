@@ -463,30 +463,45 @@ pub(crate) fn select_slot_updates_stmt(
 ///
 /// # Returns
 ///
-/// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account and
-/// a specific block. If no block is provided, latest values are selected.
+/// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account.
+/// Each row contains one of:
+///
+/// - the historical value for a slot and key specifically on block `block_to`
+/// - the latest updated value for the slot and key combination, alongside the block number in which
+///   it was updated
 #[cfg(test)]
 pub(crate) fn select_account_storage_map_values(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-    block_num: Option<BlockNumber>,
+    block_from: BlockNumber,
+    block_to: Option<BlockNumber>,
 ) -> Result<Vec<(u8, Word, Word, bool)>, DatabaseError> {
-    let base = SelectDsl::select(
-        schema::account_storage_map_values::table,
-        (
-            schema::account_storage_map_values::slot,
-            schema::account_storage_map_values::key,
-            schema::account_storage_map_values::value,
-            schema::account_storage_map_values::is_latest_update,
-        ),
-    )
-    .filter(schema::account_storage_map_values::account_id.eq(account_id.to_bytes()));
+    use schema::account_storage_map_values as t;
+
+    // SELECT
+    //   slot,
+    //   key,
+    //   value,
+    //   is_latest_update,
+    //   block_num
+    // FROM account_storage_map_values
+    // WHERE account_id = ?1
+    //   AND block_num >= ?2
+    //   AND (block_num = ?3 OR is_latest_update = 1)
+    // ORDER BY block_num ASC, slot ASC, key ASC;
+
+    let base = SelectDsl::select(t::table, (t::slot, t::key, t::value, t::is_latest_update))
+        .filter(t::block_num.ge(block_from.to_raw_sql()))
+        .filter(t::account_id.eq(account_id.to_bytes()));
 
     let mut query = base.into_boxed();
 
-    if let Some(block_num) = block_num {
-        query =
-            query.filter(schema::account_storage_map_values::block_num.eq(block_num.to_raw_sql()));
+    if let Some(bn) = block_to {
+        // block_num >= from AND (block_num = to OR is_latest_update)
+        query = query.filter(t::block_num.eq(bn.to_raw_sql()).or(t::is_latest_update.eq(true)));
+    } else {
+        // block_num >= from AND is_latest_update
+        query = query.filter(t::is_latest_update.eq(true));
     }
 
     let results: Vec<(i32, Vec<u8>, Vec<u8>, bool)> = query.load(conn)?;

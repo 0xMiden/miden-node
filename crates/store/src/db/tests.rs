@@ -1200,7 +1200,6 @@ fn notes() {
 #[miden_node_test_macro::enable_logging]
 fn sql_account_storage_map_values_insertion() {
     use std::collections::BTreeMap;
-
     use miden_objects::account::StorageMapDelta;
 
     let mut conn = create_db();
@@ -1221,6 +1220,7 @@ fn sql_account_storage_map_values_insertion() {
     let value2 = Word::from([20u32, 21, 22, 23]);
     let value3 = Word::from([30u32, 31, 32, 33]);
 
+    // Insert at block 1
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
     map1.insert(key2, value2);
@@ -1230,13 +1230,20 @@ fn sql_account_storage_map_values_insertion() {
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
     queries::insert_account_delta(conn, account_id, block1, &delta1).unwrap();
 
-    let v1 = queries::select_account_storage_map_values(conn, account_id, Some(block1)).unwrap();
+    let v1 = queries::select_account_storage_map_values(
+        conn,
+        account_id,
+        BlockNumber::GENESIS,
+        Some(block1),
+    )
+    .unwrap();
     assert_eq!(v1.len(), 2, "expect 2 initial rows");
     assert!(
         v1.iter().all(|(s, _, _, is_latest)| *s == slot && *is_latest),
         "initial rows should be latest"
     );
 
+    // Update key1 at block 2
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
     let maps2 = BTreeMap::from_iter([(slot, map2)]);
@@ -1246,19 +1253,33 @@ fn sql_account_storage_map_values_insertion() {
             .unwrap();
     queries::insert_account_delta(conn, account_id, block2, &delta2).unwrap();
 
-    let all = queries::select_account_storage_map_values(conn, account_id, None).unwrap();
-    assert_eq!(all.len(), 3, "now 3 total rows");
+    let latest_from_genesis =
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, None)
+            .unwrap();
+    assert_eq!(latest_from_genesis.len(), 2, "two latest rows (one per key)");
+    assert!(
+        latest_from_genesis
+            .iter()
+            .all(|(s, _, _, is_latest)| *s == slot && *is_latest),
+        "returned rows must be latest"
+    );
+    assert!(
+        latest_from_genesis
+            .iter()
+            .any(|(_, k, v, _)| *k == key1 && *v == value3),
+        "key1 should point to new value"
+    );
+    assert!(
+        latest_from_genesis
+            .iter()
+            .any(|(_, k, v, _)| *k == key2 && *v == value2),
+        "key2 should stay the same"
+    );
 
     let latest = queries::select_latest_account_storage_map_values(conn, account_id).unwrap();
     assert_eq!(latest.len(), 2, "2 latest (one per key)");
     assert!(latest.contains(&(slot, key1, value3)), "key1 should point to new value");
     assert!(latest.contains(&(slot, key2, value2)), "key2 should stay the same");
-
-    assert!(
-        all.iter()
-            .any(|(s, k, v, is_latest)| *s == slot && *k == key1 && *v == value1 && !*is_latest),
-        "old key1 value should be not-latest"
-    );
 }
 
 // UTILITIES

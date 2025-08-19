@@ -44,7 +44,7 @@ tracing                = { workspace = true }
 assert_matches        = { workspace = true }
 miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
-miden-node-utils      = { features = ["tracing-forest"], workspace = true }
+miden-node-utils      = { features = ["tracing-forest", "testing"], workspace = true }
 miden-objects         = { default-features = true, features = ["testing"], workspace = true }
 pretty_assertions     = { workspace = true }
 rand                  = { workspace = true }

@@ -1200,6 +1200,7 @@ fn notes() {
 #[miden_node_test_macro::enable_logging]
 fn sql_account_storage_map_values_insertion() {
     use std::collections::BTreeMap;
+
     use miden_objects::account::StorageMapDelta;
 
     let mut conn = create_db();
@@ -1258,21 +1259,15 @@ fn sql_account_storage_map_values_insertion() {
             .unwrap();
     assert_eq!(latest_from_genesis.len(), 2, "two latest rows (one per key)");
     assert!(
-        latest_from_genesis
-            .iter()
-            .all(|(s, _, _, is_latest)| *s == slot && *is_latest),
+        latest_from_genesis.iter().all(|(s, _, _, is_latest)| *s == slot && *is_latest),
         "returned rows must be latest"
     );
     assert!(
-        latest_from_genesis
-            .iter()
-            .any(|(_, k, v, _)| *k == key1 && *v == value3),
+        latest_from_genesis.iter().any(|(_, k, v, _)| *k == key1 && *v == value3),
         "key1 should point to new value"
     );
     assert!(
-        latest_from_genesis
-            .iter()
-            .any(|(_, k, v, _)| *k == key2 && *v == value2),
+        latest_from_genesis.iter().any(|(_, k, v, _)| *k == key2 && *v == value2),
         "key2 should stay the same"
     );
 

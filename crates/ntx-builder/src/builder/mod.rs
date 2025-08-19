@@ -14,6 +14,7 @@ use url::Url;
 use crate::MAX_IN_PROGRESS_TXS;
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
+use crate::transaction::NtxError;
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -91,19 +92,21 @@ impl NetworkTransactionBuilder {
                         continue;
                     };
 
-                    let prefix = NetworkAccountPrefix::try_from(candidate.account.id()).unwrap();
+                    let network_account_prefix = NetworkAccountPrefix::try_from(candidate.account.id())
+                                                 .expect("all accounts managed by NTB are network accounts");
+                    let indexed_candidate = (network_account_prefix, candidate.chain_tip_header.block_num());
                     let task_id = inflight.spawn({
                         let context = context.clone();
                         context.execute_transaction(candidate)
                     }).id();
 
                     // SAFETY: This is definitely a network account.
-                    inflight_idx.insert(task_id, prefix);
+                    inflight_idx.insert(task_id, indexed_candidate);
                 },
                 event = mempool_events.try_next() => {
                     let event = event
-                        .context("mempool event stream ended")?
-                        .context("mempool event stream failed")?;
+                                .context("mempool event stream ended")?
+                                .context("mempool event stream failed")?;
                     state.mempool_update(event).await.context("failed to update state")?;
                 },
                 completed = inflight.join_next_with_id() => {
@@ -113,18 +116,34 @@ impl NetworkTransactionBuilder {
                         Err(join_handle) => join_handle.id(),
                     };
                     // SAFETY: both inflights should have the same set.
-                    let candidate = inflight_idx.remove(&task_id).unwrap();
+                    let (candidate, block_num) = inflight_idx.remove(&task_id).unwrap();
 
                     match completed {
-                        // Nothing to do. State will be updated by the eventual mempool event.
-                        Ok((_, Ok(_))) => {},
-                        // Inform state if the tx failed.
+                        // Some notes failed.
+                        Ok((_, Ok(failed))) => {
+                            let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
+                            state.notes_failed(candidate, notes.as_slice(), block_num);
+                        },
+                        // Transaction execution failed.
                         Ok((_, Err(err))) => {
                             tracing::warn!(err=err.as_report(), "network transaction failed");
+                            match err {
+                                NtxError::AllNotesFailed(failed) => {
+                                    let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
+                                    state.notes_failed(candidate, notes.as_slice(), block_num);
+                                },
+                                NtxError::InputNotes(_)
+                                | NtxError::NoteFilter(_)
+                                | NtxError::Execution(_)
+                                | NtxError::Proving(_)
+                                | NtxError::Submission(_)
+                                | NtxError::Panic(_) => {},
+                            }
                             state.candidate_failed(candidate);
                         },
+                        // Unexpected error occurred.
                         Err(err) => {
-                            tracing::warn!(err=err.as_report(), "network transaction panic'd");
+                            tracing::warn!(err=err.as_report(), "network transaction panicked");
                             state.candidate_failed(candidate);
                         }
                     }

@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use miden_node_utils::ErrorReport;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId};
 use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::note::Note;
 use miden_objects::transaction::{
     ExecutedTransaction,
     InputNote,
@@ -21,6 +21,7 @@ use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     DataStore,
     DataStoreError,
+    FailedNote,
     LocalTransactionProver,
     MastForestStore,
     NoteConsumptionChecker,
@@ -30,7 +31,6 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
-use rand::seq::SliceRandom;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
@@ -44,15 +44,15 @@ pub enum NtxError {
     InputNotes(#[source] TransactionInputError),
     #[error("failed to filter notes")]
     NoteFilter(#[source] TransactionExecutorError),
-    #[error("no viable notes")]
-    NoViableNotes,
+    #[error("all notes failed to be executed")]
+    AllNotesFailed(Vec<FailedNote>),
     #[error("failed to execute transaction")]
     Execution(#[source] TransactionExecutorError),
     #[error("failed to prove transaction")]
     Proving(#[source] TransactionProverError),
     #[error("failed to submit transaction")]
     Submission(#[source] tonic::Status),
-    #[error("the ntx task panic'd")]
+    #[error("the ntx task panicked")]
     Panic(#[source] JoinError),
 }
 
@@ -74,11 +74,33 @@ pub struct NtxContext {
 }
 
 impl NtxContext {
+    /// Executes a transaction end-to-end: filtering, executing, proving, and submitted to the block
+    /// producer.
+    ///
+    /// The provided [`TransactionCandidate`] is processed in the following stages:
+    /// 1. Note filtering – all input notes are checked for consumability. Any notes that cannot be
+    ///    executed are returned as [`FailedNote`]s.
+    /// 2. Execution – the remaining notes are executed against the account state.
+    /// 3. Proving – a proof is generated for the executed transaction.
+    /// 4. Submission – the proven transaction is submitted to the block producer.
+    ///
+    /// # Returns
+    ///
+    /// On success, returns the list of [`FailedNote`]s representing notes that were
+    /// filtered out before execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns an [`NtxError`] if any step of the pipeline fails, including:
+    /// - Note filtering (e.g., all notes fail consumability checks).
+    /// - Transaction execution.
+    /// - Proof generation.
+    /// - Submission to the network.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction", skip_all, err)]
     pub fn execute_transaction(
         self,
         tx: TransactionCandidate,
-    ) -> impl FutureMaybeSend<NtxResult<()>> {
+    ) -> impl FutureMaybeSend<NtxResult<Vec<FailedNote>>> {
         let TransactionCandidate {
             account,
             notes,
@@ -86,28 +108,22 @@ impl NtxContext {
             chain_mmr,
         } = tx;
         tracing::Span::current().set_attribute("account.id", account.id());
+        tracing::Span::current()
+            .set_attribute("account.id.network_prefix", account.id().prefix().to_string().as_str());
         tracing::Span::current().set_attribute("notes.count", notes.len());
         tracing::Span::current()
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         async move {
             async move {
-                let mut notes = notes
-                    .into_iter()
-                    .map(|note| InputNote::Unauthenticated { note: note.into() })
-                    .collect::<Vec<_>>();
-                // We shuffle the notes here to prevent having a failing note always in
-                // front.
-                notes.shuffle(&mut rand::rng());
-                let notes = InputNotes::new(notes).map_err(NtxError::InputNotes)?;
-
                 let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
-                let notes = Box::pin(self.filter_notes(&data_store, notes)).await?;
-                let executed = Box::pin(self.execute(&data_store, notes)).await?;
+                let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
+                let (successful, failed) = self.filter_notes(&data_store, notes).await?;
+                let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed)).await?;
                 self.submit(proven).await?;
-                Ok(())
+                Ok(failed)
             }
             .in_current_span()
             .await
@@ -115,26 +131,37 @@ impl NtxContext {
         }
     }
 
-    /// Returns a set of input notes which can be successfully executed against the network account.
+    /// Filters a collection of notes, returning only those that can be successfully executed
+    /// against the given network account.
     ///
-    /// The returned set is guaranteed to be non-empty.
+    /// This function performs a consumability check on each provided note and partitions them into
+    /// two sets:
+    /// - Successful notes: notes that can be executed and are returned wrapped in [`InputNotes`].
+    /// - Failed notes: notes that cannot be executed.
+    ///
+    /// # Guarantees
+    ///
+    /// - On success, the returned [`InputNotes`] set is guaranteed to be non-empty.
+    /// - The original ordering of notes is not preserved if any notes have failed.
     ///
     /// # Errors
     ///
-    /// Returns an error if
-    /// - execution fails unexpectedly
-    /// - no notes are viable
+    /// Returns an [`NtxError`] if:
+    /// - The consumability check fails unexpectedly.
+    /// - All notes fail the check (i.e., no note is consumable).
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.filter_notes", skip_all, err)]
     async fn filter_notes(
         &self,
         data_store: &NtxDataStore,
-        notes: InputNotes<InputNote>,
-    ) -> NtxResult<InputNotes<InputNote>> {
+        notes: Vec<Note>,
+    ) -> NtxResult<(InputNotes<InputNote>, Vec<FailedNote>)> {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
             TransactionExecutor::new(data_store, None);
         let checker = NoteConsumptionChecker::new(&executor);
 
-        let notes = match Box::pin(checker.check_notes_consumability(
+        let notes = InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
+
+        match Box::pin(checker.check_notes_consumability(
             data_store.account.id(),
             data_store.reference_header.block_num(),
             notes.clone(),
@@ -143,26 +170,18 @@ impl NtxContext {
         .await
         {
             Ok(NoteConsumptionInfo { successful, failed, .. }) => {
-                let notes = successful
-                    .into_iter()
-                    .filter_map(|success| notes.iter().find(|note| note.id() == success.id()))
-                    .cloned()
-                    .collect::<Vec<InputNote>>();
-                // TODO revisit verbosity once we scale up to many more notes
-                for failed in failed {
-                    let err = failed.error.as_report();
-                    let note_id = failed.note.id();
-                    tracing::debug!(%note_id, %err, "note failed");
+                // Map successful notes to input notes.
+                let successful = InputNotes::from_unauthenticated_notes(successful)
+                    .map_err(NtxError::InputNotes)?;
+
+                // If none are successful, abort.
+                if successful.is_empty() {
+                    return Err(NtxError::AllNotesFailed(failed));
                 }
-                InputNotes::new_unchecked(notes)
+
+                Ok((successful, failed))
             },
             Err(err) => return Err(NtxError::NoteFilter(err)),
-        };
-
-        if notes.is_empty() {
-            Err(NtxError::NoViableNotes)
-        } else {
-            Ok(notes)
         }
     }
 

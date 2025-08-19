@@ -536,9 +536,9 @@ dependencies = [
 
 [[package]]
 name = "cfg-if"
-version = "1.0.1"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
+checksum = "2fd1289c04a9ea8cb22300a459a72a385d7c73d3259e2ed7dcb2af674838cfa9"
 
 [[package]]
 name = "chrono"
@@ -2211,7 +2211,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#2e6ddedd7e3225beb929c20ca2dfbcaad094cb76"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f21386ee057ac235ba497052a5cf201b064948c1"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2320,7 +2320,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#2e6ddedd7e3225beb929c20ca2dfbcaad094cb76"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f21386ee057ac235ba497052a5cf201b064948c1"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2617,7 +2617,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#2e6ddedd7e3225beb929c20ca2dfbcaad094cb76"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f21386ee057ac235ba497052a5cf201b064948c1"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2729,7 +2729,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#2e6ddedd7e3225beb929c20ca2dfbcaad094cb76"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f21386ee057ac235ba497052a5cf201b064948c1"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2748,7 +2748,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#2e6ddedd7e3225beb929c20ca2dfbcaad094cb76"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f21386ee057ac235ba497052a5cf201b064948c1"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2763,7 +2763,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#2e6ddedd7e3225beb929c20ca2dfbcaad094cb76"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f21386ee057ac235ba497052a5cf201b064948c1"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -3638,9 +3638,9 @@ dependencies = [
 
 [[package]]
 name = "prettyplease"
-version = "0.2.36"
+version = "0.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff24dfcda44452b9816fff4cd4227e1bb73ff5a2f1bc1105aa92fb8565ce44d2"
+checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn 2.0.106",
@@ -4293,9 +4293,9 @@ dependencies = [
 
 [[package]]
 name = "scc"
-version = "2.3.4"
+version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22b2d775fb28f245817589471dd49c5edf64237f4a19d10ce9a92ff4651a27f4"
+checksum = "46e6f046b7fef48e2660c57ed794263155d713de679057f2d0c169bfc6e756cc"
 dependencies = [
  "sdd",
 ]
@@ -4409,9 +4409,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.142"
+version = "1.0.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "030fedb782600dcbd6f02d479bf0d817ac3bb40d644745b769d6a96bc3afc5a7"
+checksum = "d401abef1d108fbd9cbaebc3e46611f4b1021f714a0597a71f41ee463f5f4a5a"
 dependencies = [
  "itoa",
  "memchr",

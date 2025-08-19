@@ -459,63 +459,6 @@ pub(crate) fn select_slot_updates_stmt(
     Ok(results)
 }
 
-/// Select account storage map values from the DB using the given [`SqliteConnection`].
-///
-/// # Returns
-///
-/// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account.
-/// Each row contains one of:
-///
-/// - the historical value for a slot and key specifically on block `block_to`
-/// - the latest updated value for the slot and key combination, alongside the block number in which
-///   it was updated
-#[cfg(test)]
-pub(crate) fn select_account_storage_map_values(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_from: BlockNumber,
-    block_to: Option<BlockNumber>,
-) -> Result<Vec<(u8, Word, Word, bool)>, DatabaseError> {
-    use schema::account_storage_map_values as t;
-
-    // SELECT
-    //   slot,
-    //   key,
-    //   value,
-    //   is_latest_update,
-    //   block_num
-    // FROM account_storage_map_values
-    // WHERE account_id = ?1
-    //   AND block_num >= ?2
-    //   AND (block_num = ?3 OR is_latest_update = 1)
-    // ORDER BY block_num ASC, slot ASC, key ASC;
-
-    let base = SelectDsl::select(t::table, (t::slot, t::key, t::value, t::is_latest_update))
-        .filter(t::block_num.ge(block_from.to_raw_sql()))
-        .filter(t::account_id.eq(account_id.to_bytes()));
-
-    let mut query = base.into_boxed();
-
-    if let Some(bn) = block_to {
-        // block_num >= from AND (block_num = to OR is_latest_update)
-        query = query.filter(t::block_num.eq(bn.to_raw_sql()).or(t::is_latest_update.eq(true)));
-    } else {
-        // block_num >= from AND is_latest_update
-        query = query.filter(t::is_latest_update.eq(true));
-    }
-
-    let results: Vec<(i32, Vec<u8>, Vec<u8>, bool)> = query.load(conn)?;
-
-    results
-        .into_iter()
-        .map(|(slot, key, value, is_latest_update)| -> Result<(u8, Word, Word, bool), DatabaseError> {
-            let key = Word::read_from_bytes(&key)?;
-            let value = Word::read_from_bytes(&value)?;
-            Ok((raw_sql_to_slot(slot), key, value, is_latest_update))
-        })
-        .collect()
-}
-
 #[derive(Debug, PartialEq, Eq, Clone, Queryable)]
 pub(crate) struct StorageMapUpdateEntry {
     pub(crate) slot: i32,

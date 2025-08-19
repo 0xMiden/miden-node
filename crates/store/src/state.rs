@@ -36,6 +36,7 @@ use miden_objects::crypto::merkle::{
     MmrDelta,
     MmrPeaks,
     MmrProof,
+    NodeIndex,
     PartialMmr,
     PartialSmt,
     SmtProof,
@@ -930,13 +931,6 @@ impl State {
                             return Err(AccountError::StorageSlotNotMap(*storage_index).into());
                         }
                     }
-
-                    // Only include unknown account codes
-                    let account_code = known_code_commitments
-                        .contains(&details.code().commitment())
-                        .not()
-                        .then(|| details.code().to_bytes());
-
                     let state_header =
                         proto::rpc_store::account_proofs::account_proof::AccountStateHeader {
                             header: Some(AccountHeader::from(details).into()),
@@ -944,7 +938,7 @@ impl State {
                             account_code,
                             partial_storage_smts: Vec::from_iter(partials.into_iter().map(|(slot, partial_smt)| proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapPartialSmt {
                                 storage_slot: u32::from(slot),
-                                partial_smt: partial_smt.to_bytes(),
+                                partial_smt: Some(proto::primitives::PartialSmt::from(partial_smt)),
                             })),
                         };
 

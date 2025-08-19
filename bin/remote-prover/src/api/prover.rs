@@ -316,12 +316,8 @@ mod test {
         });
 
         // Send both requests concurrently
-        let (t1, t2) = (
-            tokio::spawn(async move { client.prove(request_1).await }),
-            tokio::spawn(async move { client_2.prove(request_2).await }),
-        );
-
-        let (response_1, response_2) = (t1.await.unwrap(), t2.await.unwrap());
+        let (response_1, response_2) =
+            tokio::join!(client.prove(request_1), client_2.prove(request_2));
 
         // Check the success response
         assert!(response_1.is_ok() || response_2.is_ok());

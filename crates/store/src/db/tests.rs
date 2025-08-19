@@ -1215,11 +1215,11 @@ fn sql_account_storage_map_values_insertion() {
         AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
 
     let slot = 3u8;
-    let key1 = Word::from([Felt::new(1), Felt::new(2), Felt::new(3), Felt::new(4)]);
-    let key2 = Word::from([Felt::new(5), Felt::new(6), Felt::new(7), Felt::new(8)]);
-    let value1 = Word::from([Felt::new(10), Felt::new(11), Felt::new(12), Felt::new(13)]);
-    let value2 = Word::from([Felt::new(20), Felt::new(21), Felt::new(22), Felt::new(23)]);
-    let value3 = Word::from([Felt::new(30), Felt::new(31), Felt::new(32), Felt::new(33)]);
+    let key1 = Word::from([1u32, 2, 3, 4]);
+    let key2 = Word::from([5u32, 6, 7, 8]);
+    let value1 = Word::from([10u32, 11, 12, 13]);
+    let value2 = Word::from([20u32, 21, 22, 23]);
+    let value3 = Word::from([30u32, 31, 32, 33]);
 
     let mut map1 = StorageMapDelta::default();
     map1.insert(key1, value1);
@@ -1239,7 +1239,7 @@ fn sql_account_storage_map_values_insertion() {
 
     let mut map2 = StorageMapDelta::default();
     map2.insert(key1, value3);
-    let maps2: BTreeMap<_, _> = [(slot, map2)].into_iter().collect();
+    let maps2 = BTreeMap::from_iter([(slot, map2)]);
     let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))

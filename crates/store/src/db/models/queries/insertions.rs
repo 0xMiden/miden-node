@@ -318,9 +318,10 @@ pub(crate) fn insert_account_storage_map_value(
             schema::account_storage_map_values::account_id
                 .eq(account_id.to_bytes())
                 .and(schema::account_storage_map_values::slot.eq(slot_to_raw_sql(slot)))
-                .and(schema::account_storage_map_values::key.eq(&key.to_bytes())),
+                .and(schema::account_storage_map_values::key.eq(&key.to_bytes()))
+                .and(schema::account_storage_map_values::is_latest_update.eq(true)),
         )
-        .set(schema::account_storage_map_values::is_latest_update.eq(0))
+        .set(schema::account_storage_map_values::is_latest_update.eq(false))
         .execute(conn)?;
 
     // Insert the new row with is_latest_update=true
@@ -331,7 +332,7 @@ pub(crate) fn insert_account_storage_map_value(
             schema::account_storage_map_values::slot.eq(slot_to_raw_sql(slot)),
             schema::account_storage_map_values::key.eq(key.to_bytes()),
             schema::account_storage_map_values::value.eq(value.to_bytes()),
-            schema::account_storage_map_values::is_latest_update.eq(1),
+            schema::account_storage_map_values::is_latest_update.eq(true),
         )])
         .execute(conn)?;
 

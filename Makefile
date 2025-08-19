@@ -57,7 +57,7 @@ workspace-check: ## Runs a check that all packages have `lints.workspace = true`
 
 
 .PHONY: lint
-lint: typos-check format fix clippy toml machete ## Runs all linting tasks at once (Clippy, fixing, formatting, workspace, machete)
+lint: typos-check format fix clippy toml machete ## Runs all linting tasks at once (Clippy, fixing, formatting, machete)
 
 # --- docs ----------------------------------------------------------------------------------------
 

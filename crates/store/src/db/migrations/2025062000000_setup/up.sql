@@ -110,15 +110,16 @@ CREATE TABLE account_storage_map_updates (
 ) WITHOUT ROWID;
 
 CREATE TABLE account_storage_map_values (
-    account_id      BLOB NOT NULL,
-    block_num       INTEGER NOT NULL,
-    slot            INTEGER NOT NULL,
-    key             BLOB    NOT NULL,
-    value           BLOB    NOT NULL,
-    is_latest_update   INTEGER NOT NULL,
+    account_id          BLOB NOT NULL,
+    block_num           INTEGER NOT NULL,
+    slot                INTEGER NOT NULL,
+    key                 BLOB    NOT NULL,
+    value               BLOB    NOT NULL,
+    is_latest_update    BOOLEAN NOT NULL,
 
-    PRIMARY KEY (account_id, block_num, slot, key, is_latest_update),
+    PRIMARY KEY (account_id, block_num, slot, key),
     FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
+    CONSTRAINT slot_is_u8 CHECK (slot BETWEEN 0 AND 0xFF)
 ) WITHOUT ROWID;
 
 CREATE TABLE account_fungible_asset_deltas (

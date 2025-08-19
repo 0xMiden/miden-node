@@ -52,7 +52,7 @@ diesel::table! {
         slot -> Integer,
         key -> Binary,
         value -> Binary,
-        is_latest_update -> Integer,
+        is_latest_update -> Bool,
     }
 }
 

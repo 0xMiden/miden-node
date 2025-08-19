@@ -464,7 +464,7 @@ pub(crate) fn select_slot_updates_stmt(
 /// # Returns
 ///
 /// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account and
-/// block range.
+/// a specific block. If no block is provided, latest values are selected.
 #[cfg(test)]
 pub(crate) fn select_account_storage_map_values(
     conn: &mut SqliteConnection,
@@ -489,14 +489,14 @@ pub(crate) fn select_account_storage_map_values(
             query.filter(schema::account_storage_map_values::block_num.eq(block_num.to_raw_sql()));
     }
 
-    let results: Vec<(i32, Vec<u8>, Vec<u8>, i32)> = query.load(conn)?;
+    let results: Vec<(i32, Vec<u8>, Vec<u8>, bool)> = query.load(conn)?;
 
     results
         .into_iter()
         .map(|(slot, key, value, is_latest_update)| -> Result<(u8, Word, Word, bool), DatabaseError> {
             let key = Word::read_from_bytes(&key)?;
             let value = Word::read_from_bytes(&value)?;
-            Ok((raw_sql_to_slot(slot), key, value, is_latest_update != 0))
+            Ok((raw_sql_to_slot(slot), key, value, is_latest_update))
         })
         .collect()
 }
@@ -515,7 +515,7 @@ pub(crate) fn select_latest_account_storage_map_values(
         schema::account_storage_map_values::table.filter(
             schema::account_storage_map_values::account_id
                 .eq(account_id.to_bytes())
-                .and(schema::account_storage_map_values::is_latest_update.eq(1)),
+                .and(schema::account_storage_map_values::is_latest_update),
         ),
         (
             schema::account_storage_map_values::slot,

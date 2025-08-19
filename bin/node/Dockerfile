@@ -2,7 +2,7 @@ FROM rust:1.88-slim-bullseye AS builder
 
 RUN apt-get update && \
     apt-get -y upgrade && \
-    apt-get install -y llvm clang bindgen pkg-config libssl-dev libsqlite3-dev ca-certificates && \
+    apt-get install -y llvm clang bindgen pkg-config libssl-dev libsqlite3-dev ca-certificates build-essential cmake && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

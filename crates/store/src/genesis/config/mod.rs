@@ -1,9 +1,9 @@
 //! Describe a subset of the genesis manifest in easily human readable format
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, HashMap};
 use std::str::FromStr;
 
+use indexmap::IndexMap;
 use miden_lib::AuthScheme;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
@@ -108,7 +108,7 @@ impl GenesisConfig {
 
         let mut wallet_accounts = Vec::<Account>::new();
         // Every asset sitting in a wallet, has to reference a faucet for that asset
-        let mut faucet_accounts = BTreeMap::<TokenSymbolStr, Account>::new();
+        let mut faucet_accounts = IndexMap::<TokenSymbolStr, Account>::new();
 
         // Collect the generated secret keys for the test, so one can interact with those
         // accounts/sign transactions
@@ -145,7 +145,7 @@ impl GenesisConfig {
             FeeParameters::new(native_faucet_account_id, fee_parameters.verification_base_fee)?;
 
         // Track all adjustments, one per faucet account id
-        let mut faucet_issuance = BTreeMap::<AccountId, u64>::new();
+        let mut faucet_issuance = IndexMap::<AccountId, u64>::new();
 
         let zero_padding_width = usize::ilog10(std::cmp::max(10, wallet_configs.len())) as usize;
 
@@ -441,7 +441,7 @@ impl AccountSecrets {
         &self,
         genesis_state: &GenesisState,
     ) -> impl Iterator<Item = Result<AccountFileWithName, GenesisConfigError>> + use<'_> {
-        let account_lut = HashMap::<AccountId, Account>::from_iter(
+        let account_lut = IndexMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );
         self.secrets.iter().map(move |(name, account_id, secret_key, account_seed)| {
@@ -466,8 +466,8 @@ impl AccountSecrets {
 /// Track the negative adjustments for the respective faucets.
 fn prepare_fungible_asset_update(
     assets: impl IntoIterator<Item = AssetEntry>,
-    faucets: &BTreeMap<TokenSymbolStr, Account>,
-    faucet_issuance: &mut BTreeMap<AccountId, u64>,
+    faucets: &IndexMap<TokenSymbolStr, Account>,
+    faucet_issuance: &mut IndexMap<AccountId, u64>,
 ) -> Result<FungibleAssetDelta, GenesisConfigError> {
     let assets =
         Result::<Vec<_>, _>::from_iter(assets.into_iter().map(|AssetEntry { amount, symbol }| {

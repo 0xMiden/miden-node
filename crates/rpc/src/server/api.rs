@@ -43,37 +43,31 @@ pub struct RpcService {
 }
 
 impl RpcService {
-    pub(super) fn new(store_url: &Url, block_producer_url: Option<&Url>) -> Self {
+    pub(super) fn new(store_url: Url, block_producer_url: Option<Url>) -> Self {
         let store = {
-            // SAFETY: The store_url is always valid as it is a user-provided URL that has been
-            // validated.
-            let store = Builder::new(store_url.to_string())
+            info!(target: COMPONENT, store_endpoint = %store_url, "Initializing store client");
+            Builder::new(store_url)
                 .expect("Failed to initialize store endpoint")
                 .without_tls()
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<StoreRpc>();
-            info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
-            store
+                .connect_lazy::<StoreRpc>()
         };
 
         let block_producer = block_producer_url.map(|block_producer_url| {
-            // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has
-            // been validated.
-            let block_producer = Builder::new(block_producer_url.to_string())
+            info!(
+                target: COMPONENT,
+                block_producer_endpoint = %block_producer_url,
+                "Initialzing block producer client",
+            );
+            Builder::new(block_producer_url)
                 .expect("Failed to initialize block-producer endpoint")
                 .without_tls()
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<BlockProducer>();
-            info!(
-                target: COMPONENT,
-                block_producer_endpoint = %block_producer_url,
-                "Block producer client initialized",
-            );
-            block_producer
+                .connect_lazy::<BlockProducer>()
         });
 
         Self { store, block_producer }

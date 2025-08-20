@@ -32,18 +32,16 @@ pub struct BlockProducerClient {
 
 impl BlockProducerClient {
     /// Creates a new block producer client with a lazy connection.
-    pub fn new(block_producer_url: &Url) -> Self {
-        // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has been
-        // validated.
-        let block_producer = Builder::new(block_producer_url.to_string())
+    pub fn new(block_producer_url: Url) -> Self {
+        info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Initializing block producer client with lazy connection");
+
+        let block_producer = Builder::new(block_producer_url)
             .expect("Failed to initialize block-producer endpoint")
             .without_tls()
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
             .connect_lazy::<BlockProducer>();
-
-        info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Block producer client initialized with lazy connection");
 
         Self { client: block_producer }
     }

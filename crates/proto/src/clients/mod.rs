@@ -33,6 +33,7 @@ use tonic::service::Interceptor;
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
 use tonic::{Request, Status};
+use url::Url;
 
 use crate::generated;
 
@@ -269,11 +270,10 @@ impl<State> Builder<State> {
 impl Builder<WantsTls> {
     /// Create a new strict builder from a gRPC endpoint URL such as
     /// `http://localhost:8080` or `https://api.example.com:443`.
-    pub fn new(url: impl Into<String>) -> Result<Builder<WantsTls>> {
-        let address = url.into();
+    pub fn new(url: Url) -> Result<Builder<WantsTls>> {
         // Basic upfront validation using `Endpoint::from_shared` path; let `Builder` do full checks
         // later to keep logic in one place.
-        let endpoint = Endpoint::from_shared(address.clone())
+        let endpoint = Endpoint::from_shared(String::from(url))
             .context("Failed to create endpoint from address")?;
 
         Ok(Builder {

@@ -59,7 +59,7 @@ impl RpcService {
             info!(
                 target: COMPONENT,
                 block_producer_endpoint = %block_producer_url,
-                "Initialzing block producer client",
+                "Initializing block producer client",
             );
             Builder::new(block_producer_url)
                 .expect("Failed to initialize block-producer endpoint")

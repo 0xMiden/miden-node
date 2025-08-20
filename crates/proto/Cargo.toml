@@ -23,7 +23,7 @@ miden-objects    = { workspace = true }
 prost            = { workspace = true }
 thiserror        = { workspace = true }
 tonic            = { workspace = true }
-url                        = { workspace = true }
+url              = { workspace = true }
 
 [dev-dependencies]
 proptest = { version = "1.7" }

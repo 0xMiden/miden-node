@@ -438,9 +438,9 @@ impl State {
             .collect()
     }
 
-    /// Queries a list of [`NoteRecord`] from the database.
+    /// Queries a list of notes from the database.
     ///
-    /// If the provided list of [`NoteId`] given is empty or no [`NoteRecord`] matches the provided
+    /// If the provided list of [`NoteId`] given is empty or no note matches the provided
     /// [`NoteId`] an empty list is returned.
     pub async fn get_notes_by_id(
         &self,

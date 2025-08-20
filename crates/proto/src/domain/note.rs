@@ -217,10 +217,12 @@ impl TryFrom<Note> for NetworkNote {
     type Error = NetworkNoteError;
 
     fn try_from(note: Note) -> Result<Self, Self::Error> {
-        if !note.is_network_note() {
-            return Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()));
+        // Only support network notes targeted at a single network account.
+        if note.is_network_note() && note.metadata().tag().is_single_target() {
+            Ok(NetworkNote(note))
+        } else {
+            Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()))
         }
-        Ok(NetworkNote(note))
     }
 }
 

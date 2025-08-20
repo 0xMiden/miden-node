@@ -455,7 +455,6 @@ pub mod api_client {
             self.inner.unary(req, path, codec).await
         }
         /// Returns storage map updates for specified account and storage slots within a block range.
-        /// Supports pagination for large storage maps using the last_key parameter.
         pub async fn sync_storage_maps(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -635,7 +634,6 @@ pub mod api_server {
             tonic::Status,
         >;
         /// Returns storage map updates for specified account and storage slots within a block range.
-        /// Supports pagination for large storage maps using the last_key parameter.
         async fn sync_storage_maps(
             &self,
             request: tonic::Request<super::super::rpc_store::SyncStorageMapsRequest>,

@@ -39,6 +39,7 @@
 - RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - Stress-test CLI account now properly sets the storage mode and increment nonce in transactions ([#1113](https://github.com/0xMiden/miden-node/pull/1113)).
 - [BREAKING] Update `notes` table schema to have a nullable `consumed_block_num` ([#1100](https://github.com/0xMiden/miden-node/pull/1100)).
+- Network Transaction Builder checks that a `Note` is single target when validating conversion to `NetworkNote` ([#1166](https://github.com/0xMiden/miden-node/pull/1166)).
 
 ## v0.10.1 (2025-07-14)
 

@@ -19,13 +19,14 @@ The store file will then be located at `./data/miden-store.sqlite3`.
 This command allows to run stress tests against the Store component. These tests use the dump file with accounts ids created when seeding the store, so be sure to run the `seed-store` command beforehand.
 
 The endpoints that you can test are:
+- `load_state`
 - `sync_state`
 - `sync_notes`
 - `check_nullifiers_by_prefix`
 
-Each benchmark accepts options to control the number of iterations and concurrency level.
+Most benchmarks accept options to control the number of iterations and concurrency level. The `load_state` endpoint is different - it simply measures the one-time startup cost of loading the state from disk.
 
-**Note on Concurrency**: The concurrency parameter controls how many requests are sent in parallel to the store. Since these benchmarks run against a local store (no network overhead), higher concurrency values can help identify bottlenecks in the store's internal processing. The latency measurements exclude network time and represent pure store processing time.
+**Note on Concurrency**: For the endpoints that support it (`sync_state`, `sync_notes`, `check_nullifiers_by_prefix`), the concurrency parameter controls how many requests are sent in parallel to the store. Since these benchmarks run against a local store (no network overhead), higher concurrency values can help identify bottlenecks in the store's internal processing. The latency measurements exclude network time and represent pure store processing time.
 
 Example usage:
 
@@ -39,9 +40,11 @@ miden-node-stress-test benchmark-store \
 
 ### Results
 
+The following results were obtained using a store with 100k accounts, half of which are public.
+
 Using the store seed command:
 ```bash
-# Using 1M accounts, half are public
+# Using 100k accounts, half are public
 $ miden-node-stress-test seed-store --data-directory data --num-accounts 100000 --public-accounts-percentage 50
 
 Total time: 235.452 seconds
@@ -102,6 +105,18 @@ Average DB growth rate: 325.3 KB per block
 Current results of the store stress-tests:
 
 **Performance Note**: The latency measurements below represent pure store processing time (no network overhead).
+
+*The following results were obtained after seeding the store with the command used previously.*
+
+- load-state
+``` bash
+$ miden-node-stress-test benchmark-store --data-directory ./data load-state
+
+State loaded in 42.959271667s
+Database contains 99961 accounts and 99960 nullifiers
+```
+
+**Performance Note**: The load-state benchmark shows that account tree loading (~21.3s) and nullifier tree loading (~21.5s) are the primary bottlenecks, while MMR loading and database connection are negligible (<3ms each).
 
 - sync-state
 ``` bash

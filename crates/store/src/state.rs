@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::Not;
+use std::path::Path;
 use std::sync::Arc;
 
 use miden_node_proto::domain::account::{
@@ -43,10 +44,8 @@ use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
 use miden_objects::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
-use tokio::time::Instant;
 use tracing::{info, info_span, instrument};
 
-use crate::COMPONENT;
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate};
@@ -62,6 +61,8 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
+use crate::{COMPONENT, DataDirectory};
+
 // STRUCTURES
 // ================================================================================================
 
@@ -111,13 +112,23 @@ pub struct State {
 impl State {
     /// Loads the state from the `db`.
     #[instrument(target = COMPONENT, skip_all)]
-    pub async fn load(
-        mut db: Db,
-        block_store: Arc<BlockStore>,
-    ) -> Result<Self, StateInitializationError> {
-        let nullifier_tree = load_nullifier_tree(&mut db).await?;
+    pub async fn load(data_path: &Path) -> Result<Self, StateInitializationError> {
+        let data_directory = DataDirectory::load(data_path.to_path_buf())
+            .map_err(StateInitializationError::DataDirectoryLoadError)?;
+
+        let block_store = Arc::new(
+            BlockStore::load(data_directory.block_store_dir())
+                .map_err(StateInitializationError::BlockStoreLoadError)?,
+        );
+
+        let database_filepath = data_directory.database_path();
+        let mut db = Db::load(database_filepath.clone())
+            .await
+            .map_err(StateInitializationError::DatabaseLoadError)?;
+
         let chain_mmr = load_mmr(&mut db).await?;
-        let account_tree = load_accounts(&mut db).await?;
+        let account_tree = load_account_tree(&mut db).await?;
+        let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
         let inner = RwLock::new(InnerState {
             nullifier_tree,
@@ -428,9 +439,9 @@ impl State {
             .collect()
     }
 
-    /// Queries a list of [`NoteRecord`] from the database.
+    /// Queries a list of notes from the database.
     ///
-    /// If the provided list of [`NoteId`] given is empty or no [`NoteRecord`] matches the provided
+    /// If the provided list of [`NoteId`] given is empty or no note matches the provided
     /// [`NoteId`] an empty list is returned.
     pub async fn get_notes_by_id(
         &self,
@@ -1018,28 +1029,15 @@ impl State {
 // UTILITIES
 // ================================================================================================
 
-#[instrument(level = "debug", target = COMPONENT, skip_all)]
+#[instrument(level = "info", target = COMPONENT, skip_all)]
 async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitializationError> {
     let nullifiers = db.select_all_nullifiers().await?;
-    let len = nullifiers.len();
 
-    let now = Instant::now();
-    let nullifier_tree = NullifierTree::with_entries(
-        nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)),
-    )
-    .map_err(StateInitializationError::FailedToCreateNullifierTree)?;
-    let elapsed = now.elapsed().as_secs();
-
-    info!(
-        num_of_leaves = len,
-        tree_construction = elapsed,
-        COMPONENT,
-        "Loaded nullifier tree"
-    );
-    Ok(nullifier_tree)
+    NullifierTree::with_entries(nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)))
+        .map_err(StateInitializationError::FailedToCreateNullifierTree)
 }
 
-#[instrument(level = "debug", target = COMPONENT, skip_all)]
+#[instrument(level = "info", target = COMPONENT, skip_all)]
 async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     let block_commitments: Vec<Word> = db
         .select_all_block_headers()
@@ -1051,8 +1049,8 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
     Ok(block_commitments.into())
 }
 
-#[instrument(level = "debug", target = COMPONENT, skip_all)]
-async fn load_accounts(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
+#[instrument(level = "info", target = COMPONENT, skip_all)]
+async fn load_account_tree(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     AccountTree::with_entries(account_data)

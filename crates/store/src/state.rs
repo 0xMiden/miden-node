@@ -62,6 +62,7 @@ use crate::errors::{
     StateSyncError,
 };
 use crate::{COMPONENT, DataDirectory};
+
 // STRUCTURES
 // ================================================================================================
 

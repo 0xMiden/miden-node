@@ -78,57 +78,6 @@ CREATE TABLE note_scripts (
     PRIMARY KEY (script_root)
 ) WITHOUT ROWID;
 
-CREATE TABLE account_deltas (
-    account_id  BLOB NOT NULL,
-    block_num   INTEGER NOT NULL,
-    nonce       INTEGER NOT NULL,
-
-    PRIMARY KEY (account_id, block_num),
-    FOREIGN KEY (account_id) REFERENCES accounts(account_id),
-    FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
-) WITHOUT ROWID;
-
-CREATE TABLE account_storage_slot_updates (
-    account_id  BLOB NOT NULL,
-    block_num   INTEGER NOT NULL,
-    slot        INTEGER NOT NULL,
-    value       BLOB    NOT NULL,
-
-    PRIMARY KEY (account_id, block_num, slot),
-    FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) WITHOUT ROWID;
-
-CREATE TABLE account_storage_map_updates (
-    account_id  BLOB NOT NULL,
-    block_num   INTEGER NOT NULL,
-    slot        INTEGER NOT NULL,
-    key         BLOB    NOT NULL,
-    value       BLOB    NOT NULL,
-
-    PRIMARY KEY (account_id, block_num, slot, key),
-    FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) WITHOUT ROWID;
-
-CREATE TABLE account_fungible_asset_deltas (
-    account_id  BLOB NOT NULL,
-    block_num   INTEGER NOT NULL,
-    faucet_id   BLOB NOT NULL,
-    delta       INTEGER NOT NULL,
-
-    PRIMARY KEY (account_id, block_num, faucet_id),
-    FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) WITHOUT ROWID;
-
-CREATE TABLE account_non_fungible_asset_updates (
-    account_id  BLOB NOT NULL,
-    block_num   INTEGER NOT NULL,
-    vault_key   BLOB NOT NULL,
-    is_remove   BOOLEAN NOT NULL,
-
-    PRIMARY KEY (account_id, block_num, vault_key),
-    FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
-) WITHOUT ROWID;
-
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,
     nullifier_prefix INTEGER NOT NULL,

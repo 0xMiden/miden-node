@@ -217,8 +217,7 @@ impl TryFrom<Note> for NetworkNote {
     type Error = NetworkNoteError;
 
     fn try_from(note: Note) -> Result<Self, Self::Error> {
-        // Only support network notes targeted at a single network account.
-        if note.is_network_note() && note.metadata().tag().is_single_target() {
+        if note.is_network_note() {
             Ok(NetworkNote(note))
         } else {
             Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()))

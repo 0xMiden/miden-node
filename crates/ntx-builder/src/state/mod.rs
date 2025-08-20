@@ -263,6 +263,10 @@ impl State {
                 network_notes,
                 account_delta,
             } => {
+                let network_notes = network_notes
+                    .into_iter()
+                    .filter(|note| note.metadata().tag().is_single_target())
+                    .collect::<Vec<_>>();
                 self.add_transaction(id, nullifiers, network_notes, account_delta).await?;
             },
             MempoolEvent::BlockCommitted { header, txs } => {

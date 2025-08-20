@@ -120,28 +120,6 @@ pub mod account_proofs {
         }
     }
 }
-/// Returns delta of the account states in the range from `from_block_num` (exclusive) to
-/// `to_block_num` (inclusive).
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountStateDeltaRequest {
-    /// ID of the account for which the delta is requested.
-    #[prost(message, optional, tag = "1")]
-    pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Block number from which the delta is requested (exclusive).
-    #[prost(fixed32, tag = "2")]
-    pub from_block_num: u32,
-    /// Block number up to which the delta is requested (inclusive).
-    #[prost(fixed32, tag = "3")]
-    pub to_block_num: u32,
-}
-/// Represents the result of getting account state delta.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountStateDelta {
-    /// The calculated account delta encoded using \[winter_utils::Serializable\] implementation
-    /// for \[miden_objects::account::delta::AccountDelta\].
-    #[prost(bytes = "vec", optional, tag = "1")]
-    pub delta: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-}
 /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckNullifiersByPrefixRequest {

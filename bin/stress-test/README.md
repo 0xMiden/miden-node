@@ -116,6 +116,8 @@ State loaded in 42.959271667s
 Database contains 99961 accounts and 99960 nullifiers
 ```
 
+**Performance Note**: The load-state benchmark shows that account tree loading (~21.3s) and nullifier tree loading (~21.5s) are the primary bottlenecks, while MMR loading and database connection are negligible (<3ms each).
+
 - sync-state
 ``` bash
 $ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-state

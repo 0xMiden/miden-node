@@ -514,7 +514,7 @@ pub(crate) fn select_account_storage_map_values(
             .filter(t::block_num.ge(block_from.to_raw_sql()))
             .filter(t::account_id.eq(account_id.to_bytes()))
             .filter(t::block_num.eq(block_to.to_raw_sql()).or(t::is_latest_update.eq(true)))
-            .order((t::block_num.asc()))
+            .order(t::block_num.asc())
             .limit(i64::try_from(ROW_LIMIT).expect("const value is safe to convert"))
             .load(conn)?;
 

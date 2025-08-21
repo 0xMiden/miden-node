@@ -185,7 +185,7 @@ pub(crate) fn upsert_accounts(
 
                 for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
                     match slot {
-                        StorageSlot::Value(_) => continue,
+                        StorageSlot::Value(_) => {},
                         StorageSlot::Map(storage_map) => {
                             for (key, value) in storage_map.entries() {
                                 // SAFETY: We can safely unwrap the conversion to u8 because
@@ -195,7 +195,7 @@ pub(crate) fn upsert_accounts(
                                     account_id,
                                     block_num,
                                     u8::try_from(slot_idx).unwrap(),
-                                    (*key).into(),
+                                    *key,
                                     *value,
                                 )?;
                             }

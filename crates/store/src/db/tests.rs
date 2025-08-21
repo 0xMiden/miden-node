@@ -1130,7 +1130,7 @@ fn mock_account_code_and_storage(
 
     let component = AccountComponent::compile(
         component_code,
-        TransactionKernel::testing_assembler(),
+        TransactionKernel::assembler(),
         component_storage,
     )
     .unwrap()

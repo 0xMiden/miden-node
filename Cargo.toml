@@ -1,6 +1,5 @@
 [workspace]
 members = [
-  "bin/faucet",
   "bin/node",
   "bin/remote-prover",
   "bin/stress-test",
@@ -45,12 +44,12 @@ miden-node-utils           = { path = "crates/utils", version = "0.11" }
 miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.11" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { branch = "pgackst-remove-account-id-bech32", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "pgackst-remove-account-id-bech32", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "pgackst-remove-account-id-bech32", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "pgackst-remove-account-id-bech32", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "pgackst-remove-account-id-bech32", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "pgackst-remove-account-id-bech32", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { version = "0.17" }

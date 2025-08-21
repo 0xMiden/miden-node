@@ -440,7 +440,7 @@ impl Db {
     }
 
     /// Selects storage map values for syncing storage maps for a specific account ID.
-    /// 
+    ///
     /// The returned values are the latest known values up to `block_to`, and no values earlier
     /// than `block_from` are returned.
     pub(crate) async fn select_storage_map_sync_values(

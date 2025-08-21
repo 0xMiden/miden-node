@@ -262,7 +262,7 @@ pub(crate) fn select_account_storage_map_values(
     // WHERE account_id = ?1
     //   AND block_num >= ?2
     //   AND (block_num = ?3 OR is_latest_update = 1)
-    // ORDER BY block_num ASC, slot ASC, key ASC
+    // ORDER BY block_num ASC
     // LIMIT :row_limit;
 
     // TODO: These limits should be given by the protocol

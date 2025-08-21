@@ -440,14 +440,16 @@ impl Faucet {
         &self,
         tx_args: TransactionArgs,
     ) -> MintResult<ExecutedTransaction> {
-        let executor =
-            TransactionExecutor::new(self.data_store.as_ref(), Some(&self.authenticator));
+        let executor = TransactionExecutor::new(
+            self.data_store.as_ref(),
+            Some(&self.authenticator),
+            Arc::new(DefaultSourceManager::default()),
+        );
         Box::pin(executor.execute_transaction(
             self.id.account_id,
             BlockNumber::GENESIS,
             InputNotes::default(),
             tx_args,
-            Arc::new(DefaultSourceManager::default()),
         ))
         .await
         .map_err(MintError::Execution)

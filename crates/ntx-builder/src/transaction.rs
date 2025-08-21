@@ -155,8 +155,9 @@ impl NtxContext {
         data_store: &NtxDataStore,
         notes: Vec<Note>,
     ) -> NtxResult<(InputNotes<InputNote>, Vec<FailedNote>)> {
+        let source_manager = Arc::new(DefaultSourceManager::default());
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
-            TransactionExecutor::new(data_store, None);
+            TransactionExecutor::new(data_store, None, source_manager.clone());
         let checker = NoteConsumptionChecker::new(&executor);
 
         let notes = InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
@@ -192,15 +193,15 @@ impl NtxContext {
         data_store: &NtxDataStore,
         notes: InputNotes<InputNote>,
     ) -> NtxResult<ExecutedTransaction> {
+        let source_manager = Arc::new(DefaultSourceManager::default());
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
-            TransactionExecutor::new(data_store, None);
+            TransactionExecutor::new(data_store, None, source_manager);
 
         Box::pin(executor.execute_transaction(
             data_store.account.id(),
             data_store.reference_header.block_num(),
             notes,
             TransactionArgs::default(),
-            Arc::new(DefaultSourceManager::default()),
         ))
         .await
         .map_err(NtxError::Execution)

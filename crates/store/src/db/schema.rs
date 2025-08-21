@@ -92,7 +92,7 @@ diesel::joinable!(transactions -> block_headers (block_num));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_codes,
-    account_storage_map_values
+    account_storage_map_values,
     accounts,
     block_headers,
     note_scripts,

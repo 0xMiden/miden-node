@@ -15,7 +15,7 @@ use miden_lib::utils::Serializable;
 use miden_node_proto as proto;
 use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountDelta, AccountId};
+use miden_objects::account::{Account, AccountDelta, AccountId, StorageSlot};
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
@@ -29,6 +29,7 @@ use crate::db::models::conv::{
     idx_to_raw_sql,
     nonce_to_raw_sql,
     note_type_to_raw_sql,
+    slot_to_raw_sql,
 };
 use crate::db::schema;
 
@@ -182,6 +183,26 @@ pub(crate) fn upsert_accounts(
                     });
                 }
 
+                for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
+                    match slot {
+                        StorageSlot::Value(_) => continue,
+                        StorageSlot::Map(storage_map) => {
+                            for (key, value) in storage_map.entries() {
+                                // SAFETY: We can safely unwrap the conversion to u8 because
+                                // accounts have a limit of 255 storage elements
+                                insert_account_storage_map_value(
+                                    conn,
+                                    account_id,
+                                    block_num,
+                                    u8::try_from(slot_idx).unwrap(),
+                                    (*key).into(),
+                                    *value,
+                                )?;
+                            }
+                        },
+                    }
+                }
+
                 Some(Cow::Borrowed(account))
             },
             AccountUpdateDetails::Delta(delta) => {
@@ -189,6 +210,19 @@ pub(crate) fn upsert_accounts(
                 let Some(account) = rows.next() else {
                     return Err(DatabaseError::AccountNotFoundInDb(account_id));
                 };
+
+                for (&slot, map_delta) in delta.storage().maps() {
+                    for (key, value) in map_delta.entries() {
+                        insert_account_storage_map_value(
+                            conn,
+                            account_id,
+                            block_num,
+                            slot,
+                            (*key).into(),
+                            *value,
+                        )?;
+                    }
+                }
 
                 let account = apply_delta(account, delta, &update.final_state_commitment())?;
 

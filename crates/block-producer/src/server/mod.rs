@@ -85,9 +85,9 @@ impl BlockProducer {
     #[allow(clippy::too_many_lines)]
     pub async fn serve(self) -> anyhow::Result<()> {
         info!(target: COMPONENT, endpoint=?self.block_producer_address, store=%self.store_url, "Initializing server");
-        let store = StoreClient::new(&self.store_url);
+        let store = StoreClient::new(self.store_url.clone());
 
-        // retry fetching the chain tip from the store until it succeeds.
+        // Retry fetching the chain tip from the store until it succeeds.
         let mut retries_counter = 0;
         let chain_tip = loop {
             match store.latest_header().await {

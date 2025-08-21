@@ -18,7 +18,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_proto::{AccountWitnessRecord, generated as proto};
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountDelta, AccountHeader, AccountId, StorageSlot};
+use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
 use miden_objects::block::{
     AccountTree,
     AccountWitness,
@@ -970,17 +970,6 @@ impl State {
             .collect();
 
         Ok((inner_state.latest_block_num(), responses))
-    }
-
-    /// Returns the state delta between `from_block` (exclusive) and `to_block` (inclusive) for the
-    /// given account.
-    pub(crate) async fn get_account_state_delta(
-        &self,
-        account_id: AccountId,
-        from_block: BlockNumber,
-        to_block: BlockNumber,
-    ) -> Result<Option<AccountDelta>, DatabaseError> {
-        self.db.select_account_state_delta(account_id, from_block, to_block).await
     }
 
     /// Loads a block from the block store. Return `Ok(None)` if the block is not found.

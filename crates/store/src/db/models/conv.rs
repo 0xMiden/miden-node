@@ -37,7 +37,7 @@ use std::any::type_name;
 use miden_node_proto::domain::account::{NetworkAccountError, NetworkAccountPrefix};
 use miden_objects::Felt;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::NoteTag;
+use miden_objects::note::{NoteExecutionMode, NoteTag};
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert a database value to it's in memory type {0}")]
@@ -75,6 +75,28 @@ impl SqlTypeConvert for NetworkAccountPrefix {
     }
     fn to_raw_sql(self) -> Self::Raw {
         i64::from(self.inner())
+    }
+}
+
+impl SqlTypeConvert for NoteExecutionMode {
+    type Raw = i32;
+    type Error = DatabaseTypeConversionError;
+
+    #[inline(always)]
+    fn from_raw_sql(raw: Self::Raw) -> Result<Self, Self::Error> {
+        Ok(match raw {
+            0 => Self::Network,
+            1 => Self::Local,
+            _ => return Err(DatabaseTypeConversionError(type_name::<NoteExecutionMode>())),
+        })
+    }
+
+    #[inline(always)]
+    fn to_raw_sql(self) -> Self::Raw {
+        match self {
+            NoteExecutionMode::Network => 0,
+            NoteExecutionMode::Local => 1,
+        }
     }
 }
 
@@ -144,20 +166,6 @@ pub(crate) fn raw_sql_to_note_type(raw: i32) -> u8 {
 #[inline(always)]
 pub(crate) fn note_type_to_raw_sql(note_type: u8) -> i32 {
     i32::from(note_type)
-}
-
-#[inline(always)]
-pub(crate) fn raw_sql_to_execution_mode(raw: i32) -> i32 {
-    // match raw {
-    //     0 => NoteExecutionMode::Local,
-    //     1 => NoteExecutionMode::Network,
-    //    _ => unreachable!() // TODO
-    // }
-    raw
-}
-#[inline(always)]
-pub(crate) fn execution_mode_to_raw_sql(mode: i32) -> i32 {
-    mode
 }
 
 #[inline(always)]

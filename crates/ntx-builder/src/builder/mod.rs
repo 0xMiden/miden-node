@@ -44,8 +44,8 @@ pub struct NetworkTransactionBuilder {
 
 impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
-        let store = StoreClient::new(&self.store_url);
-        let block_producer = BlockProducerClient::new(&self.block_producer_url);
+        let store = StoreClient::new(self.store_url);
+        let block_producer = BlockProducerClient::new(self.block_producer_url);
 
         let mut state = crate::state::State::load(store.clone())
             .await

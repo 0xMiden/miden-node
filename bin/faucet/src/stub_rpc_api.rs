@@ -98,13 +98,6 @@ impl api_server::Api for StubRpcApi {
         unimplemented!()
     }
 
-    async fn get_account_state_delta(
-        &self,
-        _request: Request<proto::rpc_store::AccountStateDeltaRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountStateDelta>, Status> {
-        unimplemented!()
-    }
-
     async fn get_account_proofs(
         &self,
         _request: Request<proto::rpc_store::AccountProofsRequest>,

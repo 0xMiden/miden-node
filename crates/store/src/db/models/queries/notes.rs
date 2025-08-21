@@ -318,7 +318,7 @@ pub(crate) fn unconsumed_network_notes(
             rowid_sel.clone(),
         ),
     )
-    .filter(schema::notes::execution_mode.eq(0_i32))
+    .filter(schema::notes::execution_mode.eq(NoteExecutionMode::Network.to_raw_sql()))
     .filter(schema::notes::consumed_at.is_null())
     .filter(rowid_sel_ge)
     .order(rowid_sel.asc())
@@ -418,7 +418,7 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
             rowid_sel.clone(),
         ),
     )
-    .filter(schema::notes::execution_mode.eq(0_i32))
+    .filter(schema::notes::execution_mode.eq(NoteExecutionMode::Network.to_raw_sql()))
     .filter(schema::notes::tag.eq(tag as i32))
     .filter(schema::notes::committed_at.le(block_num.to_raw_sql()))
     .filter(

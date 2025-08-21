@@ -100,7 +100,7 @@ install-faucet: ## Installs faucet
 
 .PHONY: install-remote-prover
 install-remote-prover: ## Install remote prover's CLI
-	$(BUILD_PROTO) cargo install --path bin/remote-prover --bin miden-remote-prover --features server,concurrent
+	$(BUILD_PROTO) cargo install --path bin/remote-prover --bin miden-remote-prover --features server,concurrent --locked
 
 .PHONY: install-stress-test
 install-stress-test: ## Installs stress-test binary

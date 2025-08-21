@@ -120,28 +120,6 @@ pub mod account_proofs {
         }
     }
 }
-/// Returns delta of the account states in the range from `from_block_num` (exclusive) to
-/// `to_block_num` (inclusive).
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountStateDeltaRequest {
-    /// ID of the account for which the delta is requested.
-    #[prost(message, optional, tag = "1")]
-    pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Block number from which the delta is requested (exclusive).
-    #[prost(fixed32, tag = "2")]
-    pub from_block_num: u32,
-    /// Block number up to which the delta is requested (inclusive).
-    #[prost(fixed32, tag = "3")]
-    pub to_block_num: u32,
-}
-/// Represents the result of getting account state delta.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountStateDelta {
-    /// The calculated account delta encoded using \[winter_utils::Serializable\] implementation
-    /// for \[miden_objects::account::delta::AccountDelta\].
-    #[prost(bytes = "vec", optional, tag = "1")]
-    pub delta: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-}
 /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckNullifiersByPrefixRequest {
@@ -481,32 +459,6 @@ pub mod rpc_client {
                 .insert(GrpcMethod::new("rpc_store.Rpc", "GetAccountProofs"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns delta of the account states in the range from `from_block_num` (exclusive) to
-        /// `to_block_num` (inclusive).
-        pub async fn get_account_state_delta(
-            &mut self,
-            request: impl tonic::IntoRequest<super::AccountStateDeltaRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AccountStateDelta>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/rpc_store.Rpc/GetAccountStateDelta",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("rpc_store.Rpc", "GetAccountStateDelta"));
-            self.inner.unary(req, path, codec).await
-        }
         /// Returns raw block data for the specified block number.
         pub async fn get_block_by_number(
             &mut self,
@@ -702,15 +654,6 @@ pub mod rpc_server {
             &self,
             request: tonic::Request<super::AccountProofsRequest>,
         ) -> std::result::Result<tonic::Response<super::AccountProofs>, tonic::Status>;
-        /// Returns delta of the account states in the range from `from_block_num` (exclusive) to
-        /// `to_block_num` (inclusive).
-        async fn get_account_state_delta(
-            &self,
-            request: tonic::Request<super::AccountStateDeltaRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::AccountStateDelta>,
-            tonic::Status,
-        >;
         /// Returns raw block data for the specified block number.
         async fn get_block_by_number(
             &self,
@@ -1055,51 +998,6 @@ pub mod rpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetAccountProofsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/rpc_store.Rpc/GetAccountStateDelta" => {
-                    #[allow(non_camel_case_types)]
-                    struct GetAccountStateDeltaSvc<T: Rpc>(pub Arc<T>);
-                    impl<
-                        T: Rpc,
-                    > tonic::server::UnaryService<super::AccountStateDeltaRequest>
-                    for GetAccountStateDeltaSvc<T> {
-                        type Response = super::AccountStateDelta;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::AccountStateDeltaRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Rpc>::get_account_state_delta(&inner, request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = GetAccountStateDeltaSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

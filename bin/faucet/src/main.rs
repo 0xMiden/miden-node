@@ -207,7 +207,7 @@ async fn run_faucet_command(cli: Cli) -> anyhow::Result<()> {
             api_keys,
             open_telemetry: _,
         } => {
-            let mut rpc_client = RpcClient::connect_lazy(&node_url, timeout.as_millis() as u64)
+            let mut rpc_client = RpcClient::connect_lazy(node_url, timeout.as_millis() as u64)
                 .context("failed to create RPC client")?;
             let account_file = AccountFile::read(&faucet_account_path).context(format!(
                 "failed to load faucet account from file ({})",

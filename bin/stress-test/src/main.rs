@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use miden_node_utils::logging::OpenTelemetry;
 use seeding::seed_store;
-use store::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state};
+use store::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state, load_state};
 
 mod seeding;
 mod store;
@@ -46,7 +46,7 @@ pub enum Command {
         data_directory: PathBuf,
 
         /// Iterations of the sync request.
-        #[arg(short, long, value_name = "ITERATIONS")]
+        #[arg(short, long, value_name = "ITERATIONS", default_value = "10000")]
         iterations: usize,
 
         /// Concurrency level of the sync request. Represents the number of request that
@@ -65,6 +65,7 @@ pub enum Endpoint {
     },
     SyncState,
     SyncNotes,
+    LoadState,
 }
 
 #[tokio::main]
@@ -97,6 +98,9 @@ async fn main() {
             },
             Endpoint::SyncNotes => {
                 bench_sync_notes(data_directory, iterations, concurrency).await;
+            },
+            Endpoint::LoadState => {
+                load_state(&data_directory).await;
             },
         },
     }

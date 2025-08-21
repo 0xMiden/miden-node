@@ -3,13 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-const SQLITE_TABLES: [&str; 11] = [
+const SQLITE_TABLES: &[&str] = &[
     "accounts",
-    "account_deltas",
-    "account_fungible_asset_deltas",
-    "account_non_fungible_asset_updates",
-    "account_storage_map_updates",
-    "account_storage_slot_updates",
     "block_headers",
     "notes",
     "note_scripts",
@@ -17,7 +12,7 @@ const SQLITE_TABLES: [&str; 11] = [
     "transactions",
 ];
 
-const SQLITE_INDEXES: [&str; 10] = [
+const SQLITE_INDEXES: &[&str] = &[
     "idx_accounts_network_prefix",
     "idx_notes_note_id",
     "idx_notes_sender",
@@ -140,7 +135,7 @@ impl SeedingMetrics {
         )?;
         writeln!(f, "{:<35} {:<15} {:<15}", "Table", "Size (MB)", "KB/Entry")?;
         writeln!(f, "{}", "-".repeat(70))?;
-        for table in &SQLITE_TABLES {
+        for table in SQLITE_TABLES {
             let db_stats = Command::new("sqlite3")
                 .arg(&self.store_file)
                 .arg(format!(
@@ -172,7 +167,7 @@ impl SeedingMetrics {
         writeln!(f, "\nIndex stats:")?;
         writeln!(f, "{:<35} {:<15}", "Index", "Size (MB)")?;
         writeln!(f, "{}", "-".repeat(70))?;
-        for index in &SQLITE_INDEXES {
+        for index in SQLITE_INDEXES {
             let db_stats = Command::new("sqlite3")
                 .arg(&self.store_file)
                 .arg(format!(

@@ -161,6 +161,12 @@ pub enum StateInitializationError {
     FailedToCreateNullifierTree(#[from] NullifierTreeError),
     #[error("failed to create accounts tree")]
     FailedToCreateAccountsTree(#[source] AccountTreeError),
+    #[error("failed to load data directory")]
+    DataDirectoryLoadError(#[source] std::io::Error),
+    #[error("failed to load block store")]
+    BlockStoreLoadError(#[source] std::io::Error),
+    #[error("failed to load database")]
+    DatabaseLoadError(#[from] DatabaseSetupError),
 }
 
 #[derive(Debug, Error)]

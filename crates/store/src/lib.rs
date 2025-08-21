@@ -5,7 +5,7 @@ mod db;
 mod errors;
 pub mod genesis;
 mod server;
-mod state;
+pub mod state;
 
 pub use genesis::GenesisState;
 pub use server::{DataDirectory, Store};

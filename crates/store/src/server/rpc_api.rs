@@ -8,7 +8,6 @@ use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::NoteId;
-use miden_objects::utils::Serializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
@@ -328,37 +327,6 @@ impl rpc_server::Rpc for StoreApi {
             block_num: block_num.as_u32(),
             account_proofs: infos,
         }))
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.get_account_state_delta",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_state_delta(
-        &self,
-        request: Request<proto::rpc_store::AccountStateDeltaRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountStateDelta>, Status> {
-        let request = request.into_inner();
-
-        debug!(target: COMPONENT, ?request);
-
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
-        let delta = self
-            .state
-            .get_account_state_delta(
-                account_id,
-                request.from_block_num.into(),
-                request.to_block_num.into(),
-            )
-            .await?
-            .map(|delta| delta.to_bytes());
-
-        Ok(Response::new(proto::rpc_store::AccountStateDelta { delta }))
     }
 
     #[instrument(

@@ -1,9 +1,10 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use futures::{StreamExt, stream};
 use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
 use miden_node_proto::generated::{self as proto};
+use miden_node_store::state::State;
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::AccountId;
 use miden_objects::note::{NoteDetails, NoteTag};
@@ -286,6 +287,42 @@ async fn check_nullifiers_by_prefix(
     let start = Instant::now();
     let response = api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
+}
+
+// LOAD STATE
+// ================================================================================================
+
+pub async fn load_state(data_directory: &Path) {
+    let start = Instant::now();
+    let _state = State::load(data_directory).await.unwrap();
+    let elapsed = start.elapsed();
+
+    // Get database path and run SQL commands to count records
+    let data_directory =
+        miden_node_store::DataDirectory::load(data_directory.to_path_buf()).unwrap();
+    let database_filepath = data_directory.database_path();
+
+    // Use sqlite3 command to count records
+    let account_count = std::process::Command::new("sqlite3")
+        .arg(database_filepath.to_str().unwrap())
+        .arg("SELECT COUNT(*) FROM accounts;")
+        .output()
+        .map_or_else(
+            |_| "unknown".to_string(),
+            |output| String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        );
+
+    let nullifier_count = std::process::Command::new("sqlite3")
+        .arg(database_filepath.to_str().unwrap())
+        .arg("SELECT COUNT(*) FROM nullifiers;")
+        .output()
+        .map_or_else(
+            |_| "unknown".to_string(),
+            |output| String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        );
+
+    println!("State loaded in {elapsed:?}");
+    println!("Database contains {account_count} accounts and {nullifier_count} nullifiers");
 }
 
 // HELPERS

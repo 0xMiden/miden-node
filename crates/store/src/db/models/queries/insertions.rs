@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::collections::BTreeMap;
 
 use diesel::prelude::{AsChangeset, Insertable};
 use diesel::query_dsl::methods::SelectDsl;
@@ -13,23 +12,12 @@ use diesel::{
 };
 use miden_lib::utils::Serializable;
 use miden_node_proto as proto;
+use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{
-    Account,
-    AccountDelta,
-    AccountId,
-    AccountStorageDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    NonFungibleDeltaAction,
-    StorageSlot,
-};
-use miden_objects::asset::Asset;
+use miden_objects::account::{Account, AccountDelta, AccountId};
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
-use miden_objects::{Felt, LexicographicWord, Word};
 
 use super::accounts::{AccountRaw, AccountWithCodeRaw};
 use super::{DatabaseError, NoteRecord};
@@ -37,12 +25,9 @@ use crate::db::models::conv::{
     SqlTypeConvert,
     aux_to_raw_sql,
     execution_hint_to_raw_sql,
-    execution_mode_to_raw_sql,
-    fungible_delta_to_raw_sql,
     idx_to_raw_sql,
     nonce_to_raw_sql,
     note_type_to_raw_sql,
-    slot_to_raw_sql,
 };
 use crate::db::schema;
 
@@ -86,203 +71,6 @@ pub(crate) fn apply_delta(
     }
 
     Ok(account)
-}
-
-#[allow(clippy::too_many_lines)]
-pub(crate) fn insert_account_delta(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_number: BlockNumber,
-    delta: &AccountDelta,
-) -> Result<(), DatabaseError> {
-    fn insert_acc_delta_stmt(
-        conn: &mut SqliteConnection,
-        account_id: AccountId,
-        block_num: BlockNumber,
-        nonce: Felt,
-    ) -> Result<usize, DatabaseError> {
-        let count = diesel::insert_into(schema::account_deltas::table)
-            .values(&[(
-                schema::account_deltas::account_id.eq(account_id.to_bytes()),
-                schema::account_deltas::block_num.eq(block_num.to_raw_sql()),
-                schema::account_deltas::nonce.eq(nonce_to_raw_sql(nonce)),
-            )])
-            .execute(conn)?;
-        Ok(count)
-    }
-
-    fn insert_slot_update_stmt(
-        conn: &mut SqliteConnection,
-        account_id: AccountId,
-        block_num: BlockNumber,
-        slot: u8,
-        value: Vec<u8>,
-    ) -> Result<usize, DatabaseError> {
-        let count = diesel::insert_into(schema::account_storage_slot_updates::table)
-            .values(&[(
-                schema::account_storage_slot_updates::account_id.eq(account_id.to_bytes()),
-                schema::account_storage_slot_updates::block_num.eq(block_num.to_raw_sql()),
-                schema::account_storage_slot_updates::slot.eq(slot_to_raw_sql(slot)),
-                schema::account_storage_slot_updates::value.eq(value),
-            )])
-            .execute(conn)?;
-        Ok(count)
-    }
-
-    fn insert_storage_map_update_stmt(
-        conn2: &mut SqliteConnection,
-        account_id: AccountId,
-        block_num: BlockNumber,
-        slot: u8,
-        key: Vec<u8>,
-        value: Vec<u8>,
-    ) -> Result<usize, DatabaseError> {
-        let count = diesel::insert_into(schema::account_storage_map_updates::table)
-            .values(&[(
-                schema::account_storage_map_updates::account_id.eq(account_id.to_bytes()),
-                schema::account_storage_map_updates::block_num.eq(block_num.to_raw_sql()),
-                schema::account_storage_map_updates::slot.eq(slot_to_raw_sql(slot)),
-                schema::account_storage_map_updates::key.eq(key),
-                schema::account_storage_map_updates::value.eq(value),
-            )])
-            .execute(conn2)?;
-        Ok(count)
-    }
-
-    fn insert_fungible_asset_delta_stmt(
-        conn2: &mut SqliteConnection,
-        account_id: AccountId,
-        block_num: BlockNumber,
-        faucet_id: Vec<u8>,
-        delta: i64,
-    ) -> Result<usize, DatabaseError> {
-        let count = diesel::insert_into(schema::account_fungible_asset_deltas::table)
-            .values(&[(
-                schema::account_fungible_asset_deltas::account_id.eq(account_id.to_bytes()),
-                schema::account_fungible_asset_deltas::block_num.eq(block_num.to_raw_sql()),
-                schema::account_fungible_asset_deltas::faucet_id.eq(faucet_id),
-                schema::account_fungible_asset_deltas::delta.eq(fungible_delta_to_raw_sql(delta)),
-            )])
-            .execute(conn2)?;
-        Ok(count)
-    }
-
-    pub(crate) fn insert_non_fungible_asset_update_stmt(
-        conn2: &mut SqliteConnection,
-        account_id: AccountId,
-        block_num: BlockNumber,
-        vault_key: Vec<u8>,
-        is_remove: bool,
-    ) -> Result<usize, DatabaseError> {
-        let count = diesel::insert_into(schema::account_non_fungible_asset_updates::table)
-            .values(&[(
-                schema::account_non_fungible_asset_updates::account_id.eq(account_id.to_bytes()),
-                schema::account_non_fungible_asset_updates::block_num.eq(block_num.to_raw_sql()),
-                schema::account_non_fungible_asset_updates::vault_key.eq(vault_key),
-                schema::account_non_fungible_asset_updates::is_remove.eq(is_remove),
-            )])
-            .execute(conn2)?;
-        Ok(count)
-    }
-
-    insert_acc_delta_stmt(conn, account_id, block_number, delta.nonce_delta())?;
-
-    for (&slot, value) in delta.storage().values() {
-        insert_slot_update_stmt(conn, account_id, block_number, slot, value.to_bytes())?;
-    }
-
-    for (&slot, map_delta) in delta.storage().maps() {
-        for (key, value) in map_delta.entries() {
-            insert_storage_map_update_stmt(
-                conn,
-                account_id,
-                block_number,
-                slot,
-                key.to_bytes(),
-                value.to_bytes(),
-            )?;
-        }
-    }
-
-    for (&faucet_id, &delta) in delta.vault().fungible().iter() {
-        insert_fungible_asset_delta_stmt(
-            conn,
-            account_id,
-            block_number,
-            faucet_id.to_bytes(),
-            delta,
-        )?;
-    }
-
-    for (&asset, action) in delta.vault().non_fungible().iter() {
-        // TODO consider moving this out into a `TryFrom<u8/bool>` and `Into<u8/bool>`
-        // respectively.
-        let is_remove = match action {
-            NonFungibleDeltaAction::Add => false,
-            NonFungibleDeltaAction::Remove => true,
-        };
-        insert_non_fungible_asset_update_stmt(
-            conn,
-            account_id,
-            block_number,
-            asset.to_bytes(),
-            is_remove,
-        )?;
-    }
-
-    Ok(())
-}
-
-/// Builds an [`AccountDelta`] from the given [`Account`].
-///
-/// This function should only be used when inserting a new account into the DB.The returned delta
-/// could be thought of as the difference between an "empty transaction" and the it's initial state.
-fn build_insert_delta(account: &Account) -> Result<AccountDelta, DatabaseError> {
-    // Build storage delta
-    let mut values = BTreeMap::new();
-    let mut maps = BTreeMap::new();
-    for (slot_idx, slot) in account.storage().clone().into_iter().enumerate() {
-        let slot_idx: u8 = slot_idx.try_into().expect("slot index must fit into `u8`");
-
-        match slot {
-            StorageSlot::Value(value) => {
-                values.insert(slot_idx, value);
-            },
-
-            StorageSlot::Map(map) => {
-                maps.insert(slot_idx, map.into());
-            },
-        }
-    }
-    let storage_delta = AccountStorageDelta::from_parts(values, maps)?;
-
-    // Build vault delta
-    let mut fungible = BTreeMap::new();
-    let mut non_fungible = BTreeMap::new();
-    for asset in account.vault().assets() {
-        match asset {
-            Asset::Fungible(asset) => {
-                fungible.insert(
-                    asset.faucet_id(),
-                    asset
-                        .amount()
-                        .try_into()
-                        .expect("asset amount should be at most i64::MAX by construction"),
-                );
-            },
-
-            Asset::NonFungible(asset) => {
-                non_fungible.insert(LexicographicWord::new(asset), NonFungibleDeltaAction::Add);
-            },
-        }
-    }
-
-    let vault_delta = AccountVaultDelta::new(
-        FungibleAssetDelta::new(fungible)?,
-        NonFungibleAssetDelta::new(non_fungible),
-    );
-
-    Ok(AccountDelta::new(account.id(), storage_delta, vault_delta, account.nonce())?)
 }
 
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
@@ -330,8 +118,8 @@ pub(crate) fn upsert_accounts(
             None
         };
 
-        let (full_account, insert_delta) = match update.details() {
-            AccountUpdateDetails::Private => (None, None),
+        let full_account = match update.details() {
+            AccountUpdateDetails::Private => None,
             AccountUpdateDetails::New(account) => {
                 debug_assert_eq!(account_id, account.id());
 
@@ -342,9 +130,7 @@ pub(crate) fn upsert_accounts(
                     });
                 }
 
-                let insert_delta = build_insert_delta(account)?;
-
-                (Some(Cow::Borrowed(account)), Some(Cow::Owned(insert_delta)))
+                Some(Cow::Borrowed(account))
             },
             AccountUpdateDetails::Delta(delta) => {
                 let mut rows = select_details_stmt(conn, account_id)?.into_iter();
@@ -354,7 +140,7 @@ pub(crate) fn upsert_accounts(
 
                 let account = apply_delta(account, delta, &update.final_state_commitment())?;
 
-                (Some(Cow::Owned(account)), Some(Cow::Borrowed(delta)))
+                Some(Cow::Owned(account))
             },
         };
 
@@ -393,10 +179,6 @@ pub(crate) fn upsert_accounts(
             .execute(conn)?;
 
         debug_assert_eq!(inserted, 1);
-
-        if let Some(delta) = insert_delta {
-            insert_account_delta(conn, account_id, block_num, &delta)?;
-        }
 
         count += inserted;
     }
@@ -522,7 +304,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
             note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),
-            execution_mode: execution_mode_to_raw_sql(note.metadata.tag().execution_mode() as i32),
+            execution_mode: note.metadata.tag().execution_mode().to_raw_sql(),
             aux: aux_to_raw_sql(note.metadata.aux()),
             execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
             inclusion_path: note.inclusion_path.to_bytes(),

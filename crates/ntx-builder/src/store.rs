@@ -33,7 +33,6 @@ impl StoreClient {
         info!(target: COMPONENT, store_endpoint = %store_url, "Initializing store client");
 
         let store = Builder::new(store_url)
-            .expect("Store Url is valid")
             .without_tls()
             .without_timeout()
             .without_metadata_version()

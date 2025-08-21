@@ -47,7 +47,6 @@ impl RpcService {
         let store = {
             info!(target: COMPONENT, store_endpoint = %store_url, "Initializing store client");
             Builder::new(store_url)
-                .expect("Failed to initialize store endpoint")
                 .without_tls()
                 .without_timeout()
                 .without_metadata_version()
@@ -62,7 +61,6 @@ impl RpcService {
                 "Initializing block producer client",
             );
             Builder::new(block_producer_url)
-                .expect("Failed to initialize block-producer endpoint")
                 .without_tls()
                 .without_timeout()
                 .without_metadata_version()

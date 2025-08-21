@@ -86,7 +86,6 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
         // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
         let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
         let mut rpc_client: RpcClient = Builder::new(url)
-            .expect("Failed to initialize rpc endpoint")
             .without_tls()
             .with_timeout(Duration::from_secs(10))
             .with_metadata_version(version.to_string())
@@ -311,7 +310,6 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
     // SAFETY: The rpc_addr is always valid as it is created from a `SocketAddr`.
     let url = Url::parse(format!("http://{}", &url).as_str()).unwrap();
     let rpc_client: RpcClient = Builder::new(url)
-        .expect("Failed to initialize rpc endpoint")
         .without_tls()
         .with_timeout(Duration::from_secs(10))
         .without_metadata_version()

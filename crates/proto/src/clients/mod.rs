@@ -270,18 +270,16 @@ impl<State> Builder<State> {
 impl Builder<WantsTls> {
     /// Create a new strict builder from a gRPC endpoint URL such as
     /// `http://localhost:8080` or `https://api.example.com:443`.
-    pub fn new(url: Url) -> Result<Builder<WantsTls>> {
-        // Basic upfront validation using `Endpoint::from_shared` path; let `Builder` do full checks
-        // later to keep logic in one place.
+    pub fn new(url: Url) -> Builder<WantsTls> {
         let endpoint = Endpoint::from_shared(String::from(url))
-            .context("Failed to create endpoint from address")?;
+            .expect("Url type always results in valid endpoint");
 
-        Ok(Builder {
+        Builder {
             endpoint,
             metadata_version: None,
             metadata_genesis: None,
             _state: PhantomData,
-        })
+        }
     }
 
     /// Explicitly disable TLS.

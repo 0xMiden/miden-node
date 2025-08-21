@@ -36,7 +36,6 @@ impl BlockProducerClient {
         info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Initializing block producer client with lazy connection");
 
         let block_producer = Builder::new(block_producer_url)
-            .expect("Failed to initialize block-producer endpoint")
             .without_tls()
             .without_timeout()
             .without_metadata_version()

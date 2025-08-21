@@ -92,6 +92,8 @@ pub enum DatabaseError {
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
     AccountNotPublic(AccountId),
+    #[error("invalid block parameters: block_from ({from}) > block_to ({to})")]
+    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
     #[error("data corrupted: {0}")]
     DataCorrupted(String),
     #[error("SQLite pool interaction failed: {0}")]

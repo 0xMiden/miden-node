@@ -260,23 +260,33 @@ pub(crate) fn select_account_storage_map_values(
     //   value
     // FROM account_storage_map_values
     // WHERE account_id = ?1
-    //   AND block_num >= ?2
-    //   AND (block_num = ?3 OR is_latest_update = 1)
+    // AND block_num >= ?2
+    // AND (block_num = ?3 OR (is_latest_update = 1 AND block_num <= ?3))
     // ORDER BY block_num ASC
     // LIMIT :row_limit;
 
-    // TODO: These limits should be given by the protocol
+    // TODO: These limits should be given by the protocol.
+    // See miden-base's #1770 for more details
     pub const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
     pub const ROW_OVERHEAD_BYTES: usize = size_of::<Word>() + size_of::<Word>() + size_of::<u8>(); // key + value + slot_idx
-    pub const ROW_LIMIT: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
+    pub const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
+
+    if block_from > block_to {
+        return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
+    }
 
     let mut raw: Vec<(i64, i32, Vec<u8>, Vec<u8>)> =
         SelectDsl::select(t::table, (t::block_num, t::slot, t::key, t::value))
-            .filter(t::block_num.ge(block_from.to_raw_sql()))
-            .filter(t::account_id.eq(account_id.to_bytes()))
-            .filter(t::block_num.eq(block_to.to_raw_sql()).or(t::is_latest_update.eq(true)))
+            .filter(
+                t::account_id
+                    .eq(account_id.to_bytes())
+                    .and(t::block_num.ge(block_from.to_raw_sql()))
+                    .and(t::block_num.eq(block_to.to_raw_sql()).or(
+                        t::is_latest_update.eq(true).and(t::block_num.le(block_to.to_raw_sql())),
+                    )),
+            )
             .order(t::block_num.asc())
-            .limit(i64::try_from(ROW_LIMIT).expect("const value is safe to convert"))
+            .limit(i64::try_from(ROW_LIMIT).expect("limit fits within i64"))
             .load(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
@@ -285,9 +295,9 @@ pub(crate) fn select_account_storage_map_values(
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
         // least two blocks
-        if let Some(last_bn) = raw.last().map(|r| r.0) {
-            raw.retain(|(bn, ..)| *bn != last_bn);
-            last_block_included = BlockNumber::from_raw_sql(last_bn.saturating_sub(1))?;
+        if let Some(last_block_num) = raw.last().map(|r| r.0) {
+            raw.retain(|(row_block_num, ..)| *row_block_num != last_block_num);
+            last_block_included = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
         }
     }
 

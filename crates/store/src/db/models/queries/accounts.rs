@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
@@ -14,25 +12,13 @@ use diesel::{
     Selectable,
     SelectableHelper,
     SqliteConnection,
-    alias,
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::account::{
-    Account,
-    AccountCode,
-    AccountDelta,
-    AccountId,
-    AccountStorage,
-    AccountStorageDelta,
-    AccountVaultDelta,
-    FungibleAssetDelta,
-    NonFungibleAssetDelta,
-    StorageMapDelta,
-};
-use miden_objects::asset::{AssetVault, NonFungibleAsset};
+use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
+use miden_objects::asset::AssetVault;
 use miden_objects::block::BlockNumber;
 use miden_objects::{Felt, Word};
 
@@ -163,79 +149,6 @@ pub(crate) fn select_accounts_by_id(
     Ok(account_infos)
 }
 
-/// Selects and merges account deltas by account id and block range from the DB using the given
-/// [`SqliteConnection`].
-///
-/// # Note:
-///
-/// `block_start` is exclusive and `block_end` is inclusive.
-///
-/// # Returns
-///
-/// The resulting account delta, or an error.
-#[allow(
-    clippy::cast_sign_loss,
-    reason = "Slot types have a DB representation of i32, in memory they are u8"
-)]
-pub(crate) fn select_account_delta(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_start: BlockNumber,
-    block_end: BlockNumber,
-) -> Result<Option<AccountDelta>, DatabaseError> {
-    let slot_updates = select_slot_updates_stmt(conn, account_id, block_start, block_end)?;
-    let storage_map_updates =
-        select_storage_map_updates_stmt(conn, account_id, block_start, block_end)?;
-    let fungible_asset_deltas =
-        select_fungible_asset_deltas_stmt(conn, account_id, block_start, block_end)?;
-    let non_fungible_asset_updates =
-        select_non_fungible_asset_updates_stmt(conn, account_id, block_start, block_end)?;
-
-    let Some(nonce) = select_nonce_stmt(conn, account_id, block_start, block_end)? else {
-        return Ok(None);
-    };
-    let nonce = nonce.try_into().map_err(DatabaseError::InvalidFelt)?;
-
-    let storage_scalars =
-        Result::<BTreeMap<u8, Word>, _>::from_iter(slot_updates.iter().map(|(slot, value)| {
-            let felt = Word::read_from_bytes(value)?;
-            Ok::<_, DatabaseError>((raw_sql_to_slot(*slot), felt))
-        }))?;
-
-    let mut storage_maps = BTreeMap::<u8, StorageMapDelta>::new();
-    for StorageMapUpdateEntry { slot, key, value } in storage_map_updates {
-        let key = Word::read_from_bytes(&key)?;
-        let value = Word::read_from_bytes(&value)?;
-        storage_maps.entry(slot as u8).or_default().insert(key, value);
-    }
-
-    let mut fungible = BTreeMap::<AccountId, i64>::new();
-    for FungibleAssetDeltaEntry { faucet_id, value } in fungible_asset_deltas {
-        let faucet_id = AccountId::read_from_bytes(&faucet_id)?;
-        fungible.insert(faucet_id, value);
-    }
-
-    let mut non_fungible_delta = NonFungibleAssetDelta::default();
-    for NonFungibleAssetDeltaEntry {
-        vault_key: vault_key_asset, is_remove, ..
-    } in non_fungible_asset_updates
-    {
-        let asset = NonFungibleAsset::read_from_bytes(&vault_key_asset)
-            .map_err(|err| DatabaseError::DataCorrupted(err.to_string()))?;
-
-        if is_remove {
-            non_fungible_delta.remove(asset)?;
-        } else {
-            non_fungible_delta.add(asset)?;
-        }
-    }
-
-    let storage = AccountStorageDelta::from_parts(storage_scalars, storage_maps)?;
-    let vault = AccountVaultDelta::new(FungibleAssetDelta::new(fungible)?, non_fungible_delta);
-
-    Ok(Some(AccountDelta::new(account_id, storage, vault, nonce)?))
-}
-
 /// Select [`AccountSummary`] from the DB using the given [`SqliteConnection`], given that the
 /// account update was done between `(block_start, block_end]`.
 ///
@@ -275,60 +188,6 @@ pub fn select_accounts_by_block_range(
     Ok(vec_raw_try_into(raw).unwrap())
 }
 
-#[allow(clippy::type_complexity)]
-pub(crate) fn select_storage_map_updates_stmt(
-    conn: &mut SqliteConnection,
-    account_id_val: AccountId,
-    start_block_num: BlockNumber,
-    end_block_num: BlockNumber,
-) -> Result<Vec<StorageMapUpdateEntry>, DatabaseError> {
-    // SELECT
-    //     slot, key, value
-    // FROM
-    //     account_storage_map_updates AS a
-    // WHERE
-    //     account_id = ?1 AND
-    //     block_num > ?2 AND
-    //     block_num <= ?3 AND
-    //     NOT EXISTS(
-    //         SELECT 1
-    //         FROM account_storage_map_updates AS b
-    //         WHERE
-    //             b.account_id = ?1 AND
-    //             a.slot = b.slot AND
-    //             a.key = b.key AND
-    //             a.block_num < b.block_num AND
-    //             b.block_num <= ?3
-    //     )
-    use schema::account_storage_map_updates::dsl::{account_id, block_num, key, slot, value};
-
-    let desired_account_id = account_id_val.to_bytes();
-    let start_block_num = start_block_num.to_raw_sql();
-    let end_block_num = end_block_num.to_raw_sql();
-
-    // Alias the table for the inner and outer query
-    let (a, b) = alias!(
-        schema::account_storage_map_updates as a,
-        schema::account_storage_map_updates as b
-    );
-
-    // Construct the NOT EXISTS subquery
-    let subquery = b
-        .filter(b.field(account_id).eq(&desired_account_id))
-        .filter(a.field(slot).eq(b.field(slot))) // Correlated subquery: a.slot = b.slot
-        .filter(a.field(block_num).lt(b.field(block_num))) // a.block_num < b.block_num
-        .filter(b.field(block_num).le(end_block_num));
-
-    // Construct the main query
-    let res: Vec<StorageMapUpdateEntry> = SelectDsl::select(a, (a.field(slot), a.field(key), a.field(value)))
-        .filter(a.field(account_id).eq(&desired_account_id))
-        .filter(a.field(block_num).gt(start_block_num))
-        .filter(a.field(block_num).le(end_block_num))
-        .filter(diesel::dsl::not(diesel::dsl::exists(subquery))) // Apply the NOT EXISTS condition
-        .load(conn)?;
-    Ok(res)
-}
-
 /// Select all accounts from the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
@@ -359,104 +218,6 @@ pub(crate) fn select_all_accounts(
         accounts_raw.into_iter().map(AccountWithCodeRaw::from),
     )?;
     Ok(account_infos)
-}
-
-pub(crate) fn select_nonce_stmt(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    start_block_num: BlockNumber,
-    end_block_num: BlockNumber,
-) -> Result<Option<u64>, DatabaseError> {
-    // SELECT
-    //     SUM(nonce)
-    // FROM
-    //     account_deltas
-    // WHERE
-    //     account_id = ?1 AND block_num > ?2 AND block_num <= ?3
-    let desired_account_id = account_id.to_bytes();
-    let start_block_num = start_block_num.to_raw_sql();
-    let end_block_num = end_block_num.to_raw_sql();
-
-    // Note: The following does not work as anticipated for `BigInt` columns,
-    // since `Foldable` for `BigInt` requires `Numeric`, which is only supported
-    // with `numeric` and using `bigdecimal::BigDecimal`. It's a quite painful
-    // to figure that out from the scattered comments and bits from the documentation.
-    // Related <https://github.com/diesel-rs/diesel/discussions/4000>
-    let maybe_nonce = SelectDsl::select(
-        schema::account_deltas::table,
-        // add type annotation for better error messages next time around someone tries to move to
-        // `BigInt`
-        diesel::dsl::sum::<diesel::sql_types::BigInt, _>(schema::account_deltas::nonce),
-    )
-    .filter(
-        schema::account_deltas::account_id
-            .eq(desired_account_id)
-            .and(schema::account_deltas::block_num.gt(start_block_num))
-            .and(schema::account_deltas::block_num.le(end_block_num)),
-    )
-    .get_result::<Option<BigIntSum>>(conn)
-    .optional()?
-    .flatten();
-
-    maybe_nonce
-        .map(|nonce_delta_sum| {
-            let nonce = sql_sum_into::<i64, _>(&nonce_delta_sum, "account_deltas", "nonce")?;
-            Ok::<_, DatabaseError>(raw_sql_to_nonce(nonce))
-        })
-        .transpose()
-}
-
-// Attention: A more complex query, utilizing aliases for nested queries
-pub(crate) fn select_slot_updates_stmt(
-    conn: &mut SqliteConnection,
-    account_id_val: AccountId,
-    start_block_num: BlockNumber,
-    end_block_num: BlockNumber,
-) -> Result<Vec<(i32, Vec<u8>)>, DatabaseError> {
-    use schema::account_storage_slot_updates::dsl::{account_id, block_num, slot, value};
-
-    // SELECT
-    //     slot, value
-    // FROM
-    //     account_storage_slot_updates AS a
-    // WHERE
-    //     account_id = ?1 AND
-    //     block_num > ?2 AND
-    //     block_num <= ?3 AND
-    //     NOT EXISTS(
-    //         SELECT 1
-    //         FROM account_storage_slot_updates AS b
-    //         WHERE
-    //             b.account_id = ?1 AND
-    //             a.slot = b.slot AND
-    //             a.block_num < b.block_num AND
-    //             b.block_num <= ?3
-    //     )
-    let desired_account_id = account_id_val.to_bytes();
-    let start_block_num = start_block_num.to_raw_sql();
-    let end_block_num = end_block_num.to_raw_sql();
-
-    // Alias the table for the inner and outer query
-    let (a, b) = alias!(
-        schema::account_storage_slot_updates as a,
-        schema::account_storage_slot_updates as b
-    );
-
-    // Construct the NOT EXISTS subquery
-    let subquery = b
-        .filter(b.field(account_id).eq(&desired_account_id))
-        .filter(a.field(slot).eq(b.field(slot))) // Correlated subquery: a.slot = b.slot
-        .filter(a.field(block_num).lt(b.field(block_num))) // a.block_num < b.block_num
-        .filter(b.field(block_num).le(end_block_num));
-
-    // Construct the main query
-    let results: Vec<(i32, Vec<u8>)> = SelectDsl::select(a, (a.field(slot), a.field(value)))
-        .filter(a.field(account_id).eq(&desired_account_id))
-        .filter(a.field(block_num).gt(start_block_num))
-        .filter(a.field(block_num).le(end_block_num))
-        .filter(diesel::dsl::not(diesel::dsl::exists(subquery))) // Apply the NOT EXISTS condition
-        .load(conn)?;
-    Ok(results)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -542,142 +303,6 @@ pub(crate) fn select_account_storage_map_values(
         .collect::<Result<_, _>>()?;
 
     Ok(StorageMapValuesPage { last_block_included, values })
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Queryable)]
-pub(crate) struct StorageMapUpdateEntry {
-    pub(crate) slot: i32,
-    pub(crate) key: Vec<u8>,
-    pub(crate) value: Vec<u8>,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Queryable)]
-pub(crate) struct FungibleAssetDeltaEntry {
-    pub(crate) faucet_id: Vec<u8>,
-    pub(crate) value: i64,
-}
-
-/// Obtain a list of fungible asset delta statements
-pub(crate) fn select_fungible_asset_deltas_stmt(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    start_block_num: BlockNumber,
-    end_block_num: BlockNumber,
-) -> Result<Vec<FungibleAssetDeltaEntry>, DatabaseError> {
-    // SELECT
-    //     faucet_id, SUM(delta)
-    // FROM
-    //     account_fungible_asset_deltas
-    // WHERE
-    //     account_id = ?1 AND
-    //     block_num > ?2 AND
-    //     block_num <= ?3
-    // GROUP BY
-    //     faucet_id
-    let desired_account_id = account_id.to_bytes();
-    let start_block_num = start_block_num.to_raw_sql();
-    let end_block_num = end_block_num.to_raw_sql();
-
-    let values: Vec<(Vec<u8>, Option<BigIntSum>)> = SelectDsl::select(
-        schema::account_fungible_asset_deltas::table
-            .filter(
-                schema::account_fungible_asset_deltas::account_id
-                    .eq(desired_account_id)
-                    .and(schema::account_fungible_asset_deltas::block_num.gt(start_block_num))
-                    .and(schema::account_fungible_asset_deltas::block_num.le(end_block_num)),
-            )
-            .group_by(schema::account_fungible_asset_deltas::faucet_id),
-        (
-            schema::account_fungible_asset_deltas::faucet_id,
-            diesel::dsl::sum::<diesel::sql_types::BigInt, _>(
-                schema::account_fungible_asset_deltas::delta,
-            ),
-        ),
-    )
-    .load(conn)?;
-    let values = Result::<Vec<_>, _>::from_iter(values.into_iter().map(|(faucet_id, value)| {
-        let value = value
-            .map(|value| sql_sum_into::<i64, _>(&value, "fungible_asset_deltas", "delta"))
-            .transpose()?
-            .unwrap_or_default();
-        Ok::<_, DatabaseError>(FungibleAssetDeltaEntry { faucet_id, value })
-    }))?;
-    Ok(values)
-}
-
-#[derive(Debug, PartialEq, Eq, Clone, Queryable)]
-pub(crate) struct NonFungibleAssetDeltaEntry {
-    pub(crate) block_num: i64,
-    pub(crate) vault_key: Vec<u8>,
-    pub(crate) is_remove: bool,
-}
-
-pub(crate) fn select_non_fungible_asset_updates_stmt(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    start_block_num: BlockNumber,
-    end_block_num: BlockNumber,
-) -> Result<Vec<NonFungibleAssetDeltaEntry>, DatabaseError> {
-    // SELECT
-    //     block_num, vault_key, is_remove
-    // FROM
-    //     account_non_fungible_asset_updates
-    // WHERE
-    //     account_id = ?1 AND
-    //     block_num > ?2 AND
-    //     block_num <= ?3
-    // ORDER BY
-    //     block_num
-    let desired_account_id = account_id.to_bytes();
-    let start_block_num = start_block_num.to_raw_sql();
-    let end_block_num = end_block_num.to_raw_sql();
-
-    let entries = SelectDsl::select(
-        schema::account_non_fungible_asset_updates::table,
-        (
-            schema::account_non_fungible_asset_updates::block_num,
-            schema::account_non_fungible_asset_updates::vault_key,
-            schema::account_non_fungible_asset_updates::is_remove,
-        ),
-    )
-    .filter(
-        schema::account_non_fungible_asset_updates::account_id
-            .eq(desired_account_id)
-            .and(schema::account_non_fungible_asset_updates::block_num.gt(start_block_num))
-            .and(schema::account_non_fungible_asset_updates::block_num.le(end_block_num)),
-    )
-    .order(schema::account_non_fungible_asset_updates::block_num.asc())
-    .get_results(conn)?;
-    Ok(entries)
-}
-
-/// A type to represent a `sum(BigInt)`
-// TODO: make this a type, but it's unclear how that should work
-// See: <https://github.com/diesel-rs/diesel/discussions/4684>
-pub type BigIntSum = bigdecimal::BigDecimal;
-
-/// Impractical conversion required for `diesel-rs` `sum(BigInt)` results.
-pub fn sql_sum_into<T, E>(
-    sum: &BigIntSum,
-    table: &'static str,
-    column: &'static str,
-) -> Result<T, DatabaseError>
-where
-    E: std::error::Error + Send + Sync + 'static,
-    T: TryFrom<bigdecimal::num_bigint::BigInt, Error = E>,
-{
-    let (val, exponent) = sum.as_bigint_and_exponent();
-    debug_assert_eq!(
-        exponent, 0,
-        "We only sum(integers), hence there must never be a decimal result"
-    );
-    let val = T::try_from(val).map_err(|e| DatabaseError::ColumnSumExceedsLimit {
-        table,
-        column,
-        limit: "<T>::MAX",
-        source: Box::new(e),
-    })?;
-    Ok::<_, DatabaseError>(val)
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]

@@ -8,8 +8,9 @@
 - RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - A transaction's account delta is now checked against its commitments in `SubmitProvenTransaction` endpoint ([#1093](https://github.com/0xMiden/miden-node/pull/1093)).
 - Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the mempool ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
-- RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - Added tables for storing account storage maps ([#1132](https://github.com/0xMiden/miden-node/pull/1132)).
+- RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
+- Added benchmark CLI sub-command for the `miden-store` component to measure the state load time ([#1154](https://github.com/0xMiden/miden-node/pull/1154)).
 - Retry failed network notes with exponential backoff instead of immediately ([#1116](https://github.com/0xMiden/miden-node/pull/1116))
 - Network notes are now dropped after failing 30 times ([#1116](https://github.com/0xMiden/miden-node/pull/1116))
 - gRPC server timeout is now configurable (defaults to `10s`) ([#1133](https://github.com/0xMiden/miden-node/pull/1133))
@@ -26,6 +27,7 @@
   - Configure `NativeFaucet`, which determines the native asset used to pay fees
   - Configure the base verification fee
   - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
+- [BREAKING] Remove public store API `GetAccountStateDelta` ([#1162](https://github.com/0xMiden/miden-node/pull/1162)).
 
 ### Fixes
 

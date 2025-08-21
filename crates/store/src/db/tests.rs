@@ -24,7 +24,7 @@ use miden_objects::account::{
     AccountVaultDelta,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, FungibleAsset, NonFungibleAsset, NonFungibleAssetDetails};
+use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::block::{
     BlockAccountUpdate,
     BlockHeader,
@@ -48,7 +48,6 @@ use miden_objects::note::{
 use miden_objects::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
-    ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
 };
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId};
@@ -59,7 +58,7 @@ use rand::Rng;
 use super::{AccountInfo, NoteRecord, NullifierInfo};
 use crate::db::TransactionSummary;
 use crate::db::migrations::apply_migrations;
-use crate::db::models::queries::StorageMapValue;
+use crate::db::models::queries::{StorageMapValue, insert_account_storage_map_value};
 use crate::db::models::{Page, queries, utils};
 use crate::errors::DatabaseError;
 
@@ -657,153 +656,6 @@ fn sql_select_accounts() {
 
 #[test]
 #[miden_node_test_macro::enable_logging]
-fn sql_public_account_details() {
-    let mut conn = create_db();
-    let conn = &mut conn;
-
-    create_block(conn, 1.into());
-
-    let fungible_faucet_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
-    let non_fungible_faucet_id =
-        AccountId::try_from(ACCOUNT_ID_PUBLIC_NON_FUNGIBLE_FAUCET).unwrap();
-
-    let nft1 = Asset::NonFungible(
-        NonFungibleAsset::new(
-            &NonFungibleAssetDetails::new(non_fungible_faucet_id.prefix(), vec![1, 2, 3]).unwrap(),
-        )
-        .unwrap(),
-    );
-
-    let mut account = mock_account_code_and_storage(
-        AccountType::RegularAccountImmutableCode,
-        AccountStorageMode::Public,
-        [Asset::Fungible(FungibleAsset::new(fungible_faucet_id, 150).unwrap()), nft1],
-        None,
-    );
-
-    // test querying empty table
-    let accounts_in_db = queries::select_all_accounts(conn).unwrap();
-    assert!(accounts_in_db.is_empty());
-
-    let inserted = queries::upsert_accounts(
-        conn,
-        &[BlockAccountUpdate::new(
-            account.id(),
-            account.commitment(),
-            AccountUpdateDetails::New(account.clone()),
-        )],
-        1.into(),
-    )
-    .unwrap();
-
-    assert_eq!(inserted, 1, "One element must have been inserted");
-
-    let mut accounts_in_db = queries::select_all_accounts(conn).unwrap();
-
-    assert_eq!(accounts_in_db.len(), 1, "One element must have been inserted");
-
-    let account_read = accounts_in_db.pop().unwrap().details.unwrap();
-    assert_eq!(account_read, account);
-    assert_eq!(account_read.nonce(), Felt::try_from(1_u64).unwrap());
-
-    create_block(conn, 2.into());
-
-    let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 2.into()).unwrap();
-
-    assert_eq!(read_delta, None);
-
-    let storage_delta =
-        AccountStorageDelta::from_iters([3], [(4, num_to_word(5)), (5, num_to_word(6))], []);
-
-    let nft2 = Asset::NonFungible(
-        NonFungibleAsset::new(
-            &NonFungibleAssetDetails::new(non_fungible_faucet_id.prefix(), vec![4, 5, 6]).unwrap(),
-        )
-        .unwrap(),
-    );
-
-    let vault_delta = AccountVaultDelta::from_iters([nft2], [nft1]);
-
-    let mut delta2 =
-        AccountDelta::new(account.id(), storage_delta, vault_delta, Felt::new(2)).unwrap();
-
-    account.apply_delta(&delta2).unwrap();
-
-    assert_eq!(dbg!(account.nonce()), Felt::try_from(3_u64).unwrap());
-
-    let inserted = queries::upsert_accounts(
-        conn,
-        &[BlockAccountUpdate::new(
-            account.id(),
-            account.commitment(),
-            AccountUpdateDetails::Delta(delta2.clone()),
-        )],
-        2.into(),
-    )
-    .unwrap();
-
-    assert_eq!(inserted, 1, "One element must have been inserted");
-
-    let mut accounts_in_db = queries::select_all_accounts(conn).unwrap();
-
-    assert_eq!(accounts_in_db.len(), 1, "One element must have been inserted");
-
-    let account_read = accounts_in_db.pop().unwrap().details.unwrap();
-
-    assert_eq!(account_read.id(), account.id());
-    assert_eq!(account_read.vault(), account.vault());
-    assert_eq!(account_read.nonce(), account.nonce());
-    assert_eq!(account_read.storage(), account.storage());
-
-    let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 2.into()).unwrap();
-    assert_eq!(read_delta.as_ref(), Some(&delta2));
-
-    create_block(conn, 3.into());
-
-    let storage_delta3 = AccountStorageDelta::from_iters([5], [], []);
-
-    let delta3 = AccountDelta::new(
-        account.id(),
-        storage_delta3,
-        AccountVaultDelta::from_iters([nft1], []),
-        Felt::new(3),
-    )
-    .unwrap();
-
-    account.apply_delta(&delta3).unwrap();
-
-    let inserted = queries::upsert_accounts(
-        conn,
-        &[BlockAccountUpdate::new(
-            account.id(),
-            account.commitment(),
-            AccountUpdateDetails::Delta(delta3.clone()),
-        )],
-        3.into(),
-    )
-    .unwrap();
-
-    assert_eq!(inserted, 1, "One element must have been inserted");
-
-    let mut accounts_in_db = queries::select_all_accounts(conn).unwrap();
-
-    assert_eq!(accounts_in_db.len(), 1, "One element must have been inserted");
-
-    let account_read = accounts_in_db.pop().unwrap().details.unwrap();
-
-    assert_eq!(account_read.id(), account.id());
-    assert_eq!(account_read.vault(), account.vault());
-    assert_eq!(account_read.nonce(), account.nonce());
-
-    let read_delta = queries::select_account_delta(conn, account.id(), 1.into(), 3.into()).unwrap();
-
-    delta2.merge(delta3).unwrap();
-
-    assert_eq!(read_delta, Some(delta2));
-}
-
-#[test]
-#[miden_node_test_macro::enable_logging]
 fn select_nullifiers_by_prefix_works() {
     const PREFIX_LEN: u8 = 16;
     let mut conn = create_db();
@@ -1197,6 +1049,20 @@ fn notes() {
     assert_eq!(note_1.details, None);
 }
 
+fn insert_account_delta(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_number: BlockNumber,
+    delta: &AccountDelta,
+) {
+    for (slot, slot_delta) in delta.storage().maps() {
+        for (k, v) in slot_delta.entries() {
+            insert_account_storage_map_value(conn, account_id, block_number, *slot, *k.inner(), *v)
+                .unwrap();
+        }
+    }
+}
+
 #[test]
 #[miden_node_test_macro::enable_logging]
 fn sql_account_storage_map_values_insertion() {
@@ -1230,7 +1096,7 @@ fn sql_account_storage_map_values_insertion() {
     let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
     let delta1 =
         AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
-    queries::insert_account_delta(conn, account_id, block1, &delta1).unwrap();
+    insert_account_delta(conn, account_id, block1, &delta1);
 
     let storage_map_page =
         queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block1)
@@ -1245,7 +1111,7 @@ fn sql_account_storage_map_values_insertion() {
     let delta2 =
         AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
             .unwrap();
-    queries::insert_account_delta(conn, account_id, block2, &delta2).unwrap();
+    insert_account_delta(conn, account_id, block2, &delta2);
 
     // With block_to = block2, we get rows where (bn == block2) OR (is_latest_update = 1).
     let storage_map_values =

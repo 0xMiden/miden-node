@@ -34,10 +34,6 @@ service Rpc {
     // Returns the latest state proofs of the specified accounts.
     rpc GetAccountProofs(AccountProofsRequest) returns (AccountProofs) {}
 
-    // Returns delta of the account states in the range from `from_block_num` (exclusive) to
-    // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(AccountStateDeltaRequest) returns (AccountStateDelta) {}
-
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
 
@@ -56,7 +52,7 @@ service Rpc {
     // The response includes each note's metadata and inclusion proof.
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
-    // tip of the chain. 
+    // tip of the chain.
     rpc SyncNotes(SyncNotesRequest) returns (SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
@@ -174,27 +170,6 @@ message AccountProofs {
 
     // List of account state infos for the requested account keys.
     repeated AccountProof account_proofs = 2;
-}
-
-// GET ACCOUNT STATE DELTA
-// ================================================================================================
-
-// Returns delta of the account states in the range from `from_block_num` (exclusive) to
-// `to_block_num` (inclusive).
-message AccountStateDeltaRequest {
-    // ID of the account for which the delta is requested.
-    account.AccountId account_id = 1;
-    // Block number from which the delta is requested (exclusive).
-    fixed32 from_block_num = 2;
-    // Block number up to which the delta is requested (inclusive).
-    fixed32 to_block_num = 3;
-}
-
-// Represents the result of getting account state delta.
-message AccountStateDelta {
-    // The calculated account delta encoded using [winter_utils::Serializable] implementation
-    // for [miden_objects::account::delta::AccountDelta].
-    optional bytes delta = 1;
 }
 
 // CHECK NULLIFIERS BY PREFIX

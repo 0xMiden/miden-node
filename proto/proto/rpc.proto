@@ -34,10 +34,6 @@ service Api {
     // Returns the latest state proofs of the specified accounts.
     rpc GetAccountProofs(rpc_store.AccountProofsRequest) returns (rpc_store.AccountProofs) {}
 
-    // Returns delta of the account states in the range from `from_block_num` (exclusive) to
-    // `to_block_num` (inclusive).
-    rpc GetAccountStateDelta(rpc_store.AccountStateDeltaRequest) returns (rpc_store.AccountStateDelta) {}
-
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
 

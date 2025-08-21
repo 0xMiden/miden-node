@@ -43,37 +43,29 @@ pub struct RpcService {
 }
 
 impl RpcService {
-    pub(super) fn new(store_url: &Url, block_producer_url: Option<&Url>) -> Self {
+    pub(super) fn new(store_url: Url, block_producer_url: Option<Url>) -> Self {
         let store = {
-            // SAFETY: The store_url is always valid as it is a user-provided URL that has been
-            // validated.
-            let store = Builder::new(store_url.to_string())
-                .expect("Failed to initialize store endpoint")
+            info!(target: COMPONENT, store_endpoint = %store_url, "Initializing store client");
+            Builder::new(store_url)
                 .without_tls()
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<StoreRpc>();
-            info!(target: COMPONENT, store_endpoint = %store_url, "Store client initialized");
-            store
+                .connect_lazy::<StoreRpc>()
         };
 
         let block_producer = block_producer_url.map(|block_producer_url| {
-            // SAFETY: The block_producer_url is always valid as it is a user-provided URL that has
-            // been validated.
-            let block_producer = Builder::new(block_producer_url.to_string())
-                .expect("Failed to initialize block-producer endpoint")
+            info!(
+                target: COMPONENT,
+                block_producer_endpoint = %block_producer_url,
+                "Initializing block producer client",
+            );
+            Builder::new(block_producer_url)
                 .without_tls()
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<BlockProducer>();
-            info!(
-                target: COMPONENT,
-                block_producer_endpoint = %block_producer_url,
-                "Block producer client initialized",
-            );
-            block_producer
+                .connect_lazy::<BlockProducer>()
         });
 
         Self { store, block_producer }
@@ -400,25 +392,6 @@ impl api_server::Api for RpcService {
         debug!(target: COMPONENT, ?request);
 
         self.store.clone().get_block_by_number(request).await
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "rpc.server.get_account_state_delta",
-        skip_all,
-        ret(level = "debug"),
-        err
-    )]
-    async fn get_account_state_delta(
-        &self,
-        request: Request<proto::rpc_store::AccountStateDeltaRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountStateDelta>, Status> {
-        let request = request.into_inner();
-
-        debug!(target: COMPONENT, ?request);
-
-        self.store.clone().get_account_state_delta(request).await
     }
 
     #[instrument(

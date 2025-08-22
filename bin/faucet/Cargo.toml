@@ -27,7 +27,7 @@ miden-lib           = { workspace = true }
 miden-node-proto    = { workspace = true }
 miden-node-utils    = { workspace = true }
 miden-objects       = { workspace = true }
-miden-remote-prover = { features = ["tx-prover"], workspace = true }
+miden-remote-prover = { features = ["client"], workspace = true }
 miden-tx            = { features = ["concurrent"], workspace = true }
 rand                = { features = ["thread_rng"], workspace = true }
 rand_chacha         = { version = "0.9" }

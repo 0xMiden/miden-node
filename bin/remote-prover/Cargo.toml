@@ -25,10 +25,7 @@ concurrent = ["miden-tx?/concurrent"]
 std        = ["miden-objects?/std", "miden-tx?/std"]
 
 # Client features
-batch-prover = ["client"]
-block-prover = ["client"]
-client       = ["dep:miden-objects", "dep:tokio"]
-tx-prover    = ["client", "dep:miden-tx"]
+client = ["dep:miden-objects", "dep:miden-tx", "dep:tokio"]
 
 # Server features
 server = [

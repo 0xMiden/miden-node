@@ -19,7 +19,7 @@ futures             = { workspace = true }
 miden-node-proto    = { workspace = true }
 miden-node-utils    = { workspace = true }
 miden-objects       = { default-features = true, workspace = true }
-miden-remote-prover = { features = ["tx-prover"], workspace = true }
+miden-remote-prover = { features = ["client"], workspace = true }
 miden-tx            = { default-features = true, workspace = true }
 thiserror           = { workspace = true }
 tokio               = { features = ["rt-multi-thread"], workspace = true }

@@ -4,11 +4,8 @@
 //!
 //! ## Features
 //!
-//! - `client`: Enable client functionality (`RemoteTransactionProver`, etc.)
+//! - `client`: Enable client functionality (all remote provers: transaction, batch, block)
 //! - `server`: Enable server functionality (binary and library)
-//! - `tx-prover`: Enable transaction proving client
-//! - `batch-prover`: Enable batch proving client
-//! - `block-prover`: Enable block proving client
 //! - `std`: Enable standard library support
 //! - `concurrent`: Enable concurrent execution
 
@@ -32,7 +29,6 @@ pub mod shared;
 
 // Utils is now part of the server module
 
-// Re-exports for backward compatibility
 #[cfg(feature = "client")]
 pub mod remote_prover {
     pub use crate::client::*;

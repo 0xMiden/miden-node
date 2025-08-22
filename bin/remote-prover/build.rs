@@ -42,11 +42,7 @@ fn main() -> miette::Result<()> {
 
 /// Determines if client code should be generated based on enabled features
 fn should_generate_client() -> bool {
-    // Check for any client-related features
     cfg!(feature = "client")
-        || cfg!(feature = "tx-prover")
-        || cfg!(feature = "batch-prover")
-        || cfg!(feature = "block-prover")
 }
 
 /// Determines if server code should be generated based on enabled features

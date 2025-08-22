@@ -27,7 +27,7 @@ jobs:
       labels: "ubuntu-latest"
     strategy:
       matrix:
-        component: [node, faucet]
+        component: [node]
     name: Publish ${{ matrix.component }} ${{ inputs.version }}
     steps:
       - name: Checkout repo

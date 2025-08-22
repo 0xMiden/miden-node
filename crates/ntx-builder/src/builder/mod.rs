@@ -6,7 +6,7 @@ use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_utils::ErrorReport;
-use miden_remote_prover::remote_prover::tx_prover::RemoteTransactionProver;
+use miden_remote_prover::remote_prover::RemoteTransactionProver;
 use tokio::sync::Barrier;
 use tokio::time;
 use url::Url;

@@ -8,7 +8,7 @@ use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
 use miden_objects::note::NoteHeader;
-use miden_remote_prover::remote_prover::block_prover::RemoteBlockProver;
+use miden_remote_prover::remote_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
 use tracing::{Span, info, instrument};

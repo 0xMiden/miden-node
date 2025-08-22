@@ -138,7 +138,18 @@ message AccountProofs {
                 uint32 storage_slot = 1;
 
                 // Merkle proofs of the map value as partial sparse merkle tree for compression.
-                primitives.PartialSmt partial_smt = 2;
+                // The respective rust types is `SparseMerkleTree` and the transformation to and from
+                // bytes is done via the traits `Serializable::to_bytes` and `Deserializable::from_bytes`.
+                bytes partial_smt = 2;
+            }
+
+            // Represents a single storage slot with the requested keys and their respective values.
+            message StorageSlotMapProof {
+                // The storage slot index ([0..255]).
+                uint32 storage_slot = 1;
+
+                // Merkle proof of the map value
+                bytes smt_proof = 2;
             }
 
             // Account header.

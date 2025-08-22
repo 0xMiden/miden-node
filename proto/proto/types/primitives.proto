@@ -4,34 +4,6 @@ package primitives;
 // SMT
 // ================================================================================================
 
-// Representation of a partial sparse merkle tree.
-message PartialSmt {
-    // The sparse merkle tree root.
-    Digest root = 1;
-    // Set of leaves of the merkle tree.
-    repeated SmtLeaf leaves = 2;
-    // Unique set of inner merkle tree digest, all belonging to at least one
-    // merkle path of a given leave. Note that we skip all inner nodes that do
-    // have two children, since we can recalculate them on-the-fly.
-    repeated InnerNode nodes = 3;
-}
-
-// Node index representation.
-message NodeIndex {
-    // The depth of the index, starting from 0 as root.
-    uint32 depth = 1;
-    // The index within a certain tree depth, left-most being zero.
-    uint64 value = 2;
-}
-
-// Inner node of a sparse merkle tree
-message InnerNode {
-    // The position of the inner node within the tree.
-    NodeIndex index = 1;
-    // The digest of the subtree down to the root.
-    Digest digest = 2;
-}
-
 // Represents a single SMT leaf entry.
 message SmtLeafEntry {
     // The key of the entry.

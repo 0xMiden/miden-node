@@ -26,8 +26,7 @@ tonic            = { workspace = true }
 url              = { workspace = true }
 
 [dev-dependencies]
-proptest          = { version = "1.7" }
-pretty_assertions = { workspace = true}
+proptest = { version = "1.7" }
 
 [build-dependencies]
 anyhow                 = { workspace = true }

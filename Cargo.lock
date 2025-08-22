@@ -2042,7 +2042,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-remove-account-id-bech32#3206878fe5c4fa868ef429b8480978895a62bb3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#5047f149b157dcb8b0ed6adc5dc9268101968c65"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2114,7 +2114,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-remove-account-id-bech32#3206878fe5c4fa868ef429b8480978895a62bb3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#5047f149b157dcb8b0ed6adc5dc9268101968c65"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2411,7 +2411,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-remove-account-id-bech32#3206878fe5c4fa868ef429b8480978895a62bb3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#5047f149b157dcb8b0ed6adc5dc9268101968c65"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2541,7 +2541,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-remove-account-id-bech32#3206878fe5c4fa868ef429b8480978895a62bb3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#5047f149b157dcb8b0ed6adc5dc9268101968c65"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2560,7 +2560,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-remove-account-id-bech32#3206878fe5c4fa868ef429b8480978895a62bb3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#5047f149b157dcb8b0ed6adc5dc9268101968c65"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2575,7 +2575,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.11.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-remove-account-id-bech32#3206878fe5c4fa868ef429b8480978895a62bb3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#5047f149b157dcb8b0ed6adc5dc9268101968c65"
 dependencies = [
  "miden-objects",
  "miden-tx",

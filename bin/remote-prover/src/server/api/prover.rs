@@ -251,7 +251,8 @@ mod test {
     #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
     async fn test_prove_transaction() {
         // Start the server in the background
-        let listener = TcpListener::bind("127.0.0.1:50052").await.unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
 
         let proof_type = proto::ProofType::Transaction;
 
@@ -273,8 +274,8 @@ mod test {
         tokio::time::sleep(Duration::from_secs(1)).await;
 
         // Set up a gRPC client to send the request
-        let mut client = ApiClient::connect("http://127.0.0.1:50052").await.unwrap();
-        let mut client_2 = ApiClient::connect("http://127.0.0.1:50052").await.unwrap();
+        let mut client = ApiClient::connect(format!("http://{}", addr.clone())).await.unwrap();
+        let mut client_2 = ApiClient::connect(format!("http://{}", addr)).await.unwrap();
 
         // Create a mock transaction to send to the server
         let mut mock_chain_builder = MockChainBuilder::new();

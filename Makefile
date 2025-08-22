@@ -15,6 +15,8 @@ BUILD_PROTO=BUILD_PROTO=1
 clippy: ## Runs Clippy with configs
 	cargo clippy --locked --all-targets --all-features --workspace -- -D warnings
 	cargo clippy --locked --all-targets --all-features -p miden-remote-prover -- -D warnings
+	# Check wasm32 no-std client build
+	cargo clippy --locked -p miden-remote-prover --target wasm32-unknown-unknown --no-default-features --features client
 
 
 .PHONY: fix

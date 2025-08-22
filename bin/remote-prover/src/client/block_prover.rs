@@ -1,20 +1,17 @@
 #[cfg(not(feature = "std"))]
-use alloc::{
-    string::{String, ToString},
-    sync::Arc,
-    vec::Vec,
-};
+use alloc::{format, string::String, sync::Arc};
+#[cfg(feature = "std")]
 use core::time::Duration;
 #[cfg(feature = "std")]
-use std::sync::Arc;
+use std::{string::String, sync::Arc};
 
 use miden_objects::block::{ProposedBlock, ProvenBlock};
 use miden_objects::transaction::OrderedTransactionHeaders;
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use tokio::sync::Mutex;
 
-use crate::generated::server as proto;
-use crate::generated::server::api_client::ApiClient;
+use crate::generated::client as proto;
+use crate::generated::client::api_client::ApiClient;
 use crate::shared::error::RemoteProverClientError;
 
 // REMOTE BLOCK PROVER

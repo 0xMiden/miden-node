@@ -7,9 +7,9 @@ pub struct ProofRequest {
     pub proof_type: i32,
     /// Serialized payload requiring proof generation. The encoding format is
     /// type-specific:
-    /// - TRANSACTION: TransactionWitness encoded.
-    /// - BATCH: ProposedBatch encoded.
-    /// - BLOCK: ProposedBlock encoded.
+    /// - TRANSACTION: `TransactionWitness` encoded.
+    /// - BATCH: `ProposedBatch` encoded.
+    /// - BLOCK: `ProposedBlock` encoded.
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }
@@ -17,9 +17,9 @@ pub struct ProofRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Proof {
     /// Serialized proof bytes.
-    /// - TRANSACTION: Returns an encoded ProvenTransaction.
-    /// - BATCH: Returns an encoded ProvenBatch.
-    /// - BLOCK: Returns an encoded ProvenBlock.
+    /// - TRANSACTION: Returns an encoded `ProvenTransaction`.
+    /// - BATCH: Returns an encoded `ProvenBatch`.
+    /// - BLOCK: Returns an encoded `ProvenBlock`.
     #[prost(bytes = "vec", tag = "1")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }

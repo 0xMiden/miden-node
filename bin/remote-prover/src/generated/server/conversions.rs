@@ -93,3 +93,14 @@ impl From<crate::server::api::ProofType> for i32 {
         }
     }
 }
+
+// PROOF TO PROVEN TRANSACTION
+// ================================================================================================
+
+impl TryFrom<proto::Proof> for ProvenTransaction {
+    type Error = DeserializationError;
+
+    fn try_from(response: proto::Proof) -> Result<Self, Self::Error> {
+        ProvenTransaction::read_from_bytes(&response.payload)
+    }
+}

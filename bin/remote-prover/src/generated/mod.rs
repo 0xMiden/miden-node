@@ -29,6 +29,13 @@ pub mod client {
         //! Core/alloc-based client implementation without transport layer.
         include!("client/nostd/mod.rs");
     }
+
+    // Re-export everything from the appropriate variant based on std feature
+    #[cfg(feature = "std")]
+    pub use std::*;
+
+    #[cfg(not(feature = "std"))]
+    pub use nostd::*;
 }
 
 #[cfg(feature = "server")]

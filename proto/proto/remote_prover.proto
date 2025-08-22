@@ -31,18 +31,18 @@ message ProofRequest {
 
     // Serialized payload requiring proof generation. The encoding format is
     // type-specific:
-    // - TRANSACTION: TransactionWitness encoded.
-    // - BATCH: ProposedBatch encoded.
-    // - BLOCK: ProposedBlock encoded.
+    // - TRANSACTION: `TransactionWitness` encoded.
+    // - BATCH: `ProposedBatch` encoded.
+    // - BLOCK: `ProposedBlock` encoded.
     bytes payload = 2;
 }
 
 // Response message containing the generated proof.
 message Proof {
     // Serialized proof bytes.
-    // - TRANSACTION: Returns an encoded ProvenTransaction.
-    // - BATCH: Returns an encoded ProvenBatch.
-    // - BLOCK: Returns an encoded ProvenBlock.
+    // - TRANSACTION: Returns an encoded `ProvenTransaction`.
+    // - BATCH: Returns an encoded `ProvenBatch`.
+    // - BLOCK: Returns an encoded `ProvenBlock`.
     bytes payload = 1;
 }
 

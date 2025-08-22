@@ -1,12 +1,9 @@
 #[cfg(not(feature = "std"))]
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    sync::Arc,
-};
+use alloc::{string::String, sync::Arc};
+#[cfg(feature = "std")]
 use core::time::Duration;
 #[cfg(feature = "std")]
-use std::sync::Arc;
+use std::{string::String, sync::Arc};
 
 use miden_objects::transaction::{ProvenTransaction, TransactionWitness};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
@@ -14,8 +11,8 @@ use miden_objects::vm::FutureMaybeSend;
 use miden_tx::TransactionProverError;
 use tokio::sync::Mutex;
 
-use crate::generated::server as proto;
-use crate::generated::server::api_client::ApiClient;
+use crate::generated::client as proto;
+use crate::generated::client::api_client::ApiClient;
 use crate::shared::error::RemoteProverClientError;
 
 // REMOTE TRANSACTION PROVER

@@ -90,50 +90,14 @@ miden-node bundled start \
   --rpc.url http://0.0.0.0:57291
 ```
 
-## Faucet
-
-We also provide a reference implementation for a public faucet app with a basic webinterface to request
-tokens. The app requires a faucet account file which it can either generate (for a new account), or it can use an
-existing one e.g. one created as part of the genesis block.
-
-Create a faucet account for the faucet app to use - or skip this step if you already have an account file.
-
-Note that we specify a distinct account filename (`faucet.mac`) to avoid collision with the account file that the node
-bootstrap command generates.
-
-```sh
-miden-faucet create-faucet-account \
-  --token-symbol BTC \
-  --decimals 8 \
-  --max-supply 2100000000000000 \
-  --output faucet.mac
-```
-
-Run the faucet:
-
-```sh
-miden-faucet start \
-  --endpoint http://127.0.0.1:8080 \
-  --node-url http://127.0.0.1:57291 \
-  --account faucet.mac
-```
-
 ## Systemd
 
 Our [Debian packages](./installation.md#debian-package) install a systemd service which operates the node in `bundled`
 mode. You'll still need to run the [bootstrapping](#bootstrapping) process before the node can be started.
 
-You can inspect the service file with `systemctl cat miden-node` (and `miden-faucet`) or alternatively you can see it in
+You can inspect the service file with `systemctl cat miden-node` or alternatively you can see it in
 our repository in the `packaging` folder. For the bootstrapping process be sure to specify the data-directory as
-expected by the systemd file. If you're operating a faucet from an account generated in the genesis block, then you'll
-also want to specify the accounts directory as expected by the faucet service file. With the default unmodified service
-files this would be:
-
-```sh
-miden-node bundled bootstrap \
-  --data-directory /opt/miden-node \
-  --accounts-directory /opt/miden-faucet
-```
+expected by the systemd file.
 
 ## Environment variables
 

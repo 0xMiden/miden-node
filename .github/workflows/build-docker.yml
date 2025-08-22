@@ -14,7 +14,7 @@ jobs:
   docker-build:
     strategy:
       matrix:
-        component: [node, faucet]
+        component: [node]
     runs-on: ubuntu-latest
     name: Build ${{ matrix.component }}
     steps:

@@ -155,7 +155,7 @@ pub(crate) fn select_account_vault_assets(
     block_from: BlockNumber,
     block_to: BlockNumber,
 ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
-    use schema::account_vault_updates as t;
+    use schema::account_vault_assets as t;
 
     // SELECT block_num, faucet_id, delta
     // FROM account_fungible_asset_deltas

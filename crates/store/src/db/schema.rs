@@ -22,16 +22,6 @@ diesel::table! {
 }
 
 diesel::table! {
-    account_vault_updates (account_id, vault_key, block_num) {
-        account_id -> Binary,
-        vault_key -> Binary,
-        asset -> Nullable<Binary>,
-        block_num -> BigInt,
-        is_latest_update -> Bool,
-    }
-}
-
-diesel::table! {
     accounts (account_id) {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
@@ -114,9 +104,9 @@ diesel::joinable!(transactions -> block_headers (block_num));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_codes,
+    account_storage_map_values,
     accounts,
     account_vault_assets,
-    account_vault_updates,
     block_headers,
     note_scripts,
     notes,

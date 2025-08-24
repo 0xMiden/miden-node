@@ -62,12 +62,6 @@ Returns the latest state proofs of the specified accounts.
 
 ---
 
-### GetAccountStateDelta
-
-Returns delta of the account states in the range from `from_block_num` (exclusive) to `to_block_num` (inclusive).
-
----
-
 ### GetBlockByNumber
 
 Returns raw block data for the specified block number.

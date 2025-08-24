@@ -37,7 +37,7 @@ Returns a nullifier proof for each of the requested nullifiers.
 
 ### CheckNullifiersByPrefix
 
-Returns a list of nullifiers recorded in the node that match the specified prefixes and were created at or after 
+Returns a list of nullifiers recorded in the node that match the specified prefixes and were created at or after
 the given block height.
 
 Only 16-bit prefixes are supported at this time.
@@ -53,12 +53,6 @@ Returns the latest state of an account with the specified ID.
 ### GetAccountProofs
 
 Returns the latest state proofs of the specified accounts.
-
----
-
-### GetAccountStateDelta
-
-Returns delta of the account states in the range from `from_block_num` (exclusive) to `to_block_num` (inclusive).
 
 ---
 

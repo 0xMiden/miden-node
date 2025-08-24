@@ -6,7 +6,7 @@ use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_node_proto::domain::note::NetworkNote;
+use miden_node_proto::domain::note::SingleTargetNetworkNote;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -265,7 +265,7 @@ impl State {
             } => {
                 let network_notes = network_notes
                     .into_iter()
-                    .filter(|note| note.metadata().tag().is_single_target())
+                    .filter_map(|note| SingleTargetNetworkNote::try_from(note).ok())
                     .collect::<Vec<_>>();
                 self.add_transaction(id, nullifiers, network_notes, account_delta).await?;
             },
@@ -304,7 +304,7 @@ impl State {
         &mut self,
         id: TransactionId,
         nullifiers: Vec<Nullifier>,
-        network_notes: Vec<NetworkNote>,
+        network_notes: Vec<SingleTargetNetworkNote>,
         account_delta: Option<AccountUpdateDetails>,
     ) -> anyhow::Result<()> {
         // Skip transactions we already know about.

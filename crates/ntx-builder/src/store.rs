@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_node_proto::domain::note::NetworkNote;
+use miden_node_proto::domain::note::SingleTargetNetworkNote;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
@@ -104,7 +104,9 @@ impl StoreClient {
 
     /// Returns the list of unconsumed network notes.
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
-    pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
+    pub async fn get_unconsumed_network_notes(
+        &self,
+    ) -> Result<Vec<SingleTargetNetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
         let mut page_token: Option<u64> = None;
 
@@ -115,10 +117,10 @@ impl StoreClient {
             };
             let resp = self.inner.clone().get_unconsumed_network_notes(req).await?.into_inner();
 
-            let page: Vec<NetworkNote> = resp
+            let page: Vec<SingleTargetNetworkNote> = resp
                 .notes
                 .into_iter()
-                .map(NetworkNote::try_from)
+                .map(SingleTargetNetworkNote::try_from)
                 .collect::<Result<Vec<_>, _>>()?;
 
             all_notes.extend(page);

@@ -17,7 +17,6 @@ The full gRPC method definitions can be found in the [proto](../proto/README.md)
 - [CheckNullifiersByPrefix](#checknullifiersbyprefix)
 - [GetAccountDetails](#getaccountdetails)
 - [GetAccountProofs](#getaccountproofs)
-- [GetAccountStateDelta](#getaccountstatedelta)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetNotesById](#getnotesbyid)
@@ -114,7 +113,7 @@ number in the chain. Client is expected to repeat these requests in a loop until
 Each request also returns info about new notes, accounts, etc. created. It also returns Chain MMR delta that can be
 used to update the state of Chain MMR. This includes both chain MMR peaks and chain MMR nodes.
 
-For preserving some degree of privacy, note tags contain only high part of hashes. Thus, returned data contains excessive 
+For preserving some degree of privacy, note tags contain only high part of hashes. Thus, returned data contains excessive
 notes, client can make additional filtering of that data on its side.
 
 ---

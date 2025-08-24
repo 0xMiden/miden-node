@@ -82,7 +82,6 @@ fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         "CheckNullifiersByPrefix" => rpc_span!("store.rpc.rpc", "CheckNullifiersByPrefix"),
         "GetAccountDetails" => rpc_span!("store.rpc.rpc", "GetAccountDetails"),
         "GetAccountProofs" => rpc_span!("store.rpc.rpc", "GetAccountProofs"),
-        "GetAccountStateDelta" => rpc_span!("store.rpc.rpc", "GetAccountStateDelta"),
         "GetBlockByNumber" => rpc_span!("store.rpc.rpc", "GetBlockByNumber"),
         "GetBlockHeaderByNumber" => rpc_span!("store.rpc.rpc", "GetBlockHeaderByNumber"),
         "GetNotesById" => rpc_span!("store.rpc.rpc", "GetNotesById"),

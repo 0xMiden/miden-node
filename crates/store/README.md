@@ -17,7 +17,6 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 - [CheckNullifiersByPrefix](#checknullifiersbyprefix)
 - [GetAccountDetails](#getaccountdetails)
 - [GetAccountProofs](#getaccountproofs)
-- [GetAccountStateDelta](#getaccountstatedelta)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetBlockInputs](#getblockinputs)

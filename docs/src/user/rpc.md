@@ -12,7 +12,6 @@ The gRPC service definition can be found in the Miden node's `proto`
 - [CheckNullifiersByPrefix](#checknullifiersbyprefix)
 - [GetAccountDetails](#getaccountdetails)
 - [GetAccountProofs](#getaccountproofs)
-- [GetAccountStateDelta](#getaccountstatedelta)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetNotesById](#getnotesbyid)
@@ -40,10 +39,6 @@ Request the latest state of an account.
 ## GetAccountProofs
 
 Request state proofs for accounts, including specific storage slots.
-
-## GetAccountStateDelta
-
-Request the delta of an account's state for a range of blocks. This can be used to update your local account state to the latest network state.
 
 ## GetBlockByNumber
 

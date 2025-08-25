@@ -33,6 +33,7 @@
   - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
 - [BREAKING] Remove public store API `GetAccountStateDelta` ([#1162](https://github.com/0xMiden/miden-node/pull/1162)).
 - Removed `faucet` binary ([#1172](https://github.com/0xMiden/miden-node/pull/1172)).
+- Added `SyncAccountVault` gRPC endpoints ([#1176](https://github.com/0xMiden/miden-node/pull/1176)).
 
 ### Fixes
 

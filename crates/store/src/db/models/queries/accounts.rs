@@ -170,6 +170,10 @@ pub(crate) fn select_account_vault_assets(
     const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
     const ROW_LIMIT_SQL: i64 = ROW_LIMIT as i64;
 
+    if !account_id.is_public() {
+        return Err(DatabaseError::AccountNotPublic(account_id));
+    }
+
     if block_from > block_to {
         return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
     }

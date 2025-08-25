@@ -717,7 +717,7 @@ fn sync_account_vault_basic_validation() {
     // Test invalid block range - should return error
     let result =
         queries::select_account_vault_assets(conn, public_account_id, invalid_block_from, block_to);
-    assert!(result.is_err(), "Expected error for invalid block range");
+    assert!(result.is_err(), "expected error for invalid block range");
 
     if let Err(error) = result {
         match error {
@@ -725,7 +725,7 @@ fn sync_account_vault_basic_validation() {
                 assert_eq!(from, invalid_block_from);
                 assert_eq!(to, block_to);
             },
-            _ => panic!("Expected InvalidBlockRange error, got: {:?}", error),
+            _ => panic!("rxpected InvalidBlockRange error, got: {:?}", error),
         }
     }
 
@@ -735,13 +735,13 @@ fn sync_account_vault_basic_validation() {
             .unwrap();
 
     // Should return assets we inserted
-    assert!(values.len() > 0, "Expected non-empty vault assets");
-    assert!(last_block >= block_from, "Last block should be reasonable");
+    assert!(!values.is_empty(), "vault assets should have data");
+    assert!(last_block >= block_from, "response block num should be higher than request");
 
     // Verify that we get the updated asset for vault_key_1
     let vault_key_1_asset =
         values.iter().find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
-    assert!(vault_key_1_asset.is_some(), "Should find updated vault asset");
+    assert!(vault_key_1_asset.is_some(), "should find updated vault asset");
     assert_eq!(vault_key_1_asset.unwrap().asset, Some(updated_fungible_asset_1));
 }
 

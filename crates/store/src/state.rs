@@ -1017,7 +1017,7 @@ impl State {
         block_from: BlockNumber,
         block_to: BlockNumber,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
-        self.db.get_account_vault_updates(account_id, block_from, block_to).await
+        self.db.get_account_vault_sync(account_id, block_from, block_to).await
     }
 
     /// Returns the unprocessed network notes, along with the next pagination token.

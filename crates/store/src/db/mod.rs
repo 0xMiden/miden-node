@@ -515,7 +515,7 @@ impl Db {
         .await
     }
 
-    pub async fn get_account_vault_updates(
+    pub async fn get_account_vault_sync(
         &self,
         account_id: AccountId,
         block_from: BlockNumber,

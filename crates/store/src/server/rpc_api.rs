@@ -350,6 +350,10 @@ impl rpc_server::Rpc for StoreApi {
         let block_from = request.block_from.into();
         let block_to: BlockNumber = request.block_to.map_or(chain_tip, BlockNumber::from);
 
+        if block_to >= chain_tip {
+            return Err(Status::invalid_argument("block_to cannot be higher than the chain tip"));
+        }
+
         let (last_included_block, updates) = self
             .state
             .sync_account_vault(account_id, block_from, block_to)

@@ -169,20 +169,6 @@ pub(crate) fn note_type_to_raw_sql(note_type: u8) -> i32 {
 }
 
 #[inline(always)]
-pub(crate) fn raw_sql_to_execution_mode(raw: i32) -> i32 {
-    // match raw {
-    //     0 => NoteExecutionMode::Local,
-    //     1 => NoteExecutionMode::Network,
-    //    _ => unreachable!() // TODO
-    // }
-    raw
-}
-#[inline(always)]
-pub(crate) fn execution_mode_to_raw_sql(mode: i32) -> i32 {
-    mode
-}
-
-#[inline(always)]
 pub(crate) fn raw_sql_to_execution_hint(raw: i64) -> u64 {
     raw as u64
 }

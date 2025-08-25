@@ -115,6 +115,16 @@ the chain.
 
 ---
 
+### SyncAccountVault
+
+Returns information that allows clients to sync asset values for specific public accounts within a block range.
+
+For any `[block_from..block_to]` range, the latest known set of assets is returned for the requested account ID.
+The data can be split and a cutoff block may be selected if there are too many assets to sync. The response contains
+the chain tip so that the caller knows when it has been reached.
+
+---
+
 ### SyncState
 
 Returns info which can be used by the client to sync up to the latest state of the chain for the objects (accounts,

@@ -242,6 +242,7 @@ pub fn select_accounts_by_block_range(
     //     account_id IN rarray(?3)
     // ORDER BY
     //     block_num ASC
+
     let desired_account_ids = serialize_vec(account_ids);
     let raw: Vec<AccountSummaryRaw> =
         SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())

@@ -42,29 +42,6 @@ jobs:
           crate: miden-node
           arch: ${{ matrix.arch }}
 
-  publish-faucet:
-    name: Publish Faucet ${{ matrix.arch }} Debian
-    strategy:
-      matrix:
-        arch: [amd64, arm64]
-    runs-on:
-      labels: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@main
-        with:
-          fetch-depth: 0
-      - name: Build and Publish Faucet
-        uses: ./.github/actions/debian
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          gitref: ${{ env.version }}
-          crate_dir: faucet
-          service: miden-faucet
-          package: faucet
-          crate: miden-faucet
-          arch: ${{ matrix.arch }}
-
   publish-prover:
     name: Publish Prover ${{ matrix.arch }} Debian
     strategy:

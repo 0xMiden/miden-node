@@ -2,6 +2,10 @@
 
 ## v0.11.0 (TBD)
 
+### Removed
+
+- Moved the `miden-faucet` binary to the [`miden-faucet` repository](https://github.com/0xmiden/miden-faucet) ([#1179](https://github.com/0xMiden/miden-node/pull/1179)).
+
 ### Enhancements
 
 - Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
@@ -28,6 +32,7 @@
   - Configure the base verification fee
   - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
 - [BREAKING] Remove public store API `GetAccountStateDelta` ([#1162](https://github.com/0xMiden/miden-node/pull/1162)).
+- Removed `faucet` binary ([#1172](https://github.com/0xMiden/miden-node/pull/1172)).
 
 ### Fixes
 

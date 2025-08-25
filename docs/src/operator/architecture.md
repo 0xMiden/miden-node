@@ -1,7 +1,6 @@
 # Node architecture
 
 The node itself consists of four distributed components: store, block-producer, network transaction builder, and RPC.
-We also provide a reference faucet implementation which we use to distribute testnet and devnet tokens.
 
 The components can be run on separate instances when optimised for performance, but can also be run as a single process
 for convenience. The exception to this is the network transaction builder which can currently only be run as part of
@@ -49,9 +48,3 @@ This restriction is will be lifted in the future, but for now this component _mu
 network transactions.
 
 The mempool is monitored via a gRPC event stream served by the block-producer.
-
-## Faucet
-
-A stand-alone binary which serves a webpage where users can request tokens from a customizable faucet account. The
-faucet communicates with the node via the RPC component and is not considered special by the node. It is a simple
-reference implementation of a faucet.

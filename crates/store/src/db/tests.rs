@@ -658,6 +658,45 @@ fn sql_select_accounts() {
 
 #[test]
 #[miden_node_test_macro::enable_logging]
+fn sync_account_vault_basic_validation() {
+    let mut conn = create_db();
+    let conn = &mut conn;
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    let block_from: BlockNumber = 1.into();
+    let block_to: BlockNumber = 5.into();
+    let invalid_block_from: BlockNumber = 10.into();
+
+    create_block(conn, block_from);
+    create_block(conn, block_to);
+
+    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block_from)
+        .unwrap();
+
+    let result =
+        queries::select_account_vault_assets(conn, account_id, invalid_block_from, block_to);
+    assert!(result.is_err(), "Expected error for invalid block range");
+
+    if let Err(error) = result {
+        match error {
+            crate::errors::DatabaseError::InvalidBlockRange { from, to } => {
+                assert_eq!(from, invalid_block_from);
+                assert_eq!(to, block_to);
+            },
+            _ => panic!("Expected InvalidBlockRange error, got: {:?}", error),
+        }
+    }
+
+    // Test with valid block range - should return empty result (no vault assets inserted)
+    let (block_number, values) =
+        queries::select_account_vault_assets(conn, account_id, block_from, block_to).unwrap();
+    // Should return empty values since no vault assets were inserted
+    assert_eq!(values.len(), 0, "Expected empty vault assets");
+    assert!(block_number >= block_from, "last block should be higher than the rqeuest block");
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
 fn select_nullifiers_by_prefix_works() {
     const PREFIX_LEN: u8 = 16;
     let mut conn = create_db();

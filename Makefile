@@ -59,7 +59,7 @@ workspace-check: ## Runs a check that all packages have `lints.workspace = true`
 
 
 .PHONY: lint
-lint: typos-check format fix clippy toml workspace-check machete ## Runs all linting tasks at once (Clippy, fixing, formatting, workspace, machete)
+lint: typos-check format fix clippy toml machete ## Runs all linting tasks at once (Clippy, fixing, formatting, machete)
 
 # --- docs ----------------------------------------------------------------------------------------
 
@@ -96,10 +96,6 @@ build: ## Builds all crates and re-builds protobuf bindings for proto crates
 install-node: ## Installs node
 	${BUILD_PROTO} cargo install --path bin/node --locked
 
-.PHONY: install-faucet
-install-faucet: ## Installs faucet
-	${BUILD_PROTO} cargo install --path bin/faucet --locked
-
 .PHONY: install-remote-prover
 install-remote-prover: ## Install remote prover's CLI
 	$(BUILD_PROTO) cargo install --path bin/remote-prover --bin miden-remote-prover --features server,concurrent --locked
@@ -129,20 +125,24 @@ docker-run-node: ## Runs the Miden node as a Docker container
                -v miden-db:/db \
                -d miden-node-image
 
-.PHONY: docker-build-faucet
-docker-build-faucet: ## Builds the Miden faucet using Docker
-	@CREATED=$$(date) && \
-	VERSION=$$(cat bin/faucet/Cargo.toml | grep -m 1 '^version' | cut -d '"' -f 2) && \
-	COMMIT=$$(git rev-parse HEAD) && \
-	docker build --build-arg CREATED="$$CREATED" \
-        		 --build-arg VERSION="$$VERSION" \
-          		 --build-arg COMMIT="$$COMMIT" \
-                 -f bin/faucet/Dockerfile \
-                 -t miden-faucet-image .
+## --- setup --------------------------------------------------------------------------------------
 
-.PHONY: docker-run-faucet
-docker-run-faucet: ## Runs the Miden faucet as a Docker container
-	docker volume create miden-db
-	docker run --name miden-faucet \
-			   -p 8080:8080 \
-               -d miden-faucet-image
+.PHONY: check-tools
+check-tools: ## Checks if development tools are installed
+	@echo "Checking development tools..."
+	@command -v mdbook        >/dev/null 2>&1 && echo "[OK] mdbook is installed"        || echo "[MISSING] mdbook       (make install-tools)"
+	@command -v typos         >/dev/null 2>&1 && echo "[OK] typos is installed"         || echo "[MISSING] typos        (make install-tools)"
+	@command -v cargo nextest >/dev/null 2>&1 && echo "[OK] cargo-nextest is installed" || echo "[MISSING] cargo-nextest(make install-tools)"
+	@command -v taplo         >/dev/null 2>&1 && echo "[OK] taplo is installed"         || echo "[MISSING] taplo        (make install-tools)"
+	@command -v cargo-machete >/dev/null 2>&1 && echo "[OK] cargo-machete is installed" || echo "[MISSING] cargo-machete (make install-tools)"
+
+.PHONY: install-tools
+install-tools: ## Installs tools required by the Makefile
+	@echo "Installing development tools..."
+	# Rust-related
+	cargo install mdbook --locked
+	cargo install typos-cli --locked
+	cargo install cargo-nextest --locked
+	cargo install taplo-cli --locked
+	cargo install cargo-machete --locked
+	@echo "Development tools installation complete!"

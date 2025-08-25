@@ -6,7 +6,6 @@ The following is considered the node's public API, and will therefore be conside
 
 - RPC gRPC specification (note that this _excludes_ internal inter-component gRPC schemas).
 - Node configuration options.
-- Faucet configuration options.
 - Database schema changes which cannot be reverted.
 - Large protocol and behavioral changes.
 

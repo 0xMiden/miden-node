@@ -2,12 +2,17 @@
 
 ## v0.11.0 (TBD)
 
+### Removed
+
+- Moved the `miden-faucet` binary to the [`miden-faucet` repository](https://github.com/0xmiden/miden-faucet) ([#1179](https://github.com/0xMiden/miden-node/pull/1179)).
+
 ### Enhancements
 
 - Added environment variable support for batch and block size CLI arguments ([#1081](https://github.com/0xMiden/miden-node/pull/1081)).
 - RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - A transaction's account delta is now checked against its commitments in `SubmitProvenTransaction` endpoint ([#1093](https://github.com/0xMiden/miden-node/pull/1093)).
 - Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the mempool ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
+- Added tables for storing account storage maps ([#1132](https://github.com/0xMiden/miden-node/pull/1132)).
 - RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - Added benchmark CLI sub-command for the `miden-store` component to measure the state load time ([#1154](https://github.com/0xMiden/miden-node/pull/1154)).
 - Retry failed network notes with exponential backoff instead of immediately ([#1116](https://github.com/0xMiden/miden-node/pull/1116))
@@ -27,6 +32,7 @@
   - Configure the base verification fee
   - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
 - [BREAKING] Remove public store API `GetAccountStateDelta` ([#1162](https://github.com/0xMiden/miden-node/pull/1162)).
+- Removed `faucet` binary ([#1172](https://github.com/0xMiden/miden-node/pull/1172)).
 
 ### Fixes
 

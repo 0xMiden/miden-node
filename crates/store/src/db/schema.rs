@@ -1,5 +1,14 @@
 // @generated automatically by Diesel CLI.
-
+diesel::table! {
+    account_storage_map_values (account_id, block_num, slot, key, is_latest_update) {
+        account_id -> Binary,
+        block_num -> BigInt,
+        slot -> Integer,
+        key -> Binary,
+        value -> Binary,
+        is_latest_update -> Bool,
+    }
+}
 diesel::table! {
     accounts (account_id) {
         account_id -> Binary,
@@ -83,6 +92,7 @@ diesel::joinable!(transactions -> block_headers (block_num));
 
 diesel::allow_tables_to_appear_in_same_query!(
     account_codes,
+    account_storage_map_values,
     accounts,
     block_headers,
     note_scripts,

@@ -275,7 +275,7 @@ mod test {
 
         // Set up a gRPC client to send the request
         let mut client = ApiClient::connect(format!("http://{}", addr.clone())).await.unwrap();
-        let mut client_2 = ApiClient::connect(format!("http://{}", addr)).await.unwrap();
+        let mut client_2 = ApiClient::connect(format!("http://{addr}")).await.unwrap();
 
         // Create a mock transaction to send to the server
         let mut mock_chain_builder = MockChainBuilder::new();

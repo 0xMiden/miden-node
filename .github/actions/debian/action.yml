@@ -20,7 +20,6 @@ inputs:
     type: choice
     options:
       - miden-node
-      - miden-faucet
       - miden-remote-prover
   crate_dir:
     required: true
@@ -28,7 +27,6 @@ inputs:
     type: choice
     options:
       - miden-node
-      - miden-faucet
       - miden-remote-prover
   service:
     required: true
@@ -36,7 +34,6 @@ inputs:
     type: choice
     options:
       - miden-node
-      - miden-faucet
       - miden-prover
       - miden-prover-proxy
   package:
@@ -45,7 +42,6 @@ inputs:
     type: choice
     options:
       - node
-      - faucet
       - prover
       - prover-proxy
 

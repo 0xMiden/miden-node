@@ -51,6 +51,7 @@ jobs:
         run: |
           rustup update --no-self-update
           rustup component add clippy
+          rustup target add wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}

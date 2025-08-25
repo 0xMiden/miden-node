@@ -116,7 +116,7 @@ impl State {
 
         let notes = state.store.get_unconsumed_network_notes().await?;
         for note in notes {
-            // Single target network notes only.
+            // TODO: support multi target network notes.
             if let Some(prefix) = note.account_prefix() {
                 // Ignore notes which don't target an existing account.
                 let Some(account) = state.fetch_account(prefix).await? else {

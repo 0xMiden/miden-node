@@ -347,6 +347,12 @@ impl rpc_server::Rpc for StoreApi {
         let chain_tip = self.state.latest_block_num().await;
 
         let account_id: AccountId = read_account_id(request.account_id).map_err(|e| *e)?;
+        if !account_id.is_public() {
+            return Err(Status::invalid_argument(format!(
+                "account with ID {account_id} is not public",
+            )));
+        }
+
         let block_from = request.block_from.into();
         let block_to: BlockNumber = request.block_to.map_or(chain_tip, BlockNumber::from);
 

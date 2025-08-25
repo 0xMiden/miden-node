@@ -662,19 +662,61 @@ fn sync_account_vault_basic_validation() {
     let mut conn = create_db();
     let conn = &mut conn;
 
-    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+    // Create a public account for vault testing
+    let public_account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
     let block_from: BlockNumber = 1.into();
     let block_to: BlockNumber = 5.into();
+    let block_mid: BlockNumber = 3.into();
     let invalid_block_from: BlockNumber = 10.into();
 
+    // Create blocks
     create_block(conn, block_from);
+    create_block(conn, block_mid);
     create_block(conn, block_to);
 
-    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block_from)
+    // Create accounts - one public for vault assets, one private for testing
+    queries::upsert_accounts(conn, &[mock_block_account_update(public_account_id, 0)], block_from)
         .unwrap();
 
+    // Create some test vault assets
+    let vault_key_1 = num_to_word(100);
+    let vault_key_2 = num_to_word(200);
+    let fungible_asset_1 = Asset::Fungible(FungibleAsset::new(public_account_id, 1000).unwrap());
+    let fungible_asset_2 = Asset::Fungible(FungibleAsset::new(public_account_id, 2000).unwrap());
+
+    // Insert vault assets for the public account at different blocks
+    queries::insert_account_vault_asset(
+        conn,
+        public_account_id,
+        block_from,
+        vault_key_1,
+        Some(fungible_asset_1.clone()),
+    )
+    .unwrap();
+    queries::insert_account_vault_asset(
+        conn,
+        public_account_id,
+        block_mid,
+        vault_key_2,
+        Some(fungible_asset_2.clone()),
+    )
+    .unwrap();
+
+    // Update an existing vault asset (setss previous as not latest)
+    let updated_fungible_asset_1 =
+        Asset::Fungible(FungibleAsset::new(public_account_id, 1500).unwrap());
+    queries::insert_account_vault_asset(
+        conn,
+        public_account_id,
+        block_to,
+        vault_key_1,
+        Some(updated_fungible_asset_1.clone()),
+    )
+    .unwrap();
+
+    // Test invalid block range - should return error
     let result =
-        queries::select_account_vault_assets(conn, account_id, invalid_block_from, block_to);
+        queries::select_account_vault_assets(conn, public_account_id, invalid_block_from, block_to);
     assert!(result.is_err(), "Expected error for invalid block range");
 
     if let Err(error) = result {
@@ -687,12 +729,20 @@ fn sync_account_vault_basic_validation() {
         }
     }
 
-    // Test with valid block range - should return empty result (no vault assets inserted)
-    let (block_number, values) =
-        queries::select_account_vault_assets(conn, account_id, block_from, block_to).unwrap();
-    // Should return empty values since no vault assets were inserted
-    assert_eq!(values.len(), 0, "Expected empty vault assets");
-    assert!(block_number >= block_from, "last block should be higher than the rqeuest block");
+    // Test with valid block range - should return vault assets
+    let (last_block, values) =
+        queries::select_account_vault_assets(conn, public_account_id, block_from, block_to)
+            .unwrap();
+
+    // Should return assets we inserted
+    assert!(values.len() > 0, "Expected non-empty vault assets");
+    assert!(last_block >= block_from, "Last block should be reasonable");
+
+    // Verify that we get the updated asset for vault_key_1
+    let vault_key_1_asset =
+        values.iter().find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
+    assert!(vault_key_1_asset.is_some(), "Should find updated vault asset");
+    assert_eq!(vault_key_1_asset.unwrap().asset, Some(updated_fungible_asset_1));
 }
 
 #[test]

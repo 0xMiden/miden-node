@@ -237,20 +237,8 @@ impl TryFrom<proto::note::NetworkNote> for NetworkNote {
     type Error = ConversionError;
 
     fn try_from(proto_note: proto::note::NetworkNote) -> Result<Self, Self::Error> {
-        let note = proto_to_note(proto_note)?;
-        NetworkNote::try_from(note).map_err(Into::into)
+        from_proto(proto_note)
     }
-}
-
-fn proto_to_note(proto_note: proto::note::NetworkNote) -> Result<Note, ConversionError> {
-    let details = NoteDetails::read_from_bytes(&proto_note.details)
-        .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
-    let (assets, recipient) = details.into_parts();
-    let metadata: NoteMetadata = proto_note
-        .metadata
-        .ok_or_else(|| proto::note::NetworkNote::missing_field(stringify!(metadata)))?
-        .try_into()?;
-    Ok(Note::new(assets, metadata, recipient))
 }
 
 // SINGLE TARGET NETWORK NOTE
@@ -319,7 +307,24 @@ impl TryFrom<proto::note::NetworkNote> for SingleTargetNetworkNote {
     type Error = ConversionError;
 
     fn try_from(proto_note: proto::note::NetworkNote) -> Result<Self, Self::Error> {
-        let note = proto_to_note(proto_note)?;
-        SingleTargetNetworkNote::try_from(note).map_err(Into::into)
+        from_proto(proto_note)
     }
+}
+
+/// Helper function to deduplicate implementation for `NetworkNote` and `SingleTargetNetworkNote`
+/// `TryFrom<proto::note::NetworkNote>`.
+fn from_proto<T>(proto_note: proto::note::NetworkNote) -> Result<T, ConversionError>
+where
+    T: TryFrom<Note>,
+    T::Error: Into<ConversionError>,
+{
+    let details = NoteDetails::read_from_bytes(&proto_note.details)
+        .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
+    let (assets, recipient) = details.into_parts();
+    let metadata: NoteMetadata = proto_note
+        .metadata
+        .ok_or_else(|| proto::note::NetworkNote::missing_field(stringify!(metadata)))?
+        .try_into()?;
+    let note = Note::new(assets, metadata, recipient);
+    T::try_from(note).map_err(Into::into)
 }

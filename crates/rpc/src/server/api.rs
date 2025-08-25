@@ -436,6 +436,16 @@ impl api_server::Api for RpcService {
             None
         };
 
+        let genesis = self
+            .get_genesis_header_with_retry()
+            .await
+            .context("Fetching genesis header from store");
+
+        if let Err(err) = genesis {
+            tracing::warn!(target: COMPONENT, "Failed to fetch genesis header: {}", err);
+            return Err(Status::invalid_argument("Failed to fetch genesis header".to_string()));
+        }
+
         Ok(Response::new(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             store: store_status.or(Some(proto::rpc_store::StoreStatus {
@@ -449,6 +459,7 @@ impl api_server::Api for RpcService {
                     version: "-".to_string(),
                 },
             )),
+            genesis_commitment: Some(genesis.unwrap().commitment().into()),
         }))
     }
 }

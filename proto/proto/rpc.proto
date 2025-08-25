@@ -101,4 +101,7 @@ message RpcStatus {
 
     // The block producer status.
     block_producer.BlockProducerStatus block_producer = 4;
+
+    // The genesis commitment.
+    primitives.Digest genesis_commitment = 5;
 }

@@ -13,6 +13,9 @@ pub struct RpcStatus {
     pub block_producer: ::core::option::Option<
         super::block_producer::BlockProducerStatus,
     >,
+    /// The genesis commitment.
+    #[prost(message, optional, tag = "5")]
+    pub genesis_commitment: ::core::option::Option<super::primitives::Digest>,
 }
 /// Generated client implementations.
 pub mod api_client {

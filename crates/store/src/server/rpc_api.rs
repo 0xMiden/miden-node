@@ -349,6 +349,13 @@ impl rpc_server::Rpc for StoreApi {
         let request = request.into_inner();
 
         let account_id = read_account_id(request.account_id).map_err(|e| *e)?;
+
+        if !account_id.is_public() {
+            return Err(Status::invalid_argument(format!(
+                "account with ID {account_id} is not public"
+            )));
+        }
+
         let block_from = BlockNumber::from(request.block_from);
         let chain_tip = self.state.latest_block_num().await;
 
@@ -356,6 +363,10 @@ impl rpc_server::Rpc for StoreApi {
             Some(block_to) => BlockNumber::from(block_to),
             None => chain_tip,
         };
+
+        if block_from > block_to {
+            return Err(Status::invalid_argument("block_from cannot be higher than block_to"));
+        }
 
         let storage_maps_page = self
             .state

@@ -266,10 +266,14 @@ pub(crate) fn select_account_storage_map_values(
     // LIMIT :row_limit;
 
     // TODO: These limits should be given by the protocol.
-    // See miden-base's #1770 for more details
+    // See miden-base/issues/1770 for more details
     pub const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
     pub const ROW_OVERHEAD_BYTES: usize = size_of::<Word>() + size_of::<Word>() + size_of::<u8>(); // key + value + slot_idx
     pub const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
+
+    if !account_id.is_public() {
+        return Err(DatabaseError::AccountNotPublic(account_id));
+    }
 
     if block_from > block_to {
         return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });

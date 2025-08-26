@@ -6,7 +6,6 @@ members = [
   "crates/block-producer",
   "crates/ntx-builder",
   "crates/proto",
-
   "crates/rpc",
   "crates/store",
   "crates/test-macro",

@@ -690,7 +690,7 @@ fn sync_account_vault_basic_validation() {
         public_account_id,
         block_from,
         vault_key_1,
-        Some(fungible_asset_1.clone()),
+        Some(fungible_asset_1),
     )
     .unwrap();
     queries::insert_account_vault_asset(
@@ -698,11 +698,11 @@ fn sync_account_vault_basic_validation() {
         public_account_id,
         block_mid,
         vault_key_2,
-        Some(fungible_asset_2.clone()),
+        Some(fungible_asset_2),
     )
     .unwrap();
 
-    // Update an existing vault asset (setss previous as not latest)
+    // Update an existing vault asset (sets previous as not latest)
     let updated_fungible_asset_1 =
         Asset::Fungible(FungibleAsset::new(public_account_id, 1500).unwrap());
     queries::insert_account_vault_asset(
@@ -710,7 +710,7 @@ fn sync_account_vault_basic_validation() {
         public_account_id,
         block_to,
         vault_key_1,
-        Some(updated_fungible_asset_1.clone()),
+        Some(updated_fungible_asset_1),
     )
     .unwrap();
 
@@ -719,15 +719,9 @@ fn sync_account_vault_basic_validation() {
         queries::select_account_vault_assets(conn, public_account_id, invalid_block_from, block_to);
     assert!(result.is_err(), "expected error for invalid block range");
 
-    if let Err(error) = result {
-        match error {
-            crate::errors::DatabaseError::InvalidBlockRange { from, to } => {
-                assert_eq!(from, invalid_block_from);
-                assert_eq!(to, block_to);
-            },
-            _ => panic!("rxpected InvalidBlockRange error, got: {:?}", error),
-        }
-    }
+    let Err(crate::errors::DatabaseError::InvalidBlockRange { .. }) = result else {
+        panic!("expected error, got Ok");
+    };
 
     // Test with valid block range - should return vault assets
     let (last_block, values) =

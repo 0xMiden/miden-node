@@ -168,7 +168,6 @@ pub(crate) fn select_account_vault_assets(
     const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024;
     const ROW_OVERHEAD_BYTES: usize = core::mem::size_of::<Word>() * 2;
     const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
-    const ROW_LIMIT_SQL: i64 = ROW_LIMIT as i64;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -192,7 +191,7 @@ pub(crate) fn select_account_vault_assets(
                     ),
             )
             .order(t::block_num.asc())
-            .limit(ROW_LIMIT_SQL)
+            .limit(i64::try_from(ROW_LIMIT).expect("should fit within i64"))
             .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
@@ -212,7 +211,7 @@ pub(crate) fn select_account_vault_assets(
         .map(|(block_num, vault_key, asset)| {
             Ok(AccountVaultValue {
                 block_num: u32::try_from(block_num)
-                    .map_err(|e| DatabaseError::conversiont_from_sql::<u32, _, _>(e))?
+                    .map_err(DatabaseError::conversiont_from_sql::<u32, _, _>)?
                     .into(),
                 vault_key: Word::read_from_bytes(&vault_key)?,
                 asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,

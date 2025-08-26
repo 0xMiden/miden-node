@@ -28,6 +28,7 @@ use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::serde::Deserializable;
 use miden_objects::{MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
+use tokio::sync::OnceCell;
 use tonic::{IntoRequest, Request, Response, Status};
 use tracing::{debug, info, instrument};
 use url::Url;
@@ -40,6 +41,7 @@ use crate::COMPONENT;
 pub struct RpcService {
     store: StoreRpcClient,
     block_producer: Option<BlockProducerClient>,
+    genesis_commitment: OnceCell<Word>,
 }
 
 impl RpcService {
@@ -68,7 +70,18 @@ impl RpcService {
                 .connect_lazy::<BlockProducer>()
         });
 
-        Self { store, block_producer }
+        Self {
+            store,
+            block_producer,
+            genesis_commitment: OnceCell::new(),
+        }
+    }
+
+    pub fn set_genesis_commitment(&self, commitment: Word) -> anyhow::Result<()> {
+        self.genesis_commitment
+            .set(commitment)
+            .map_err(|_| anyhow::anyhow!("Genesis commitment already set"))?;
+        Ok(())
     }
 
     /// Fetches the genesis block header from the store.
@@ -436,15 +449,10 @@ impl api_server::Api for RpcService {
             None
         };
 
-        let genesis = self
-            .get_genesis_header_with_retry()
-            .await
-            .context("Fetching genesis header from store");
-
-        if let Err(err) = genesis {
-            tracing::warn!(target: COMPONENT, "Failed to fetch genesis header: {}", err);
-            return Err(Status::invalid_argument("Failed to fetch genesis header".to_string()));
-        }
+        let genesis_commitment = self.genesis_commitment.get().ok_or({
+            tracing::warn!(target: COMPONENT, "Failed to fetch genesis header");
+            Status::internal("failed to fetch genesis header")
+        })?;
 
         Ok(Response::new(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
@@ -459,7 +467,7 @@ impl api_server::Api for RpcService {
                     version: "-".to_string(),
                 },
             )),
-            genesis_commitment: Some(genesis.unwrap().commitment().into()),
+            genesis_commitment: Some(genesis_commitment.into()),
         }))
     }
 }

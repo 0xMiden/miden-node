@@ -48,6 +48,8 @@ impl Rpc {
             .await
             .context("Fetching genesis header from store")?;
 
+        api.set_genesis_commitment(genesis.commitment())?;
+
         let api_service = api_server::ApiServer::new(api);
         let reflection_service = server::Builder::configure()
             .register_file_descriptor_set(rpc_api_descriptor())

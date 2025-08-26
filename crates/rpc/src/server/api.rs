@@ -77,10 +77,14 @@ impl RpcService {
         }
     }
 
+    /// Sets the genesis commitment, returning an error if it is already set.
+    ///
+    /// Required since `RpcService::new()` sets up the `store` which is used to fetch the
+    /// `genesis_commitment`.
     pub fn set_genesis_commitment(&self, commitment: Word) -> anyhow::Result<()> {
         self.genesis_commitment
             .set(commitment)
-            .map_err(|_| anyhow::anyhow!("Genesis commitment already set"))?;
+            .map_err(|_| anyhow::anyhow!("genesis commitment already set"))?;
         Ok(())
     }
 
@@ -451,7 +455,7 @@ impl api_server::Api for RpcService {
 
         let genesis_commitment = self.genesis_commitment.get().ok_or({
             tracing::warn!(target: COMPONENT, "Failed to fetch genesis header");
-            Status::internal("failed to fetch genesis header")
+            Status::failed_precondition("genesis header was not set")
         })?;
 
         Ok(Response::new(proto::rpc::RpcStatus {

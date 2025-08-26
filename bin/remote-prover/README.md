@@ -1,6 +1,8 @@
 # Miden remote prover
 
-A service for generating Miden proofs on-demand. The binary enables spawning workers and a proxy for Miden's remote prover. It currently supports proving individual transactions, transaction batches, and blocks.
+A service for generating Miden proofs on-demand. This crate contains protobuf definitions for the Miden remote prover service and provides optional `RemoteTransactionProver`, `RemoteBatchProver` and `RemoteBlockProver` structs, which can be used to interact with a remote prover.
+
+The binary enables spawning workers and a proxy for Miden's remote prover. It currently supports proving individual transactions, transaction batches, and blocks.
 
 A worker is a gRPC service that can receive transaction witnesses, proposed batches, or proposed blocks, prove them, and return the generated proofs. It can handle only one request at a time and will return an error if it is already in use. Each worker is specialized on startup to handle exactly one type of proof requests - transactions, batches, or blocks.
 
@@ -67,6 +69,37 @@ make install-remote-prover
 ```
 
 The CLI can be installed from the source code using specific git revisions with `cargo install` or from crates.io with `cargo install miden-remote-prover`.
+
+## Client Library
+
+This crate provides remote prover client implementations for interacting with remote proving services. When the `client` feature is enabled, the following client structs become available:
+
+- **`RemoteTransactionProver`**: A client for proving individual transactions remotely
+- **`RemoteBatchProver`**: A client for proving transaction batches remotely
+- **`RemoteBlockProver`**: A client for proving blocks remotely
+
+These clients send proof requests to remote gRPC servers and receive the generated proofs. Each client is designed to handle a specific type of proof and provides an async interface for submitting proof requests.
+
+### Usage
+
+```rust
+use miden_remote_prover::client::{RemoteTransactionProver, RemoteBatchProver, RemoteBlockProver};
+
+// Create a remote transaction prover client
+let tx_prover = RemoteTransactionProver::new("http://localhost:50051".to_string())?;
+
+// Create a remote batch prover client
+let batch_prover = RemoteBatchProver::new("http://localhost:50052".to_string())?;
+
+// Create a remote block prover client
+let block_prover = RemoteBlockProver::new("http://localhost:50053".to_string())?;
+```
+
+The clients support both native and WebAssembly targets:
+- For `wasm32-unknown-unknown`, they use `tonic_web_wasm_client` transport
+- For native platforms, they use the built-in `tonic::transport`
+
+Transport layer connections are established lazily when the first proof request is made.
 
 ## Worker
 
@@ -331,11 +364,15 @@ Then, to add the new Prometheus collector as a datasource for Grafana, you can [
 
 ## Features
 
-Description of this crate's feature:
+Description of this crate's features:
 
-| Features     | Description                                            |
-| ------------ | ------------------------------------------------------ |
-| `concurrent` | Enables concurrent code to speed up runtime execution. |
+| Features     | Description                                                                                     |
+| ------------ | ----------------------------------------------------------------------------------------------- |
+| `concurrent` | Enables concurrent code to speed up runtime execution.                                          |
+| `std`        | Enables standard library support. Required for most server functionality.                       |
+| `client`     | Enables client functionality, providing remote prover client structs for all proof types.       |
+| `server`     | Enables server functionality, including the binary and library components.                      |
+| `metrics`    | Enables Prometheus metrics collection for the proxy service.                                    |
 
 ## License
 

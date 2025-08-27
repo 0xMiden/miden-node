@@ -46,6 +46,7 @@ fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         Some("CheckNullifiers") => rpc_span!("rpc.rpc", "CheckNullifiers"),
         Some("CheckNullifiersByPrefix") => rpc_span!("rpc.rpc", "CheckNullifiersByPrefix"),
         Some("GetBlockHeaderByNumber") => rpc_span!("rpc.rpc", "GetBlockHeaderByNumber"),
+        Some("SyncStorageMaps") => rpc_span!("rpc.rpc", "SyncStorageMaps"),
         Some("SyncAccountVault") => rpc_span!("rpc.rpc", "SyncAccountVault"),
         Some("SyncState") => rpc_span!("rpc.rpc", "SyncState"),
         Some("SyncNotes") => rpc_span!("rpc.rpc", "SyncNotes"),

@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use miden_lib::utils::Serializable;
 use miden_node_proto::domain::account::{AccountInfo, AccountProofRequest};
 use miden_node_proto::generated::rpc_store::rpc_server;
 use miden_node_proto::generated::{self as proto};

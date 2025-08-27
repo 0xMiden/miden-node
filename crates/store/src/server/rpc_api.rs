@@ -1,6 +1,5 @@
 use std::collections::BTreeSet;
 
-use miden_lib::utils::Serializable;
 use miden_node_proto::domain::account::{AccountInfo, AccountProofRequest};
 use miden_node_proto::generated::rpc_store::rpc_server;
 use miden_node_proto::generated::{self as proto};
@@ -379,8 +378,8 @@ impl rpc_server::Rpc for StoreApi {
             .into_iter()
             .map(|map_value| proto::rpc_store::StorageMapUpdate {
                 slot_index: u32::from(map_value.slot_index),
-                key: map_value.key.to_bytes(),
-                value: map_value.value.to_bytes(),
+                key: Some(map_value.key.into()),
+                value: Some(map_value.value.into()),
             })
             .collect();
 

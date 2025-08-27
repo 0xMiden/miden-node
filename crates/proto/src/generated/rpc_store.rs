@@ -270,29 +270,34 @@ pub struct SyncStorageMapsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncStorageMapsResponse {
-    /// The block number of the last row included in this response.
+    /// The block number of the last update included in this response.
+    ///
     /// For chunked responses, this may be less than request.block_to.
+    /// If it is less than request.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_from = block_num + 1).
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
     /// Current chain tip
     #[prost(fixed32, tag = "2")]
     pub chain_tip: u32,
     /// The list of storage map updates.
+    ///
+    ///
     #[prost(message, repeated, tag = "3")]
     pub updates: ::prost::alloc::vec::Vec<StorageMapUpdate>,
 }
 /// Represents a single storage map update.
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct StorageMapUpdate {
     /// Slot index (\[0..255\]).
     #[prost(uint32, tag = "1")]
     pub slot_index: u32,
     /// The storage map key.
-    #[prost(bytes = "vec", tag = "2")]
-    pub key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "2")]
+    pub key: ::core::option::Option<super::primitives::Digest>,
     /// The storage map value.
-    #[prost(bytes = "vec", tag = "3")]
-    pub value: ::prost::alloc::vec::Vec<u8>,
+    #[prost(message, optional, tag = "3")]
+    pub value: ::core::option::Option<super::primitives::Digest>,
 }
 /// Generated client implementations.
 pub mod rpc_client {

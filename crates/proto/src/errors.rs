@@ -1,7 +1,7 @@
 use std::any::type_name;
 use std::num::TryFromIntError;
 
-use miden_objects::FeeError;
+use miden_objects::{AssetError, FeeError};
 use miden_objects::crypto::merkle::{SmtLeafError, SmtProofError};
 use miden_objects::utils::DeserializationError;
 use thiserror::Error;
@@ -10,6 +10,8 @@ use crate::domain::note::NetworkNoteError;
 
 #[derive(Debug, Error)]
 pub enum ConversionError {
+    #[error("asset error")]
+    AssetError(#[from] AssetError),
     #[error("fee parameters error")]
     FeeError(#[from] FeeError),
     #[error("hex error")]

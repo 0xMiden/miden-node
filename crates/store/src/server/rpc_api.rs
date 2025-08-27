@@ -389,7 +389,7 @@ impl rpc_server::Rpc for StoreApi {
             .into_iter()
             .map(|update| proto::rpc_store::AccountVaultUpdate {
                 vault_key: Some(update.vault_key.into()),
-                asset: update.asset.map(|asset| asset.to_bytes()),
+                asset: update.asset.map(|asset| asset.into()),
                 block_num: update.block_num.as_u32(),
             })
             .collect();

@@ -222,6 +222,7 @@ pub(crate) fn select_all_accounts(
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMapValue {
+    pub block_num: BlockNumber,
     pub slot_index: u8,
     pub key: Word,
     pub value: Word,
@@ -237,8 +238,9 @@ pub struct StorageMapValuesPage {
 
 impl StorageMapValue {
     pub fn from_raw_row(row: (i64, i32, Vec<u8>, Vec<u8>)) -> Result<Self, DatabaseError> {
-        let (_, slot_index, key, value) = row;
+        let (block_num, slot_index, key, value) = row;
         Ok(Self {
+            block_num: BlockNumber::from_raw_sql(block_num)?,
             slot_index: raw_sql_to_slot(slot_index),
             key: Word::read_from_bytes(&key)?,
             value: Word::read_from_bytes(&value)?,
@@ -274,7 +276,7 @@ pub(crate) fn select_account_storage_map_values(
     // WHERE
     //     account_id = ?1
     //     AND block_num >= ?2
-    //     AND (block_num = ?3 OR (is_latest_update = 1 AND block_num <= ?3))
+    //     AND block_num <= ?3
     // ORDER BY
     //     block_num ASC
     // LIMIT
@@ -300,9 +302,7 @@ pub(crate) fn select_account_storage_map_values(
                 t::account_id
                     .eq(account_id.to_bytes())
                     .and(t::block_num.ge(block_from.to_raw_sql()))
-                    .and(t::block_num.eq(block_to.to_raw_sql()).or(
-                        t::is_latest_update.eq(true).and(t::block_num.le(block_to.to_raw_sql())),
-                    )),
+                    .and(t::block_num.le(block_to.to_raw_sql())),
             )
             .order(t::block_num.asc())
             .limit(i64::try_from(ROW_LIMIT).expect("limit fits within i64"))

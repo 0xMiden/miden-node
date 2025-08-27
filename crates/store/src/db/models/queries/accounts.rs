@@ -236,9 +236,10 @@ pub struct StorageMapValuesPage {
 }
 
 impl StorageMapValue {
-    pub fn from_raw_row(slot: i32, key: Vec<u8>, value: Vec<u8>) -> Result<Self, DatabaseError> {
+    pub fn from_raw_row(row: (i64, i32, Vec<u8>, Vec<u8>)) -> Result<Self, DatabaseError> {
+        let (_, slot_index, key, value) = row;
         Ok(Self {
-            slot_index: raw_sql_to_slot(slot),
+            slot_index: raw_sql_to_slot(slot_index),
             key: Word::read_from_bytes(&key)?,
             value: Word::read_from_bytes(&value)?,
         })
@@ -315,18 +316,17 @@ pub(crate) fn select_account_storage_map_values(
 
         // SAFETY: we checked that the vector is not empty
         let &(last_block_num, ..) = raw.last().unwrap();
+        let values = raw
+            .into_iter()
+            .filter(|(bn, ..)| *bn != last_block_num)
+            .map(StorageMapValue::from_raw_row)
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
 
-        let mut values = Vec::with_capacity(raw.len().saturating_sub(1));
-        for (_, slot, key, value) in raw.into_iter().filter(|(bn, ..)| *bn != last_block_num) {
-            values.push(StorageMapValue::from_raw_row(slot, key, value)?);
-        }
         (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
     } else {
         (
             block_to,
-            raw.into_iter()
-                .map(|(_, slot, key, value)| StorageMapValue::from_raw_row(slot, key, value))
-                .collect::<Result<_, _>>()?,
+            raw.into_iter().map(StorageMapValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };
 

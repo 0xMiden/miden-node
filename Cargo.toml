@@ -40,7 +40,7 @@ miden-node-rpc            = { path = "crates/rpc", version = "0.11" }
 miden-node-store          = { path = "crates/store", version = "0.11" }
 miden-node-test-macro     = { path = "crates/test-macro" }
 miden-node-utils          = { path = "crates/utils", version = "0.11" }
-miden-remote-prover       = { path = "bin/remote-prover", version = "0.11" }
+miden-remote-prover       = { default-features = false, path = "bin/remote-prover", version = "0.11" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
 miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }

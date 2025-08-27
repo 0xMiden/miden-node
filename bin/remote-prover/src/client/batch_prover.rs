@@ -1,6 +1,6 @@
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String, sync::Arc, vec::Vec};
-#[cfg(feature = "std")]
+#[cfg(not(target_arch = "wasm32"))]
 use core::time::Duration;
 #[cfg(feature = "std")]
 use std::{string::String, sync::Arc, vec::Vec};

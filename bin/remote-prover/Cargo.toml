@@ -18,7 +18,7 @@ required-features = ["server"]
 
 [features]
 # Default features
-default = ["concurrent", "server"]
+default = ["concurrent"]
 
 # Core functionality
 concurrent = ["miden-tx?/concurrent"]

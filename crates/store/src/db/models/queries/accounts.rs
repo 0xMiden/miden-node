@@ -162,7 +162,7 @@ pub(crate) fn select_account_vault_assets(
     // WHERE account_id = ?
     //   AND block_num >= ?
     //   AND block_num <= ?
-    // ORDER BY block_num ASC, faucet_id ASC
+    // ORDER BY block_num ASC
     // LIMIT ROW_LIMIT;
 
     // TODO: These limits should be given by the protocol.
@@ -185,12 +185,7 @@ pub(crate) fn select_account_vault_assets(
                 t::account_id
                     .eq(account_id.to_bytes())
                     .and(t::block_num.ge(block_from.to_raw_sql()))
-                    .and(
-                        // include rows exactly at block_to OR latest rows <= block_to
-                        t::block_num.eq(block_to.to_raw_sql()).or(t::is_latest_update
-                            .eq(true)
-                            .and(t::block_num.le(block_to.to_raw_sql()))),
-                    ),
+                    .and(t::block_num.le(block_to.to_raw_sql())),
             )
             .order(t::block_num.asc())
             .limit(i64::try_from(ROW_LIMIT).expect("should fit within i64"))

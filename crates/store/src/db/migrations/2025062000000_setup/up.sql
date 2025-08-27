@@ -103,6 +103,8 @@ CREATE TABLE account_vault_assets (
     PRIMARY KEY (account_id, block_num, vault_key)
 ) WITHOUT ROWID;
 
+CREATE INDEX idx_vault_assets_id_block ON account_vault_assets (account_id, block_num);
+
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,
     nullifier_prefix INTEGER NOT NULL,

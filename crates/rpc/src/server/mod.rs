@@ -41,7 +41,7 @@ impl Rpc {
     /// Note: Executes in place (i.e. not spawned) and will run indefinitely until
     ///       a fatal error is encountered.
     pub async fn serve(self) -> anyhow::Result<()> {
-        let api = api::RpcService::new(self.store_url.clone(), self.block_producer_url.clone());
+        let mut api = api::RpcService::new(self.store_url.clone(), self.block_producer_url.clone());
 
         let genesis = api
             .get_genesis_header_with_retry()

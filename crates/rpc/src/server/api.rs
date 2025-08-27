@@ -28,7 +28,6 @@ use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::serde::Deserializable;
 use miden_objects::{MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
-use tokio::sync::OnceCell;
 use tonic::{IntoRequest, Request, Response, Status};
 use tracing::{debug, info, instrument};
 use url::Url;
@@ -41,7 +40,7 @@ use crate::COMPONENT;
 pub struct RpcService {
     store: StoreRpcClient,
     block_producer: Option<BlockProducerClient>,
-    genesis_commitment: OnceCell<Word>,
+    genesis_commitment: Word,
 }
 
 impl RpcService {
@@ -73,7 +72,7 @@ impl RpcService {
         Self {
             store,
             block_producer,
-            genesis_commitment: OnceCell::new(),
+            genesis_commitment: Word::empty(),
         }
     }
 
@@ -81,10 +80,11 @@ impl RpcService {
     ///
     /// Required since `RpcService::new()` sets up the `store` which is used to fetch the
     /// `genesis_commitment`.
-    pub fn set_genesis_commitment(&self, commitment: Word) -> anyhow::Result<()> {
-        self.genesis_commitment
-            .set(commitment)
-            .map_err(|_| anyhow::anyhow!("genesis commitment already set"))?;
+    pub fn set_genesis_commitment(&mut self, commitment: Word) -> anyhow::Result<()> {
+        if !self.genesis_commitment.is_empty() {
+            return Err(anyhow::anyhow!("genesis commitment already set"));
+        }
+        self.genesis_commitment = commitment;
         Ok(())
     }
 
@@ -453,11 +453,6 @@ impl api_server::Api for RpcService {
             None
         };
 
-        let genesis_commitment = self.genesis_commitment.get().ok_or({
-            tracing::warn!(target: COMPONENT, "Failed to fetch genesis header");
-            Status::failed_precondition("genesis header was not set")
-        })?;
-
         Ok(Response::new(proto::rpc::RpcStatus {
             version: env!("CARGO_PKG_VERSION").to_string(),
             store: store_status.or(Some(proto::rpc_store::StoreStatus {
@@ -471,7 +466,7 @@ impl api_server::Api for RpcService {
                     version: "-".to_string(),
                 },
             )),
-            genesis_commitment: Some(genesis_commitment.into()),
+            genesis_commitment: Some(self.genesis_commitment.into()),
         }))
     }
 }

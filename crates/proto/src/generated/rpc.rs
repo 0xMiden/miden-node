@@ -5,6 +5,9 @@ pub struct RpcStatus {
     /// The rpc component's running version.
     #[prost(string, tag = "1")]
     pub version: ::prost::alloc::string::String,
+    /// The genesis commitment.
+    #[prost(message, optional, tag = "2")]
+    pub genesis_commitment: ::core::option::Option<super::primitives::Digest>,
     /// The store status.
     #[prost(message, optional, tag = "3")]
     pub store: ::core::option::Option<super::rpc_store::StoreStatus>,
@@ -13,9 +16,6 @@ pub struct RpcStatus {
     pub block_producer: ::core::option::Option<
         super::block_producer::BlockProducerStatus,
     >,
-    /// The genesis commitment.
-    #[prost(message, optional, tag = "5")]
-    pub genesis_commitment: ::core::option::Option<super::primitives::Digest>,
 }
 /// Generated client implementations.
 pub mod api_client {

@@ -96,12 +96,12 @@ message RpcStatus {
     // The rpc component's running version.
     string version = 1;
 
+    // The genesis commitment.
+    primitives.Digest genesis_commitment = 2;
+
     // The store status.
     rpc_store.StoreStatus store = 3;
 
     // The block producer status.
     block_producer.BlockProducerStatus block_producer = 4;
-
-    // The genesis commitment.
-    primitives.Digest genesis_commitment = 5;
 }

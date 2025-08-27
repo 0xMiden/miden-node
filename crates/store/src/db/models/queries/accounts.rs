@@ -235,6 +235,16 @@ pub struct StorageMapValuesPage {
     pub values: Vec<StorageMapValue>,
 }
 
+impl StorageMapValue {
+    pub fn from_raw_row(slot: i32, key: Vec<u8>, value: Vec<u8>) -> Result<Self, DatabaseError> {
+        Ok(Self {
+            slot_index: raw_sql_to_slot(slot),
+            key: Word::read_from_bytes(&key)?,
+            value: Word::read_from_bytes(&value)?,
+        })
+    }
+}
+
 /// Select account storage map values from the DB using the given [`SqliteConnection`].
 ///
 /// # Returns
@@ -254,20 +264,24 @@ pub(crate) fn select_account_storage_map_values(
     use schema::account_storage_map_values as t;
 
     // SELECT
-    //   block_num,
-    //   slot,
-    //   key,
-    //   value
-    // FROM account_storage_map_values
-    // WHERE account_id = ?1
-    // AND block_num >= ?2
-    // AND (block_num = ?3 OR (is_latest_update = 1 AND block_num <= ?3))
-    // ORDER BY block_num ASC
-    // LIMIT :row_limit;
+    //     block_num,
+    //     slot,
+    //     key,
+    //     value
+    // FROM
+    //     account_storage_map_values
+    // WHERE
+    //     account_id = ?1
+    //     AND block_num >= ?2
+    //     AND (block_num = ?3 OR (is_latest_update = 1 AND block_num <= ?3))
+    // ORDER BY
+    //     block_num ASC
+    // LIMIT
+    //     :row_limit;
 
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
-    pub const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
+    pub const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     pub const ROW_OVERHEAD_BYTES: usize = size_of::<Word>() + size_of::<Word>() + size_of::<u8>(); // key + value + slot_idx
     pub const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
 
@@ -279,7 +293,7 @@ pub(crate) fn select_account_storage_map_values(
         return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
     }
 
-    let mut raw: Vec<(i64, i32, Vec<u8>, Vec<u8>)> =
+    let raw: Vec<(i64, i32, Vec<u8>, Vec<u8>)> =
         SelectDsl::select(t::table, (t::block_num, t::slot, t::key, t::value))
             .filter(
                 t::account_id
@@ -294,27 +308,27 @@ pub(crate) fn select_account_storage_map_values(
             .load(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
-    let mut last_block_included = block_to;
-    if raw.len() == ROW_LIMIT {
+    let (last_block_included, values) = if raw.len() == ROW_LIMIT {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
         // least two blocks
-        if let Some(last_block_num) = raw.last().map(|r| r.0) {
-            raw.retain(|(row_block_num, ..)| *row_block_num != last_block_num);
-            last_block_included = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
-        }
-    }
 
-    let values: Vec<StorageMapValue> = raw
-        .into_iter()
-        .map(|(_, slot, key, value)| -> Result<StorageMapValue, DatabaseError> {
-            Ok(StorageMapValue {
-                slot_index: raw_sql_to_slot(slot),
-                key: Word::read_from_bytes(&key)?,
-                value: Word::read_from_bytes(&value)?,
-            })
-        })
-        .collect::<Result<_, _>>()?;
+        // SAFETY: we checked that the vector is not empty
+        let &(last_block_num, ..) = raw.last().unwrap();
+
+        let mut values = Vec::with_capacity(raw.len().saturating_sub(1));
+        for (_, slot, key, value) in raw.into_iter().filter(|(bn, ..)| *bn != last_block_num) {
+            values.push(StorageMapValue::from_raw_row(slot, key, value)?);
+        }
+        (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
+    } else {
+        (
+            block_to,
+            raw.into_iter()
+                .map(|(_, slot, key, value)| StorageMapValue::from_raw_row(slot, key, value))
+                .collect::<Result<_, _>>()?,
+        )
+    };
 
     Ok(StorageMapValuesPage { last_block_included, values })
 }

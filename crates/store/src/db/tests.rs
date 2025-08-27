@@ -49,6 +49,8 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId};
 use miden_objects::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
@@ -1079,7 +1081,7 @@ fn sql_account_storage_map_values_insertion() {
     create_block(conn, block2);
 
     let account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
 
     let slot = 3u8;
     let key1 = Word::from([1u32, 2, 3, 4]);
@@ -1139,8 +1141,7 @@ fn sql_account_storage_map_values_insertion() {
 #[test]
 fn select_storage_map_sync_values() {
     let mut conn = create_db();
-    let account_id =
-        AccountId::try_from(ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE).unwrap();
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
     let slot = 5u8;
 
     let key1 = num_to_word(1);

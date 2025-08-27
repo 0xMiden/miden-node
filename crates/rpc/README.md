@@ -118,6 +118,7 @@ notes, client can make additional filtering of that data on its side.
 Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
 
 Caller specifies the `account_id` of the public account and the block range (`block_from`, `block_to`) for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
+
 This endpoint enables clients to maintain an updated view of account storage.
 
 ---

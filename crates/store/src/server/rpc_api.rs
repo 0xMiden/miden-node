@@ -365,7 +365,7 @@ impl rpc_server::Rpc for StoreApi {
         };
 
         if block_from > block_to {
-            return Err(Status::invalid_argument("block_from cannot be higher than block_to"));
+            return Err(Status::invalid_argument("block_from cannot be greater than block_to"));
         }
 
         let storage_maps_page = self

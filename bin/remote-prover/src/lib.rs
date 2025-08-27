@@ -24,8 +24,8 @@ pub mod client;
 #[cfg(feature = "server")]
 pub mod server;
 
+pub mod error;
 pub mod generated;
-pub mod shared;
 
 // Utils is now part of the server module
 
@@ -35,7 +35,9 @@ pub mod remote_prover {
 }
 
 // Server-side re-exports
-#[cfg(feature = "server")]
-pub use server::{api, error};
 #[cfg(feature = "client")]
-pub use shared::error::RemoteProverClientError;
+pub use error::RemoteProverClientError;
+#[cfg(feature = "server")]
+pub use server::api;
+#[cfg(feature = "server")]
+pub use server::error::RemoteProverError;

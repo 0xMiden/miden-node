@@ -9,9 +9,9 @@ use miden_objects::vm::FutureMaybeSend;
 use miden_tx::TransactionProverError;
 use tokio::sync::Mutex;
 
+use crate::error::RemoteProverClientError;
 use crate::generated::client as proto;
 use crate::generated::client::api_client::ApiClient;
-use crate::shared::error::RemoteProverClientError;
 
 // REMOTE TRANSACTION PROVER
 // ================================================================================================

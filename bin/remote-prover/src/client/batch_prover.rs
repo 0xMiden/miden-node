@@ -8,9 +8,9 @@ use miden_objects::transaction::{OutputNote, ProvenTransaction};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use tokio::sync::Mutex;
 
+use crate::error::RemoteProverClientError;
 use crate::generated::client as proto;
 use crate::generated::client::api_client::ApiClient;
-use crate::shared::error::RemoteProverClientError;
 
 // REMOTE BATCH PROVER
 // ================================================================================================

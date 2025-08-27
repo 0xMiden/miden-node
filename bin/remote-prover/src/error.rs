@@ -1,4 +1,4 @@
-//! Shared error types for remote prover client and server functionality
+//! Error types for remote prover client functionality
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;

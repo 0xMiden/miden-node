@@ -26,6 +26,26 @@ use crate::server::api::{
 
 #[tonic::async_trait]
 impl rpc_server::Rpc for StoreApi {
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.status",
+        skip_all,
+        level = "debug",
+        ret(level = "debug"),
+        err
+    )]
+    async fn status(
+        &self,
+        _request: Request<()>,
+    ) -> Result<Response<proto::rpc_store::StoreStatus>, Status> {
+        Ok(Response::new(proto::rpc_store::StoreStatus {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "connected".to_string(),
+            chain_tip: self.state.latest_block_num().await.as_u32(),
+        }))
+    }
+
     /// Returns block header for the specified block number.
     ///
     /// If the block number is not provided, block header for the latest block is returned.

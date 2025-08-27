@@ -408,7 +408,7 @@ pub(crate) fn select_account_storage_map_values(
 }
 
 #[derive(Queryable, Selectable)]
-#[diesel(table_name = crate::db::schema::account_vault_updates)]
+#[diesel(table_name = crate::db::schema::account_vault_assets)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct AccountVaultUpdateRaw {
     pub vault_key: Vec<u8>,

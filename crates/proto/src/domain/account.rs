@@ -287,19 +287,19 @@ impl TryFrom<proto::block_producer_store::transaction_inputs::AccountTransaction
 // ASSET
 // ================================================================================================
 
-impl From<Asset> for proto::rpc_store::Asset {
+impl From<Asset> for proto::account::Asset {
     fn from(asset_from: Asset) -> Self {
-        proto::rpc_store::Asset {
+        proto::account::Asset {
             asset: Some(Word::from(asset_from).into()),
         }
     }
 }
 
-impl TryFrom<proto::rpc_store::Asset> for Asset {
+impl TryFrom<proto::account::Asset> for Asset {
     type Error = ConversionError;
 
-    fn try_from(value: proto::rpc_store::Asset) -> Result<Self, Self::Error> {
-        let inner = value.asset.ok_or(proto::rpc_store::Asset::missing_field("asset"))?;
+    fn try_from(value: proto::account::Asset) -> Result<Self, Self::Error> {
+        let inner = value.asset.ok_or(proto::account::Asset::missing_field("asset"))?;
         let word = Word::try_from(inner)?;
 
         Asset::try_from(word).map_err(ConversionError::AssetError)

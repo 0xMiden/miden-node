@@ -255,21 +255,13 @@ pub struct AccountVaultUpdate {
     /// Vault key asscoiated with the asset.
     #[prost(message, optional, tag = "1")]
     pub vault_key: ::core::option::Option<super::primitives::Digest>,
-    /// Serialized asset.
+    /// Asset value related to the vault key.
     /// If not present, the asset was removed from the vault.
-    ///
-    /// TODO: see if it's worth making a message for assets
     #[prost(message, optional, tag = "2")]
-    pub asset: ::core::option::Option<Asset>,
+    pub asset: ::core::option::Option<super::account::Asset>,
     /// Block number at which the above asset was updated in the account vault.
     #[prost(fixed32, tag = "3")]
     pub block_num: u32,
-}
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct Asset {
-    /// Asset represented as a word.
-    #[prost(message, optional, tag = "1")]
-    pub asset: ::core::option::Option<super::primitives::Digest>,
 }
 /// Note synchronization request.
 ///

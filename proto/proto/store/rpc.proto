@@ -304,17 +304,12 @@ message AccountVaultUpdate {
     // Vault key asscoiated with the asset.
     primitives.Digest vault_key = 1;
 
-    // Serialized asset.
+    // Asset value related to the vault key.
     // If not present, the asset was removed from the vault.
-    optional Asset asset = 2; // TODO: see if it's worth making a message for assets
+    optional account.Asset asset = 2;
 
     // Block number at which the above asset was updated in the account vault.
     fixed32 block_num = 3;
-}
-
-message Asset {
-    // Asset represented as a word.
-    primitives.Digest asset = 1;
 }
 
 // SYNC NOTES

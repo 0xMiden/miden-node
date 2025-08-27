@@ -1258,8 +1258,8 @@ fn select_storage_map_sync_values() {
     let page = queries::select_account_storage_map_values(
         &mut conn,
         account_id,
-        BlockNumber::from(0),
-        block3,
+        BlockNumber::from(2),
+        BlockNumber::from(3),
     )
     .unwrap();
 
@@ -1271,17 +1271,20 @@ fn select_storage_map_sync_values() {
             slot_index: slot,
             key: key2,
             value: value3,
-        }, // block2
+            block_num: block2,
+        },
         StorageMapValue {
             slot_index: slot,
             key: key3,
             value: value3,
-        }, // block2
+            block_num: block2,
+        },
         StorageMapValue {
             slot_index: slot,
             key: key1,
             value: value2,
-        }, // block3
+            block_num: block3,
+        },
     ];
 
     assert_eq!(page.values, expected, "should return latest values ordered by key");

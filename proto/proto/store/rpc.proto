@@ -379,19 +379,23 @@ message SyncStorageMapsResponse {
     fixed32 chain_tip = 2;
 
     // The list of storage map updates.
-    //
-    //
+    // 
+    // Multiple updates can be returned for a single slot index and key combination, and the one
+    // with a higher `block_num` is expected to be retained by the caller.
     repeated StorageMapUpdate updates = 3;
 }
 
 // Represents a single storage map update.
 message StorageMapUpdate {
+    // Block number in which the slot was updated.
+    fixed32 block_num = 1;
+
     // Slot index ([0..255]).
-    uint32 slot_index = 1;
+    uint32 slot_index = 2;
     
     // The storage map key.
-    primitives.Digest key = 2;
+    primitives.Digest key = 3;
         
     // The storage map value.
-    primitives.Digest value = 3;
+    primitives.Digest value = 4;
 }

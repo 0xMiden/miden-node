@@ -329,21 +329,25 @@ pub struct SyncStorageMapsResponse {
     pub chain_tip: u32,
     /// The list of storage map updates.
     ///
-    ///
+    /// Multiple updates can be returned for a single slot index and key combination, and the one
+    /// with a higher `block_num` is expected to be retained by the caller.
     #[prost(message, repeated, tag = "3")]
     pub updates: ::prost::alloc::vec::Vec<StorageMapUpdate>,
 }
 /// Represents a single storage map update.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct StorageMapUpdate {
+    /// Block number in which the slot was updated.
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
     /// Slot index (\[0..255\]).
-    #[prost(uint32, tag = "1")]
+    #[prost(uint32, tag = "2")]
     pub slot_index: u32,
     /// The storage map key.
-    #[prost(message, optional, tag = "2")]
+    #[prost(message, optional, tag = "3")]
     pub key: ::core::option::Option<super::primitives::Digest>,
     /// The storage map value.
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "4")]
     pub value: ::core::option::Option<super::primitives::Digest>,
 }
 /// Generated client implementations.

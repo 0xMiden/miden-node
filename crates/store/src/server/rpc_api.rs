@@ -452,6 +452,7 @@ impl rpc_server::Rpc for StoreApi {
                 slot_index: u32::from(map_value.slot_index),
                 key: Some(map_value.key.into()),
                 value: Some(map_value.value.into()),
+                block_num: map_value.block_num.as_u32(),
             })
             .collect();
 

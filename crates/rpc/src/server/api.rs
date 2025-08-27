@@ -269,6 +269,26 @@ impl api_server::Api for RpcService {
         self.store.clone().get_notes_by_id(request).await
     }
 
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.sync_account_vault",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_account_vault(
+        &self,
+        request: tonic::Request<proto::rpc_store::SyncAccountVaultRequest>,
+    ) -> std::result::Result<
+        tonic::Response<proto::rpc_store::SyncAccountVaultResponse>,
+        tonic::Status,
+    > {
+        debug!(target: COMPONENT, request = ?request.get_ref());
+
+        self.store.clone().sync_account_vault(request).await
+    }
+
     #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
     async fn submit_proven_transaction(
         &self,

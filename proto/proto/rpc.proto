@@ -59,6 +59,9 @@ service Api {
     // state following normal transaction submission rules.
     rpc SubmitProvenBatch(transaction.ProvenTransactionBatch) returns (block_producer.SubmitProvenBatchResponse) {}
 
+    // Returns account vault updates for specified account within a block range.
+    rpc SyncAccountVault(rpc_store.SyncAccountVaultRequest) returns (rpc_store.SyncAccountVaultResponse) {}
+
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
     // Client specifies the `note_tags` they are interested in, and the block height from which to search for new for

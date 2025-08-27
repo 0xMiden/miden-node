@@ -18,13 +18,13 @@ use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
 use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
-use miden_objects::asset::AssetVault;
+use miden_objects::asset::{Asset, AssetVault};
 use miden_objects::block::BlockNumber;
 use miden_objects::{Felt, Word};
 
 use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_nonce, raw_sql_to_slot};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
-use crate::db::schema;
+use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
 /// Select the latest account details by account id from the DB using the given
@@ -147,6 +147,73 @@ pub(crate) fn select_accounts_by_id(
         accounts_raw.into_iter().map(AccountWithCodeRaw::from),
     )?;
     Ok(account_infos)
+}
+
+pub(crate) fn select_account_vault_assets(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_from: BlockNumber,
+    block_to: BlockNumber,
+) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
+    use schema::account_vault_updates as t;
+
+    // SELECT block_num, faucet_id, delta
+    // FROM account_fungible_asset_deltas
+    // WHERE account_id = ?
+    //   AND block_num >= ?
+    //   AND block_num <= ?
+    // ORDER BY block_num ASC, faucet_id ASC
+    // LIMIT ROW_LIMIT;
+
+    const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024;
+    const ROW_OVERHEAD_BYTES: usize = core::mem::size_of::<Word>() * 2;
+    const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
+
+    if block_from > block_to {
+        return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
+    }
+
+    let mut raw: Vec<(i64, Vec<u8>, Option<Vec<u8>>)> =
+        SelectDsl::select(t::table, (t::block_num, t::vault_key, t::asset))
+            .filter(
+                t::account_id
+                    .eq(account_id.to_bytes())
+                    .and(t::block_num.ge(block_from.to_raw_sql()))
+                    .and(
+                        // include rows exactly at block_to OR latest rows <= block_to
+                        t::block_num.eq(block_to.to_raw_sql()).or(t::is_latest_update
+                            .eq(true)
+                            .and(t::block_num.le(block_to.to_raw_sql()))),
+                    ),
+            )
+            .order(t::block_num.asc())
+            .limit(i64::try_from(ROW_LIMIT).unwrap())
+            .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
+
+    // Discard the last block in the response (assumes more than one block may be present)
+    let mut last_block_included = block_to.checked_sub(1).unwrap_or_default();
+    if raw.len() == ROW_LIMIT {
+        // NOTE: If the query contains at least one more row than the amount of storage map updates
+        // allowed in a single block for an account, then the response is guaranteed to have at
+        // least two blocks
+        if let Some(last_block_num) = raw.last().map(|r| r.0) {
+            raw.retain(|(row_block_num, ..)| *row_block_num != last_block_num);
+            last_block_included = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
+        }
+    }
+
+    let values = raw
+        .into_iter()
+        .map(|(block_num, vault_key, asset)| {
+            Ok(AccountVaultValue {
+                block_num: u32::try_from(block_num).unwrap().into(),
+                vault_key: Word::read_from_bytes(&vault_key)?,
+                asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
+            })
+        })
+        .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+    Ok((last_block_included, values))
 }
 
 /// Select [`AccountSummary`] from the DB using the given [`SqliteConnection`], given that the
@@ -331,6 +398,27 @@ pub(crate) fn select_account_storage_map_values(
     };
 
     Ok(StorageMapValuesPage { last_block_included, values })
+}
+
+#[derive(Queryable, Selectable)]
+#[diesel(table_name = crate::db::schema::account_vault_updates)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct AccountVaultUpdateRaw {
+    pub vault_key: Vec<u8>,
+    pub asset: Option<Vec<u8>>,
+    pub block_num: i64,
+}
+
+impl TryFrom<AccountVaultUpdateRaw> for AccountVaultValue {
+    type Error = DatabaseError;
+
+    fn try_from(raw: AccountVaultUpdateRaw) -> Result<Self, Self::Error> {
+        let vault_key = Word::read_from_bytes(&raw.vault_key)?;
+        let asset = raw.asset.map(|bytes| Asset::read_from_bytes(&bytes)).transpose()?;
+        let block_num = BlockNumber::from_raw_sql(raw.block_num)?;
+
+        Ok(AccountVaultValue { block_num, vault_key, asset })
+    }
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]

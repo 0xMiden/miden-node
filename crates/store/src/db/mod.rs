@@ -8,6 +8,7 @@ use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAcco
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
+use miden_objects::asset::Asset;
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier};
@@ -39,6 +40,17 @@ pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
     pool: deadpool_diesel::Pool<ConnectionManager, deadpool::managed::Object<ConnectionManager>>,
+}
+
+/// Describes the value of an asset for an account ID at `block_num` specifically.
+///
+/// If `asset` is `None`, the asset was removed.
+#[derive(Debug, Clone)]
+pub struct AccountVaultValue {
+    pub block_num: BlockNumber,
+    pub vault_key: Word,
+    /// None if the asset was removed
+    pub asset: Option<Asset>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -499,6 +511,18 @@ impl Db {
                 block_num,
                 page,
             )
+        })
+        .await
+    }
+
+    pub async fn get_account_vault_updates(
+        &self,
+        account_id: AccountId,
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
+        self.transact("account vault sync", move |conn| {
+            queries::select_account_vault_assets(conn, account_id, block_from, block_to)
         })
         .await
     }

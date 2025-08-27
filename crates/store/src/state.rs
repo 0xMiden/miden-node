@@ -49,7 +49,14 @@ use tracing::{info, info_span, instrument};
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
 use crate::db::models::queries::StorageMapValuesPage;
-use crate::db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate};
+use crate::db::{
+    AccountVaultValue,
+    Db,
+    NoteRecord,
+    NoteSyncUpdate,
+    NullifierInfo,
+    StateSyncUpdate,
+};
 use crate::errors::{
     ApplyBlockError,
     DatabaseError,
@@ -1002,6 +1009,15 @@ impl State {
     /// Runs database optimization.
     pub async fn optimize_db(&self) -> Result<(), DatabaseError> {
         self.db.optimize().await
+    }
+
+    pub async fn sync_account_vault(
+        &self,
+        account_id: AccountId,
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
+        self.db.get_account_vault_updates(account_id, block_from, block_to).await
     }
 
     /// Returns the unprocessed network notes, along with the next pagination token.

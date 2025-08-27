@@ -52,7 +52,7 @@ service Rpc {
     // The response includes each note's metadata and inclusion proof.
     //
     // A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the
-    // tip of the chain.
+    // tip of the chain. 
     rpc SyncNotes(SyncNotesRequest) returns (SyncNotesResponse) {}
 
     // Returns info which can be used by the client to sync up to the latest state of the chain
@@ -71,6 +71,9 @@ service Rpc {
     // part of hashes. Thus, returned data contains excessive notes and nullifiers, client can make
     // additional filtering of that data on its side.
     rpc SyncState(SyncStateRequest) returns (SyncStateResponse) {}
+
+    // Returns account vault updates for specified account within a block range.
+    rpc SyncAccountVault(SyncAccountVaultRequest) returns (SyncAccountVaultResponse) {}
 
     // Returns storage map updates for specified account and storage slots within a block range.
     rpc SyncStorageMaps(SyncStorageMapsRequest) returns (SyncStorageMapsResponse) {}
@@ -260,6 +263,50 @@ message SyncStateResponse {
 
     // List of all notes together with the Merkle paths from `response.block_header.note_root`.
     repeated note.NoteSyncRecord notes = 7;
+}
+
+// SYNC ACCOUNT VAULT
+// ================================================================================================
+
+// Account vault synchronization request.
+//
+// Allows clients to sync asset values for specific public accounts within a block range.
+message SyncAccountVaultRequest {
+    // Block number from which to start synchronizing.
+    fixed32 block_from = 1;
+    
+    /// Block number up to which to sync. If not specified, syncs up to the latest block.
+    ///
+    /// If specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    /// otherwise an error will be returned.
+    optional fixed32 block_to = 2;
+    
+    // Account for which we want to sync storage maps.
+    account.AccountId account_id = 3;
+}
+
+message SyncAccountVaultResponse {
+    // The block number of the last row included in this response.
+    // For chunked responses, this may be less than request.block_to.
+    fixed32 block_num = 1;
+
+    // Chain tip at the moment of the request.
+    fixed32 chain_tip = 2;
+    
+    // List of asset updates for the account.
+    repeated AccountVaultUpdate updates = 3;
+}
+
+message AccountVaultUpdate {
+    // Vault key asscoiated with the asset.
+    primitives.Digest vault_key = 1;
+
+    // Serialized asset.
+    // If not present, the asset was removed from the vault.
+    optional bytes asset = 2; // TODO: see if it's worth making a message for assets
+
+    // Block number at which the above asset was updated in the account vault.
+    fixed32 block_num = 3;
 }
 
 // SYNC NOTES

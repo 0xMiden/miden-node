@@ -93,6 +93,16 @@ CREATE TABLE account_storage_map_values (
 
 CREATE INDEX asm_latest_by_acct_block_slot_key ON account_storage_map_values(account_id, block_num);
 
+CREATE TABLE account_vault_assets (
+    account_id          BLOB    NOT NULL,
+    block_num           INTEGER NOT NULL,
+    vault_key            BLOB    NOT NULL,
+    amount              INTEGER NOT NULL,
+    is_latest_update    BOOLEAN NOT NULL,
+
+    PRIMARY KEY (account_id, block_num, vault_key)
+) WITHOUT ROWID;
+
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,
     nullifier_prefix INTEGER NOT NULL,

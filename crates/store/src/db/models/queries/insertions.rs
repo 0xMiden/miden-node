@@ -15,7 +15,14 @@ use miden_lib::utils::Serializable;
 use miden_node_proto as proto;
 use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountDelta, AccountId, StorageSlot};
+use miden_objects::account::{
+    Account,
+    AccountDelta,
+    AccountId,
+    NonFungibleDeltaAction,
+    StorageSlot,
+};
+use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
@@ -26,6 +33,7 @@ use crate::db::models::conv::{
     SqlTypeConvert,
     aux_to_raw_sql,
     execution_hint_to_raw_sql,
+    execution_mode_to_raw_sql,
     idx_to_raw_sql,
     nonce_to_raw_sql,
     note_type_to_raw_sql,
@@ -54,6 +62,54 @@ pub(crate) fn insert_block_header(
         )])
         .execute(conn)?;
     Ok(count)
+}
+
+/// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
+///
+/// This function will set `is_latest_update=true` for the new row and update any existing
+/// row with the same `(account_id, asset_id)` tuple to `is_latest_update=false`.
+///
+/// # Returns
+///
+/// The number of affected rows.
+pub(crate) fn insert_account_vault_asset(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    vault_key: Word,
+    asset: Option<Asset>,
+) -> Result<usize, DatabaseError> {
+    let account_id = account_id.to_bytes();
+    let vault_key = vault_key.to_bytes();
+    let block_num = block_num.to_raw_sql();
+    let asset = asset.map(|a| a.to_bytes());
+
+    diesel::Connection::transaction(conn, |conn| {
+        // First, update any existing rows with the same (account_id, asset_id) to set
+        // is_latest_update=false
+        let update_count = diesel::update(schema::account_vault_assets::table)
+            .filter(
+                schema::account_vault_assets::account_id
+                    .eq(&account_id)
+                    .and(schema::account_vault_assets::vault_key.eq(&vault_key))
+                    .and(schema::account_vault_assets::is_latest_update.eq(true)),
+            )
+            .set(schema::account_vault_assets::is_latest_update.eq(false))
+            .execute(conn)?;
+
+        // Insert the new latest row
+        let insert_count = diesel::insert_into(schema::account_vault_assets::table)
+            .values((
+                schema::account_vault_assets::account_id.eq(&account_id),
+                schema::account_vault_assets::block_num.eq(block_num),
+                schema::account_vault_assets::vault_key.eq(&vault_key),
+                schema::account_vault_assets::asset.eq(&asset),
+                schema::account_vault_assets::is_latest_update.eq(true),
+            ))
+            .execute(conn)?;
+
+        Ok(update_count + insert_count)
+    })
 }
 
 /// Deserializes account and applies account delta.
@@ -226,6 +282,44 @@ pub(crate) fn upsert_accounts(
 
                 let account = apply_delta(account, delta, &update.final_state_commitment())?;
 
+                // Update assets
+
+                for (faucet_id, _) in delta.vault().fungible().iter() {
+                    let current_amount = account.vault().get_balance(*faucet_id).unwrap();
+                    let asset_update = if current_amount == 0u64 {
+                        None
+                    } else {
+                        Some(Asset::Fungible(
+                            FungibleAsset::new(*faucet_id, current_amount).unwrap(),
+                        ))
+                    };
+                    // TODO: make vault key function public on miden-base
+                    let asset_remove_me = FungibleAsset::new(*faucet_id, 0).unwrap();
+                    insert_account_vault_asset(
+                        conn,
+                        account.id(),
+                        block_num,
+                        asset_remove_me.vault_key(),
+                        asset_update,
+                    )
+                    .unwrap();
+                }
+
+                for (asset, delta_action) in delta.vault().non_fungible().iter() {
+                    let asset_update = match delta_action {
+                        NonFungibleDeltaAction::Add => Some(Asset::NonFungible(*asset)),
+                        NonFungibleDeltaAction::Remove => None,
+                    };
+                    insert_account_vault_asset(
+                        conn,
+                        account.id(),
+                        block_num,
+                        asset.vault_key(),
+                        asset_update,
+                    )
+                    .unwrap();
+                }
+
                 Some(Cow::Owned(account))
             },
         };
@@ -390,7 +484,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
             note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),
-            execution_mode: note.metadata.tag().execution_mode().to_raw_sql(),
+            execution_mode: execution_mode_to_raw_sql(note.metadata.tag().execution_mode() as i32),
             aux: aux_to_raw_sql(note.metadata.aux()),
             execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
             inclusion_path: note.inclusion_path.to_bytes(),

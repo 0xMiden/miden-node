@@ -247,6 +247,9 @@ pub struct SyncAccountVaultResponse {
     #[prost(fixed32, tag = "2")]
     pub chain_tip: u32,
     /// List of asset updates for the account.
+    ///
+    /// Multiple updates can be returned for a single asset, and the one with a higher `block_num`
+    /// is expected to be retained by the caller.
     #[prost(message, repeated, tag = "3")]
     pub updates: ::prost::alloc::vec::Vec<AccountVaultUpdate>,
 }

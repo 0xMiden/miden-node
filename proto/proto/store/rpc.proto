@@ -297,6 +297,9 @@ message SyncAccountVaultResponse {
     fixed32 chain_tip = 2;
     
     // List of asset updates for the account.
+    // 
+    // Multiple updates can be returned for a single asset, and the one with a higher `block_num`
+    // is expected to be retained by the caller.
     repeated AccountVaultUpdate updates = 3;
 }
 

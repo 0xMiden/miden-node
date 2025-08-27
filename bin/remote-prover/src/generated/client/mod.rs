@@ -5,14 +5,11 @@
 
 #[cfg(feature = "std")]
 mod std;
-
-#[cfg(not(feature = "std"))]
-mod nostd;
-
-// Re-export based on current environment
 #[cfg(feature = "std")]
 pub use std::*;
 
+#[cfg(not(feature = "std"))]
+mod nostd;
 #[cfg(not(feature = "std"))]
 pub use nostd::*;
 

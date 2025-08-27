@@ -266,12 +266,9 @@ impl State {
             } => {
                 let network_notes = network_notes
                     .into_iter()
-                    .filter_map(|note| {
-                        if let NetworkNote::SingleTarget(note) = note {
-                            Some(note)
-                        } else {
-                            None
-                        }
+                    .filter_map(|note| match note {
+                        NetworkNote::SingleTarget(note) => Some(note),
+                        NetworkNote::MultiTarget(_) => None,
                     })
                     .collect::<Vec<_>>();
                 self.add_transaction(id, nullifiers, network_notes, account_delta).await?;

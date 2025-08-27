@@ -183,14 +183,15 @@ impl TryFrom<proto::note::Note> for Note {
 /// An enum that wraps around notes used in a network mode.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum NetworkNote {
-    SingleTarget(Note),
-    MultiTarget(Note),
+    SingleTarget(SingleTargetNetworkNote),
+    MultiTarget(MultiTargetNetworkNote),
 }
 
 impl NetworkNote {
     pub fn inner(&self) -> &Note {
         match self {
-            NetworkNote::SingleTarget(note) | NetworkNote::MultiTarget(note) => note,
+            NetworkNote::SingleTarget(note) => &note.0,
+            NetworkNote::MultiTarget(note) => &note.0,
         }
     }
 
@@ -205,31 +206,13 @@ impl NetworkNote {
     pub fn id(&self) -> NoteId {
         self.inner().id()
     }
-
-    /// Returns the network account prefix for this note.
-    ///
-    /// For single-target notes, this extracts the network account prefix from the note's tag,
-    /// which identifies the target account. For multi-target notes, this returns `None` as
-    /// they don't target a specific account prefix.
-    pub fn account_prefix(&self) -> Option<NetworkAccountPrefix> {
-        match self {
-            NetworkNote::SingleTarget(_) => {
-                let prefix: NetworkAccountPrefix = self
-                    .metadata()
-                    .tag()
-                    .try_into()
-                    .expect("NetworkNote has a network account prefix");
-                Some(prefix)
-            },
-            NetworkNote::MultiTarget(_) => None,
-        }
-    }
 }
 
 impl From<NetworkNote> for Note {
     fn from(value: NetworkNote) -> Self {
         match value {
-            NetworkNote::SingleTarget(note) | NetworkNote::MultiTarget(note) => note,
+            NetworkNote::SingleTarget(note) => note.0,
+            NetworkNote::MultiTarget(note) => note.0,
         }
     }
 }
@@ -240,9 +223,9 @@ impl TryFrom<Note> for NetworkNote {
     fn try_from(note: Note) -> Result<Self, Self::Error> {
         if note.is_network_note() {
             if note.metadata().tag().is_single_target() {
-                Ok(NetworkNote::SingleTarget(note))
+                Ok(NetworkNote::SingleTarget(SingleTargetNetworkNote(note)))
             } else {
-                Ok(NetworkNote::MultiTarget(note))
+                Ok(NetworkNote::MultiTarget(MultiTargetNetworkNote(note)))
             }
         } else {
             Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()))
@@ -250,24 +233,119 @@ impl TryFrom<Note> for NetworkNote {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum NetworkNoteError {
-    #[error("note tag {0} is not a valid network note tag")]
-    InvalidExecutionMode(NoteTag),
-}
-
 impl TryFrom<proto::note::NetworkNote> for NetworkNote {
     type Error = ConversionError;
 
     fn try_from(proto_note: proto::note::NetworkNote) -> Result<Self, Self::Error> {
-        let details = NoteDetails::read_from_bytes(&proto_note.details)
-            .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
-        let (assets, recipient) = details.into_parts();
-        let metadata: NoteMetadata = proto_note
-            .metadata
-            .ok_or_else(|| proto::note::NetworkNote::missing_field(stringify!(metadata)))?
-            .try_into()?;
-        let note = Note::new(assets, metadata, recipient);
-        Self::try_from(note).map_err(Into::into)
+        from_proto(proto_note)
     }
+}
+
+// MULTI TARGET NETWORK NOTE
+// ================================================================================================
+
+/// A newtype that wraps around notes having multiple targets to be used in a network mode.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MultiTargetNetworkNote(Note);
+
+impl TryFrom<Note> for MultiTargetNetworkNote {
+    type Error = NetworkNoteError;
+
+    fn try_from(note: Note) -> Result<Self, Self::Error> {
+        if note.is_network_note() && !note.metadata().tag().is_single_target() {
+            Ok(Self(note))
+        } else {
+            Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()))
+        }
+    }
+}
+
+impl TryFrom<proto::note::NetworkNote> for MultiTargetNetworkNote {
+    type Error = ConversionError;
+
+    fn try_from(proto_note: proto::note::NetworkNote) -> Result<Self, Self::Error> {
+        from_proto(proto_note)
+    }
+}
+
+// SINGLE TARGET NETWORK NOTE
+// ================================================================================================
+
+/// A newtype that wraps around notes targeting a single account to be used in a network mode.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SingleTargetNetworkNote(Note);
+
+impl SingleTargetNetworkNote {
+    pub fn inner(&self) -> &Note {
+        &self.0
+    }
+
+    pub fn metadata(&self) -> &NoteMetadata {
+        self.inner().metadata()
+    }
+
+    pub fn nullifier(&self) -> Nullifier {
+        self.inner().nullifier()
+    }
+
+    pub fn id(&self) -> NoteId {
+        self.inner().id()
+    }
+
+    /// The account prefix that this note targets.
+    pub fn account_prefix(&self) -> NetworkAccountPrefix {
+        self.metadata()
+            .tag()
+            .try_into()
+            .expect("SingleTargetNetworkNotes have network account prefix")
+    }
+}
+
+impl From<SingleTargetNetworkNote> for Note {
+    fn from(value: SingleTargetNetworkNote) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<Note> for SingleTargetNetworkNote {
+    type Error = NetworkNoteError;
+
+    fn try_from(note: Note) -> Result<Self, Self::Error> {
+        if note.is_network_note() && note.metadata().tag().is_single_target() {
+            Ok(Self(note))
+        } else {
+            Err(NetworkNoteError::InvalidExecutionMode(note.metadata().tag()))
+        }
+    }
+}
+
+impl TryFrom<proto::note::NetworkNote> for SingleTargetNetworkNote {
+    type Error = ConversionError;
+
+    fn try_from(proto_note: proto::note::NetworkNote) -> Result<Self, Self::Error> {
+        from_proto(proto_note)
+    }
+}
+
+/// Helper function to deduplicate implementations `TryFrom<proto::note::NetworkNote>`.
+fn from_proto<T>(proto_note: proto::note::NetworkNote) -> Result<T, ConversionError>
+where
+    T: TryFrom<Note>,
+    T::Error: Into<ConversionError>,
+{
+    let details = NoteDetails::read_from_bytes(&proto_note.details)
+        .map_err(|err| ConversionError::deserialization_error("NoteDetails", err))?;
+    let (assets, recipient) = details.into_parts();
+    let metadata: NoteMetadata = proto_note
+        .metadata
+        .ok_or_else(|| proto::note::NetworkNote::missing_field(stringify!(metadata)))?
+        .try_into()?;
+    let note = Note::new(assets, metadata, recipient);
+    T::try_from(note).map_err(Into::into)
+}
+
+#[derive(Debug, Error)]
+pub enum NetworkNoteError {
+    #[error("note tag {0} is not a valid network note tag")]
+    InvalidExecutionMode(NoteTag),
 }

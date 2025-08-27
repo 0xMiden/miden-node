@@ -1,7 +1,5 @@
 #[cfg(not(feature = "std"))]
 use alloc::{format, string::String, sync::Arc, vec::Vec};
-#[cfg(not(target_arch = "wasm32"))]
-use core::time::Duration;
 #[cfg(feature = "std")]
 use std::{string::String, sync::Arc, vec::Vec};
 
@@ -64,7 +62,7 @@ impl RemoteBatchProver {
         let new_client = {
             let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .timeout(Duration::from_millis(10000));
+                .timeout(core::time::Duration::from_millis(10000));
             let channel = endpoint
                 .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?

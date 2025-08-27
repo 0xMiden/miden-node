@@ -297,7 +297,7 @@ impl SingleTargetNetworkNote {
         self.metadata()
             .tag()
             .try_into()
-            .expect("SingleTargetNetworkNotes have network account prefix")
+            .expect("Single target network note's tag should contain an account prefix")
     }
 }
 

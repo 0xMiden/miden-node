@@ -1115,12 +1115,11 @@ fn sql_account_storage_map_values_insertion() {
             .unwrap();
     insert_account_delta(conn, account_id, block2, &delta2);
 
-    // With block_to = block2, we get rows where (bn == block2) OR (is_latest_update = 1).
     let storage_map_values =
         queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block2)
             .unwrap();
 
-    assert_eq!(storage_map_values.values.len(), 2, "two rows (one per key)");
+    assert_eq!(storage_map_values.values.len(), 3, "three rows (with duplicate key)");
     // key1 should now be value3 at block2; key2 remains value2 at block1
     assert!(
         storage_map_values

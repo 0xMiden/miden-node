@@ -236,8 +236,11 @@ pub struct SyncAccountVaultRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncAccountVaultResponse {
-    /// The block number of the last row included in this response.
+    /// The block number of the last update included in this response.
+    ///
     /// For chunked responses, this may be less than request.block_to.
+    /// If it is less than request.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_from = block_num + 1).
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
     /// Chain tip at the moment of the request.

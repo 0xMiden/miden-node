@@ -40,7 +40,7 @@ use crate::COMPONENT;
 pub struct RpcService {
     store: StoreRpcClient,
     block_producer: Option<BlockProducerClient>,
-    genesis_commitment: Word,
+    genesis_commitment: Option<Word>,
 }
 
 impl RpcService {
@@ -72,7 +72,7 @@ impl RpcService {
         Self {
             store,
             block_producer,
-            genesis_commitment: Word::empty(),
+            genesis_commitment: None,
         }
     }
 
@@ -81,10 +81,10 @@ impl RpcService {
     /// Required since `RpcService::new()` sets up the `store` which is used to fetch the
     /// `genesis_commitment`.
     pub fn set_genesis_commitment(&mut self, commitment: Word) -> anyhow::Result<()> {
-        if !self.genesis_commitment.is_empty() {
+        if self.genesis_commitment.is_some() {
             return Err(anyhow::anyhow!("genesis commitment already set"));
         }
-        self.genesis_commitment = commitment;
+        self.genesis_commitment = Some(commitment);
         Ok(())
     }
 
@@ -466,7 +466,7 @@ impl api_server::Api for RpcService {
                     version: "-".to_string(),
                 },
             )),
-            genesis_commitment: Some(self.genesis_commitment.into()),
+            genesis_commitment: self.genesis_commitment.map(Into::into),
         }))
     }
 }

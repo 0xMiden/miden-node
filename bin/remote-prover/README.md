@@ -1,14 +1,69 @@
 # Miden remote prover
 
-A service for generating Miden proofs on-demand. This crate contains protobuf definitions for the Miden remote prover service and provides optional `RemoteTransactionProver`, `RemoteBatchProver` and `RemoteBlockProver` structs, which can be used to interact with a remote prover.
+This crate provides both client and server functionality for Miden's remote proving service:
 
-The binary enables spawning workers and a proxy for Miden's remote prover. It currently supports proving individual transactions, transaction batches, and blocks.
+- **Client Library**: Rust clients (`RemoteTransactionProver`, `RemoteBatchProver`, `RemoteBlockProver`) for interacting with remote proving services
+- **Server Binary**: A service for running remote proving workers and proxies that generate Miden proofs on-demand
+
+---
+
+## Client Library
+
+The client library provides remote prover implementations for interacting with remote proving services. When the `client` feature is enabled, the following client structs become available:
+
+- **`RemoteTransactionProver`**: A client for proving individual transactions remotely
+- **`RemoteBatchProver`**: A client for proving transaction batches remotely
+- **`RemoteBlockProver`**: A client for proving blocks remotely
+
+These clients send proof requests to remote gRPC servers and receive the generated proofs. Each client is designed to handle a specific type of proof and provides an async interface for submitting proof requests.
+
+### Installation
+
+Add this to your `Cargo.toml`:
+
+```toml
+[dependencies]
+miden-remote-prover = { version = "0.8", features = ["client"] }
+```
+
+Or install from source:
+
+```bash
+cargo add miden-remote-prover --features client
+```
+
+### Usage
+
+```rust
+use miden_remote_prover::client::{RemoteTransactionProver, RemoteBatchProver, RemoteBlockProver};
+
+// Create a remote transaction prover client
+let tx_prover = RemoteTransactionProver::new("http://localhost:50051".to_string())?;
+
+// Create a remote batch prover client
+let batch_prover = RemoteBatchProver::new("http://localhost:50052".to_string())?;
+
+// Create a remote block prover client
+let block_prover = RemoteBlockProver::new("http://localhost:50053".to_string())?;
+```
+
+The clients support both native and WebAssembly targets:
+- For `wasm32-unknown-unknown`, they use `tonic_web_wasm_client` transport
+- For native platforms, they use the built-in `tonic::transport`
+
+Transport layer connections are established lazily when the first proof request is made.
+
+---
+
+## Server
+
+The server binary enables spawning workers and a proxy for Miden's remote prover. It currently supports proving individual transactions, transaction batches, and blocks.
 
 A worker is a gRPC service that can receive transaction witnesses, proposed batches, or proposed blocks, prove them, and return the generated proofs. It can handle only one request at a time and will return an error if it is already in use. Each worker is specialized on startup to handle exactly one type of proof requests - transactions, batches, or blocks.
 
 The proxy uses [Cloudflare's Pingora crate](https://crates.io/crates/pingora), which provides features to create a modular proxy. It is meant to handle multiple workers with a queue, assigning a worker to each request and retrying if the worker is not available. Further information about Pingora and its features can be found in the [official GitHub repository](https://github.com/cloudflare/pingora).
 
-## Debian Installation
+### Debian Installation
 
 #### Prover
 
@@ -60,7 +115,7 @@ sudo systemctl enable miden-prover-proxy
 sudo systemctl start miden-prover-proxy
 ```
 
-## Source Installation
+### Source Installation
 
 To build the service from a local version, from the root of the workspace you can run:
 
@@ -70,38 +125,7 @@ make install-remote-prover
 
 The CLI can be installed from the source code using specific git revisions with `cargo install` or from crates.io with `cargo install miden-remote-prover`.
 
-## Client Library
-
-This crate provides remote prover client implementations for interacting with remote proving services. When the `client` feature is enabled, the following client structs become available:
-
-- **`RemoteTransactionProver`**: A client for proving individual transactions remotely
-- **`RemoteBatchProver`**: A client for proving transaction batches remotely
-- **`RemoteBlockProver`**: A client for proving blocks remotely
-
-These clients send proof requests to remote gRPC servers and receive the generated proofs. Each client is designed to handle a specific type of proof and provides an async interface for submitting proof requests.
-
-### Usage
-
-```rust
-use miden_remote_prover::client::{RemoteTransactionProver, RemoteBatchProver, RemoteBlockProver};
-
-// Create a remote transaction prover client
-let tx_prover = RemoteTransactionProver::new("http://localhost:50051".to_string())?;
-
-// Create a remote batch prover client
-let batch_prover = RemoteBatchProver::new("http://localhost:50052".to_string())?;
-
-// Create a remote block prover client
-let block_prover = RemoteBlockProver::new("http://localhost:50053".to_string())?;
-```
-
-The clients support both native and WebAssembly targets:
-- For `wasm32-unknown-unknown`, they use `tonic_web_wasm_client` transport
-- For native platforms, they use the built-in `tonic::transport`
-
-Transport layer connections are established lazily when the first proof request is made.
-
-## Worker
+### Worker
 
 To start the worker service you will need to run:
 

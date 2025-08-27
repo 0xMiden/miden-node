@@ -372,7 +372,6 @@ Description of this crate's features:
 | `std`        | Enables standard library support. Required for most server functionality.                       |
 | `client`     | Enables client functionality, providing remote prover client structs for all proof types.       |
 | `server`     | Enables server functionality, including the binary and library components.                      |
-| `metrics`    | Enables Prometheus metrics collection for the proxy service.                                    |
 
 ## License
 

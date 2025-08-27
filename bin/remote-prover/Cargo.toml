@@ -60,9 +60,6 @@ server = [
   "std",
 ]
 
-# Optional server features
-metrics = ["dep:prometheus", "server"]
-
 [lints]
 workspace = true
 

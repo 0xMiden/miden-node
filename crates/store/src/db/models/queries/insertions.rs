@@ -66,7 +66,7 @@ pub(crate) fn insert_block_header(
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
 /// This function will set `is_latest_update=true` for the new row and update any existing
-/// row with the same `(account_id, asset_id)` tuple to `is_latest_update=false`.
+/// row with the same `(account_id, faucet_id)` tuple to `is_latest_update=false`.
 ///
 /// # Returns
 ///
@@ -81,10 +81,9 @@ pub(crate) fn insert_account_vault_asset(
     let account_id = account_id.to_bytes();
     let vault_key = vault_key.to_bytes();
     let block_num = block_num.to_raw_sql();
-    let asset = asset.map(|a| a.to_bytes());
-
+    let asset = asset.map(|asset| asset.to_bytes());
     diesel::Connection::transaction(conn, |conn| {
-        // First, update any existing rows with the same (account_id, asset_id) to set
+        // First, update any existing rows with the same (account_id, faucet_id) to set
         // is_latest_update=false
         let update_count = diesel::update(schema::account_vault_assets::table)
             .filter(
@@ -285,23 +284,17 @@ pub(crate) fn upsert_accounts(
 
                 for (faucet_id, _) in delta.vault().fungible().iter() {
                     let current_amount = account.vault().get_balance(*faucet_id).unwrap();
-                    let asset_update = if current_amount == 0u64 {
-                        None
-                    } else {
-                        Some(Asset::Fungible(
-                            FungibleAsset::new(*faucet_id, current_amount).unwrap(),
-                        ))
-                    };
-                    // TODO: make vault key function public on miden-base
-                    let asset_remove_me = FungibleAsset::new(*faucet_id, 0).unwrap();
+                    let asset: Asset = FungibleAsset::new(*faucet_id, current_amount)?.into();
+                    let asset_update_or_removal =
+                        if current_amount == 0 { None } else { Some(asset) };
+
                     insert_account_vault_asset(
                         conn,
                         account.id(),
                         block_num,
-                        asset_remove_me.vault_key(),
-                        asset_update,
-                    )
-                    .unwrap();
+                        asset.vault_key(),
+                        asset_update_or_removal,
+                    )?;
                 }
 
                 for (asset, delta_action) in delta.vault().non_fungible().iter() {
@@ -315,8 +308,7 @@ pub(crate) fn upsert_accounts(
                         block_num,
                         asset.vault_key(),
                         asset_update,
-                    )
-                    .unwrap();
+                    )?;
                 }
 
                 Some(Cow::Owned(account))

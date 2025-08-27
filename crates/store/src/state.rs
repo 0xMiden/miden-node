@@ -1011,6 +1011,7 @@ impl State {
         self.db.optimize().await
     }
 
+    /// Returns account vault updates for specified account within a block range.
     pub async fn sync_account_vault(
         &self,
         account_id: AccountId,

@@ -158,7 +158,7 @@ pub(crate) fn select_account_vault_assets(
     use schema::account_vault_assets as t;
 
     // SELECT block_num, faucet_id, delta
-    // FROM account_fungible_asset_deltas
+    // FROM account_vault_assets
     // WHERE account_id = ?
     //   AND block_num >= ?
     //   AND block_num <= ?

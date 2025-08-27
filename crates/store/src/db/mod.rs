@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
-use miden_lib::utils::Serializable;
+use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
@@ -19,6 +19,7 @@ use tracing::{info, info_span, instrument};
 use crate::COMPONENT;
 use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
 use crate::db::migrations::apply_migrations;
+use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::models::{Page, queries};
 use crate::errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError};
@@ -51,6 +52,17 @@ pub struct AccountVaultValue {
     pub vault_key: Word,
     /// None if the asset was removed
     pub asset: Option<Asset>,
+}
+
+impl AccountVaultValue {
+    pub fn from_raw_row(row: (i64, Vec<u8>, Option<Vec<u8>>)) -> Result<Self, DatabaseError> {
+        let (block_num, vault_key, asset) = row;
+        Ok(Self {
+            block_num: BlockNumber::from_raw_sql(block_num)?,
+            vault_key: Word::read_from_bytes(&vault_key)?,
+            asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]

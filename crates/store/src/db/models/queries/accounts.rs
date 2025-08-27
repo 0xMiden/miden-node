@@ -165,8 +165,10 @@ pub(crate) fn select_account_vault_assets(
     // ORDER BY block_num ASC, faucet_id ASC
     // LIMIT ROW_LIMIT;
 
-    const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024;
-    const ROW_OVERHEAD_BYTES: usize = core::mem::size_of::<Word>() * 2;
+    // TODO: These limits should be given by the protocol.
+    // See miden-base/issues/1770 for more details
+    const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
+    const ROW_OVERHEAD_BYTES: usize = core::mem::size_of::<Word>() * 2; // vault key word + asset word
     const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
 
     if !account_id.is_public() {
@@ -208,15 +210,7 @@ pub(crate) fn select_account_vault_assets(
 
     let values = raw
         .into_iter()
-        .map(|(block_num, vault_key, asset)| {
-            Ok(AccountVaultValue {
-                block_num: u32::try_from(block_num)
-                    .map_err(DatabaseError::conversiont_from_sql::<u32, _, _>)?
-                    .into(),
-                vault_key: Word::read_from_bytes(&vault_key)?,
-                asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
-            })
-        })
+        .map(AccountVaultValue::from_raw_row)
         .collect::<Result<Vec<_>, DatabaseError>>()?;
 
     Ok((last_block_included, values))

@@ -56,6 +56,14 @@ Request a set of notes.
 
 Submit a transaction to the network.
 
+## SyncAccountVault
+
+Returns information that allows clients to sync asset values for specific public accounts within a block range.
+
+For any `[block_from..block_to]` range, the latest known set of assets is returned for the requested account ID.
+The data can be split and a cutoff block may be selected if there are too many assets to sync. The response contains
+the chain tip so that the caller knows when it has been reached.
+
 ## SyncNotes
 
 Iteratively sync data for a given set of note tags.
@@ -79,3 +87,11 @@ The low part of note tags are redacted to preserve some degree of privacy. Retur
 ## Status
 
 Request the status of the node components. The response contains the current version of the RPC component and the connection status of the other components, including their versions and the number of the most recent block in the chain (chain tip).
+
+## SyncStorageMaps
+
+Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
+
+Caller specifies the `account_id` of the public account and the block range (`block_from`, `block_to`) for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
+
+This endpoint enables clients to maintain an updated view of account storage.

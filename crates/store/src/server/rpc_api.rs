@@ -329,68 +329,6 @@ impl rpc_server::Rpc for StoreApi {
         }))
     }
 
-    /// Returns storage map updates for the specified account within a block range.
-    ///
-    /// Supports cursor-based pagination for large storage maps.
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.rpc_server.sync_storage_maps",
-        skip_all,
-        level = "debug",
-        ret(level = "debug"),
-        err
-    )]
-    async fn sync_storage_maps(
-        &self,
-        request: Request<proto::rpc_store::SyncStorageMapsRequest>,
-    ) -> Result<Response<proto::rpc_store::SyncStorageMapsResponse>, Status> {
-        let request = request.into_inner();
-
-        let account_id = read_account_id(request.account_id).map_err(|e| *e)?;
-
-        if !account_id.is_public() {
-            return Err(Status::invalid_argument(format!(
-                "account with ID {account_id} is not public"
-            )));
-        }
-
-        let block_from = BlockNumber::from(request.block_from);
-        let chain_tip = self.state.latest_block_num().await;
-
-        let block_to = match request.block_to {
-            Some(block_to) => BlockNumber::from(block_to),
-            None => chain_tip,
-        };
-
-        if block_from > block_to {
-            return Err(Status::invalid_argument("block_from cannot be greater than block_to"));
-        }
-
-        let storage_maps_page = self
-            .state
-            .get_storage_map_sync_values(account_id, block_from, block_to)
-            .await
-            .map_err(internal_error)?;
-
-        let updates = storage_maps_page
-            .values
-            .into_iter()
-            .map(|map_value| proto::rpc_store::StorageMapUpdate {
-                slot_index: u32::from(map_value.slot_index),
-                key: Some(map_value.key.into()),
-                value: Some(map_value.value.into()),
-                block_num: map_value.block_num.as_u32(),
-            })
-            .collect();
-
-        Ok(Response::new(proto::rpc_store::SyncStorageMapsResponse {
-            block_num: storage_maps_page.last_block_included.as_u32(),
-            chain_tip: chain_tip.as_u32(),
-            updates,
-        }))
-    }
-
     #[instrument(
         parent = None,
         target = COMPONENT,

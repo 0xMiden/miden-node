@@ -17,6 +17,7 @@ workspace = true
 [features]
 testing        = []
 tracing-forest = ["miden-node-utils/tracing-forest"]
+release-plz    = ["miden-node-store/default"] # needed for correct release order
 
 [dependencies]
 anyhow                     = { workspace = true }

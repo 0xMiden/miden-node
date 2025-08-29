@@ -5,6 +5,9 @@ pub struct RpcStatus {
     /// The rpc component's running version.
     #[prost(string, tag = "1")]
     pub version: ::prost::alloc::string::String,
+    /// The genesis commitment.
+    #[prost(message, optional, tag = "2")]
+    pub genesis_commitment: ::core::option::Option<super::primitives::Digest>,
     /// The store status.
     #[prost(message, optional, tag = "3")]
     pub store: ::core::option::Option<super::rpc_store::StoreStatus>,

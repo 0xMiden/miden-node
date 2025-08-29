@@ -21,6 +21,7 @@
 - [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
 - [BREAKING] De-duplicate storage of code in DB (no-migration) ([#1083](https://github.com/0xMiden/miden-node/issue/#1083)).
 - Added gRPC method `SyncStorageMaps` for retrieving account storage maps ([#1140](https://github.com/0xMiden/miden-node/pull/1140), [#1132](https://github.com/0xMiden/miden-node/pull/1132)).
+- Added `SyncAccountVault` gRPC endpoints ([#1176](https://github.com/0xMiden/miden-node/pull/1176)).
 
 ### Changes
 
@@ -33,7 +34,7 @@
   - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
 - [BREAKING] Remove public store API `GetAccountStateDelta` ([#1162](https://github.com/0xMiden/miden-node/pull/1162)).
 - Removed `faucet` binary ([#1172](https://github.com/0xMiden/miden-node/pull/1172)).
-- Added `SyncAccountVault` gRPC endpoints ([#1176](https://github.com/0xMiden/miden-node/pull/1176)).
+- Add `genesis_commitment` in `Status` response ([#1181](https://github.com/0xMiden/miden-node/pull/1181)).
 
 ### Fixes
 
@@ -41,6 +42,7 @@
 - RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - Stress-test CLI account now properly sets the storage mode and increment nonce in transactions ([#1113](https://github.com/0xMiden/miden-node/pull/1113)).
 - [BREAKING] Update `notes` table schema to have a nullable `consumed_block_num` ([#1100](https://github.com/0xMiden/miden-node/pull/1100)).
+- Network Transaction Builder now correctly discards non-single-target network notes instead of panicking ([#1166](https://github.com/0xMiden/miden-node/pull/1166)).
 
 ## v0.10.1 (2025-07-14)
 

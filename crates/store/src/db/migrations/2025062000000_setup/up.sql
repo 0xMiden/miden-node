@@ -87,7 +87,6 @@ CREATE TABLE account_storage_map_values (
     is_latest_update    BOOLEAN NOT NULL,
 
     PRIMARY KEY (account_id, block_num, slot, key),
-    FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
     CONSTRAINT slot_is_u8 CHECK (slot BETWEEN 0 AND 0xFF)
 ) WITHOUT ROWID;
 

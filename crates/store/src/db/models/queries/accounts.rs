@@ -386,7 +386,8 @@ pub(crate) fn select_account_storage_map_values(
             .load(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
-    let (last_block_included, values) = if raw.len() == ROW_LIMIT {
+
+    let (last_block_included, values) = if raw.len() >= ROW_LIMIT {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
         // least two blocks
@@ -395,7 +396,7 @@ pub(crate) fn select_account_storage_map_values(
         let &(last_block_num, ..) = raw.last().unwrap();
         let values = raw
             .into_iter()
-            .filter(|(bn, ..)| *bn != last_block_num)
+            .take_while(|(bn, ..)| *bn != last_block_num)
             .map(StorageMapValue::from_raw_row)
             .collect::<Result<Vec<_>, DatabaseError>>()?;
 

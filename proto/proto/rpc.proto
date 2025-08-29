@@ -102,6 +102,9 @@ message RpcStatus {
     // The rpc component's running version.
     string version = 1;
 
+    // The genesis commitment.
+    primitives.Digest genesis_commitment = 2;
+
     // The store status.
     rpc_store.StoreStatus store = 3;
 

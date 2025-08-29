@@ -15,7 +15,7 @@ version.workspace      = true
 workspace = true
 
 [features]
-default = []
+default = [] # needed for correct release order
 
 [dependencies]
 anyhow                 = { workspace = true }

@@ -69,9 +69,3 @@ pub struct AccountWitness {
     #[prost(message, optional, tag = "4")]
     pub path: ::core::option::Option<super::primitives::MerklePath>,
 }
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct Asset {
-    /// Asset represented as a word.
-    #[prost(message, optional, tag = "1")]
-    pub asset: ::core::option::Option<super::primitives::Digest>,
-}

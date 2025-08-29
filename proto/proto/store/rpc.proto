@@ -281,7 +281,7 @@ message SyncAccountVaultRequest {
     /// otherwise an error will be returned.
     optional fixed32 block_to = 2;
     
-    // Account for which we want to sync storage maps.
+    // Account for which we want to sync asset vault.
     account.AccountId account_id = 3;
 }
 
@@ -304,12 +304,12 @@ message SyncAccountVaultResponse {
 }
 
 message AccountVaultUpdate {
-    // Vault key asscoiated with the asset.
+    // Vault key associated with the asset.
     primitives.Digest vault_key = 1;
 
     // Asset value related to the vault key.
     // If not present, the asset was removed from the vault.
-    optional account.Asset asset = 2;
+    optional primitives.Asset asset = 2;
 
     // Block number at which the above asset was updated in the account vault.
     fixed32 block_num = 3;

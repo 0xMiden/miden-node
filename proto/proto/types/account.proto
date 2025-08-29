@@ -69,11 +69,3 @@ message AccountWitness {
     // The merkle path of the state commitment in the account tree.
     primitives.MerklePath path = 4;
 }
-
-// ASSET
-// ================================================================================================
-
-message Asset {
-    // Asset represented as a word.
-    primitives.Digest asset = 1;
-}

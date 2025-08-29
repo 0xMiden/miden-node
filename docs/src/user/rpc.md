@@ -16,8 +16,10 @@ The gRPC service definition can be found in the Miden node's `proto`
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetNotesById](#getnotesbyid)
 - [SubmitProvenTransaction](#submitproventransaction)
+- [SyncAccountVault](#syncaccountvault)
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
+- [SyncStorageMaps](#syncstoragemaps)
 - [Status](#status)
 
 <!--toc:end-->
@@ -84,10 +86,6 @@ Each update response also contains info about new notes, accounts etc. created. 
 
 The low part of note tags are redacted to preserve some degree of privacy. Returned data therefore contains additional notes which should be filtered out by the client.
 
-## Status
-
-Request the status of the node components. The response contains the current version of the RPC component and the connection status of the other components, including their versions and the number of the most recent block in the chain (chain tip).
-
 ## SyncStorageMaps
 
 Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
@@ -95,3 +93,7 @@ Returns storage map synchronization data for a specified public account within a
 Caller specifies the `account_id` of the public account and the block range (`block_from`, `block_to`) for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
 
 This endpoint enables clients to maintain an updated view of account storage.
+
+## Status
+
+Request the status of the node components. The response contains the current version of the RPC component and the connection status of the other components, including their versions and the number of the most recent block in the chain (chain tip).

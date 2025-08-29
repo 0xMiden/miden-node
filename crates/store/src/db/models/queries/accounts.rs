@@ -157,18 +157,25 @@ pub(crate) fn select_account_vault_assets(
 ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
     use schema::account_vault_assets as t;
 
-    // SELECT block_num, faucet_id, delta
-    // FROM account_vault_assets
-    // WHERE account_id = ?
-    //   AND block_num >= ?
-    //   AND block_num <= ?
-    // ORDER BY block_num ASC
-    // LIMIT ROW_LIMIT;
+    // SELECT
+    //     block_num,
+    //     vault_key,
+    //     asset
+    // FROM
+    //     account_vault_assets
+    // WHERE
+    //     account_id = ?
+    //     AND block_num >= ?
+    //     AND block_num <= ?
+    // ORDER BY
+    //     block_num ASC
+    // LIMIT
+    //     ROW_LIMIT;
 
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
     const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
-    const ROW_OVERHEAD_BYTES: usize = core::mem::size_of::<Word>() * 2; // vault key word + asset word
+    const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
     const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
 
     if !account_id.is_public() {
@@ -179,7 +186,7 @@ pub(crate) fn select_account_vault_assets(
         return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
     }
 
-    let mut raw: Vec<(i64, Vec<u8>, Option<Vec<u8>>)> =
+    let raw: Vec<(i64, Vec<u8>, Option<Vec<u8>>)> =
         SelectDsl::select(t::table, (t::block_num, t::vault_key, t::asset))
             .filter(
                 t::account_id
@@ -192,21 +199,27 @@ pub(crate) fn select_account_vault_assets(
             .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
-    let mut last_block_included = block_to.checked_sub(1).unwrap_or_default();
-    if raw.len() == ROW_LIMIT {
+    let (last_block_included, values) = if raw.len() >= ROW_LIMIT {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
         // least two blocks
-        if let Some(last_block_num) = raw.last().map(|r| r.0) {
-            raw.retain(|(row_block_num, ..)| *row_block_num != last_block_num);
-            last_block_included = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
-        }
-    }
 
-    let values = raw
-        .into_iter()
-        .map(AccountVaultValue::from_raw_row)
-        .collect::<Result<Vec<_>, DatabaseError>>()?;
+        // SAFETY: we checked that the vector is not empty
+        let &(last_block_num, ..) = raw.last().unwrap();
+
+        let values = raw
+            .into_iter()
+            .take_while(|(bn, ..)| *bn != last_block_num)
+            .map(AccountVaultValue::from_raw_row)
+            .collect::<Result<Vec<_>, DatabaseError>>()?;
+
+        (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
+    } else {
+        (
+            block_to,
+            raw.into_iter().map(AccountVaultValue::from_raw_row).collect::<Result<_, _>>()?,
+        )
+    };
 
     Ok((last_block_included, values))
 }
@@ -348,7 +361,8 @@ pub(crate) fn select_account_storage_map_values(
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
     pub const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
-    pub const ROW_OVERHEAD_BYTES: usize = size_of::<Word>() + size_of::<Word>() + size_of::<u8>(); // key + value + slot_idx
+    pub const ROW_OVERHEAD_BYTES: usize =
+        2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
     pub const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
 
     if !account_id.is_public() {

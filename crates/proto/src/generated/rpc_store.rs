@@ -230,7 +230,7 @@ pub struct SyncAccountVaultRequest {
     /// / otherwise an error will be returned.
     #[prost(fixed32, optional, tag = "2")]
     pub block_to: ::core::option::Option<u32>,
-    /// Account for which we want to sync storage maps.
+    /// Account for which we want to sync asset vault.
     #[prost(message, optional, tag = "3")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
 }
@@ -255,13 +255,13 @@ pub struct SyncAccountVaultResponse {
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct AccountVaultUpdate {
-    /// Vault key asscoiated with the asset.
+    /// Vault key associated with the asset.
     #[prost(message, optional, tag = "1")]
     pub vault_key: ::core::option::Option<super::primitives::Digest>,
     /// Asset value related to the vault key.
     /// If not present, the asset was removed from the vault.
     #[prost(message, optional, tag = "2")]
-    pub asset: ::core::option::Option<super::account::Asset>,
+    pub asset: ::core::option::Option<super::primitives::Asset>,
     /// Block number at which the above asset was updated in the account vault.
     #[prost(fixed32, tag = "3")]
     pub block_num: u32,

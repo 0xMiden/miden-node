@@ -66,7 +66,7 @@ pub(crate) fn insert_block_header(
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
 /// This function will set `is_latest_update=true` for the new row and update any existing
-/// row with the same `(account_id, faucet_id)` tuple to `is_latest_update=false`.
+/// row with the same `(account_id, vault_key)` tuple to `is_latest_update=false`.
 ///
 /// # Returns
 ///
@@ -83,7 +83,7 @@ pub(crate) fn insert_account_vault_asset(
     let block_num = block_num.to_raw_sql();
     let asset = asset.map(|asset| asset.to_bytes());
     diesel::Connection::transaction(conn, |conn| {
-        // First, update any existing rows with the same (account_id, faucet_id) to set
+        // First, update any existing rows with the same (account_id, vault_key) to set
         // is_latest_update=false
         let update_count = diesel::update(schema::account_vault_assets::table)
             .filter(
@@ -265,6 +265,8 @@ pub(crate) fn upsert_accounts(
                     return Err(DatabaseError::AccountNotFoundInDb(account_id));
                 };
 
+                // --- process storage map updates ----------------------------
+
                 for (&slot, map_delta) in delta.storage().maps() {
                     for (key, value) in map_delta.entries() {
                         insert_account_storage_map_value(
@@ -278,9 +280,12 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
+                // apply delta to the account; we need to do this before we process asset updates
+                // because we currently need to get the current value of fungible assets from the
+                // account
                 let account = apply_delta(account, delta, &update.final_state_commitment())?;
 
-                // Update assets
+                // --- process asset updates ----------------------------------
 
                 for (faucet_id, _) in delta.vault().fungible().iter() {
                     let current_amount = account.vault().get_balance(*faucet_id).unwrap();

@@ -23,8 +23,10 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 - [GetNoteAuthenticationInfo](#getnoteauthenticationinfo)
 - [GetNotesById](#getnotesbyid)
 - [GetTransactionInputs](#gettransactioninputs)
+- [SyncAccountVault](#syncaccountvault)
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
+- [SyncStorageMaps](#syncstoragemaps)
 <!--toc:end-->
 
 ---
@@ -100,6 +102,16 @@ Used by the `block-producer` to query state required to verify a submitted trans
 
 ---
 
+### SyncAccountVault
+
+Returns information that allows clients to sync asset values for specific public accounts within a block range.
+
+For any `[block_from..block_to]` range, the latest known set of assets is returned for the requested account ID.
+The data can be split and a cutoff block may be selected if there are too many assets to sync. The response contains
+the chain tip so that the caller knows when it has been reached.
+
+---
+
 ### SyncNotes
 
 Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -128,6 +140,16 @@ used to update the state of Chain MMR. This includes both chain MMR peaks and ch
 
 For preserving some degree of privacy, note tags and nullifiers filters contain only high part of hashes. Thus, returned
 data contains excessive notes and nullifiers, client can make additional filtering of that data on its side.
+
+---
+
+### SyncStorageMaps
+
+Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
+
+Caller specifies the `account_id` of the public account and the block range (`block_from`, `block_to`) for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
+
+This endpoint enables clients to maintain an updated view of account storage.
 
 ---
 

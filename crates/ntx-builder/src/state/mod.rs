@@ -6,7 +6,7 @@ use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_node_proto::domain::note::NetworkNote;
+use miden_node_proto::domain::note::{NetworkNote, SingleTargetNetworkNote};
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -116,13 +116,14 @@ impl State {
 
         let notes = state.store.get_unconsumed_network_notes().await?;
         for note in notes {
-            let prefix = note.account_prefix();
-
-            // Ignore notes which don't target an existing account.
-            let Some(account) = state.fetch_account(prefix).await? else {
-                continue;
-            };
-            account.add_note(note);
+            // Currently only support single target network notes in NTB.
+            if let NetworkNote::SingleTarget(note) = note {
+                let prefix = note.account_prefix();
+                // Ignore notes which don't target an existing account.
+                if let Some(account) = state.fetch_account(prefix).await? {
+                    account.add_note(note);
+                }
+            }
         }
         state.inject_telemetry();
 
@@ -263,6 +264,13 @@ impl State {
                 network_notes,
                 account_delta,
             } => {
+                let network_notes = network_notes
+                    .into_iter()
+                    .filter_map(|note| match note {
+                        NetworkNote::SingleTarget(note) => Some(note),
+                        NetworkNote::MultiTarget(_) => None,
+                    })
+                    .collect::<Vec<_>>();
                 self.add_transaction(id, nullifiers, network_notes, account_delta).await?;
             },
             MempoolEvent::BlockCommitted { header, txs } => {
@@ -300,7 +308,7 @@ impl State {
         &mut self,
         id: TransactionId,
         nullifiers: Vec<Nullifier>,
-        network_notes: Vec<NetworkNote>,
+        network_notes: Vec<SingleTargetNetworkNote>,
         account_delta: Option<AccountUpdateDetails>,
     ) -> anyhow::Result<()> {
         // Skip transactions we already know about.
@@ -336,13 +344,10 @@ impl State {
         }
         for note in network_notes {
             tx_impact.notes.insert(note.nullifier());
-            self.nullifier_idx.insert(note.nullifier(), note.account_prefix());
+            let prefix = note.account_prefix();
+            self.nullifier_idx.insert(note.nullifier(), prefix);
             // Skip notes which target a non-existent network account.
-            if let Some(account) = self
-                .fetch_account(note.account_prefix())
-                .await
-                .context("failed to load account")?
-            {
+            if let Some(account) = self.fetch_account(prefix).await? {
                 account.add_note(note);
             }
         }

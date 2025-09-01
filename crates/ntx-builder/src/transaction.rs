@@ -1,9 +1,7 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
 
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId};
-use miden_objects::assembly::DefaultSourceManager;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
@@ -24,6 +22,7 @@ use miden_tx::{
     FailedNote,
     LocalTransactionProver,
     MastForestStore,
+    NoteCheckerError,
     NoteConsumptionChecker,
     NoteConsumptionInfo,
     TransactionExecutor,
@@ -43,7 +42,7 @@ pub enum NtxError {
     #[error("note inputs were invalid")]
     InputNotes(#[source] TransactionInputError),
     #[error("failed to filter notes")]
-    NoteFilter(#[source] TransactionExecutorError),
+    NoteFilter(#[source] NoteCheckerError),
     #[error("all notes failed to be executed")]
     AllNotesFailed(Vec<FailedNote>),
     #[error("failed to execute transaction")]
@@ -156,7 +155,7 @@ impl NtxContext {
         notes: Vec<Note>,
     ) -> NtxResult<(InputNotes<InputNote>, Vec<FailedNote>)> {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
-            TransactionExecutor::new(data_store, None);
+            TransactionExecutor::new(data_store);
         let checker = NoteConsumptionChecker::new(&executor);
 
         let notes = InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
@@ -193,14 +192,13 @@ impl NtxContext {
         notes: InputNotes<InputNote>,
     ) -> NtxResult<ExecutedTransaction> {
         let executor: TransactionExecutor<'_, '_, _, UnreachableAuth> =
-            TransactionExecutor::new(data_store, None);
+            TransactionExecutor::new(data_store);
 
         Box::pin(executor.execute_transaction(
             data_store.account.id(),
             data_store.reference_header.block_num(),
             notes,
             TransactionArgs::default(),
-            Arc::new(DefaultSourceManager::default()),
         ))
         .await
         .map_err(NtxError::Execution)

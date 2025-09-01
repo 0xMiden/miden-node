@@ -40,6 +40,7 @@ use crate::COMPONENT;
 pub struct RpcService {
     store: StoreRpcClient,
     block_producer: Option<BlockProducerClient>,
+    genesis_commitment: Option<Word>,
 }
 
 impl RpcService {
@@ -68,7 +69,23 @@ impl RpcService {
                 .connect_lazy::<BlockProducer>()
         });
 
-        Self { store, block_producer }
+        Self {
+            store,
+            block_producer,
+            genesis_commitment: None,
+        }
+    }
+
+    /// Sets the genesis commitment, returning an error if it is already set.
+    ///
+    /// Required since `RpcService::new()` sets up the `store` which is used to fetch the
+    /// `genesis_commitment`.
+    pub fn set_genesis_commitment(&mut self, commitment: Word) -> anyhow::Result<()> {
+        if self.genesis_commitment.is_some() {
+            return Err(anyhow::anyhow!("genesis commitment already set"));
+        }
+        self.genesis_commitment = Some(commitment);
+        Ok(())
     }
 
     /// Fetches the genesis block header from the store.
@@ -207,6 +224,23 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
+        name = "rpc.server.sync_storage_maps",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_storage_maps(
+        &self,
+        request: Request<proto::rpc_store::SyncStorageMapsRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncStorageMapsResponse>, Status> {
+        debug!(target: COMPONENT, request = ?request.get_ref());
+
+        self.store.clone().sync_storage_maps(request).await
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
         name = "rpc.server.sync_notes",
         skip_all,
         ret(level = "debug"),
@@ -250,6 +284,26 @@ impl api_server::Api for RpcService {
                 })?;
 
         self.store.clone().get_notes_by_id(request).await
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.sync_account_vault",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_account_vault(
+        &self,
+        request: tonic::Request<proto::rpc_store::SyncAccountVaultRequest>,
+    ) -> std::result::Result<
+        tonic::Response<proto::rpc_store::SyncAccountVaultResponse>,
+        tonic::Status,
+    > {
+        debug!(target: COMPONENT, request = ?request.get_ref());
+
+        self.store.clone().sync_account_vault(request).await
     }
 
     #[instrument(parent = None, target = COMPONENT, name = "rpc.server.submit_proven_transaction", skip_all, err)]
@@ -449,6 +503,7 @@ impl api_server::Api for RpcService {
                     version: "-".to_string(),
                 },
             )),
+            genesis_commitment: self.genesis_commitment.map(Into::into),
         }))
     }
 }

@@ -1,10 +1,12 @@
 # Changelog
 
-## v0.11.0 (TBD)
+## v0.12.0 (TBD)
 
-### Removed
+### Changes
 
-- Moved the `miden-faucet` binary to the [`miden-faucet` repository](https://github.com/0xmiden/miden-faucet) ([#1179](https://github.com/0xMiden/miden-node/pull/1179)).
+- [BREAKING] Updated MSRV to 1.89.
+
+## v0.11.0 (2025-08-28)
 
 ### Enhancements
 
@@ -12,17 +14,17 @@
 - RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - A transaction's account delta is now checked against its commitments in `SubmitProvenTransaction` endpoint ([#1093](https://github.com/0xMiden/miden-node/pull/1093)).
 - Added check for Account Id prefix uniqueness when transactions to create accounts are submitted to the mempool ([#1094](https://github.com/0xMiden/miden-node/pull/1094)).
-- Added tables for storing account storage maps ([#1132](https://github.com/0xMiden/miden-node/pull/1132)).
-- RPC accept header now supports specifying the genesis commitment in addition to the RPC version. This lets clients ensure they are on the right network ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - Added benchmark CLI sub-command for the `miden-store` component to measure the state load time ([#1154](https://github.com/0xMiden/miden-node/pull/1154)).
 - Retry failed network notes with exponential backoff instead of immediately ([#1116](https://github.com/0xMiden/miden-node/pull/1116))
 - Network notes are now dropped after failing 30 times ([#1116](https://github.com/0xMiden/miden-node/pull/1116))
 - gRPC server timeout is now configurable (defaults to `10s`) ([#1133](https://github.com/0xMiden/miden-node/pull/1133))
+- [BREAKING] Refactored protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
+- Added `SyncStorageMaps` gRPC endpoint for retrieving account storage maps ([#1140](https://github.com/0xMiden/miden-node/pull/1140), [#1132](https://github.com/0xMiden/miden-node/pull/1132)).
+- Added `SyncAccountVault` gRPC endpoints for retrieving account assets ([#1176](https://github.com/0xMiden/miden-node/pull/1176)).
 
 ### Changes
 
 - [BREAKING] Updated MSRV to 1.88.
-- [BREAKING] Refactor protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
 - [BREAKING] De-duplicate storage of code in DB (no-migration) ([#1083](https://github.com/0xMiden/miden-node/issue/#1083)).
 - [BREAKING] RPC accept header format changed from `application/miden.vnd+grpc.<version>` to `application/vnd.miden; version=<version>` ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - [BREAKING] Integrated `FeeParameters` into block headers. ([#1122](https://github.com/0xMiden/miden-node/pull/1122)).
@@ -33,6 +35,7 @@
   - Note: fees are not yet activated, and this has no impact beyond setting these values in the block headers
 - [BREAKING] Remove public store API `GetAccountStateDelta` ([#1162](https://github.com/0xMiden/miden-node/pull/1162)).
 - Removed `faucet` binary ([#1172](https://github.com/0xMiden/miden-node/pull/1172)).
+- Add `genesis_commitment` in `Status` response ([#1181](https://github.com/0xMiden/miden-node/pull/1181)).
 
 ### Fixes
 
@@ -40,6 +43,11 @@
 - RPC requests with wildcard (`*/*`) media-type are not longer rejected ([#1084](https://github.com/0xMiden/miden-node/pull/1084)).
 - Stress-test CLI account now properly sets the storage mode and increment nonce in transactions ([#1113](https://github.com/0xMiden/miden-node/pull/1113)).
 - [BREAKING] Update `notes` table schema to have a nullable `consumed_block_num` ([#1100](https://github.com/0xMiden/miden-node/pull/1100)).
+- Network Transaction Builder now correctly discards non-single-target network notes instead of panicking ([#1166](https://github.com/0xMiden/miden-node/pull/1166)).
+
+### Removed
+
+- Moved the `miden-faucet` binary to the [`miden-faucet` repository](https://github.com/0xmiden/miden-faucet) ([#1179](https://github.com/0xMiden/miden-node/pull/1179)).
 
 ## v0.10.1 (2025-07-14)
 

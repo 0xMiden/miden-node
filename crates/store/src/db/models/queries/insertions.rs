@@ -15,7 +15,14 @@ use miden_lib::utils::Serializable;
 use miden_node_proto as proto;
 use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountDelta, AccountId, StorageSlot};
+use miden_objects::account::{
+    Account,
+    AccountDelta,
+    AccountId,
+    NonFungibleDeltaAction,
+    StorageSlot,
+};
+use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
@@ -54,6 +61,53 @@ pub(crate) fn insert_block_header(
         )])
         .execute(conn)?;
     Ok(count)
+}
+
+/// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
+///
+/// This function will set `is_latest_update=true` for the new row and update any existing
+/// row with the same `(account_id, vault_key)` tuple to `is_latest_update=false`.
+///
+/// # Returns
+///
+/// The number of affected rows.
+pub(crate) fn insert_account_vault_asset(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    vault_key: Word,
+    asset: Option<Asset>,
+) -> Result<usize, DatabaseError> {
+    let account_id = account_id.to_bytes();
+    let vault_key = vault_key.to_bytes();
+    let block_num = block_num.to_raw_sql();
+    let asset = asset.map(|asset| asset.to_bytes());
+    diesel::Connection::transaction(conn, |conn| {
+        // First, update any existing rows with the same (account_id, vault_key) to set
+        // is_latest_update=false
+        let update_count = diesel::update(schema::account_vault_assets::table)
+            .filter(
+                schema::account_vault_assets::account_id
+                    .eq(&account_id)
+                    .and(schema::account_vault_assets::vault_key.eq(&vault_key))
+                    .and(schema::account_vault_assets::is_latest_update.eq(true)),
+            )
+            .set(schema::account_vault_assets::is_latest_update.eq(false))
+            .execute(conn)?;
+
+        // Insert the new latest row
+        let insert_count = diesel::insert_into(schema::account_vault_assets::table)
+            .values((
+                schema::account_vault_assets::account_id.eq(&account_id),
+                schema::account_vault_assets::block_num.eq(block_num),
+                schema::account_vault_assets::vault_key.eq(&vault_key),
+                schema::account_vault_assets::asset.eq(&asset),
+                schema::account_vault_assets::is_latest_update.eq(true),
+            ))
+            .execute(conn)?;
+
+        Ok(update_count + insert_count)
+    })
 }
 
 /// Deserializes account and applies account delta.
@@ -211,6 +265,8 @@ pub(crate) fn upsert_accounts(
                     return Err(DatabaseError::AccountNotFoundInDb(account_id));
                 };
 
+                // --- process storage map updates ----------------------------
+
                 for (&slot, map_delta) in delta.storage().maps() {
                     for (key, value) in map_delta.entries() {
                         insert_account_storage_map_value(
@@ -224,7 +280,41 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
+                // apply delta to the account; we need to do this before we process asset updates
+                // because we currently need to get the current value of fungible assets from the
+                // account
                 let account = apply_delta(account, delta, &update.final_state_commitment())?;
+
+                // --- process asset updates ----------------------------------
+
+                for (faucet_id, _) in delta.vault().fungible().iter() {
+                    let current_amount = account.vault().get_balance(*faucet_id).unwrap();
+                    let asset: Asset = FungibleAsset::new(*faucet_id, current_amount)?.into();
+                    let asset_update_or_removal =
+                        if current_amount == 0 { None } else { Some(asset) };
+
+                    insert_account_vault_asset(
+                        conn,
+                        account.id(),
+                        block_num,
+                        asset.vault_key(),
+                        asset_update_or_removal,
+                    )?;
+                }
+
+                for (asset, delta_action) in delta.vault().non_fungible().iter() {
+                    let asset_update = match delta_action {
+                        NonFungibleDeltaAction::Add => Some(Asset::NonFungible(*asset)),
+                        NonFungibleDeltaAction::Remove => None,
+                    };
+                    insert_account_vault_asset(
+                        conn,
+                        account.id(),
+                        block_num,
+                        asset.vault_key(),
+                        asset_update,
+                    )?;
+                }
 
                 Some(Cow::Owned(account))
             },

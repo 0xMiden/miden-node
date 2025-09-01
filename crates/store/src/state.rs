@@ -426,10 +426,11 @@ impl State {
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
-        block_num: BlockNumber,
-    ) -> Result<Vec<NullifierInfo>, DatabaseError> {
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
         self.db
-            .select_nullifiers_by_prefix(prefix_len, nullifier_prefixes, block_num)
+            .select_nullifiers_by_prefix(prefix_len, nullifier_prefixes, block_from, block_to)
             .await
     }
 

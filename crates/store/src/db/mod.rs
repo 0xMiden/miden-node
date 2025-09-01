@@ -276,8 +276,9 @@ impl Db {
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
-        block_num: BlockNumber,
-    ) -> Result<Vec<NullifierInfo>> {
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<(Vec<NullifierInfo>, BlockNumber)> {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.transact("nullifieres by prefix", move |conn| {
@@ -287,7 +288,8 @@ impl Db {
                 conn,
                 prefix_len as u8,
                 &nullifier_prefixes[..],
-                block_num,
+                block_from,
+                block_to,
             )
         })
         .await

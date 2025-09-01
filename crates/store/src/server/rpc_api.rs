@@ -96,14 +96,19 @@ impl rpc_server::Rpc for StoreApi {
             return Err(Status::invalid_argument("Only 16-bit prefixes are supported"));
         }
 
-        let nullifiers = self
+        let chain_tip = self.state.latest_block_num().await.as_u32();
+        let block_to = request.block_to.map_or(BlockNumber::from(chain_tip), BlockNumber::from);
+
+        let (nullifiers, block_num) = self
             .state
             .check_nullifiers_by_prefix(
                 request.prefix_len,
                 request.nullifiers,
-                BlockNumber::from(request.block_num),
+                BlockNumber::from(request.block_from),
+                block_to,
             )
-            .await?
+            .await?;
+        let nullifiers = nullifiers
             .into_iter()
             .map(|nullifier_info| {
                 proto::rpc_store::check_nullifiers_by_prefix_response::NullifierUpdate {
@@ -113,7 +118,11 @@ impl rpc_server::Rpc for StoreApi {
             })
             .collect();
 
-        Ok(Response::new(proto::rpc_store::CheckNullifiersByPrefixResponse { nullifiers }))
+        Ok(Response::new(proto::rpc_store::CheckNullifiersByPrefixResponse {
+            nullifiers,
+            block_num: block_num.as_u32(),
+            chain_tip,
+        }))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain

@@ -281,7 +281,8 @@ async fn check_nullifiers_by_prefix(
     let sync_request = proto::rpc_store::CheckNullifiersByPrefixRequest {
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,
-        block_num: 0,
+        block_from: 0,
+        block_to: None,
     };
 
     let start = Instant::now();

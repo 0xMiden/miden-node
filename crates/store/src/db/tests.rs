@@ -746,9 +746,12 @@ fn select_nullifiers_by_prefix_works() {
     let mut conn = create_db();
     let conn = &mut conn; // test empty table
     let block_number0 = 0.into();
-    let nullifiers =
-        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0).unwrap();
+    let block_number10 = 10.into();
+    let (nullifiers, block_number_reached) =
+        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0, block_number10)
+            .unwrap();
     assert!(nullifiers.is_empty());
+    assert_eq!(block_number_reached, block_number10);
 
     // test single item
     let nullifier1 = num_to_nullifier(1 << 48);
@@ -757,11 +760,12 @@ fn select_nullifiers_by_prefix_works() {
 
     queries::insert_nullifiers_for_block(conn, &[nullifier1], block_number1).unwrap();
 
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, block_number_reached) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -771,6 +775,8 @@ fn select_nullifiers_by_prefix_works() {
             block_num: block_number1
         }]
     );
+    // Block number reached should be the last block number (the block number of the last nullifier)
+    assert_eq!(block_number_reached, block_number10);
 
     // test two elements
     let nullifier2 = num_to_nullifier(2 << 48);
@@ -783,11 +789,12 @@ fn select_nullifiers_by_prefix_works() {
     assert_eq!(nullifiers, vec![(nullifier1, block_number1), (nullifier2, block_number2)]);
 
     // only the nullifiers matching the prefix are included
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -797,11 +804,12 @@ fn select_nullifiers_by_prefix_works() {
             block_num: block_number1
         }]
     );
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier2)],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -813,7 +821,7 @@ fn select_nullifiers_by_prefix_works() {
     );
 
     // All matching nullifiers are included
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[
@@ -821,6 +829,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -838,18 +847,19 @@ fn select_nullifiers_by_prefix_works() {
     );
 
     // If a non-matching prefix is provided, no nullifiers are returned
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert!(nullifiers.is_empty());
 
     // If a block number is provided, only matching nullifiers created at or after that block are
     // returned
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[
@@ -857,6 +867,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number2,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -866,6 +877,40 @@ fn select_nullifiers_by_prefix_works() {
             block_num: block_number2
         }]
     );
+
+    // Nullifiers are not returned if the block number is after the last nullifier
+    let nullifier3 = num_to_nullifier(3 << 48);
+    let block_number3 = 3.into();
+    create_block(conn, block_number3);
+
+    queries::insert_nullifiers_for_block(conn, &[nullifier3], block_number3).unwrap();
+
+    let (nullifiers, block_number_reached) = queries::select_nullifiers_by_prefix(
+        conn,
+        PREFIX_LEN,
+        &[
+            utils::get_nullifier_prefix(&nullifier1),
+            utils::get_nullifier_prefix(&nullifier2),
+            utils::get_nullifier_prefix(&nullifier3),
+        ],
+        block_number0,
+        block_number2,
+    )
+    .unwrap();
+    assert_eq!(
+        nullifiers,
+        vec![
+            NullifierInfo {
+                nullifier: nullifier1,
+                block_num: block_number1
+            },
+            NullifierInfo {
+                nullifier: nullifier2,
+                block_num: block_number2
+            }
+        ]
+    );
+    assert_eq!(block_number_reached, block_number2);
 }
 
 #[test]

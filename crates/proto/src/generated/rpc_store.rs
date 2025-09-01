@@ -132,7 +132,10 @@ pub struct CheckNullifiersByPrefixRequest {
     pub nullifiers: ::prost::alloc::vec::Vec<u32>,
     /// Block number from which the nullifiers are requested (inclusive).
     #[prost(fixed32, tag = "3")]
-    pub block_num: u32,
+    pub block_from: u32,
+    /// Block number up to which to check. If not specified, checks up to the latest block.
+    #[prost(fixed32, optional, tag = "4")]
+    pub block_to: ::core::option::Option<u32>,
 }
 /// Represents the result of checking nullifiers by prefix.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -142,6 +145,16 @@ pub struct CheckNullifiersByPrefixResponse {
     pub nullifiers: ::prost::alloc::vec::Vec<
         check_nullifiers_by_prefix_response::NullifierUpdate,
     >,
+    /// The block number of the last check included in this response.
+    ///
+    /// For chunked responses, this may be less than request.block_to.
+    /// If it is less than request.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_from = block_num + 1).
+    #[prost(fixed32, tag = "2")]
+    pub block_num: u32,
+    /// Current chain tip
+    #[prost(fixed32, tag = "3")]
+    pub chain_tip: u32,
 }
 /// Nested message and enum types in `CheckNullifiersByPrefixResponse`.
 pub mod check_nullifiers_by_prefix_response {

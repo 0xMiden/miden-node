@@ -2218,7 +2218,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-remote-prover-client",
+ "miden-remote-prover",
  "miden-tx",
  "miden-tx-batch-prover",
  "pretty_assertions",
@@ -2247,7 +2247,7 @@ dependencies = [
  "miden-node-test-macro",
  "miden-node-utils",
  "miden-objects",
- "miden-remote-prover-client",
+ "miden-remote-prover",
  "miden-tx",
  "rstest",
  "thiserror 2.0.16",
@@ -2475,6 +2475,7 @@ dependencies = [
  "axum",
  "bytes",
  "clap 4.5.46",
+ "getrandom 0.3.3",
  "http",
  "humantime",
  "miden-block-prover",
@@ -2505,29 +2506,10 @@ dependencies = [
  "tonic-build",
  "tonic-health",
  "tonic-web",
+ "tonic-web-wasm-client",
  "tower-http",
  "tracing",
  "uuid",
-]
-
-[[package]]
-name = "miden-remote-prover-client"
-version = "0.12.0"
-dependencies = [
- "getrandom 0.3.3",
- "miden-node-proto-build",
- "miden-objects",
- "miden-tx",
- "miette",
- "prost",
- "prost-build",
- "protox",
- "thiserror 2.0.16",
- "tokio",
- "tonic",
- "tonic-build",
- "tonic-web",
- "tonic-web-wasm-client",
 ]
 
 [[package]]
@@ -4761,7 +4743,6 @@ dependencies = [
  "io-uring",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
  "signal-hook-registry",
  "slab",

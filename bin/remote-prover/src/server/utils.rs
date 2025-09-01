@@ -1,7 +1,6 @@
 use std::net::TcpListener;
 
 use http::{HeaderMap, HeaderName, HeaderValue};
-use crate::server::error::RemoteProverError;
 use pingora::http::ResponseHeader;
 use pingora::protocols::http::ServerSession;
 use pingora::{Error, ErrorType};
@@ -10,9 +9,10 @@ use prost::Message;
 use tonic::Code;
 use tracing::debug;
 
+use super::commands::PROXY_HOST;
+use super::error::RemoteProverError;
+use super::proxy::metrics::QUEUE_DROP_COUNT;
 use crate::COMPONENT;
-use crate::server::commands::PROXY_HOST;
-use crate::server::proxy::metrics::QUEUE_DROP_COUNT;
 
 // CONSTANTS
 // ================================================================================================

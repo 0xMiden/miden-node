@@ -15,6 +15,10 @@ BUILD_PROTO=BUILD_PROTO=1
 clippy: ## Runs Clippy with configs
 	cargo clippy --locked --all-targets --all-features --workspace -- -D warnings
 	cargo clippy --locked --all-targets --all-features -p miden-remote-prover -- -D warnings
+	# Check all remote-prover feature combinations
+	cargo clippy --locked -p miden-remote-prover --no-default-features --features server -- -D warnings
+	cargo clippy --locked -p miden-remote-prover --no-default-features --features "client,std" -- -D warnings
+	cargo clippy --locked -p miden-remote-prover --target wasm32-unknown-unknown --no-default-features --features client -- -D warnings
 
 
 .PHONY: fix
@@ -80,13 +84,19 @@ test:  ## Runs all tests
 .PHONY: check
 check: ## Check all targets and features for errors without code generation
 	${BUILD_PROTO} cargo check --all-features --all-targets --locked --workspace
+	# Check all remote-prover feature combinations
+	${BUILD_PROTO} cargo check --locked -p miden-remote-prover --no-default-features --features server
+	${BUILD_PROTO} cargo check --locked -p miden-remote-prover --no-default-features --features "client,std"
+	${BUILD_PROTO} cargo check --locked -p miden-remote-prover --target wasm32-unknown-unknown --no-default-features --features client
 
 # --- building ------------------------------------------------------------------------------------
 
 .PHONY: build
 build: ## Builds all crates and re-builds protobuf bindings for proto crates
 	${BUILD_PROTO} cargo build --locked --workspace
-	${BUILD_PROTO} cargo build --locked -p miden-remote-prover-client --target wasm32-unknown-unknown --no-default-features  # no-std compatible build
+	${BUILD_PROTO} cargo build --locked -p miden-remote-prover --no-default-features --features server  # server-only build
+	${BUILD_PROTO} cargo build --locked -p miden-remote-prover --no-default-features --features "client,std"  # client-only std build
+	${BUILD_PROTO} cargo build --locked -p miden-remote-prover --target wasm32-unknown-unknown --no-default-features --features client  # no-std compatible build
 
 # --- installing ----------------------------------------------------------------------------------
 
@@ -96,7 +106,7 @@ install-node: ## Installs node
 
 .PHONY: install-remote-prover
 install-remote-prover: ## Install remote prover's CLI
-	$(BUILD_PROTO) cargo install --path bin/remote-prover --bin miden-remote-prover --features concurrent --locked
+	$(BUILD_PROTO) cargo install --path bin/remote-prover --bin miden-remote-prover --features server,concurrent --locked
 
 .PHONY: install-stress-test
 install-stress-test: ## Installs stress-test binary

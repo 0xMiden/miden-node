@@ -25,11 +25,21 @@ use crate::db::{NullifierInfo, schema};
 
 /// Returns nullifiers filtered by prefix within a block number range.
 ///
-/// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits
-/// of the nullifier of interest to the client. This hides the details of the specific
-/// nullifier being requested. Currently the only supported prefix length is 16 bits.
+/// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits of the
+/// nullifier of interest to the client. This hides the details of the specific nullifier being
+/// requested. Currently the only supported prefix length is 16 bits.
 ///
 /// # Returns
+///
+/// Range and pagination semantics:
+/// - Both `block_from` and `block_to` are inclusive bounds.
+/// - To keep responses ≤ ~2MB, an internal row limit is enforced. When the limit is hit and the
+///   result spans multiple blocks, the last block in the page is dropped entirely, and
+///  `last_block_included` is set to the block number immediately before that dropped block.
+///   Clients should resume with `block_from = last_block_included + 1`.
+/// - If all rows belong to a single block and hit the limit, this function returns an empty
+///   `nullifiers` page with `last_block_included = that_block - 1`. Intra-block pagination is not
+///   supported; callers may need to narrow the range.
 ///
 /// A tuple `(nullifiers, last_block_included)` where:
 /// - `nullifiers` is a vector of [`NullifierInfo`] (each contains the nullifier and the block

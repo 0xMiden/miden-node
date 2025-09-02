@@ -1,7 +1,8 @@
 use std::collections::BTreeSet;
 
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::{Account, AccountId};
+use miden_objects::account::{Account, AccountId, PartialAccount};
+use miden_objects::asset::AssetWitness;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
@@ -158,12 +159,10 @@ impl NtxContext {
             TransactionExecutor::new(data_store);
         let checker = NoteConsumptionChecker::new(&executor);
 
-        let notes = InputNotes::from_unauthenticated_notes(notes).map_err(NtxError::InputNotes)?;
-
         match Box::pin(checker.check_notes_consumability(
             data_store.account.id(),
             data_store.reference_header.block_num(),
-            notes.clone(),
+            notes,
             TransactionArgs::default(),
         ))
         .await
@@ -262,7 +261,7 @@ impl DataStore for NtxDataStore {
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
     ) -> impl FutureMaybeSend<
-        Result<(Account, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
+        Result<(PartialAccount, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
     > {
         let account = self.account.clone();
         async move {
@@ -277,7 +276,35 @@ impl DataStore for NtxDataStore {
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
 
-            Ok((account, None, self.reference_header.clone(), self.chain_mmr.clone()))
+            Ok((account.into(), None, self.reference_header.clone(), self.chain_mmr.clone()))
+        }
+    }
+
+    fn get_vault_asset_witness(
+        &self,
+        account_id: AccountId,
+        vault_root: Word,
+        vault_key: Word,
+    ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
+        let account = self.account.clone();
+        async move {
+            if account.id() != account_id {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
+
+            if account.vault().root() != vault_root {
+                return Err(DataStoreError::Other {
+                    error_msg: "Vault root mismatch".into(),
+                    source: None,
+                });
+            }
+
+            AssetWitness::new(account.vault().asset_tree().open(&vault_key)).map_err(|err| {
+                DataStoreError::Other {
+                    error_msg: "Failed to open vault asset tree".into(),
+                    source: Some(Box::new(err)),
+                }
+            })
         }
     }
 }

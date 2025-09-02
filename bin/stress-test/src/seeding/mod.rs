@@ -241,9 +241,7 @@ async fn apply_block(
     metrics: &mut SeedingMetrics,
 ) -> ProvenBlock {
     let proposed_block = ProposedBlock::new(block_inputs, batches).unwrap();
-    let proven_block = LocalBlockProver::new(0)
-        .prove_without_batch_verification(proposed_block)
-        .unwrap();
+    let proven_block = LocalBlockProver::new(0).prove_dummy(proposed_block).unwrap();
     let block_size: usize = proven_block.to_bytes().len();
 
     let start = Instant::now();
@@ -391,7 +389,7 @@ fn create_consume_note_tx(
     mut account: Account,
     input_note: InputNote,
 ) -> ProvenTransaction {
-    let init_hash = account.init_commitment();
+    let init_hash = account.initial_commitment();
 
     input_note.note().assets().iter().for_each(|asset| {
         account.vault_mut().add_asset(*asset).unwrap();

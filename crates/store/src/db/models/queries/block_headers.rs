@@ -53,7 +53,11 @@ pub(crate) fn select_block_header_by_block_num(
     row.map(std::convert::TryInto::try_into).transpose()
 }
 
-/// Select all the given block headers from the DB using the given [`SqliteConnection`].
+/// Select block headers for the given block numbers.
+///
+/// # Parameters
+/// * `blocks`: Iterator of block numbers to retrieve
+///     - Limit: 0 <= count <= 1000
 ///
 /// # Note
 ///

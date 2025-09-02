@@ -64,8 +64,13 @@ use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{DatabaseError, NoteRecord, NoteSyncRecord, NoteSyncUpdate, Page, schema};
 use crate::errors::NoteSyncError;
 
-/// Select notes matching the tags and account IDs search criteria using the given
-/// [`SqliteConnection`].
+/// Select notes matching the tags and account IDs search criteria.
+///
+/// # Parameters
+/// * `account_ids`: List of account IDs to filter by
+///     - Limit: 0 <= size <= 1000
+/// * `note_tags`: List of note tags to filter by
+///     - Limit: 0 <= count <= 1000
 ///
 /// # Returns
 ///
@@ -213,7 +218,11 @@ pub(crate) fn select_all_notes(
     Ok(records)
 }
 
-/// Select note inclusion proofs matching the `NoteId`, using the given [`SqliteConnection`].
+/// Select note inclusion proofs matching the NoteIds.
+///
+/// # Parameters
+/// * `note_ids`: Set of note IDs to query
+///     - Limit: 0 <= count <= 1000
 ///
 /// # Returns
 ///

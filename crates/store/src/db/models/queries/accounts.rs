@@ -146,6 +146,11 @@ pub(crate) fn select_all_account_commitments(
     ))
 }
 
+/// Select accounts by their IDs.
+///
+/// # Parameters
+/// * `account_ids`: List of account IDs to query
+///     - Limit: 0 <= size <= 1000
 pub(crate) fn select_accounts_by_id(
     conn: &mut SqliteConnection,
     account_ids: Vec<AccountId>,
@@ -168,6 +173,14 @@ pub(crate) fn select_accounts_by_id(
     Ok(account_infos)
 }
 
+/// Select account vault assets within a block range.
+///
+/// # Parameters
+/// * `account_id`: Account ID to query
+/// * `block_from`: Starting block number
+/// * `block_to`: Ending block number
+/// * Response payload size: 0 <= size <= 2MB
+/// * Vault assets per response: 0 <= count <= (2MB / (2*Word + u32)) + 1
 pub(crate) fn select_account_vault_assets(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -381,6 +394,14 @@ impl StorageMapValue {
 /// LIMIT
 ///     :row_limit;
 /// ```
+/// Select account storage map values within a block range.
+///
+/// # Parameters
+/// * `account_id`: Account ID to query
+/// * `block_from`: Starting block number
+/// * `block_to`: Ending block number
+/// * Response payload size: 0 <= size <= 2MB
+/// * Storage map values per response: 0 <= count <= (2MB / (2*Word + u32 + u8)) + 1
 pub(crate) fn select_account_storage_map_values(
     conn: &mut SqliteConnection,
     account_id: AccountId,

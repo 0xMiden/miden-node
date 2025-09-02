@@ -25,6 +25,12 @@ use crate::db::{NullifierInfo, schema};
 
 /// Returns nullifiers filtered by prefix and block creation height.
 ///
+/// # Parameters
+/// * `prefix_len`: Length of nullifier prefix in bits
+///     - Must be exactly 16 bits
+/// * `nullifier_prefixes`: List of nullifier prefixes to filter by
+///     - Limit: 0 <= count <= 1000
+///
 /// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits
 /// of the nullifier of interest to the client. This hides the details of the specific
 /// nullifier being requested. Currently the only supported prefix length is 16 bits.
@@ -82,8 +88,12 @@ pub(crate) fn select_all_nullifiers(
     vec_raw_try_into(nullifiers_raw)
 }
 
-/// Commit nullifiers to the DB using the given [`SqliteConnection`]. This inserts the nullifiers
-/// into the nullifiers table, and marks the note as consumed (if it was public).
+/// Insert nullifiers for a block into the database.
+///
+/// # Parameters
+/// * `nullifiers`: List of nullifiers to insert
+///     - Limit: 0 <= count <= 1000
+/// * `block_num`: Block number to associate with the nullifiers
 ///
 /// # Returns
 ///

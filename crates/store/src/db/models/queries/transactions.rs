@@ -21,6 +21,12 @@ use crate::db::{TransactionSummary, schema};
 
 /// Select transactions for given accounts in a specified block range
 ///
+/// # Parameters
+/// * `account_ids`: List of account IDs to filter by
+///     - Limit: 0 <= size <= 1000
+/// * `block_start`: Starting block number (exclusive)
+/// * `block_end`: Ending block number (inclusive)
+///
 /// # Returns
 ///
 /// A vector of [`TransactionSummary`] types or an error.

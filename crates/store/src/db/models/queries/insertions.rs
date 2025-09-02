@@ -38,6 +38,7 @@ use crate::db::models::conv::{
     note_type_to_raw_sql,
     slot_to_raw_sql,
 };
+use crate::db::models::queries::BlockHeaderInsert;
 use crate::db::schema;
 
 /// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
@@ -54,11 +55,9 @@ pub(crate) fn insert_block_header(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,
 ) -> Result<usize, DatabaseError> {
+    let block_header = BlockHeaderInsert::from(block_header);
     let count = diesel::insert_into(schema::block_headers::table)
-        .values(&[(
-            schema::block_headers::block_num.eq(block_header.block_num().to_raw_sql()),
-            schema::block_headers::block_header.eq(block_header.to_bytes()),
-        )])
+        .values(&[block_header])
         .execute(conn)?;
     Ok(count)
 }
@@ -78,18 +77,16 @@ pub(crate) fn insert_account_vault_asset(
     vault_key: Word,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
-    let account_id = account_id.to_bytes();
-    let vault_key = vault_key.to_bytes();
-    let block_num = block_num.to_raw_sql();
-    let asset = asset.map(|asset| asset.to_bytes());
+    let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
+
     diesel::Connection::transaction(conn, |conn| {
         // First, update any existing rows with the same (account_id, vault_key) to set
         // is_latest_update=false
         let update_count = diesel::update(schema::account_vault_assets::table)
             .filter(
                 schema::account_vault_assets::account_id
-                    .eq(&account_id)
-                    .and(schema::account_vault_assets::vault_key.eq(&vault_key))
+                    .eq(&account_id.to_bytes())
+                    .and(schema::account_vault_assets::vault_key.eq(&vault_key.to_bytes()))
                     .and(schema::account_vault_assets::is_latest_update.eq(true)),
             )
             .set(schema::account_vault_assets::is_latest_update.eq(false))
@@ -97,13 +94,7 @@ pub(crate) fn insert_account_vault_asset(
 
         // Insert the new latest row
         let insert_count = diesel::insert_into(schema::account_vault_assets::table)
-            .values((
-                schema::account_vault_assets::account_id.eq(&account_id),
-                schema::account_vault_assets::block_num.eq(block_num),
-                schema::account_vault_assets::vault_key.eq(&vault_key),
-                schema::account_vault_assets::asset.eq(&asset),
-                schema::account_vault_assets::is_latest_update.eq(true),
-            ))
+            .values(record)
             .execute(conn)?;
 
         Ok(update_count + insert_count)
@@ -148,36 +139,33 @@ pub(crate) fn insert_account_storage_map_value(
     let account_id = account_id.to_bytes();
     let key = key.to_bytes();
     let value = value.to_bytes();
-    let slot_idx = slot_to_raw_sql(slot);
+    let slot = slot_to_raw_sql(slot);
     let block_num = block_num.to_raw_sql();
 
-    diesel::Connection::transaction(conn, |conn| {
-        // First, update any existing rows with the same (account_id, slot, key) to set
-        // is_latest_update=false
-        let update_count = diesel::update(schema::account_storage_map_values::table)
-            .filter(
-                schema::account_storage_map_values::account_id
-                    .eq(&account_id)
-                    .and(schema::account_storage_map_values::slot.eq(slot_idx))
-                    .and(schema::account_storage_map_values::key.eq(&key))
-                    .and(schema::account_storage_map_values::is_latest_update.eq(true)),
-            )
-            .set(schema::account_storage_map_values::is_latest_update.eq(false))
-            .execute(conn)?;
+    let update_count = diesel::update(schema::account_storage_map_values::table)
+        .filter(
+            schema::account_storage_map_values::account_id
+                .eq(&account_id)
+                .and(schema::account_storage_map_values::slot.eq(slot))
+                .and(schema::account_storage_map_values::key.eq(&key))
+                .and(schema::account_storage_map_values::is_latest_update.eq(true)),
+        )
+        .set(schema::account_storage_map_values::is_latest_update.eq(false))
+        .execute(conn)?;
 
-        let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
-            .values((
-                schema::account_storage_map_values::account_id.eq(&account_id),
-                schema::account_storage_map_values::block_num.eq(block_num),
-                schema::account_storage_map_values::slot.eq(slot_idx),
-                schema::account_storage_map_values::key.eq(&key),
-                schema::account_storage_map_values::value.eq(&value),
-                schema::account_storage_map_values::is_latest_update.eq(true),
-            ))
-            .execute(conn)?;
+    let record = AccountStorageMapRowInsert {
+        account_id,
+        key,
+        value,
+        slot,
+        block_num,
+        is_latest_update: true,
+    };
+    let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
+        .values(record)
+        .execute(conn)?;
 
-        Ok(update_count + insert_count)
-    })
+    Ok(update_count + insert_count)
 }
 
 /// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
@@ -512,4 +500,47 @@ pub(crate) struct AccountRowInsert {
     pub(crate) storage: Option<Vec<u8>>,
     pub(crate) vault: Option<Vec<u8>>,
     pub(crate) nonce: Option<i64>,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::account_vault_assets)]
+pub(crate) struct AccountAssetRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) block_num: i64,
+    pub(crate) vault_key: Vec<u8>,
+    pub(crate) asset: Option<Vec<u8>>,
+    pub(crate) is_latest_update: bool,
+}
+
+impl AccountAssetRowInsert {
+    pub(crate) fn new(
+        account_id: &AccountId,
+        vault_key: &Word,
+        block_num: BlockNumber,
+        asset: Option<Asset>,
+        is_latest_update: bool,
+    ) -> Self {
+        let account_id = account_id.to_bytes();
+        let vault_key = vault_key.to_bytes();
+        let block_num = block_num.to_raw_sql();
+        let asset = asset.map(|asset| asset.to_bytes());
+        Self {
+            account_id,
+            block_num,
+            vault_key,
+            asset,
+            is_latest_update,
+        }
+    }
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::account_storage_map_values)]
+pub(crate) struct AccountStorageMapRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) block_num: i64,
+    pub(crate) slot: i32,
+    pub(crate) key: Vec<u8>,
+    pub(crate) value: Vec<u8>,
+    pub(crate) is_latest_update: bool,
 }

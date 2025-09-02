@@ -352,9 +352,23 @@ pub(crate) fn unconsumed_network_notes(
 ///
 /// A set of unconsumed network notes with maximum length of `size` and the page to get
 /// the next set.
-//
-// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
-// statements
+///
+/// # Raw SQL
+///
+/// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+/// statements.
+///
+/// ```sql
+/// SELECT *, rowid
+/// FROM notes
+/// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+/// WHERE
+///  execution_mode = 0 AND tag = ?1 AND
+///  block_num <= ?2 AND
+///  (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
+/// ORDER BY rowid
+/// LIMIT ?
+/// ```
 #[allow(
     clippy::cast_sign_loss,
     reason = "We need custom SQL statements which has given types that we need to convert"
@@ -380,15 +394,6 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
         diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
             .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
 
-    // SELECT {}, rowid
-    // FROM notes
-    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-    // WHERE
-    //  execution_mode = 0 AND tag = ?1 AND
-    //  block_num <= ?2 AND
-    //  (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
-    // ORDER BY rowid
-    // LIMIT ?
     #[allow(
         clippy::items_after_statements,
         reason = "It's only relevant for a single call function"

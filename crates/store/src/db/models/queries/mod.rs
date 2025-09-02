@@ -2,7 +2,8 @@
 //!
 //! ## Naming
 //!
-//! * `fn *` function names follow the public API
+//! * `fn *` function names have on of three prefixes: `upsert_`, `insert_` or `select_` denoting
+//!   their nature. If neither fits, then use your best judgment for naming.
 //! * `*Insert` types are used for _inserting_ data into table and _must_ implement
 //!   `diesel::Insertable`.
 //! * `*RawRow` types are used for _querying_ a _single_ table an _without_ an explicit row and must
@@ -17,6 +18,12 @@
 //! If that is inconvenient, provide two wrapper methods for the conversion each way. There must be
 //! relevant constraints in the table. For convenience, any types that have more complex
 //! serialization may use [`Serializable`] and [`Deserializable`] for convenience.
+//!
+//! ## Assumptions
+//!
+//! Any call that sits insides of `queries/**/*.rs` can assume it's called within the scope of a
+//! transaction, any nesting of further `transaction(conn, || {})` has no effect and should be
+//! considered unnecessary boilerplate by default.
 
 #![allow(
     clippy::needless_pass_by_value,

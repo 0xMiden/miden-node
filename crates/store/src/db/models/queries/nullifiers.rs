@@ -32,6 +32,21 @@ use crate::db::{NullifierInfo, schema};
 /// # Returns
 ///
 /// A vector of [`NullifierInfo`] with the nullifiers and the block height at which they were
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     nullifier,
+///     block_num
+/// FROM
+///     nullifiers
+/// WHERE
+///     nullifier_prefix IN (?1) AND
+///     block_num >= ?2
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_nullifiers_by_prefix(
     conn: &mut SqliteConnection,
     prefix_len: u8,
@@ -41,17 +56,6 @@ pub(crate) fn select_nullifiers_by_prefix(
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
     QueryParamNullifierPrefixLimit::check(nullifier_prefixes.len())?;
-
-    // SELECT
-    //     nullifier,
-    //     block_num
-    // FROM
-    //     nullifiers
-    // WHERE
-    //     nullifier_prefix IN rarray(?1) AND
-    //     block_num >= ?2
-    // ORDER BY
-    //     block_num ASC
 
     let prefixes = nullifier_prefixes.iter().map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
     let nullifiers_raw =

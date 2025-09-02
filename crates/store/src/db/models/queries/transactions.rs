@@ -19,26 +19,35 @@ use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{TransactionSummary, schema};
 
+/// Select transactions for given accounts in a specified block range
+///
+/// # Returns
+///
+/// A vector of [`TransactionSummary`] types or an error.
+///
+/// # Raw SQL
+/// ```sql
+/// SELECT
+///     account_id,
+///     block_num,
+///     transaction_id
+/// FROM
+///     transactions
+/// WHERE
+///     block_num > ?1 AND
+///     block_num <= ?2 AND
+///     account_id IN rarray(?3)
+/// ORDER BY
+///     transaction_id ASC
+/// ```
 pub fn select_transactions_by_accounts_and_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
     block_start: BlockNumber,
-    block_end: BlockNumber, // TODO migrate to BlockNumber as argument type
+    block_end: BlockNumber,
 ) -> Result<Vec<TransactionSummary>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
-    // SELECT
-    //     account_id,
-    //     block_num,
-    //     transaction_id
-    // FROM
-    //     transactions
-    // WHERE
-    //     block_num > ?1 AND
-    //     block_num <= ?2 AND
-    //     account_id IN rarray(?3)
-    // ORDER BY
-    //     transaction_id ASC
     let desired_account_ids = serialize_vec(account_ids);
     let raw = SelectDsl::select(
         schema::transactions::table,

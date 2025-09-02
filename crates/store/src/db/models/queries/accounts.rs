@@ -230,6 +230,23 @@ pub(crate) fn select_account_vault_assets(
 /// # Returns
 ///
 /// The vector of [`AccountSummary`] with the matching accounts.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment,
+///     block_num
+/// FROM
+///     accounts
+/// WHERE
+///     block_num > ?1 AND
+///     block_num <= ?2 AND
+///     account_id IN rarray(?3)
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub fn select_accounts_by_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
@@ -237,19 +254,6 @@ pub fn select_accounts_by_block_range(
     block_end: BlockNumber,
 ) -> Result<Vec<AccountSummary>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
-
-    // SELECT
-    //     account_id,
-    //     account_commitment,
-    //     block_num
-    // FROM
-    //     accounts
-    // WHERE
-    //     block_num > ?1 AND
-    //     block_num <= ?2 AND
-    //     account_id IN rarray(?3)
-    // ORDER BY
-    //     block_num ASC
 
     let desired_account_ids = serialize_vec(account_ids);
     let raw: Vec<AccountSummaryRaw> =
@@ -269,20 +273,24 @@ pub fn select_accounts_by_block_range(
 /// # Returns
 ///
 /// A vector with accounts, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment,
+///     block_num,
+///     details
+/// FROM
+///     accounts
+/// ORDER BY
+///     block_num ASC;
+/// ```
 #[cfg(test)]
 pub(crate) fn select_all_accounts(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<AccountInfo>, DatabaseError> {
-    // SELECT
-    //     account_id,
-    //     account_commitment,
-    //     block_num,
-    //     details
-    // FROM
-    //     accounts
-    // ORDER BY
-    //     block_num ASC;
-
     let accounts_raw = QueryDsl::select(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
@@ -334,6 +342,26 @@ impl StorageMapValue {
 /// - the historical value for a slot and key specifically on block `block_to`
 /// - the latest updated value for the slot and key combination, alongside the block number in which
 ///   it was updated
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     block_num,
+///     slot,
+///     key,
+///     value
+/// FROM
+///     account_storage_map_values
+/// WHERE
+///     account_id = ?1
+///     AND block_num >= ?2
+///     AND block_num <= ?3
+/// ORDER BY
+///     block_num ASC
+/// LIMIT
+///     :row_limit;
+/// ```
 pub(crate) fn select_account_storage_map_values(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -341,22 +369,6 @@ pub(crate) fn select_account_storage_map_values(
     block_to: BlockNumber,
 ) -> Result<StorageMapValuesPage, DatabaseError> {
     use schema::account_storage_map_values as t;
-
-    // SELECT
-    //     block_num,
-    //     slot,
-    //     key,
-    //     value
-    // FROM
-    //     account_storage_map_values
-    // WHERE
-    //     account_id = ?1
-    //     AND block_num >= ?2
-    //     AND block_num <= ?3
-    // ORDER BY
-    //     block_num ASC
-    // LIMIT
-    //     :row_limit;
 
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details

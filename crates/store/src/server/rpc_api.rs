@@ -1,9 +1,11 @@
 use std::collections::BTreeSet;
 
 use miden_node_proto::domain::account::{AccountInfo, AccountProofRequest};
+use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc_store::rpc_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::{convert, try_convert};
+use miden_node_utils::ErrorReport as _;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -15,6 +17,7 @@ use crate::COMPONENT;
 use crate::server::api::{
     StoreApi,
     internal_error,
+    invalid_argument,
     read_account_id,
     read_account_ids,
     validate_nullifiers,
@@ -460,6 +463,36 @@ impl rpc_server::Rpc for StoreApi {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
             chain_tip: self.state.latest_block_num().await.as_u32(),
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.get_note_script_by_root",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_note_script_by_root(
+        &self,
+        request: Request<proto::note::NoteRoot>,
+    ) -> Result<Response<proto::rpc_store::MaybeNoteScript>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        let root = request
+            .into_inner()
+            .root
+            .ok_or(invalid_argument("missing root"))?
+            .try_into()
+            .map_err(|err: ConversionError| {
+                invalid_argument(err.as_report_context("invalid root"))
+            })?;
+
+        let note_script = self.state.get_note_script_by_root(root).await.map_err(internal_error)?;
+
+        Ok(Response::new(proto::rpc_store::MaybeNoteScript {
+            script: note_script.map(Into::into),
         }))
     }
 }

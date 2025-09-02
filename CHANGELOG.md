@@ -5,6 +5,7 @@
 ### Changes
 
 - [BREAKING] Updated MSRV to 1.89.
+- Added `GetNoteScriptByRoot` gRPC endpoint for retrieving a note script by its root ([#1196](https://github.com/0xMiden/miden-node/pull/1196)).
 
 ## v0.11.0 (2025-08-28)
 

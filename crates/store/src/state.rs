@@ -39,7 +39,7 @@ use miden_objects::crypto::merkle::{
     PartialMmr,
     SmtProof,
 };
-use miden_objects::note::{NoteDetails, NoteId, Nullifier};
+use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
 use miden_objects::{AccountError, Word};
@@ -1040,6 +1040,14 @@ impl State {
         self.db
             .select_unconsumed_network_notes_for_account(network_account_id_prefix, block_num, page)
             .await
+    }
+
+    /// Returns the script for a note by its root.
+    pub async fn get_note_script_by_root(
+        &self,
+        root: Word,
+    ) -> Result<Option<NoteScript>, DatabaseError> {
+        self.db.select_note_script_by_root(root).await
     }
 }
 

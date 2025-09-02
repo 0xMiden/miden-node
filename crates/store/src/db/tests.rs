@@ -363,6 +363,44 @@ fn sql_select_notes_different_execution_hints() {
     );
 }
 
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn sql_select_note_script_by_root() {
+    let mut conn = create_db();
+    let conn = &mut conn;
+    let block_num = BlockNumber::from(1);
+    create_block(conn, block_num);
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+
+    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block_num).unwrap();
+
+    let new_note = create_note(account_id);
+
+    // test multiple entries
+    let mut state = vec![];
+    let note = NoteRecord {
+        block_num,
+        note_index: BlockNoteIndex::new(0, 0.try_into().unwrap()).unwrap(),
+        note_id: num_to_word(0),
+        metadata: *new_note.metadata(),
+        details: Some(NoteDetails::from(&new_note)),
+        inclusion_path: SparseMerklePath::default(),
+    };
+    state.push(note.clone());
+
+    let res = queries::insert_scripts(conn, [&note]);
+    assert_eq!(res.unwrap(), 1, "One element must have been inserted");
+
+    // test querying the script by the root
+    let note_script = queries::select_note_script_by_root(conn, new_note.script().root()).unwrap();
+    assert_eq!(note_script, Some(new_note.script().clone()));
+
+    // test querying the script by the root that is not in the database
+    let note_script = queries::select_note_script_by_root(conn, [0_u16; 4].into()).unwrap();
+    assert_eq!(note_script, None);
+}
+
 // Generates an account, inserts into the database, and creates a note for it.
 fn make_account_and_note(
     conn: &mut SqliteConnection,

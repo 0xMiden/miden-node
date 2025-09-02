@@ -20,6 +20,7 @@ The full gRPC method definitions can be found in the [proto](../proto/README.md)
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetNotesById](#getnotesbyid)
+- [GetNoteScriptByRoot](#getnotescriptbyroot)
 - [SubmitProvenTransaction](#submitproventransaction)
 - [SyncAccountVault](#SyncAccountVault)
 - [SyncNotes](#syncnotes)
@@ -73,6 +74,12 @@ authenticate the block's inclusion.
 ### GetNotesById
 
 Returns a list of notes matching the provided note IDs.
+
+---
+
+### GetNoteScriptByRoot
+
+Returns the script for a note by its root.
 
 ---
 

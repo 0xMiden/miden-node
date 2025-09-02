@@ -353,6 +353,13 @@ pub struct StorageMapUpdate {
     #[prost(message, optional, tag = "4")]
     pub value: ::core::option::Option<super::primitives::Digest>,
 }
+/// Represents a note script or nothing.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaybeNoteScript {
+    /// The script for a note by its root.
+    #[prost(message, optional, tag = "1")]
+    pub script: ::core::option::Option<super::note::NoteScript>,
+}
 /// Generated client implementations.
 pub mod rpc_client {
     #![allow(
@@ -641,6 +648,31 @@ pub mod rpc_client {
                 .insert(GrpcMethod::new("rpc_store.Rpc", "GetNotesById"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the script for a note by its root.
+        pub async fn get_note_script_by_root(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::note::NoteRoot>,
+        ) -> std::result::Result<
+            tonic::Response<super::MaybeNoteScript>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rpc_store.Rpc/GetNoteScriptByRoot",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("rpc_store.Rpc", "GetNoteScriptByRoot"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
         ///
         /// Client specifies the `note_tags` they are interested in, and the block height from which to search for new for
@@ -833,6 +865,11 @@ pub mod rpc_server {
             tonic::Response<super::super::note::CommittedNoteList>,
             tonic::Status,
         >;
+        /// Returns the script for a note by its root.
+        async fn get_note_script_by_root(
+            &self,
+            request: tonic::Request<super::super::note::NoteRoot>,
+        ) -> std::result::Result<tonic::Response<super::MaybeNoteScript>, tonic::Status>;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
         ///
         /// Client specifies the `note_tags` they are interested in, and the block height from which to search for new for
@@ -1309,6 +1346,51 @@ pub mod rpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNotesByIdSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rpc_store.Rpc/GetNoteScriptByRoot" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetNoteScriptByRootSvc<T: Rpc>(pub Arc<T>);
+                    impl<
+                        T: Rpc,
+                    > tonic::server::UnaryService<super::super::note::NoteRoot>
+                    for GetNoteScriptByRootSvc<T> {
+                        type Response = super::MaybeNoteScript;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::super::note::NoteRoot>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Rpc>::get_note_script_by_root(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetNoteScriptByRootSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

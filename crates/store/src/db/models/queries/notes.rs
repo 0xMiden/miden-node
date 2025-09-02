@@ -158,11 +158,13 @@ pub(crate) fn select_notes_by_id(
                 .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
         )
         .filter(schema::notes::note_id.eq_any(&note_ids));
-    let raw: Vec<_> =
-        SelectDsl::select(q, (NoteRecordRaw::as_select(), schema::note_scripts::script.nullable()))
-            .load::<(NoteRecordRaw, Option<Vec<u8>>)>(conn)?;
-    let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRaw>(
-        raw.into_iter().map(NoteRecordWithScriptRaw::from),
+    let raw: Vec<_> = SelectDsl::select(
+        q,
+        (NoteRecordRawRow::as_select(), schema::note_scripts::script.nullable()),
+    )
+    .load::<(NoteRecordRawRow, Option<Vec<u8>>)>(conn)?;
+    let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRawJoined>(
+        raw.into_iter().map(NoteRecordWithScriptRawJoined::from),
     )?;
     Ok(records)
 }
@@ -185,12 +187,14 @@ pub(crate) fn select_all_notes(
         schema::note_scripts::table
             .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
     );
-    let raw: Vec<_> =
-        SelectDsl::select(q, (NoteRecordRaw::as_select(), schema::note_scripts::script.nullable()))
-            .order(schema::notes::committed_at.asc())
-            .load::<(NoteRecordRaw, Option<Vec<u8>>)>(conn)?;
-    let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRaw>(
-        raw.into_iter().map(NoteRecordWithScriptRaw::from),
+    let raw: Vec<_> = SelectDsl::select(
+        q,
+        (NoteRecordRawRow::as_select(), schema::note_scripts::script.nullable()),
+    )
+    .order(schema::notes::committed_at.asc())
+    .load::<(NoteRecordRawRow, Option<Vec<u8>>)>(conn)?;
+    let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRawJoined>(
+        raw.into_iter().map(NoteRecordWithScriptRawJoined::from),
     )?;
     Ok(records)
 }
@@ -290,7 +294,7 @@ pub(crate) fn unconsumed_network_notes(
         reason = "It's only relevant for a single call function"
     )]
     type RawLoadedTuple = (
-        NoteRecordRaw,
+        NoteRecordRawRow,
         Option<Vec<u8>>, // script
         i64,             // rowid (from sql::<BigInt>("notes.rowid"))
     );
@@ -301,9 +305,9 @@ pub(crate) fn unconsumed_network_notes(
     )]
     fn split_into_raw_note_record_and_implicit_row_id(
         tuple: RawLoadedTuple,
-    ) -> (NoteRecordWithScriptRaw, i64) {
+    ) -> (NoteRecordWithScriptRawJoined, i64) {
         let (note, script, row) = tuple;
-        let combined = NoteRecordWithScriptRaw::from((note, script));
+        let combined = NoteRecordWithScriptRawJoined::from((note, script));
         (combined, row)
     }
 
@@ -313,7 +317,7 @@ pub(crate) fn unconsumed_network_notes(
                 .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
         ),
         (
-            NoteRecordRaw::as_select(),
+            NoteRecordRawRow::as_select(),
             schema::note_scripts::script.nullable(),
             rowid_sel.clone(),
         ),
@@ -390,7 +394,7 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
         reason = "It's only relevant for a single call function"
     )]
     type RawLoadedTuple = (
-        NoteRecordRaw,
+        NoteRecordRawRow,
         Option<Vec<u8>>, // script
         i64,             // rowid (from sql::<BigInt>("notes.rowid"))
     );
@@ -401,9 +405,9 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
     )]
     fn split_into_raw_note_record_and_implicit_row_id(
         tuple: RawLoadedTuple,
-    ) -> (NoteRecordWithScriptRaw, i64) {
+    ) -> (NoteRecordWithScriptRawJoined, i64) {
         let (note, script, row) = tuple;
-        let combined = NoteRecordWithScriptRaw::from((note, script));
+        let combined = NoteRecordWithScriptRawJoined::from((note, script));
         (combined, row)
     }
 
@@ -413,7 +417,7 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
                 .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
         ),
         (
-            NoteRecordRaw::as_select(),
+            NoteRecordRawRow::as_select(),
             schema::note_scripts::script.nullable(),
             rowid_sel.clone(),
         ),
@@ -467,10 +471,10 @@ pub(crate) fn get_note_sync(
 pub struct NoteSyncRecordRawRow {
     pub committed_at: i64, // BlockNumber
     #[diesel(embed)]
-    pub block_note_index: BlockNoteIndexRaw,
+    pub block_note_index: BlockNoteIndexRawRow,
     pub note_id: Vec<u8>, // BlobDigest
     #[diesel(embed)]
-    pub metadata: NoteMetadataRaw,
+    pub metadata: NoteMetadataRawRow,
     pub inclusion_path: Vec<u8>, // SparseMerklePath
 }
 
@@ -497,7 +501,7 @@ impl TryInto<NoteSyncRecord> for NoteSyncRecordRawRow {
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
 #[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
-pub struct NoteDetailsRaw {
+pub struct NoteDetailsRawRow {
     pub assets: Option<Vec<u8>>,
     pub inputs: Option<Vec<u8>>,
     pub serial_num: Option<Vec<u8>>,
@@ -508,7 +512,7 @@ pub struct NoteDetailsRaw {
 // when used with join and debugging is painful to put it
 // mildly.
 #[derive(Debug, Clone, PartialEq, Queryable)]
-pub struct NoteRecordWithScriptRaw {
+pub struct NoteRecordWithScriptRawJoined {
     pub committed_at: i64,
 
     pub batch_index: i32,
@@ -534,9 +538,9 @@ pub struct NoteRecordWithScriptRaw {
     pub script: Option<Vec<u8>>, // not part of notes::table!
 }
 
-impl From<(NoteRecordRaw, Option<Vec<u8>>)> for NoteRecordWithScriptRaw {
-    fn from((note, script): (NoteRecordRaw, Option<Vec<u8>>)) -> Self {
-        let NoteRecordRaw {
+impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined {
+    fn from((note, script): (NoteRecordRawRow, Option<Vec<u8>>)) -> Self {
+        let NoteRecordRawRow {
             committed_at,
             batch_index,
             note_index,
@@ -570,12 +574,12 @@ impl From<(NoteRecordRaw, Option<Vec<u8>>)> for NoteRecordWithScriptRaw {
     }
 }
 
-impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
+impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteRecord, Self::Error> {
         // let (raw, script) = self;
         let raw = self;
-        let NoteRecordWithScriptRaw {
+        let NoteRecordWithScriptRawJoined {
             committed_at,
 
             batch_index,
@@ -597,21 +601,21 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
             script,
             ..
         } = raw;
-        let index = BlockNoteIndexRaw { batch_index, note_index };
-        let metadata = NoteMetadataRaw {
+        let index = BlockNoteIndexRawRow { batch_index, note_index };
+        let metadata = NoteMetadataRawRow {
             note_type,
             sender,
             tag,
             aux,
             execution_hint,
         };
-        let details = NoteDetailsRaw { assets, inputs, serial_num };
+        let details = NoteDetailsRawRow { assets, inputs, serial_num };
 
         let metadata = metadata.try_into()?;
         let committed_at = BlockNumber::from_raw_sql(committed_at)?;
         let note_id = Word::read_from_bytes(&note_id[..])?;
         let script = script.map(|script| NoteScript::read_from_bytes(&script[..])).transpose()?;
-        let details = if let NoteDetailsRaw {
+        let details = if let NoteDetailsRawRow {
             assets: Some(assets),
             inputs: Some(inputs),
             serial_num: Some(serial_num),
@@ -644,7 +648,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRaw {
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
 #[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
-pub struct NoteRecordRaw {
+pub struct NoteRecordRawRow {
     pub committed_at: i64,
 
     pub batch_index: i32,
@@ -667,7 +671,7 @@ pub struct NoteRecordRaw {
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
 #[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
-pub struct NoteMetadataRaw {
+pub struct NoteMetadataRawRow {
     note_type: i32,
     sender: Vec<u8>, // AccountId
     tag: i32,
@@ -676,7 +680,7 @@ pub struct NoteMetadataRaw {
 }
 
 #[allow(clippy::cast_sign_loss)]
-impl TryInto<NoteMetadata> for NoteMetadataRaw {
+impl TryInto<NoteMetadata> for NoteMetadataRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<NoteMetadata, Self::Error> {
         let sender = AccountId::read_from_bytes(&self.sender[..])?;
@@ -693,13 +697,13 @@ impl TryInto<NoteMetadata> for NoteMetadataRaw {
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]
 #[diesel(table_name = schema::notes)]
 #[diesel(check_for_backend(Sqlite))]
-pub struct BlockNoteIndexRaw {
+pub struct BlockNoteIndexRawRow {
     pub batch_index: i32,
     pub note_index: i32, // index within batch
 }
 
 #[allow(clippy::cast_sign_loss, reason = "Indices are cast to usize for ease of use")]
-impl TryInto<BlockNoteIndex> for BlockNoteIndexRaw {
+impl TryInto<BlockNoteIndex> for BlockNoteIndexRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockNoteIndex, Self::Error> {
         let batch_index = self.batch_index as usize;

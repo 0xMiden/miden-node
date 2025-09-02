@@ -381,7 +381,7 @@ pub(crate) fn insert_notes(
         .values(Vec::from_iter(
             notes
                 .iter()
-                .map(|(note, nullifier)| NoteInsertRowRaw::from((note.clone(), *nullifier))),
+                .map(|(note, nullifier)| NoteInsertRowInsert::from((note.clone(), *nullifier))),
         ))
         .execute(conn)?;
     Ok(count)
@@ -446,7 +446,7 @@ pub(crate) fn insert_transactions(
 
 #[derive(Debug, Clone, PartialEq, Insertable)]
 #[diesel(table_name = schema::notes)]
-pub struct NoteInsertRowRaw {
+pub struct NoteInsertRowInsert {
     pub committed_at: i64,
 
     pub batch_index: i32,
@@ -470,7 +470,7 @@ pub struct NoteInsertRowRaw {
     pub inclusion_path: Vec<u8>,
 }
 
-impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowRaw {
+impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
     fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
         Self {
             committed_at: note.block_num.to_raw_sql(),

@@ -8,7 +8,7 @@
 //!   `diesel::Insertable`.
 //! * `*RawRow` types are used for _querying_ a _single_ table an _without_ an explicit row and must
 //!   implement a `QueryableByName` and `Selectable`.
-//! * `*RawJoined` types are used for _querying_ a _left join_ed table _without_ an explicit row and
+//! * `*RawJoined` types are used for _querying_ a _left join_ table _without_ an explicit row and
 //!   must implement a `QueryableByName` and _cannot_ implement `Selectable`.
 //!
 //! ## Type conversion
@@ -50,6 +50,11 @@ pub(crate) use nullifiers::*;
 mod notes;
 pub(crate) use notes::*;
 
+/// Apply a new block to the state
+///
+/// # Returns
+///
+/// Number of records inserted and/or updated.
 pub(crate) fn apply_block(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,
@@ -69,17 +74,20 @@ pub(crate) fn apply_block(
     Ok(count)
 }
 
-/// Loads the state necessary for a state sync.
+/// Loads the state necessary for a state sync
+///
+/// The state sync covers from `block_start` until the last block that has a note matching the given
+/// `note_tags`.
 pub(crate) fn get_state_sync(
     conn: &mut SqliteConnection,
-    since_block_number: BlockNumber,
+    block_start: BlockNumber,
     account_ids: Vec<AccountId>,
     note_tags: Vec<u32>,
 ) -> Result<StateSyncUpdate, StateSyncError> {
     // select notes since block by tag and sender
     let notes = select_notes_since_block_by_tag_and_sender(
         conn,
-        since_block_number,
+        block_start,
         &account_ids[..],
         &note_tags[..],
     )?;
@@ -90,7 +98,6 @@ pub(crate) fn get_state_sync(
         .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
     // select accounts by block range
-    let block_start = since_block_number.clone();
     let block_end = block_header.block_num();
     let account_updates =
         select_accounts_by_block_range(conn, &account_ids, block_start, block_end)?;

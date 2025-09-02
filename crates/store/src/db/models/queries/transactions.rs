@@ -107,7 +107,7 @@ pub(crate) fn insert_transactions(
             transactions
                 .as_slice()
                 .into_iter()
-                .map(|tx| TransactionSummaryRowInsert::new(tx.id(), tx.account_id(), &block_num)),
+                .map(|tx| TransactionSummaryRowInsert::new(tx.id(), tx.account_id(), block_num)),
         ))
         .execute(conn)?;
     Ok(count)
@@ -123,7 +123,7 @@ pub struct TransactionSummaryRowInsert {
 }
 
 impl TransactionSummaryRowInsert {
-    fn new(transaction_id: TransactionId, account_id: AccountId, block_num: &BlockNumber) -> Self {
+    fn new(transaction_id: TransactionId, account_id: AccountId, block_num: BlockNumber) -> Self {
         Self {
             transaction_id: transaction_id.to_bytes(),
             account_id: account_id.to_bytes(),

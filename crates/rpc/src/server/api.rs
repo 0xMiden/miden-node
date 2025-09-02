@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -24,8 +25,9 @@ use miden_objects::account::AccountId;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::transaction::ProvenTransaction;
-use miden_objects::utils::serde::Deserializable;
+use miden_objects::note::{Note, NoteRecipient, NoteScript};
+use miden_objects::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
+use miden_objects::utils::serde::{Deserializable, Serializable};
 use miden_objects::{MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
@@ -325,6 +327,38 @@ impl api_server::Api for RpcService {
             Status::invalid_argument(err.as_report_context("invalid transaction"))
         })?;
 
+        // Rebuild a new ProvenTransaction with decorators removed from output notes
+        let mut builder = ProvenTransactionBuilder::new(
+            tx.account_id(),
+            tx.account_update().initial_state_commitment(),
+            tx.account_update().final_state_commitment(),
+            tx.account_update().account_delta_commitment(),
+            tx.ref_block_num(),
+            tx.ref_block_commitment(),
+            tx.fee(),
+            tx.expiration_block_num(),
+            tx.proof().clone(),
+        )
+        .account_update_details(tx.account_update().details().clone())
+        .add_input_notes(tx.input_notes().iter().cloned());
+
+        let stripped_outputs = tx.output_notes().iter().map(|note| match note {
+            OutputNote::Full(note) => {
+                let mut mast = note.script().mast().clone();
+                Arc::make_mut(&mut mast).strip_decorators();
+                let script = NoteScript::from_parts(mast, note.script().entrypoint());
+                let recipient =
+                    NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
+                let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
+                OutputNote::Full(new_note)
+            },
+            other => other.clone(),
+        });
+        builder = builder.add_output_notes(stripped_outputs);
+        let rebuilt_tx = builder.build().map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let mut request = request;
+        request.transaction = rebuilt_tx.to_bytes();
+
         // Only allow deployment transactions for new network accounts
         if tx.account_id().is_network()
             && !tx.account_update().initial_state_commitment().is_empty()
@@ -370,10 +404,42 @@ impl api_server::Api for RpcService {
             return Err(Status::unavailable("Batch submission not available in read-only mode"));
         };
 
-        let request = request.into_inner();
+        let mut request = request.into_inner();
 
         let batch = ProvenBatch::read_from_bytes(&request.encoded)
             .map_err(|err| Status::invalid_argument(err.as_report_context("invalid batch")))?;
+
+        // Build a new batch with output notes' decorators removed
+        let stripped_outputs: Vec<OutputNote> = batch
+            .output_notes()
+            .iter()
+            .map(|note| match note {
+                OutputNote::Full(note) => {
+                    let mut mast = note.script().mast().clone();
+                    Arc::make_mut(&mut mast).strip_decorators();
+                    let script = NoteScript::from_parts(mast, note.script().entrypoint());
+                    let recipient =
+                        NoteRecipient::new(note.serial_num(), script, note.inputs().clone());
+                    let new_note = Note::new(note.assets().clone(), *note.metadata(), recipient);
+                    OutputNote::Full(new_note)
+                },
+                other => other.clone(),
+            })
+            .collect();
+
+        let rebuilt_batch = ProvenBatch::new(
+            batch.id(),
+            batch.reference_block_commitment(),
+            batch.reference_block_num(),
+            batch.account_updates().clone(),
+            batch.input_notes().clone(),
+            stripped_outputs,
+            batch.batch_expiration_block_num(),
+            batch.transactions().clone(),
+        )
+        .map_err(|e| Status::invalid_argument(e.to_string()))?;
+
+        request.encoded = rebuilt_batch.to_bytes();
 
         // Only allow deployment transactions for new network accounts
         for tx in batch.transactions().as_slice() {

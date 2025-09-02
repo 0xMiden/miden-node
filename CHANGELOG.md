@@ -4,7 +4,7 @@
 
 ### Fixes
 
-- Removed decorators from scripts when inserting notes into the DB ([#1194](https://github.com/
+- Removed decorators from scripts when submitting transactions and batches, and inserting notes into the DB ([#1194](https://github.com/
 0xMiden/miden-node/pull/1194)).
 
 ## v0.11.0 (2025-08-28)

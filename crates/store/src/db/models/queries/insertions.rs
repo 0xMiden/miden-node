@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::sync::Arc;
 
 use diesel::prelude::{AsChangeset, Insertable};
 use diesel::query_dsl::methods::SelectDsl;
@@ -24,7 +25,7 @@ use miden_objects::account::{
 };
 use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
-use miden_objects::note::Nullifier;
+use miden_objects::note::{NoteDetails, NoteRecipient, NoteScript, Nullifier};
 use miden_objects::transaction::OrderedTransactionHeaders;
 
 use super::accounts::{AccountRaw, AccountWithCodeRaw};
@@ -363,7 +364,7 @@ pub(crate) fn upsert_accounts(
 }
 
 /// Insert notes to the DB using the given [`SqliteConnection`]. Public notes should also have a
-/// nullifier.
+/// nullifier. Decorators are removed from the script when inserting notes into the DB.
 ///
 /// # Returns
 ///
@@ -378,11 +379,22 @@ pub(crate) fn insert_notes(
     notes: &[(NoteRecord, Option<Nullifier>)],
 ) -> Result<usize, DatabaseError> {
     let count = diesel::insert_into(schema::notes::table)
-        .values(Vec::from_iter(
-            notes
-                .iter()
-                .map(|(note, nullifier)| NoteInsertRowRaw::from((note.clone(), *nullifier))),
-        ))
+        .values(Vec::from_iter(notes.iter().map(|(note, nullifier)| {
+            let stripped_details = note.details.as_ref().map(|details| {
+                let mut mast = details.script().mast().clone();
+                Arc::make_mut(&mut mast).strip_decorators();
+                let script = NoteScript::from_parts(mast, details.script().entrypoint());
+                let recipient =
+                    NoteRecipient::new(details.serial_num(), script, details.inputs().clone());
+                NoteDetails::new(details.assets().clone(), recipient)
+            });
+
+            let modified_note = NoteRecord {
+                details: stripped_details,
+                ..note.clone()
+            };
+            NoteInsertRowRaw::from((modified_note, *nullifier))
+        })))
         .execute(conn)?;
     Ok(count)
 }

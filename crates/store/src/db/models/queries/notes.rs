@@ -8,16 +8,23 @@ use std::collections::{BTreeMap, BTreeSet};
 use diesel::prelude::{
     BoolExpressionMethods,
     ExpressionMethods,
+    Insertable,
+    QueryDsl,
     Queryable,
     QueryableByName,
     Selectable,
-    SelectableHelper,
 };
 use diesel::query_dsl::methods::SelectDsl;
-use diesel::query_dsl::{QueryDsl, RunQueryDsl};
 use diesel::sqlite::Sqlite;
-use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection};
-use miden_lib::utils::Deserializable;
+use diesel::{
+    JoinOnDsl,
+    NullableExpressionMethods,
+    OptionalExtension,
+    RunQueryDsl,
+    SelectableHelper,
+    SqliteConnection,
+};
+use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
@@ -40,14 +47,21 @@ use miden_objects::note::{
     NoteScript,
     NoteTag,
     NoteType,
+    Nullifier,
 };
 use miden_objects::{Felt, Word};
 
-use super::DatabaseError;
-use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_idx};
+use crate::db::models::conv::{
+    SqlTypeConvert,
+    aux_to_raw_sql,
+    execution_hint_to_raw_sql,
+    idx_to_raw_sql,
+    note_type_to_raw_sql,
+    raw_sql_to_idx,
+};
 use crate::db::models::queries::select_block_header_by_block_num;
 use crate::db::models::{serialize_vec, vec_raw_try_into};
-use crate::db::{NoteRecord, NoteSyncRecord, NoteSyncUpdate, Page, schema};
+use crate::db::{DatabaseError, NoteRecord, NoteSyncRecord, NoteSyncUpdate, Page, schema};
 use crate::errors::NoteSyncError;
 
 /// Select notes matching the tags and account IDs search criteria using the given
@@ -717,5 +731,109 @@ impl TryInto<BlockNoteIndex> for BlockNoteIndexRawRow {
             DatabaseError::conversiont_from_sql::<BlockNoteIndex, DatabaseError, _>(None)
         })?;
         Ok(index)
+    }
+}
+
+/// Insert notes to the DB using the given [`SqliteConnection`]. Public notes should also have a
+/// nullifier.
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
+pub(crate) fn insert_notes(
+    conn: &mut SqliteConnection,
+    notes: &[(NoteRecord, Option<Nullifier>)],
+) -> Result<usize, DatabaseError> {
+    let count = diesel::insert_into(schema::notes::table)
+        .values(Vec::from_iter(
+            notes
+                .iter()
+                .map(|(note, nullifier)| NoteInsertRowInsert::from((note.clone(), *nullifier))),
+        ))
+        .execute(conn)?;
+    Ok(count)
+}
+
+/// Insert scripts to the DB using the given [`SqliteConnection`]. It inserts the scripts held by
+/// the notes passed as parameter. If the script root already exists in the DB, it will be ignored.
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
+pub(crate) fn insert_scripts<'a>(
+    conn: &mut SqliteConnection,
+    notes: impl IntoIterator<Item = &'a NoteRecord>,
+) -> Result<usize, DatabaseError> {
+    let values = Vec::from_iter(notes.into_iter().filter_map(|note| {
+        let note_details = note.details.as_ref()?;
+        Some((
+            schema::note_scripts::script_root.eq(note_details.script().root().to_bytes()),
+            schema::note_scripts::script.eq(note_details.script().to_bytes()),
+        ))
+    }));
+    let count = diesel::insert_or_ignore_into(schema::note_scripts::table)
+        .values(values)
+        .execute(conn)?;
+
+    Ok(count)
+}
+
+#[derive(Debug, Clone, PartialEq, Insertable)]
+#[diesel(table_name = schema::notes)]
+pub struct NoteInsertRowInsert {
+    pub committed_at: i64,
+
+    pub batch_index: i32,
+    pub note_index: i32, // index within batch
+
+    pub note_id: Vec<u8>,
+
+    pub note_type: i32,
+    pub sender: Vec<u8>, // AccountId
+    pub tag: i32,
+    pub aux: i64,
+    pub execution_hint: i64,
+
+    pub consumed_at: Option<i64>,
+    pub assets: Option<Vec<u8>>,
+    pub inputs: Option<Vec<u8>>,
+    pub serial_num: Option<Vec<u8>>,
+    pub nullifier: Option<Vec<u8>>,
+    pub script_root: Option<Vec<u8>>,
+    pub execution_mode: i32,
+    pub inclusion_path: Vec<u8>,
+}
+
+impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
+    fn from((note, nullifier): (NoteRecord, Option<Nullifier>)) -> Self {
+        Self {
+            committed_at: note.block_num.to_raw_sql(),
+            batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
+            note_index: idx_to_raw_sql(note.note_index.note_idx_in_batch()),
+            note_id: note.note_id.to_bytes(),
+            note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
+            sender: note.metadata.sender().to_bytes(),
+            tag: note.metadata.tag().to_raw_sql(),
+            execution_mode: note.metadata.tag().execution_mode().to_raw_sql(),
+            aux: aux_to_raw_sql(note.metadata.aux()),
+            execution_hint: execution_hint_to_raw_sql(note.metadata.execution_hint().into()),
+            inclusion_path: note.inclusion_path.to_bytes(),
+            consumed_at: None::<i64>, // New notes are always unconsumed.
+            nullifier: nullifier.as_ref().map(Nullifier::to_bytes), /* Beware: `Option<T>` also implements `to_bytes`, but this is not what you want. */
+            assets: note.details.as_ref().map(|d| d.assets().to_bytes()),
+            inputs: note.details.as_ref().map(|d| d.inputs().to_bytes()),
+            script_root: note.details.as_ref().map(|d| d.script().root().to_bytes()),
+            serial_num: note.details.as_ref().map(|d| d.serial_num().to_bytes()),
+        }
     }
 }

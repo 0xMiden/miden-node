@@ -140,3 +140,24 @@ impl From<&BlockHeader> for BlockHeaderInsert {
         }
     }
 }
+
+/// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction
+pub(crate) fn insert_block_header(
+    conn: &mut SqliteConnection,
+    block_header: &BlockHeader,
+) -> Result<usize, DatabaseError> {
+    let block_header = BlockHeaderInsert::from(block_header);
+    let count = diesel::insert_into(schema::block_headers::table)
+        .values(&[block_header])
+        .execute(conn)?;
+    Ok(count)
+}

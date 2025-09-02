@@ -1,4 +1,4 @@
-use diesel::prelude::Queryable;
+use diesel::prelude::{Insertable, Queryable};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
     ExpressionMethods,
@@ -8,11 +8,11 @@ use diesel::{
     Selectable,
     SqliteConnection,
 };
-use miden_lib::utils::Deserializable;
+use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
-use miden_objects::transaction::TransactionId;
+use miden_objects::transaction::{OrderedTransactionHeaders, TransactionId};
 
 use super::DatabaseError;
 use crate::db::models::conv::SqlTypeConvert;
@@ -83,5 +83,51 @@ impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
             block_num: BlockNumber::from_raw_sql(self.block_num)?,
             transaction_id: TransactionId::read_from_bytes(&self.transaction_id[..])?,
         })
+    }
+}
+
+/// Insert transactions to the DB using the given [`SqliteConnection`].
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction.
+pub(crate) fn insert_transactions(
+    conn: &mut SqliteConnection,
+    block_num: BlockNumber,
+    transactions: &OrderedTransactionHeaders,
+) -> Result<usize, DatabaseError> {
+    #[allow(clippy::into_iter_on_ref)] // false positive
+    let count = diesel::insert_into(schema::transactions::table)
+        .values(Vec::from_iter(
+            transactions
+                .as_slice()
+                .into_iter()
+                .map(|tx| TransactionSummaryRowInsert::new(tx.id(), tx.account_id(), &block_num)),
+        ))
+        .execute(conn)?;
+    Ok(count)
+}
+
+#[derive(Debug, Clone, PartialEq, Insertable)]
+#[diesel(table_name = schema::transactions)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TransactionSummaryRowInsert {
+    transaction_id: Vec<u8>,
+    account_id: Vec<u8>,
+    block_num: i64,
+}
+
+impl TransactionSummaryRowInsert {
+    fn new(transaction_id: TransactionId, account_id: AccountId, block_num: &BlockNumber) -> Self {
+        Self {
+            transaction_id: transaction_id.to_bytes(),
+            account_id: account_id.to_bytes(),
+            block_num: block_num.to_raw_sql(),
+        }
     }
 }

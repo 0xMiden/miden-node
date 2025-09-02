@@ -50,9 +50,6 @@ pub(crate) use nullifiers::*;
 mod notes;
 pub(crate) use notes::*;
 
-mod insertions;
-pub(crate) use insertions::*;
-
 pub(crate) fn apply_block(
     conn: &mut SqliteConnection,
     block_header: &BlockHeader,

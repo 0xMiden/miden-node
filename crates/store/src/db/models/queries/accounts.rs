@@ -1,9 +1,13 @@
+use std::borrow::Cow;
+
 use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::sqlite::Sqlite;
 use diesel::{
+    AsChangeset,
     BoolExpressionMethods,
     ExpressionMethods,
+    Insertable,
     JoinOnDsl,
     NullableExpressionMethods,
     OptionalExtension,
@@ -17,12 +21,27 @@ use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto as proto;
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary};
 use miden_node_utils::limiter::{QueryParamAccountIdLimit, QueryParamLimiter};
-use miden_objects::account::{Account, AccountCode, AccountId, AccountStorage};
-use miden_objects::asset::{Asset, AssetVault};
-use miden_objects::block::BlockNumber;
+use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{
+    Account,
+    AccountCode,
+    AccountDelta,
+    AccountId,
+    AccountStorage,
+    NonFungibleDeltaAction,
+    StorageSlot,
+};
+use miden_objects::asset::{Asset, AssetVault, FungibleAsset};
+use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
-use crate::db::models::conv::{SqlTypeConvert, raw_sql_to_nonce, raw_sql_to_slot};
+use crate::db::models::conv::{
+    SqlTypeConvert,
+    nonce_to_raw_sql,
+    raw_sql_to_nonce,
+    raw_sql_to_slot,
+    slot_to_raw_sql,
+};
 use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
@@ -532,4 +551,355 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
             block_num,
         })
     }
+}
+
+/// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
+///
+/// This function will set `is_latest_update=true` for the new row and update any existing
+/// row with the same `(account_id, vault_key)` tuple to `is_latest_update=false`.
+///
+/// # Returns
+///
+/// The number of affected rows.
+pub(crate) fn insert_account_vault_asset(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    vault_key: Word,
+    asset: Option<Asset>,
+) -> Result<usize, DatabaseError> {
+    let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
+
+    diesel::Connection::transaction(conn, |conn| {
+        // First, update any existing rows with the same (account_id, vault_key) to set
+        // is_latest_update=false
+        let update_count = diesel::update(schema::account_vault_assets::table)
+            .filter(
+                schema::account_vault_assets::account_id
+                    .eq(&account_id.to_bytes())
+                    .and(schema::account_vault_assets::vault_key.eq(&vault_key.to_bytes()))
+                    .and(schema::account_vault_assets::is_latest_update.eq(true)),
+            )
+            .set(schema::account_vault_assets::is_latest_update.eq(false))
+            .execute(conn)?;
+
+        // Insert the new latest row
+        let insert_count = diesel::insert_into(schema::account_vault_assets::table)
+            .values(record)
+            .execute(conn)?;
+
+        Ok(update_count + insert_count)
+    })
+}
+
+/// Insert an account storage map value into the DB using the given [`SqliteConnection`].
+///
+/// This function will set `is_latest_update=true` for the new row and update any existing
+/// row with the same `(account_id, slot, key)` tuple to `is_latest_update=false`.
+///
+/// # Returns
+///
+/// The number of affected rows.
+pub(crate) fn insert_account_storage_map_value(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+    slot: u8,
+    key: Word,
+    value: Word,
+) -> Result<usize, DatabaseError> {
+    let account_id = account_id.to_bytes();
+    let key = key.to_bytes();
+    let value = value.to_bytes();
+    let slot = slot_to_raw_sql(slot);
+    let block_num = block_num.to_raw_sql();
+
+    let update_count = diesel::update(schema::account_storage_map_values::table)
+        .filter(
+            schema::account_storage_map_values::account_id
+                .eq(&account_id)
+                .and(schema::account_storage_map_values::slot.eq(slot))
+                .and(schema::account_storage_map_values::key.eq(&key))
+                .and(schema::account_storage_map_values::is_latest_update.eq(true)),
+        )
+        .set(schema::account_storage_map_values::is_latest_update.eq(false))
+        .execute(conn)?;
+
+    let record = AccountStorageMapRowInsert {
+        account_id,
+        key,
+        value,
+        slot,
+        block_num,
+        is_latest_update: true,
+    };
+    let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
+        .values(record)
+        .execute(conn)?;
+
+    Ok(update_count + insert_count)
+}
+
+/// Attention: Assumes the account details are NOT null! The schema explicitly allows this though!
+#[allow(clippy::too_many_lines)]
+pub(crate) fn upsert_accounts(
+    conn: &mut SqliteConnection,
+    accounts: &[BlockAccountUpdate],
+    block_num: BlockNumber,
+) -> Result<usize, DatabaseError> {
+    use proto::domain::account::NetworkAccountPrefix;
+
+    fn select_details_stmt(
+        conn: &mut SqliteConnection,
+        account_id: AccountId,
+    ) -> Result<Vec<Account>, DatabaseError> {
+        let account_id = account_id.to_bytes();
+        let accounts = SelectDsl::select(
+            schema::accounts::table.left_join(
+                schema::account_codes::table.on(schema::accounts::code_commitment
+                    .eq(schema::account_codes::code_commitment.nullable())),
+            ),
+            (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+        )
+        .filter(schema::accounts::account_id.eq(account_id))
+        .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+
+        // SELECT .. FROM accounts LEFT JOIN account_codes
+        // ON accounts.code_commitment == account_codes.code_commitment
+
+        let accounts = Result::from_iter(accounts.into_iter().filter_map(|x| {
+            let account_with_code = AccountWithCodeRawJoined::from(x);
+            account_with_code.try_into().transpose()
+        }))?;
+        Ok(accounts)
+    }
+
+    let mut count = 0;
+    for update in accounts {
+        let account_id = update.account_id();
+        // Extract the 30-bit prefix to provide easy look ups for NTB
+        // Do not store prefix for accounts that are not network
+        let network_account_id_prefix = if account_id.is_network() {
+            Some(NetworkAccountPrefix::try_from(account_id)?)
+        } else {
+            None
+        };
+
+        let full_account = match update.details() {
+            AccountUpdateDetails::Private => None,
+            AccountUpdateDetails::New(account) => {
+                debug_assert_eq!(account_id, account.id());
+
+                if account.commitment() != update.final_state_commitment() {
+                    return Err(DatabaseError::AccountCommitmentsMismatch {
+                        calculated: account.commitment(),
+                        expected: update.final_state_commitment(),
+                    });
+                }
+
+                for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
+                    match slot {
+                        StorageSlot::Value(_) => {},
+                        StorageSlot::Map(storage_map) => {
+                            for (key, value) in storage_map.entries() {
+                                // SAFETY: We can safely unwrap the conversion to u8 because
+                                // accounts have a limit of 255 storage elements
+                                insert_account_storage_map_value(
+                                    conn,
+                                    account_id,
+                                    block_num,
+                                    u8::try_from(slot_idx).unwrap(),
+                                    *key,
+                                    *value,
+                                )?;
+                            }
+                        },
+                    }
+                }
+
+                Some(Cow::Borrowed(account))
+            },
+            AccountUpdateDetails::Delta(delta) => {
+                let mut rows = select_details_stmt(conn, account_id)?.into_iter();
+                let Some(account) = rows.next() else {
+                    return Err(DatabaseError::AccountNotFoundInDb(account_id));
+                };
+
+                // --- process storage map updates ----------------------------
+
+                for (&slot, map_delta) in delta.storage().maps() {
+                    for (key, value) in map_delta.entries() {
+                        insert_account_storage_map_value(
+                            conn,
+                            account_id,
+                            block_num,
+                            slot,
+                            (*key).into(),
+                            *value,
+                        )?;
+                    }
+                }
+
+                // apply delta to the account; we need to do this before we process asset updates
+                // because we currently need to get the current value of fungible assets from the
+                // account
+                let account = apply_delta(account, delta, &update.final_state_commitment())?;
+
+                // --- process asset updates ----------------------------------
+
+                for (faucet_id, _) in delta.vault().fungible().iter() {
+                    let current_amount = account.vault().get_balance(*faucet_id).unwrap();
+                    let asset: Asset = FungibleAsset::new(*faucet_id, current_amount)?.into();
+                    let asset_update_or_removal =
+                        if current_amount == 0 { None } else { Some(asset) };
+
+                    insert_account_vault_asset(
+                        conn,
+                        account.id(),
+                        block_num,
+                        asset.vault_key(),
+                        asset_update_or_removal,
+                    )?;
+                }
+
+                for (asset, delta_action) in delta.vault().non_fungible().iter() {
+                    let asset_update = match delta_action {
+                        NonFungibleDeltaAction::Add => Some(Asset::NonFungible(*asset)),
+                        NonFungibleDeltaAction::Remove => None,
+                    };
+                    insert_account_vault_asset(
+                        conn,
+                        account.id(),
+                        block_num,
+                        asset.vault_key(),
+                        asset_update,
+                    )?;
+                }
+
+                Some(Cow::Owned(account))
+            },
+        };
+
+        if let Some(code) = full_account.as_ref().map(|account| account.code()) {
+            let code_value = AccountCodeRowInsert {
+                code_commitment: code.commitment().to_bytes(),
+                code: code.to_bytes(),
+            };
+            diesel::insert_into(schema::account_codes::table)
+                .values(&code_value)
+                .on_conflict(schema::account_codes::code_commitment)
+                .do_nothing()
+                .execute(conn)?;
+        }
+
+        let account_value = AccountRowInsert {
+            account_id: account_id.to_bytes(),
+            network_account_id_prefix: network_account_id_prefix
+                .map(NetworkAccountPrefix::to_raw_sql),
+            account_commitment: update.final_state_commitment().to_bytes(),
+            block_num: block_num.to_raw_sql(),
+            nonce: full_account.as_ref().map(|account| nonce_to_raw_sql(account.nonce())),
+            storage: full_account.as_ref().map(|account| account.storage().to_bytes()),
+            vault: full_account.as_ref().map(|account| account.vault().to_bytes()),
+            code_commitment: full_account
+                .as_ref()
+                .map(|account| account.code().commitment().to_bytes()),
+        };
+
+        let v = account_value.clone();
+        let inserted = diesel::insert_into(schema::accounts::table)
+            .values(&v)
+            .on_conflict(schema::accounts::account_id)
+            .do_update()
+            .set(account_value)
+            .execute(conn)?;
+
+        debug_assert_eq!(inserted, 1);
+
+        count += inserted;
+    }
+
+    Ok(count)
+}
+
+/// Deserializes account and applies account delta.
+pub(crate) fn apply_delta(
+    mut account: Account,
+    delta: &AccountDelta,
+    final_state_commitment: &Word,
+) -> crate::db::Result<Account, DatabaseError> {
+    account.apply_delta(delta)?;
+
+    let actual_commitment = account.commitment();
+    if &actual_commitment != final_state_commitment {
+        return Err(DatabaseError::AccountCommitmentsMismatch {
+            calculated: actual_commitment,
+            expected: *final_state_commitment,
+        });
+    }
+
+    Ok(account)
+}
+
+#[derive(Insertable, Debug, Clone)]
+#[diesel(table_name = schema::account_codes)]
+pub(crate) struct AccountCodeRowInsert {
+    pub(crate) code_commitment: Vec<u8>,
+    pub(crate) code: Vec<u8>,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::accounts)]
+pub(crate) struct AccountRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) network_account_id_prefix: Option<i64>,
+    pub(crate) block_num: i64,
+    pub(crate) account_commitment: Vec<u8>,
+    pub(crate) code_commitment: Option<Vec<u8>>,
+    pub(crate) storage: Option<Vec<u8>>,
+    pub(crate) vault: Option<Vec<u8>>,
+    pub(crate) nonce: Option<i64>,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::account_vault_assets)]
+pub(crate) struct AccountAssetRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) block_num: i64,
+    pub(crate) vault_key: Vec<u8>,
+    pub(crate) asset: Option<Vec<u8>>,
+    pub(crate) is_latest_update: bool,
+}
+
+impl AccountAssetRowInsert {
+    pub(crate) fn new(
+        account_id: &AccountId,
+        vault_key: &Word,
+        block_num: BlockNumber,
+        asset: Option<Asset>,
+        is_latest_update: bool,
+    ) -> Self {
+        let account_id = account_id.to_bytes();
+        let vault_key = vault_key.to_bytes();
+        let block_num = block_num.to_raw_sql();
+        let asset = asset.map(|asset| asset.to_bytes());
+        Self {
+            account_id,
+            block_num,
+            vault_key,
+            asset,
+            is_latest_update,
+        }
+    }
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = schema::account_storage_map_values)]
+pub(crate) struct AccountStorageMapRowInsert {
+    pub(crate) account_id: Vec<u8>,
+    pub(crate) block_num: i64,
+    pub(crate) slot: i32,
+    pub(crate) key: Vec<u8>,
+    pub(crate) value: Vec<u8>,
+    pub(crate) is_latest_update: bool,
 }

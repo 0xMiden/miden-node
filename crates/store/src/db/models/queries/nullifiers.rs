@@ -35,7 +35,7 @@ use crate::db::{NullifierInfo, schema};
 /// - Both `block_from` and `block_to` are inclusive bounds.
 /// - To keep responses ≤ ~2MB, an internal row limit is enforced. When the limit is hit and the
 ///   result spans multiple blocks, the last block in the page is dropped entirely, and
-///  `last_block_included` is set to the block number immediately before that dropped block.
+///   `last_block_included` is set to the block number immediately before that dropped block.
 ///   Clients should resume with `block_from = last_block_included + 1`.
 /// - If all rows belong to a single block and hit the limit, this function returns an empty
 ///   `nullifiers` page with `last_block_included = that_block - 1`. Intra-block pagination is not
@@ -93,9 +93,10 @@ pub(crate) fn select_nullifiers_by_prefix(
             .load::<NullifierWithoutPrefixRawRow>(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
-    if raw.len() >= ROW_LIMIT {
-        // SAFETY: len >= ROW_LIMIT => non-empty
-        let last_block_num_i64 = raw.last().unwrap().block_num;
+    if let Some(last) = raw.last()
+        && raw.len() >= ROW_LIMIT
+    {
+        let last_block_num_i64 = last.block_num;
 
         let nullifiers = vec_raw_try_into(
             raw.into_iter().take_while(|row| row.block_num != last_block_num_i64),

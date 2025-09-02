@@ -27,7 +27,7 @@ use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 
-use super::accounts::{AccountRaw, AccountWithCodeRaw};
+use super::accounts::{AccountRaw, AccountWithCodeRawJoined};
 use super::{DatabaseError, NoteRecord};
 use crate::db::models::conv::{
     SqlTypeConvert,
@@ -208,7 +208,7 @@ pub(crate) fn upsert_accounts(
         // ON accounts.code_commitment == account_codes.code_commitment
 
         let accounts = Result::from_iter(accounts.into_iter().filter_map(|x| {
-            let account_with_code = AccountWithCodeRaw::from(x);
+            let account_with_code = AccountWithCodeRawJoined::from(x);
             account_with_code.try_into().transpose()
         }))?;
         Ok(accounts)

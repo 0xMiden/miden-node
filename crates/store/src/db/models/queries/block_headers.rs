@@ -29,11 +29,11 @@ pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
     maybe_block_number: Option<BlockNumber>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
-    let sel = SelectDsl::select(schema::block_headers::table, BlockHeaderRaw::as_select());
+    let sel = SelectDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select());
     let row = if let Some(block_number) = maybe_block_number {
         // SELECT block_header FROM block_headers WHERE block_num = ?1
         sel.filter(schema::block_headers::block_num.eq(block_number.to_raw_sql()))
-            .get_result::<BlockHeaderRaw>(conn)
+            .get_result::<BlockHeaderRawRow>(conn)
             .optional()?
         // invariant: only one block exists with the given block header, so the length is
         // always zero or one
@@ -41,7 +41,7 @@ pub(crate) fn select_block_header_by_block_num(
         // SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1
         sel.order(schema::block_headers::block_num.desc())
             .limit(1)
-            .get_result::<BlockHeaderRaw>(conn)
+            .get_result::<BlockHeaderRawRow>(conn)
             .optional()?
     };
     row.map(std::convert::TryInto::try_into).transpose()
@@ -69,9 +69,9 @@ pub fn select_block_headers(
     // SELECT block_header FROM block_headers WHERE block_num IN rarray(?1)
     let blocks = Vec::from_iter(blocks.map(SqlTypeConvert::to_raw_sql));
     let raw_block_headers =
-        QueryDsl::select(schema::block_headers::table, BlockHeaderRaw::as_select())
+        QueryDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select())
             .filter(schema::block_headers::block_num.eq_any(blocks))
-            .load::<BlockHeaderRaw>(conn)?;
+            .load::<BlockHeaderRawRow>(conn)?;
     vec_raw_try_into(raw_block_headers)
 }
 
@@ -85,21 +85,21 @@ pub fn select_all_block_headers(
 ) -> Result<Vec<BlockHeader>, DatabaseError> {
     // SELECT block_header FROM block_headers ORDER BY block_num ASC
     let raw_block_headers =
-        QueryDsl::select(schema::block_headers::table, BlockHeaderRaw::as_select())
+        QueryDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select())
             .order(schema::block_headers::block_num.asc())
-            .load::<BlockHeaderRaw>(conn)?;
+            .load::<BlockHeaderRawRow>(conn)?;
     vec_raw_try_into(raw_block_headers)
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = schema::block_headers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct BlockHeaderRaw {
+pub struct BlockHeaderRawRow {
     #[allow(dead_code)]
     pub block_num: i64,
     pub block_header: Vec<u8>,
 }
-impl TryInto<BlockHeader> for BlockHeaderRaw {
+impl TryInto<BlockHeader> for BlockHeaderRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockHeader, Self::Error> {
         let block_header = BlockHeader::read_from_bytes(&self.block_header[..])?;

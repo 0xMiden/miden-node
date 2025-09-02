@@ -22,8 +22,8 @@ use crate::db::{TransactionSummary, schema};
 pub fn select_transactions_by_accounts_and_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
-    block_start: i64,
-    block_end: i64, // TODO migrate to BlockNumber as argument type
+    block_start: BlockNumber,
+    block_end: BlockNumber, // TODO migrate to BlockNumber as argument type
 ) -> Result<Vec<TransactionSummary>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
@@ -48,8 +48,8 @@ pub fn select_transactions_by_accounts_and_block_range(
             schema::transactions::transaction_id,
         ),
     )
-    .filter(schema::transactions::block_num.gt(block_start))
-    .filter(schema::transactions::block_num.le(block_end))
+    .filter(schema::transactions::block_num.gt(block_start.to_raw_sql()))
+    .filter(schema::transactions::block_num.le(block_end.to_raw_sql()))
     .filter(schema::transactions::account_id.eq_any(desired_account_ids))
     .order(schema::transactions::transaction_id.asc())
     .load::<TransactionSummaryRaw>(conn)

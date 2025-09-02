@@ -58,7 +58,7 @@ pub(crate) fn select_account(
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-    let info = AccountWithCodeRaw::from(raw).try_into()?;
+    let info = AccountWithCodeRawJoined::from(raw).try_into()?;
     Ok(info)
 }
 
@@ -97,7 +97,7 @@ pub(crate) fn select_account_by_id_prefix(
     .map_err(DatabaseError::Diesel)?;
 
     let result: Result<Option<AccountInfo>, DatabaseError> = maybe_info
-        .map(AccountWithCodeRaw::from)
+        .map(AccountWithCodeRawJoined::from)
         .map(std::convert::TryInto::<AccountInfo>::try_into)
         .transpose();
 
@@ -143,8 +143,8 @@ pub(crate) fn select_accounts_by_id(
     )
     .filter(schema::accounts::account_id.eq_any(account_ids))
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
-        accounts_raw.into_iter().map(AccountWithCodeRaw::from),
+    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
+        accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
     )?;
     Ok(account_infos)
 }
@@ -233,8 +233,8 @@ pub(crate) fn select_account_vault_assets(
 pub fn select_accounts_by_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
-    block_start: i64,
-    block_end: i64,
+    block_start: BlockNumber,
+    block_end: BlockNumber,
 ) -> Result<Vec<AccountSummary>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
@@ -254,8 +254,8 @@ pub fn select_accounts_by_block_range(
     let desired_account_ids = serialize_vec(account_ids);
     let raw: Vec<AccountSummaryRaw> =
         SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
-            .filter(schema::accounts::block_num.gt(block_start))
-            .filter(schema::accounts::block_num.le(block_end))
+            .filter(schema::accounts::block_num.gt(block_start.to_raw_sql()))
+            .filter(schema::accounts::block_num.le(block_end.to_raw_sql()))
             .filter(schema::accounts::account_id.eq_any(desired_account_ids))
             .order(schema::accounts::block_num.asc())
             .load::<AccountSummaryRaw>(conn)?;
@@ -290,8 +290,8 @@ pub(crate) fn select_all_accounts(
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRaw>(
-        accounts_raw.into_iter().map(AccountWithCodeRaw::from),
+    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
+        accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
     )?;
     Ok(account_infos)
 }
@@ -445,20 +445,20 @@ pub struct AccountRaw {
 }
 
 #[derive(Debug, Clone, QueryableByName)]
-pub struct AccountWithCodeRaw {
+pub struct AccountWithCodeRawJoined {
     #[diesel(embed)]
     pub account: AccountRaw,
     #[diesel(embed)]
     pub code: Option<Vec<u8>>,
 }
 
-impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRaw {
+impl From<(AccountRaw, Option<Vec<u8>>)> for AccountWithCodeRawJoined {
     fn from((account, code): (AccountRaw, Option<Vec<u8>>)) -> Self {
         Self { account, code }
     }
 }
 
-impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
+impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRawJoined {
     type Error = DatabaseError;
     fn try_into(self) -> Result<proto::domain::account::AccountInfo, Self::Error> {
         use proto::domain::account::{AccountInfo, AccountSummary};
@@ -476,7 +476,7 @@ impl TryInto<proto::domain::account::AccountInfo> for AccountWithCodeRaw {
     }
 }
 
-impl TryInto<Option<Account>> for AccountWithCodeRaw {
+impl TryInto<Option<Account>> for AccountWithCodeRawJoined {
     type Error = DatabaseError;
     fn try_into(self) -> Result<Option<Account>, Self::Error> {
         let account_id = AccountId::read_from_bytes(&self.account.account_id[..])?;

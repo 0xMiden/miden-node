@@ -1,3 +1,23 @@
+//! Abstracts all relevant queries to individual blocking function calls
+//!
+//! ## Naming
+//!
+//! * `fn *` function names follow the public API
+//! * `*Insert` types are used for _inserting_ data into table and _must_ implement
+//!   `diesel::Insertable`.
+//! * `*RawRow` types are used for _querying_ a _single_ table an _without_ an explicit row and must
+//!   implement a `QueryableByName` and `Selectable`.
+//! * `*RawJoined` types are used for _querying_ a _left join_ed table _without_ an explicit row and
+//!   must implement a `QueryableByName` and _cannot_ implement `Selectable`.
+//!
+//! ## Type conversion
+//!
+//! The database `*Raw` and `*Joined` types use database primitives. In order to convert to correct
+//! in-memory representations it's preferable to have new-types which implement [`SqlTypeConvert`].
+//! If that is inconvenient, provide two wrapper methods for the conversion each way. There must be
+//! relevant constraints in the table. For convenience, any types that have more complex
+//! serialization may use [`Serializable`] and [`Deserializable`] for convenience.
+
 #![allow(
     clippy::needless_pass_by_value,
     reason = "The parent scope does own it, passing by value avoids additional boilerplate"
@@ -9,7 +29,6 @@ use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 
 use super::DatabaseError;
-use crate::db::models::conv::SqlTypeConvert;
 use crate::db::{NoteRecord, StateSyncUpdate};
 use crate::errors::StateSyncError;
 
@@ -67,8 +86,8 @@ pub(crate) fn get_state_sync(
         .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
     // select accounts by block range
-    let block_start = since_block_number.to_raw_sql();
-    let block_end = block_header.block_num().to_raw_sql();
+    let block_start = since_block_number.clone();
+    let block_end = block_header.block_num();
     let account_updates =
         select_accounts_by_block_range(conn, &account_ids, block_start, block_end)?;
 

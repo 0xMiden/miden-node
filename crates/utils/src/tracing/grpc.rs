@@ -55,6 +55,7 @@ fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         Some("GetAccountDetails") => rpc_span!("rpc.rpc", "GetAccountDetails"),
         Some("GetBlockByNumber") => rpc_span!("rpc.rpc", "GetBlockByNumber"),
         Some("GetAccountProofs") => rpc_span!("rpc.rpc", "GetAccountProofs"),
+        Some("GetNoteScriptByRoot") => rpc_span!("rpc.rpc", "GetNoteScriptByRoot"),
         Some("Status") => rpc_span!("rpc.rpc", "Status"),
         _ => rpc_span!("rpc.rpc", "Unknown"),
     };
@@ -88,6 +89,7 @@ fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
         "GetNotesById" => rpc_span!("store.rpc.rpc", "GetNotesById"),
         "SyncNotes" => rpc_span!("store.rpc.rpc", "SyncNotes"),
         "SyncState" => rpc_span!("store.rpc.rpc", "SyncState"),
+        "GetNoteScriptByRoot" => rpc_span!("store.rpc.rpc", "GetNoteScriptByRoot"),
         "Status" => rpc_span!("store.rpc.rpc", "Status"),
         _ => rpc_span!("store.rpc.rpc", "Unknown"),
     };

@@ -96,15 +96,15 @@ impl rpc_server::Rpc for StoreApi {
             return Err(Status::invalid_argument("Only 16-bit prefixes are supported"));
         }
 
-        let chain_tip = self.state.latest_block_num().await.as_u32();
-        let block_to = request.block_to.map_or(BlockNumber::from(chain_tip), BlockNumber::from);
+        let chain_tip = self.state.latest_block_num().await;
+        let block_to = request.block_to.map_or(chain_tip, BlockNumber::from);
 
         let (nullifiers, block_num) = self
             .state
             .check_nullifiers_by_prefix(
                 request.prefix_len,
                 request.nullifiers,
-                BlockNumber::from(request.block_from),
+                request.block_from.into(),
                 block_to,
             )
             .await?;
@@ -121,7 +121,7 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(proto::rpc_store::CheckNullifiersByPrefixResponse {
             nullifiers,
             block_num: block_num.as_u32(),
-            chain_tip,
+            chain_tip: chain_tip.as_u32(),
         }))
     }
 

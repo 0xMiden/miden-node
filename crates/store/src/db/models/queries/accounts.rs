@@ -227,8 +227,8 @@ pub(crate) fn select_account_vault_assets(
 
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
-            from: block_range.start().clone(),
-            to: block_range.end().clone(),
+            from: *block_range.start(),
+            to: *block_range.end(),
         });
     }
 
@@ -261,7 +261,7 @@ pub(crate) fn select_account_vault_assets(
         (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
     } else {
         (
-            block_range.end().clone(),
+            *block_range.end(),
             raw.into_iter().map(AccountVaultValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };
@@ -437,8 +437,8 @@ pub(crate) fn select_account_storage_map_values(
 
     if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
-            from: block_range.start().clone(),
-            to: block_range.end().clone(),
+            from: *block_range.start(),
+            to: *block_range.end(),
         });
     }
 
@@ -472,7 +472,7 @@ pub(crate) fn select_account_storage_map_values(
         (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
     } else {
         (
-            block_range.end().clone(),
+            *block_range.end(),
             raw.into_iter().map(StorageMapValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };

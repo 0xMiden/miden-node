@@ -154,9 +154,7 @@ fn sql_select_transactions() {
         queries::select_transactions_by_accounts_and_block_range(
             conn,
             &[AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()],
-            // TODO use a Range<BlockNumber> expression
-            0.into(),
-            2.into(),
+            BlockNumber::from(0)..=BlockNumber::from(2),
         )
         .unwrap()
     }
@@ -953,9 +951,12 @@ fn db_account() {
             .iter()
             .map(|acc_id| (*acc_id).try_into().unwrap())
             .collect();
-    let res =
-        queries::select_accounts_by_block_range(conn, &account_ids, 0.into(), u32::MAX.into())
-            .unwrap();
+    let res = queries::select_accounts_by_block_range(
+        conn,
+        &account_ids,
+        BlockNumber::from(0)..=u32::MAX.into(),
+    )
+    .unwrap();
     assert!(res.is_empty());
 
     // test insertion
@@ -976,9 +977,12 @@ fn db_account() {
     assert_eq!(row_count, 1);
 
     // test successful query
-    let res =
-        queries::select_accounts_by_block_range(conn, &account_ids, 0.into(), u32::MAX.into())
-            .unwrap();
+    let res = queries::select_accounts_by_block_range(
+        conn,
+        &account_ids,
+        BlockNumber::from(0)..=u32::MAX.into(),
+    )
+    .unwrap();
     assert_eq!(
         res,
         vec![AccountSummary {
@@ -992,8 +996,7 @@ fn db_account() {
     let res = queries::select_accounts_by_block_range(
         conn,
         &account_ids,
-        (block_num.as_u32() + 1).into(),
-        u32::MAX.into(),
+        (block_num.as_u32() + 1).into()..=u32::MAX.into(),
     )
     .unwrap();
     assert!(res.is_empty());
@@ -1002,8 +1005,7 @@ fn db_account() {
     let res = queries::select_accounts_by_block_range(
         conn,
         &[6.try_into().unwrap(), 7.try_into().unwrap(), 8.try_into().unwrap()],
-        (block_num.as_u32() + 1).into(),
-        u32::MAX.into(),
+        (block_num + 1)..=u32::MAX.into(),
     )
     .unwrap();
     assert!(res.is_empty());

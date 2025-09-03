@@ -100,14 +100,13 @@ pub(crate) fn get_state_sync(
     // select accounts by block range
     let block_end = block_header.block_num();
     let account_updates =
-        select_accounts_by_block_range(conn, &account_ids, block_start, block_end)?;
+        select_accounts_by_block_range(conn, &account_ids, block_start..=block_end)?;
 
     // select transactions by accounts and block range
     let transactions = select_transactions_by_accounts_and_block_range(
         conn,
         &account_ids,
-        block_start,
-        block_end,
+        block_start..=block_end,
     )?;
     Ok(StateSyncUpdate {
         notes,

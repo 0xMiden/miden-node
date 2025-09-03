@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::ops::RangeInclusive;
 
 use diesel::prelude::{Queryable, QueryableByName};
 use diesel::query_dsl::methods::SelectDsl;
@@ -257,7 +258,7 @@ pub(crate) fn select_account_vault_assets(
 }
 
 /// Select [`AccountSummary`] from the DB using the given [`SqliteConnection`], given that the
-/// account update was done between `(block_start, block_end]`.
+/// account update was in the given block range (inclusive).
 ///
 /// # Returns
 ///
@@ -282,16 +283,15 @@ pub(crate) fn select_account_vault_assets(
 pub fn select_accounts_by_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
-    block_start: BlockNumber,
-    block_end: BlockNumber,
+    blockrange: RangeInclusive<BlockNumber>,
 ) -> Result<Vec<AccountSummary>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
     let desired_account_ids = serialize_vec(account_ids);
     let raw: Vec<AccountSummaryRaw> =
         SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
-            .filter(schema::accounts::block_num.gt(block_start.to_raw_sql()))
-            .filter(schema::accounts::block_num.le(block_end.to_raw_sql()))
+            .filter(schema::accounts::block_num.gt(blockrange.start().to_raw_sql()))
+            .filter(schema::accounts::block_num.le(blockrange.end().to_raw_sql()))
             .filter(schema::accounts::account_id.eq_any(desired_account_ids))
             .order(schema::accounts::block_num.asc())
             .load::<AccountSummaryRaw>(conn)?;

@@ -83,7 +83,7 @@ pub(crate) fn select_nullifiers_by_prefix(
     // ORDER BY
     //     block_num ASC
     // LIMIT
-    //     ROW_LIMIT;
+    //     MAX_ROWS + 1;
 
     let prefixes = nullifier_prefixes.iter().map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
     let raw = SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())

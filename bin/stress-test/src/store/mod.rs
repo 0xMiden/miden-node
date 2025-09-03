@@ -28,7 +28,7 @@ const ACCOUNTS_PER_SYNC_STATE: usize = 5;
 /// Number of accounts used in each `sync_notes` call.
 const ACCOUNTS_PER_SYNC_NOTES: usize = 15;
 
-/// Number of note IDs used in each `check_nullifiers_by_prefix` call.
+/// Number of note IDs used in each `sync_nullifiers` call.
 const NOTE_IDS_PER_NULLIFIERS_CHECK: usize = 20;
 
 /// Number of attempts the benchmark will make to reach the store before proceeding.
@@ -165,10 +165,10 @@ pub async fn sync_notes(
     start.elapsed()
 }
 
-// CHECK NULLIFIERS BY PREFIX
+// SYNC NULLIFIERS
 // ================================================================================================
 
-/// Sends multiple `check_nullifiers_by_prefix` requests to the store and prints the performance.
+/// Sends multiple `sync_nullifiers` requests to the store and prints the performance.
 ///
 /// Arguments:
 /// - `data_directory`: directory that contains the database dump file and the accounts ids dump
@@ -176,7 +176,7 @@ pub async fn sync_notes(
 /// - `iterations`: number of requests to send.
 /// - `concurrency`: number of requests to send in parallel.
 /// - `prefixes_per_request`: number of prefixes to send in each request.
-pub async fn bench_check_nullifiers_by_prefix(
+pub async fn bench_sync_nullifiers(
     data_directory: PathBuf,
     iterations: usize,
     concurrency: usize,
@@ -252,7 +252,7 @@ pub async fn bench_check_nullifiers_by_prefix(
 
         let nullifiers_batch: Vec<u32> = nullifiers.by_ref().take(prefixes_per_request).collect();
 
-        tokio::spawn(async move { check_nullifiers_by_prefix(&mut client, nullifiers_batch).await })
+        tokio::spawn(async move { sync_nullifiers(&mut client, nullifiers_batch).await })
     };
 
     // create a stream of tasks to send the requests
@@ -271,14 +271,14 @@ pub async fn bench_check_nullifiers_by_prefix(
     println!("Average nullifiers per response: {average_nullifiers_per_response}");
 }
 
-/// Sends a single `check_nullifiers_by_prefix` request to the store and returns:
+/// Sends a single `sync_nullifiers` request to the store and returns:
 /// - the elapsed time.
 /// - the response.
-async fn check_nullifiers_by_prefix(
+async fn sync_nullifiers(
     api_client: &mut RpcClient<InterceptedService<Channel, OtelInterceptor>>,
     nullifiers_prefixes: Vec<u32>,
-) -> (Duration, proto::rpc_store::CheckNullifiersByPrefixResponse) {
-    let sync_request = proto::rpc_store::CheckNullifiersByPrefixRequest {
+) -> (Duration, proto::rpc_store::SyncNullifiersResponse) {
+    let sync_request = proto::rpc_store::SyncNullifiersRequest {
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,
         block_from: 0,
@@ -286,7 +286,7 @@ async fn check_nullifiers_by_prefix(
     };
 
     let start = Instant::now();
-    let response = api_client.check_nullifiers_by_prefix(sync_request).await.unwrap();
+    let response = api_client.sync_nullifiers(sync_request).await.unwrap();
     (start.elapsed(), response.into_inner())
 }
 

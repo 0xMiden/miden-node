@@ -44,7 +44,7 @@ pub fn traced_span_fn<T>(component: TracedComponent) -> fn(&http::Request<T>) ->
 fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let span = match request.uri().path().rsplit('/').next() {
         Some("CheckNullifiers") => rpc_span!("rpc.rpc", "CheckNullifiers"),
-        Some("CheckNullifiersByPrefix") => rpc_span!("rpc.rpc", "CheckNullifiersByPrefix"),
+        Some("SyncNullifiers") => rpc_span!("rpc.rpc", "SyncNullifiers"),
         Some("GetBlockHeaderByNumber") => rpc_span!("rpc.rpc", "GetBlockHeaderByNumber"),
         Some("SyncStorageMaps") => rpc_span!("rpc.rpc", "SyncStorageMaps"),
         Some("SyncAccountVault") => rpc_span!("rpc.rpc", "SyncAccountVault"),
@@ -81,7 +81,7 @@ fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
     let span = match method {
         "CheckNullifiers" => rpc_span!("store.rpc.rpc", "CheckNullifiers"),
-        "CheckNullifiersByPrefix" => rpc_span!("store.rpc.rpc", "CheckNullifiersByPrefix"),
+        "SyncNullifiers" => rpc_span!("store.rpc.rpc", "SyncNullifiers"),
         "GetAccountDetails" => rpc_span!("store.rpc.rpc", "GetAccountDetails"),
         "GetAccountProofs" => rpc_span!("store.rpc.rpc", "GetAccountProofs"),
         "GetBlockByNumber" => rpc_span!("store.rpc.rpc", "GetBlockByNumber"),

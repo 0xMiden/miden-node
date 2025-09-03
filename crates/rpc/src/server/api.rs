@@ -168,20 +168,20 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "rpc.server.check_nullifiers_by_prefix",
+        name = "rpc.server.sync_nullifiers",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn check_nullifiers_by_prefix(
+    async fn sync_nullifiers(
         &self,
-        request: Request<proto::rpc_store::CheckNullifiersByPrefixRequest>,
-    ) -> Result<Response<proto::rpc_store::CheckNullifiersByPrefixResponse>, Status> {
+        request: Request<proto::rpc_store::SyncNullifiersRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncNullifiersResponse>, Status> {
         debug!(target: COMPONENT, request = ?request.get_ref());
 
         check::<QueryParamNullifierLimit>(request.get_ref().nullifiers.len())?;
 
-        self.store.clone().check_nullifiers_by_prefix(request).await
+        self.store.clone().sync_nullifiers(request).await
     }
 
     #[instrument(

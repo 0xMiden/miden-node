@@ -9,7 +9,6 @@ The gRPC service definition can be found in the Miden node's `proto`
 <!--toc:start-->
 
 - [CheckNullifiers](#checknullifiers)
-- [CheckNullifiersByPrefix](#checknullifiersbyprefix)
 - [GetAccountDetails](#getaccountdetails)
 - [GetAccountProofs](#getaccountproofs)
 - [GetBlockByNumber](#getblockbynumber)
@@ -17,6 +16,7 @@ The gRPC service definition can be found in the Miden node's `proto`
 - [GetNotesById](#getnotesbyid)
 - [GetNoteScriptByRoot](#getnotescriptbyroot)
 - [SubmitProvenTransaction](#submitproventransaction)
+- [SyncNullifiers](#syncnullifiers)
 - [SyncAccountVault](#syncaccountvault)
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
@@ -28,18 +28,6 @@ The gRPC service definition can be found in the Miden node's `proto`
 ## CheckNullifiers
 
 Request proofs for a set of nullifiers.
-
-## CheckNullifiersByPrefix
-
-Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows
-clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
-
-Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block
-range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that
-range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
-
-If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with
-`block_from = block_num + 1` to retrieve subsequent updates.
 
 ## GetAccountDetails
 
@@ -68,6 +56,18 @@ Request the script for a note by its root.
 ## SubmitProvenTransaction
 
 Submit a transaction to the network.
+
+## SyncNullifiers
+
+Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows
+clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
+
+Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block
+range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that
+range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
+
+If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with
+`block_from = block_num + 1` to retrieve subsequent updates.
 
 ## SyncAccountVault
 

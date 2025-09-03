@@ -83,16 +83,16 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.rpc_server.check_nullifiers_by_prefix",
+        name = "store.rpc_server.sync_nullifiers",
         skip_all,
         level = "debug",
         ret(level = "debug"),
         err
     )]
-    async fn check_nullifiers_by_prefix(
+    async fn sync_nullifiers(
         &self,
-        request: Request<proto::rpc_store::CheckNullifiersByPrefixRequest>,
-    ) -> Result<Response<proto::rpc_store::CheckNullifiersByPrefixResponse>, Status> {
+        request: Request<proto::rpc_store::SyncNullifiersRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncNullifiersResponse>, Status> {
         let request = request.into_inner();
 
         if request.prefix_len != 16 {
@@ -104,7 +104,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let (nullifiers, block_num) = self
             .state
-            .check_nullifiers_by_prefix(
+            .sync_nullifiers(
                 request.prefix_len,
                 request.nullifiers,
                 request.block_from.into(),
@@ -113,15 +113,13 @@ impl rpc_server::Rpc for StoreApi {
             .await?;
         let nullifiers = nullifiers
             .into_iter()
-            .map(|nullifier_info| {
-                proto::rpc_store::check_nullifiers_by_prefix_response::NullifierUpdate {
-                    nullifier: Some(nullifier_info.nullifier.into()),
-                    block_num: nullifier_info.block_num.as_u32(),
-                }
+            .map(|nullifier_info| proto::rpc_store::sync_nullifiers_response::NullifierUpdate {
+                nullifier: Some(nullifier_info.nullifier.into()),
+                block_num: nullifier_info.block_num.as_u32(),
             })
             .collect();
 
-        Ok(Response::new(proto::rpc_store::CheckNullifiersByPrefixResponse {
+        Ok(Response::new(proto::rpc_store::SyncNullifiersResponse {
             nullifiers,
             block_num: block_num.as_u32(),
             chain_tip: chain_tip.as_u32(),

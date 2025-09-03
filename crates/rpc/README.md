@@ -14,7 +14,7 @@ The full gRPC method definitions can be found in the [proto](../proto/README.md)
 <!--toc:start-->
 
 - [CheckNullifiers](#checknullifiers)
-- [CheckNullifiersByPrefix](#checknullifiersbyprefix)
+- [SyncNullifiers](#syncnullifiers)
 - [GetAccountDetails](#getaccountdetails)
 - [GetAccountProofs](#getaccountproofs)
 - [GetBlockByNumber](#getblockbynumber)
@@ -34,20 +34,6 @@ The full gRPC method definitions can be found in the [proto](../proto/README.md)
 ### CheckNullifiers
 
 Returns a nullifier proof for each of the requested nullifiers.
-
----
-
-### CheckNullifiersByPrefix
-
-Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows
-clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
-
-Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block
-range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that
-range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
-
-If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with
-`block_from = block_num + 1` to retrieve subsequent updates.
 
 ---
 
@@ -91,6 +77,20 @@ Returns the script for a note by its root.
 ### SubmitProvenTransaction
 
 Submits proven transaction to the Miden network.
+
+---
+
+### SyncNullifiers
+
+Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows
+clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
+
+Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block
+range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that
+range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
+
+If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with
+`block_from = block_num + 1` to retrieve subsequent updates.
 
 ---
 

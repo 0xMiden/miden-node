@@ -422,7 +422,7 @@ impl State {
         }
     }
 
-    pub async fn check_nullifiers_by_prefix(
+    pub async fn sync_nullifiers(
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,

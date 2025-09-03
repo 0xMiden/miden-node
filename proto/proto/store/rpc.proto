@@ -23,11 +23,6 @@ service Rpc {
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(NullifierList) returns (CheckNullifiersResponse) {}
 
-    // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-    //
-    // Note that only 16-bit prefixes are supported at this time.
-    rpc CheckNullifiersByPrefix(CheckNullifiersByPrefixRequest) returns (CheckNullifiersByPrefixResponse) {}
-
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
@@ -46,6 +41,11 @@ service Rpc {
 
     // Returns the script for a note by its root.
     rpc GetNoteScriptByRoot(note.NoteRoot) returns (MaybeNoteScript) {}
+
+    // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+    //
+    // Note that only 16-bit prefixes are supported at this time.
+    rpc SyncNullifiers(SyncNullifiersRequest) returns (SyncNullifiersResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -178,11 +178,26 @@ message AccountProofs {
     repeated AccountProof account_proofs = 2;
 }
 
-// CHECK NULLIFIERS BY PREFIX
+// CHECK NULLIFIERS
+// ================================================================================================
+
+// List of nullifiers to return proofs for.
+message NullifierList {
+    // List of nullifiers to return proofs for.
+    repeated primitives.Digest nullifiers = 1;
+}
+
+// Represents the result of checking nullifiers.
+message CheckNullifiersResponse {
+    // Each requested nullifier has its corresponding nullifier proof at the same position.
+    repeated primitives.SmtOpening proofs = 1;
+}
+
+// SYNC NULLIFIERS
 // ================================================================================================
 
 // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-message CheckNullifiersByPrefixRequest {
+message SyncNullifiersRequest {
     // Block number from which the nullifiers are requested (inclusive).
     fixed32 block_from = 1;
 
@@ -197,8 +212,8 @@ message CheckNullifiersByPrefixRequest {
     repeated uint32 nullifiers = 4;
 }
 
-// Represents the result of checking nullifiers by prefix.
-message CheckNullifiersByPrefixResponse {
+// Represents the result of syncing nullifiers.
+message SyncNullifiersResponse {
     // Represents a single nullifier update.
     message NullifierUpdate {
         // Nullifier ID.
@@ -220,21 +235,6 @@ message CheckNullifiersByPrefixResponse {
 
     // List of nullifiers matching the prefixes specified in the request.
     repeated NullifierUpdate nullifiers = 3;
-}
-
-// CHECK NULLIFIERS
-// ================================================================================================
-
-// List of nullifiers to return proofs for.
-message NullifierList {
-    // List of nullifiers to return proofs for.
-    repeated primitives.Digest nullifiers = 1;
-}
-
-// Represents the result of checking nullifiers.
-message CheckNullifiersResponse {
-    // Each requested nullifier has its corresponding nullifier proof at the same position.
-    repeated primitives.SmtOpening proofs = 1;
 }
 
 // SYNC STATE

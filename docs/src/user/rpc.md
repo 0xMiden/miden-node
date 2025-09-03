@@ -15,6 +15,7 @@ The gRPC service definition can be found in the Miden node's `proto`
 - [GetBlockByNumber](#getblockbynumber)
 - [GetBlockHeaderByNumber](#getblockheaderbynumber)
 - [GetNotesById](#getnotesbyid)
+- [GetNoteScriptByRoot](#getnotescriptbyroot)
 - [SubmitProvenTransaction](#submitproventransaction)
 - [SyncAccountVault](#syncaccountvault)
 - [SyncNotes](#syncnotes)
@@ -59,6 +60,10 @@ Request a specific block header and its inclusion proof.
 ## GetNotesById
 
 Request a set of notes.
+
+## GetNoteScriptByRoot
+
+Request the script for a note by its root.
 
 ## SubmitProvenTransaction
 

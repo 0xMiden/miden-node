@@ -17,7 +17,7 @@ use diesel::query_dsl::methods::SelectDsl;
 use diesel::query_dsl::{QueryDsl, RunQueryDsl};
 use diesel::sqlite::Sqlite;
 use diesel::{JoinOnDsl, NullableExpressionMethods, OptionalExtension, SqliteConnection};
-use miden_lib::utils::Deserializable;
+use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
@@ -248,6 +248,32 @@ pub(crate) fn select_note_inclusion_proofs(
             Ok((note_id, proof))
         },
     ))
+}
+
+/// Returns the script for a note by its root.
+///
+/// ```sql
+/// SELECT
+///     root,
+///     script
+/// FROM
+///     note_scripts
+/// WHERE
+///     root = ?1;
+/// ```
+pub(crate) fn select_note_script_by_root(
+    conn: &mut SqliteConnection,
+    root: Word,
+) -> Result<Option<NoteScript>, DatabaseError> {
+    let raw = SelectDsl::select(schema::note_scripts::table, schema::note_scripts::script)
+        .filter(schema::note_scripts::script_root.eq(root.to_bytes()))
+        .get_result::<Vec<u8>>(conn)
+        .optional()?;
+
+    raw.as_ref()
+        .map(|bytes| NoteScript::from_bytes(bytes))
+        .transpose()
+        .map_err(Into::into)
 }
 
 /// Returns a paginated batch of network notes that have not yet been consumed.

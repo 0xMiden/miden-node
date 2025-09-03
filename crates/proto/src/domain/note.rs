@@ -6,6 +6,7 @@ use miden_objects::note::{
     NoteId,
     NoteInclusionProof,
     NoteMetadata,
+    NoteScript,
     NoteTag,
     NoteType,
     Nullifier,
@@ -348,4 +349,16 @@ where
 pub enum NetworkNoteError {
     #[error("note tag {0} is not a valid network note tag")]
     InvalidExecutionMode(NoteTag),
+}
+
+// NOTE SCRIPT
+// ================================================================================================
+
+impl From<NoteScript> for proto::note::NoteScript {
+    fn from(script: NoteScript) -> Self {
+        Self {
+            entrypoint: script.entrypoint().into(),
+            mast: script.mast().to_bytes(),
+        }
+    }
 }

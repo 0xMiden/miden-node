@@ -23,6 +23,7 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 - [GetNoteAuthenticationInfo](#getnoteauthenticationinfo)
 - [GetNotesById](#getnotesbyid)
 - [GetTransactionInputs](#gettransactioninputs)
+- [GetNoteScriptByRoot](#getnotescriptbyroot)
 - [SyncAccountVault](#syncaccountvault)
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
@@ -104,6 +105,12 @@ Returns a list of notes matching the provided note IDs.
 ### GetTransactionInputs
 
 Used by the `block-producer` to query state required to verify a submitted transaction.
+
+---
+
+### GetNoteScriptByRoot
+
+Returns the script for a note by its root.
 
 ---
 

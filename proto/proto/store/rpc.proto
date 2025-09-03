@@ -44,6 +44,9 @@ service Rpc {
     // Returns a list of committed notes matching the provided note IDs.
     rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
 
+    // Returns the script for a note by its root.
+    rpc GetNoteScriptByRoot(note.NoteRoot) returns (MaybeNoteScript) {}
+
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
     // Client specifies the `note_tags` they are interested in, and the block height from which to search for new for
@@ -417,4 +420,13 @@ message StorageMapUpdate {
         
     // The storage map value.
     primitives.Digest value = 4;
+}
+
+// GET NOTE SCRIPT BY ROOT
+// ================================================================================================
+
+// Represents a note script or nothing.
+message MaybeNoteScript {
+    // The script for a note by its root.
+    optional note.NoteScript script = 1;
 }

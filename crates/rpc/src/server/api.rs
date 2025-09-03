@@ -506,6 +506,23 @@ impl api_server::Api for RpcService {
             genesis_commitment: self.genesis_commitment.map(Into::into),
         }))
     }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.get_note_script_by_root",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_note_script_by_root(
+        &self,
+        request: Request<proto::note::NoteRoot>,
+    ) -> Result<Response<proto::rpc_store::MaybeNoteScript>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        self.store.clone().get_note_script_by_root(request).await
+    }
 }
 
 // LIMIT HELPERS

@@ -151,18 +151,11 @@ pub struct SyncNullifiersRequest {
 /// Represents the result of syncing nullifiers.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncNullifiersResponse {
-    /// Current chain tip
-    #[prost(fixed32, tag = "1")]
-    pub chain_tip: u32,
-    /// The block number of the last check included in this response.
-    ///
-    /// For chunked responses, this may be less than request.block_range.block_to.
-    /// If it is less than request.block_range.block_to, the user is expected to make a subsequent request
-    /// starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
-    #[prost(fixed32, tag = "2")]
-    pub block_num: u32,
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
     /// List of nullifiers matching the prefixes specified in the request.
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "2")]
     pub nullifiers: ::prost::alloc::vec::Vec<sync_nullifiers_response::NullifierUpdate>,
 }
 /// Nested message and enum types in `SyncNullifiersResponse`.
@@ -241,21 +234,14 @@ pub struct SyncAccountVaultRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncAccountVaultResponse {
-    /// Chain tip at the moment of the request.
-    #[prost(fixed32, tag = "1")]
-    pub chain_tip: u32,
-    /// The block number of the last update included in this response.
-    ///
-    /// For chunked responses, this may be less than request.block_range.block_to.
-    /// If it is less than request.block_range.block_to, the user is expected to make a subsequent request
-    /// starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
-    #[prost(fixed32, tag = "2")]
-    pub block_num: u32,
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
     /// List of asset updates for the account.
     ///
     /// Multiple updates can be returned for a single asset, and the one with a higher `block_num`
     /// is expected to be retained by the caller.
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "2")]
     pub updates: ::prost::alloc::vec::Vec<AccountVaultUpdate>,
 }
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -322,21 +308,14 @@ pub struct SyncStorageMapsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncStorageMapsResponse {
-    /// Current chain tip
-    #[prost(fixed32, tag = "1")]
-    pub chain_tip: u32,
-    /// The block number of the last update included in this response.
-    ///
-    /// For chunked responses, this may be less than request.block_to.
-    /// If it is less than request.block_to, the user is expected to make a subsequent request
-    /// starting from the next block to this one (ie, request.block_from = block_num + 1).
-    #[prost(fixed32, tag = "2")]
-    pub block_num: u32,
+    /// Pagination information.
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
     /// The list of storage map updates.
     ///
     /// Multiple updates can be returned for a single slot index and key combination, and the one
     /// with a higher `block_num` is expected to be retained by the caller.
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "2")]
     pub updates: ::prost::alloc::vec::Vec<StorageMapUpdate>,
 }
 /// Represents a single storage map update.
@@ -371,6 +350,20 @@ pub struct BlockRange {
     /// Block number up to which to check (inclusive). If not specified, checks up to the latest block.
     #[prost(fixed32, optional, tag = "2")]
     pub block_to: ::core::option::Option<u32>,
+}
+/// Represents pagination information.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct PaginationInfo {
+    /// Current chain tip
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
+    /// The block number of the last check included in this response.
+    ///
+    /// For chunked responses, this may be less than request.block_range.block_to.
+    /// If it is less than request.block_range.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
+    #[prost(fixed32, tag = "2")]
+    pub block_num: u32,
 }
 /// Generated client implementations.
 pub mod rpc_client {

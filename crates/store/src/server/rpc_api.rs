@@ -122,9 +122,11 @@ impl rpc_server::Rpc for StoreApi {
             .collect();
 
         Ok(Response::new(proto::rpc_store::SyncNullifiersResponse {
+            pagination_info: Some(proto::rpc_store::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: block_num.as_u32(),
+            }),
             nullifiers,
-            block_num: block_num.as_u32(),
-            chain_tip: chain_tip.as_u32(),
         }))
     }
 
@@ -389,8 +391,10 @@ impl rpc_server::Rpc for StoreApi {
             .collect();
 
         Ok(Response::new(proto::rpc_store::SyncAccountVaultResponse {
-            block_num: last_included_block.as_u32(),
-            chain_tip: chain_tip.as_u32(),
+            pagination_info: Some(proto::rpc_store::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: last_included_block.as_u32(),
+            }),
             updates,
         }))
     }
@@ -453,8 +457,10 @@ impl rpc_server::Rpc for StoreApi {
             .collect();
 
         Ok(Response::new(proto::rpc_store::SyncStorageMapsResponse {
-            block_num: storage_maps_page.last_block_included.as_u32(),
-            chain_tip: chain_tip.as_u32(),
+            pagination_info: Some(proto::rpc_store::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: storage_maps_page.last_block_included.as_u32(),
+            }),
             updates,
         }))
     }

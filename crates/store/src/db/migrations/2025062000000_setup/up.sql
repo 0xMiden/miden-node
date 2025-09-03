@@ -87,9 +87,22 @@ CREATE TABLE account_storage_map_values (
     is_latest_update    BOOLEAN NOT NULL,
 
     PRIMARY KEY (account_id, block_num, slot, key),
-    FOREIGN KEY (account_id, block_num) REFERENCES account_deltas (account_id, block_num)
     CONSTRAINT slot_is_u8 CHECK (slot BETWEEN 0 AND 0xFF)
 ) WITHOUT ROWID;
+
+CREATE INDEX asm_latest_by_acct_block_slot_key ON account_storage_map_values(account_id, block_num);
+
+CREATE TABLE account_vault_assets (
+    account_id          BLOB    NOT NULL,
+    block_num           INTEGER NOT NULL,
+    vault_key           BLOB    NOT NULL,
+    asset               BLOB,
+    is_latest_update    BOOLEAN NOT NULL,
+
+    PRIMARY KEY (account_id, block_num, vault_key)
+) WITHOUT ROWID;
+
+CREATE INDEX idx_vault_assets_id_block ON account_vault_assets (account_id, block_num);
 
 CREATE TABLE nullifiers (
     nullifier        BLOB    NOT NULL,

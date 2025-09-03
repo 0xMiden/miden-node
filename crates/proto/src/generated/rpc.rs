@@ -5,6 +5,9 @@ pub struct RpcStatus {
     /// The rpc component's running version.
     #[prost(string, tag = "1")]
     pub version: ::prost::alloc::string::String,
+    /// The genesis commitment.
+    #[prost(message, optional, tag = "2")]
+    pub genesis_commitment: ::core::option::Option<super::primitives::Digest>,
     /// The store status.
     #[prost(message, optional, tag = "3")]
     pub store: ::core::option::Option<super::rpc_store::StoreStatus>,
@@ -360,6 +363,30 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SubmitProvenBatch"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns account vault updates for specified account within a block range.
+        pub async fn sync_account_vault(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::rpc_store::SyncAccountVaultRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::rpc_store::SyncAccountVaultResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/rpc.Api/SyncAccountVault");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncAccountVault"));
+            self.inner.unary(req, path, codec).await
+        }
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
         ///
         /// Client specifies the `note_tags` they are interested in, and the block height from which to search for new for
@@ -424,6 +451,30 @@ pub mod api_client {
             let path = http::uri::PathAndQuery::from_static("/rpc.Api/SyncState");
             let mut req = request.into_request();
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncState"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Returns storage map updates for specified account and storage slots within a block range.
+        pub async fn sync_storage_maps(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::rpc_store::SyncStorageMapsRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::rpc_store::SyncStorageMapsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static("/rpc.Api/SyncStorageMaps");
+            let mut req = request.into_request();
+            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncStorageMaps"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -534,6 +585,14 @@ pub mod api_server {
             tonic::Response<super::super::block_producer::SubmitProvenBatchResponse>,
             tonic::Status,
         >;
+        /// Returns account vault updates for specified account within a block range.
+        async fn sync_account_vault(
+            &self,
+            request: tonic::Request<super::super::rpc_store::SyncAccountVaultRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::rpc_store::SyncAccountVaultResponse>,
+            tonic::Status,
+        >;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
         ///
         /// Client specifies the `note_tags` they are interested in, and the block height from which to search for new for
@@ -570,6 +629,14 @@ pub mod api_server {
             request: tonic::Request<super::super::rpc_store::SyncStateRequest>,
         ) -> std::result::Result<
             tonic::Response<super::super::rpc_store::SyncStateResponse>,
+            tonic::Status,
+        >;
+        /// Returns storage map updates for specified account and storage slots within a block range.
+        async fn sync_storage_maps(
+            &self,
+            request: tonic::Request<super::super::rpc_store::SyncStorageMapsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::rpc_store::SyncStorageMapsResponse>,
             tonic::Status,
         >;
     }
@@ -1115,6 +1182,54 @@ pub mod api_server {
                     };
                     Box::pin(fut)
                 }
+                "/rpc.Api/SyncAccountVault" => {
+                    #[allow(non_camel_case_types)]
+                    struct SyncAccountVaultSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::rpc_store::SyncAccountVaultRequest,
+                    > for SyncAccountVaultSvc<T> {
+                        type Response = super::super::rpc_store::SyncAccountVaultResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::rpc_store::SyncAccountVaultRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::sync_account_vault(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SyncAccountVaultSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/rpc.Api/SyncNotes" => {
                     #[allow(non_camel_case_types)]
                     struct SyncNotesSvc<T: Api>(pub Arc<T>);
@@ -1196,6 +1311,54 @@ pub mod api_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SyncStateSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rpc.Api/SyncStorageMaps" => {
+                    #[allow(non_camel_case_types)]
+                    struct SyncStorageMapsSvc<T: Api>(pub Arc<T>);
+                    impl<
+                        T: Api,
+                    > tonic::server::UnaryService<
+                        super::super::rpc_store::SyncStorageMapsRequest,
+                    > for SyncStorageMapsSvc<T> {
+                        type Response = super::super::rpc_store::SyncStorageMapsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::rpc_store::SyncStorageMapsRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Api>::sync_storage_maps(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SyncStorageMapsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

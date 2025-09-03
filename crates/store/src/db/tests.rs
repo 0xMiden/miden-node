@@ -15,10 +15,13 @@ use miden_objects::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountDelta,
     AccountId,
     AccountIdVersion,
+    AccountStorageDelta,
     AccountStorageMode,
     AccountType,
+    AccountVaultDelta,
     StorageSlot,
 };
 use miden_objects::asset::{Asset, FungibleAsset};
@@ -46,6 +49,8 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_PRIVATE_SENDER,
     ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
+    ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId};
 use miden_objects::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
@@ -55,6 +60,7 @@ use rand::Rng;
 use super::{AccountInfo, NoteRecord, NullifierInfo};
 use crate::db::TransactionSummary;
 use crate::db::migrations::apply_migrations;
+use crate::db::models::queries::{StorageMapValue, insert_account_storage_map_value};
 use crate::db::models::{Page, queries, utils};
 use crate::errors::DatabaseError;
 
@@ -652,6 +658,89 @@ fn sql_select_accounts() {
 
 #[test]
 #[miden_node_test_macro::enable_logging]
+fn sync_account_vault_basic_validation() {
+    let mut conn = create_db();
+    let conn = &mut conn;
+
+    // Create a public account for vault testing
+    let public_account_id = AccountId::try_from(ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET).unwrap();
+    let block_from: BlockNumber = 1.into();
+    let block_to: BlockNumber = 5.into();
+    let block_mid: BlockNumber = 3.into();
+    let invalid_block_from: BlockNumber = 10.into();
+
+    // Create blocks
+    create_block(conn, block_from);
+    create_block(conn, block_mid);
+    create_block(conn, block_to);
+
+    // Create accounts - one public for vault assets, one private for testing
+    queries::upsert_accounts(conn, &[mock_block_account_update(public_account_id, 0)], block_from)
+        .unwrap();
+
+    // Create some test vault assets
+    let vault_key_1 = num_to_word(100);
+    let vault_key_2 = num_to_word(200);
+    let fungible_asset_1 = Asset::Fungible(FungibleAsset::new(public_account_id, 1000).unwrap());
+    let fungible_asset_2 = Asset::Fungible(FungibleAsset::new(public_account_id, 2000).unwrap());
+
+    // Insert vault assets for the public account at different blocks
+    queries::insert_account_vault_asset(
+        conn,
+        public_account_id,
+        block_from,
+        vault_key_1,
+        Some(fungible_asset_1),
+    )
+    .unwrap();
+    queries::insert_account_vault_asset(
+        conn,
+        public_account_id,
+        block_mid,
+        vault_key_2,
+        Some(fungible_asset_2),
+    )
+    .unwrap();
+
+    // Update an existing vault asset (sets previous as not latest)
+    let updated_fungible_asset_1 =
+        Asset::Fungible(FungibleAsset::new(public_account_id, 1500).unwrap());
+    queries::insert_account_vault_asset(
+        conn,
+        public_account_id,
+        block_to,
+        vault_key_1,
+        Some(updated_fungible_asset_1),
+    )
+    .unwrap();
+
+    // Test invalid block range - should return error
+    let result =
+        queries::select_account_vault_assets(conn, public_account_id, invalid_block_from, block_to);
+    assert!(result.is_err(), "expected error for invalid block range");
+
+    let Err(crate::errors::DatabaseError::InvalidBlockRange { .. }) = result else {
+        panic!("expected error, got Ok");
+    };
+
+    // Test with valid block range - should return vault assets
+    let (last_block, values) =
+        queries::select_account_vault_assets(conn, public_account_id, block_from, block_to)
+            .unwrap();
+
+    // Should return assets we inserted
+    assert!(!values.is_empty(), "vault assets should have data");
+    assert!(last_block >= block_from, "response block num should be higher than request");
+
+    // Verify that we get the updated asset for vault_key_1
+    let vault_key_1_asset =
+        values.iter().find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
+    assert!(vault_key_1_asset.is_some(), "should find updated vault asset");
+    assert_eq!(vault_key_1_asset.unwrap().asset, Some(updated_fungible_asset_1));
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
 fn select_nullifiers_by_prefix_works() {
     const PREFIX_LEN: u8 = 16;
     let mut conn = create_db();
@@ -1045,6 +1134,161 @@ fn notes() {
     assert_eq!(note_1.details, None);
 }
 
+fn insert_account_delta(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_number: BlockNumber,
+    delta: &AccountDelta,
+) {
+    for (slot, slot_delta) in delta.storage().maps() {
+        for (k, v) in slot_delta.entries() {
+            insert_account_storage_map_value(conn, account_id, block_number, *slot, *k.inner(), *v)
+                .unwrap();
+        }
+    }
+}
+
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn sql_account_storage_map_values_insertion() {
+    use std::collections::BTreeMap;
+
+    use miden_objects::account::StorageMapDelta;
+
+    let mut conn = create_db();
+    let conn = &mut conn;
+
+    let block1: BlockNumber = 1.into();
+    let block2: BlockNumber = 2.into();
+    create_block(conn, block1);
+    create_block(conn, block2);
+
+    let account_id =
+        AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2).unwrap();
+
+    let slot = 3u8;
+    let key1 = Word::from([1u32, 2, 3, 4]);
+    let key2 = Word::from([5u32, 6, 7, 8]);
+    let value1 = Word::from([10u32, 11, 12, 13]);
+    let value2 = Word::from([20u32, 21, 22, 23]);
+    let value3 = Word::from([30u32, 31, 32, 33]);
+
+    // Insert at block 1
+    let mut map1 = StorageMapDelta::default();
+    map1.insert(key1, value1);
+    map1.insert(key2, value2);
+    let maps1: BTreeMap<_, _> = [(slot, map1)].into_iter().collect();
+    let storage1 = AccountStorageDelta::from_parts(BTreeMap::new(), maps1).unwrap();
+    let delta1 =
+        AccountDelta::new(account_id, storage1, AccountVaultDelta::default(), Felt::ONE).unwrap();
+    insert_account_delta(conn, account_id, block1, &delta1);
+
+    let storage_map_page =
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block1)
+            .unwrap();
+    assert_eq!(storage_map_page.values.len(), 2, "expect 2 initial rows");
+
+    // Update key1 at block 2
+    let mut map2 = StorageMapDelta::default();
+    map2.insert(key1, value3);
+    let maps2 = BTreeMap::from_iter([(slot, map2)]);
+    let storage2 = AccountStorageDelta::from_parts(BTreeMap::new(), maps2).unwrap();
+    let delta2 =
+        AccountDelta::new(account_id, storage2, AccountVaultDelta::default(), Felt::new(2))
+            .unwrap();
+    insert_account_delta(conn, account_id, block2, &delta2);
+
+    let storage_map_values =
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block2)
+            .unwrap();
+
+    assert_eq!(storage_map_values.values.len(), 3, "three rows (with duplicate key)");
+    // key1 should now be value3 at block2; key2 remains value2 at block1
+    assert!(
+        storage_map_values
+            .values
+            .iter()
+            .any(|val| val.slot_index == slot && val.key == key1 && val.value == value3),
+        "key1 should point to new value at block2"
+    );
+    assert!(
+        storage_map_values
+            .values
+            .iter()
+            .any(|val| val.slot_index == slot && val.key == key2 && val.value == value2),
+        "key2 should stay the same (from block1)"
+    );
+}
+
+#[test]
+fn select_storage_map_sync_values() {
+    let mut conn = create_db();
+    let account_id = AccountId::try_from(ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE).unwrap();
+    let slot = 5u8;
+
+    let key1 = num_to_word(1);
+    let key2 = num_to_word(2);
+    let key3 = num_to_word(3);
+    let value1 = num_to_word(10);
+    let value2 = num_to_word(20);
+    let value3 = num_to_word(30);
+
+    let block1 = BlockNumber::from(1);
+    let block2 = BlockNumber::from(2);
+    let block3 = BlockNumber::from(3);
+
+    // Insert data across multiple blocks using individual inserts
+    // Block 1: key1 -> value1, key2 -> value2
+    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key1, value1)
+        .unwrap();
+    queries::insert_account_storage_map_value(&mut conn, account_id, block1, slot, key2, value2)
+        .unwrap();
+
+    // Block 2: key2 -> value3 (update), key3 -> value3 (new)
+    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key2, value3)
+        .unwrap();
+    queries::insert_account_storage_map_value(&mut conn, account_id, block2, slot, key3, value3)
+        .unwrap();
+
+    // Block 3: key1 -> value2 (update)
+    queries::insert_account_storage_map_value(&mut conn, account_id, block3, slot, key1, value2)
+        .unwrap();
+
+    let page = queries::select_account_storage_map_values(
+        &mut conn,
+        account_id,
+        BlockNumber::from(2),
+        BlockNumber::from(3),
+    )
+    .unwrap();
+
+    assert_eq!(page.values.len(), 3, "should return latest values");
+
+    // Compare ordered by key using a tuple view to avoid relying on the concrete struct name
+    let expected = vec![
+        StorageMapValue {
+            slot_index: slot,
+            key: key2,
+            value: value3,
+            block_num: block2,
+        },
+        StorageMapValue {
+            slot_index: slot,
+            key: key3,
+            value: value3,
+            block_num: block2,
+        },
+        StorageMapValue {
+            slot_index: slot,
+            key: key1,
+            value: value2,
+            block_num: block3,
+        },
+    ];
+
+    assert_eq!(page.values, expected, "should return latest values ordered by key");
+}
+
 // UTILITIES
 // -------------------------------------------------------------------------------------------
 fn num_to_word(n: u64) -> Word {
@@ -1130,7 +1374,7 @@ fn mock_account_code_and_storage(
 
     let component = AccountComponent::compile(
         component_code,
-        TransactionKernel::testing_assembler(),
+        TransactionKernel::assembler(),
         component_storage,
     )
     .unwrap()

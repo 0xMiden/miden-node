@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_node_proto::domain::note::NetworkNote;
+use miden_node_proto::domain::note::SingleTargetNetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountDelta, AccountId};
 use miden_objects::block::BlockNumber;
@@ -17,14 +17,14 @@ use miden_objects::note::{Note, Nullifier};
 /// will likely be soon after the number that is recorded here.
 #[derive(Debug, Clone)]
 pub struct InflightNetworkNote {
-    note: NetworkNote,
+    note: SingleTargetNetworkNote,
     attempt_count: usize,
     last_attempt: Option<BlockNumber>,
 }
 
 impl InflightNetworkNote {
     /// Creates a new inflight network note.
-    pub fn new(note: NetworkNote) -> Self {
+    pub fn new(note: SingleTargetNetworkNote) -> Self {
         Self {
             note,
             attempt_count: 0,
@@ -33,12 +33,12 @@ impl InflightNetworkNote {
     }
 
     /// Consumes the inflight network note and returns the inner network note.
-    pub fn into_inner(self) -> NetworkNote {
+    pub fn into_inner(self) -> SingleTargetNetworkNote {
         self.note
     }
 
     /// Returns a reference to the inner network note.
-    pub fn to_inner(&self) -> &NetworkNote {
+    pub fn to_inner(&self) -> &SingleTargetNetworkNote {
         &self.note
     }
 
@@ -159,7 +159,7 @@ impl AccountState {
     }
 
     /// Adds a new network note making it available for consumption.
-    pub fn add_note(&mut self, note: NetworkNote) {
+    pub fn add_note(&mut self, note: SingleTargetNetworkNote) {
         self.available_notes.insert(note.nullifier(), InflightNetworkNote::new(note));
     }
 

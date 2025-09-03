@@ -3,11 +3,12 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use diesel::{Connection, RunQueryDsl, SqliteConnection};
-use miden_lib::utils::Serializable;
+use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAccountPrefix};
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
+use miden_objects::asset::Asset;
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier};
@@ -18,6 +19,8 @@ use tracing::{info, info_span, instrument};
 use crate::COMPONENT;
 use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
 use crate::db::migrations::apply_migrations;
+use crate::db::models::conv::SqlTypeConvert;
+use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::models::{Page, queries};
 use crate::errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError};
 use crate::genesis::GenesisBlock;
@@ -38,6 +41,28 @@ pub type Result<T, E = DatabaseError> = std::result::Result<T, E>;
 
 pub struct Db {
     pool: deadpool_diesel::Pool<ConnectionManager, deadpool::managed::Object<ConnectionManager>>,
+}
+
+/// Describes the value of an asset for an account ID at `block_num` specifically.
+///
+/// If `asset` is `None`, the asset was removed.
+#[derive(Debug, Clone)]
+pub struct AccountVaultValue {
+    pub block_num: BlockNumber,
+    pub vault_key: Word,
+    /// None if the asset was removed
+    pub asset: Option<Asset>,
+}
+
+impl AccountVaultValue {
+    pub fn from_raw_row(row: (i64, Vec<u8>, Option<Vec<u8>>)) -> Result<Self, DatabaseError> {
+        let (block_num, vault_key, asset) = row;
+        Ok(Self {
+            block_num: BlockNumber::from_raw_sql(block_num)?,
+            vault_key: Word::read_from_bytes(&vault_key)?,
+            asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -438,6 +463,24 @@ impl Db {
         .await
     }
 
+    /// Selects storage map values for syncing storage maps for a specific account ID.
+    ///
+    /// The returned values are the latest known values up to `block_to`, and no values earlier
+    /// than `block_from` are returned.
+    pub(crate) async fn select_storage_map_sync_values(
+        &self,
+        account_id: AccountId,
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<StorageMapValuesPage> {
+        self.transact("select storage map sync values", move |conn| {
+            models::queries::select_account_storage_map_values(
+                conn, account_id, block_from, block_to,
+            )
+        })
+        .await
+    }
+
     /// Runs database optimization.
     #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
     pub async fn optimize(&self) -> Result<(), DatabaseError> {
@@ -480,6 +523,18 @@ impl Db {
                 block_num,
                 page,
             )
+        })
+        .await
+    }
+
+    pub async fn get_account_vault_sync(
+        &self,
+        account_id: AccountId,
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
+        self.transact("account vault sync", move |conn| {
+            queries::select_account_vault_assets(conn, account_id, block_from, block_to)
         })
         .await
     }

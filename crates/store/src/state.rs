@@ -49,7 +49,15 @@ use tracing::{info, info_span, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
-use crate::db::{Db, NoteRecord, NoteSyncUpdate, NullifierInfo, StateSyncUpdate};
+use crate::db::models::queries::StorageMapValuesPage;
+use crate::db::{
+    AccountVaultValue,
+    Db,
+    NoteRecord,
+    NoteSyncUpdate,
+    NullifierInfo,
+    StateSyncUpdate,
+};
 use crate::errors::{
     ApplyBlockError,
     DatabaseError,
@@ -978,6 +986,16 @@ impl State {
         Ok((inner_state.latest_block_num(), responses))
     }
 
+    /// Returns storage map values for syncing within a block range.
+    pub(crate) async fn get_storage_map_sync_values(
+        &self,
+        account_id: AccountId,
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<StorageMapValuesPage, DatabaseError> {
+        self.db.select_storage_map_sync_values(account_id, block_from, block_to).await
+    }
+
     /// Loads a block from the block store. Return `Ok(None)` if the block is not found.
     pub async fn load_block(
         &self,
@@ -997,6 +1015,16 @@ impl State {
     /// Runs database optimization.
     pub async fn optimize_db(&self) -> Result<(), DatabaseError> {
         self.db.optimize().await
+    }
+
+    /// Returns account vault updates for specified account within a block range.
+    pub async fn sync_account_vault(
+        &self,
+        account_id: AccountId,
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
+        self.db.get_account_vault_sync(account_id, block_from, block_to).await
     }
 
     /// Returns the unprocessed network notes, along with the next pagination token.

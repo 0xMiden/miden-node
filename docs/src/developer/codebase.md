@@ -1,15 +1,14 @@
 # Navigating the codebase
 
-The code is organised using a Rust workspace with separate crates for the node and faucet binaries, a crate for each node
+The code is organised using a Rust workspace with separate crates for the node and remote prover binaries, a crate for each node
 component, a couple of gRPC-related codegen crates, and a catch-all utilities crate.
 
-The primary artifacts are the node and faucet binaries. The library crates are not intended for external usage, but
+The primary artifacts are the node and remote prover binaries. The library crates are not intended for external usage, but
 instead simply serve to enforce code organisation and decoupling.
 
 | Crate                     | Description                                                                                                                                              |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `node`                    | The node executable. Configure and run the node and its components.                                                                                      |
-| `faucet`                  | A reference faucet app implementation used by the official Miden faucet.                                                                                 |
 | `remote-prover`           | Remote prover executables. Includes workers and proxies.                                                                                                 |
 | `remote-prover-client`    | Remote prover client implementation.                                                                                                                     |
 | `block-producer`          | Block-producer component implementation.                                                                                                                 |

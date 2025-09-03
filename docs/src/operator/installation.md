@@ -1,9 +1,6 @@
 # Installation
 
-We provide Debian packages for official releases for both the node software as well as a reference faucet
-implementation.
-
-Alternatively, both also can be installed from source on most systems using the Rust package manager `cargo`.
+We provide Debian packages for official releases for the node software. Alternatively, it also can be installed from source on most systems using the Rust package manager `cargo`.
 
 ## Debian package
 
@@ -18,8 +15,7 @@ To install, download the desired releases `.deb` package and checksum files. Ins
 sudo dpkg -i $package_name.deb
 ```
 
-You can (and should) verify the checksum prior to installation using a SHA256 utility. This differs from platform to
-platform, but on most linux distros:
+You can (and should) verify the checksum prior to installation using a SHA256 utility. This differs from platform to platform, but on most linux distros:
 
 ```sh
 sha256sum --check $checksum_file.deb.checksum
@@ -29,7 +25,7 @@ can be used so long as the checksum file and the package file are in the same fo
 
 ## Install using `cargo`
 
-Install Rust version **1.88** or greater using the official Rust installation
+Install Rust version **1.89** or greater using the official Rust installation
 [instructions](https://www.rust-lang.org/tools/install).
 
 Depending on the platform, you may need to install additional libraries. For example, on Ubuntu 22.04 the following

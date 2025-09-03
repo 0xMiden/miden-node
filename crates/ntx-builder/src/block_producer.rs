@@ -44,7 +44,6 @@ impl BlockProducerClient {
 
         Self { client: block_producer }
     }
-
     #[instrument(target = COMPONENT, name = "block_producer.client.submit_proven_transaction", skip_all, err)]
     pub async fn submit_proven_transaction(
         &self,

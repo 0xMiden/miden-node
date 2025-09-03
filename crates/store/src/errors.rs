@@ -14,6 +14,8 @@ use miden_objects::{
     AccountDeltaError,
     AccountError,
     AccountTreeError,
+    AssetError,
+    AssetVaultError,
     FeeError,
     NoteError,
     NullifierTreeError,
@@ -39,6 +41,10 @@ pub enum DatabaseError {
     AccountError(#[from] AccountError),
     #[error("account delta error")]
     AccountDeltaError(#[from] AccountDeltaError),
+    #[error("asset vault error")]
+    AssetVaultError(#[from] AssetVaultError),
+    #[error("asset error")]
+    AssetError(#[from] AssetError),
     #[error("closed channel")]
     ClosedChannel(#[from] RecvError),
     #[error("deserialization failed")]
@@ -92,6 +98,8 @@ pub enum DatabaseError {
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
     AccountNotPublic(AccountId),
+    #[error("invalid block parameters: block_from ({from}) > block_to ({to})")]
+    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
     #[error("data corrupted: {0}")]
     DataCorrupted(String),
     #[error("SQLite pool interaction failed: {0}")]

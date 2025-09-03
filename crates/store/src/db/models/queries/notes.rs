@@ -268,9 +268,10 @@ pub(crate) fn select_note_script_by_root(
         .get_result::<Vec<u8>>(conn)
         .optional()?;
 
-    let note_script = raw.map(|bytes| NoteScript::from_bytes(&bytes[..])).transpose()?;
-
-    Ok(note_script)
+    raw.as_ref()
+        .map(|bytes| NoteScript::from_bytes(bytes))
+        .transpose()
+        .map_err(Into::into)
 }
 
 /// Returns a paginated batch of network notes that have not yet been consumed.

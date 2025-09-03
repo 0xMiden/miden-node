@@ -528,11 +528,10 @@ impl Db {
     pub async fn get_account_vault_sync(
         &self,
         account_id: AccountId,
-        block_from: BlockNumber,
-        block_to: BlockNumber,
+        blockrange: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
         self.transact("account vault sync", move |conn| {
-            queries::select_account_vault_assets(conn, account_id, block_from, block_to)
+            queries::select_account_vault_assets(conn, account_id, blockrange)
         })
         .await
     }

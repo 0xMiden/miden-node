@@ -29,6 +29,7 @@
     clippy::needless_pass_by_value,
     reason = "The parent scope does own it, passing by value avoids additional boilerplate"
 )]
+
 use diesel::SqliteConnection;
 use miden_objects::account::AccountId;
 use miden_objects::block::{BlockAccountUpdate, BlockHeader, BlockNumber};
@@ -80,14 +81,14 @@ pub(crate) fn apply_block(
 /// `note_tags`.
 pub(crate) fn get_state_sync(
     conn: &mut SqliteConnection,
-    block_from: BlockNumber,
+    from_start_block: BlockNumber,
     account_ids: Vec<AccountId>,
     note_tags: Vec<u32>,
 ) -> Result<StateSyncUpdate, StateSyncError> {
     // select notes since block by tag and sender
     let notes = select_notes_since_block_by_tag_and_sender(
         conn,
-        block_from,
+        from_start_block,
         &account_ids[..],
         &note_tags[..],
     )?;
@@ -98,15 +99,15 @@ pub(crate) fn get_state_sync(
         .ok_or_else(|| StateSyncError::EmptyBlockHeadersTable)?;
 
     // select accounts by block range
-    let block_end = block_header.block_num();
+    let to_end_block = block_header.block_num();
     let account_updates =
-        select_accounts_by_block_range(conn, &account_ids, block_from..=block_end)?;
+        select_accounts_by_block_range(conn, &account_ids, from_start_block..=to_end_block)?;
 
     // select transactions by accounts and block range
     let transactions = select_transactions_by_accounts_and_block_range(
         conn,
         &account_ids,
-        block_from..=block_end,
+        from_start_block..=to_end_block,
     )?;
     Ok(StateSyncUpdate {
         notes,

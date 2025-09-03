@@ -212,8 +212,7 @@ pub(crate) fn select_accounts_by_id(
 pub(crate) fn select_account_vault_assets(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-    block_from: BlockNumber,
-    block_to: BlockNumber,
+    blockrange: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
     use schema::account_vault_assets as t;
     // TODO: These limits should be given by the protocol.
@@ -226,8 +225,11 @@ pub(crate) fn select_account_vault_assets(
         return Err(DatabaseError::AccountNotPublic(account_id));
     }
 
-    if block_from > block_to {
-        return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
+    if blockrange.is_empty() {
+        return Err(DatabaseError::InvalidBlockRange {
+            from: blockrange.start().clone(),
+            to: blockrange.end().clone(),
+        });
     }
 
     let raw: Vec<(i64, Vec<u8>, Option<Vec<u8>>)> =
@@ -235,21 +237,20 @@ pub(crate) fn select_account_vault_assets(
             .filter(
                 t::account_id
                     .eq(account_id.to_bytes())
-                    .and(t::block_num.ge(block_from.to_raw_sql()))
-                    .and(t::block_num.le(block_to.to_raw_sql())),
+                    .and(t::block_num.ge(blockrange.start().to_raw_sql()))
+                    .and(t::block_num.le(blockrange.end().to_raw_sql())),
             )
             .order(t::block_num.asc())
             .limit(i64::try_from(ROW_LIMIT).expect("should fit within i64"))
             .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
-    let (last_block_included, values) = if raw.len() >= ROW_LIMIT {
+    let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
+        && raw.len() >= ROW_LIMIT
+    {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
         // least two blocks
-
-        // SAFETY: we checked that the vector is not empty
-        let &(last_block_num, ..) = raw.last().unwrap();
 
         let values = raw
             .into_iter()
@@ -260,7 +261,7 @@ pub(crate) fn select_account_vault_assets(
         (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
     } else {
         (
-            block_to,
+            blockrange.end().clone(),
             raw.into_iter().map(AccountVaultValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };

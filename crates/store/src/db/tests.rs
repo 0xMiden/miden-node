@@ -713,8 +713,11 @@ fn sync_account_vault_basic_validation() {
     .unwrap();
 
     // Test invalid block range - should return error
-    let result =
-        queries::select_account_vault_assets(conn, public_account_id, invalid_block_from, block_to);
+    let result = queries::select_account_vault_assets(
+        conn,
+        public_account_id,
+        invalid_block_from..=block_to,
+    );
     assert!(result.is_err(), "expected error for invalid block range");
 
     let Err(crate::errors::DatabaseError::InvalidBlockRange { .. }) = result else {
@@ -723,7 +726,7 @@ fn sync_account_vault_basic_validation() {
 
     // Test with valid block range - should return vault assets
     let (last_block, values) =
-        queries::select_account_vault_assets(conn, public_account_id, block_from, block_to)
+        queries::select_account_vault_assets(conn, public_account_id, block_from..=block_to)
             .unwrap();
 
     // Should return assets we inserted

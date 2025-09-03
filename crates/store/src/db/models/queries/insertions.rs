@@ -380,13 +380,18 @@ pub(crate) fn insert_notes(
 ) -> Result<usize, DatabaseError> {
     let count = diesel::insert_into(schema::notes::table)
         .values(Vec::from_iter(notes.iter().map(|(note, nullifier)| {
+            // Remove decorators from the script
             let stripped_details = note.details.as_ref().map(|details| {
                 let mut mast = details.script().mast().clone();
-                Arc::make_mut(&mut mast).strip_decorators();
-                let script = NoteScript::from_parts(mast, details.script().entrypoint());
-                let recipient =
-                    NoteRecipient::new(details.serial_num(), script, details.inputs().clone());
-                NoteDetails::new(details.assets().clone(), recipient)
+                if mast.decorators().is_empty() {
+                    details.clone()
+                } else {
+                    Arc::make_mut(&mut mast).strip_decorators();
+                    let script = NoteScript::from_parts(mast, details.script().entrypoint());
+                    let recipient =
+                        NoteRecipient::new(details.serial_num(), script, details.inputs().clone());
+                    NoteDetails::new(details.assets().clone(), recipient)
+                }
             });
 
             let modified_note = NoteRecord {

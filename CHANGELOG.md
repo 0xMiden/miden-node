@@ -8,6 +8,7 @@
 - Added `GetNoteScriptByRoot` gRPC endpoint for retrieving a note script by its root ([#1196](https://github.com/0xMiden/miden-node/pull/1196)).
 - [BREAKING] Refactored `CheckNullifiersByPrefix` endpoint adding pagination ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
 - [BREAKING] Renamed `CheckNullifiersByPrefix` endpoint to `SyncNullifiers` ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
+- [BREAKING] Added `block_range` field to paginated gRPC endpoints ([#????](https://github.com/0xMiden/miden-node/pull/????)).
 
 ## v0.11.0 (2025-08-28)
 

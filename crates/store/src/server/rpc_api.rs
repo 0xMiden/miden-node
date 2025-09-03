@@ -99,15 +99,17 @@ impl rpc_server::Rpc for StoreApi {
             return Err(Status::invalid_argument("Only 16-bit prefixes are supported"));
         }
 
+        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+
         let chain_tip = self.state.latest_block_num().await;
-        let block_to = request.block_to.map_or(chain_tip, BlockNumber::from);
+        let block_to = block_range.block_to.map_or(chain_tip, BlockNumber::from);
 
         let (nullifiers, block_num) = self
             .state
             .sync_nullifiers(
                 request.prefix_len,
                 request.nullifiers,
-                request.block_from.into(),
+                block_range.block_from.into(),
                 block_to,
             )
             .await?;
@@ -362,8 +364,10 @@ impl rpc_server::Rpc for StoreApi {
             )));
         }
 
-        let block_from = request.block_from.into();
-        let block_to: BlockNumber = request.block_to.map_or(chain_tip, BlockNumber::from);
+        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+
+        let block_from = block_range.block_from.into();
+        let block_to: BlockNumber = block_range.block_to.map_or(chain_tip, BlockNumber::from);
 
         if block_to >= chain_tip {
             return Err(Status::invalid_argument("block_to cannot be higher than the chain tip"));
@@ -417,10 +421,12 @@ impl rpc_server::Rpc for StoreApi {
             )));
         }
 
-        let block_from = BlockNumber::from(request.block_from);
+        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+
+        let block_from = BlockNumber::from(block_range.block_from);
         let chain_tip = self.state.latest_block_num().await;
 
-        let block_to = match request.block_to {
+        let block_to = match block_range.block_to {
             Some(block_to) => BlockNumber::from(block_to),
             None => chain_tip,
         };

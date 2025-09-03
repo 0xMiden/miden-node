@@ -279,10 +279,9 @@ async fn sync_nullifiers(
     nullifiers_prefixes: Vec<u32>,
 ) -> (Duration, proto::rpc_store::SyncNullifiersResponse) {
     let sync_request = proto::rpc_store::SyncNullifiersRequest {
+        block_range: Some(proto::rpc_store::BlockRange { block_from: 0, block_to: None }),
         nullifiers: nullifiers_prefixes,
         prefix_len: 16,
-        block_from: 0,
-        block_to: None,
     };
 
     let start = Instant::now();

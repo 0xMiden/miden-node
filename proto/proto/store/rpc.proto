@@ -199,17 +199,14 @@ message CheckNullifiersResponse {
 // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
 message SyncNullifiersRequest {
     // Block number from which the nullifiers are requested (inclusive).
-    fixed32 block_from = 1;
-
-    // Block number up to which to check. If not specified, checks up to the latest block.
-    optional fixed32 block_to = 2;
+    BlockRange block_range = 1;
 
     // Number of bits used for nullifier prefix. Currently the only supported value is 16.
-    uint32 prefix_len = 3;
+    uint32 prefix_len = 2;
 
     // List of nullifiers to check. Each nullifier is specified by its prefix with length equal
     // to `prefix_len`.
-    repeated uint32 nullifiers = 4;
+    repeated uint32 nullifiers = 3;
 }
 
 // Represents the result of syncing nullifiers.
@@ -228,9 +225,9 @@ message SyncNullifiersResponse {
 
     // The block number of the last check included in this response.
     //
-    // For chunked responses, this may be less than request.block_to.
-    // If it is less than request.block_to, the user is expected to make a subsequent request
-    // starting from the next block to this one (ie, request.block_from = block_num + 1).
+    // For chunked responses, this may be less than request.block_range.block_to.
+    // If it is less than request.block_range.block_to, the user is expected to make a subsequent request
+    // starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
     fixed32 block_num = 2;
 
     // List of nullifiers matching the prefixes specified in the request.
@@ -291,17 +288,14 @@ message SyncStateResponse {
 //
 // Allows clients to sync asset values for specific public accounts within a block range.
 message SyncAccountVaultRequest {
-    // Block number from which to start synchronizing.
-    fixed32 block_from = 1;
-    
-    /// Block number up to which to sync. If not specified, syncs up to the latest block.
-    ///
-    /// If specified, this block must be close to the chain tip (i.e., within 30 blocks),
-    /// otherwise an error will be returned.
-    optional fixed32 block_to = 2;
-    
+    // Block range from which to start synchronizing.
+    //
+    // If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    // otherwise an error will be returned.
+    BlockRange block_range = 1;
+
     // Account for which we want to sync asset vault.
-    account.AccountId account_id = 3;
+    account.AccountId account_id = 2;
 }
 
 message SyncAccountVaultResponse {
@@ -310,9 +304,9 @@ message SyncAccountVaultResponse {
 
     // The block number of the last update included in this response.
     //
-    // For chunked responses, this may be less than request.block_to.
-    // If it is less than request.block_to, the user is expected to make a subsequent request 
-    // starting from the next block to this one (ie, request.block_from = block_num + 1).
+    // For chunked responses, this may be less than request.block_range.block_to.
+    // If it is less than request.block_range.block_to, the user is expected to make a subsequent request 
+    // starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
     fixed32 block_num = 2;
 
     // List of asset updates for the account.
@@ -376,15 +370,12 @@ message SyncNotesResponse {
 // Allows clients to sync storage map values for specific public accounts within a block range,
 // with support for cursor-based pagination to handle large storage maps.
 message SyncStorageMapsRequest {
-    // Block number to start sending updates from (inclusive).
-    fixed32 block_from = 1;
-
-    // Block number up to which to sync. If not specified, syncs up to the latest block.
+    // Block range from which to start synchronizing.
     //
-    // If specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    // If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
     // otherwise an error will be returned.
-    optional fixed32 block_to = 2;
-    
+    BlockRange block_range = 1;
+
     // Account for which we want to sync storage maps.
     account.AccountId account_id = 3;
 }
@@ -395,9 +386,9 @@ message SyncStorageMapsResponse {
 
     // The block number of the last update included in this response.
     //
-    // For chunked responses, this may be less than request.block_to.
-    // If it is less than request.block_to, the user is expected to make a subsequent request 
-    // starting from the next block to this one (ie, request.block_from = block_num + 1).
+    // For chunked responses, this may be less than request.block_range.block_to.
+    // If it is less than request.block_range.block_to, the user is expected to make a subsequent request 
+    // starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
     fixed32 block_num = 2;
 
     // The list of storage map updates.
@@ -429,4 +420,16 @@ message StorageMapUpdate {
 message MaybeNoteScript {
     // The script for a note by its root.
     optional note.NoteScript script = 1;
+}
+
+// BLOCK RANGE
+// ================================================================================================
+
+// Represents a block range.
+message BlockRange {
+    // Block number from which to start (inclusive).
+    fixed32 block_from = 1;
+
+    // Block number up to which to check (inclusive). If not specified, checks up to the latest block.
+    optional fixed32 block_to = 2;
 }

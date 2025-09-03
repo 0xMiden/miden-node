@@ -138,17 +138,14 @@ pub struct CheckNullifiersResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncNullifiersRequest {
     /// Block number from which the nullifiers are requested (inclusive).
-    #[prost(fixed32, tag = "1")]
-    pub block_from: u32,
-    /// Block number up to which to check. If not specified, checks up to the latest block.
-    #[prost(fixed32, optional, tag = "2")]
-    pub block_to: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
     /// Number of bits used for nullifier prefix. Currently the only supported value is 16.
-    #[prost(uint32, tag = "3")]
+    #[prost(uint32, tag = "2")]
     pub prefix_len: u32,
     /// List of nullifiers to check. Each nullifier is specified by its prefix with length equal
     /// to `prefix_len`.
-    #[prost(uint32, repeated, tag = "4")]
+    #[prost(uint32, repeated, tag = "3")]
     pub nullifiers: ::prost::alloc::vec::Vec<u32>,
 }
 /// Represents the result of syncing nullifiers.
@@ -159,9 +156,9 @@ pub struct SyncNullifiersResponse {
     pub chain_tip: u32,
     /// The block number of the last check included in this response.
     ///
-    /// For chunked responses, this may be less than request.block_to.
-    /// If it is less than request.block_to, the user is expected to make a subsequent request
-    /// starting from the next block to this one (ie, request.block_from = block_num + 1).
+    /// For chunked responses, this may be less than request.block_range.block_to.
+    /// If it is less than request.block_range.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
     /// List of nullifiers matching the prefixes specified in the request.
@@ -232,17 +229,14 @@ pub struct SyncStateResponse {
 /// Allows clients to sync asset values for specific public accounts within a block range.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncAccountVaultRequest {
-    /// Block number from which to start synchronizing.
-    #[prost(fixed32, tag = "1")]
-    pub block_from: u32,
-    /// / Block number up to which to sync. If not specified, syncs up to the latest block.
-    /// /
-    /// / If specified, this block must be close to the chain tip (i.e., within 30 blocks),
-    /// / otherwise an error will be returned.
-    #[prost(fixed32, optional, tag = "2")]
-    pub block_to: ::core::option::Option<u32>,
+    /// Block range from which to start synchronizing.
+    ///
+    /// If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    /// otherwise an error will be returned.
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
     /// Account for which we want to sync asset vault.
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "2")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -252,9 +246,9 @@ pub struct SyncAccountVaultResponse {
     pub chain_tip: u32,
     /// The block number of the last update included in this response.
     ///
-    /// For chunked responses, this may be less than request.block_to.
-    /// If it is less than request.block_to, the user is expected to make a subsequent request
-    /// starting from the next block to this one (ie, request.block_from = block_num + 1).
+    /// For chunked responses, this may be less than request.block_range.block_to.
+    /// If it is less than request.block_range.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
     /// List of asset updates for the account.
@@ -316,15 +310,12 @@ pub struct SyncNotesResponse {
 /// with support for cursor-based pagination to handle large storage maps.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncStorageMapsRequest {
-    /// Block number to start sending updates from (inclusive).
-    #[prost(fixed32, tag = "1")]
-    pub block_from: u32,
-    /// Block number up to which to sync. If not specified, syncs up to the latest block.
+    /// Block range from which to start synchronizing.
     ///
-    /// If specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    /// If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
     /// otherwise an error will be returned.
-    #[prost(fixed32, optional, tag = "2")]
-    pub block_to: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
     /// Account for which we want to sync storage maps.
     #[prost(message, optional, tag = "3")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
@@ -370,6 +361,16 @@ pub struct MaybeNoteScript {
     /// The script for a note by its root.
     #[prost(message, optional, tag = "1")]
     pub script: ::core::option::Option<super::note::NoteScript>,
+}
+/// Represents a block range.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct BlockRange {
+    /// Block number from which to start (inclusive).
+    #[prost(fixed32, tag = "1")]
+    pub block_from: u32,
+    /// Block number up to which to check (inclusive). If not specified, checks up to the latest block.
+    #[prost(fixed32, optional, tag = "2")]
+    pub block_to: ::core::option::Option<u32>,
 }
 /// Generated client implementations.
 pub mod rpc_client {

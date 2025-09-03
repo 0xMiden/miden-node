@@ -26,7 +26,7 @@ use crate::db::{TransactionSummary, schema};
 /// # Parameters
 /// * `account_ids`: List of account IDs to filter by
 ///     - Limit: 0 <= size <= 1000
-/// * `blockrange`: Range of blocks to include inclusive
+/// * `block_range`: Range of blocks to include inclusive
 ///
 /// # Returns
 ///
@@ -50,7 +50,7 @@ use crate::db::{TransactionSummary, schema};
 pub fn select_transactions_by_accounts_and_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
-    blockrange: RangeInclusive<BlockNumber>,
+    block_range: RangeInclusive<BlockNumber>,
 ) -> Result<Vec<TransactionSummary>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
@@ -63,8 +63,8 @@ pub fn select_transactions_by_accounts_and_block_range(
             schema::transactions::transaction_id,
         ),
     )
-    .filter(schema::transactions::block_num.gt(blockrange.start().to_raw_sql()))
-    .filter(schema::transactions::block_num.le(blockrange.end().to_raw_sql()))
+    .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
+    .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
     .filter(schema::transactions::account_id.eq_any(desired_account_ids))
     .order(schema::transactions::transaction_id.asc())
     .load::<TransactionSummaryRaw>(conn)

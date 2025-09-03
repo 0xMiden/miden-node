@@ -212,7 +212,7 @@ pub(crate) fn select_accounts_by_id(
 pub(crate) fn select_account_vault_assets(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-    blockrange: RangeInclusive<BlockNumber>,
+    block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
     use schema::account_vault_assets as t;
     // TODO: These limits should be given by the protocol.
@@ -225,10 +225,10 @@ pub(crate) fn select_account_vault_assets(
         return Err(DatabaseError::AccountNotPublic(account_id));
     }
 
-    if blockrange.is_empty() {
+    if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
-            from: blockrange.start().clone(),
-            to: blockrange.end().clone(),
+            from: block_range.start().clone(),
+            to: block_range.end().clone(),
         });
     }
 
@@ -237,8 +237,8 @@ pub(crate) fn select_account_vault_assets(
             .filter(
                 t::account_id
                     .eq(account_id.to_bytes())
-                    .and(t::block_num.ge(blockrange.start().to_raw_sql()))
-                    .and(t::block_num.le(blockrange.end().to_raw_sql())),
+                    .and(t::block_num.ge(block_range.start().to_raw_sql()))
+                    .and(t::block_num.le(block_range.end().to_raw_sql())),
             )
             .order(t::block_num.asc())
             .limit(i64::try_from(ROW_LIMIT).expect("should fit within i64"))
@@ -261,7 +261,7 @@ pub(crate) fn select_account_vault_assets(
         (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
     } else {
         (
-            blockrange.end().clone(),
+            block_range.end().clone(),
             raw.into_iter().map(AccountVaultValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };
@@ -295,15 +295,15 @@ pub(crate) fn select_account_vault_assets(
 pub fn select_accounts_by_block_range(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
-    blockrange: RangeInclusive<BlockNumber>,
+    block_range: RangeInclusive<BlockNumber>,
 ) -> Result<Vec<AccountSummary>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
     let desired_account_ids = serialize_vec(account_ids);
     let raw: Vec<AccountSummaryRaw> =
         SelectDsl::select(schema::accounts::table, AccountSummaryRaw::as_select())
-            .filter(schema::accounts::block_num.gt(blockrange.start().to_raw_sql()))
-            .filter(schema::accounts::block_num.le(blockrange.end().to_raw_sql()))
+            .filter(schema::accounts::block_num.gt(block_range.start().to_raw_sql()))
+            .filter(schema::accounts::block_num.le(block_range.end().to_raw_sql()))
             .filter(schema::accounts::account_id.eq_any(desired_account_ids))
             .order(schema::accounts::block_num.asc())
             .load::<AccountSummaryRaw>(conn)?;
@@ -411,7 +411,7 @@ impl StorageMapValue {
 /// ## Parameters
 ///
 /// * `account_id`: Account ID to query
-/// * `blockrange`: Range of block numbers (inclusive)
+/// * `block_range`: Range of block numbers (inclusive)
 ///
 /// ## Response
 ///
@@ -420,7 +420,7 @@ impl StorageMapValue {
 pub(crate) fn select_account_storage_map_values(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-    blockrange: RangeInclusive<BlockNumber>,
+    block_range: RangeInclusive<BlockNumber>,
 ) -> Result<StorageMapValuesPage, DatabaseError> {
     use schema::account_storage_map_values as t;
 
@@ -435,10 +435,10 @@ pub(crate) fn select_account_storage_map_values(
         return Err(DatabaseError::AccountNotPublic(account_id));
     }
 
-    if blockrange.is_empty() {
+    if block_range.is_empty() {
         return Err(DatabaseError::InvalidBlockRange {
-            from: blockrange.start().clone(),
-            to: blockrange.end().clone(),
+            from: block_range.start().clone(),
+            to: block_range.end().clone(),
         });
     }
 
@@ -447,8 +447,8 @@ pub(crate) fn select_account_storage_map_values(
             .filter(
                 t::account_id
                     .eq(account_id.to_bytes())
-                    .and(t::block_num.ge(blockrange.start().to_raw_sql()))
-                    .and(t::block_num.le(blockrange.end().to_raw_sql())),
+                    .and(t::block_num.ge(block_range.start().to_raw_sql()))
+                    .and(t::block_num.le(block_range.end().to_raw_sql())),
             )
             .order(t::block_num.asc())
             .limit(i64::try_from(ROW_LIMIT).expect("limit fits within i64"))
@@ -472,7 +472,7 @@ pub(crate) fn select_account_storage_map_values(
         (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
     } else {
         (
-            blockrange.end().clone(),
+            block_range.end().clone(),
             raw.into_iter().map(StorageMapValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };

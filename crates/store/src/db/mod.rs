@@ -471,10 +471,10 @@ impl Db {
     pub(crate) async fn select_storage_map_sync_values(
         &self,
         account_id: AccountId,
-        blockrange: RangeInclusive<BlockNumber>,
+        block_range: RangeInclusive<BlockNumber>,
     ) -> Result<StorageMapValuesPage> {
         self.transact("select storage map sync values", move |conn| {
-            models::queries::select_account_storage_map_values(conn, account_id, blockrange)
+            models::queries::select_account_storage_map_values(conn, account_id, block_range)
         })
         .await
     }
@@ -528,10 +528,10 @@ impl Db {
     pub async fn get_account_vault_sync(
         &self,
         account_id: AccountId,
-        blockrange: RangeInclusive<BlockNumber>,
+        block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
         self.transact("account vault sync", move |conn| {
-            queries::select_account_vault_assets(conn, account_id, blockrange)
+            queries::select_account_vault_assets(conn, account_id, block_range)
         })
         .await
     }

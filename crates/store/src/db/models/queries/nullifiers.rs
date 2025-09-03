@@ -33,7 +33,7 @@ use crate::db::{NullifierInfo, schema};
 ///
 /// Range and pagination semantics:
 /// - Both `block_from` and `block_to` are inclusive bounds.
-/// - To keep responses ≤ ~2MB, an internal row limit is enforced. When the limit is hit and the
+/// - To keep responses ≤ ~2.5MB, an internal row limit is enforced. When the limit is hit and the
 ///   result spans multiple blocks, the last block in the page is dropped entirely, and
 ///   `last_block_included` is set to the block number immediately before that dropped block.
 ///   Clients should resume with `block_from = last_block_included + 1`.
@@ -55,9 +55,12 @@ pub(crate) fn select_nullifiers_by_prefix(
     block_from: BlockNumber,
     block_to: BlockNumber,
 ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
-    pub const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
-    pub const NULLIFIER_BYTES: usize = 32; // digest size
-    pub const ROW_OVERHEAD_BYTES: usize = NULLIFIER_BYTES + size_of::<i64>(); // 40 bytes
+    // Size calculation: max 2^16 nullifiers per block × 36 bytes per nullifier = ~2.25MB
+    // We use 2.5MB to provide a safety margin for the unlikely case of hitting the maximum
+    pub const MAX_PAYLOAD_BYTES: usize = 2_500_000; // 2.5 MB - allows for max block size of ~2.25MB
+    pub const NULLIFIER_BYTES: usize = 32; // digest size (nullifier)
+    pub const BLOCK_NUM_BYTES: usize = 4; // 32 bits per block number
+    pub const ROW_OVERHEAD_BYTES: usize = NULLIFIER_BYTES + BLOCK_NUM_BYTES; // 36 bytes
     pub const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
 
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");

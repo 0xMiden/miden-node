@@ -123,28 +123,26 @@ pub mod account_proofs {
 /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckNullifiersByPrefixRequest {
+    /// Block number from which the nullifiers are requested (inclusive).
+    #[prost(fixed32, tag = "1")]
+    pub block_from: u32,
+    /// Block number up to which to check. If not specified, checks up to the latest block.
+    #[prost(fixed32, optional, tag = "2")]
+    pub block_to: ::core::option::Option<u32>,
     /// Number of bits used for nullifier prefix. Currently the only supported value is 16.
-    #[prost(uint32, tag = "1")]
+    #[prost(uint32, tag = "3")]
     pub prefix_len: u32,
     /// List of nullifiers to check. Each nullifier is specified by its prefix with length equal
     /// to `prefix_len`.
-    #[prost(uint32, repeated, tag = "2")]
+    #[prost(uint32, repeated, tag = "4")]
     pub nullifiers: ::prost::alloc::vec::Vec<u32>,
-    /// Block number from which the nullifiers are requested (inclusive).
-    #[prost(fixed32, tag = "3")]
-    pub block_from: u32,
-    /// Block number up to which to check. If not specified, checks up to the latest block.
-    #[prost(fixed32, optional, tag = "4")]
-    pub block_to: ::core::option::Option<u32>,
 }
 /// Represents the result of checking nullifiers by prefix.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckNullifiersByPrefixResponse {
-    /// List of nullifiers matching the prefixes specified in the request.
-    #[prost(message, repeated, tag = "1")]
-    pub nullifiers: ::prost::alloc::vec::Vec<
-        check_nullifiers_by_prefix_response::NullifierUpdate,
-    >,
+    /// Current chain tip
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
     /// The block number of the last check included in this response.
     ///
     /// For chunked responses, this may be less than request.block_to.
@@ -152,9 +150,11 @@ pub struct CheckNullifiersByPrefixResponse {
     /// starting from the next block to this one (ie, request.block_from = block_num + 1).
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
-    /// Current chain tip
-    #[prost(fixed32, tag = "3")]
-    pub chain_tip: u32,
+    /// List of nullifiers matching the prefixes specified in the request.
+    #[prost(message, repeated, tag = "3")]
+    pub nullifiers: ::prost::alloc::vec::Vec<
+        check_nullifiers_by_prefix_response::NullifierUpdate,
+    >,
 }
 /// Nested message and enum types in `CheckNullifiersByPrefixResponse`.
 pub mod check_nullifiers_by_prefix_response {
@@ -249,16 +249,16 @@ pub struct SyncAccountVaultRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncAccountVaultResponse {
+    /// Chain tip at the moment of the request.
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
     /// The block number of the last update included in this response.
     ///
     /// For chunked responses, this may be less than request.block_to.
     /// If it is less than request.block_to, the user is expected to make a subsequent request
     /// starting from the next block to this one (ie, request.block_from = block_num + 1).
-    #[prost(fixed32, tag = "1")]
-    pub block_num: u32,
-    /// Chain tip at the moment of the request.
     #[prost(fixed32, tag = "2")]
-    pub chain_tip: u32,
+    pub block_num: u32,
     /// List of asset updates for the account.
     ///
     /// Multiple updates can be returned for a single asset, and the one with a higher `block_num`
@@ -333,16 +333,16 @@ pub struct SyncStorageMapsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncStorageMapsResponse {
+    /// Current chain tip
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
     /// The block number of the last update included in this response.
     ///
     /// For chunked responses, this may be less than request.block_to.
     /// If it is less than request.block_to, the user is expected to make a subsequent request
     /// starting from the next block to this one (ie, request.block_from = block_num + 1).
-    #[prost(fixed32, tag = "1")]
-    pub block_num: u32,
-    /// Current chain tip
     #[prost(fixed32, tag = "2")]
-    pub chain_tip: u32,
+    pub block_num: u32,
     /// The list of storage map updates.
     ///
     /// Multiple updates can be returned for a single slot index and key combination, and the one

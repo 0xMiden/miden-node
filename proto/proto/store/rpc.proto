@@ -180,15 +180,18 @@ message AccountProofs {
 
 // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
 message CheckNullifiersByPrefixRequest {
+    // Block number from which the nullifiers are requested (inclusive).
+    fixed32 block_from = 1;
+
+    // Block number up to which to check. If not specified, checks up to the latest block.
+    optional fixed32 block_to = 2;
+
     // Number of bits used for nullifier prefix. Currently the only supported value is 16.
-    uint32 prefix_len = 1;
+    uint32 prefix_len = 3;
+
     // List of nullifiers to check. Each nullifier is specified by its prefix with length equal
     // to `prefix_len`.
-    repeated uint32 nullifiers = 2;
-    // Block number from which the nullifiers are requested (inclusive).
-    fixed32 block_from = 3;
-    // Block number up to which to check. If not specified, checks up to the latest block.
-    optional fixed32 block_to = 4;
+    repeated uint32 nullifiers = 4;
 }
 
 // Represents the result of checking nullifiers by prefix.
@@ -201,16 +204,19 @@ message CheckNullifiersByPrefixResponse {
         // Block number.
         fixed32 block_num = 2;
     }
-    // List of nullifiers matching the prefixes specified in the request.
-    repeated NullifierUpdate nullifiers = 1;
+
+    // Current chain tip
+    fixed32 chain_tip = 1;
+
     // The block number of the last check included in this response.
     //
     // For chunked responses, this may be less than request.block_to.
     // If it is less than request.block_to, the user is expected to make a subsequent request
     // starting from the next block to this one (ie, request.block_from = block_num + 1).
     fixed32 block_num = 2;
-    // Current chain tip
-    fixed32 chain_tip = 3;
+
+    // List of nullifiers matching the prefixes specified in the request.
+    repeated NullifierUpdate nullifiers = 3;
 }
 
 // CHECK NULLIFIERS
@@ -296,16 +302,16 @@ message SyncAccountVaultRequest {
 }
 
 message SyncAccountVaultResponse {
+    // Chain tip at the moment of the request.
+    fixed32 chain_tip = 1;
+
     // The block number of the last update included in this response.
     //
     // For chunked responses, this may be less than request.block_to.
     // If it is less than request.block_to, the user is expected to make a subsequent request 
     // starting from the next block to this one (ie, request.block_from = block_num + 1).
-    fixed32 block_num = 1;
+    fixed32 block_num = 2;
 
-    // Chain tip at the moment of the request.
-    fixed32 chain_tip = 2;
-    
     // List of asset updates for the account.
     // 
     // Multiple updates can be returned for a single asset, and the one with a higher `block_num`
@@ -381,15 +387,15 @@ message SyncStorageMapsRequest {
 }
 
 message SyncStorageMapsResponse {
+    // Current chain tip
+    fixed32 chain_tip = 1;
+
     // The block number of the last update included in this response.
     //
     // For chunked responses, this may be less than request.block_to.
     // If it is less than request.block_to, the user is expected to make a subsequent request 
     // starting from the next block to this one (ie, request.block_from = block_num + 1).
-    fixed32 block_num = 1;
-
-    // Current chain tip
-    fixed32 chain_tip = 2;
+    fixed32 block_num = 2;
 
     // The list of storage map updates.
     // 

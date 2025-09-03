@@ -45,8 +45,7 @@ Returns a nullifier proof for each of the requested nullifiers.
 
 ### CheckNullifiersByPrefix
 
-Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows
-clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
+Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows clients to efficiently track nullifier creation by retrieving only the nullifiers produced within a specific range of blocks.
 
 Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block
 range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that

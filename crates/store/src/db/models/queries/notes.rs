@@ -82,6 +82,39 @@ use crate::errors::NoteSyncError;
 ///
 /// This method returns notes from a single block. To fetch all notes up to the chain tip,
 /// multiple requests are necessary.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     block_num,
+///     batch_index,
+///     note_index,
+///     note_id,
+///     note_type,
+///     sender,
+///     tag,
+///     aux,
+///     execution_hint,
+///     inclusion_path
+/// FROM
+///     notes
+/// WHERE
+///     -- find the next block which contains at least one note with a matching tag or sender
+///     block_num = (
+///         SELECT
+///             block_num
+///         FROM
+///             notes
+///         WHERE
+///             (tag IN (?1) OR sender IN (?2)) AND
+///             block_num > ?3
+///         ORDER BY
+///             block_num ASC
+///     LIMIT 1) AND
+///     -- filter the block's notes and return only the ones matching the requested tags or
+/// senders     (tag IN (?1) OR sender IN (?2))
+/// ```
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
     start_block_number: BlockNumber,
@@ -90,35 +123,6 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 ) -> Result<Vec<NoteSyncRecord>, DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
     QueryParamNoteTagLimit::check(note_tags.len())?;
-    // SELECT
-    //     block_num,
-    //     batch_index,
-    //     note_index,
-    //     note_id,
-    //     note_type,
-    //     sender,
-    //     tag,
-    //     aux,
-    //     execution_hint,
-    //     inclusion_path
-    // FROM
-    //     notes
-    // WHERE
-    //     -- find the next block which contains at least one note with a matching tag or sender
-    //     block_num = (
-    //         SELECT
-    //             block_num
-    //         FROM
-    //             notes
-    //         WHERE
-    //             (tag IN rarray(?1) OR sender IN rarray(?2)) AND
-    //             block_num > ?3
-    //         ORDER BY
-    //             block_num ASC
-    //     LIMIT 1) AND
-    //     -- filter the block's notes and return only the ones matching the requested tags or
-    // senders     (tag IN rarray(?1) OR sender IN rarray(?2))
-
     let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| *tag as i32));
     let desired_senders = serialize_vec(account_ids.iter());
 
@@ -161,16 +165,21 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
     vec_raw_try_into(notes)
 }
 
+/// Select all notes matching the given set of identifiers
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT {}
+/// FROM notes
+/// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+/// WHERE note_id IN rarray(?1),
+/// ```
 pub(crate) fn select_notes_by_id(
     conn: &mut SqliteConnection,
     note_ids: &[NoteId],
 ) -> Result<Vec<NoteRecord>, DatabaseError> {
     let note_ids = serialize_vec(note_ids);
-    // SELECT {}
-    // FROM notes
-    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-    // WHERE note_id IN rarray(?1),
-
     let q = schema::notes::table
         .left_join(
             schema::note_scripts::table
@@ -194,14 +203,19 @@ pub(crate) fn select_notes_by_id(
 /// # Returns
 ///
 /// A vector with notes, or an error.
+///
+/// # Raw SQL
+///
+/// ```
+/// SELECT {cols}
+/// FROM notes
+/// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+/// ORDER BY block_num ASC
+/// ```
 #[cfg(test)]
 pub(crate) fn select_all_notes(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NoteRecord>, DatabaseError> {
-    // SELECT {cols}
-    // FROM notes
-    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-    // ORDER BY block_num ASC
     let q = schema::notes::table.left_join(
         schema::note_scripts::table
             .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
@@ -228,24 +242,29 @@ pub(crate) fn select_all_notes(
 ///
 /// - Empty map if no matching `note`.
 /// - Otherwise, note inclusion proofs, which `note_id` matches the `NoteId` as bytes.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     block_num,
+///     note_id,
+///     batch_index,
+///     note_index,
+///     inclusion_path
+/// FROM
+///     notes
+/// WHERE
+///     note_id IN (?1)
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
     note_ids: &BTreeSet<NoteId>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
     QueryParamNoteIdLimit::check(note_ids.len())?;
 
-    // SELECT
-    //     block_num,
-    //     note_id,
-    //     batch_index,
-    //     note_index,
-    //     inclusion_path
-    // FROM
-    //     notes
-    // WHERE
-    //     note_id IN rarray(?1)
-    // ORDER BY
-    //     block_num ASC
     let noted_ids_serialized = serialize_vec(note_ids.iter());
 
     let raw_notes = SelectDsl::select(
@@ -283,9 +302,21 @@ pub(crate) fn select_note_inclusion_proofs(
 ///
 /// A set of unconsumed network notes with maximum length of `size` and the page to get
 /// the next set.
-//
-// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
-// statements
+///
+/// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+/// statements
+///
+/// # Raw SQL
+///
+/// ```
+/// SELECT *, rowid
+/// FROM notes
+/// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+/// WHERE
+///     execution_mode = 0 AND consumed_block_num = NULL AND rowid >= ?
+/// ORDER BY rowid
+/// LIMIT ?
+/// ```
 #[allow(
     clippy::cast_sign_loss,
     reason = "We need custom SQL statements which has given types that we need to convert"
@@ -305,17 +336,6 @@ pub(crate) fn unconsumed_network_notes(
         diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
             .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
 
-    // SELECT {}, rowid
-    // FROM notes
-    // LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-    // WHERE
-    //     execution_mode = 0 AND consumed_block_num = NULL AND rowid >= ?
-    // ORDER BY rowid
-    // LIMIT ?
-    #[allow(
-        clippy::items_after_statements,
-        reason = "It's only relevant for a single call function"
-    )]
     type RawLoadedTuple = (
         NoteRecordRawRow,
         Option<Vec<u8>>, // script

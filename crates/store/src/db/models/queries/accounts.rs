@@ -53,21 +53,24 @@ use crate::errors::DatabaseError;
 /// # Returns
 ///
 /// The latest account details, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment,
+///     block_num,
+///     details
+/// FROM
+///     accounts
+/// WHERE
+///     account_id = ?1;
+/// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
 ) -> Result<proto::domain::account::AccountInfo, DatabaseError> {
-    // SELECT
-    //     account_id,
-    //     account_commitment,
-    //     block_num,
-    //     details
-    // FROM
-    //     accounts
-    // WHERE
-    //     account_id = ?1;
-    //
-
     let raw = SelectDsl::select(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
@@ -92,19 +95,24 @@ pub(crate) fn select_account(
 /// # Returns
 ///
 /// The latest account details, `None` if the account was not found, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment,
+///     block_num,
+///     details
+/// FROM
+///     accounts
+/// WHERE
+///     network_account_id_prefix = ?1;
+/// ```
 pub(crate) fn select_account_by_id_prefix(
     conn: &mut SqliteConnection,
     id_prefix: u32,
 ) -> Result<Option<AccountInfo>, DatabaseError> {
-    // SELECT
-    //     account_id,
-    //     account_commitment,
-    //     block_num,
-    //     details
-    // FROM
-    //     accounts
-    // WHERE
-    //     network_account_id_prefix = ?1;
     let maybe_info = SelectDsl::select(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
@@ -182,6 +190,25 @@ pub(crate) fn select_accounts_by_id(
 /// * `block_to`: Ending block number
 /// * Response payload size: 0 <= size <= 2MB
 /// * Vault assets per response: 0 <= count <= (2MB / (2*Word + u32)) + 1
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     block_num,
+///     vault_key,
+///     asset
+/// FROM
+///     account_vault_assets
+/// WHERE
+///     account_id = ?
+///     AND block_num >= ?
+///     AND block_num <= ?
+/// ORDER BY
+///     block_num ASC
+/// LIMIT
+///     ROW_LIMIT;
+/// ```
 pub(crate) fn select_account_vault_assets(
     conn: &mut SqliteConnection,
     account_id: AccountId,
@@ -189,22 +216,6 @@ pub(crate) fn select_account_vault_assets(
     block_to: BlockNumber,
 ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
     use schema::account_vault_assets as t;
-
-    // SELECT
-    //     block_num,
-    //     vault_key,
-    //     asset
-    // FROM
-    //     account_vault_assets
-    // WHERE
-    //     account_id = ?
-    //     AND block_num >= ?
-    //     AND block_num <= ?
-    // ORDER BY
-    //     block_num ASC
-    // LIMIT
-    //     ROW_LIMIT;
-
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
     const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB

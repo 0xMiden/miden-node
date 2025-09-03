@@ -407,17 +407,19 @@ impl StorageMapValue {
 /// ```
 /// Select account storage map values within a block range.
 ///
-/// # Parameters
+/// ## Parameters
+///
 /// * `account_id`: Account ID to query
-/// * `block_from`: Starting block number
-/// * `block_to`: Ending block number
+/// * `blockrange`: Range of block numbers (inclusive)
+///
+/// ## Response
+///
 /// * Response payload size: 0 <= size <= 2MB
 /// * Storage map values per response: 0 <= count <= (2MB / (2*Word + u32 + u8)) + 1
 pub(crate) fn select_account_storage_map_values(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-    block_from: BlockNumber,
-    block_to: BlockNumber,
+    blockrange: RangeInclusive<BlockNumber>,
 ) -> Result<StorageMapValuesPage, DatabaseError> {
     use schema::account_storage_map_values as t;
 
@@ -432,8 +434,11 @@ pub(crate) fn select_account_storage_map_values(
         return Err(DatabaseError::AccountNotPublic(account_id));
     }
 
-    if block_from > block_to {
-        return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
+    if blockrange.is_empty() {
+        return Err(DatabaseError::InvalidBlockRange {
+            from: blockrange.start().clone(),
+            to: blockrange.end().clone(),
+        });
     }
 
     let raw: Vec<(i64, i32, Vec<u8>, Vec<u8>)> =
@@ -441,8 +446,8 @@ pub(crate) fn select_account_storage_map_values(
             .filter(
                 t::account_id
                     .eq(account_id.to_bytes())
-                    .and(t::block_num.ge(block_from.to_raw_sql()))
-                    .and(t::block_num.le(block_to.to_raw_sql())),
+                    .and(t::block_num.ge(blockrange.start().to_raw_sql()))
+                    .and(t::block_num.le(blockrange.end().to_raw_sql())),
             )
             .order(t::block_num.asc())
             .limit(i64::try_from(ROW_LIMIT).expect("limit fits within i64"))
@@ -450,13 +455,13 @@ pub(crate) fn select_account_storage_map_values(
 
     // Discard the last block in the response (assumes more than one block may be present)
 
-    let (last_block_included, values) = if raw.len() >= ROW_LIMIT {
+    let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
+        && raw.len() >= ROW_LIMIT
+    {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
         // least two blocks
 
-        // SAFETY: we checked that the vector is not empty
-        let &(last_block_num, ..) = raw.last().unwrap();
         let values = raw
             .into_iter()
             .take_while(|(bn, ..)| *bn != last_block_num)
@@ -466,7 +471,7 @@ pub(crate) fn select_account_storage_map_values(
         (BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?, values)
     } else {
         (
-            block_to,
+            blockrange.end().clone(),
             raw.into_iter().map(StorageMapValue::from_raw_row).collect::<Result<_, _>>()?,
         )
     };

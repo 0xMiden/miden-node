@@ -1186,7 +1186,7 @@ fn sql_account_storage_map_values_insertion() {
     insert_account_delta(conn, account_id, block1, &delta1);
 
     let storage_map_page =
-        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block1)
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS..=block1)
             .unwrap();
     assert_eq!(storage_map_page.values.len(), 2, "expect 2 initial rows");
 
@@ -1201,7 +1201,7 @@ fn sql_account_storage_map_values_insertion() {
     insert_account_delta(conn, account_id, block2, &delta2);
 
     let storage_map_values =
-        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block2)
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS..=block2)
             .unwrap();
 
     assert_eq!(storage_map_values.values.len(), 3, "three rows (with duplicate key)");
@@ -1259,8 +1259,7 @@ fn select_storage_map_sync_values() {
     let page = queries::select_account_storage_map_values(
         &mut conn,
         account_id,
-        BlockNumber::from(2),
-        BlockNumber::from(3),
+        BlockNumber::from(2)..=BlockNumber::from(3),
     )
     .unwrap();
 

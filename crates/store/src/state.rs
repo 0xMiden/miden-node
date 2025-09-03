@@ -987,7 +987,7 @@ impl State {
         block_from: BlockNumber,
         block_to: BlockNumber,
     ) -> Result<StorageMapValuesPage, DatabaseError> {
-        self.db.select_storage_map_sync_values(account_id, block_from, block_to).await
+        self.db.select_storage_map_sync_values(account_id, block_from..=block_to).await
     }
 
     /// Loads a block from the block store. Return `Ok(None)` if the block is not found.

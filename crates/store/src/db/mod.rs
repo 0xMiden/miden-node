@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
 use anyhow::Context;
@@ -470,13 +471,10 @@ impl Db {
     pub(crate) async fn select_storage_map_sync_values(
         &self,
         account_id: AccountId,
-        block_from: BlockNumber,
-        block_to: BlockNumber,
+        blockrange: RangeInclusive<BlockNumber>,
     ) -> Result<StorageMapValuesPage> {
         self.transact("select storage map sync values", move |conn| {
-            models::queries::select_account_storage_map_values(
-                conn, account_id, block_from, block_to,
-            )
+            models::queries::select_account_storage_map_values(conn, account_id, blockrange)
         })
         .await
     }

@@ -76,18 +76,18 @@ pub(crate) fn apply_block(
 
 /// Loads the state necessary for a state sync
 ///
-/// The state sync covers from `block_start` until the last block that has a note matching the given
+/// The state sync covers from `block_from` until the last block that has a note matching the given
 /// `note_tags`.
 pub(crate) fn get_state_sync(
     conn: &mut SqliteConnection,
-    block_start: BlockNumber,
+    block_from: BlockNumber,
     account_ids: Vec<AccountId>,
     note_tags: Vec<u32>,
 ) -> Result<StateSyncUpdate, StateSyncError> {
     // select notes since block by tag and sender
     let notes = select_notes_since_block_by_tag_and_sender(
         conn,
-        block_start,
+        block_from,
         &account_ids[..],
         &note_tags[..],
     )?;
@@ -100,13 +100,13 @@ pub(crate) fn get_state_sync(
     // select accounts by block range
     let block_end = block_header.block_num();
     let account_updates =
-        select_accounts_by_block_range(conn, &account_ids, block_start..=block_end)?;
+        select_accounts_by_block_range(conn, &account_ids, block_from..=block_end)?;
 
     // select transactions by accounts and block range
     let transactions = select_transactions_by_accounts_and_block_range(
         conn,
         &account_ids,
-        block_start..=block_end,
+        block_from..=block_end,
     )?;
     Ok(StateSyncUpdate {
         notes,

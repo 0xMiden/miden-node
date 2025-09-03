@@ -24,7 +24,7 @@ use crate::db::schema;
 ///
 /// # Returns
 ///
-/// When `block_number` is [None], the latest block header is returned. Otherwise, the block with
+/// When `block_num` is [None], the latest block header is returned. Otherwise, the block with
 /// the given block height is returned.
 ///
 /// ```sql
@@ -35,11 +35,11 @@ use crate::db::schema;
 /// ```
 pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
-    maybe_block_number: Option<BlockNumber>,
+    maybe_block_num: Option<BlockNumber>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
     let sel = SelectDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select());
-    let row = if let Some(block_number) = maybe_block_number {
-        sel.filter(schema::block_headers::block_num.eq(block_number.to_raw_sql()))
+    let row = if let Some(block_num) = maybe_block_num {
+        sel.filter(schema::block_headers::block_num.eq(block_num.to_raw_sql()))
             .get_result::<BlockHeaderRawRow>(conn)
             .optional()?
         // invariant: only one block exists with the given block header, so the length is

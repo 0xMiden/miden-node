@@ -117,7 +117,7 @@ use crate::errors::NoteSyncError;
 /// ```
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
-    start_block_number: BlockNumber,
+    from_start_block: BlockNumber,
     account_ids: &[AccountId],
     note_tags: &[u32],
 ) -> Result<Vec<NoteSyncRecord>, DatabaseError> {
@@ -126,7 +126,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
     let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| *tag as i32));
     let desired_senders = serialize_vec(account_ids.iter());
 
-    let start_block_num = start_block_number.to_raw_sql();
+    let start_block_num = from_start_block.to_raw_sql();
 
     // find block_num: select notes since block by tag and sender
     let Some(desired_block_num): Option<i64> =

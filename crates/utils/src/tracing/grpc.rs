@@ -1,17 +1,6 @@
-/// Creates a [`tracing::Span`] based on RPC service and method name.
-macro_rules! rpc_span {
-    ($service:literal, $method:literal) => {
-        tracing::info_span!(
-            concat!($service, "/", $method),
-            rpc.service = $service,
-            rpc.method = $method
-        )
-    };
-}
-
 /// Represents an Otel compatible, traced Miden component.
 ///
-/// Used to select an appropriate [`tracing::Span`] for the tonic server to use.
+/// Used to select an appropriate service name for the tonic server to use.
 #[derive(Copy, Clone)]
 pub enum TracedComponent {
     Rpc,
@@ -23,10 +12,26 @@ pub enum TracedComponent {
     RemoteProverProxy,
 }
 
+impl TracedComponent {
+    /// Returns the service name for this component.
+    fn service_name(self) -> &'static str {
+        match self {
+            TracedComponent::Rpc => "rpc.rpc",
+            TracedComponent::BlockProducer => "block-producer.rpc",
+            TracedComponent::StoreRpc => "store.rpc.rpc",
+            TracedComponent::StoreBlockProducer => "store.block-producer.rpc",
+            TracedComponent::StoreNtxBuilder => "store.ntx-builder.rpc",
+            TracedComponent::RemoteProver => "remote-prover.rpc",
+            TracedComponent::RemoteProverProxy => "remote-prover-proxy.rpc",
+        }
+    }
+}
+
 /// Returns a [`trace_fn`](tonic::transport::server::Server) implementation for the RPC which
 /// adds open-telemetry information to the span.
 ///
 /// Creates an `info` span following the open-telemetry standard: `{service}.rpc/{method}`.
+/// The span name is dynamically set using the HTTP path via the `otel.name` field.
 /// Additionally also pulls in remote tracing context which allows the server trace to be connected
 /// to the client's origin trace.
 pub fn traced_span_fn<T>(component: TracedComponent) -> fn(&http::Request<T>) -> tracing::Span {
@@ -41,120 +46,59 @@ pub fn traced_span_fn<T>(component: TracedComponent) -> fn(&http::Request<T>) ->
     }
 }
 
-fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let span = match request.uri().path().rsplit('/').next() {
-        Some("CheckNullifiers") => rpc_span!("rpc.rpc", "CheckNullifiers"),
-        Some("SyncNullifiers") => rpc_span!("rpc.rpc", "SyncNullifiers"),
-        Some("GetBlockHeaderByNumber") => rpc_span!("rpc.rpc", "GetBlockHeaderByNumber"),
-        Some("SyncStorageMaps") => rpc_span!("rpc.rpc", "SyncStorageMaps"),
-        Some("SyncAccountVault") => rpc_span!("rpc.rpc", "SyncAccountVault"),
-        Some("SyncState") => rpc_span!("rpc.rpc", "SyncState"),
-        Some("SyncNotes") => rpc_span!("rpc.rpc", "SyncNotes"),
-        Some("GetNotesById") => rpc_span!("rpc.rpc", "GetNotesById"),
-        Some("SubmitProvenTransaction") => rpc_span!("rpc.rpc", "SubmitProvenTransaction"),
-        Some("GetAccountDetails") => rpc_span!("rpc.rpc", "GetAccountDetails"),
-        Some("GetBlockByNumber") => rpc_span!("rpc.rpc", "GetBlockByNumber"),
-        Some("GetAccountProofs") => rpc_span!("rpc.rpc", "GetAccountProofs"),
-        Some("GetNoteScriptByRoot") => rpc_span!("rpc.rpc", "GetNoteScriptByRoot"),
-        Some("Status") => rpc_span!("rpc.rpc", "Status"),
-        _ => rpc_span!("rpc.rpc", "Unknown"),
-    };
+/// Creates a dynamic tracing span based on the HTTP path of the gRPC request.
+///
+/// This function extracts the method name from the HTTP path and creates a span with
+/// the service name from the component. The actual span name used by OpenTelemetry
+/// is set dynamically via the `otel.name` field, allowing us to avoid hardcoded
+/// method name matches.
+fn dynamic_trace_fn<T>(request: &http::Request<T>, component: TracedComponent) -> tracing::Span {
+    let service_name = component.service_name();
+
+    // Extract the method name from the HTTP path (e.g., "/rpc.rpc/CheckNullifiers" ->
+    // "CheckNullifiers")
+    let method_name = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
+
+    // Create a span with a generic name - the actual span name will be set via otel.name
+    let span =
+        tracing::info_span!("grpc_request", rpc.service = service_name, rpc.method = method_name);
+
+    // Set the dynamic span name that OpenTelemetry will use
+    // This allows us to have the proper <service>/<method> format without hardcoding
+    span.record("otel.name", format!("{service_name}/{method_name}"));
+
+    // Add OpenTelemetry context and network attributes
+    let span = add_otel_span_attributes(span, request);
     add_network_attributes(span, request)
+}
+
+// Individual trace functions that delegate to the dynamic implementation
+fn rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
+    dynamic_trace_fn(request, TracedComponent::Rpc)
 }
 
 fn block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let span = match request.uri().path().rsplit('/').next() {
-        Some("SubmitProvenTransaction") => {
-            rpc_span!("block-producer.rpc", "SubmitProvenTransaction")
-        },
-        Some("Status") => rpc_span!("block-producer.rpc", "Status"),
-        _ => {
-            rpc_span!("block-producer.rpc", "Unknown")
-        },
-    };
-
-    let span = add_otel_span_attributes(span, request);
-    add_network_attributes(span, request)
+    dynamic_trace_fn(request, TracedComponent::BlockProducer)
 }
 
 fn store_rpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
-    let span = match method {
-        "CheckNullifiers" => rpc_span!("store.rpc.rpc", "CheckNullifiers"),
-        "SyncNullifiers" => rpc_span!("store.rpc.rpc", "SyncNullifiers"),
-        "GetAccountDetails" => rpc_span!("store.rpc.rpc", "GetAccountDetails"),
-        "GetAccountProofs" => rpc_span!("store.rpc.rpc", "GetAccountProofs"),
-        "GetBlockByNumber" => rpc_span!("store.rpc.rpc", "GetBlockByNumber"),
-        "GetBlockHeaderByNumber" => rpc_span!("store.rpc.rpc", "GetBlockHeaderByNumber"),
-        "GetNotesById" => rpc_span!("store.rpc.rpc", "GetNotesById"),
-        "SyncNotes" => rpc_span!("store.rpc.rpc", "SyncNotes"),
-        "SyncState" => rpc_span!("store.rpc.rpc", "SyncState"),
-        "GetNoteScriptByRoot" => rpc_span!("store.rpc.rpc", "GetNoteScriptByRoot"),
-        "Status" => rpc_span!("store.rpc.rpc", "Status"),
-        _ => rpc_span!("store.rpc.rpc", "Unknown"),
-    };
-
-    let span = add_otel_span_attributes(span, request);
-    add_network_attributes(span, request)
+    dynamic_trace_fn(request, TracedComponent::StoreRpc)
 }
 
 fn store_block_producer_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
-    let span = match method {
-        "ApplyBlock" => rpc_span!("store.block-producer.rpc", "ApplyBlock"),
-        "GetBlockHeaderByNumber" => rpc_span!("store.block-producer.rpc", "GetBlockHeaderByNumber"),
-        "GetBlockInputs" => rpc_span!("store.block-producer.rpc", "GetBlockInputs"),
-        "GetBatchInputs" => rpc_span!("store.block-producer.rpc", "GetBatchInputs"),
-        "GetTransactionInputs" => rpc_span!("store.block-producer.rpc", "GetTransactionInputs"),
-        _ => rpc_span!("store.block-producer.rpc", "Unknown"),
-    };
-
-    let span = add_otel_span_attributes(span, request);
-    add_network_attributes(span, request)
+    dynamic_trace_fn(request, TracedComponent::StoreBlockProducer)
 }
 
 fn store_ntx_builder_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
-    let span = match method {
-        "GetBlockHeaderByNumber" => rpc_span!("store.ntx-builder.rpc", "GetBlockHeaderByNumber"),
-        "GetUnconsumedNetworkNotes" => {
-            rpc_span!("store.ntx-builder.rpc", "GetUnconsumedNetworkNotes")
-        },
-        "GetCurrentBlockchainData" => {
-            rpc_span!("store.ntx-builder.rpc", "GetCurrentBlockchainData")
-        },
-        "GetNetworkAccountDetailsByPrefix" => {
-            rpc_span!("store.ntx-builder.rpc", "GetNetworkAccountDetailsByPrefix")
-        },
-        _ => rpc_span!("store.ntx-builder.rpc", "Unknown"),
-    };
-
-    let span = add_otel_span_attributes(span, request);
-    add_network_attributes(span, request)
+    dynamic_trace_fn(request, TracedComponent::StoreNtxBuilder)
 }
 
 fn remote_prover_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
-    let span = match method {
-        "Prove" => rpc_span!("remote-prover.rpc", "Prove"),
-        "Status" => rpc_span!("remote-prover.rpc", "Status"),
-        _ => rpc_span!("remote-prover.rpc", "Unknown"),
-    };
-
-    let span = add_otel_span_attributes(span, request);
-    add_network_attributes(span, request)
+    dynamic_trace_fn(request, TracedComponent::RemoteProver)
 }
 
 fn remote_prover_proxy_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
-    let method = request.uri().path().rsplit('/').next().unwrap_or("Unknown");
-    let span = if method == "Status" {
-        rpc_span!("remote-prover-proxy.rpc", "Status")
-    } else {
-        rpc_span!("remote-prover-proxy.rpc", "Unknown")
-    };
-
-    let span = add_otel_span_attributes(span, request);
-    add_network_attributes(span, request)
+    dynamic_trace_fn(request, TracedComponent::RemoteProverProxy)
 }
 
 /// Adds remote tracing context to the span.

@@ -232,7 +232,7 @@ pub(crate) fn select_all_notes(
     Ok(records)
 }
 
-/// Select note inclusion proofs matching the NoteIds.
+/// Select note inclusion proofs matching the `NoteId`s.
 ///
 /// # Parameters
 /// * `note_ids`: Set of note IDs to query
@@ -336,6 +336,10 @@ pub(crate) fn unconsumed_network_notes(
         diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
             .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
 
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
     type RawLoadedTuple = (
         NoteRecordRawRow,
         Option<Vec<u8>>, // script

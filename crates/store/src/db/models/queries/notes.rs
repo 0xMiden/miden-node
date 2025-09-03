@@ -251,18 +251,20 @@ pub(crate) fn select_note_inclusion_proofs(
 }
 
 /// Returns the script for a note by its root.
+///
+/// ```sql
+/// SELECT
+///     root,
+///     script
+/// FROM
+///     note_scripts
+/// WHERE
+///     root = ?1;
+/// ```
 pub(crate) fn select_note_script_by_root(
     conn: &mut SqliteConnection,
     root: Word,
 ) -> Result<Option<NoteScript>, DatabaseError> {
-    // SELECT
-    //     root,
-    //     script
-    // FROM
-    //     note_scripts
-    // WHERE
-    //     root = ?1;
-
     let raw = SelectDsl::select(schema::note_scripts::table, schema::note_scripts::script)
         .filter(schema::note_scripts::script_root.eq(root.to_bytes()))
         .get_result::<Vec<u8>>(conn)

@@ -182,7 +182,7 @@ pub(crate) fn select_accounts_by_id(
     Ok(account_infos)
 }
 
-/// Select account vault assets within a block range.
+/// Select account vault assets within a block range (inclusive).
 ///
 /// # Parameters
 /// * `account_id`: Account ID to query
@@ -406,7 +406,7 @@ impl StorageMapValue {
 /// LIMIT
 ///     :row_limit;
 /// ```
-/// Select account storage map values within a block range.
+/// Select account storage map values within a block range (inclusive).
 ///
 /// ## Parameters
 ///

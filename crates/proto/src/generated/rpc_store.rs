@@ -351,7 +351,13 @@ pub struct BlockRange {
     #[prost(fixed32, optional, tag = "2")]
     pub block_to: ::core::option::Option<u32>,
 }
-/// Represents pagination information.
+/// Represents pagination information for chunked responses.
+///
+/// Pagination is done using block numbers as the axis, allowing clients to request
+/// data in chunks by specifying block ranges and continuing from where the previous
+/// response left off.
+/// To request the next chunk, the client should use the `block_num` from the previous response
+/// as the `block_from` for the next request.
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct PaginationInfo {
     /// Current chain tip
@@ -359,7 +365,7 @@ pub struct PaginationInfo {
     pub chain_tip: u32,
     /// The block number of the last check included in this response.
     ///
-    /// For chunked responses, this may be less than request.block_range.block_to.
+    /// For chunked responses, this may be less than `request.block_range.block_to`.
     /// If it is less than request.block_range.block_to, the user is expected to make a subsequent request
     /// starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
     #[prost(fixed32, tag = "2")]

@@ -23,11 +23,6 @@ service Rpc {
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(NullifierList) returns (CheckNullifiersResponse) {}
 
-    // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-    //
-    // Note that only 16-bit prefixes are supported at this time.
-    rpc CheckNullifiersByPrefix(CheckNullifiersByPrefixRequest) returns (CheckNullifiersByPrefixResponse) {}
-
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
@@ -43,6 +38,14 @@ service Rpc {
 
     // Returns a list of committed notes matching the provided note IDs.
     rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
+
+    // Returns the script for a note by its root.
+    rpc GetNoteScriptByRoot(note.NoteRoot) returns (MaybeNoteScript) {}
+
+    // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+    //
+    // Note that only 16-bit prefixes are supported at this time.
+    rpc SyncNullifiers(SyncNullifiersRequest) returns (SyncNullifiersResponse) {}
 
     // Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
     //
@@ -175,34 +178,6 @@ message AccountProofs {
     repeated AccountProof account_proofs = 2;
 }
 
-// CHECK NULLIFIERS BY PREFIX
-// ================================================================================================
-
-// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-message CheckNullifiersByPrefixRequest {
-    // Number of bits used for nullifier prefix. Currently the only supported value is 16.
-    uint32 prefix_len = 1;
-    // List of nullifiers to check. Each nullifier is specified by its prefix with length equal
-    // to `prefix_len`.
-    repeated uint32 nullifiers = 2;
-    // Block number from which the nullifiers are requested (inclusive).
-    fixed32 block_num = 3;
-}
-
-// Represents the result of checking nullifiers by prefix.
-message CheckNullifiersByPrefixResponse {
-    // Represents a single nullifier update.
-    message NullifierUpdate {
-        // Nullifier ID.
-        primitives.Digest nullifier = 1;
-
-        // Block number.
-        fixed32 block_num = 2;
-    }
-    // List of nullifiers matching the prefixes specified in the request.
-    repeated NullifierUpdate nullifiers = 1;
-}
-
 // CHECK NULLIFIERS
 // ================================================================================================
 
@@ -216,6 +191,50 @@ message NullifierList {
 message CheckNullifiersResponse {
     // Each requested nullifier has its corresponding nullifier proof at the same position.
     repeated primitives.SmtOpening proofs = 1;
+}
+
+// SYNC NULLIFIERS
+// ================================================================================================
+
+// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+message SyncNullifiersRequest {
+    // Block number from which the nullifiers are requested (inclusive).
+    fixed32 block_from = 1;
+
+    // Block number up to which to check. If not specified, checks up to the latest block.
+    optional fixed32 block_to = 2;
+
+    // Number of bits used for nullifier prefix. Currently the only supported value is 16.
+    uint32 prefix_len = 3;
+
+    // List of nullifiers to check. Each nullifier is specified by its prefix with length equal
+    // to `prefix_len`.
+    repeated uint32 nullifiers = 4;
+}
+
+// Represents the result of syncing nullifiers.
+message SyncNullifiersResponse {
+    // Represents a single nullifier update.
+    message NullifierUpdate {
+        // Nullifier ID.
+        primitives.Digest nullifier = 1;
+
+        // Block number.
+        fixed32 block_num = 2;
+    }
+
+    // Current chain tip
+    fixed32 chain_tip = 1;
+
+    // The block number of the last check included in this response.
+    //
+    // For chunked responses, this may be less than request.block_to.
+    // If it is less than request.block_to, the user is expected to make a subsequent request
+    // starting from the next block to this one (ie, request.block_from = block_num + 1).
+    fixed32 block_num = 2;
+
+    // List of nullifiers matching the prefixes specified in the request.
+    repeated NullifierUpdate nullifiers = 3;
 }
 
 // SYNC STATE
@@ -286,16 +305,16 @@ message SyncAccountVaultRequest {
 }
 
 message SyncAccountVaultResponse {
+    // Chain tip at the moment of the request.
+    fixed32 chain_tip = 1;
+
     // The block number of the last update included in this response.
     //
     // For chunked responses, this may be less than request.block_to.
     // If it is less than request.block_to, the user is expected to make a subsequent request 
     // starting from the next block to this one (ie, request.block_from = block_num + 1).
-    fixed32 block_num = 1;
+    fixed32 block_num = 2;
 
-    // Chain tip at the moment of the request.
-    fixed32 chain_tip = 2;
-    
     // List of asset updates for the account.
     // 
     // Multiple updates can be returned for a single asset, and the one with a higher `block_num`
@@ -371,15 +390,15 @@ message SyncStorageMapsRequest {
 }
 
 message SyncStorageMapsResponse {
+    // Current chain tip
+    fixed32 chain_tip = 1;
+
     // The block number of the last update included in this response.
     //
     // For chunked responses, this may be less than request.block_to.
     // If it is less than request.block_to, the user is expected to make a subsequent request 
     // starting from the next block to this one (ie, request.block_from = block_num + 1).
-    fixed32 block_num = 1;
-
-    // Current chain tip
-    fixed32 chain_tip = 2;
+    fixed32 block_num = 2;
 
     // The list of storage map updates.
     // 
@@ -401,4 +420,13 @@ message StorageMapUpdate {
         
     // The storage map value.
     primitives.Digest value = 4;
+}
+
+// GET NOTE SCRIPT BY ROOT
+// ================================================================================================
+
+// Represents a note script or nothing.
+message MaybeNoteScript {
+    // The script for a note by its root.
+    optional note.NoteScript script = 1;
 }

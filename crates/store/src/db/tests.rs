@@ -361,6 +361,44 @@ fn sql_select_notes_different_execution_hints() {
     );
 }
 
+#[test]
+#[miden_node_test_macro::enable_logging]
+fn sql_select_note_script_by_root() {
+    let mut conn = create_db();
+    let conn = &mut conn;
+    let block_num = BlockNumber::from(1);
+    create_block(conn, block_num);
+
+    let account_id = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
+
+    queries::upsert_accounts(conn, &[mock_block_account_update(account_id, 0)], block_num).unwrap();
+
+    let new_note = create_note(account_id);
+
+    // test multiple entries
+    let mut state = vec![];
+    let note = NoteRecord {
+        block_num,
+        note_index: BlockNoteIndex::new(0, 0.try_into().unwrap()).unwrap(),
+        note_id: num_to_word(0),
+        metadata: *new_note.metadata(),
+        details: Some(NoteDetails::from(&new_note)),
+        inclusion_path: SparseMerklePath::default(),
+    };
+    state.push(note.clone());
+
+    let res = queries::insert_scripts(conn, [&note]);
+    assert_eq!(res.unwrap(), 1, "One element must have been inserted");
+
+    // test querying the script by the root
+    let note_script = queries::select_note_script_by_root(conn, new_note.script().root()).unwrap();
+    assert_eq!(note_script, Some(new_note.script().clone()));
+
+    // test querying the script by the root that is not in the database
+    let note_script = queries::select_note_script_by_root(conn, [0_u16; 4].into()).unwrap();
+    assert_eq!(note_script, None);
+}
+
 // Generates an account, inserts into the database, and creates a note for it.
 fn make_account_and_note(
     conn: &mut SqliteConnection,
@@ -747,9 +785,12 @@ fn select_nullifiers_by_prefix_works() {
     let mut conn = create_db();
     let conn = &mut conn; // test empty table
     let block_number0 = 0.into();
-    let nullifiers =
-        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0).unwrap();
+    let block_number10 = 10.into();
+    let (nullifiers, block_number_reached) =
+        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0, block_number10)
+            .unwrap();
     assert!(nullifiers.is_empty());
+    assert_eq!(block_number_reached, block_number10);
 
     // test single item
     let nullifier1 = num_to_nullifier(1 << 48);
@@ -758,11 +799,12 @@ fn select_nullifiers_by_prefix_works() {
 
     queries::insert_nullifiers_for_block(conn, &[nullifier1], block_number1).unwrap();
 
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, block_number_reached) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -772,6 +814,8 @@ fn select_nullifiers_by_prefix_works() {
             block_num: block_number1
         }]
     );
+    // Block number reached should be the last block number (the block number of the last nullifier)
+    assert_eq!(block_number_reached, block_number10);
 
     // test two elements
     let nullifier2 = num_to_nullifier(2 << 48);
@@ -784,11 +828,12 @@ fn select_nullifiers_by_prefix_works() {
     assert_eq!(nullifiers, vec![(nullifier1, block_number1), (nullifier2, block_number2)]);
 
     // only the nullifiers matching the prefix are included
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -798,11 +843,12 @@ fn select_nullifiers_by_prefix_works() {
             block_num: block_number1
         }]
     );
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier2)],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -814,7 +860,7 @@ fn select_nullifiers_by_prefix_works() {
     );
 
     // All matching nullifiers are included
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[
@@ -822,6 +868,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -839,18 +886,19 @@ fn select_nullifiers_by_prefix_works() {
     );
 
     // If a non-matching prefix is provided, no nullifiers are returned
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
         block_number0,
+        block_number10,
     )
     .unwrap();
     assert!(nullifiers.is_empty());
 
     // If a block number is provided, only matching nullifiers created at or after that block are
     // returned
-    let nullifiers = queries::select_nullifiers_by_prefix(
+    let (nullifiers, _) = queries::select_nullifiers_by_prefix(
         conn,
         PREFIX_LEN,
         &[
@@ -858,6 +906,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier2),
         ],
         block_number2,
+        block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -867,6 +916,40 @@ fn select_nullifiers_by_prefix_works() {
             block_num: block_number2
         }]
     );
+
+    // Nullifiers are not returned if the block number is after the last nullifier
+    let nullifier3 = num_to_nullifier(3 << 48);
+    let block_number3 = 3.into();
+    create_block(conn, block_number3);
+
+    queries::insert_nullifiers_for_block(conn, &[nullifier3], block_number3).unwrap();
+
+    let (nullifiers, block_number_reached) = queries::select_nullifiers_by_prefix(
+        conn,
+        PREFIX_LEN,
+        &[
+            utils::get_nullifier_prefix(&nullifier1),
+            utils::get_nullifier_prefix(&nullifier2),
+            utils::get_nullifier_prefix(&nullifier3),
+        ],
+        block_number0,
+        block_number2,
+    )
+    .unwrap();
+    assert_eq!(
+        nullifiers,
+        vec![
+            NullifierInfo {
+                nullifier: nullifier1,
+                block_num: block_number1
+            },
+            NullifierInfo {
+                nullifier: nullifier2,
+                block_num: block_number2
+            }
+        ]
+    );
+    assert_eq!(block_number_reached, block_number2);
 }
 
 #[test]

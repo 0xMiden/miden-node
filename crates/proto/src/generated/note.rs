@@ -114,3 +114,20 @@ pub struct NoteSyncRecord {
     #[prost(message, optional, tag = "4")]
     pub inclusion_path: ::core::option::Option<super::primitives::SparseMerklePath>,
 }
+/// Represents a note root.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct NoteRoot {
+    /// The root of the note.
+    #[prost(message, optional, tag = "1")]
+    pub root: ::core::option::Option<super::primitives::Digest>,
+}
+/// Represents a note script.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NoteScript {
+    /// Entrypoint of the script.
+    #[prost(uint32, tag = "1")]
+    pub entrypoint: u32,
+    /// Mast of the script.
+    #[prost(bytes = "vec", tag = "2")]
+    pub mast: ::prost::alloc::vec::Vec<u8>,
+}

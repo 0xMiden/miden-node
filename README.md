@@ -2,7 +2,7 @@
 
 [![LICENSE](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/0xMiden/miden-node/blob/main/LICENSE)
 [![test](https://github.com/0xMiden/miden-node/actions/workflows/test.yml/badge.svg)](https://github.com/0xMiden/miden-node/actions/workflows/test.yml)
-[![RUST_VERSION](https://img.shields.io/badge/rustc-1.88+-lightgray.svg)](https://www.rust-lang.org/tools/install)
+[![RUST_VERSION](https://img.shields.io/badge/rustc-1.89+-lightgray.svg)](https://www.rust-lang.org/tools/install)
 [![crates.io](https://img.shields.io/crates/v/miden-node)](https://crates.io/crates/miden-node)
 
 Welcome to the Miden node implementation :) This software is used to operate a Miden ZK-rollup network by

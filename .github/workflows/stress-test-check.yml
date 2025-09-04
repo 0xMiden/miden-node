@@ -39,5 +39,5 @@ jobs:
         run: miden-node-stress-test benchmark-store --data-directory stress-test-store --iterations 10 --concurrency 1 sync-state
       - name: Run sync notes benchmark
         run: miden-node-stress-test benchmark-store --data-directory stress-test-store --iterations 10 --concurrency 1 sync-notes
-      - name: Run check nullifiers by prefix benchmark
-        run: miden-node-stress-test benchmark-store --data-directory stress-test-store --iterations 10 --concurrency 1 check-nullifiers-by-prefix --prefixes 10
+      - name: Run sync nullifiers benchmark
+        run: miden-node-stress-test benchmark-store --data-directory stress-test-store --iterations 10 --concurrency 1 sync-nullifiers --prefixes 10

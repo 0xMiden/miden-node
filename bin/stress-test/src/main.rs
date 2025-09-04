@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use miden_node_utils::logging::OpenTelemetry;
 use seeding::seed_store;
-use store::{bench_check_nullifiers_by_prefix, bench_sync_notes, bench_sync_state, load_state};
+use store::{bench_sync_notes, bench_sync_nullifiers, bench_sync_state, load_state};
 
 mod seeding;
 mod store;
@@ -58,7 +58,7 @@ pub enum Command {
 
 #[derive(Subcommand, Clone, Copy)]
 pub enum Endpoint {
-    CheckNullifiersByPrefix {
+    SyncNullifiers {
         /// Number of prefixes to send in each request.
         #[arg(short, long, value_name = "PREFIXES", default_value = "10")]
         prefixes: usize,
@@ -89,9 +89,8 @@ async fn main() {
             iterations,
             concurrency,
         } => match endpoint {
-            Endpoint::CheckNullifiersByPrefix { prefixes } => {
-                bench_check_nullifiers_by_prefix(data_directory, iterations, concurrency, prefixes)
-                    .await;
+            Endpoint::SyncNullifiers { prefixes } => {
+                bench_sync_nullifiers(data_directory, iterations, concurrency, prefixes).await;
             },
             Endpoint::SyncState => {
                 bench_sync_state(data_directory, iterations, concurrency).await;

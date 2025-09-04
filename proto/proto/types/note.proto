@@ -112,3 +112,17 @@ message NoteSyncRecord {
     // The note's inclusion proof in the block.
     primitives.SparseMerklePath inclusion_path = 4;
 }
+
+// Represents a note root.
+message NoteRoot {
+    // The root of the note.
+    primitives.Digest root = 1;
+}
+
+// Represents a note script.
+message NoteScript {
+    // Entrypoint of the script.
+    uint32 entrypoint = 1;
+    // Mast of the script.
+    bytes mast = 2;
+}

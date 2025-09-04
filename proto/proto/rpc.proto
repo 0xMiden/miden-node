@@ -23,11 +23,6 @@ service Api {
     // Returns a nullifier proof for each of the requested nullifiers.
     rpc CheckNullifiers(rpc_store.NullifierList) returns (rpc_store.CheckNullifiersResponse) {}
 
-    // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-    //
-    // Note that only 16-bit prefixes are supported at this time.
-    rpc CheckNullifiersByPrefix(rpc_store.CheckNullifiersByPrefixRequest) returns (rpc_store.CheckNullifiersByPrefixResponse) {}
-
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
@@ -44,6 +39,9 @@ service Api {
     // Returns a list of notes matching the provided note IDs.
     rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
 
+    // Returns the script for a note by its root.
+    rpc GetNoteScriptByRoot(note.NoteRoot) returns (rpc_store.MaybeNoteScript) {}
+
     // Submits proven transaction to the Miden network.
     rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (block_producer.SubmitProvenTransactionResponse) {}
 
@@ -58,6 +56,11 @@ service Api {
     // All transactions in the batch but not in the mempool must build on the current mempool
     // state following normal transaction submission rules.
     rpc SubmitProvenBatch(transaction.ProvenTransactionBatch) returns (block_producer.SubmitProvenBatchResponse) {}
+
+    // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+    //
+    // Note that only 16-bit prefixes are supported at this time.
+    rpc SyncNullifiers(rpc_store.SyncNullifiersRequest) returns (rpc_store.SyncNullifiersResponse) {}
 
     // Returns account vault updates for specified account within a block range.
     rpc SyncAccountVault(rpc_store.SyncAccountVaultRequest) returns (rpc_store.SyncAccountVaultResponse) {}

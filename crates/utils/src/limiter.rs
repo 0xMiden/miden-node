@@ -55,7 +55,7 @@ impl QueryParamLimiter for QueryParamNullifierPrefixLimit {
 
 /// Used for the following RPC endpoints
 /// * `select_nullifiers_by_prefix`
-/// * `check_nullifiers_by_prefix`
+/// * `sync_nullifiers`
 /// * `sync_state`
 pub struct QueryParamNullifierLimit;
 impl QueryParamLimiter for QueryParamNullifierLimit {

@@ -12,7 +12,9 @@ use miden_objects::account::AccountId;
 use miden_objects::asset::Asset;
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
-use miden_objects::note::{NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, Nullifier};
+use miden_objects::note::{
+    NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, NoteScript, Nullifier,
+};
 use miden_objects::transaction::TransactionId;
 use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
@@ -277,8 +279,9 @@ impl Db {
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
-        block_num: BlockNumber,
-    ) -> Result<Vec<NullifierInfo>> {
+        block_from: BlockNumber,
+        block_to: BlockNumber,
+    ) -> Result<(Vec<NullifierInfo>, BlockNumber)> {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
         self.transact("nullifieres by prefix", move |conn| {
@@ -288,7 +291,7 @@ impl Db {
                 conn,
                 prefix_len as u8,
                 &nullifier_prefixes[..],
-                block_num,
+                block_from..=block_to,
             )
         })
         .await
@@ -532,6 +535,14 @@ impl Db {
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>)> {
         self.transact("account vault sync", move |conn| {
             queries::select_account_vault_assets(conn, account_id, block_range)
+        })
+        .await
+    }
+
+    /// Returns the script for a note by its root.
+    pub async fn select_note_script_by_root(&self, root: Word) -> Result<Option<NoteScript>> {
+        self.transact("note script by root", move |conn| {
+            queries::select_note_script_by_root(conn, root)
         })
         .await
     }

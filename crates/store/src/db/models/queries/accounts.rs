@@ -219,7 +219,7 @@ pub(crate) fn select_account_vault_assets(
     // See miden-base/issues/1770 for more details
     const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
-    const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
+    const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -241,12 +241,12 @@ pub(crate) fn select_account_vault_assets(
                     .and(t::block_num.le(block_range.end().to_raw_sql())),
             )
             .order(t::block_num.asc())
-            .limit(i64::try_from(ROW_LIMIT).expect("should fit within i64"))
+            .limit(i64::try_from(MAX_ROWS + 1).expect("should fit within i64"))
             .load::<(i64, Vec<u8>, Option<Vec<u8>>)>(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= ROW_LIMIT
+        && raw.len() >= MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at
@@ -429,7 +429,7 @@ pub(crate) fn select_account_storage_map_values(
     pub const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     pub const ROW_OVERHEAD_BYTES: usize =
         2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
-    pub const ROW_LIMIT: usize = (MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES) + 1;
+    pub const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
     if !account_id.is_public() {
         return Err(DatabaseError::AccountNotPublic(account_id));
@@ -451,13 +451,13 @@ pub(crate) fn select_account_storage_map_values(
                     .and(t::block_num.le(block_range.end().to_raw_sql())),
             )
             .order(t::block_num.asc())
-            .limit(i64::try_from(ROW_LIMIT).expect("limit fits within i64"))
+            .limit(i64::try_from(MAX_ROWS + 1).expect("limit fits within i64"))
             .load(conn)?;
 
     // Discard the last block in the response (assumes more than one block may be present)
 
     let (last_block_included, values) = if let Some(&(last_block_num, ..)) = raw.last()
-        && raw.len() >= ROW_LIMIT
+        && raw.len() >= MAX_ROWS
     {
         // NOTE: If the query contains at least one more row than the amount of storage map updates
         // allowed in a single block for an account, then the response is guaranteed to have at

@@ -1,9 +1,11 @@
 use std::collections::BTreeSet;
 
 use miden_node_proto::domain::account::{AccountInfo, AccountProofRequest};
+use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc_store::rpc_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::{convert, try_convert};
+use miden_node_utils::ErrorReport as _;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -15,6 +17,7 @@ use crate::COMPONENT;
 use crate::server::api::{
     StoreApi,
     internal_error,
+    invalid_argument,
     read_account_id,
     read_account_ids,
     validate_nullifiers,
@@ -80,40 +83,47 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.rpc_server.check_nullifiers_by_prefix",
+        name = "store.rpc_server.sync_nullifiers",
         skip_all,
         level = "debug",
         ret(level = "debug"),
         err
     )]
-    async fn check_nullifiers_by_prefix(
+    async fn sync_nullifiers(
         &self,
-        request: Request<proto::rpc_store::CheckNullifiersByPrefixRequest>,
-    ) -> Result<Response<proto::rpc_store::CheckNullifiersByPrefixResponse>, Status> {
+        request: Request<proto::rpc_store::SyncNullifiersRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncNullifiersResponse>, Status> {
         let request = request.into_inner();
 
         if request.prefix_len != 16 {
             return Err(Status::invalid_argument("Only 16-bit prefixes are supported"));
         }
 
-        let nullifiers = self
+        let chain_tip = self.state.latest_block_num().await;
+        let block_to = request.block_to.map_or(chain_tip, BlockNumber::from);
+
+        let (nullifiers, block_num) = self
             .state
-            .check_nullifiers_by_prefix(
+            .sync_nullifiers(
                 request.prefix_len,
                 request.nullifiers,
-                BlockNumber::from(request.block_num),
+                request.block_from.into(),
+                block_to,
             )
-            .await?
+            .await?;
+        let nullifiers = nullifiers
             .into_iter()
-            .map(|nullifier_info| {
-                proto::rpc_store::check_nullifiers_by_prefix_response::NullifierUpdate {
-                    nullifier: Some(nullifier_info.nullifier.into()),
-                    block_num: nullifier_info.block_num.as_u32(),
-                }
+            .map(|nullifier_info| proto::rpc_store::sync_nullifiers_response::NullifierUpdate {
+                nullifier: Some(nullifier_info.nullifier.into()),
+                block_num: nullifier_info.block_num.as_u32(),
             })
             .collect();
 
-        Ok(Response::new(proto::rpc_store::CheckNullifiersByPrefixResponse { nullifiers }))
+        Ok(Response::new(proto::rpc_store::SyncNullifiersResponse {
+            nullifiers,
+            block_num: block_num.as_u32(),
+            chain_tip: chain_tip.as_u32(),
+        }))
     }
 
     /// Returns info which can be used by the client to sync up to the latest state of the chain
@@ -460,6 +470,36 @@ impl rpc_server::Rpc for StoreApi {
             version: env!("CARGO_PKG_VERSION").to_string(),
             status: "connected".to_string(),
             chain_tip: self.state.latest_block_num().await.as_u32(),
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.get_note_script_by_root",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_note_script_by_root(
+        &self,
+        request: Request<proto::note::NoteRoot>,
+    ) -> Result<Response<proto::rpc_store::MaybeNoteScript>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        let root = request
+            .into_inner()
+            .root
+            .ok_or(invalid_argument("missing root"))?
+            .try_into()
+            .map_err(|err: ConversionError| {
+                invalid_argument(err.as_report_context("invalid root"))
+            })?;
+
+        let note_script = self.state.get_note_script_by_root(root).await.map_err(internal_error)?;
+
+        Ok(Response::new(proto::rpc_store::MaybeNoteScript {
+            script: note_script.map(Into::into),
         }))
     }
 }

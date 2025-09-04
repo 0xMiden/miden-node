@@ -120,42 +120,6 @@ pub mod account_proofs {
         }
     }
 }
-/// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CheckNullifiersByPrefixRequest {
-    /// Number of bits used for nullifier prefix. Currently the only supported value is 16.
-    #[prost(uint32, tag = "1")]
-    pub prefix_len: u32,
-    /// List of nullifiers to check. Each nullifier is specified by its prefix with length equal
-    /// to `prefix_len`.
-    #[prost(uint32, repeated, tag = "2")]
-    pub nullifiers: ::prost::alloc::vec::Vec<u32>,
-    /// Block number from which the nullifiers are requested (inclusive).
-    #[prost(fixed32, tag = "3")]
-    pub block_num: u32,
-}
-/// Represents the result of checking nullifiers by prefix.
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CheckNullifiersByPrefixResponse {
-    /// List of nullifiers matching the prefixes specified in the request.
-    #[prost(message, repeated, tag = "1")]
-    pub nullifiers: ::prost::alloc::vec::Vec<
-        check_nullifiers_by_prefix_response::NullifierUpdate,
-    >,
-}
-/// Nested message and enum types in `CheckNullifiersByPrefixResponse`.
-pub mod check_nullifiers_by_prefix_response {
-    /// Represents a single nullifier update.
-    #[derive(Clone, Copy, PartialEq, ::prost::Message)]
-    pub struct NullifierUpdate {
-        /// Nullifier ID.
-        #[prost(message, optional, tag = "1")]
-        pub nullifier: ::core::option::Option<super::super::primitives::Digest>,
-        /// Block number.
-        #[prost(fixed32, tag = "2")]
-        pub block_num: u32,
-    }
-}
 /// List of nullifiers to return proofs for.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NullifierList {
@@ -169,6 +133,53 @@ pub struct CheckNullifiersResponse {
     /// Each requested nullifier has its corresponding nullifier proof at the same position.
     #[prost(message, repeated, tag = "1")]
     pub proofs: ::prost::alloc::vec::Vec<super::primitives::SmtOpening>,
+}
+/// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncNullifiersRequest {
+    /// Block number from which the nullifiers are requested (inclusive).
+    #[prost(fixed32, tag = "1")]
+    pub block_from: u32,
+    /// Block number up to which to check. If not specified, checks up to the latest block.
+    #[prost(fixed32, optional, tag = "2")]
+    pub block_to: ::core::option::Option<u32>,
+    /// Number of bits used for nullifier prefix. Currently the only supported value is 16.
+    #[prost(uint32, tag = "3")]
+    pub prefix_len: u32,
+    /// List of nullifiers to check. Each nullifier is specified by its prefix with length equal
+    /// to `prefix_len`.
+    #[prost(uint32, repeated, tag = "4")]
+    pub nullifiers: ::prost::alloc::vec::Vec<u32>,
+}
+/// Represents the result of syncing nullifiers.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncNullifiersResponse {
+    /// Current chain tip
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
+    /// The block number of the last check included in this response.
+    ///
+    /// For chunked responses, this may be less than request.block_to.
+    /// If it is less than request.block_to, the user is expected to make a subsequent request
+    /// starting from the next block to this one (ie, request.block_from = block_num + 1).
+    #[prost(fixed32, tag = "2")]
+    pub block_num: u32,
+    /// List of nullifiers matching the prefixes specified in the request.
+    #[prost(message, repeated, tag = "3")]
+    pub nullifiers: ::prost::alloc::vec::Vec<sync_nullifiers_response::NullifierUpdate>,
+}
+/// Nested message and enum types in `SyncNullifiersResponse`.
+pub mod sync_nullifiers_response {
+    /// Represents a single nullifier update.
+    #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+    pub struct NullifierUpdate {
+        /// Nullifier ID.
+        #[prost(message, optional, tag = "1")]
+        pub nullifier: ::core::option::Option<super::super::primitives::Digest>,
+        /// Block number.
+        #[prost(fixed32, tag = "2")]
+        pub block_num: u32,
+    }
 }
 /// State synchronization request.
 ///
@@ -236,16 +247,16 @@ pub struct SyncAccountVaultRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncAccountVaultResponse {
+    /// Chain tip at the moment of the request.
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
     /// The block number of the last update included in this response.
     ///
     /// For chunked responses, this may be less than request.block_to.
     /// If it is less than request.block_to, the user is expected to make a subsequent request
     /// starting from the next block to this one (ie, request.block_from = block_num + 1).
-    #[prost(fixed32, tag = "1")]
-    pub block_num: u32,
-    /// Chain tip at the moment of the request.
     #[prost(fixed32, tag = "2")]
-    pub chain_tip: u32,
+    pub block_num: u32,
     /// List of asset updates for the account.
     ///
     /// Multiple updates can be returned for a single asset, and the one with a higher `block_num`
@@ -320,16 +331,16 @@ pub struct SyncStorageMapsRequest {
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncStorageMapsResponse {
+    /// Current chain tip
+    #[prost(fixed32, tag = "1")]
+    pub chain_tip: u32,
     /// The block number of the last update included in this response.
     ///
     /// For chunked responses, this may be less than request.block_to.
     /// If it is less than request.block_to, the user is expected to make a subsequent request
     /// starting from the next block to this one (ie, request.block_from = block_num + 1).
-    #[prost(fixed32, tag = "1")]
-    pub block_num: u32,
-    /// Current chain tip
     #[prost(fixed32, tag = "2")]
-    pub chain_tip: u32,
+    pub block_num: u32,
     /// The list of storage map updates.
     ///
     /// Multiple updates can be returned for a single slot index and key combination, and the one
@@ -352,6 +363,13 @@ pub struct StorageMapUpdate {
     /// The storage map value.
     #[prost(message, optional, tag = "4")]
     pub value: ::core::option::Option<super::primitives::Digest>,
+}
+/// Represents a note script or nothing.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MaybeNoteScript {
+    /// The script for a note by its root.
+    #[prost(message, optional, tag = "1")]
+    pub script: ::core::option::Option<super::note::NoteScript>,
 }
 /// Generated client implementations.
 pub mod rpc_client {
@@ -489,33 +507,6 @@ pub mod rpc_client {
                 .insert(GrpcMethod::new("rpc_store.Rpc", "CheckNullifiers"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-        ///
-        /// Note that only 16-bit prefixes are supported at this time.
-        pub async fn check_nullifiers_by_prefix(
-            &mut self,
-            request: impl tonic::IntoRequest<super::CheckNullifiersByPrefixRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CheckNullifiersByPrefixResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::unknown(
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/rpc_store.Rpc/CheckNullifiersByPrefix",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(GrpcMethod::new("rpc_store.Rpc", "CheckNullifiersByPrefix"));
-            self.inner.unary(req, path, codec).await
-        }
         /// Returns the latest state of an account with the specified ID.
         pub async fn get_account_details(
             &mut self,
@@ -639,6 +630,58 @@ pub mod rpc_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("rpc_store.Rpc", "GetNotesById"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Returns the script for a note by its root.
+        pub async fn get_note_script_by_root(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::note::NoteRoot>,
+        ) -> std::result::Result<
+            tonic::Response<super::MaybeNoteScript>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rpc_store.Rpc/GetNoteScriptByRoot",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("rpc_store.Rpc", "GetNoteScriptByRoot"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+        ///
+        /// Note that only 16-bit prefixes are supported at this time.
+        pub async fn sync_nullifiers(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SyncNullifiersRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SyncNullifiersResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rpc_store.Rpc/SyncNullifiers",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("rpc_store.Rpc", "SyncNullifiers"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -785,16 +828,6 @@ pub mod rpc_server {
             tonic::Response<super::CheckNullifiersResponse>,
             tonic::Status,
         >;
-        /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
-        ///
-        /// Note that only 16-bit prefixes are supported at this time.
-        async fn check_nullifiers_by_prefix(
-            &self,
-            request: tonic::Request<super::CheckNullifiersByPrefixRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CheckNullifiersByPrefixResponse>,
-            tonic::Status,
-        >;
         /// Returns the latest state of an account with the specified ID.
         async fn get_account_details(
             &self,
@@ -831,6 +864,21 @@ pub mod rpc_server {
             request: tonic::Request<super::super::note::NoteIdList>,
         ) -> std::result::Result<
             tonic::Response<super::super::note::CommittedNoteList>,
+            tonic::Status,
+        >;
+        /// Returns the script for a note by its root.
+        async fn get_note_script_by_root(
+            &self,
+            request: tonic::Request<super::super::note::NoteRoot>,
+        ) -> std::result::Result<tonic::Response<super::MaybeNoteScript>, tonic::Status>;
+        /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
+        ///
+        /// Note that only 16-bit prefixes are supported at this time.
+        async fn sync_nullifiers(
+            &self,
+            request: tonic::Request<super::SyncNullifiersRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SyncNullifiersResponse>,
             tonic::Status,
         >;
         /// Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
@@ -1032,54 +1080,6 @@ pub mod rpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CheckNullifiersSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/rpc_store.Rpc/CheckNullifiersByPrefix" => {
-                    #[allow(non_camel_case_types)]
-                    struct CheckNullifiersByPrefixSvc<T: Rpc>(pub Arc<T>);
-                    impl<
-                        T: Rpc,
-                    > tonic::server::UnaryService<super::CheckNullifiersByPrefixRequest>
-                    for CheckNullifiersByPrefixSvc<T> {
-                        type Response = super::CheckNullifiersByPrefixResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                super::CheckNullifiersByPrefixRequest,
-                            >,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                <T as Rpc>::check_nullifiers_by_prefix(&inner, request)
-                                    .await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let method = CheckNullifiersByPrefixSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -1309,6 +1309,96 @@ pub mod rpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNotesByIdSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rpc_store.Rpc/GetNoteScriptByRoot" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetNoteScriptByRootSvc<T: Rpc>(pub Arc<T>);
+                    impl<
+                        T: Rpc,
+                    > tonic::server::UnaryService<super::super::note::NoteRoot>
+                    for GetNoteScriptByRootSvc<T> {
+                        type Response = super::MaybeNoteScript;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::super::note::NoteRoot>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Rpc>::get_note_script_by_root(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetNoteScriptByRootSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rpc_store.Rpc/SyncNullifiers" => {
+                    #[allow(non_camel_case_types)]
+                    struct SyncNullifiersSvc<T: Rpc>(pub Arc<T>);
+                    impl<
+                        T: Rpc,
+                    > tonic::server::UnaryService<super::SyncNullifiersRequest>
+                    for SyncNullifiersSvc<T> {
+                        type Response = super::SyncNullifiersResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SyncNullifiersRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Rpc>::sync_nullifiers(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SyncNullifiersSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

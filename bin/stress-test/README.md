@@ -22,11 +22,11 @@ The endpoints that you can test are:
 - `load_state`
 - `sync_state`
 - `sync_notes`
-- `check_nullifiers_by_prefix`
+- `sync_nullifiers`
 
 Most benchmarks accept options to control the number of iterations and concurrency level. The `load_state` endpoint is different - it simply measures the one-time startup cost of loading the state from disk.
 
-**Note on Concurrency**: For the endpoints that support it (`sync_state`, `sync_notes`, `check_nullifiers_by_prefix`), the concurrency parameter controls how many requests are sent in parallel to the store. Since these benchmarks run against a local store (no network overhead), higher concurrency values can help identify bottlenecks in the store's internal processing. The latency measurements exclude network time and represent pure store processing time.
+**Note on Concurrency**: For the endpoints that support it (`sync_state`, `sync_notes`, `sync_nullifiers`), the concurrency parameter controls how many requests are sent in parallel to the store. Since these benchmarks run against a local store (no network overhead), higher concurrency values can help identify bottlenecks in the store's internal processing. The latency measurements exclude network time and represent pure store processing time.
 
 Example usage:
 
@@ -141,9 +141,9 @@ P99 request latency: 1.528667ms
 P99.9 request latency: 5.247875ms
 ```
 
-- check-nullifiers-by-prefix
+- sync-nullifiers
 ``` bash
-$ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 check-nullifiers-by-prefix --prefixes 10
+$ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-nullifiers --prefixes 10
 
 Average request latency: 519.239µs
 P50 request latency: 503.708µs

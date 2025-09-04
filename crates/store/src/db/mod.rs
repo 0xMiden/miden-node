@@ -284,8 +284,7 @@ impl Db {
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
-        block_from: BlockNumber,
-        block_to: BlockNumber,
+        block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NullifierInfo>, BlockNumber)> {
         assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
@@ -296,7 +295,7 @@ impl Db {
                 conn,
                 prefix_len as u8,
                 &nullifier_prefixes[..],
-                block_from..=block_to,
+                block_range,
             )
         })
         .await
@@ -474,8 +473,8 @@ impl Db {
 
     /// Selects storage map values for syncing storage maps for a specific account ID.
     ///
-    /// The returned values are the latest known values up to `block_to`, and no values earlier
-    /// than `block_from` are returned.
+    /// The returned values are the latest known values up to `block_range.end()`, and no values
+    /// earlier than `block_range.start()` are returned.
     pub(crate) async fn select_storage_map_sync_values(
         &self,
         account_id: AccountId,

@@ -77,8 +77,8 @@ pub(crate) fn apply_block(
 
 /// Loads the state necessary for a state sync
 ///
-/// The state sync covers from `block_from` until the last block that has a note matching the given
-/// `note_tags`.
+/// The state sync covers from `from_start_block` until the last block that has a note matching the
+/// given `note_tags`.
 pub(crate) fn get_state_sync(
     conn: &mut SqliteConnection,
     from_start_block: BlockNumber,

@@ -86,11 +86,11 @@ Returns nullifier synchronization data for a set of prefixes within a given bloc
 clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
 
 Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block
-range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that
+range (`from_start_block`, optional `to_end_block`). The response includes all matching nullifiers created within that
 range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
 
-If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with
-`block_from = block_num + 1` to retrieve subsequent updates.
+If the response is chunked due to exceeding the maximum returned entries, continue by issuing another request with
+consecutive block number to retrieve subsequent updates.
 
 ---
 
@@ -98,7 +98,7 @@ If the response is chunked (i.e., `block_num < block_to`), continue by issuing a
 
 Returns information that allows clients to sync asset values for specific public accounts within a block range.
 
-For any `[block_from..block_to]` range, the latest known set of assets is returned for the requested account ID.
+For any `block_range`, the latest known set of assets is returned for the requested account ID.
 The data can be split and a cutoff block may be selected if there are too many assets to sync. The response contains
 the chain tip so that the caller knows when it has been reached.
 
@@ -139,7 +139,7 @@ notes, client can make additional filtering of that data on its side.
 
 Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
 
-Caller specifies the `account_id` of the public account and the block range (`block_from`, `block_to`) for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
+Caller specifies the `account_id` of the public account and the block range `block_range` for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
 
 This endpoint enables clients to maintain an updated view of account storage.
 

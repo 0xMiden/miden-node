@@ -1,3 +1,4 @@
+use diesel::prelude::Insertable;
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
     ExpressionMethods,
@@ -10,7 +11,7 @@ use diesel::{
     SelectableHelper,
     SqliteConnection,
 };
-use miden_lib::utils::Deserializable;
+use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{QueryParamBlockLimit, QueryParamLimiter};
 use miden_objects::block::{BlockHeader, BlockNumber};
 
@@ -23,37 +24,54 @@ use crate::db::schema;
 ///
 /// # Returns
 ///
-/// When `block_number` is [None], the latest block header is returned. Otherwise, the block with
+/// When `block_num` is [None], the latest block header is returned. Otherwise, the block with
 /// the given block height is returned.
+///
+/// ```sql
+/// # with argument
+/// SELECT block_header FROM block_headers WHERE block_num = ?1
+/// # without
+/// SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1
+/// ```
 pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
-    maybe_block_number: Option<BlockNumber>,
+    maybe_block_num: Option<BlockNumber>,
 ) -> Result<Option<BlockHeader>, DatabaseError> {
-    let sel = SelectDsl::select(schema::block_headers::table, BlockHeaderRaw::as_select());
-    let row = if let Some(block_number) = maybe_block_number {
-        // SELECT block_header FROM block_headers WHERE block_num = ?1
-        sel.filter(schema::block_headers::block_num.eq(block_number.to_raw_sql()))
-            .get_result::<BlockHeaderRaw>(conn)
+    let sel = SelectDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select());
+    let row = if let Some(block_num) = maybe_block_num {
+        sel.filter(schema::block_headers::block_num.eq(block_num.to_raw_sql()))
+            .get_result::<BlockHeaderRawRow>(conn)
             .optional()?
         // invariant: only one block exists with the given block header, so the length is
         // always zero or one
     } else {
-        // SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1
         sel.order(schema::block_headers::block_num.desc())
             .limit(1)
-            .get_result::<BlockHeaderRaw>(conn)
+            .get_result::<BlockHeaderRawRow>(conn)
             .optional()?
     };
     row.map(std::convert::TryInto::try_into).transpose()
 }
 
-/// Select all the given block headers from the DB using the given [`SqliteConnection`].
+/// Select block headers for the given block numbers.
+///
+/// # Parameters
+/// * `blocks`: Iterator of block numbers to retrieve
+///     - Limit: 0 <= count <= 1000
 ///
 /// # Note
 ///
 /// Only returns the block headers that are actually present.
 ///
 /// # Returns
+///
+/// A vector of [`BlockHeader`] or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT block_header FROM block_headers WHERE block_num IN (?1)
+/// ```
 pub fn select_block_headers(
     conn: &mut SqliteConnection,
     blocks: impl Iterator<Item = BlockNumber> + Send,
@@ -66,12 +84,11 @@ pub fn select_block_headers(
     // <https://doc.rust-lang.org/src/core/iter/adapters/chain.rs.html#184>
     QueryParamBlockLimit::check(blocks.size_hint().0)?;
 
-    // SELECT block_header FROM block_headers WHERE block_num IN rarray(?1)
     let blocks = Vec::from_iter(blocks.map(SqlTypeConvert::to_raw_sql));
     let raw_block_headers =
-        QueryDsl::select(schema::block_headers::table, BlockHeaderRaw::as_select())
+        QueryDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select())
             .filter(schema::block_headers::block_num.eq_any(blocks))
-            .load::<BlockHeaderRaw>(conn)?;
+            .load::<BlockHeaderRawRow>(conn)?;
     vec_raw_try_into(raw_block_headers)
 }
 
@@ -80,29 +97,71 @@ pub fn select_block_headers(
 /// # Returns
 ///
 /// A vector of [`BlockHeader`] or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT block_header FROM block_headers ORDER BY block_num ASC
+/// ```
 pub fn select_all_block_headers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<BlockHeader>, DatabaseError> {
-    // SELECT block_header FROM block_headers ORDER BY block_num ASC
     let raw_block_headers =
-        QueryDsl::select(schema::block_headers::table, BlockHeaderRaw::as_select())
+        QueryDsl::select(schema::block_headers::table, BlockHeaderRawRow::as_select())
             .order(schema::block_headers::block_num.asc())
-            .load::<BlockHeaderRaw>(conn)?;
+            .load::<BlockHeaderRawRow>(conn)?;
     vec_raw_try_into(raw_block_headers)
 }
 
 #[derive(Debug, Clone, Queryable, QueryableByName, Selectable)]
 #[diesel(table_name = schema::block_headers)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct BlockHeaderRaw {
+pub struct BlockHeaderRawRow {
     #[allow(dead_code)]
     pub block_num: i64,
     pub block_header: Vec<u8>,
 }
-impl TryInto<BlockHeader> for BlockHeaderRaw {
+impl TryInto<BlockHeader> for BlockHeaderRawRow {
     type Error = DatabaseError;
     fn try_into(self) -> Result<BlockHeader, Self::Error> {
         let block_header = BlockHeader::read_from_bytes(&self.block_header[..])?;
         Ok(block_header)
     }
+}
+
+#[derive(Debug, Clone, Insertable)]
+#[diesel(table_name = schema::block_headers)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct BlockHeaderInsert {
+    pub block_num: i64,
+    pub block_header: Vec<u8>,
+}
+impl From<&BlockHeader> for BlockHeaderInsert {
+    fn from(block_header: &BlockHeader) -> Self {
+        Self {
+            block_num: block_header.block_num().to_raw_sql(),
+            block_header: block_header.to_bytes(),
+        }
+    }
+}
+
+/// Insert a [`BlockHeader`] to the DB using the given [`SqliteConnection`].
+///
+/// # Returns
+///
+/// The number of affected rows.
+///
+/// # Note
+///
+/// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
+/// transaction
+pub(crate) fn insert_block_header(
+    conn: &mut SqliteConnection,
+    block_header: &BlockHeader,
+) -> Result<usize, DatabaseError> {
+    let block_header = BlockHeaderInsert::from(block_header);
+    let count = diesel::insert_into(schema::block_headers::table)
+        .values(&[block_header])
+        .execute(conn)?;
+    Ok(count)
 }

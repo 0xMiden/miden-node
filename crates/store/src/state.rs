@@ -4,7 +4,7 @@
 //! data is atomically written, and that reads are consistent.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::ops::Not;
+use std::ops::{Not, RangeInclusive};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -426,11 +426,10 @@ impl State {
         &self,
         prefix_len: u32,
         nullifier_prefixes: Vec<u32>,
-        block_from: BlockNumber,
-        block_to: BlockNumber,
+        block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
         self.db
-            .select_nullifiers_by_prefix(prefix_len, nullifier_prefixes, block_from, block_to)
+            .select_nullifiers_by_prefix(prefix_len, nullifier_prefixes, block_range)
             .await
     }
 
@@ -985,10 +984,9 @@ impl State {
     pub(crate) async fn get_storage_map_sync_values(
         &self,
         account_id: AccountId,
-        block_from: BlockNumber,
-        block_to: BlockNumber,
+        block_range: RangeInclusive<BlockNumber>,
     ) -> Result<StorageMapValuesPage, DatabaseError> {
-        self.db.select_storage_map_sync_values(account_id, block_from, block_to).await
+        self.db.select_storage_map_sync_values(account_id, block_range).await
     }
 
     /// Loads a block from the block store. Return `Ok(None)` if the block is not found.
@@ -1016,10 +1014,9 @@ impl State {
     pub async fn sync_account_vault(
         &self,
         account_id: AccountId,
-        block_from: BlockNumber,
-        block_to: BlockNumber,
+        block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<AccountVaultValue>), DatabaseError> {
-        self.db.get_account_vault_sync(account_id, block_from, block_to).await
+        self.db.get_account_vault_sync(account_id, block_range).await
     }
 
     /// Returns the unprocessed network notes, along with the next pagination token.

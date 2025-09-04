@@ -109,8 +109,7 @@ impl rpc_server::Rpc for StoreApi {
             .sync_nullifiers(
                 request.prefix_len,
                 request.nullifiers,
-                block_range.block_from.into(),
-                block_to,
+                block_range.block_from.into()..=block_to,
             )
             .await?;
         let nullifiers = nullifiers
@@ -377,7 +376,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let (last_included_block, updates) = self
             .state
-            .sync_account_vault(account_id, block_from, block_to)
+            .sync_account_vault(account_id, block_from..=block_to)
             .await
             .map_err(internal_error)?;
 
@@ -441,7 +440,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let storage_maps_page = self
             .state
-            .get_storage_map_sync_values(account_id, block_from, block_to)
+            .get_storage_map_sync_values(account_id, block_from..=block_to)
             .await
             .map_err(internal_error)?;
 

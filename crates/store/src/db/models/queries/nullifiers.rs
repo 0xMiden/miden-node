@@ -1,3 +1,5 @@
+use std::ops::RangeInclusive;
+
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
     ExpressionMethods,
@@ -25,35 +27,40 @@ use crate::db::{NullifierInfo, schema};
 
 /// Returns nullifiers filtered by prefix within a block number range.
 ///
-/// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits of the
-/// nullifier of interest to the client. This hides the details of the specific nullifier being
-/// requested. Currently the only supported prefix length is 16 bits.
+/// # Parameters
+/// * `prefix_len`: Length of nullifier prefix in bits
+///     - Must be exactly 16 bits
+/// * `nullifier_prefixes`: List of nullifier prefixes to filter by
+///     - Limit: 0 <= count <= 1000
+///
+/// Each value of the `nullifier_prefixes` is only the `prefix_len` most significant bits
+/// of the nullifier of interest to the client. This hides the details of the specific
+/// nullifier being requested. Currently the only supported prefix length is 16 bits.
 ///
 /// # Returns
 ///
-/// Range and pagination semantics:
-/// - Both `block_from` and `block_to` are inclusive bounds.
-/// - To keep responses ≤ ~2.5MB, an internal row limit is enforced. When the limit is hit and the
-///   result spans multiple blocks, the last block in the page is dropped entirely, and
-///   `last_block_included` is set to the block number immediately before that dropped block.
-///   Clients should resume with `block_from = last_block_included + 1`.
-/// - If all rows belong to a single block and hit the limit, this function returns an empty
-///   `nullifiers` page with `last_block_included = that_block - 1`. Intra-block pagination is not
-///   supported; callers may need to narrow the range.
+/// A vector of [`NullifierInfo`] with the nullifiers and the block height at which they were
 ///
-/// A tuple `(nullifiers, last_block_included)` where:
-/// - `nullifiers` is a vector of [`NullifierInfo`] (each contains the nullifier and the block
-///   number at which it was created), ordered by block number ascending.
-/// - `last_block_included` is the last block number fully included in this response. If the
-///   internal row limit is reached (to cap response size), this may be less than `block_to`. In
-///   that case, the caller should re-issue the query with `block_from = last_block_included + 1` to
-///   continue.
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     nullifier,
+///     block_num
+/// FROM
+///     nullifiers
+/// WHERE
+///     nullifier_prefix IN (?1) AND
+///     block_num >= ?2
+///     block_num <= ?3
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_nullifiers_by_prefix(
     conn: &mut SqliteConnection,
     prefix_len: u8,
     nullifier_prefixes: &[u16],
-    block_from: BlockNumber,
-    block_to: BlockNumber,
+    block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(Vec<NullifierInfo>, BlockNumber), DatabaseError> {
     // Size calculation: max 2^16 nullifiers per block × 36 bytes per nullifier = ~2.25MB
     // We use 2.5MB to provide a safety margin for the unlikely case of hitting the maximum
@@ -65,31 +72,20 @@ pub(crate) fn select_nullifiers_by_prefix(
 
     assert_eq!(prefix_len, 16, "Only 16-bit prefixes are supported");
 
-    if block_from > block_to {
-        return Err(DatabaseError::InvalidBlockRange { from: block_from, to: block_to });
+    if block_range.is_empty() {
+        return Err(DatabaseError::InvalidBlockRange {
+            from: *block_range.start(),
+            to: *block_range.end(),
+        });
     }
 
     QueryParamNullifierPrefixLimit::check(nullifier_prefixes.len())?;
 
-    // SELECT
-    //     nullifier,
-    //     block_num
-    // FROM
-    //     nullifiers
-    // WHERE
-    //     nullifier_prefix IN rarray(?1) AND
-    //     block_num >= ?2
-    //     AND block_num <= ?3
-    // ORDER BY
-    //     block_num ASC
-    // LIMIT
-    //     MAX_ROWS + 1;
-
     let prefixes = nullifier_prefixes.iter().map(|prefix| nullifier_prefix_to_raw_sql(*prefix));
     let raw = SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
             .filter(schema::nullifiers::nullifier_prefix.eq_any(prefixes))
-            .filter(schema::nullifiers::block_num.ge(block_from.to_raw_sql()))
-            .filter(schema::nullifiers::block_num.le(block_to.to_raw_sql()))
+            .filter(schema::nullifiers::block_num.ge(block_range.start().to_raw_sql()))
+            .filter(schema::nullifiers::block_num.le(block_range.end().to_raw_sql()))
             .order(schema::nullifiers::block_num.asc())
             // Request an additional row so we can determine whether this is the last page.
             .limit(i64::try_from(MAX_ROWS + 1).expect("limit fits within i64"))
@@ -109,7 +105,7 @@ pub(crate) fn select_nullifiers_by_prefix(
 
         Ok((nullifiers, last_block_included))
     } else {
-        Ok((vec_raw_try_into(raw)?, block_to))
+        Ok((vec_raw_try_into(raw)?, *block_range.end()))
     }
 }
 
@@ -128,8 +124,12 @@ pub(crate) fn select_all_nullifiers(
     vec_raw_try_into(nullifiers_raw)
 }
 
-/// Commit nullifiers to the DB using the given [`SqliteConnection`]. This inserts the nullifiers
-/// into the nullifiers table, and marks the note as consumed (if it was public).
+/// Insert nullifiers for a block into the database.
+///
+/// # Parameters
+/// * `nullifiers`: List of nullifiers to insert
+///     - Limit: 0 <= count <= 1000
+/// * `block_num`: Block number to associate with the nullifiers
 ///
 /// # Returns
 ///

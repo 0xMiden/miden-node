@@ -154,9 +154,7 @@ fn sql_select_transactions() {
         queries::select_transactions_by_accounts_and_block_range(
             conn,
             &[AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap()],
-            // TODO use a Range<BlockNumber> expression
-            0.into(),
-            2.into(),
+            BlockNumber::from(0)..=BlockNumber::from(2),
         )
         .unwrap()
     }
@@ -753,8 +751,11 @@ fn sync_account_vault_basic_validation() {
     .unwrap();
 
     // Test invalid block range - should return error
-    let result =
-        queries::select_account_vault_assets(conn, public_account_id, invalid_block_from, block_to);
+    let result = queries::select_account_vault_assets(
+        conn,
+        public_account_id,
+        invalid_block_from..=block_to,
+    );
     assert!(result.is_err(), "expected error for invalid block range");
 
     let Err(crate::errors::DatabaseError::InvalidBlockRange { .. }) = result else {
@@ -763,7 +764,7 @@ fn sync_account_vault_basic_validation() {
 
     // Test with valid block range - should return vault assets
     let (last_block, values) =
-        queries::select_account_vault_assets(conn, public_account_id, block_from, block_to)
+        queries::select_account_vault_assets(conn, public_account_id, block_from..=block_to)
             .unwrap();
 
     // Should return assets we inserted
@@ -786,7 +787,7 @@ fn select_nullifiers_by_prefix_works() {
     let block_number0 = 0.into();
     let block_number10 = 10.into();
     let (nullifiers, block_number_reached) =
-        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0, block_number10)
+        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0..=block_number10)
             .unwrap();
     assert!(nullifiers.is_empty());
     assert_eq!(block_number_reached, block_number10);
@@ -802,8 +803,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -831,8 +831,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -846,8 +845,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier2)],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -866,8 +864,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier1),
             utils::get_nullifier_prefix(&nullifier2),
         ],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -889,8 +886,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert!(nullifiers.is_empty());
@@ -904,8 +900,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier1),
             utils::get_nullifier_prefix(&nullifier2),
         ],
-        block_number2,
-        block_number10,
+        block_number2..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -931,8 +926,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier2),
             utils::get_nullifier_prefix(&nullifier3),
         ],
-        block_number0,
-        block_number2,
+        block_number0..=block_number2,
     )
     .unwrap();
     assert_eq!(
@@ -1036,9 +1030,12 @@ fn db_account() {
             .iter()
             .map(|acc_id| (*acc_id).try_into().unwrap())
             .collect();
-    let res =
-        queries::select_accounts_by_block_range(conn, &account_ids, 0.into(), u32::MAX.into())
-            .unwrap();
+    let res = queries::select_accounts_by_block_range(
+        conn,
+        &account_ids,
+        BlockNumber::from(0)..=u32::MAX.into(),
+    )
+    .unwrap();
     assert!(res.is_empty());
 
     // test insertion
@@ -1059,9 +1056,12 @@ fn db_account() {
     assert_eq!(row_count, 1);
 
     // test successful query
-    let res =
-        queries::select_accounts_by_block_range(conn, &account_ids, 0.into(), u32::MAX.into())
-            .unwrap();
+    let res = queries::select_accounts_by_block_range(
+        conn,
+        &account_ids,
+        BlockNumber::from(0)..=u32::MAX.into(),
+    )
+    .unwrap();
     assert_eq!(
         res,
         vec![AccountSummary {
@@ -1075,8 +1075,7 @@ fn db_account() {
     let res = queries::select_accounts_by_block_range(
         conn,
         &account_ids,
-        (block_num.as_u32() + 1).into(),
-        u32::MAX.into(),
+        (block_num.as_u32() + 1).into()..=u32::MAX.into(),
     )
     .unwrap();
     assert!(res.is_empty());
@@ -1085,8 +1084,7 @@ fn db_account() {
     let res = queries::select_accounts_by_block_range(
         conn,
         &[6.try_into().unwrap(), 7.try_into().unwrap(), 8.try_into().unwrap()],
-        (block_num.as_u32() + 1).into(),
-        u32::MAX.into(),
+        (block_num + 1)..=u32::MAX.into(),
     )
     .unwrap();
     assert!(res.is_empty());
@@ -1267,7 +1265,7 @@ fn sql_account_storage_map_values_insertion() {
     insert_account_delta(conn, account_id, block1, &delta1);
 
     let storage_map_page =
-        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block1)
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS..=block1)
             .unwrap();
     assert_eq!(storage_map_page.values.len(), 2, "expect 2 initial rows");
 
@@ -1282,7 +1280,7 @@ fn sql_account_storage_map_values_insertion() {
     insert_account_delta(conn, account_id, block2, &delta2);
 
     let storage_map_values =
-        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS, block2)
+        queries::select_account_storage_map_values(conn, account_id, BlockNumber::GENESIS..=block2)
             .unwrap();
 
     assert_eq!(storage_map_values.values.len(), 3, "three rows (with duplicate key)");
@@ -1340,8 +1338,7 @@ fn select_storage_map_sync_values() {
     let page = queries::select_account_storage_map_values(
         &mut conn,
         account_id,
-        BlockNumber::from(2),
-        BlockNumber::from(3),
+        BlockNumber::from(2)..=BlockNumber::from(3),
     )
     .unwrap();
 

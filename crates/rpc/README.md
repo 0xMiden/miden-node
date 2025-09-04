@@ -89,7 +89,7 @@ Caller specifies the `prefix_len` (currently only 16), the list of prefix values
 range (`from_start_block`, optional `to_end_block`). The response includes all matching nullifiers created within that
 range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
 
-If the response is chunked due to exceeding the maximum returned entires, continue by issuing another request with
+If the response is chunked due to exceeding the maximum returned entries, continue by issuing another request with
 consecutive block number to retrieve subsequent updates.
 
 ---

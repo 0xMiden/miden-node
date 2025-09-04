@@ -30,6 +30,7 @@ mod inflight_state;
 mod subscription;
 mod transaction_expiration;
 mod transaction_graph;
+mod v2;
 
 #[cfg(test)]
 mod tests;

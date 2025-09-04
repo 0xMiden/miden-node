@@ -5,7 +5,13 @@ use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
-use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate};
+use miden_objects::transaction::{
+    OutputNote,
+    ProvenTransaction,
+    TransactionHeader,
+    TransactionId,
+    TxAccountUpdate,
+};
 
 use crate::errors::VerifyTxError;
 use crate::store::TransactionInputs;
@@ -109,8 +115,8 @@ impl AuthenticatedTransaction {
         (self.inner.ref_block_num(), self.inner.ref_block_commitment())
     }
 
-    /// Notes which were unauthenticate in the transaction __and__ which were
-    /// not authenticated by the store inputs.
+    /// Notes which were unauthenticated in the transaction __and__ which were not authenticated by
+    /// the store inputs.
     pub fn unauthenticated_notes(&self) -> impl Iterator<Item = NoteId> + '_ {
         self.inner
             .unauthenticated_notes()
@@ -123,13 +129,12 @@ impl AuthenticatedTransaction {
         Arc::clone(&self.inner)
     }
 
-    #[cfg(test)]
-    pub fn raw_proven_transaction(&self) -> &ProvenTransaction {
-        &self.inner
-    }
-
     pub fn expires_at(&self) -> BlockNumber {
         self.inner.expiration_block_num()
+    }
+
+    pub fn header(&self) -> TransactionHeader {
+        self.inner.as_ref().into()
     }
 }
 
@@ -173,5 +178,9 @@ impl AuthenticatedTransaction {
     pub fn with_empty_store_state(mut self) -> Self {
         self.store_account_state = None;
         self
+    }
+
+    pub fn raw_proven_transaction(&self) -> &ProvenTransaction {
+        &self.inner
     }
 }

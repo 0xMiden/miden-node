@@ -13,7 +13,12 @@ use miden_objects::asset::Asset;
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
-    NoteDetails, NoteId, NoteInclusionProof, NoteMetadata, NoteScript, Nullifier,
+    NoteDetails,
+    NoteId,
+    NoteInclusionProof,
+    NoteMetadata,
+    NoteScript,
+    Nullifier,
 };
 use miden_objects::transaction::TransactionId;
 use tokio::sync::oneshot;

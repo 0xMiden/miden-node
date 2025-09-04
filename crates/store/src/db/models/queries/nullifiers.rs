@@ -2,12 +2,20 @@ use std::ops::RangeInclusive;
 
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
-    ExpressionMethods, QueryDsl, Queryable, QueryableByName, RunQueryDsl, Selectable,
-    SelectableHelper, SqliteConnection,
+    ExpressionMethods,
+    QueryDsl,
+    Queryable,
+    QueryableByName,
+    RunQueryDsl,
+    Selectable,
+    SelectableHelper,
+    SqliteConnection,
 };
 use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
-    QueryParamLimiter, QueryParamNullifierLimit, QueryParamNullifierPrefixLimit,
+    QueryParamLimiter,
+    QueryParamNullifierLimit,
+    QueryParamNullifierPrefixLimit,
 };
 use miden_objects::block::BlockNumber;
 use miden_objects::note::Nullifier;

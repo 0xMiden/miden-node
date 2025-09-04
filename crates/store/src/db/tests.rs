@@ -12,42 +12,21 @@ use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::test_fee_params;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
-    Account,
-    AccountBuilder,
-    AccountComponent,
-    AccountDelta,
-    AccountId,
-    AccountIdVersion,
-    AccountStorageDelta,
-    AccountStorageMode,
-    AccountType,
-    AccountVaultDelta,
-    StorageSlot,
+    Account, AccountBuilder, AccountComponent, AccountDelta, AccountId, AccountIdVersion,
+    AccountStorageDelta, AccountStorageMode, AccountType, AccountVaultDelta, StorageSlot,
 };
 use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::block::{
-    BlockAccountUpdate,
-    BlockHeader,
-    BlockNoteIndex,
-    BlockNoteTree,
-    BlockNumber,
+    BlockAccountUpdate, BlockHeader, BlockNoteIndex, BlockNoteTree, BlockNumber,
 };
 use miden_objects::crypto::dsa::rpo_falcon512::PublicKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{
-    Note,
-    NoteDetails,
-    NoteExecutionHint,
-    NoteId,
-    NoteMetadata,
-    NoteTag,
-    NoteType,
-    Nullifier,
+    Note, NoteDetails, NoteExecutionHint, NoteId, NoteMetadata, NoteTag, NoteType, Nullifier,
 };
 use miden_objects::testing::account_id::{
-    ACCOUNT_ID_PRIVATE_SENDER,
-    ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
+    ACCOUNT_ID_PRIVATE_SENDER, ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
     ACCOUNT_ID_REGULAR_PRIVATE_ACCOUNT_UPDATABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
@@ -787,7 +766,7 @@ fn select_nullifiers_by_prefix_works() {
     let block_number0 = 0.into();
     let block_number10 = 10.into();
     let (nullifiers, block_number_reached) =
-        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0, block_number10)
+        queries::select_nullifiers_by_prefix(conn, PREFIX_LEN, &[], block_number0..=block_number10)
             .unwrap();
     assert!(nullifiers.is_empty());
     assert_eq!(block_number_reached, block_number10);
@@ -803,8 +782,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -832,8 +810,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier1)],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -847,8 +824,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&nullifier2)],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -867,8 +843,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier1),
             utils::get_nullifier_prefix(&nullifier2),
         ],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -890,8 +865,7 @@ fn select_nullifiers_by_prefix_works() {
         conn,
         PREFIX_LEN,
         &[utils::get_nullifier_prefix(&num_to_nullifier(3 << 48))],
-        block_number0,
-        block_number10,
+        block_number0..=block_number10,
     )
     .unwrap();
     assert!(nullifiers.is_empty());
@@ -905,8 +879,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier1),
             utils::get_nullifier_prefix(&nullifier2),
         ],
-        block_number2,
-        block_number10,
+        block_number2..=block_number10,
     )
     .unwrap();
     assert_eq!(
@@ -932,8 +905,7 @@ fn select_nullifiers_by_prefix_works() {
             utils::get_nullifier_prefix(&nullifier2),
             utils::get_nullifier_prefix(&nullifier3),
         ],
-        block_number0,
-        block_number2,
+        block_number0..=block_number2,
     )
     .unwrap();
     assert_eq!(

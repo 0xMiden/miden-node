@@ -421,7 +421,8 @@ message BlockRange {
 // Pagination is done using block numbers as the axis, allowing clients to request
 // data in chunks by specifying block ranges and continuing from where the previous
 // response left off.
-// To request the next chunk, the client should use the `block_num` from the previous response
+//
+// To request the next chunk, the client should use `block_num + 1` from the previous response
 // as the `block_from` for the next request.
 message PaginationInfo {
     // Current chain tip

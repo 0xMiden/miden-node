@@ -8,7 +8,6 @@ use miden_node_proto::{convert, try_convert};
 use miden_node_utils::ErrorReport as _;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::block::BlockNumber;
 use miden_objects::note::NoteId;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
@@ -420,23 +419,19 @@ impl rpc_server::Rpc for StoreApi {
             )));
         }
 
-        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
-
-        let block_from = BlockNumber::from(block_range.block_from);
         let chain_tip = self.state.latest_block_num().await;
+        let block_range = request
+            .block_range
+            .ok_or(invalid_argument("block_range is required"))?
+            .into_inclusive_range(chain_tip);
 
-        let block_to = match block_range.block_to {
-            Some(block_to) => BlockNumber::from(block_to),
-            None => chain_tip,
-        };
-
-        if block_from > block_to {
+        if block_range.start() > block_range.end() {
             return Err(Status::invalid_argument("block_from cannot be greater than block_to"));
         }
 
         let storage_maps_page = self
             .state
-            .get_storage_map_sync_values(account_id, block_from..=block_to)
+            .get_storage_map_sync_values(account_id, block_range)
             .await
             .map_err(internal_error)?;
 

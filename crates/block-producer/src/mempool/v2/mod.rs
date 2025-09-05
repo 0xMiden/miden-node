@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::batch::{BatchId, ProvenBatch};
+use miden_objects::batch::BatchId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
 use miden_objects::transaction::{TransactionHeader, TransactionId};
@@ -52,7 +52,7 @@ struct Mempool {
     state: state_graph::StateGraph,
 
     txs: HashMap<TransactionId, AuthenticatedTransaction>,
-    batches: HashMap<BatchId, ProvenBatch>,
+    batches: HashMap<BatchId, AuthenticatedBatch>,
 
     block_budget: BlockBudget,
     batch_budget: BatchBudget,
@@ -66,13 +66,15 @@ struct Mempool {
 impl Mempool {
     pub fn submit_transaction(
         &mut self,
-        tx: &AuthenticatedTransaction,
+        tx: AuthenticatedTransaction,
     ) -> Result<BlockNumber, SubmissionError> {
         // Separate state check from insertion to maintain atomicity.
-        self.check_transaction(tx)?;
+        self.check_transaction(&tx)?;
 
         let id = NodeId::Transaction(tx.id());
-        self.state.insert(id, tx);
+        self.state.insert(id, &tx);
+
+        self.txs.insert(tx.id(), tx);
 
         self.inject_telemetry();
         Ok(self.chain_tip)
@@ -80,10 +82,10 @@ impl Mempool {
 
     pub fn submit_user_batch(
         &mut self,
-        batch: &AuthenticatedBatch,
+        batch: AuthenticatedBatch,
     ) -> Result<BlockNumber, SubmissionError> {
         // Separate state check from insertion to maintain atomicity.
-        self.check_batch(batch)?;
+        self.check_batch(&batch)?;
 
         // Remove existing transactions from the state graph as the batch is replacing them.
         //
@@ -102,8 +104,9 @@ impl Mempool {
         }
 
         let id = NodeId::Batch(batch.id());
-        self.state.insert(id, batch);
+        self.state.insert(id, &batch);
 
+        self.batches.insert(batch.id(), batch);
         self.inject_telemetry();
 
         Ok(self.chain_tip)
@@ -265,8 +268,9 @@ mod state_graph {
     }
 
     /// Describes an account's state transitions and the node's which caused them.
-    #[derive(Default)]
     struct AccountTransitions {
+        /// The latest committed account state.
+        committed: Word,
         /// Alias for an account's initial state.
         from: HashMap<Word, NodeId>,
         /// Alias for an account's final state.
@@ -281,6 +285,7 @@ mod state_graph {
         fn account_updates(&self) -> impl Iterator<Item = (AccountId, Word, Word)>;
         fn unauthenticated_input_notes(&self) -> impl Iterator<Item = NoteId>;
         fn output_notes(&self) -> impl Iterator<Item = NoteId>;
+        fn store_account_state(&self, account: &AccountId) -> Option<Word>;
     }
 
     impl StateGraph {
@@ -323,7 +328,11 @@ mod state_graph {
         /// used in conjunction with `remove` to e.g. replace a set of transaction's with a batch.
         pub fn insert(&mut self, id: NodeId, node: &impl Node) {
             for (account, from, to) in node.account_updates() {
-                self.accounts.entry(account).or_default().insert(id, from, to);
+                let store_state = node.store_account_state(&account).unwrap_or_default();
+                self.accounts
+                    .entry(account)
+                    .or_insert_with(|| AccountTransitions::new(store_state))
+                    .insert(id, from, to);
             }
 
             for nullifier in node.nullifiers() {
@@ -341,7 +350,7 @@ mod state_graph {
 
         /// The latest inflight state of the given account.
         pub fn account_commitment(&self, account: AccountId) -> Option<Word> {
-            self.accounts.get(&account).and_then(AccountTransitions::commitment)
+            self.accounts.get(&account).map(AccountTransitions::commitment)
         }
 
         /// All descendents of the given node.
@@ -384,6 +393,14 @@ mod state_graph {
     }
 
     impl AccountTransitions {
+        fn new(committed: Word) -> Self {
+            Self {
+                committed,
+                from: HashMap::default(),
+                to: HashMap::default(),
+            }
+        }
+
         fn insert(&mut self, node: NodeId, from: Word, to: Word) {
             assert!(
                 self.from.insert(from, node).is_none(),
@@ -402,8 +419,12 @@ mod state_graph {
             self.is_empty()
         }
 
-        fn commitment(&self) -> Option<Word> {
-            self.to.iter().find(|(c, _)| !self.from.contains_key(c)).map(|(c, _)| *c)
+        fn commitment(&self) -> Word {
+            // TODO: revisit this.
+            self.to
+                .iter()
+                .find(|(c, _)| !self.from.contains_key(c))
+                .map_or(self.committed, |(c, _)| *c)
         }
 
         fn consumed_by(&self, to: &Word) -> Option<&NodeId> {
@@ -441,6 +462,10 @@ mod state_graph {
         fn output_notes(&self) -> impl Iterator<Item = NoteId> {
             self.output_note_ids()
         }
+
+        fn store_account_state(&self, account: &AccountId) -> Option<Word> {
+            self.store_account_state()
+        }
     }
 
     impl Node for AuthenticatedBatch {
@@ -460,6 +485,10 @@ mod state_graph {
 
         fn output_notes(&self) -> impl Iterator<Item = NoteId> {
             self.output_note_ids()
+        }
+
+        fn store_account_state(&self, account: &AccountId) -> Option<Word> {
+            self.store_account_state(account)
         }
     }
 }

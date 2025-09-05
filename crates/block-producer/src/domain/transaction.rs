@@ -5,13 +5,7 @@ use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
-use miden_objects::transaction::{
-    OutputNote,
-    ProvenTransaction,
-    TransactionHeader,
-    TransactionId,
-    TxAccountUpdate,
-};
+use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate};
 
 use crate::errors::VerifyTxError;
 use crate::store::TransactionInputs;
@@ -133,8 +127,8 @@ impl AuthenticatedTransaction {
         self.inner.expiration_block_num()
     }
 
-    pub fn header(&self) -> TransactionHeader {
-        self.inner.as_ref().into()
+    pub fn raw_proven_transaction(&self) -> &ProvenTransaction {
+        &self.inner
     }
 }
 
@@ -178,9 +172,5 @@ impl AuthenticatedTransaction {
     pub fn with_empty_store_state(mut self) -> Self {
         self.store_account_state = None;
         self
-    }
-
-    pub fn raw_proven_transaction(&self) -> &ProvenTransaction {
-        &self.inner
     }
 }

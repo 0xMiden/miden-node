@@ -1,7 +1,14 @@
 use std::collections::BTreeMap;
+use std::ops::RangeInclusive;
 
 use miden_objects::account::AccountId;
-use miden_objects::block::{BlockHeader, BlockInputs, FeeParameters, NullifierWitness};
+use miden_objects::block::{
+    BlockHeader,
+    BlockInputs,
+    BlockNumber,
+    FeeParameters,
+    NullifierWitness,
+};
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
 use miden_objects::utils::{Deserializable, Serializable};
@@ -204,6 +211,28 @@ impl From<&FeeParameters> for proto::blockchain::FeeParameters {
         Self {
             native_asset_id: Some(value.native_asset_id().into()),
             verification_base_fee: value.verification_base_fee(),
+        }
+    }
+}
+
+// BLOCK RANGE
+// ================================================================================================
+
+impl proto::rpc_store::BlockRange {
+    /// Converts the block range into an inclusive range, using the fallback block number if the
+    /// block to is not specified.
+    pub fn into_inclusive_range(self, fallback: BlockNumber) -> RangeInclusive<BlockNumber> {
+        RangeInclusive::new(
+            self.block_from.into(),
+            self.block_to.map_or(fallback, BlockNumber::from),
+        )
+    }
+
+    /// Converts an inclusive range into a [`proto::rpc_store::BlockRange`].
+    pub fn from_range(range: RangeInclusive<BlockNumber>) -> Self {
+        Self {
+            block_from: range.start().as_u32(),
+            block_to: Some(range.end().as_u32()),
         }
     }
 }

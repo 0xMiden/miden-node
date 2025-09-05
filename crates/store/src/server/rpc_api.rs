@@ -99,18 +99,15 @@ impl rpc_server::Rpc for StoreApi {
             return Err(Status::invalid_argument("Only 16-bit prefixes are supported"));
         }
 
-        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
-
         let chain_tip = self.state.latest_block_num().await;
-        let block_to = block_range.block_to.map_or(chain_tip, BlockNumber::from);
+        let block_range = request
+            .block_range
+            .ok_or(invalid_argument("block_range is required"))?
+            .into_inclusive_range(chain_tip);
 
         let (nullifiers, block_num) = self
             .state
-            .sync_nullifiers(
-                request.prefix_len,
-                request.nullifiers,
-                block_range.block_from.into()..=block_to,
-            )
+            .sync_nullifiers(request.prefix_len, request.nullifiers, block_range)
             .await?;
         let nullifiers = nullifiers
             .into_iter()
@@ -367,16 +364,15 @@ impl rpc_server::Rpc for StoreApi {
 
         let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
 
-        let block_from = block_range.block_from.into();
-        let block_to: BlockNumber = block_range.block_to.map_or(chain_tip, BlockNumber::from);
+        let block_range = block_range.into_inclusive_range(chain_tip);
 
-        if block_to >= chain_tip {
+        if block_range.end() > &chain_tip {
             return Err(Status::invalid_argument("block_to cannot be higher than the chain tip"));
         }
 
         let (last_included_block, updates) = self
             .state
-            .sync_account_vault(account_id, block_from..=block_to)
+            .sync_account_vault(account_id, block_range)
             .await
             .map_err(internal_error)?;
 

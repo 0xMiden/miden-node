@@ -28,7 +28,7 @@ use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteRecipient, NoteScript};
 use miden_objects::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
 use miden_objects::utils::serde::{Deserializable, Serializable};
-use miden_objects::{MAX_NUM_FOREIGN_ACCOUNTS, MIN_PROOF_SECURITY_LEVEL, Word};
+use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
 use tracing::{debug, info, instrument};
@@ -500,33 +500,20 @@ impl api_server::Api for RpcService {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "rpc.server.get_account_proofs",
+        name = "rpc.server.get_account_proof",
         skip_all,
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proofs(
+    async fn get_account_proof(
         &self,
-        request: Request<proto::rpc_store::AccountProofsRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProofs>, Status> {
+        request: Request<proto::rpc_store::AccountProofRequest>,
+    ) -> Result<Response<proto::rpc_store::AccountProof>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
 
-        if request.account_requests.len() > MAX_NUM_FOREIGN_ACCOUNTS as usize {
-            return Err(Status::invalid_argument(format!(
-                "Too many accounts requested: {}, limit: {MAX_NUM_FOREIGN_ACCOUNTS}",
-                request.account_requests.len()
-            )));
-        }
-
-        if request.account_requests.len() < request.code_commitments.len() {
-            return Err(Status::invalid_argument(
-                "The number of code commitments should not exceed the number of requested accounts.",
-            ));
-        }
-
-        self.store.clone().get_account_proofs(request).await
+        self.store.clone().get_account_proof(request).await
     }
 
     #[instrument(

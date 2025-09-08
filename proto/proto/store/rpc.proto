@@ -26,8 +26,8 @@ service Rpc {
     // Returns the latest state of an account with the specified ID.
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
-    // Returns the latest state proofs of the specified accounts.
-    rpc GetAccountProofs(AccountProofsRequest) returns (AccountProofs) {}
+    // Returns the latest state proof of the specified account.
+    rpc GetAccountProof(AccountProofRequest) returns (AccountProof) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
@@ -101,7 +101,7 @@ message StoreStatus {
 // ================================================================================================
 
 // Returns the latest state proofs of the specified accounts.
-message AccountProofsRequest {
+message AccountProofRequest {
     // Represents per-account requests where each account ID has its own list of
     // (storage_slot_index, map_keys) pairs.
     message AccountRequest {
@@ -122,7 +122,7 @@ message AccountProofsRequest {
     }
 
     // A list of account requests, including map keys + values.
-    repeated AccountRequest account_requests = 1;
+    optional AccountRequest account_request = 1;
 
     // Optional flag to include account headers and account code in the response. If false, storage
     // requests are also ignored. False by default.
@@ -136,46 +136,41 @@ message AccountProofsRequest {
 }
 
 // Represents the result of getting account proofs.
-message AccountProofs {
-    // A single account proof returned as a response to `GetAccountProofs`.
-    message AccountProof {
-        // State header for public accounts.
-        message AccountStateHeader {
-            // Represents a single storage slot with the requested keys and their respective values.
-            message StorageSlotMapProof {
-                // The storage slot index ([0..255]).
-                uint32 storage_slot = 1;
-
-                // Merkle proof of the map value
-                bytes smt_proof = 2;
-            }
-
-            // Account header.
-            account.AccountHeader header = 1;
-
-            // Values of all account storage slots (max 255).
-            bytes storage_header = 2;
-
-            // Account code, returned only when none of the request's code commitments match
-            // the current one.
-            optional bytes account_code = 3;
-
-            // Storage slots information for this account
-            repeated StorageSlotMapProof storage_maps = 4;
-        }
-
-        // The account witness for the current state commitment of one account ID.
-        account.AccountWitness witness = 1;
-
-        // State header for public accounts. Filled only if `include_headers` flag is set to `true`.
-        optional AccountStateHeader state_header = 2;
-    }
+message AccountProof {
 
     // Block number at which the state of the accounts is returned.
     fixed32 block_num = 1;
 
-    // List of account state infos for the requested account keys.
-    repeated AccountProof account_proofs = 2;
+    // State header for public accounts.
+    message AccountStateHeader {
+        // Represents a single storage slot with the requested keys and their respective values.
+        message StorageSlotMapProof {
+            // The storage slot index ([0..255]).
+            uint32 storage_slot = 1;
+
+            // Merkle proof of the map value
+            bytes smt_proof = 2;
+        }
+
+        // Account header.
+        account.AccountHeader header = 1;
+
+        // Values of all account storage slots (max 255).
+        bytes storage_header = 2;
+
+        // Account code, returned only when none of the request's code commitments match
+        // the current one.
+        optional bytes account_code = 3;
+
+        // Storage slots information for this account
+        repeated StorageSlotMapProof storage_maps = 4;
+    }
+
+    // The account witness for the current state commitment of one account ID.
+    account.AccountWitness witness = 2;
+
+    // State header for public accounts. Filled only if `include_headers` flag is set to `true`.
+    optional AccountStateHeader state_header = 3;
 }
 
 // CHECK NULLIFIERS
@@ -296,7 +291,7 @@ message SyncAccountVaultResponse {
     PaginationInfo pagination_info = 1;
 
     // List of asset updates for the account.
-    // 
+    //
     // Multiple updates can be returned for a single asset, and the one with a higher `block_num`
     // is expected to be retained by the caller.
     repeated AccountVaultUpdate updates = 2;
@@ -371,7 +366,7 @@ message SyncStorageMapsResponse {
     PaginationInfo pagination_info = 1;
 
     // The list of storage map updates.
-    // 
+    //
     // Multiple updates can be returned for a single slot index and key combination, and the one
     // with a higher `block_num` is expected to be retained by the caller.
     repeated StorageMapUpdate updates = 2;
@@ -384,10 +379,10 @@ message StorageMapUpdate {
 
     // Slot index ([0..255]).
     uint32 slot_index = 2;
-    
+
     // The storage map key.
     primitives.Digest key = 3;
-        
+
     // The storage map value.
     primitives.Digest value = 4;
 }

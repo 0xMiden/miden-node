@@ -367,18 +367,6 @@ impl Db {
         .await
     }
 
-    /// Loads public accounts details from the DB.
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_accounts_by_ids(
-        &self,
-        account_ids: Vec<AccountId>,
-    ) -> Result<Vec<AccountInfo>> {
-        self.transact("Select account by id set", |conn| {
-            queries::select_accounts_by_id(conn, account_ids)
-        })
-        .await
-    }
-
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,

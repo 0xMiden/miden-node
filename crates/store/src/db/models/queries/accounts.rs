@@ -155,33 +155,6 @@ pub(crate) fn select_all_account_commitments(
     ))
 }
 
-/// Select accounts by their IDs.
-///
-/// # Parameters
-/// * `account_ids`: List of account IDs to query
-///     - Limit: 0 <= size <= 1000
-pub(crate) fn select_accounts_by_id(
-    conn: &mut SqliteConnection,
-    account_ids: Vec<AccountId>,
-) -> Result<Vec<AccountInfo>, DatabaseError> {
-    QueryParamAccountIdLimit::check(account_ids.len())?;
-
-    let account_ids = account_ids.iter().map(|account_id| account_id.to_bytes().clone());
-
-    let accounts_raw = SelectDsl::select(
-        schema::accounts::table.left_join(schema::account_codes::table.on(
-            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
-        )),
-        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-    )
-    .filter(schema::accounts::account_id.eq_any(account_ids))
-    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
-        accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
-    )?;
-    Ok(account_infos)
-}
-
 /// Select account vault assets within a block range (inclusive).
 ///
 /// # Parameters

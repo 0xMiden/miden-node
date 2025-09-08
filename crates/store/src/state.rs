@@ -883,101 +883,80 @@ impl State {
     }
 
     /// Returns account proofs with optional account and storage headers.
-    pub async fn get_account_proofs(
+    pub async fn get_account_proof(
         &self,
-        account_requests: Vec<AccountProofRequest>,
+        account_request: AccountProofRequest,
         known_code_commitments: BTreeSet<Word>,
         include_headers: bool,
-    ) -> Result<(BlockNumber, Vec<proto::rpc_store::account_proofs::AccountProof>), DatabaseError>
-    {
+    ) -> Result<(BlockNumber, proto::rpc_store::AccountProof), DatabaseError> {
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
         let inner_state = self.inner.read().await;
 
-        let account_ids: Vec<AccountId> =
-            account_requests.iter().map(|req| req.account_id).collect();
+        let account_id = account_request.account_id;
 
         let state_headers = if include_headers.not() {
-            BTreeMap::<AccountId, proto::rpc_store::account_proofs::account_proof::AccountStateHeader>::default()
+            BTreeMap::<AccountId, proto::rpc_store::account_proof::AccountStateHeader>::default()
         } else {
-            let infos = self.db.select_accounts_by_ids(account_ids.clone()).await?;
-            if account_ids.len() > infos.len() {
-                let found_ids = infos.iter().map(|info| info.summary.account_id).collect();
-                return Err(DatabaseError::AccountsNotFoundInDb(
-                    BTreeSet::from_iter(account_ids).difference(&found_ids).copied().collect(),
-                ));
-            }
+            let info = self.db.select_account(account_id).await?;
 
             let mut headers_map = BTreeMap::new();
 
-            // Iterate and build state headers for public accounts
-            for request in account_requests {
-                let account_info = infos
-                    .iter()
-                    .find(|info| info.summary.account_id == request.account_id)
-                    .expect("retrieved accounts were validated against request");
+            if let Some(details) = &info.details {
+                let mut storage_slot_map_keys = Vec::new();
 
-                if let Some(details) = &account_info.details {
-                    let mut storage_slot_map_keys = Vec::new();
-
-                    for StorageMapKeysProof { storage_index, storage_keys } in
-                        &request.storage_requests
+                for StorageMapKeysProof { storage_index, storage_keys } in
+                    &account_request.storage_requests
+                {
+                    if let Some(StorageSlot::Map(storage_map)) =
+                        details.storage().slots().get(*storage_index as usize)
                     {
-                        if let Some(StorageSlot::Map(storage_map)) =
-                            details.storage().slots().get(*storage_index as usize)
-                        {
-                            for map_key in storage_keys {
-                                let proof = storage_map.open(map_key);
+                        for map_key in storage_keys {
+                            let proof = storage_map.open(map_key);
 
-                                let slot_map_key = proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapProof {
+                            let slot_map_key = proto::rpc_store::account_proof::account_state_header::StorageSlotMapProof {
                                     storage_slot: u32::from(*storage_index),
                                     smt_proof: proof.to_bytes(),
                                 };
-                                storage_slot_map_keys.push(slot_map_key);
-                            }
-                        } else {
-                            return Err(AccountError::StorageSlotNotMap(*storage_index).into());
+                            storage_slot_map_keys.push(slot_map_key);
                         }
+                    } else {
+                        return Err(AccountError::StorageSlotNotMap(*storage_index).into());
                     }
-
-                    // Only include unknown account codes
-                    let account_code = known_code_commitments
-                        .contains(&details.code().commitment())
-                        .not()
-                        .then(|| details.code().to_bytes());
-
-                    let state_header =
-                        proto::rpc_store::account_proofs::account_proof::AccountStateHeader {
-                            header: Some(AccountHeader::from(details).into()),
-                            storage_header: details.storage().to_header().to_bytes(),
-                            account_code,
-                            storage_maps: storage_slot_map_keys,
-                        };
-
-                    headers_map.insert(account_info.summary.account_id, state_header);
                 }
+
+                // Only include unknown account codes
+                let account_code = known_code_commitments
+                    .contains(&details.code().commitment())
+                    .not()
+                    .then(|| details.code().to_bytes()); // FIXME
+
+                let state_header = proto::rpc_store::account_proof::AccountStateHeader {
+                    header: Some(AccountHeader::from(details).into()),
+                    storage_header: details.storage().to_header().to_bytes(),
+                    account_code,
+                    storage_maps: storage_slot_map_keys,
+                };
+
+                headers_map.insert(account_id, state_header);
             }
 
             headers_map
         };
 
-        let responses = account_ids
-            .into_iter()
-            .map(|account_id| {
-                let witness = inner_state.account_tree.open(account_id);
-                let state_header = state_headers.get(&account_id).cloned();
+        let witness = inner_state.account_tree.open(account_id);
+        let state_header = state_headers.get(&account_id).cloned();
 
-                let witness_record = AccountWitnessRecord { account_id, witness };
+        let witness_record = AccountWitnessRecord { account_id, witness };
 
-                proto::rpc_store::account_proofs::AccountProof {
-                    witness: Some(witness_record.into()),
-                    state_header,
-                }
-            })
-            .collect();
+        let response = proto::rpc_store::AccountProof {
+            block_num: inner_state.latest_block_num().as_u32(),
+            witness: Some(witness_record.into()),
+            state_header,
+        };
 
-        Ok((inner_state.latest_block_num(), responses))
+        Ok((inner_state.latest_block_num(), response))
     }
 
     /// Returns storage map values for syncing within a block range.

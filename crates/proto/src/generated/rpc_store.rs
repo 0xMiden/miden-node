@@ -14,12 +14,10 @@ pub struct StoreStatus {
 }
 /// Returns the latest state proofs of the specified accounts.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountProofsRequest {
+pub struct AccountProofRequest {
     /// A list of account requests, including map keys + values.
-    #[prost(message, repeated, tag = "1")]
-    pub account_requests: ::prost::alloc::vec::Vec<
-        account_proofs_request::AccountRequest,
-    >,
+    #[prost(message, optional, tag = "1")]
+    pub account_request: ::core::option::Option<account_proof_request::AccountRequest>,
     /// Optional flag to include account headers and account code in the response. If false, storage
     /// requests are also ignored. False by default.
     #[prost(bool, optional, tag = "2")]
@@ -31,8 +29,8 @@ pub struct AccountProofsRequest {
     #[prost(message, repeated, tag = "3")]
     pub code_commitments: ::prost::alloc::vec::Vec<super::primitives::Digest>,
 }
-/// Nested message and enum types in `AccountProofsRequest`.
-pub mod account_proofs_request {
+/// Nested message and enum types in `AccountProofRequest`.
+pub mod account_proof_request {
     /// Represents per-account requests where each account ID has its own list of
     /// (storage_slot_index, map_keys) pairs.
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -62,61 +60,49 @@ pub mod account_proofs_request {
 }
 /// Represents the result of getting account proofs.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountProofs {
+pub struct AccountProof {
     /// Block number at which the state of the accounts is returned.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
-    /// List of account state infos for the requested account keys.
-    #[prost(message, repeated, tag = "2")]
-    pub account_proofs: ::prost::alloc::vec::Vec<account_proofs::AccountProof>,
+    /// The account witness for the current state commitment of one account ID.
+    #[prost(message, optional, tag = "2")]
+    pub witness: ::core::option::Option<super::account::AccountWitness>,
+    /// State header for public accounts. Filled only if `include_headers` flag is set to `true`.
+    #[prost(message, optional, tag = "3")]
+    pub state_header: ::core::option::Option<account_proof::AccountStateHeader>,
 }
-/// Nested message and enum types in `AccountProofs`.
-pub mod account_proofs {
-    /// A single account proof returned as a response to `GetAccountProofs`.
+/// Nested message and enum types in `AccountProof`.
+pub mod account_proof {
+    /// State header for public accounts.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct AccountProof {
-        /// The account witness for the current state commitment of one account ID.
+    pub struct AccountStateHeader {
+        /// Account header.
         #[prost(message, optional, tag = "1")]
-        pub witness: ::core::option::Option<super::super::account::AccountWitness>,
-        /// State header for public accounts. Filled only if `include_headers` flag is set to `true`.
-        #[prost(message, optional, tag = "2")]
-        pub state_header: ::core::option::Option<account_proof::AccountStateHeader>,
+        pub header: ::core::option::Option<super::super::account::AccountHeader>,
+        /// Values of all account storage slots (max 255).
+        #[prost(bytes = "vec", tag = "2")]
+        pub storage_header: ::prost::alloc::vec::Vec<u8>,
+        /// Account code, returned only when none of the request's code commitments match
+        /// the current one.
+        #[prost(bytes = "vec", optional, tag = "3")]
+        pub account_code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+        /// Storage slots information for this account
+        #[prost(message, repeated, tag = "4")]
+        pub storage_maps: ::prost::alloc::vec::Vec<
+            account_state_header::StorageSlotMapProof,
+        >,
     }
-    /// Nested message and enum types in `AccountProof`.
-    pub mod account_proof {
-        /// State header for public accounts.
+    /// Nested message and enum types in `AccountStateHeader`.
+    pub mod account_state_header {
+        /// Represents a single storage slot with the requested keys and their respective values.
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct AccountStateHeader {
-            /// Account header.
-            #[prost(message, optional, tag = "1")]
-            pub header: ::core::option::Option<
-                super::super::super::account::AccountHeader,
-            >,
-            /// Values of all account storage slots (max 255).
+        pub struct StorageSlotMapProof {
+            /// The storage slot index (\[0..255\]).
+            #[prost(uint32, tag = "1")]
+            pub storage_slot: u32,
+            /// Merkle proof of the map value
             #[prost(bytes = "vec", tag = "2")]
-            pub storage_header: ::prost::alloc::vec::Vec<u8>,
-            /// Account code, returned only when none of the request's code commitments match
-            /// the current one.
-            #[prost(bytes = "vec", optional, tag = "3")]
-            pub account_code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-            /// Storage slots information for this account
-            #[prost(message, repeated, tag = "4")]
-            pub storage_maps: ::prost::alloc::vec::Vec<
-                account_state_header::StorageSlotMapProof,
-            >,
-        }
-        /// Nested message and enum types in `AccountStateHeader`.
-        pub mod account_state_header {
-            /// Represents a single storage slot with the requested keys and their respective values.
-            #[derive(Clone, PartialEq, ::prost::Message)]
-            pub struct StorageSlotMapProof {
-                /// The storage slot index (\[0..255\]).
-                #[prost(uint32, tag = "1")]
-                pub storage_slot: u32,
-                /// Merkle proof of the map value
-                #[prost(bytes = "vec", tag = "2")]
-                pub smt_proof: ::prost::alloc::vec::Vec<u8>,
-            }
+            pub smt_proof: ::prost::alloc::vec::Vec<u8>,
         }
     }
 }
@@ -533,11 +519,11 @@ pub mod rpc_client {
                 .insert(GrpcMethod::new("rpc_store.Rpc", "GetAccountDetails"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state proofs of the specified accounts.
-        pub async fn get_account_proofs(
+        /// Returns the latest state proof of the specified account.
+        pub async fn get_account_proof(
             &mut self,
-            request: impl tonic::IntoRequest<super::AccountProofsRequest>,
-        ) -> std::result::Result<tonic::Response<super::AccountProofs>, tonic::Status> {
+            request: impl tonic::IntoRequest<super::AccountProofRequest>,
+        ) -> std::result::Result<tonic::Response<super::AccountProof>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -548,11 +534,11 @@ pub mod rpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/rpc_store.Rpc/GetAccountProofs",
+                "/rpc_store.Rpc/GetAccountProof",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("rpc_store.Rpc", "GetAccountProofs"));
+                .insert(GrpcMethod::new("rpc_store.Rpc", "GetAccountProof"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns raw block data for the specified block number.
@@ -837,11 +823,11 @@ pub mod rpc_server {
             tonic::Response<super::super::account::AccountDetails>,
             tonic::Status,
         >;
-        /// Returns the latest state proofs of the specified accounts.
-        async fn get_account_proofs(
+        /// Returns the latest state proof of the specified account.
+        async fn get_account_proof(
             &self,
-            request: tonic::Request<super::AccountProofsRequest>,
-        ) -> std::result::Result<tonic::Response<super::AccountProofs>, tonic::Status>;
+            request: tonic::Request<super::AccountProofRequest>,
+        ) -> std::result::Result<tonic::Response<super::AccountProof>, tonic::Status>;
         /// Returns raw block data for the specified block number.
         async fn get_block_by_number(
             &self,
@@ -1141,23 +1127,23 @@ pub mod rpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/rpc_store.Rpc/GetAccountProofs" => {
+                "/rpc_store.Rpc/GetAccountProof" => {
                     #[allow(non_camel_case_types)]
-                    struct GetAccountProofsSvc<T: Rpc>(pub Arc<T>);
-                    impl<T: Rpc> tonic::server::UnaryService<super::AccountProofsRequest>
-                    for GetAccountProofsSvc<T> {
-                        type Response = super::AccountProofs;
+                    struct GetAccountProofSvc<T: Rpc>(pub Arc<T>);
+                    impl<T: Rpc> tonic::server::UnaryService<super::AccountProofRequest>
+                    for GetAccountProofSvc<T> {
+                        type Response = super::AccountProof;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
                         fn call(
                             &mut self,
-                            request: tonic::Request<super::AccountProofsRequest>,
+                            request: tonic::Request<super::AccountProofRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Rpc>::get_account_proofs(&inner, request).await
+                                <T as Rpc>::get_account_proof(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -1168,7 +1154,7 @@ pub mod rpc_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetAccountProofsSvc(inner);
+                        let method = GetAccountProofSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

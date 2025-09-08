@@ -102,11 +102,11 @@ pub struct AccountProofRequest {
     pub storage_requests: Vec<StorageMapKeysProof>,
 }
 
-impl TryInto<AccountProofRequest> for proto::rpc_store::account_proofs_request::AccountRequest {
+impl TryInto<AccountProofRequest> for proto::rpc_store::account_proof_request::AccountRequest {
     type Error = ConversionError;
 
     fn try_into(self) -> Result<AccountProofRequest, Self::Error> {
-        let proto::rpc_store::account_proofs_request::AccountRequest {
+        let proto::rpc_store::account_proof_request::AccountRequest {
             account_id,
             storage_requests,
         } = self;
@@ -114,7 +114,7 @@ impl TryInto<AccountProofRequest> for proto::rpc_store::account_proofs_request::
         Ok(AccountProofRequest {
             account_id: account_id
                 .clone()
-                .ok_or(proto::rpc_store::account_proofs_request::AccountRequest::missing_field(
+                .ok_or(proto::rpc_store::account_proof_request::AccountRequest::missing_field(
                     stringify!(account_id),
                 ))?
                 .try_into()?,
@@ -132,12 +132,12 @@ pub struct StorageMapKeysProof {
 }
 
 impl TryInto<StorageMapKeysProof>
-    for proto::rpc_store::account_proofs_request::account_request::StorageRequest
+    for proto::rpc_store::account_proof_request::account_request::StorageRequest
 {
     type Error = ConversionError;
 
     fn try_into(self) -> Result<StorageMapKeysProof, Self::Error> {
-        let proto::rpc_store::account_proofs_request::account_request::StorageRequest {
+        let proto::rpc_store::account_proof_request::account_request::StorageRequest {
             storage_slot_index,
             map_keys,
         } = self;

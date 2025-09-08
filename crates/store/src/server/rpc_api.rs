@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use miden_node_proto::domain::account::{AccountInfo, AccountProofRequest};
+use miden_node_proto::domain::account::AccountInfo;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc_store::rpc_server;
 use miden_node_proto::generated::{self as proto};
@@ -300,19 +300,19 @@ impl rpc_server::Rpc for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.rpc_server.get_account_proofs",
+        name = "store.rpc_server.get_account_proof",
         skip_all,
         level = "debug",
         ret(level = "debug"),
         err
     )]
-    async fn get_account_proofs(
+    async fn get_account_proof(
         &self,
-        request: Request<proto::rpc_store::AccountProofsRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProofs>, Status> {
+        request: Request<proto::rpc_store::AccountProofRequest>,
+    ) -> Result<Response<proto::rpc_store::AccountProof>, Status> {
         debug!(target: COMPONENT, ?request);
-        let proto::rpc_store::AccountProofsRequest {
-            account_requests,
+        let proto::rpc_store::AccountProofRequest {
+            account_request,
             include_headers,
             code_commitments,
         } = request.into_inner();
@@ -322,20 +322,17 @@ impl rpc_server::Rpc for StoreApi {
             .collect::<Result<_, _>>()
             .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
 
-        let account_requests: Vec<AccountProofRequest> =
-            try_convert(account_requests).collect::<Result<_, _>>().map_err(|err| {
-                Status::invalid_argument(format!("Invalid account proofs request: {err}"))
-            })?;
+        let account_request = account_request.unwrap(); // FIXME XXX
+        let account_request = account_request.try_into().map_err(|err| {
+            Status::invalid_argument(format!("Invalid account proofs request: {err}"))
+        })?;
 
-        let (block_num, infos) = self
+        let (_block_num, proof) = self
             .state
-            .get_account_proofs(account_requests, request_code_commitments, include_headers)
+            .get_account_proof(account_request, request_code_commitments, include_headers)
             .await?;
 
-        Ok(Response::new(proto::rpc_store::AccountProofs {
-            block_num: block_num.as_u32(),
-            account_proofs: infos,
-        }))
+        Ok(Response::new(proof))
     }
 
     #[instrument(

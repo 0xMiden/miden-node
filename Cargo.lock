@@ -2058,8 +2058,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "647ac07da368ec735ed22a28006e4e263eb454d806a044edfe423b735247cb42"
+source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-fix-foreign-account-prover#3b2ae7c80f4a39cc117286026f707481285c71b8"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2131,8 +2130,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07947bc8471c133dbf6d063973531f0e6428852cc67d6a23f74f88c67cae9ee1"
+source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-fix-foreign-account-prover#3b2ae7c80f4a39cc117286026f707481285c71b8"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2430,8 +2428,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a848cda86c5abab6a2eeec7f066d6eaf2f2af432fea8da78199a1da51fdea6b6"
+source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-fix-foreign-account-prover#3b2ae7c80f4a39cc117286026f707481285c71b8"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2561,8 +2558,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6d4d3283db8ffc5ff60e9259baf9c6736df06fc38212c9b79eaf3926aaad316"
+source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-fix-foreign-account-prover#3b2ae7c80f4a39cc117286026f707481285c71b8"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2581,8 +2577,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "83ba01b977d313f82c19351c48b0c28a4969fd97a6b00f3d6a098ed2cc14bc2b"
+source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-fix-foreign-account-prover#3b2ae7c80f4a39cc117286026f707481285c71b8"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2597,8 +2592,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b77a0fe4805ea1fc983f50f4b757865d9ec8ecf5df15d93acb09840642cace"
+source = "git+https://github.com/0xMiden/miden-base?branch=pgackst-fix-foreign-account-prover#3b2ae7c80f4a39cc117286026f707481285c71b8"
 dependencies = [
  "miden-objects",
  "miden-tx",

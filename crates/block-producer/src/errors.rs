@@ -100,25 +100,68 @@ pub enum AddTransactionError {
     },
 }
 
+// Error codes for gRPC Status::details
+// =================================================================================================
+
+/// Error codes for `SubmitTransaction` errors
+#[repr(u8)]
+pub enum SubmitTransactionErrorCode {
+    InputNotesAlreadyConsumed = 0,
+    UnauthenticatedNotesNotFound = 1,
+    OutputNotesAlreadyExist = 2,
+    IncorrectAccountInitialCommitment = 3,
+    InvalidTransactionProof = 4,
+    StaleInputs = 5,
+    Expired = 6,
+    DeserializationFailed = 7,
+    Internal = 8,
+}
+
 impl From<AddTransactionError> for tonic::Status {
     fn from(value: AddTransactionError) -> Self {
-        match value {
-            AddTransactionError::VerificationFailed(
-                VerifyTxError::InputNotesAlreadyConsumed(_)
-                | VerifyTxError::UnauthenticatedNotesNotFound(_)
-                | VerifyTxError::OutputNotesAlreadyExist(_)
-                | VerifyTxError::IncorrectAccountInitialCommitment { .. }
-                | VerifyTxError::InvalidTransactionProof(_),
-            )
-            | AddTransactionError::Expired { .. }
-            | AddTransactionError::TransactionDeserializationFailed(_) => {
-                Self::invalid_argument(value.as_report())
-            },
+        let (error_code, grpc_code) = get_error_code_and_grpc_code(&value);
 
-            // Internal errors which should not be communicated to the user.
-            AddTransactionError::VerificationFailed(VerifyTxError::StoreConnectionFailed(_))
-            | AddTransactionError::StaleInputs { .. } => Self::internal("Internal error"),
-        }
+        tonic::Status::with_details(grpc_code, value.to_string(), vec![error_code].into())
+    }
+}
+
+fn get_error_code_and_grpc_code(error: &AddTransactionError) -> (u8, tonic::Code) {
+    match error {
+        AddTransactionError::VerificationFailed(tx_verify_error) => match tx_verify_error {
+            VerifyTxError::InputNotesAlreadyConsumed(_) => (
+                SubmitTransactionErrorCode::InputNotesAlreadyConsumed as u8,
+                tonic::Code::InvalidArgument,
+            ),
+            VerifyTxError::UnauthenticatedNotesNotFound(_) => (
+                SubmitTransactionErrorCode::UnauthenticatedNotesNotFound as u8,
+                tonic::Code::InvalidArgument,
+            ),
+            VerifyTxError::OutputNotesAlreadyExist(_) => (
+                SubmitTransactionErrorCode::OutputNotesAlreadyExist as u8,
+                tonic::Code::InvalidArgument,
+            ),
+            VerifyTxError::IncorrectAccountInitialCommitment { .. } => (
+                SubmitTransactionErrorCode::IncorrectAccountInitialCommitment as u8,
+                tonic::Code::InvalidArgument,
+            ),
+            VerifyTxError::InvalidTransactionProof(_) => (
+                SubmitTransactionErrorCode::InvalidTransactionProof as u8,
+                tonic::Code::InvalidArgument,
+            ),
+            VerifyTxError::StoreConnectionFailed(_) => {
+                (SubmitTransactionErrorCode::Internal as u8, tonic::Code::Internal)
+            },
+        },
+        AddTransactionError::StaleInputs { .. } => {
+            (SubmitTransactionErrorCode::StaleInputs as u8, tonic::Code::InvalidArgument)
+        },
+        AddTransactionError::Expired { .. } => {
+            (SubmitTransactionErrorCode::Expired as u8, tonic::Code::InvalidArgument)
+        },
+        AddTransactionError::TransactionDeserializationFailed(_) => (
+            SubmitTransactionErrorCode::DeserializationFailed as u8,
+            tonic::Code::InvalidArgument,
+        ),
     }
 }
 

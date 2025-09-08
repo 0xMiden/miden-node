@@ -307,14 +307,14 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_account_proof(
         &self,
         request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProof>, Status> {
+    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
         debug!(target: COMPONENT, ?request);
         let request = request.into_inner();
-        let account_request = request.try_into()?;
+        let account_proof_request = request.try_into()?;
 
-        let proof = self.state.get_account_proof(account_request).await?;
+        let proof = self.state.get_account_proof(account_proof_request).await?;
 
-        Ok(Response::new(proto::rpc_store::AccountProof::from(proof)))
+        Ok(Response::new(proof.into()))
     }
 
     #[instrument(

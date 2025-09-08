@@ -181,7 +181,7 @@ pub mod api_client {
                 super::super::rpc_store::AccountProofRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProof>,
+            tonic::Response<super::super::rpc_store::AccountProofResponse>,
             tonic::Status,
         > {
             self.inner
@@ -564,7 +564,7 @@ pub mod api_server {
             &self,
             request: tonic::Request<super::super::rpc_store::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProof>,
+            tonic::Response<super::super::rpc_store::AccountProofResponse>,
             tonic::Status,
         >;
         /// Returns raw block data for the specified block number.
@@ -916,7 +916,7 @@ pub mod api_server {
                     > tonic::server::UnaryService<
                         super::super::rpc_store::AccountProofRequest,
                     > for GetAccountProofSvc<T> {
-                        type Response = super::super::rpc_store::AccountProof;
+                        type Response = super::super::rpc_store::AccountProofResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

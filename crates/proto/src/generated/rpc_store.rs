@@ -12,98 +12,170 @@ pub struct StoreStatus {
     #[prost(fixed32, tag = "3")]
     pub chain_tip: u32,
 }
-/// Returns the latest state proof of the specified accounts.
+/// Returns the latest state proof of the specified account.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofRequest {
-    /// The account ID for this request.
+    /// ID of the account for which we want to get data
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// A account detail requests, including map keys + values.
-    #[prost(message, optional, tag = "2")]
-    pub account_details: ::core::option::Option<
-        account_proof_request::AccountDetailsRequest,
-    >,
+    /// Block at which we'd like to get this data. Must be close to the chain tip.
+    #[prost(fixed32, tag = "2")]
+    pub block_num: u32,
+    /// Request for additional account details; valid only for public accounts.
+    #[prost(message, optional, tag = "3")]
+    pub details: ::core::option::Option<account_proof_request::AccountDetailRequest>,
 }
 /// Nested message and enum types in `AccountProofRequest`.
 pub mod account_proof_request {
     /// Request the details for a public account.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct AccountDetailsRequest {
-        /// Account code commitment corresponding to the last-known `AccountCode` for the requested
-        /// account. The response will include only code that is known.
+    pub struct AccountDetailRequest {
+        /// Last known code commitment to the client. The response will include account code
+        /// only if its commitment is different from this value.
+        ///
+        /// We could also extend this methodology to account storage and asset vault to return
+        /// data only if the client doesn't already have it.
         #[prost(message, optional, tag = "1")]
         pub code_commitment: ::core::option::Option<super::super::primitives::Digest>,
-        /// List of storage requests for this account.
-        #[prost(message, repeated, tag = "2")]
-        pub storage_requests: ::prost::alloc::vec::Vec<
-            account_details_request::StorageRequest,
+        /// A flag indicating whether the response should include asset vault data; assets
+        /// will be returned only if the account contains a small number of assets
+        /// (e.g., under 1000).
+        ///
+        /// We could also make this more granular and request assets under specific keys, but
+        /// I'm not sure this is needed at the moment.
+        #[prost(bool, tag = "2")]
+        pub include_assets: bool,
+        /// Additional request per storage map.
+        #[prost(message, repeated, tag = "3")]
+        pub storage_maps: ::prost::alloc::vec::Vec<
+            account_detail_request::StorageMapDetailRequest,
         >,
     }
-    /// Nested message and enum types in `AccountDetailsRequest`.
-    pub mod account_details_request {
+    /// Nested message and enum types in `AccountDetailRequest`.
+    pub mod account_detail_request {
         /// Represents a storage slot index and the associated map keys.
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct StorageRequest {
+        pub struct StorageMapDetailRequest {
             /// Storage slot index (\[0..255\])
             #[prost(uint32, tag = "1")]
-            pub storage_slot_index: u32,
-            /// A list of map keys (Digests) associated with this storage slot.
-            #[prost(message, repeated, tag = "2")]
-            pub map_keys: ::prost::alloc::vec::Vec<
-                super::super::super::primitives::Digest,
-            >,
+            pub slot_index: u32,
+            #[prost(oneof = "storage_map_detail_request::SlotData", tags = "2, 3")]
+            pub slot_data: ::core::option::Option<storage_map_detail_request::SlotData>,
+        }
+        /// Nested message and enum types in `StorageMapDetailRequest`.
+        pub mod storage_map_detail_request {
+            #[derive(Clone, PartialEq, ::prost::Message)]
+            pub struct MapKeys {
+                /// A list of map keys (Digests) associated with this storage slot.
+                #[prost(message, repeated, tag = "1")]
+                pub map_keys: ::prost::alloc::vec::Vec<
+                    super::super::super::super::primitives::Digest,
+                >,
+            }
+            #[derive(Clone, PartialEq, ::prost::Oneof)]
+            pub enum SlotData {
+                /// A flag asking to return all storage map data; valid only for small storage maps
+                /// (e.g., with fewer than 1000 entries).
+                #[prost(bool, tag = "2")]
+                AllEntries(bool),
+                /// A list of map keys (Digests) associated with this storage slot.
+                #[prost(message, tag = "3")]
+                MapKeys(MapKeys),
+            }
         }
     }
 }
-/// Represents the result of getting account proofs.
+/// Represents the result of getting account proof.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct AccountProof {
-    /// Block number at which the state of the accounts is returned.
-    #[prost(fixed32, tag = "1")]
-    pub block_num: u32,
-    /// The account witness for the current state commitment of one account ID.
-    #[prost(message, optional, tag = "2")]
+pub struct AccountProofResponse {
+    /// Account ID, current state commitment, and SMT path
+    #[prost(message, optional, tag = "1")]
     pub witness: ::core::option::Option<super::account::AccountWitness>,
-    /// State header for public accounts. Filled only if the flag `AccountDetailsRequest` was
-    /// present and the account was a public account/the information was available.
-    #[prost(message, optional, tag = "3")]
-    pub details: ::core::option::Option<account_proof::AccountDetailsResponse>,
+    /// Additional details for public accounts
+    #[prost(message, optional, tag = "2")]
+    pub details: ::core::option::Option<account_proof_response::AccountDetailsResponse>,
 }
-/// Nested message and enum types in `AccountProof`.
-pub mod account_proof {
-    /// State header, available for public accounts only.
+/// Nested message and enum types in `AccountProofResponse`.
+pub mod account_proof_response {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AccountDetailsResponse {
-        /// Account header, always included.
+        /// Account header.
         #[prost(message, optional, tag = "1")]
         pub header: ::core::option::Option<super::super::account::AccountHeader>,
-        /// Account storage header containing slot types and commitments.
-        #[prost(message, optional, tag = "2")]
-        pub storage_header: ::core::option::Option<
-            super::super::account::AccountStorageHeader,
-        >,
-        /// Account code, if the current account code does not match the request provided commitment digest.
-        #[prost(bytes = "vec", optional, tag = "3")]
-        pub account_code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-        /// Storage slots information for this account
-        #[prost(message, repeated, tag = "4")]
-        pub storage_maps: ::prost::alloc::vec::Vec<
-            account_details_response::StorageSlotMapProof,
-        >,
+        /// Account code; empty if code commitments matched
+        #[prost(bytes = "vec", optional, tag = "2")]
+        pub code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+        /// Account asset vault data; empty if vault commitments matched
+        #[prost(message, optional, tag = "3")]
+        pub vault_details: ::core::option::Option<super::AccountVaultDetails>,
+        /// Account storage data; empty if storage commitments matched
+        #[prost(message, optional, tag = "4")]
+        pub storage_details: ::core::option::Option<super::AccountStorageDetails>,
     }
-    /// Nested message and enum types in `AccountDetailsResponse`.
-    pub mod account_details_response {
-        /// Represents a single storage slot with the requested keys and their respective values.
+}
+/// Account vault details for AccountProofResponse
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountVaultDetails {
+    /// A flag that is set to true if the account contains too many assets. This indicates
+    /// to the user that `SyncAccountVault` endpoint should be used to retrieve the
+    /// account's assets
+    #[prost(bool, tag = "1")]
+    pub too_many_assets: bool,
+    /// When too_many_assets == false, this will contain the list of assets in the
+    /// account's vault
+    #[prost(message, repeated, tag = "2")]
+    pub assets: ::prost::alloc::vec::Vec<super::primitives::Asset>,
+}
+/// Account storage details for AccountProofResponse
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountStorageDetails {
+    /// Account storage header (storage slot info for up to 256 slots)
+    #[prost(message, optional, tag = "1")]
+    pub header: ::core::option::Option<super::account::AccountStorageHeader>,
+    /// Additional data for the requested storage maps
+    #[prost(message, repeated, tag = "2")]
+    pub map_details: ::prost::alloc::vec::Vec<
+        account_storage_details::AccountStorageMapDetails,
+    >,
+}
+/// Nested message and enum types in `AccountStorageDetails`.
+pub mod account_storage_details {
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct AccountStorageMapDetails {
+        /// slot index of the storage map
+        #[prost(uint32, tag = "1")]
+        pub slot_index: u32,
+        /// A flag that is set to true if all_entries == true was used in the request for this
+        /// storage map and the map contains too many entries. This indicates to the user
+        /// that `SyncStorageMaps` endpoint should be used to get all storage map data
+        #[prost(bool, tag = "2")]
+        pub too_many_entries: bool,
+        /// By default we provide all storage entries.
+        #[prost(message, optional, tag = "3")]
+        pub entries: ::core::option::Option<account_storage_map_details::MapEntries>,
+    }
+    /// Nested message and enum types in `AccountStorageMapDetails`.
+    pub mod account_storage_map_details {
+        /// Wrapper for repeated storage map entries
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct StorageSlotMapProof {
-            /// The storage slot index (\[0..255\]).
-            #[prost(uint32, tag = "1")]
-            pub storage_slot: u32,
-            /// Merkle proof of the map value
-            #[prost(message, optional, tag = "2")]
-            pub smt_proof: ::core::option::Option<
-                super::super::super::primitives::SmtOpening,
-            >,
+        pub struct MapEntries {
+            #[prost(message, repeated, tag = "1")]
+            pub entries: ::prost::alloc::vec::Vec<map_entries::StorageMapEntry>,
+        }
+        /// Nested message and enum types in `MapEntries`.
+        pub mod map_entries {
+            /// Definition of individual storage entries.
+            #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+            pub struct StorageMapEntry {
+                #[prost(message, optional, tag = "1")]
+                pub key: ::core::option::Option<
+                    super::super::super::super::primitives::Digest,
+                >,
+                #[prost(message, optional, tag = "2")]
+                pub value: ::core::option::Option<
+                    super::super::super::super::primitives::Digest,
+                >,
+            }
         }
     }
 }
@@ -558,7 +630,10 @@ pub mod rpc_client {
         pub async fn get_account_proof(
             &mut self,
             request: impl tonic::IntoRequest<super::AccountProofRequest>,
-        ) -> std::result::Result<tonic::Response<super::AccountProof>, tonic::Status> {
+        ) -> std::result::Result<
+            tonic::Response<super::AccountProofResponse>,
+            tonic::Status,
+        > {
             self.inner
                 .ready()
                 .await
@@ -887,7 +962,10 @@ pub mod rpc_server {
         async fn get_account_proof(
             &self,
             request: tonic::Request<super::AccountProofRequest>,
-        ) -> std::result::Result<tonic::Response<super::AccountProof>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::AccountProofResponse>,
+            tonic::Status,
+        >;
         /// Returns raw block data for the specified block number.
         async fn get_block_by_number(
             &self,
@@ -1200,7 +1278,7 @@ pub mod rpc_server {
                     struct GetAccountProofSvc<T: Rpc>(pub Arc<T>);
                     impl<T: Rpc> tonic::server::UnaryService<super::AccountProofRequest>
                     for GetAccountProofSvc<T> {
-                        type Response = super::AccountProof;
+                        type Response = super::AccountProofResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

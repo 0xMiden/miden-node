@@ -17,6 +17,8 @@
 ## v0.11.2 (2025-09-10)
 
 - Added support for keepalive requests against base path `/` of RPC server ([#1212](https://github.com/0xMiden/miden-node/pull/1212)).
+- [BREAKING] Replace `GetAccountProofs` with `GetAccountProof` in the public store API ([#1211](https://github.com/0xMiden/miden-node/pull/1211)).
+- [BREAKING] Optimize `GetAccountProof` for small accounts ([#1185](https://github.com/0xMiden/miden-node/pull/1185)).
 
 ## v0.11.1 (2025-09-08)
 

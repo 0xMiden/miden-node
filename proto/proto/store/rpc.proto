@@ -27,7 +27,7 @@ service Rpc {
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
     // Returns the latest state proof of the specified account.
-    rpc GetAccountProof(AccountProofRequest) returns (AccountProof) {}
+    rpc GetAccountProof(AccountProofRequest) returns (AccountProofResponse) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
@@ -103,70 +103,126 @@ message StoreStatus {
 // GET ACCOUNT PROOF
 // ================================================================================================
 
-// Returns the latest state proof of the specified accounts.
+// Returns the latest state proof of the specified account.
 message AccountProofRequest {
     // Request the details for a public account.
-    message AccountDetailsRequest {
+    message AccountDetailRequest {
         // Represents a storage slot index and the associated map keys.
-        message StorageRequest {
+        message StorageMapDetailRequest {
+            message MapKeys {
+                // A list of map keys (Digests) associated with this storage slot.
+                repeated primitives.Digest map_keys = 1;
+            }
             // Storage slot index ([0..255])
-            uint32 storage_slot_index = 1;
+            uint32 slot_index = 1;
 
-            // A list of map keys (Digests) associated with this storage slot.
-            repeated primitives.Digest map_keys = 2;
+            oneof slot_data {
+                // A flag asking to return all storage map data; valid only for small storage maps
+                // (e.g., with fewer than 1000 entries).
+                bool all_entries = 2;
+
+                // A list of map keys (Digests) associated with this storage slot.
+                MapKeys map_keys = 3;
+            }
         }
 
-        // Account code commitment corresponding to the last-known `AccountCode` for the requested
-        // account. The response will include only code that is known.
-        optional primitives.Digest code_commitment = 1;
+        // Last known code commitment to the client. The response will include account code
+        // only if its commitment is different from this value.
+        //
+        // We could also extend this methodology to account storage and asset vault to return
+        // data only if the client doesn't already have it.
+        primitives.Digest code_commitment = 1;
 
-        // List of storage requests for this account.
-        repeated StorageRequest storage_requests = 2;
+        // A flag indicating whether the response should include asset vault data; assets
+        // will be returned only if the account contains a small number of assets
+        // (e.g., under 1000).
+        //
+        // We could also make this more granular and request assets under specific keys, but
+        // I'm not sure this is needed at the moment.
+        bool include_assets = 2;
+
+        // Additional request per storage map.
+        repeated StorageMapDetailRequest storage_maps = 3;
     }
 
-    // The account ID for this request.
+    // ID of the account for which we want to get data
     account.AccountId account_id = 1;
 
-    // A account detail requests, including map keys + values.
-    optional AccountDetailsRequest account_details = 2;
+    // Block at which we'd like to get this data. Must be close to the chain tip.
+    fixed32 block_num = 2;
+
+    // Request for additional account details; valid only for public accounts.
+    optional AccountDetailRequest details = 3;
 }
 
-// Represents the result of getting account proofs.
-message AccountProof {
-    // State header, available for public accounts only.
+// Represents the result of getting account proof.
+message AccountProofResponse {
+
     message AccountDetailsResponse {
-        // Represents a single storage slot with the requested keys and their respective values.
-        message StorageSlotMapProof {
-            // The storage slot index ([0..255]).
-            uint32 storage_slot = 1;
-
-            // Merkle proof of the map value
-            primitives.SmtOpening smt_proof = 2;
-        }
-
-        // Account header, always included.
+        // Account header.
         account.AccountHeader header = 1;
 
-        // Account storage header containing slot types and commitments.
-        account.AccountStorageHeader storage_header = 2;
+        // Account code; empty if code commitments matched
+        optional bytes code = 2;
 
-        // Account code, if the current account code does not match the request provided commitment digest.
-        optional bytes account_code = 3;
+        // Account asset vault data; empty if vault commitments matched
+        optional AccountVaultDetails vault_details = 3;
 
-        // Storage slots information for this account
-        repeated StorageSlotMapProof storage_maps = 4;
+        // Account storage data; empty if storage commitments matched
+        optional AccountStorageDetails storage_details = 4;
     }
 
-    // Block number at which the state of the accounts is returned.
-    fixed32 block_num = 1;
+    // Account ID, current state commitment, and SMT path
+    account.AccountWitness witness = 1;
 
-    // The account witness for the current state commitment of one account ID.
-    account.AccountWitness witness = 2;
-
-    // State header for public accounts. Filled only if the flag `AccountDetailsRequest` was
-    // present and the account was a public account/the information was available.
-    optional AccountDetailsResponse details = 3;
+    // Additional details for public accounts
+    optional AccountDetailsResponse details = 2;
 }
+
+// Account vault details for AccountProofResponse
+message AccountVaultDetails {
+    // A flag that is set to true if the account contains too many assets. This indicates
+    // to the user that `SyncAccountVault` endpoint should be used to retrieve the
+    // account's assets
+    bool too_many_assets = 1;
+
+    // When too_many_assets == false, this will contain the list of assets in the
+    // account's vault
+    repeated primitives.Asset assets = 2;
+}
+
+// Account storage details for AccountProofResponse
+message AccountStorageDetails {
+    message AccountStorageMapDetails {
+        // Wrapper for repeated storage map entries
+        message MapEntries {
+            // Definition of individual storage entries.
+            message StorageMapEntry {
+                primitives.Digest key = 1;
+                primitives.Digest value = 2;
+            }
+
+            repeated StorageMapEntry entries = 1;
+        }
+        // slot index of the storage map
+        uint32 slot_index = 1;
+
+        // A flag that is set to true if all_entries == true was used in the request for this
+        // storage map and the map contains too many entries. This indicates to the user
+        // that `SyncStorageMaps` endpoint should be used to get all storage map data
+        bool too_many_entries = 2;
+
+        // By default we provide all storage entries.
+        MapEntries entries = 3;
+    }
+
+    // Account storage header (storage slot info for up to 256 slots)
+    account.AccountStorageHeader header = 1;
+
+    // Additional data for the requested storage maps
+    repeated AccountStorageMapDetails map_details = 2;
+}
+
 
 // CHECK NULLIFIERS
 // ================================================================================================

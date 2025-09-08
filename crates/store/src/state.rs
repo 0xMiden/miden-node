@@ -8,20 +8,23 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 
-use miden_node_proto::AccountWitnessRecord;
 use miden_node_proto::domain::account::{
+    AccountDetailRequest,
     AccountDetailsResponse,
     AccountInfo,
     AccountProofRequest,
     AccountProofResponse,
+    AccountStorageDetails,
+    AccountStorageMapDetails,
+    AccountVaultDetails,
     NetworkAccountPrefix,
-    StorageMapKeysProof,
-    StorageSlotMapProof,
+    SlotData,
+    StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
+use miden_objects::account::{AccountHeader, AccountId, AccountStorageHeader, StorageSlot};
 use miden_objects::block::{
     AccountTree,
     AccountWitness,
@@ -887,64 +890,113 @@ impl State {
 
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
+    #[allow(clippy::too_many_lines)]
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
     ) -> Result<AccountProofResponse, DatabaseError> {
+        // If this number is exceed
+        // TODO use a total size to derive
+        const RESPONSE_COUNT_LIMIT: usize = 100;
+
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
         let inner_state = self.inner.read().await;
 
         let account_id = account_request.account_id;
-
-        let account_details = if let Some(account_detail_request) = account_request.account_details
+        let account_details = if let Some(AccountDetailRequest {
+            code_commitment,
+            include_assets,
+            storage_requests,
+        }) = account_request.details
         {
             let info = self.db.select_account(account_id).await?;
 
-            if let Some(details) = &info.details {
-                let mut storage_proofs = Vec::new();
+            // if we get a query for a private account, we'll return `None`
+            if let Some(details) = info.details {
+                let slot_headers = Vec::from_iter(
+                    details
+                        .storage()
+                        .slots()
+                        .iter()
+                        .map(|storage_slot| (storage_slot.slot_type(), storage_slot.value())),
+                );
 
-                for StorageMapKeysProof { storage_index, storage_keys } in
-                    &account_detail_request.storage_requests
-                {
+                let storage_header = AccountStorageHeader::new(slot_headers);
+
+                let mut storage_map_details = Vec::<AccountStorageMapDetails>::new();
+
+                for StorageMapRequest { slot_index, slot_data } in storage_requests {
                     if let Some(StorageSlot::Map(storage_map)) =
-                        details.storage().slots().get(*storage_index as usize)
+                        details.storage().slots().get(slot_index as usize)
                     {
-                        for map_key in storage_keys {
-                            let proof = storage_map.open(map_key);
-
-                            let slot_map_key = StorageSlotMapProof {
-                                storage_slot: *storage_index,
-                                proof: proof.into(),
+                        if storage_map.entries().nth(RESPONSE_COUNT_LIMIT).is_some() {
+                            storage_map_details.push(AccountStorageMapDetails {
+                                slot_index,
+                                too_many_entries: true,
+                                map_entries: Vec::new(),
+                            });
+                        } else {
+                            let converter =
+                                |key: &Word, value: &Word| -> (Word, Word) { (*key, *value) };
+                            let map_entries = match slot_data {
+                                SlotData::All => Vec::from_iter(
+                                    storage_map.entries().map(|(k, v)| converter(k, v)),
+                                ),
+                                SlotData::MapKeys(keys) => Vec::from_iter(
+                                    keys.iter().map(|key| converter(key, &storage_map.get(key))),
+                                ),
                             };
-                            storage_proofs.push(slot_map_key);
+
+                            storage_map_details.push(AccountStorageMapDetails {
+                                slot_index,
+                                too_many_entries: false,
+                                map_entries,
+                            });
                         }
                     } else {
-                        return Err(AccountError::StorageSlotNotMap(*storage_index).into());
+                        return Err(AccountError::StorageSlotNotMap(slot_index).into());
                     }
                 }
 
                 // Only include unknown account code blobs
-                let account_code = match account_detail_request.code_commitment {
-                    Some(known_code_commitment)
-                        if known_code_commitment == details.code().commitment() =>
-                    {
-                        // the known code matches the expected commitment, which implies
-                        // the user already has that code
-                        None
-                    },
-                    _ => Some(details.code().to_bytes()),
+                let account_code = (code_commitment != Some(details.code().commitment()))
+                    .then(|| details.code().to_bytes());
+
+                // storage details
+                let storage_details = AccountStorageDetails {
+                    header: storage_header,
+                    map_details: storage_map_details,
                 };
 
-                let account_details_response = AccountDetailsResponse {
+                // TODO: Handle vault details based on new proto structure
+                let vault_details = if include_assets {
+                    // was: include_assets
+                    if details.vault().asset_tree().entries().nth(RESPONSE_COUNT_LIMIT).is_some() {
+                        AccountVaultDetails {
+                            too_many_assets: true,
+                            assets: Vec::new(),
+                        }
+                    } else {
+                        AccountVaultDetails {
+                            too_many_assets: false,
+                            assets: Vec::from_iter(details.vault().assets()),
+                        }
+                    }
+                } else {
+                    AccountVaultDetails {
+                        too_many_assets: false,
+                        assets: Vec::new(),
+                    }
+                };
+
+                Some(AccountDetailsResponse {
                     account_header: AccountHeader::from(details),
-                    storage_header: details.storage().to_header(),
                     account_code,
-                    storage_proofs,
-                };
-
-                Some(account_details_response)
+                    vault_details,
+                    storage_details,
+                })
             } else {
                 None
             }
@@ -952,15 +1004,9 @@ impl State {
             None
         };
 
-        let witness = AccountWitnessRecord {
-            account_id, // FIXME TODO see account.proto we need to triple check this is correct
-            witness: inner_state.account_tree.open(account_id),
-        };
-
         let response = AccountProofResponse {
-            block_num: inner_state.latest_block_num(),
-            witness,
-            account_details,
+            witness: inner_state.account_tree.open(account_id),
+            details: account_details,
         };
 
         Ok(response)

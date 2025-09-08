@@ -139,7 +139,7 @@ message AccountProofs {
         // State header for public accounts.
         message AccountStateHeader {
             // Represents a single storage slot with the requested keys and their respective values.
-            message StorageSlotMapPartialSmt {
+            message StorageSlotMap {
                 // The storage slot index ([0..255]).
                 uint32 storage_slot = 1;
 
@@ -169,7 +169,7 @@ message AccountProofs {
             optional bytes account_code = 3;
 
             // A sparse merkle tree per storage slot, including all relevant merkle proofs for storage entries.
-            repeated StorageSlotMapPartialSmt partial_storage_smts = 5;
+            repeated StorageSlotMap partial_storage_smts = 5;
         }
 
         // The account witness for the current state commitment of one account ID.

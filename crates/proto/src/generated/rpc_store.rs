@@ -102,14 +102,14 @@ pub mod account_proofs {
             /// A sparse merkle tree per storage slot, including all relevant merkle proofs for storage entries.
             #[prost(message, repeated, tag = "5")]
             pub partial_storage_smts: ::prost::alloc::vec::Vec<
-                account_state_header::StorageSlotMapPartialSmt,
+                account_state_header::StorageSlotMap,
             >,
         }
         /// Nested message and enum types in `AccountStateHeader`.
         pub mod account_state_header {
             /// Represents a single storage slot with the requested keys and their respective values.
             #[derive(Clone, PartialEq, ::prost::Message)]
-            pub struct StorageSlotMapPartialSmt {
+            pub struct StorageSlotMap {
                 /// The storage slot index (\[0..255\]).
                 #[prost(uint32, tag = "1")]
                 pub storage_slot: u32,

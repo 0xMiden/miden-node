@@ -948,7 +948,7 @@ impl State {
 
                     let partial_storage_smts = Vec::from_iter(
                         partials.into_iter()
-                            .map(|(slot, partial_smt)| proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapPartialSmt {
+                            .map(|(slot, partial_smt)| proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMap {
                                 storage_slot: u32::from(slot),
                                 partial_smt: partial_smt.to_bytes(),
                             })

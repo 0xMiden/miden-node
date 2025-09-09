@@ -34,6 +34,7 @@ miden-node-block-producer
 miden-node-ntx-builder
 miden-node-rpc
 miden-node
+miden-network-monitoring
 )
 for crate in ${crates[@]}; do
     echo "Publishing $crate..."

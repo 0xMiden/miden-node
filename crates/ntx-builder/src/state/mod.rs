@@ -2,7 +2,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 
-use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
+use account::{InflightNetworkNote, NetworkAccountUpdate};
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
@@ -19,6 +19,8 @@ use crate::COMPONENT;
 use crate::store::{StoreClient, StoreError};
 
 mod account;
+
+pub use account::AccountState;
 
 // CONSTANTS
 // =================================================================================================
@@ -60,7 +62,7 @@ pub struct State {
     /// Tracks all network accounts with inflight state.
     ///
     /// This is network account deltas, network notes and their nullifiers.
-    accounts: HashMap<NetworkAccountPrefix, AccountState>,
+    accounts: HashMap<NetworkAccountPrefix, account::AccountState>,
 
     /// A rotating queue of all tracked network accounts.
     ///
@@ -204,6 +206,11 @@ impl State {
         self.chain_tip_header.block_num()
     }
 
+    /// Returns a reference to the accounts map.
+    pub fn accounts(&self) -> &HashMap<NetworkAccountPrefix, account::AccountState> {
+        &self.accounts
+    }
+
     /// Updates the chain tip and MMR block count.
     ///
     /// Blocks in the MMR are pruned if the block count exceeds the maximum.
@@ -324,7 +331,7 @@ impl State {
             let prefix = update.prefix();
             match update {
                 NetworkAccountUpdate::New(account) => {
-                    let account_state = AccountState::from_uncommitted_account(account);
+                    let account_state = account::AccountState::from_uncommitted_account(account);
                     self.accounts.insert(prefix, account_state);
                     self.queue.push_back(prefix);
                 },
@@ -440,7 +447,8 @@ impl State {
                 };
 
                 self.queue.push_back(prefix);
-                let entry = vacant_entry.insert(AccountState::from_committed_account(account));
+                let entry =
+                    vacant_entry.insert(account::AccountState::from_committed_account(account));
 
                 Ok(Some(entry))
             },

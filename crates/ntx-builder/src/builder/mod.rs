@@ -5,16 +5,19 @@ use std::time::Duration;
 use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_node_utils::ErrorReport;
+use miden_node_proto::domain::note::NetworkNote;
+use miden_objects::account::delta::AccountUpdateDetails;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::sync::Barrier;
+use tokio::sync::{Barrier, Semaphore};
 use tokio::time;
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
+use crate::actor::{AccountActor, AccountConfig, ActorHandle, CoordinatorMessage};
 use crate::block_producer::BlockProducerClient;
+use crate::state::State;
 use crate::store::StoreClient;
-use crate::transaction::NtxError;
+use crate::transaction::NtxContext;
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -43,13 +46,12 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
+    #[allow(clippy::too_many_lines)]
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url);
         let block_producer = BlockProducerClient::new(self.block_producer_url);
 
-        let mut state = crate::state::State::load(store.clone())
-            .await
-            .context("failed to load ntx state")?;
+        let state = State::load(store.clone()).await.context("failed to load ntx state")?;
 
         let mut mempool_events = block_producer
             .subscribe_to_mempool_with_retry(state.chain_tip())
@@ -67,125 +69,154 @@ impl NetworkTransactionBuilder {
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
-        // Tracks network transaction tasks until they are submitted to the mempool.
-        //
-        // We also map the task ID to the network account so we can mark it as failed if it doesn't
-        // get submitted.
-        let mut inflight = JoinSet::new();
-        let mut inflight_idx = HashMap::new();
+        // Set up actors and communications.
+        //let (actor_msg_tx, mut actor_msg_rx) = mpsc::unbounded_channel::<ActorMessage>();
+        let mut actor_registry = HashMap::<NetworkAccountPrefix, ActorHandle>::new();
+        let rate_limiter = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
 
-        let context = crate::transaction::NtxContext {
+        let ntx_context = NtxContext {
             block_producer: block_producer.clone(),
             prover,
         };
 
+        let default_config = AccountConfig { max_note_attempts: 10 };
+
+        // Create initial actors for existing accounts
+        for (account_prefix, _account_state) in state.accounts().iter() {
+            let actor_handle = AccountActor::spawn(
+                *account_prefix,
+                None, // State will be initialized when first transaction is processed
+                ntx_context.clone(),
+                rate_limiter.clone(),
+                default_config.clone(),
+                state.chain_tip(),
+            );
+            actor_registry.insert(*account_prefix, actor_handle);
+        }
+
         loop {
             tokio::select! {
-                _next = interval.tick() => {
-                    if inflight.len() > MAX_IN_PROGRESS_TXS {
-                        tracing::info!("At maximum network tx capacity, skipping");
-                        continue;
+                // Periodic tick - broadcast to all actors
+                _tick = interval.tick() => {
+                    for (account_prefix, actor_handle) in &actor_registry {
+                        if actor_handle.is_finished() {
+                            tracing::error!(
+                                account = %account_prefix,
+                                "Actor finished unexpectedly, will respawn on next event"
+                            );
+                            continue;
+                        }
+
+                        if let Err(error) = actor_handle.send(CoordinatorMessage::ProcessTick) {
+                            tracing::error!(
+                                account = %account_prefix,
+                                error = ?error,
+                                "Failed to send tick to actor"
+                            );
+                        }
                     }
-
-                    let Some(candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
-                        tracing::debug!("No candidate network transaction available");
-                        continue;
-                    };
-
-                    let network_account_prefix = NetworkAccountPrefix::try_from(candidate.account.id())
-                                                 .expect("all accounts managed by NTB are network accounts");
-                    let indexed_candidate = (network_account_prefix, candidate.chain_tip_header.block_num());
-                    let task_id = inflight.spawn({
-                        let context = context.clone();
-                        context.execute_transaction(candidate)
-                    }).id();
-
-                    // SAFETY: This is definitely a network account.
-                    inflight_idx.insert(task_id, indexed_candidate);
                 },
+
+                // Handle mempool events
                 event = mempool_events.try_next() => {
                     let event = event
                                 .context("mempool event stream ended")?
                                 .context("mempool event stream failed")?;
-                    state.mempool_update(event).await.context("failed to update state")?;
-                },
-                completed = inflight.join_next_with_id() => {
-                    // Grab the task ID and associated network account reference.
-                    let task_id = match &completed {
-                        Ok((task_id, _)) => *task_id,
-                        Err(join_handle) => join_handle.id(),
-                    };
-                    // SAFETY: both inflights should have the same set.
-                    let (candidate, block_num) = inflight_idx.remove(&task_id).unwrap();
 
-                    match completed {
-                        // Some notes failed.
-                        Ok((_, Ok(failed))) => {
-                            let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                            state.notes_failed(candidate, notes.as_slice(), block_num);
-                        },
-                        // Transaction execution failed.
-                        Ok((_, Err(err))) => {
-                            tracing::warn!(err=err.as_report(), "network transaction failed");
-                            match err {
-                                NtxError::AllNotesFailed(failed) => {
-                                    let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                                    state.notes_failed(candidate, notes.as_slice(), block_num);
-                                },
-                                NtxError::InputNotes(_)
-                                | NtxError::NoteFilter(_)
-                                | NtxError::Execution(_)
-                                | NtxError::Proving(_)
-                                | NtxError::Submission(_)
-                                | NtxError::Panic(_) => {},
+                    match &event {
+                        miden_node_proto::domain::mempool::MempoolEvent::TransactionAdded {
+                            account_delta,
+                            network_notes,
+                            ..
+                        } => {
+                            // Route to affected accounts
+                            let mut affected_accounts = std::collections::HashSet::new();
+
+                            // Check if any account deltas affect our tracked accounts
+                            if let Some(delta) = account_delta {
+                                let account_prefix = match delta {
+                                    AccountUpdateDetails::New(account) => {
+                                        NetworkAccountPrefix::try_from(account.id()).ok()
+                                    },
+                                    AccountUpdateDetails::Delta(delta) => {
+                                        NetworkAccountPrefix::try_from(delta.id()).ok()
+                                    },
+                                    AccountUpdateDetails::Private => None,
+                                };
+
+                                if let Some(prefix) = account_prefix {
+                                    affected_accounts.insert(prefix);
+
+                                    // Create new actor.
+                                    actor_registry.entry(prefix).or_insert_with( || {
+                                        AccountActor::spawn(
+                                            prefix,
+                                            None, // State will be initialized by the actor when it receives the delta
+                                            ntx_context.clone(),
+                                            rate_limiter.clone(),
+                                            default_config.clone(),
+                                            state.chain_tip(),
+                                        )
+                                    });
+                                }
                             }
-                            state.candidate_failed(candidate);
+
+                            // Check which accounts are affected by network notes
+                            for note in network_notes {
+                                if let NetworkNote::SingleTarget(note) = note {
+                                    let prefix = note.account_prefix();
+                                    affected_accounts.insert(prefix);
+
+                                    // Create new actor.
+                                    actor_registry.entry(prefix).or_insert_with( || {
+                                        AccountActor::spawn(
+                                            prefix,
+                                            None, // State will be initialized by the actor when it receives the delta
+                                            ntx_context.clone(),
+                                            rate_limiter.clone(),
+                                            default_config.clone(),
+                                            state.chain_tip(),
+                                        )
+                                    });
+                                }
+                            }
+
+                            // Send event to all affected actors
+                            for account_prefix in affected_accounts {
+                                if let Some(actor_handle) = actor_registry.get(&account_prefix) {
+                                    if let Err(error) = actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone())) {
+                                        tracing::error!(
+                                            account = %account_prefix,
+                                            error = ?error,
+                                            "Failed to send mempool event to actor"
+                                        );
+                                    }
+                                } else {
+                                    tracing::error!(
+                                        account = %account_prefix,
+                                        "Failed to find actor handle for mempool event"
+                                    );
+                                }
+                            }
                         },
-                        // Unexpected error occurred.
-                        Err(err) => {
-                            tracing::warn!(err=err.as_report(), "network transaction panicked");
-                            state.candidate_failed(candidate);
+
+                        miden_node_proto::domain::mempool::MempoolEvent::BlockCommitted { .. } |
+                        miden_node_proto::domain::mempool::MempoolEvent::TransactionsReverted(_) => {
+                            // Broadcast to all actors
+                            for (account_prefix, actor_handle) in &actor_registry {
+                                if let Err(error) = actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone())) {
+                                    tracing::error!(
+                                        account = %account_prefix,
+                                        error = ?error,
+                                        "Failed to send mempool event to actor"
+                                    );
+                                }
+                            }
                         }
                     }
-                }
+                },
+
             }
         }
-    }
-}
-
-/// A wrapper arounnd tokio's [`JoinSet`](tokio::task::JoinSet) which returns pending instead of
-/// [`None`] if its empty.
-///
-/// This makes it much more convenient to use in a `select!`.
-struct JoinSet<T>(tokio::task::JoinSet<T>);
-
-impl<T> JoinSet<T>
-where
-    T: 'static,
-{
-    fn new() -> Self {
-        Self(tokio::task::JoinSet::new())
-    }
-
-    fn spawn<F>(&mut self, task: F) -> tokio::task::AbortHandle
-    where
-        F: Future<Output = T>,
-        F: Send + 'static,
-        T: Send,
-    {
-        self.0.spawn(task)
-    }
-
-    async fn join_next_with_id(&mut self) -> Result<(tokio::task::Id, T), tokio::task::JoinError> {
-        if self.0.is_empty() {
-            std::future::pending().await
-        } else {
-            // Cannot be None as its not empty.
-            self.0.join_next_with_id().await.unwrap()
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
     }
 }

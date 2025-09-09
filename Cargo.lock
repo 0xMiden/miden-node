@@ -2282,7 +2282,8 @@ dependencies = [
 name = "miden-node-proto-build"
 version = "0.12.0"
 dependencies = [
- "anyhow",
+ "fs-err",
+ "miette",
  "prost",
  "protox",
  "tonic-build",

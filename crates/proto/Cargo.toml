@@ -29,7 +29,8 @@ url              = { workspace = true }
 proptest = { version = "1.7" }
 
 [build-dependencies]
-anyhow                 = { workspace = true }
+miette                 = { version = "7.6" }
+fs-err                 = { workspace = true}
 miden-node-proto-build = { features = ["internal"], workspace = true }
 prost                  = { workspace = true }
 prost-build            = { version = "0.13" }

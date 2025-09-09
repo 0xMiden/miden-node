@@ -1,8 +1,8 @@
-use fs_err as fs;
-use miette::{Context, IntoDiagnostic};
 use std::env;
 use std::path::PathBuf;
 
+use fs_err as fs;
+use miette::{Context, IntoDiagnostic};
 use prost::Message;
 
 const RPC_PROTO: &str = "rpc.proto";
@@ -22,7 +22,7 @@ const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
 
 fn main() -> miette::Result<()> {
-    dbg!(run())
+    run()
 }
 
 /// Generates Rust protobuf bindings from .proto files.

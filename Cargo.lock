@@ -2263,11 +2263,13 @@ name = "miden-node-proto"
 version = "0.12.0"
 dependencies = [
  "anyhow",
+ "fs-err",
  "hex",
  "http",
  "miden-node-proto-build",
  "miden-node-utils",
  "miden-objects",
+ "miette",
  "proptest",
  "prost",
  "prost-build",

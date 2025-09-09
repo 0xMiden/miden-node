@@ -78,8 +78,8 @@ impl Rpc {
             .timeout(self.grpc_timeout)
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
-            .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(cors_for_grpc_web_layer())
+            .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(HealthCheckLayer)
             // Enables gRPC-web support.
             .layer(GrpcWebLayer::new())

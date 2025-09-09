@@ -1,6 +1,5 @@
 use std::num::NonZeroUsize;
 
-mod actor;
 mod block_producer;
 mod builder;
 mod state;

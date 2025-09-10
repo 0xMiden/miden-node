@@ -97,10 +97,10 @@ message StoreStatus {
     fixed32 chain_tip = 3;
 }
 
-// GET ACCOUNT PROOFS
+// GET ACCOUNT PROOF
 // ================================================================================================
 
-// Returns the latest state proofs of the specified accounts.
+// Returns the latest state proof of the specified accounts.
 message AccountProofRequest {
     // Represents per-account requests where each account ID has its own list of
     // (storage_slot_index, map_keys) pairs.

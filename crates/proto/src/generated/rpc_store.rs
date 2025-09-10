@@ -12,7 +12,7 @@ pub struct StoreStatus {
     #[prost(fixed32, tag = "3")]
     pub chain_tip: u32,
 }
-/// Returns the latest state proofs of the specified accounts.
+/// Returns the latest state proof of the specified accounts.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofRequest {
     /// A list of account requests, including map keys + values.

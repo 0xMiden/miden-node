@@ -324,7 +324,7 @@ impl rpc_server::Rpc for StoreApi {
         let account_request =
             account_request.ok_or(Status::invalid_argument(stringify!(account_request)))?;
         let account_request = account_request.try_into().map_err(|err| {
-            Status::invalid_argument(format!("Invalid account proofs request: {err}"))
+            Status::invalid_argument(format!("Invalid account proof request: {err}"))
         })?;
 
         let (_block_num, proof) = self

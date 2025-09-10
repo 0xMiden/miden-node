@@ -50,6 +50,7 @@ pub struct TransactionCandidate {
 /// Holds the state of the network transaction builder.
 ///
 /// It tracks inflight transactions, and their impact on network-related state.
+#[derive(Clone)]
 pub struct State {
     /// The latest committed block header.
     chain_tip_header: BlockHeader,
@@ -462,7 +463,7 @@ impl State {
 }
 
 /// The impact a transaction has on the state.
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct TransactionImpact {
     /// The network account this transaction added an account delta to.
     account_delta: Option<NetworkAccountPrefix>,

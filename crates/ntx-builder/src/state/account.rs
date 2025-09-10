@@ -77,6 +77,7 @@ impl From<InflightNetworkNote> for Note {
 // ================================================================================================
 
 /// Tracks the state of a network account and its notes.
+#[derive(Clone)]
 pub struct AccountState {
     /// The committed account state, if any.
     ///

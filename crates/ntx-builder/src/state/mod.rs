@@ -131,6 +131,10 @@ impl State {
         Ok(state)
     }
 
+    pub fn accounts(&self) -> &HashMap<NetworkAccountPrefix, AccountState> {
+        &self.accounts
+    }
+
     /// Selects the next candidate network transaction.
     ///
     /// Note that this marks the candidate account as in-progress and that it cannot be selected

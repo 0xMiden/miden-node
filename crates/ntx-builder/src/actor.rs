@@ -72,7 +72,6 @@ pub struct AccountActor {
     ntx_context: NtxContext,
     rate_limiter: Arc<Semaphore>,
     config: AccountActorConfig,
-    chain_tip_block_num: BlockNumber,
 }
 
 impl AccountActor {
@@ -81,18 +80,14 @@ impl AccountActor {
         state: State,
         coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
         ntx_context: NtxContext,
-        rate_limiter: Arc<Semaphore>,
         config: AccountActorConfig,
-        chain_tip_block_num: BlockNumber,
     ) -> Self {
         Self {
             account_prefix,
             state,
             coordinator_rx,
             ntx_context,
-            rate_limiter,
             config,
-            chain_tip_block_num,
         }
     }
 
@@ -101,9 +96,7 @@ impl AccountActor {
         account_prefix: NetworkAccountPrefix,
         state: State,
         ntx_context: NtxContext,
-        rate_limiter: Arc<Semaphore>,
         config: AccountActorConfig,
-        chain_tip_block_num: BlockNumber,
     ) -> AccountActorHandle {
         let (coordinator_tx, coordinator_rx) = mpsc::unbounded_channel();
 
@@ -112,7 +105,6 @@ impl AccountActor {
             state,
             coordinator_rx,
             ntx_context,
-            rate_limiter,
             config,
             chain_tip_block_num,
         );

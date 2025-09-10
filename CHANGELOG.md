@@ -44,6 +44,7 @@
 - [BREAKING] Remove public store API `GetAccountStateDelta` ([#1162](https://github.com/0xMiden/miden-node/pull/1162)).
 - Removed `faucet` binary ([#1172](https://github.com/0xMiden/miden-node/pull/1172)).
 - Add `genesis_commitment` in `Status` response ([#1181](https://github.com/0xMiden/miden-node/pull/1181)).
+- [BREAKING] `GetAccountProofs` endpoint uses a `PartialSmt` for proofs. ([#1158](https://github.com/0xMiden/miden-node/pull/1158)).
 
 ### Fixes
 

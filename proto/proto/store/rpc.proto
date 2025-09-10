@@ -142,6 +142,17 @@ message AccountProofs {
         // State header for public accounts.
         message AccountStateHeader {
             // Represents a single storage slot with the requested keys and their respective values.
+            message StorageSlotMap {
+                // The storage slot index ([0..255]).
+                uint32 storage_slot = 1;
+
+                // Merkle proofs of the map value as partial sparse merkle tree for compression.
+                // The respective rust types is `SparseMerkleTree` and the transformation to and from
+                // bytes is done via the traits `Serializable::to_bytes` and `Deserializable::from_bytes`.
+                bytes partial_smt = 2;
+            }
+
+            // Represents a single storage slot with the requested keys and their respective values.
             message StorageSlotMapProof {
                 // The storage slot index ([0..255]).
                 uint32 storage_slot = 1;
@@ -160,8 +171,8 @@ message AccountProofs {
             // the current one.
             optional bytes account_code = 3;
 
-            // Storage slots information for this account
-            repeated StorageSlotMapProof storage_maps = 4;
+            // A sparse merkle tree per storage slot, including all relevant merkle proofs for storage entries.
+            repeated StorageSlotMap partial_storage_smts = 5;
         }
 
         // The account witness for the current state commitment of one account ID.

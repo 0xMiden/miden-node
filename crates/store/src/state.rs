@@ -37,6 +37,7 @@ use miden_objects::crypto::merkle::{
     MmrPeaks,
     MmrProof,
     PartialMmr,
+    PartialSmt,
     SmtProof,
 };
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
@@ -919,8 +920,7 @@ impl State {
                     .expect("retrieved accounts were validated against request");
 
                 if let Some(details) = &account_info.details {
-                    let mut storage_slot_map_keys = Vec::new();
-
+                    let mut partials = BTreeMap::<u8, PartialSmt>::default();
                     for StorageMapKeysProof { storage_index, storage_keys } in
                         &request.storage_requests
                     {
@@ -928,13 +928,12 @@ impl State {
                             details.storage().slots().get(*storage_index as usize)
                         {
                             for map_key in storage_keys {
+                                // only add the required storage keys to the partial representation
                                 let proof = storage_map.open(map_key);
-
-                                let slot_map_key = proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMapProof {
-                                    storage_slot: u32::from(*storage_index),
-                                    smt_proof: proof.to_bytes(),
-                                };
-                                storage_slot_map_keys.push(slot_map_key);
+                                partials
+                                    .entry(*storage_index)
+                                    .or_insert_with(PartialSmt::new)
+                                    .add_proof(proof)?;
                             }
                         } else {
                             return Err(AccountError::StorageSlotNotMap(*storage_index).into());
@@ -947,12 +946,19 @@ impl State {
                         .not()
                         .then(|| details.code().to_bytes());
 
+                    let partial_storage_smts = Vec::from_iter(
+                        partials.into_iter()
+                            .map(|(slot, partial_smt)| proto::rpc_store::account_proofs::account_proof::account_state_header::StorageSlotMap {
+                                storage_slot: u32::from(slot),
+                                partial_smt: partial_smt.to_bytes(),
+                            })
+                    );
                     let state_header =
                         proto::rpc_store::account_proofs::account_proof::AccountStateHeader {
                             header: Some(AccountHeader::from(details).into()),
                             storage_header: details.storage().to_header().to_bytes(),
                             account_code,
-                            storage_maps: storage_slot_map_keys,
+                            partial_storage_smts,
                         };
 
                     headers_map.insert(account_info.summary.account_id, state_header);

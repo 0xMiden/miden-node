@@ -99,14 +99,26 @@ pub mod account_proofs {
             /// the current one.
             #[prost(bytes = "vec", optional, tag = "3")]
             pub account_code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
-            /// Storage slots information for this account
-            #[prost(message, repeated, tag = "4")]
-            pub storage_maps: ::prost::alloc::vec::Vec<
-                account_state_header::StorageSlotMapProof,
+            /// A sparse merkle tree per storage slot, including all relevant merkle proofs for storage entries.
+            #[prost(message, repeated, tag = "5")]
+            pub partial_storage_smts: ::prost::alloc::vec::Vec<
+                account_state_header::StorageSlotMap,
             >,
         }
         /// Nested message and enum types in `AccountStateHeader`.
         pub mod account_state_header {
+            /// Represents a single storage slot with the requested keys and their respective values.
+            #[derive(Clone, PartialEq, ::prost::Message)]
+            pub struct StorageSlotMap {
+                /// The storage slot index (\[0..255\]).
+                #[prost(uint32, tag = "1")]
+                pub storage_slot: u32,
+                /// Merkle proofs of the map value as partial sparse merkle tree for compression.
+                /// The respective rust types is `SparseMerkleTree` and the transformation to and from
+                /// bytes is done via the traits `Serializable::to_bytes` and `Deserializable::from_bytes`.
+                #[prost(bytes = "vec", tag = "2")]
+                pub partial_smt: ::prost::alloc::vec::Vec<u8>,
+            }
             /// Represents a single storage slot with the requested keys and their respective values.
             #[derive(Clone, PartialEq, ::prost::Message)]
             pub struct StorageSlotMapProof {

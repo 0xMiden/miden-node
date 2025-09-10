@@ -2,9 +2,19 @@
 
 ## v0.11.2 (2025-09-10)
 
+### Fixes
+
+- Accept `application/gprc` content type for RPC requests ([#1220](https://github.com/0xMiden/miden-node/pull/1220)).
+
+## v0.11.2 (2025-09-10)
+
+### Enhancements
+
 - Added support for keepalive requests against base path `/` of RPC server ([#1212](https://github.com/0xMiden/miden-node/pull/1212)).
 
 ## v0.11.1 (2025-09-08)
+
+### Enhancements
 
 - Removed decorators from scripts when submitting transactions and batches, and inserting notes into the DB ([#1194](https://github.com/
 0xMiden/miden-node/pull/1194)).

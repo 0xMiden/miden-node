@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use anyhow::Context;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
 use miden_node_proto::generated::block_producer::BlockProducerStatus;
 use miden_node_proto::generated::remote_prover::{
@@ -255,7 +256,10 @@ pub async fn check_remote_prover_status(
     }
 }
 
-pub async fn check_status(shared_status: SharedStatus, config: MonitoringConfig) {
+pub async fn check_status(
+    shared_status: SharedStatus,
+    config: MonitoringConfig,
+) -> anyhow::Result<()> {
     let mut rpc = ClientBuilder::new(config.rpc_url.clone())
         .without_tls()
         .without_timeout()
@@ -286,7 +290,10 @@ pub async fn check_status(shared_status: SharedStatus, config: MonitoringConfig)
         .collect();
 
     loop {
-        let current_time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("Failed to get current time")?
+            .as_secs();
 
         let mut services = Vec::new();
 

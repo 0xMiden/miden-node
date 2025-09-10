@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
+use anyhow::Context;
 use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 
 mod frontend;
 mod status;
@@ -37,41 +40,40 @@ async fn main() {
     let shared_status: SharedStatus =
         Arc::new(Mutex::new(NetworkStatus { services: Vec::new(), last_updated: 0 }));
 
-    // Start a task with a frontend that displays the network status.
+    // Start tasks for frontend and status monitoring
+    let mut join_set = JoinSet::new();
+    let mut component_ids = HashMap::new();
+
+    // Spawn frontend task
     let frontend_status = shared_status.clone();
     let frontend_config = config.clone();
-    let frontend_task = tokio::spawn(run_frontend(frontend_status, frontend_config));
+    let id = join_set
+        .spawn(async move { run_frontend(frontend_status, frontend_config).await })
+        .id();
+    component_ids.insert(id, "frontend");
 
-    // Start a task to hit status endpoint periodically in the different components.
+    // Spawn status monitoring task
     let status_status = shared_status.clone();
     let status_config = config.clone();
-    let status_task = tokio::spawn(check_status(status_status, status_config));
+    let id = join_set
+        .spawn(async move { check_status(status_status, status_config).await })
+        .id();
+    component_ids.insert(id, "status");
 
-    // Wait for either task to complete or fail, then abort the other
-    let (frontend_result, status_result) = tokio::join!(frontend_task, status_task);
+    // Wait for any task to complete or fail
+    let component_result = join_set.join_next_with_id().await.unwrap();
 
-    // Check if either task failed and exit with error code
-    match (frontend_result, status_result) {
-        (Ok(_), Ok(_)) => {
-            println!("Both tasks completed successfully");
-        },
-        (Err(e), Ok(_)) => {
-            eprintln!("Frontend task failed: {e}");
-            eprintln!("Status task completed normally");
-            std::process::exit(1);
-        },
-        (Ok(_), Err(e)) => {
-            eprintln!("Status task failed: {e}");
-            eprintln!("Frontend task completed normally");
-            std::process::exit(1);
-        },
-        (Err(e1), Err(e2)) => {
-            eprintln!("Both tasks failed:");
-            eprintln!("  Frontend task error: {e1}");
-            eprintln!("  Status task error: {e2}");
-            std::process::exit(1);
-        },
-    }
+    // We expect components to run indefinitely, so we treat any return as fatal.
+    let (id, err) = match component_result {
+        Ok((id, Ok(_))) => (
+            id,
+            Err::<(), anyhow::Error>(anyhow::anyhow!("Component completed unexpectedly")),
+        ), // SAFETY: The JoinSet is definitely not empty.
+        Ok((id, Err(err))) => (id, Err(err)), // SAFETY: The JoinSet is definitely not empty.
+        Err(join_err) => (join_err.id(), Err(join_err).context("Joining component task")),
+    };
+    let component = component_ids.get(&id).unwrap_or(&"unknown");
 
-    // If any of the tasks fail, terminate the program.
+    // Exit with error context
+    err.context(format!("Component {component} failed")).unwrap();
 }

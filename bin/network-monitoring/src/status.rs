@@ -180,7 +180,7 @@ impl MonitoringConfig {
     }
 }
 
-pub async fn check_rpc_status(
+async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
     current_time: u64,
 ) -> ServiceStatus {
@@ -212,7 +212,7 @@ pub async fn check_rpc_status(
     }
 }
 
-pub async fn check_remote_prover_status(
+async fn check_remote_prover_status(
     remote_prover: &mut miden_node_proto::clients::RemoteProverProxyClient,
     name: String,
     url: String,

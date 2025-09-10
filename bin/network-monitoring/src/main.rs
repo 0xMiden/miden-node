@@ -8,7 +8,7 @@ use tokio::task::JoinSet;
 mod frontend;
 mod status;
 
-use frontend::run_frontend;
+use frontend::serve;
 use status::{MonitoringConfig, NetworkStatus, SharedStatus, check_status};
 
 #[tokio::main]
@@ -48,7 +48,7 @@ async fn main() {
     let frontend_status = shared_status.clone();
     let frontend_config = config.clone();
     let id = join_set
-        .spawn(async move { run_frontend(frontend_status, frontend_config).await })
+        .spawn(async move { serve(frontend_status, frontend_config).await })
         .id();
     component_ids.insert(id, "frontend");
 

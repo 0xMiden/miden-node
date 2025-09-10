@@ -14,10 +14,7 @@ use crate::status::{MonitoringConfig, SharedStatus};
 ///
 /// * `shared_status` - The shared status of the network.
 /// * `config` - The configuration of the network.
-pub async fn run_frontend(
-    shared_status: SharedStatus,
-    config: MonitoringConfig,
-) -> anyhow::Result<()> {
+pub async fn serve(shared_status: SharedStatus, config: MonitoringConfig) -> anyhow::Result<()> {
     // build our application with routes
     let app = Router::new()
         // Serve static files from assets directory
@@ -39,11 +36,11 @@ pub async fn run_frontend(
     Ok(())
 }
 
-pub async fn get_dashboard() -> Html<&'static str> {
+async fn get_dashboard() -> Html<&'static str> {
     Html(include_str!("../assets/index.html"))
 }
 
-pub async fn get_status(
+async fn get_status(
     axum::extract::State(shared_status): axum::extract::State<SharedStatus>,
 ) -> axum::response::Json<crate::status::NetworkStatus> {
     let status = shared_status.lock().await;

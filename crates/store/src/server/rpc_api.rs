@@ -8,7 +8,9 @@ use miden_node_proto::{convert, try_convert};
 use miden_node_utils::ErrorReport as _;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
+use miden_objects::block::ProvenBlock;
 use miden_objects::note::NoteId;
+use miden_objects::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
@@ -502,6 +504,114 @@ impl rpc_server::Rpc for StoreApi {
 
         Ok(Response::new(proto::rpc_store::MaybeNoteScript {
             script: note_script.map(Into::into),
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.sync_transactions",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_transactions(
+        &self,
+        request: Request<proto::rpc_store::SyncTransactionsRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncTransactionsResponse>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        let request = request.into_inner();
+
+        let chain_tip = self.state.latest_block_num().await;
+        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+        let block_range = block_range.into_inclusive_range(chain_tip);
+
+        let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
+
+        let transaction_summaries = self
+            .state
+            .sync_transactions(account_ids, block_range.clone())
+            .await
+            .map_err(internal_error)?;
+
+        // Convert TransactionSummary to TransactionHeader proto by loading full block data
+        // from BlockStore to get complete transaction header information
+        let mut transaction_headers = Vec::new();
+
+        for summary in transaction_summaries {
+            // Load the full block data from BlockStore
+            let block_data = self
+                .state
+                .load_block_data(summary.block_num)
+                .await
+                .map_err(|err| Status::internal(format!("Failed to load block data: {err}")))?;
+
+            let block_data = block_data.ok_or_else(|| {
+                Status::internal(format!(
+                    "Block data not found for block {}",
+                    summary.block_num.as_u32()
+                ))
+            })?;
+
+            // Deserialize the block to get transaction headers
+            let proven_block = ProvenBlock::read_from_bytes(&block_data)
+                .map_err(|err| Status::internal(format!("Failed to deserialize block: {err}")))?;
+
+            // Find the transaction header for this specific transaction
+            let transaction_header = proven_block
+                .transactions()
+                .as_slice()
+                .iter()
+                .find(|header| {
+                    header.account_id() == summary.account_id
+                        && header.id() == summary.transaction_id
+                })
+                .ok_or_else(|| {
+                    Status::internal(format!(
+                        "Transaction header not found for account {} in block {}",
+                        summary.account_id,
+                        summary.block_num.as_u32()
+                    ))
+                })?;
+
+            let input_notes: Vec<proto::primitives::Digest> =
+                transaction_header.input_notes().iter().map(Into::into).collect();
+
+            // Get output note IDs from the transaction header
+            let output_note_ids: Vec<NoteId> = transaction_header.output_notes().to_vec();
+
+            // Retrieve full note data from the database
+            let note_records =
+                self.state.get_notes_by_id(output_note_ids).await.map_err(internal_error)?;
+
+            // Convert NoteRecord to NoteSyncRecord and then to proto
+            let output_notes: Vec<proto::note::NoteSyncRecord> = note_records
+                .into_iter()
+                .map(|note_record| {
+                    let note_sync_record: crate::db::NoteSyncRecord = note_record.into();
+                    note_sync_record.into()
+                })
+                .collect();
+
+            transaction_headers.push(proto::rpc_store::TransactionHeader {
+                block_num: summary.block_num.as_u32(),
+                account_id: Some(summary.account_id.into()),
+                initial_state_commitment: Some(
+                    transaction_header.initial_state_commitment().into(),
+                ),
+                final_state_commitment: Some(transaction_header.final_state_commitment().into()),
+                input_notes,
+                output_notes,
+            });
+        }
+
+        Ok(Response::new(proto::rpc_store::SyncTransactionsResponse {
+            pagination_info: Some(proto::rpc_store::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: block_range.end().as_u32(),
+            }),
+            transaction_headers,
         }))
     }
 }

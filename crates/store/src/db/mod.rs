@@ -550,4 +550,17 @@ impl Db {
         })
         .await
     }
+
+    /// Returns the transactions headers for the specified accounts within the specified block
+    /// range.
+    pub async fn select_transactions_headers(
+        &self,
+        account_ids: Vec<AccountId>,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<Vec<TransactionSummary>> {
+        self.transact("transactions headers", move |conn| {
+            queries::select_transactions_headers(conn, &account_ids, block_range)
+        })
+        .await
+    }
 }

@@ -372,6 +372,40 @@ pub struct PaginationInfo {
     #[prost(fixed32, tag = "2")]
     pub block_num: u32,
 }
+/// Transactions synchronization request.
+///
+/// Allows clients to sync transactions for specific accounts within a block range.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncTransactionsRequest {
+    /// Block range from which to start synchronizing.
+    #[prost(message, optional, tag = "1")]
+    pub block_range: ::core::option::Option<BlockRange>,
+    /// Accounts to sync transactions for.
+    #[prost(message, repeated, tag = "2")]
+    pub account_ids: ::prost::alloc::vec::Vec<super::account::AccountId>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SyncTransactionsResponse {
+    #[prost(message, optional, tag = "1")]
+    pub pagination_info: ::core::option::Option<PaginationInfo>,
+    #[prost(message, repeated, tag = "2")]
+    pub transaction_headers: ::prost::alloc::vec::Vec<TransactionHeader>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TransactionHeader {
+    #[prost(fixed32, tag = "1")]
+    pub block_num: u32,
+    #[prost(message, optional, tag = "2")]
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+    #[prost(message, optional, tag = "3")]
+    pub initial_state_commitment: ::core::option::Option<super::primitives::Digest>,
+    #[prost(message, optional, tag = "4")]
+    pub final_state_commitment: ::core::option::Option<super::primitives::Digest>,
+    #[prost(message, repeated, tag = "5")]
+    pub input_notes: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    #[prost(message, repeated, tag = "6")]
+    pub output_notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
+}
 /// Generated client implementations.
 pub mod rpc_client {
     #![allow(
@@ -801,6 +835,31 @@ pub mod rpc_client {
                 .insert(GrpcMethod::new("rpc_store.Rpc", "SyncStorageMaps"));
             self.inner.unary(req, path, codec).await
         }
+        /// Returns transactions headers for specific accounts within a block range.
+        pub async fn sync_transactions(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SyncTransactionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SyncTransactionsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/rpc_store.Rpc/SyncTransactions",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("rpc_store.Rpc", "SyncTransactions"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -934,6 +993,14 @@ pub mod rpc_server {
             request: tonic::Request<super::SyncStorageMapsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::SyncStorageMapsResponse>,
+            tonic::Status,
+        >;
+        /// Returns transactions headers for specific accounts within a block range.
+        async fn sync_transactions(
+            &self,
+            request: tonic::Request<super::SyncTransactionsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SyncTransactionsResponse>,
             tonic::Status,
         >;
     }
@@ -1576,6 +1643,51 @@ pub mod rpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = SyncStorageMapsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/rpc_store.Rpc/SyncTransactions" => {
+                    #[allow(non_camel_case_types)]
+                    struct SyncTransactionsSvc<T: Rpc>(pub Arc<T>);
+                    impl<
+                        T: Rpc,
+                    > tonic::server::UnaryService<super::SyncTransactionsRequest>
+                    for SyncTransactionsSvc<T> {
+                        type Response = super::SyncTransactionsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SyncTransactionsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as Rpc>::sync_transactions(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SyncTransactionsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

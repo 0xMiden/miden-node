@@ -95,6 +95,9 @@ service Api {
 
     // Returns storage map updates for specified account and storage slots within a block range.
     rpc SyncStorageMaps(rpc_store.SyncStorageMapsRequest) returns (rpc_store.SyncStorageMapsResponse) {}
+
+    // Returns transactions headers for specific accounts within a block range.
+    rpc SyncTransactions(rpc_store.SyncTransactionsRequest) returns (rpc_store.SyncTransactionsResponse) {}
 }
 
 // RPC STATUS

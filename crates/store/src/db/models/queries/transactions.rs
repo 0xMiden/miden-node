@@ -8,6 +8,7 @@ use diesel::{
     QueryableByName,
     RunQueryDsl,
     Selectable,
+    SelectableHelper,
     SqliteConnection,
 };
 use miden_lib::utils::{Deserializable, Serializable};
@@ -136,4 +137,35 @@ impl TransactionSummaryRowInsert {
             block_num: block_num.to_raw_sql(),
         }
     }
+}
+
+/// Select transactions headers for the given accounts and block range.
+///
+/// # Parameters
+/// * `account_ids`: List of account IDs to filter by
+///     - Limit: 0 <= size <= 1000
+/// * `block_range`: Range of blocks to include inclusive
+///
+/// # Returns
+/// A vector of [`TransactionSummary`] or an error.
+///
+/// # Note
+/// This function returns basic transaction information since the database only stores
+/// `transaction_id`, `account_id`, and `block_num`.
+pub fn select_transactions_headers(
+    conn: &mut SqliteConnection,
+    account_ids: &[AccountId],
+    block_range: RangeInclusive<BlockNumber>,
+) -> Result<Vec<TransactionSummary>, DatabaseError> {
+    QueryParamAccountIdLimit::check(account_ids.len())?;
+
+    let desired_account_ids = serialize_vec(account_ids);
+    let raw = SelectDsl::select(schema::transactions::table, TransactionSummaryRaw::as_select())
+        .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
+        .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
+        .filter(schema::transactions::account_id.eq_any(desired_account_ids))
+        .order(schema::transactions::transaction_id.asc())
+        .load::<TransactionSummaryRaw>(conn)
+        .map_err(DatabaseError::from)?;
+    Ok(vec_raw_try_into(raw).unwrap())
 }

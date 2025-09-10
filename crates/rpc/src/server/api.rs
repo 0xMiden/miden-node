@@ -589,6 +589,23 @@ impl api_server::Api for RpcService {
 
         self.store.clone().get_note_script_by_root(request).await
     }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.sync_transactions",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_transactions(
+        &self,
+        request: Request<proto::rpc_store::SyncTransactionsRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncTransactionsResponse>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        self.store.clone().sync_transactions(request).await
+    }
 }
 
 // LIMIT HELPERS

@@ -80,6 +80,9 @@ service Rpc {
 
     // Returns storage map updates for specified account and storage slots within a block range.
     rpc SyncStorageMaps(SyncStorageMapsRequest) returns (SyncStorageMapsResponse) {}
+
+    // Returns transactions headers for specific accounts within a block range.
+    rpc SyncTransactions(SyncTransactionsRequest) returns (SyncTransactionsResponse) {}
 }
 
 // STORE STATUS
@@ -434,4 +437,32 @@ message PaginationInfo {
     // If it is less than request.block_range.block_to, the user is expected to make a subsequent request
     // starting from the next block to this one (ie, request.block_range.block_from = block_num + 1).
     fixed32 block_num = 2;
+}
+
+// SYNC TRANSACTIONS
+// ================================================================================================
+
+// Transactions synchronization request.
+//
+// Allows clients to sync transactions for specific accounts within a block range.
+message SyncTransactionsRequest {
+    // Block range from which to start synchronizing.
+    BlockRange block_range = 1;
+
+    // Accounts to sync transactions for.
+    repeated account.AccountId account_ids = 2;
+}
+
+message SyncTransactionsResponse {
+    PaginationInfo pagination_info = 1;
+    repeated TransactionHeader transaction_headers = 2;
+}
+
+message TransactionHeader {
+    fixed32 block_num = 1;
+    account.AccountId account_id = 2;
+    primitives.Digest initial_state_commitment = 3;
+    primitives.Digest final_state_commitment = 4;
+    repeated primitives.Digest input_notes = 5;
+    repeated note.NoteSyncRecord output_notes = 6;
 }

@@ -886,7 +886,7 @@ impl State {
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
-        known_code_commitments: BTreeSet<Word>,
+        known_code_commitment: Word,
         include_headers: bool,
     ) -> Result<(BlockNumber, proto::rpc_store::AccountProof), DatabaseError> {
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
@@ -896,12 +896,10 @@ impl State {
 
         let account_id = account_request.account_id;
 
-        let state_headers = if include_headers.not() {
-            BTreeMap::<AccountId, proto::rpc_store::account_proof::AccountStateHeader>::default()
+        let state_header = if include_headers.not() {
+            None
         } else {
             let info = self.db.select_account(account_id).await?;
-
-            let mut headers_map = BTreeMap::new();
 
             if let Some(details) = &info.details {
                 let mut storage_slot_map_keys = Vec::new();
@@ -927,10 +925,9 @@ impl State {
                 }
 
                 // Only include unknown account codes
-                let account_code = known_code_commitments
-                    .contains(&details.code().commitment())
+                let account_code = (known_code_commitment == details.code().commitment())
                     .not()
-                    .then(|| details.code().to_bytes()); // FIXME
+                    .then(|| details.code().to_bytes());
 
                 let state_header = proto::rpc_store::account_proof::AccountStateHeader {
                     header: Some(AccountHeader::from(details).into()),
@@ -939,14 +936,13 @@ impl State {
                     storage_maps: storage_slot_map_keys,
                 };
 
-                headers_map.insert(account_id, state_header);
+                Some(state_header)
+            } else {
+                None
             }
-
-            headers_map
         };
 
         let witness = inner_state.account_tree.open(account_id);
-        let state_header = state_headers.get(&account_id).cloned();
 
         let witness_record = AccountWitnessRecord { account_id, witness };
 

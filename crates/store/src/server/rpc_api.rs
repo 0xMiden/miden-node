@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use miden_node_proto::domain::account::AccountInfo;
 use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc_store::rpc_server;
@@ -314,22 +312,24 @@ impl rpc_server::Rpc for StoreApi {
         let proto::rpc_store::AccountProofRequest {
             account_request,
             include_headers,
-            code_commitments,
+            code_commitment,
         } = request.into_inner();
 
         let include_headers = include_headers.unwrap_or_default();
-        let request_code_commitments: BTreeSet<Word> = try_convert(code_commitments)
-            .collect::<Result<_, _>>()
-            .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
+        let request_code_commitment = Word::try_from(
+            &(code_commitment.ok_or(Status::invalid_argument(stringify!(code_commitment)))?),
+        )
+        .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
 
-        let account_request = account_request.unwrap(); // FIXME XXX
+        let account_request =
+            account_request.ok_or(Status::invalid_argument(stringify!(account_request)))?;
         let account_request = account_request.try_into().map_err(|err| {
             Status::invalid_argument(format!("Invalid account proofs request: {err}"))
         })?;
 
         let (_block_num, proof) = self
             .state
-            .get_account_proof(account_request, request_code_commitments, include_headers)
+            .get_account_proof(account_request, request_code_commitment, include_headers)
             .await?;
 
         Ok(Response::new(proof))

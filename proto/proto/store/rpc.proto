@@ -122,17 +122,15 @@ message AccountProofRequest {
     }
 
     // A list of account requests, including map keys + values.
-    optional AccountRequest account_request = 1;
+    AccountRequest account_request = 1;
 
     // Optional flag to include account headers and account code in the response. If false, storage
     // requests are also ignored. False by default.
     optional bool include_headers = 2;
 
-    // Account code commitments corresponding to the last-known `AccountCode` for requested
-    // accounts. Responses will include only the ones that are not known to the caller.
-    // These are not associated with a specific account but rather, they will be matched against
-    // all requested accounts.
-    repeated primitives.Digest code_commitments = 3;
+    // Account code commitment corresponding to the last-known `AccountCode` for the requested
+    // account. The response will include only code that is known.
+    optional primitives.Digest code_commitment = 3;
 }
 
 // Represents the result of getting account proofs.

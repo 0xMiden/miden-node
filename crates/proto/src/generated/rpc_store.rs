@@ -22,12 +22,10 @@ pub struct AccountProofRequest {
     /// requests are also ignored. False by default.
     #[prost(bool, optional, tag = "2")]
     pub include_headers: ::core::option::Option<bool>,
-    /// Account code commitments corresponding to the last-known `AccountCode` for requested
-    /// accounts. Responses will include only the ones that are not known to the caller.
-    /// These are not associated with a specific account but rather, they will be matched against
-    /// all requested accounts.
-    #[prost(message, repeated, tag = "3")]
-    pub code_commitments: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    /// Account code commitment corresponding to the last-known `AccountCode` for the requested
+    /// account. The response will include only code that is known.
+    #[prost(message, optional, tag = "3")]
+    pub code_commitment: ::core::option::Option<super::primitives::Digest>,
 }
 /// Nested message and enum types in `AccountProofRequest`.
 pub mod account_proof_request {

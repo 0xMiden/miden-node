@@ -106,15 +106,14 @@ pub enum AddTransactionError {
 /// Error codes for `SubmitTransaction` errors
 #[repr(u8)]
 pub enum SubmitTransactionErrorCode {
-    InputNotesAlreadyConsumed = 0,
-    UnauthenticatedNotesNotFound = 1,
-    OutputNotesAlreadyExist = 2,
+    InternalError = 0,
+    DeserializationFailed = 1,
+    InvalidTransactionProof = 2,
     IncorrectAccountInitialCommitment = 3,
-    InvalidTransactionProof = 4,
-    StaleInputs = 5,
-    Expired = 6,
-    DeserializationFailed = 7,
-    Internal = 8,
+    InputNotesAlreadyConsumed = 4,
+    UnauthenticatedNotesNotFound = 5,
+    OutputNotesAlreadyExist = 6,
+    TransactionExpired = 7,
 }
 
 impl From<AddTransactionError> for tonic::Status {
@@ -142,15 +141,16 @@ impl From<AddTransactionError> for tonic::Status {
                     tonic::Code::InvalidArgument,
                 ),
                 VerifyTxError::StoreConnectionFailed(_) => {
-                    (SubmitTransactionErrorCode::Internal as u8, tonic::Code::Internal)
+                    (SubmitTransactionErrorCode::InternalError as u8, tonic::Code::Internal)
                 },
             },
             AddTransactionError::StaleInputs { .. } => {
-                (SubmitTransactionErrorCode::StaleInputs as u8, tonic::Code::InvalidArgument)
+                (SubmitTransactionErrorCode::InternalError as u8, tonic::Code::Internal)
             },
-            AddTransactionError::Expired { .. } => {
-                (SubmitTransactionErrorCode::Expired as u8, tonic::Code::InvalidArgument)
-            },
+            AddTransactionError::Expired { .. } => (
+                SubmitTransactionErrorCode::TransactionExpired as u8,
+                tonic::Code::InvalidArgument,
+            ),
             AddTransactionError::TransactionDeserializationFailed(_) => (
                 SubmitTransactionErrorCode::DeserializationFailed as u8,
                 tonic::Code::InvalidArgument,

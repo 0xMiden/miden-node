@@ -23,11 +23,11 @@ mod tests {
 
         let status: tonic::Status = error.into();
 
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+        assert_eq!(status.code(), tonic::Code::Internal);
         assert!(status.message().contains("stale"));
 
         let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitTransactionErrorCode::StaleInputs as u8);
+        assert_eq!(error_code, SubmitTransactionErrorCode::InternalError as u8);
     }
 
     #[test]
@@ -43,7 +43,7 @@ mod tests {
         assert!(status.message().contains("expired"));
 
         let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitTransactionErrorCode::Expired as u8);
+        assert_eq!(error_code, SubmitTransactionErrorCode::TransactionExpired as u8);
     }
 
     #[test]

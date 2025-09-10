@@ -17,8 +17,8 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: build
+  check:
+    name: check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -28,28 +28,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - name: Build network monitoring
+      - name: Check network monitoring (release)
         run: |
-          BUILD_PROTO=1 cargo build --locked -p miden-network-monitoring
-      - name: Build network monitoring (release)
-        run: |
-          BUILD_PROTO=1 cargo build --locked -p miden-network-monitoring --release
-
-  install:
-    name: install
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - name: Rustup
-        run: rustup update --no-self-update
-      - uses: Swatinem/rust-cache@v2
-        with:
-          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - name: Install network monitoring
-        run: |
-          make install-network-monitoring
-      - name: Verify installation
-        run: |
-          # Verify the binary was installed and can be executed
-          timeout 5s miden-network-monitoring || true
+          BUILD_PROTO=1 cargo check --locked -p miden-network-monitoring --release

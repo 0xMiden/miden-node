@@ -30,7 +30,6 @@ pub async fn serve(shared_status: SharedStatus, config: MonitoringConfig) -> any
         .route("/status", get(get_status))
         .with_state(shared_status);
 
-    // run our app with hyper, listening globally on the configured port
     let bind_address = format!("0.0.0.0:{}", config.port);
     println!("Starting web server on {bind_address}");
     println!("Dashboard available at: http://localhost:{}/", config.port);

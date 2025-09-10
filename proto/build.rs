@@ -21,15 +21,11 @@ const STORE_SHARED_DESCRIPTOR: &str = "store_shared_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
 
-fn main() -> miette::Result<()> {
-    run()
-}
-
 /// Generates Rust protobuf bindings from .proto files.
 ///
 /// This is done only if `BUILD_PROTO` environment variable is set to `1` to avoid running the
 /// script on crates.io where repo-level .proto files are not available.
-fn run() -> miette::Result<()> {
+fn main() -> miette::Result<()> {
     println!("cargo::rerun-if-changed=./proto");
     println!("cargo::rerun-if-env-changed=BUILD_PROTO");
 

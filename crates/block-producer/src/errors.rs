@@ -119,49 +119,45 @@ pub enum SubmitTransactionErrorCode {
 
 impl From<AddTransactionError> for tonic::Status {
     fn from(value: AddTransactionError) -> Self {
-        let (error_code, grpc_code) = get_error_code_and_grpc_code(&value);
+        let (error_code, grpc_code) = match &value {
+            AddTransactionError::VerificationFailed(tx_verify_error) => match tx_verify_error {
+                VerifyTxError::InputNotesAlreadyConsumed(_) => (
+                    SubmitTransactionErrorCode::InputNotesAlreadyConsumed as u8,
+                    tonic::Code::InvalidArgument,
+                ),
+                VerifyTxError::UnauthenticatedNotesNotFound(_) => (
+                    SubmitTransactionErrorCode::UnauthenticatedNotesNotFound as u8,
+                    tonic::Code::InvalidArgument,
+                ),
+                VerifyTxError::OutputNotesAlreadyExist(_) => (
+                    SubmitTransactionErrorCode::OutputNotesAlreadyExist as u8,
+                    tonic::Code::InvalidArgument,
+                ),
+                VerifyTxError::IncorrectAccountInitialCommitment { .. } => (
+                    SubmitTransactionErrorCode::IncorrectAccountInitialCommitment as u8,
+                    tonic::Code::InvalidArgument,
+                ),
+                VerifyTxError::InvalidTransactionProof(_) => (
+                    SubmitTransactionErrorCode::InvalidTransactionProof as u8,
+                    tonic::Code::InvalidArgument,
+                ),
+                VerifyTxError::StoreConnectionFailed(_) => {
+                    (SubmitTransactionErrorCode::Internal as u8, tonic::Code::Internal)
+                },
+            },
+            AddTransactionError::StaleInputs { .. } => {
+                (SubmitTransactionErrorCode::StaleInputs as u8, tonic::Code::InvalidArgument)
+            },
+            AddTransactionError::Expired { .. } => {
+                (SubmitTransactionErrorCode::Expired as u8, tonic::Code::InvalidArgument)
+            },
+            AddTransactionError::TransactionDeserializationFailed(_) => (
+                SubmitTransactionErrorCode::DeserializationFailed as u8,
+                tonic::Code::InvalidArgument,
+            ),
+        };
 
         tonic::Status::with_details(grpc_code, value.to_string(), vec![error_code].into())
-    }
-}
-
-fn get_error_code_and_grpc_code(error: &AddTransactionError) -> (u8, tonic::Code) {
-    match error {
-        AddTransactionError::VerificationFailed(tx_verify_error) => match tx_verify_error {
-            VerifyTxError::InputNotesAlreadyConsumed(_) => (
-                SubmitTransactionErrorCode::InputNotesAlreadyConsumed as u8,
-                tonic::Code::InvalidArgument,
-            ),
-            VerifyTxError::UnauthenticatedNotesNotFound(_) => (
-                SubmitTransactionErrorCode::UnauthenticatedNotesNotFound as u8,
-                tonic::Code::InvalidArgument,
-            ),
-            VerifyTxError::OutputNotesAlreadyExist(_) => (
-                SubmitTransactionErrorCode::OutputNotesAlreadyExist as u8,
-                tonic::Code::InvalidArgument,
-            ),
-            VerifyTxError::IncorrectAccountInitialCommitment { .. } => (
-                SubmitTransactionErrorCode::IncorrectAccountInitialCommitment as u8,
-                tonic::Code::InvalidArgument,
-            ),
-            VerifyTxError::InvalidTransactionProof(_) => (
-                SubmitTransactionErrorCode::InvalidTransactionProof as u8,
-                tonic::Code::InvalidArgument,
-            ),
-            VerifyTxError::StoreConnectionFailed(_) => {
-                (SubmitTransactionErrorCode::Internal as u8, tonic::Code::Internal)
-            },
-        },
-        AddTransactionError::StaleInputs { .. } => {
-            (SubmitTransactionErrorCode::StaleInputs as u8, tonic::Code::InvalidArgument)
-        },
-        AddTransactionError::Expired { .. } => {
-            (SubmitTransactionErrorCode::Expired as u8, tonic::Code::InvalidArgument)
-        },
-        AddTransactionError::TransactionDeserializationFailed(_) => (
-            SubmitTransactionErrorCode::DeserializationFailed as u8,
-            tonic::Code::InvalidArgument,
-        ),
     }
 }
 

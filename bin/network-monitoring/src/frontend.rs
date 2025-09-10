@@ -1,8 +1,11 @@
+//! This file explicitly embeds each of the frontend files into the binary using `include_str!` and
+//! `include_bytes!`.
+
 use anyhow::Context;
 use axum::Router;
-use axum::response::Html;
+use axum::http::header;
+use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use tower_http::services::ServeDir;
 
 use crate::status::{MonitoringConfig, SharedStatus};
 
@@ -17,8 +20,10 @@ use crate::status::{MonitoringConfig, SharedStatus};
 pub async fn serve(shared_status: SharedStatus, config: MonitoringConfig) -> anyhow::Result<()> {
     // build our application with routes
     let app = Router::new()
-        // Serve static files from assets directory
-        .nest_service("/assets", ServeDir::new("bin/network-monitoring/assets"))
+        // Serve embedded assets
+        .route("/assets/index.css", get(serve_css))
+        .route("/assets/background.png", get(serve_background))
+        .route("/assets/favicon.ico", get(serve_favicon))
         // Main dashboard route
         .route("/", get(get_dashboard))
         // API route for status data
@@ -37,7 +42,7 @@ pub async fn serve(shared_status: SharedStatus, config: MonitoringConfig) -> any
 }
 
 async fn get_dashboard() -> Html<&'static str> {
-    Html(include_str!("../assets/index.html"))
+    Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.html")))
 }
 
 async fn get_status(
@@ -45,4 +50,28 @@ async fn get_status(
 ) -> axum::response::Json<crate::status::NetworkStatus> {
     let status = shared_status.lock().await;
     axum::response::Json(status.clone())
+}
+
+async fn serve_css() -> Response {
+    (
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("text/css"))],
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.css")),
+    )
+        .into_response()
+}
+
+async fn serve_background() -> Response {
+    (
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/png"))],
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/background.png")),
+    )
+        .into_response()
+}
+
+async fn serve_favicon() -> Response {
+    (
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/x-icon"))],
+        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/favicon.ico")),
+    )
+        .into_response()
 }

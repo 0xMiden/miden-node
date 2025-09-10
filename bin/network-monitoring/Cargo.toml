@@ -20,5 +20,4 @@ axum             = { version = "0.8.4" }
 miden-node-proto = { workspace = true }
 serde            = { features = ["derive"], version = "1.0" }
 tokio            = { features = ["full"], workspace = true }
-tower-http       = { features = ["fs"], version = "0.6" }
 url              = { features = ["serde"], workspace = true }

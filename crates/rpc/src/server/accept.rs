@@ -112,7 +112,7 @@ impl AcceptHeaderLayer {
             //
             // Note that `application/*` is invalid so we cannot collapse the conditions.
             match (media_type.ty.as_str(), media_type.subty.as_str()) {
-                ("*", "*") | ("*" | "application", "vnd.miden") => {},
+                ("*", "*") | ("*" | "application", "vnd.miden" | "grpc") => {},
                 _ => continue,
             }
 
@@ -317,6 +317,10 @@ mod tests {
     #[rstest::rstest]
     #[case::empty("")]
     #[case::wildcard("*/*")]
+    #[case::grpc_media_type("application/grpc")]
+    #[case::grpc_media_type_full(
+        "application/grpc; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=0.2.3"
+    )]
     #[case::media_type_only("application/vnd.miden")]
     #[case::with_grpc_suffix("application/vnd.miden+grpc")]
     #[case::with_quality("application/vnd.miden; q=0.3")]

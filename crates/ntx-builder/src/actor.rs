@@ -1,21 +1,14 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use miden_node_proto::AccountState;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_node_proto::domain::note::NetworkNote;
 use miden_node_utils::ErrorReport;
-use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::TransactionId;
-use miden_tx::FailedNote;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::mpsc;
 use tracing::instrument;
 
+use crate::COMPONENT;
 use crate::state::State;
 use crate::transaction::{NtxContext, NtxError};
-use crate::{COMPONENT, MAX_IN_PROGRESS_TXS};
 
 #[derive(Debug, Clone)]
 pub enum CoordinatorMessage {
@@ -24,21 +17,16 @@ pub enum CoordinatorMessage {
 
 #[derive(Debug, Clone)]
 pub struct AccountActorConfig {
-    pub max_note_attempts: usize,
     pub tick_interval_ms: Duration,
 }
 
 impl Default for AccountActorConfig {
     fn default() -> Self {
         Self {
-            max_note_attempts: 10,
             tick_interval_ms: Duration::from_millis(200),
         }
     }
 }
-
-// ACCOUNT ACTOR
-// ================================================================================================
 
 pub struct AccountActorHandle {
     pub account_prefix: NetworkAccountPrefix,
@@ -69,7 +57,6 @@ pub struct AccountActor {
     state: State,
     coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
     ntx_context: NtxContext,
-    rate_limiter: Arc<Semaphore>,
     config: AccountActorConfig,
 }
 
@@ -99,14 +86,7 @@ impl AccountActor {
     ) -> AccountActorHandle {
         let (coordinator_tx, coordinator_rx) = mpsc::unbounded_channel();
 
-        let actor = AccountActor::new(
-            account_prefix,
-            state,
-            coordinator_rx,
-            ntx_context,
-            config,
-            chain_tip_block_num,
-        );
+        let actor = AccountActor::new(account_prefix, state, coordinator_rx, ntx_context, config);
 
         let join_handle = tokio::spawn(async move {
             if let Err(error) = actor.run().await {
@@ -132,7 +112,7 @@ impl AccountActor {
         loop {
             tokio::select! {
                 _next = interval.tick() => {
-                    self.tick().await;
+                    self.execute_transactions().await;
                 },
                 msg = self.coordinator_rx.recv() => {
                     match msg {
@@ -154,16 +134,18 @@ impl AccountActor {
         }
     }
 
-    async fn tick(&mut self) {
-        let Some(candidate) = self.state.select_candidate(crate::MAX_NOTES_PER_TX) else {
+    async fn execute_transactions(&mut self) {
+        // Select a transaction to execute.
+        let Some(tx_candidate) = self.state.select_candidate(crate::MAX_NOTES_PER_TX) else {
             tracing::debug!(
                 account = %self.account_prefix,
                 "no candidate network transaction available");
             return;
         };
-        let block_num = candidate.chain_tip_header.block_num();
+        let block_num = tx_candidate.chain_tip_header.block_num();
 
-        let execution_result = self.ntx_context.clone().execute_transaction(candidate).await;
+        // Execute the selected transaction.
+        let execution_result = self.ntx_context.clone().execute_transaction(tx_candidate).await;
         match execution_result {
             // Execution completed without failed notes.
             Ok(failed) if failed.is_empty() => {},

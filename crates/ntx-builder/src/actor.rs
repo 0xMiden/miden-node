@@ -14,9 +14,8 @@ use tokio::sync::{Semaphore, mpsc};
 use tracing::instrument;
 
 use crate::state::State;
-use crate::{COMPONENT, MAX_IN_PROGRESS_TXS};
-
 use crate::transaction::{NtxContext, NtxError};
+use crate::{COMPONENT, MAX_IN_PROGRESS_TXS};
 
 #[derive(Debug, Clone)]
 pub enum CoordinatorMessage {

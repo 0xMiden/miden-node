@@ -1,24 +1,21 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::actor::{AccountActor, AccountActorConfig, AccountActorHandle, CoordinatorMessage};
 use anyhow::Context;
 use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_node_utils::ErrorReport;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::Barrier;
 use tokio::time;
 use url::Url;
 
-use crate::MAX_IN_PROGRESS_TXS;
+use crate::actor::{AccountActor, AccountActorConfig, AccountActorHandle, CoordinatorMessage};
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
-use crate::transaction::NtxError;
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -51,7 +48,7 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(self.store_url);
         let block_producer = BlockProducerClient::new(self.block_producer_url);
 
-        let mut state = crate::state::State::load(store.clone())
+        let state = crate::state::State::load(store.clone())
             .await
             .context("failed to load ntx state")?;
 
@@ -71,20 +68,13 @@ impl NetworkTransactionBuilder {
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
-        // Tracks network transaction tasks until they are submitted to the mempool.
-        //
-        // We also map the task ID to the network account so we can mark it as failed if it doesn't
-        // get submitted.
-        let mut inflight = JoinSet::new();
-        let mut inflight_idx = HashMap::new();
-
         let context = crate::transaction::NtxContext {
             block_producer: block_producer.clone(),
             prover,
         };
 
-        let mut actor_registry = HashMap::<NetworkAccountPrefix, AccountActorHandle>::new();
         // Create initial actors for existing accounts
+        let mut actor_registry = HashMap::<NetworkAccountPrefix, AccountActorHandle>::new();
         for (account_prefix, _account_state) in state.accounts().iter() {
             let actor_handle = AccountActor::spawn(
                 *account_prefix,
@@ -102,104 +92,118 @@ impl NetworkTransactionBuilder {
                         if actor_handle.is_finished() {
                             tracing::error!(
                                 account = %account_prefix,
-                                "Actor finished unexpectedly, will respawn on next event"
+                                "actor finished unexpectedly, will respawn on next event"
                             );
                         }
                     }
                 },
                 event = mempool_events.try_next() => {
-                    let event = event
-                                .context("mempool event stream ended")?
-                                .context("mempool event stream failed")?;
-                    match &event {
-                        MempoolEvent::TransactionAdded {
-                          account_delta,
-                          network_notes,
-                          ..
-                        } => {
-                            // Route to affected accounts
-                            let mut affected_accounts = std::collections::HashSet::new();
-
-                            // Check if any account deltas affect our tracked accounts
-                            if let Some(delta) = account_delta {
-                                let account_prefix = match delta {
-                                    AccountUpdateDetails::New(account) => {
-                                        NetworkAccountPrefix::try_from(account.id()).ok()
-                                    },
-                                    AccountUpdateDetails::Delta(delta) => {
-                                        NetworkAccountPrefix::try_from(delta.id()).ok()
-                                    },
-                                    AccountUpdateDetails::Private => None,
-                                };
-
-                                if let Some(prefix) = account_prefix {
-                                    affected_accounts.insert(prefix);
-
-                                    // Create new actor.
-                                    actor_registry.entry(prefix).or_insert_with( || {
-                                        AccountActor::spawn(
-                                            prefix,
-                                            state.clone(),
-                                            context.clone(),
-                                            AccountActorConfig::default(),
-                                        )
-                                    });
-                                }
-                            }
-
-                            // Check which accounts are affected by network notes
-                            for note in network_notes {
-                                if let NetworkNote::SingleTarget(note) = note {
-                                    let prefix = note.account_prefix();
-                                    affected_accounts.insert(prefix);
-
-                                    // Create new actor.
-                                    actor_registry.entry(prefix).or_insert_with( || {
-                                        AccountActor::spawn(
-                                            prefix,
-                                            state.clone(),
-                                            context.clone(),
-                                            AccountActorConfig::default(),
-                                        )
-                                    });
-                                }
-                            }
-
-                            // Send event to all affected actors
-                            for account_prefix in affected_accounts {
-                                if let Some(actor_handle) = actor_registry.get(&account_prefix) {
-                                    if let Err(error) = actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone())) {
-                                        tracing::error!(
-                                            account = %account_prefix,
-                                            error = ?error,
-                                            "Failed to send mempool event to actor"
-                                        );
-                                    }
-                                } else {
-                                    tracing::error!(
-                                        account = %account_prefix,
-                                        "Failed to find actor handle for mempool event"
-                                    );
-                                }
-                            }
-                        },
-                        MempoolEvent::BlockCommitted { .. } |
-                        MempoolEvent::TransactionsReverted(_) => {
-                            // Broadcast to all actors
-                            for (account_prefix, actor_handle) in &actor_registry {
-                                if let Err(error) = actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone())) {
-                                    tracing::error!(
-                                        account = %account_prefix,
-                                        error = ?error,
-                                        "Failed to send mempool event to actor"
-                                    );
-                                }
-                            }
-                        }
-                    };
+                    if let Err(error) = Self::handle_mempool_event(
+                        event,
+                        &mut actor_registry,
+                        &state,
+                        &context,
+                    ).await {
+                        return Err(error);
+                    }
                 },
             }
         }
+    }
+
+    /// Handles mempool events by routing them to affected account actors.
+    async fn handle_mempool_event(
+        event_result: Result<Option<MempoolEvent>, tonic::Status>,
+        actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
+        state: &crate::state::State,
+        context: &crate::transaction::NtxContext,
+    ) -> anyhow::Result<()> {
+        let event = event_result
+            .context("mempool event stream ended")?
+            .context("mempool event stream failed")?;
+
+        match &event {
+            // Broadcast to affected actors.
+            MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
+                // Find affected accounts.
+                let affected_accounts =
+                    Self::find_affected_accounts(&account_delta, &network_notes);
+
+                for account_prefix in affected_accounts {
+                    // Update registry.
+                    actor_registry.entry(account_prefix).or_insert_with(|| {
+                        AccountActor::spawn(
+                            account_prefix,
+                            state.clone(),
+                            context.clone(),
+                            AccountActorConfig::default(),
+                        )
+                    });
+                    // Send event.
+                    let actor_handle =
+                        actor_registry.get(&account_prefix).expect("actor insertion is inevitable");
+                    if let Err(error) =
+                        actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone()))
+                    {
+                        tracing::error!(
+                            account = %account_prefix,
+                            error = ?error,
+                            "Failed to send mempool event to actor"
+                        );
+                    }
+                }
+            },
+            // Broadcast to all actors.
+            MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
+                for (account_prefix, actor_handle) in actor_registry {
+                    if let Err(error) =
+                        actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone()))
+                    {
+                        tracing::error!(
+                            account = %account_prefix,
+                            error = ?error,
+                            "Failed to send mempool event to actor"
+                        );
+                    }
+                }
+            },
+        };
+
+        Ok(())
+    }
+
+    fn find_affected_accounts(
+        account_delta: &Option<AccountUpdateDetails>,
+        network_notes: &[NetworkNote],
+    ) -> HashSet<NetworkAccountPrefix> {
+        let mut affected_accounts = HashSet::new();
+
+        // Find affected accounts from account delta.
+        if let Some(delta) = account_delta {
+            let account_prefix = match delta {
+                AccountUpdateDetails::New(account) => {
+                    NetworkAccountPrefix::try_from(account.id()).ok()
+                },
+                AccountUpdateDetails::Delta(delta) => {
+                    NetworkAccountPrefix::try_from(delta.id()).ok()
+                },
+                AccountUpdateDetails::Private => None,
+            };
+
+            if let Some(prefix) = account_prefix {
+                affected_accounts.insert(prefix);
+            }
+        }
+
+        // Find affected accounts from network notes.
+        for note in network_notes {
+            if let NetworkNote::SingleTarget(note) = note {
+                let prefix = note.account_prefix();
+                affected_accounts.insert(prefix);
+            }
+        }
+
+        affected_accounts
     }
 }
 

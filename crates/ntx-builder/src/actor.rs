@@ -3,12 +3,16 @@ use std::time::Duration;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
+use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::mpsc;
 use tracing::instrument;
+use url::Url;
 
 use crate::COMPONENT;
+use crate::block_producer::BlockProducerClient;
 use crate::state::State;
-use crate::transaction::{NtxContext, NtxError};
+use crate::store::StoreClient;
+use crate::transaction::NtxError;
 
 #[derive(Debug, Clone)]
 pub enum CoordinatorMessage {
@@ -18,14 +22,13 @@ pub enum CoordinatorMessage {
 #[derive(Debug, Clone)]
 pub struct AccountActorConfig {
     pub tick_interval_ms: Duration,
-}
-
-impl Default for AccountActorConfig {
-    fn default() -> Self {
-        Self {
-            tick_interval_ms: Duration::from_millis(200),
-        }
-    }
+    /// Address of the store gRPC server.
+    pub store_url: Url,
+    /// Address of the block producer gRPC server.
+    pub block_producer_url: Url,
+    /// Address of the remote prover. If `None`, transactions will be proven locally, which is
+    /// undesirable due to the perofmrance impact.
+    pub tx_prover_url: Option<Url>,
 }
 
 pub struct AccountActorHandle {
@@ -56,8 +59,10 @@ pub struct AccountActor {
     account_prefix: NetworkAccountPrefix,
     state: State,
     coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
-    ntx_context: NtxContext,
     config: AccountActorConfig,
+    store: StoreClient,
+    block_producer: BlockProducerClient,
+    prover: Option<RemoteTransactionProver>,
 }
 
 impl AccountActor {
@@ -65,15 +70,19 @@ impl AccountActor {
         account_prefix: NetworkAccountPrefix,
         state: State,
         coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
-        ntx_context: NtxContext,
         config: AccountActorConfig,
     ) -> Self {
+        let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
+        let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
+        let store = StoreClient::new(config.store_url.clone());
         Self {
             account_prefix,
             state,
             coordinator_rx,
-            ntx_context,
             config,
+            store,
+            block_producer,
+            prover,
         }
     }
 
@@ -81,12 +90,11 @@ impl AccountActor {
     pub fn spawn(
         account_prefix: NetworkAccountPrefix,
         state: State,
-        ntx_context: NtxContext,
         config: AccountActorConfig,
     ) -> AccountActorHandle {
         let (coordinator_tx, coordinator_rx) = mpsc::unbounded_channel();
 
-        let actor = AccountActor::new(account_prefix, state, coordinator_rx, ntx_context, config);
+        let actor = AccountActor::new(account_prefix, state, coordinator_rx, config);
 
         let join_handle = tokio::spawn(async move {
             if let Err(error) = actor.run().await {
@@ -107,6 +115,11 @@ impl AccountActor {
 
     #[instrument(target = COMPONENT, name = "account_actor.run", skip_all)]
     async fn run(mut self) -> anyhow::Result<()> {
+        // First catch up with all pre-existing events.
+        while let Some(CoordinatorMessage::MempoolEvent(event)) = self.coordinator_rx.recv().await {
+            self.state.mempool_update(event).await?;
+        }
+
         let mut interval = tokio::time::interval(self.config.tick_interval_ms);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
@@ -145,7 +158,12 @@ impl AccountActor {
         let block_num = tx_candidate.chain_tip_header.block_num();
 
         // Execute the selected transaction.
-        let execution_result = self.ntx_context.clone().execute_transaction(tx_candidate).await;
+        let context = crate::transaction::NtxContext {
+            block_producer: self.block_producer.clone(),
+            prover: self.prover.clone(),
+        };
+
+        let execution_result = context.execute_transaction(tx_candidate).await;
         match execution_result {
             // Execution completed without failed notes.
             Ok(failed) if failed.is_empty() => {},

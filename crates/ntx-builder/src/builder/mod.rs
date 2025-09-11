@@ -45,8 +45,8 @@ pub struct NetworkTransactionBuilder {
 
 impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
-        let store = StoreClient::new(self.store_url);
-        let block_producer = BlockProducerClient::new(self.block_producer_url);
+        let store = StoreClient::new(self.store_url.clone());
+        let block_producer = BlockProducerClient::new(self.block_producer_url.clone());
 
         let state = crate::state::State::load(store.clone())
             .await
@@ -63,25 +63,20 @@ impl NetworkTransactionBuilder {
         // This is a temporary work-around until the ntb can resync on the fly.
         self.bp_checkpoint.wait().await;
 
-        let prover = self.tx_prover_url.map(RemoteTransactionProver::new);
-
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
-        let context = crate::transaction::NtxContext {
-            block_producer: block_producer.clone(),
-            prover,
+        let config = AccountActorConfig {
+            tick_interval_ms: self.ticker_interval, // todo these should be separate values?
+            store_url: self.store_url,
+            block_producer_url: self.block_producer_url,
+            tx_prover_url: self.tx_prover_url,
         };
 
         // Create initial actors for existing accounts
         let mut actor_registry = HashMap::<NetworkAccountPrefix, AccountActorHandle>::new();
-        for (account_prefix, _account_state) in state.accounts().iter() {
-            let actor_handle = AccountActor::spawn(
-                *account_prefix,
-                state.clone(),
-                context.clone(),
-                AccountActorConfig::default(), //todo
-            );
+        for account_prefix in state.accounts().keys() {
+            let actor_handle = AccountActor::spawn(*account_prefix, state.clone(), config.clone());
             actor_registry.insert(*account_prefix, actor_handle);
         }
 
@@ -98,25 +93,23 @@ impl NetworkTransactionBuilder {
                     }
                 },
                 event = mempool_events.try_next() => {
-                    if let Err(error) = Self::handle_mempool_event(
+                    Self::handle_mempool_event(
                         event,
                         &mut actor_registry,
+                        config.clone(),
                         &state,
-                        &context,
-                    ).await {
-                        return Err(error);
-                    }
+                    )?;
                 },
             }
         }
     }
 
     /// Handles mempool events by routing them to affected account actors.
-    async fn handle_mempool_event(
+    fn handle_mempool_event(
         event_result: Result<Option<MempoolEvent>, tonic::Status>,
         actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
+        account_actor_config: AccountActorConfig,
         state: &crate::state::State,
-        context: &crate::transaction::NtxContext,
     ) -> anyhow::Result<()> {
         let event = event_result
             .context("mempool event stream ended")?
@@ -135,8 +128,7 @@ impl NetworkTransactionBuilder {
                         AccountActor::spawn(
                             account_prefix,
                             state.clone(),
-                            context.clone(),
-                            AccountActorConfig::default(),
+                            account_actor_config.clone(),
                         )
                     });
                     // Send event.

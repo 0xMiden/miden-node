@@ -384,25 +384,35 @@ pub struct SyncTransactionsRequest {
     #[prost(message, repeated, tag = "2")]
     pub account_ids: ::prost::alloc::vec::Vec<super::account::AccountId>,
 }
+/// Represents the result of syncing transactions request.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncTransactionsResponse {
+    /// Pagination information.
     #[prost(message, optional, tag = "1")]
     pub pagination_info: ::core::option::Option<PaginationInfo>,
+    /// List of transaction headers.
     #[prost(message, repeated, tag = "2")]
     pub transaction_headers: ::prost::alloc::vec::Vec<TransactionHeader>,
 }
+/// Represents a transaction header.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TransactionHeader {
+    /// Block number in which the transaction was executed.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
+    /// Account ID of the transaction.
     #[prost(message, optional, tag = "2")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
+    /// State commitment of the account before the transaction was executed.
     #[prost(message, optional, tag = "3")]
     pub initial_state_commitment: ::core::option::Option<super::primitives::Digest>,
+    /// State commitment of the account after the transaction was executed.
     #[prost(message, optional, tag = "4")]
     pub final_state_commitment: ::core::option::Option<super::primitives::Digest>,
+    /// Input notes of the transaction.
     #[prost(message, repeated, tag = "5")]
     pub input_notes: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    /// Output notes of the transaction.
     #[prost(message, repeated, tag = "6")]
     pub output_notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
 }

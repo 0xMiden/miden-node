@@ -453,16 +453,32 @@ message SyncTransactionsRequest {
     repeated account.AccountId account_ids = 2;
 }
 
+// Represents the result of syncing transactions request.
 message SyncTransactionsResponse {
+    // Pagination information.
     PaginationInfo pagination_info = 1;
+
+    // List of transaction headers.
     repeated TransactionHeader transaction_headers = 2;
 }
 
+// Represents a transaction header.
 message TransactionHeader {
+    // Block number in which the transaction was executed.
     fixed32 block_num = 1;
+
+    // Account ID of the transaction.
     account.AccountId account_id = 2;
+
+    // State commitment of the account before the transaction was executed.
     primitives.Digest initial_state_commitment = 3;
+
+    // State commitment of the account after the transaction was executed.
     primitives.Digest final_state_commitment = 4;
+
+    // Input notes of the transaction.
     repeated primitives.Digest input_notes = 5;
+
+    // Output notes of the transaction.
     repeated note.NoteSyncRecord output_notes = 6;
 }

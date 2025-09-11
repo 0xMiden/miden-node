@@ -3,6 +3,7 @@ use std::time::Duration;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
+use miden_objects::account::Account;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::mpsc;
 use tracing::instrument;
@@ -68,13 +69,14 @@ pub struct AccountActor {
 impl AccountActor {
     async fn new(
         account_prefix: NetworkAccountPrefix,
+        account: Account,
         coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
         config: AccountActorConfig,
     ) -> Result<Self, StoreError> {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let store = StoreClient::new(config.store_url.clone());
-        let state = State::load(account_prefix, store.clone()).await?;
+        let state = State::load(account_prefix, account, store.clone()).await?;
         Ok(Self {
             account_prefix,
             state,
@@ -89,11 +91,12 @@ impl AccountActor {
     /// Spawns the actor and returns a handle to it.
     pub async fn spawn(
         account_prefix: NetworkAccountPrefix,
+        account: Account,
         config: AccountActorConfig,
     ) -> Result<AccountActorHandle, StoreError> {
         let (coordinator_tx, coordinator_rx) = mpsc::unbounded_channel();
 
-        let actor = AccountActor::new(account_prefix, coordinator_rx, config).await?;
+        let actor = AccountActor::new(account_prefix, account, coordinator_rx, config).await?;
 
         let join_handle = tokio::spawn(async move {
             if let Err(error) = actor.run().await {

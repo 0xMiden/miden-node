@@ -79,11 +79,14 @@ impl NetworkTransactionBuilder {
             // Currently only support single target network notes in NTB.
             if let NetworkNote::SingleTarget(note) = note {
                 let prefix = note.account_prefix();
-                if !actor_registry.contains_key(&prefix) {
-                    let actor = AccountActor::spawn(prefix, config.clone())
-                        .await
-                        .expect("todo, could panic here");
-                    actor_registry.insert(prefix, actor);
+                let account = store.get_network_account(prefix).await?;
+                if let Some(account) = account {
+                    if !actor_registry.contains_key(&prefix) {
+                        let actor = AccountActor::spawn(prefix, account, config.clone())
+                            .await
+                            .expect("todo, could panic here");
+                        actor_registry.insert(prefix, actor);
+                    }
                 }
             }
         }
@@ -105,19 +108,19 @@ impl NetworkTransactionBuilder {
                         event,
                         &mut actor_registry,
                         config.clone(),
-                        &state,
-                    )?;
+                        &store,
+                    ).await?;
                 },
             }
         }
     }
 
     /// Handles mempool events by routing them to affected account actors.
-    fn handle_mempool_event(
+    async fn handle_mempool_event(
         event_result: Result<Option<MempoolEvent>, tonic::Status>,
         actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
         account_actor_config: AccountActorConfig,
-        state: &crate::state::State,
+        store: &StoreClient,
     ) -> anyhow::Result<()> {
         let event = event_result
             .context("mempool event stream ended")?
@@ -133,13 +136,16 @@ impl NetworkTransactionBuilder {
                 for account_prefix in affected_accounts {
                     // Update registry - create actor if it doesn't exist.
                     if !actor_registry.contains_key(&account_prefix) {
-                        let actor_handle = AccountActor::spawn(
-                            account_prefix,
-                            state.clone(),
-                            context.clone(),
-                            AccountActorConfig::default(),
-                        );
-                        actor_registry.insert(account_prefix, actor_handle);
+                        let account = store.get_network_account(account_prefix).await?;
+                        if let Some(account) = account {
+                            let actor_handle = AccountActor::spawn(
+                                account_prefix,
+                                account,
+                                account_actor_config.clone(),
+                            )
+                            .await?;
+                            actor_registry.insert(account_prefix, actor_handle);
+                        }
                     }
 
                     // Send event.

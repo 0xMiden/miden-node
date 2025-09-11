@@ -169,7 +169,7 @@ impl AccountActor {
             // Execution completed with some failed notes.
             Ok(failed) => {
                 let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                self.state.notes_failed(self.account_prefix, notes.as_slice(), block_num);
+                self.state.notes_failed(notes.as_slice(), block_num);
             },
             // Transaction execution failed.
             Err(err) => {
@@ -177,7 +177,7 @@ impl AccountActor {
                 match err {
                     NtxError::AllNotesFailed(failed) => {
                         let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                        self.state.notes_failed(self.account_prefix, notes.as_slice(), block_num);
+                        self.state.notes_failed(notes.as_slice(), block_num);
                     },
                     NtxError::InputNotes(_)
                     | NtxError::NoteFilter(_)
@@ -186,7 +186,7 @@ impl AccountActor {
                     | NtxError::Submission(_)
                     | NtxError::Panic(_) => {},
                 }
-                self.state.candidate_failed(self.account_prefix);
+                self.state.failed(); // ?
             },
         }
     }

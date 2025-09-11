@@ -8,7 +8,6 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::Barrier;
 use tokio::time;
 use url::Url;

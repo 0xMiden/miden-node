@@ -1,4 +1,3 @@
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 
@@ -55,7 +54,8 @@ pub struct State {
     /// The chain MMR, which lags behind the tip by one block.
     chain_mmr: PartialBlockchain,
 
-    account: AccountState,
+    prefix: NetworkAccountPrefix,
+    account: Option<AccountState>,
 
     /// Uncommitted transactions which have a some impact on the network state.
     ///
@@ -64,7 +64,7 @@ pub struct State {
     inflight_txs: BTreeMap<TransactionId, TransactionImpact>,
 
     /// A mapping of network note's to their account.
-    //nullifier_idx: BTreeMap<Nullifier, NetworkAccountPrefix>,
+    nullifier_idx: HashSet<Nullifier>,
 
     /// gRPC client used to retrieve the network account state from the store.
     store: StoreClient,
@@ -88,25 +88,25 @@ impl State {
         let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
 
-        let account = store.get_network_account(prefix).await?.expect("todo");
         let notes = store.get_unconsumed_network_notes().await?;
-        let account = AccountState::new(prefix, account, notes);
+        let account = store
+            .get_network_account(prefix)
+            .await?
+            .map(|account| AccountState::new(prefix, account, notes));
 
         let state = Self {
             chain_tip_header,
             chain_mmr,
             store,
             account,
+            prefix,
             inflight_txs: BTreeMap::default(),
+            nullifier_idx: HashSet::default(),
         };
 
         state.inject_telemetry();
 
         Ok(state)
-    }
-
-    pub fn accounts(&self) -> &HashMap<NetworkAccountPrefix, AccountState> {
-        &self.accounts
     }
 
     /// Selects the next candidate network transaction.
@@ -119,63 +119,37 @@ impl State {
     ///     being submitted
     #[instrument(target = COMPONENT, name = "ntx.state.select_candidate", skip_all)]
     pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
-        // Loop through the account queue until we find one that is selectable.
-        //
-        // Since the queue contains _all_ accounts, including unselectable accounts, we limit our
-        // search to once through the entire queue.
-        //
-        // There are smarter ways of doing this, but this should scale more than well enough for a
-        // long time.
-        for _ in 0..self.queue.len() {
-            // This is a rotating queue.
-            let candidate = self.queue.pop_front().unwrap();
-            self.queue.push_back(candidate);
+        let Some(account) = &mut self.account else {
+            return None;
+        };
+        // Remove notes that have failed too many times.
+        account.drop_failing_notes(Self::MAX_NOTE_ATTEMPTS);
 
-            // Skip accounts which are already in-progress.
-            if self.in_progress.contains(&candidate) {
-                continue;
-            }
-
-            let account = self.accounts.get_mut(&candidate).expect("queue account must be tracked");
-
-            // Remove notes that have failed too many times.
-            account.drop_failing_notes(Self::MAX_NOTE_ATTEMPTS);
-
-            // Skip empty accounts, and prune them.
-            // This is how we keep the number of accounts bounded.
-            if account.is_empty() {
-                // We don't need to prune the inflight transactions because if the account is empty,
-                // then it would have no inflight txs.
-                self.accounts.remove(&candidate);
-                // We know this account is the backmost one since we just rotated it there.
-                self.queue.pop_back();
-                continue;
-            }
-
-            // Select notes from the account that can be consumed or are ready for a retry.
-            let notes = account
-                .available_notes(&self.chain_tip_header.block_num())
-                .take(limit.get())
-                .cloned()
-                .collect::<Vec<_>>();
-
-            // Skip accounts with no available notes.
-            if notes.is_empty() {
-                continue;
-            }
-
-            self.in_progress.insert(candidate);
-            return TransactionCandidate {
-                account: account.latest_account(),
-                notes,
-                chain_tip_header: self.chain_tip_header.clone(),
-                chain_mmr: self.chain_mmr.clone(),
-            }
-            .into();
+        // Skip empty accounts, and prune them.
+        // This is how we keep the number of accounts bounded.
+        if account.is_empty() {
+            return None;
         }
-        self.inject_telemetry();
 
-        None
+        // Select notes from the account that can be consumed or are ready for a retry.
+        let notes = account
+            .available_notes(&self.chain_tip_header.block_num())
+            .take(limit.get())
+            .cloned()
+            .collect::<Vec<_>>();
+
+        // Skip accounts with no available notes.
+        if notes.is_empty() {
+            return None;
+        }
+
+        TransactionCandidate {
+            account: account.latest_account(),
+            notes,
+            chain_tip_header: self.chain_tip_header.clone(),
+            chain_mmr: self.chain_mmr.clone(),
+        }
+        .into()
     }
 
     /// The latest block number the state knows of.
@@ -203,29 +177,12 @@ impl State {
     ///
     /// Does not remove the candidate from the in-progress pool.
     #[instrument(target = COMPONENT, name = "ntx.state.notes_failed", skip_all)]
-    pub fn notes_failed(
-        &mut self,
-        candidate: NetworkAccountPrefix,
-        notes: &[Note],
-        block_num: BlockNumber,
-    ) {
-        if let Some(account) = self.accounts.get_mut(&candidate) {
-            let nullifiers = notes.iter().map(Note::nullifier).collect::<Vec<_>>();
-            account.fail_notes(nullifiers.as_slice(), block_num);
-        } else {
-            tracing::error!(account.prefix=%candidate, "failed network notes have no local account state");
-        }
-    }
-
-    /// Marks a previously selected candidate account as failed, allowing it to be available for
-    /// selection again.
-    ///
-    /// All notes in the candidate will be marked as failed.
-    #[instrument(target = COMPONENT, name = "ntx.state.candidate_failed", skip_all)]
-    pub fn candidate_failed(&mut self, candidate: NetworkAccountPrefix) {
-        self.in_progress.remove(&candidate);
-
-        self.inject_telemetry();
+    pub fn notes_failed(&mut self, notes: &[Note], block_num: BlockNumber) {
+        let nullifiers = notes.iter().map(Note::nullifier).collect::<Vec<_>>();
+        self.account
+            .as_mut()
+            .expect("todo typestate")
+            .fail_notes(nullifiers.as_slice(), block_num);
     }
 
     /// Updates state with the mempool event.
@@ -304,10 +261,10 @@ impl State {
             match update {
                 NetworkAccountUpdate::New(account) => {
                     let account_state = AccountState::from_uncommitted_account(account);
-                    self.accounts.insert(prefix, account_state);
-                    self.queue.push_back(prefix);
+                    self.account = account_state.into();
                 },
                 NetworkAccountUpdate::Delta(account_delta) => {
+                    // todo what here?
                     self.fetch_account(prefix)
                         .await
                         .context("failed to load account")?
@@ -316,31 +273,24 @@ impl State {
                 },
             }
 
-            // If this account was in-progress, then it should no longer be as this update is the
-            // result of our own network transaction.
-            self.in_progress.remove(&prefix);
             tx_impact.account_delta = Some(prefix);
         }
         for note in network_notes {
-            tx_impact.notes.insert(note.nullifier());
-            let prefix = note.account_prefix();
-            self.nullifier_idx.insert(note.nullifier(), prefix);
-            // Skip notes which target a non-existent network account.
-            if let Some(account) = self.fetch_account(prefix).await? {
-                account.add_note(note);
+            if note.account_prefix() == self.prefix {
+                tx_impact.notes.insert(note.nullifier());
+                let prefix = note.account_prefix();
+                self.nullifier_idx.insert(note.nullifier());
+                self.account.expect("todo?").add_note(note);
             }
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.
-            let Some(account) = self.nullifier_idx.get(&nullifier) else {
+            if !self.nullifier_idx.contains(&nullifier) {
                 continue;
             };
             tx_impact.nullifiers.insert(nullifier);
             // We don't use the entry wrapper here because the account must already exist.
-            self.accounts
-                .get_mut(account)
-                .expect("nullifier account must exist")
-                .add_nullifier(nullifier);
+            self.account.expect("todo?").add_nullifier(nullifier);
         }
 
         if !tx_impact.is_empty() {
@@ -358,15 +308,14 @@ impl State {
         };
 
         if let Some(prefix) = impact.account_delta {
-            self.accounts.get_mut(&prefix).unwrap().commit_delta();
+            self.account.expect("todo?").commit_delta();
         }
 
         for nullifier in impact.nullifiers {
-            let prefix = self.nullifier_idx.remove(&nullifier).unwrap();
-            // Its possible for the account to no longer exist if the transaction creating it was
-            // reverted.
-            if let Some(account) = self.accounts.get_mut(&prefix) {
-                account.commit_nullifier(nullifier);
+            if self.nullifier_idx.remove(&nullifier) {
+                // Its possible for the account to no longer exist if the transaction creating it
+                // was reverted.
+                self.account.expect("todo").commit_nullifier(nullifier);
             }
         }
     }
@@ -415,6 +364,10 @@ impl State {
         span.set_attribute("ntx.state.accounts.in_progress", self.in_progress.len());
         span.set_attribute("ntx.state.transactions", self.inflight_txs.len());
         span.set_attribute("ntx.state.notes.total", self.nullifier_idx.len());
+    }
+
+    pub fn failed(&self) {
+        // todo?
     }
 }
 

@@ -28,6 +28,21 @@ message AccountSummary {
     uint32 block_num = 3;
 }
 
+// Represents the storage header of an account.
+message AccountStorageHeader {
+    // A single storage slot in the account storage header.
+    message StorageSlot {
+        // The type of the storage slot.
+        uint32 slot_type = 1;
+
+        // The commitment (Word) for this storage slot.
+        primitives.Digest commitment = 2;
+    }
+
+    // Storage slots with their types and commitments.
+    repeated StorageSlot slots = 1;
+}
+
 // An account details.
 message AccountDetails {
     // Account summary.

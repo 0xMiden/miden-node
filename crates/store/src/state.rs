@@ -8,14 +8,18 @@ use std::ops::{Not, RangeInclusive};
 use std::path::Path;
 use std::sync::Arc;
 
+use miden_node_proto::AccountWitnessRecord;
 use miden_node_proto::domain::account::{
+    AccountDetailsResponse,
+    AccountHeader2,
     AccountInfo,
     AccountProofRequest,
+    AccountProofResponse,
     NetworkAccountPrefix,
     StorageMapKeysProof,
+    StorageSlotMapProof,
 };
 use miden_node_proto::domain::batch::BatchInputs;
-use miden_node_proto::{AccountWitnessRecord, generated as proto};
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
@@ -886,9 +890,7 @@ impl State {
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
-        known_code_commitment: Word,
-        include_headers: bool,
-    ) -> Result<(BlockNumber, proto::rpc_store::AccountProof), DatabaseError> {
+    ) -> Result<AccountProofResponse, DatabaseError> {
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
@@ -896,16 +898,15 @@ impl State {
 
         let account_id = account_request.account_id;
 
-        let state_header = if include_headers.not() {
-            None
-        } else {
+        let account_details = if let Some(account_detail_request) = account_request.account_details
+        {
             let info = self.db.select_account(account_id).await?;
 
             if let Some(details) = &info.details {
-                let mut storage_slot_map_keys = Vec::new();
+                let mut storage_proofs = Vec::new();
 
                 for StorageMapKeysProof { storage_index, storage_keys } in
-                    &account_request.storage_requests
+                    &account_detail_request.storage_requests
                 {
                     if let Some(StorageSlot::Map(storage_map)) =
                         details.storage().slots().get(*storage_index as usize)
@@ -913,46 +914,52 @@ impl State {
                         for map_key in storage_keys {
                             let proof = storage_map.open(map_key);
 
-                            let slot_map_key = proto::rpc_store::account_proof::account_state_header::StorageSlotMapProof {
-                                    storage_slot: u32::from(*storage_index),
-                                    smt_proof: proof.to_bytes(),
-                                };
-                            storage_slot_map_keys.push(slot_map_key);
+                            let slot_map_key =
+                                StorageSlotMapProof { storage_slot: *storage_index, proof };
+                            storage_proofs.push(slot_map_key);
                         }
                     } else {
                         return Err(AccountError::StorageSlotNotMap(*storage_index).into());
                     }
                 }
 
-                // Only include unknown account codes
-                let account_code = (known_code_commitment == details.code().commitment())
-                    .not()
-                    .then(|| details.code().to_bytes());
+                // Only include unknown account code blobs
+                let account_code = account_detail_request
+                    .code_commitment
+                    .map(|known_code_commitment| {
+                        (known_code_commitment == details.code().commitment())
+                            .not()
+                            .then(|| details.code().to_bytes())
+                    })
+                    .flatten();
 
-                let state_header = proto::rpc_store::account_proof::AccountStateHeader {
-                    header: Some(AccountHeader::from(details).into()),
-                    storage_header: details.storage().to_header().to_bytes(),
+                let account_details_response = AccountDetailsResponse {
+                    storage_header: details.storage().to_header(),
+                    account_header: AccountHeader2::from(AccountHeader::from(details)),
                     account_code,
-                    storage_maps: storage_slot_map_keys,
+                    storage_proofs,
                 };
 
-                Some(state_header)
+                Some(account_details_response)
             } else {
                 None
             }
+        } else {
+            None
         };
 
-        let witness = inner_state.account_tree.open(account_id);
-
-        let witness_record = AccountWitnessRecord { account_id, witness };
-
-        let response = proto::rpc_store::AccountProof {
-            block_num: inner_state.latest_block_num().as_u32(),
-            witness: Some(witness_record.into()),
-            state_header,
+        let witness = AccountWitnessRecord {
+            account_id, // FIXME TODO see account.proto we need to triple check this is correct
+            witness: inner_state.account_tree.open(account_id),
         };
 
-        Ok((inner_state.latest_block_num(), response))
+        let response = AccountProofResponse {
+            block_num: inner_state.latest_block_num(),
+            witness,
+            account_details,
+        };
+
+        Ok(response)
     }
 
     /// Returns storage map values for syncing within a block range.

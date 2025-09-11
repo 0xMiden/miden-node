@@ -309,30 +309,12 @@ impl rpc_server::Rpc for StoreApi {
         request: Request<proto::rpc_store::AccountProofRequest>,
     ) -> Result<Response<proto::rpc_store::AccountProof>, Status> {
         debug!(target: COMPONENT, ?request);
-        let proto::rpc_store::AccountProofRequest {
-            account_request,
-            include_headers,
-            code_commitment,
-        } = request.into_inner();
+        let request = request.into_inner();
+        let account_request = request.try_into()?;
 
-        let include_headers = include_headers.unwrap_or_default();
-        let request_code_commitment = Word::try_from(
-            &(code_commitment.ok_or(Status::invalid_argument(stringify!(code_commitment)))?),
-        )
-        .map_err(|err| Status::invalid_argument(format!("Invalid code commitment: {err}")))?;
+        let proof = self.state.get_account_proof(account_request).await?;
 
-        let account_request =
-            account_request.ok_or(Status::invalid_argument(stringify!(account_request)))?;
-        let account_request = account_request.try_into().map_err(|err| {
-            Status::invalid_argument(format!("Invalid account proof request: {err}"))
-        })?;
-
-        let (_block_num, proof) = self
-            .state
-            .get_account_proof(account_request, request_code_commitment, include_headers)
-            .await?;
-
-        Ok(Response::new(proof))
+        Ok(Response::new(proto::rpc_store::AccountProof::from(proof)))
     }
 
     #[instrument(

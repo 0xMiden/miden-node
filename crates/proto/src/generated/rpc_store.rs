@@ -15,33 +15,33 @@ pub struct StoreStatus {
 /// Returns the latest state proof of the specified accounts.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofRequest {
-    /// A list of account requests, including map keys + values.
+    /// The account ID for this request.
     #[prost(message, optional, tag = "1")]
-    pub account_request: ::core::option::Option<account_proof_request::AccountRequest>,
-    /// Optional flag to include account headers and account code in the response. If false, storage
-    /// requests are also ignored. False by default.
-    #[prost(bool, optional, tag = "2")]
-    pub include_headers: ::core::option::Option<bool>,
-    /// Account code commitment corresponding to the last-known `AccountCode` for the requested
-    /// account. The response will include only code that is known.
-    #[prost(message, optional, tag = "3")]
-    pub code_commitment: ::core::option::Option<super::primitives::Digest>,
+    pub account_id: ::core::option::Option<super::account::AccountId>,
+    /// A account detail requests, including map keys + values.
+    #[prost(message, optional, tag = "2")]
+    pub account_details: ::core::option::Option<
+        account_proof_request::AccountDetailsRequest,
+    >,
 }
 /// Nested message and enum types in `AccountProofRequest`.
 pub mod account_proof_request {
     /// Represents per-account requests where each account ID has its own list of
     /// (storage_slot_index, map_keys) pairs.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct AccountRequest {
-        /// The account ID for this request.
+    pub struct AccountDetailsRequest {
+        /// Account code commitment corresponding to the last-known `AccountCode` for the requested
+        /// account. The response will include only code that is known.
         #[prost(message, optional, tag = "1")]
-        pub account_id: ::core::option::Option<super::super::account::AccountId>,
+        pub code_commitment: ::core::option::Option<super::super::primitives::Digest>,
         /// List of storage requests for this account.
         #[prost(message, repeated, tag = "2")]
-        pub storage_requests: ::prost::alloc::vec::Vec<account_request::StorageRequest>,
+        pub storage_requests: ::prost::alloc::vec::Vec<
+            account_details_request::StorageRequest,
+        >,
     }
-    /// Nested message and enum types in `AccountRequest`.
-    pub mod account_request {
+    /// Nested message and enum types in `AccountDetailsRequest`.
+    pub mod account_details_request {
         /// Represents a storage slot index and the associated map keys.
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct StorageRequest {
@@ -65,33 +65,34 @@ pub struct AccountProof {
     /// The account witness for the current state commitment of one account ID.
     #[prost(message, optional, tag = "2")]
     pub witness: ::core::option::Option<super::account::AccountWitness>,
-    /// State header for public accounts. Filled only if `include_headers` flag is set to `true`.
+    /// State header for public accounts. Filled only if the flag `AccountDetailsRequest` was present and the account was a public account/the information was available.
     #[prost(message, optional, tag = "3")]
-    pub state_header: ::core::option::Option<account_proof::AccountStateHeader>,
+    pub details: ::core::option::Option<account_proof::AccountDetailsResponse>,
 }
 /// Nested message and enum types in `AccountProof`.
 pub mod account_proof {
-    /// State header for public accounts.
+    /// State header, available for public accounts only.
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct AccountStateHeader {
-        /// Account header.
+    pub struct AccountDetailsResponse {
+        /// Account header, always included.
         #[prost(message, optional, tag = "1")]
         pub header: ::core::option::Option<super::super::account::AccountHeader>,
-        /// Values of all account storage slots (max 255).
-        #[prost(bytes = "vec", tag = "2")]
-        pub storage_header: ::prost::alloc::vec::Vec<u8>,
-        /// Account code, returned only when none of the request's code commitments match
-        /// the current one.
+        /// Account storage header containing slot types and commitments.
+        #[prost(message, optional, tag = "2")]
+        pub storage_header: ::core::option::Option<
+            super::super::account::AccountStorageHeader,
+        >,
+        /// Account code, if the current account code does not match the request provided commitment digest.
         #[prost(bytes = "vec", optional, tag = "3")]
         pub account_code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
         /// Storage slots information for this account
         #[prost(message, repeated, tag = "4")]
         pub storage_maps: ::prost::alloc::vec::Vec<
-            account_state_header::StorageSlotMapProof,
+            account_details_response::StorageSlotMapProof,
         >,
     }
-    /// Nested message and enum types in `AccountStateHeader`.
-    pub mod account_state_header {
+    /// Nested message and enum types in `AccountDetailsResponse`.
+    pub mod account_details_response {
         /// Represents a single storage slot with the requested keys and their respective values.
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct StorageSlotMapProof {
@@ -99,8 +100,10 @@ pub mod account_proof {
             #[prost(uint32, tag = "1")]
             pub storage_slot: u32,
             /// Merkle proof of the map value
-            #[prost(bytes = "vec", tag = "2")]
-            pub smt_proof: ::prost::alloc::vec::Vec<u8>,
+            #[prost(message, optional, tag = "2")]
+            pub smt_proof: ::core::option::Option<
+                super::super::super::primitives::SmtOpening,
+            >,
         }
     }
 }

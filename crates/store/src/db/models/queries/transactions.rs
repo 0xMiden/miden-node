@@ -214,6 +214,21 @@ impl TransactionSummaryRowInsert {
 /// This function returns complete transaction header information including state commitments
 /// and note IDs, allowing for direct conversion to proto `TransactionHeader` without loading
 /// full block data.
+///
+/// # Raw SQL
+/// ```sql
+/// SELECT
+///     account_id,
+///     block_num,
+///     transaction_id,
+///     initial_state_commitment,
+///     final_state_commitment,
+///     input_notes,
+///     output_notes
+/// FROM transactions
+/// WHERE block_num > ?1 AND block_num <= ?2 AND account_id IN rarray(?3)
+/// ORDER BY transaction_id ASC
+/// ```
 pub fn select_transactions_headers(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],

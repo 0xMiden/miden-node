@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_node_proto::domain::note::SingleTargetNetworkNote;
+use miden_node_proto::domain::note::{NetworkNote, SingleTargetNetworkNote};
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountDelta, AccountId};
 use miden_objects::block::BlockNumber;
@@ -95,6 +95,26 @@ pub struct AccountState {
 }
 
 impl AccountState {
+    pub fn new(prefix: NetworkAccountPrefix, account: Account, notes: Vec<NetworkNote>) -> Self {
+        let mut state = Self {
+            committed: Some(account),
+            inflight: VecDeque::default(),
+            available_notes: HashMap::default(),
+            nullified_notes: HashMap::default(),
+        };
+
+        for note in notes {
+            // Currently only support single target network notes in NTB.
+            if let NetworkNote::SingleTarget(note) = note {
+                if note.account_prefix() == prefix {
+                    state.add_note(note);
+                }
+            }
+        }
+
+        state
+    }
+
     /// Creates a new account state using the given value as the committed state.
     pub fn from_committed_account(account: Account) -> Self {
         Self {

@@ -11,7 +11,7 @@ use url::Url;
 use crate::COMPONENT;
 use crate::block_producer::BlockProducerClient;
 use crate::state::State;
-use crate::store::StoreClient;
+use crate::store::{StoreClient, StoreError};
 use crate::transaction::NtxError;
 
 #[derive(Debug, Clone)]
@@ -66,16 +66,16 @@ pub struct AccountActor {
 }
 
 impl AccountActor {
-    fn new(
+    async fn new(
         account_prefix: NetworkAccountPrefix,
-        state: State,
         coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
         config: AccountActorConfig,
-    ) -> Self {
+    ) -> Result<Self, StoreError> {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let store = StoreClient::new(config.store_url.clone());
-        Self {
+        let state = State::load(account_prefix, store.clone()).await?;
+        Ok(Self {
             account_prefix,
             state,
             coordinator_rx,
@@ -83,18 +83,17 @@ impl AccountActor {
             store,
             block_producer,
             prover,
-        }
+        })
     }
 
     /// Spawns the actor and returns a handle to it.
-    pub fn spawn(
+    pub async fn spawn(
         account_prefix: NetworkAccountPrefix,
-        state: State,
         config: AccountActorConfig,
-    ) -> AccountActorHandle {
+    ) -> Result<AccountActorHandle, StoreError> {
         let (coordinator_tx, coordinator_rx) = mpsc::unbounded_channel();
 
-        let actor = AccountActor::new(account_prefix, state, coordinator_rx, config);
+        let actor = AccountActor::new(account_prefix, coordinator_rx, config).await?;
 
         let join_handle = tokio::spawn(async move {
             if let Err(error) = actor.run().await {
@@ -106,11 +105,11 @@ impl AccountActor {
             }
         });
 
-        AccountActorHandle {
+        Ok(AccountActorHandle {
             account_prefix,
             coordinator_tx,
             join_handle,
-        }
+        })
     }
 
     #[instrument(target = COMPONENT, name = "account_actor.run", skip_all)]

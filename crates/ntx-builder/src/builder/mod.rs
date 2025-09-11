@@ -48,12 +48,12 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(self.store_url.clone());
         let block_producer = BlockProducerClient::new(self.block_producer_url.clone());
 
-        let state = crate::state::State::load(store.clone())
-            .await
-            .context("failed to load ntx state")?;
-
+        let (chain_tip_header, _) = store
+            .get_latest_blockchain_data_with_retry()
+            .await?
+            .expect("store should contain a latest block");
         let mut mempool_events = block_producer
-            .subscribe_to_mempool_with_retry(state.chain_tip())
+            .subscribe_to_mempool_with_retry(chain_tip_header.block_num())
             .await
             .context("failed to subscribe to mempool events")?;
 
@@ -73,11 +73,20 @@ impl NetworkTransactionBuilder {
             tx_prover_url: self.tx_prover_url,
         };
 
-        // Create initial actors for existing accounts
+        // Create initial actors for existing accounts.
         let mut actor_registry = HashMap::<NetworkAccountPrefix, AccountActorHandle>::new();
-        for account_prefix in state.accounts().keys() {
-            let actor_handle = AccountActor::spawn(*account_prefix, state.clone(), config.clone());
-            actor_registry.insert(*account_prefix, actor_handle);
+        let notes = store.get_unconsumed_network_notes().await?;
+        for note in notes {
+            // Currently only support single target network notes in NTB.
+            if let NetworkNote::SingleTarget(note) = note {
+                let prefix = note.account_prefix();
+                if !actor_registry.contains_key(&prefix) {
+                    let actor = AccountActor::spawn(prefix, config.clone())
+                        .await
+                        .expect("todo, could panic here");
+                    actor_registry.insert(prefix, actor);
+                }
+            }
         }
 
         loop {
@@ -123,14 +132,17 @@ impl NetworkTransactionBuilder {
                     Self::find_affected_accounts(&account_delta, &network_notes);
 
                 for account_prefix in affected_accounts {
-                    // Update registry.
-                    actor_registry.entry(account_prefix).or_insert_with(|| {
-                        AccountActor::spawn(
+                    // Update registry - create actor if it doesn't exist.
+                    if !actor_registry.contains_key(&account_prefix) {
+                        let actor_handle = AccountActor::spawn(
                             account_prefix,
                             state.clone(),
-                            account_actor_config.clone(),
-                        )
-                    });
+                            context.clone(),
+                            AccountActorConfig::default(),
+                        );
+                        actor_registry.insert(account_prefix, actor_handle);
+                    }
+
                     // Send event.
                     let actor_handle =
                         actor_registry.get(&account_prefix).expect("actor insertion is inevitable");

@@ -47,9 +47,6 @@ pub struct TransactionCandidate {
     pub chain_mmr: PartialBlockchain,
 }
 
-/// Holds the state of the network transaction builder.
-///
-/// It tracks inflight transactions, and their impact on network-related state.
 #[derive(Clone)]
 pub struct State {
     /// The latest committed block header.
@@ -58,23 +55,7 @@ pub struct State {
     /// The chain MMR, which lags behind the tip by one block.
     chain_mmr: PartialBlockchain,
 
-    /// Tracks all network accounts with inflight state.
-    ///
-    /// This is network account deltas, network notes and their nullifiers.
-    accounts: HashMap<NetworkAccountPrefix, AccountState>,
-
-    /// A rotating queue of all tracked network accounts.
-    ///
-    /// This is used to select the next transaction's account.
-    ///
-    /// Note that this _always_ includes _all_ network accounts. Filtering out accounts that aren't
-    /// viable is handled within the select method itself.
-    queue: VecDeque<NetworkAccountPrefix>,
-
-    /// Network accounts which have been selected but whose transaction has not yet completed.
-    ///
-    /// This locks these accounts so they cannot be selected.
-    in_progress: HashSet<NetworkAccountPrefix>,
+    account: AccountState,
 
     /// Uncommitted transactions which have a some impact on the network state.
     ///
@@ -83,7 +64,7 @@ pub struct State {
     inflight_txs: BTreeMap<TransactionId, TransactionImpact>,
 
     /// A mapping of network note's to their account.
-    nullifier_idx: BTreeMap<Nullifier, NetworkAccountPrefix>,
+    //nullifier_idx: BTreeMap<Nullifier, NetworkAccountPrefix>,
 
     /// gRPC client used to retrieve the network account state from the store.
     store: StoreClient,
@@ -95,7 +76,10 @@ impl State {
 
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
-    pub async fn load(store: StoreClient) -> Result<Self, StoreError> {
+    pub async fn load(
+        prefix: NetworkAccountPrefix,
+        store: StoreClient,
+    ) -> Result<Self, StoreError> {
         let (chain_tip_header, chain_mmr) = store
             .get_latest_blockchain_data_with_retry()
             .await?
@@ -104,28 +88,18 @@ impl State {
         let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
 
-        let mut state = Self {
+        let account = store.get_network_account(prefix).await?.expect("todo");
+        let notes = store.get_unconsumed_network_notes().await?;
+        let account = AccountState::new(prefix, account, notes);
+
+        let state = Self {
             chain_tip_header,
             chain_mmr,
             store,
-            accounts: HashMap::default(),
-            queue: VecDeque::default(),
-            in_progress: HashSet::default(),
+            account,
             inflight_txs: BTreeMap::default(),
-            nullifier_idx: BTreeMap::default(),
         };
 
-        let notes = state.store.get_unconsumed_network_notes().await?;
-        for note in notes {
-            // Currently only support single target network notes in NTB.
-            if let NetworkNote::SingleTarget(note) = note {
-                let prefix = note.account_prefix();
-                // Ignore notes which don't target an existing account.
-                if let Some(account) = state.fetch_account(prefix).await? {
-                    account.add_note(note);
-                }
-            }
-        }
         state.inject_telemetry();
 
         Ok(state)
@@ -427,28 +401,6 @@ impl State {
             if let Some(account) = self.accounts.get_mut(prefix) {
                 account.revert_nullifier(nullifier);
             }
-        }
-    }
-
-    /// Returns the current inflight account, loading it from the store if it isn't present locally.
-    ///
-    /// Returns `None` if the account is unknown.
-    async fn fetch_account(
-        &mut self,
-        prefix: NetworkAccountPrefix,
-    ) -> Result<Option<&mut AccountState>, StoreError> {
-        match self.accounts.entry(prefix) {
-            Entry::Occupied(occupied_entry) => Ok(Some(occupied_entry.into_mut())),
-            Entry::Vacant(vacant_entry) => {
-                let Some(account) = self.store.get_network_account(prefix).await? else {
-                    return Ok(None);
-                };
-
-                self.queue.push_back(prefix);
-                let entry = vacant_entry.insert(AccountState::from_committed_account(account));
-
-                Ok(Some(entry))
-            },
         }
     }
 

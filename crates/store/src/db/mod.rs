@@ -590,11 +590,15 @@ impl Db {
 
     /// Returns the complete transaction headers for the specified accounts within the specified
     /// block range, including state commitments and note IDs.
+    ///
+    /// Note: This method is size-limited (~5MB) and may not return all matching transactions
+    /// if the limit is exceeded. Transactions from partial blocks are excluded to maintain
+    /// consistency.
     pub async fn select_transactions_headers(
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<Vec<TransactionHeader>> {
+    ) -> Result<(BlockNumber, Vec<TransactionHeader>)> {
         self.transact("full transactions headers", move |conn| {
             queries::select_transactions_headers(conn, &account_ids, block_range)
         })

@@ -71,7 +71,7 @@ pub fn select_transactions_by_accounts_and_block_range(
     .order(schema::transactions::transaction_id.asc())
     .load::<TransactionSummaryRaw>(conn)
     .map_err(DatabaseError::from)?;
-    Ok(vec_raw_try_into(raw).unwrap())
+    vec_raw_try_into(raw)
 }
 
 #[derive(Debug, Clone, PartialEq, Queryable, Selectable, QueryableByName)]
@@ -119,10 +119,8 @@ impl TryInto<crate::db::TransactionHeader> for TransactionHeaderRaw {
         let output_notes_binary = self.output_notes;
 
         // Deserialize input notes as nullifiers and output notes as note IDs
-        let input_notes: Vec<Nullifier> =
-            Deserializable::read_from_bytes(&input_notes_binary).unwrap();
-        let output_notes: Vec<NoteId> =
-            Deserializable::read_from_bytes(&output_notes_binary).unwrap();
+        let input_notes: Vec<Nullifier> = Deserializable::read_from_bytes(&input_notes_binary)?;
+        let output_notes: Vec<NoteId> = Deserializable::read_from_bytes(&output_notes_binary)?;
 
         Ok(crate::db::TransactionHeader {
             account_id: AccountId::read_from_bytes(&self.account_id[..])?,
@@ -208,12 +206,15 @@ impl TransactionSummaryRowInsert {
 /// * `block_range`: Range of blocks to include inclusive
 ///
 /// # Returns
-/// A vector of [`TransactionHeader`] or an error.
+/// A tuple of (`last_block_included`, `transaction_headers`) where:
+/// - `last_block_included`: The highest block number included in the response
+/// - `transaction_headers`: Vector of transaction headers, limited by payload size
 ///
 /// # Note
 /// This function returns complete transaction header information including state commitments
 /// and note IDs, allowing for direct conversion to proto `TransactionHeader` without loading
-/// full block data.
+/// full block data. The response is size-limited to ~5MB to prevent excessive memory usage.
+/// If the limit is reached, transactions from the last block are excluded to maintain consistency.
 ///
 /// # Raw SQL
 /// ```sql
@@ -227,25 +228,70 @@ impl TransactionSummaryRowInsert {
 ///     output_notes
 /// FROM transactions
 /// WHERE block_num > ?1 AND block_num <= ?2 AND account_id IN rarray(?3)
-/// ORDER BY transaction_id ASC
+/// ORDER BY block_num ASC
+/// LIMIT ?4
 /// ```
 pub fn select_transactions_headers(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
-) -> Result<Vec<crate::db::TransactionHeader>, DatabaseError> {
+) -> Result<(BlockNumber, Vec<crate::db::TransactionHeader>), DatabaseError> {
+    const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
+    const ROW_OVERHEAD_BYTES: usize = 500 * 1024; // 500 KB per transaction header
+    const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES; // ~10 transactions
+
     QueryParamAccountIdLimit::check(account_ids.len())?;
+
+    if block_range.is_empty() {
+        return Err(DatabaseError::InvalidBlockRange {
+            from: *block_range.start(),
+            to: *block_range.end(),
+        });
+    }
 
     let desired_account_ids = serialize_vec(account_ids);
     let raw = SelectDsl::select(schema::transactions::table, TransactionHeaderRaw::as_select())
         .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
         .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
         .filter(schema::transactions::account_id.eq_any(desired_account_ids))
-        .order(schema::transactions::transaction_id.asc())
+        .order((schema::transactions::block_num.asc(),))
+        .limit(i64::try_from(MAX_ROWS + 1).expect("should fit within i64"))
         .load::<TransactionHeaderRaw>(conn)
         .map_err(DatabaseError::from)?;
 
-    raw.into_iter()
-        .map(std::convert::TryInto::try_into)
-        .collect::<Result<Vec<_>, _>>()
+    // Discard the last block in the response if we hit the row limit (assumes more than one block
+    // may be present)
+    let (last_block_included, transaction_headers) = if let Some(last_raw) = raw.last()
+        && raw.len() >= MAX_ROWS
+    {
+        let last_block_num = last_raw.block_num;
+
+        // Take all transactions except those from the last block to avoid partial block data
+        let filtered_raw: Vec<_> =
+            raw.into_iter().take_while(|tx| tx.block_num != last_block_num).collect();
+
+        let headers: Result<Vec<crate::db::TransactionHeader>, _> =
+            filtered_raw.into_iter().map(std::convert::TryInto::try_into).collect();
+
+        let last_included_block =
+            if let Some(last_tx) = headers.as_ref().ok().and_then(|h| h.last()) {
+                last_tx.block_num
+            } else {
+                *block_range.start()
+            };
+
+        (last_included_block, headers?)
+    } else {
+        // All results fit within the limit
+        let headers: Vec<crate::db::TransactionHeader> = raw
+            .into_iter()
+            .map(std::convert::TryInto::try_into)
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let last_included_block = headers.last().map_or(*block_range.start(), |tx| tx.block_num);
+
+        (last_included_block, headers)
+    };
+
+    Ok((last_block_included, transaction_headers))
 }

@@ -1054,7 +1054,7 @@ impl State {
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<Vec<crate::db::TransactionHeader>, DatabaseError> {
+    ) -> Result<(BlockNumber, Vec<crate::db::TransactionHeader>), DatabaseError> {
         self.db.select_transactions_headers(account_ids, block_range).await
     }
 

@@ -527,7 +527,7 @@ impl rpc_server::Rpc for StoreApi {
 
         let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
 
-        let transaction_headers_db = self
+        let (last_block_included, transaction_headers_db) = self
             .state
             .sync_transactions(account_ids, block_range.clone())
             .await
@@ -556,7 +556,7 @@ impl rpc_server::Rpc for StoreApi {
         Ok(Response::new(proto::rpc_store::SyncTransactionsResponse {
             pagination_info: Some(proto::rpc_store::PaginationInfo {
                 chain_tip: chain_tip.as_u32(),
-                block_num: block_range.end().as_u32(),
+                block_num: last_block_included.as_u32(),
             }),
             transaction_headers,
         }))

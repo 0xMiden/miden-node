@@ -38,6 +38,17 @@ impl Debug for proto::account::AccountId {
     }
 }
 
+// FROM PROTO ACCOUNT ID
+// ------------------------------------------------------------------------------------------------
+
+impl TryFrom<proto::account::AccountId> for AccountId {
+    type Error = ConversionError;
+
+    fn try_from(account_id: proto::account::AccountId) -> Result<Self, Self::Error> {
+        AccountId::read_from_bytes(&account_id.id).map_err(|_| ConversionError::NotAValidFelt)
+    }
+}
+
 // INTO PROTO ACCOUNT ID
 // ------------------------------------------------------------------------------------------------
 
@@ -50,17 +61,6 @@ impl From<&AccountId> for proto::account::AccountId {
 impl From<AccountId> for proto::account::AccountId {
     fn from(account_id: AccountId) -> Self {
         Self { id: account_id.to_bytes() }
-    }
-}
-
-// FROM PROTO ACCOUNT ID
-// ------------------------------------------------------------------------------------------------
-
-impl TryFrom<proto::account::AccountId> for AccountId {
-    type Error = ConversionError;
-
-    fn try_from(account_id: proto::account::AccountId) -> Result<Self, Self::Error> {
-        AccountId::read_from_bytes(&account_id.id).map_err(|_| ConversionError::NotAValidFelt)
     }
 }
 
@@ -118,8 +118,7 @@ impl TryFrom<proto::rpc_store::AccountProofRequest> for AccountProofRequest {
             .ok_or(proto::rpc_store::AccountProofRequest::missing_field(stringify!(account_id)))?
             .try_into()?;
 
-        let account_details =
-            account_details.map(|details| TryFrom::try_from(details)).transpose()?;
+        let account_details = account_details.map(TryFrom::try_from).transpose()?;
 
         Ok(AccountProofRequest { account_id, account_details })
     }
@@ -189,17 +188,6 @@ pub struct AccountHeader2 {
     pub nonce: Felt,
 }
 
-impl From<AccountHeader> for AccountHeader2 {
-    fn from(value: AccountHeader) -> Self {
-        AccountHeader2 {
-            vault_root: value.vault_root(),
-            storage_commitment: value.storage_commitment(),
-            code_commitment: value.code_commitment(),
-            nonce: value.nonce(),
-        }
-    }
-}
-
 impl TryFrom<proto::account::AccountHeader> for AccountHeader2 {
     type Error = ConversionError;
 
@@ -230,7 +218,65 @@ impl TryFrom<proto::account::AccountHeader> for AccountHeader2 {
     }
 }
 
-const fn storage_slot_type_from_raw(slot_type: u8) -> Result<StorageSlotType, ConversionError> {
+impl From<AccountHeader> for AccountHeader2 {
+    fn from(value: AccountHeader) -> Self {
+        AccountHeader2 {
+            vault_root: value.vault_root(),
+            storage_commitment: value.storage_commitment(),
+            code_commitment: value.code_commitment(),
+            nonce: value.nonce(),
+        }
+    }
+}
+
+#[allow(clippy::unnecessary_wraps)]
+fn word_to_protobuf_primitive_digest(word: Word) -> Option<proto::primitives::Digest> {
+    Some(proto::primitives::Digest::from(word))
+}
+
+impl From<AccountHeader2> for proto::account::AccountHeader {
+    fn from(value: AccountHeader2) -> Self {
+        let AccountHeader2 {
+            vault_root,
+            storage_commitment,
+            code_commitment,
+            nonce,
+        } = value;
+        Self {
+            vault_root: word_to_protobuf_primitive_digest(vault_root),
+            storage_commitment: word_to_protobuf_primitive_digest(storage_commitment),
+            code_commitment: word_to_protobuf_primitive_digest(code_commitment),
+            nonce: nonce.as_int(),
+        }
+    }
+}
+
+impl From<AccountHeader> for proto::account::AccountHeader {
+    fn from(value: AccountHeader) -> Self {
+        Self {
+            vault_root: word_to_protobuf_primitive_digest(value.vault_root()),
+            storage_commitment: word_to_protobuf_primitive_digest(value.storage_commitment()),
+            code_commitment: word_to_protobuf_primitive_digest(value.code_commitment()),
+            nonce: value.nonce().as_int(),
+        }
+    }
+}
+
+impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
+    fn from(value: AccountStorageHeader) -> Self {
+        let slots = value
+            .slots()
+            .map(|(slot_type, slot_value)| proto::account::account_storage_header::StorageSlot {
+                slot_type: storage_slot_type_to_raw(*slot_type),
+                commitment: Some(proto::primitives::Digest::from(*slot_value)),
+            })
+            .collect();
+
+        Self { slots }
+    }
+}
+
+const fn storage_slot_type_from_raw(slot_type: u32) -> Result<StorageSlotType, ConversionError> {
     Ok(match slot_type {
         0 => StorageSlotType::Map,
         1 => StorageSlotType::Value,
@@ -238,7 +284,7 @@ const fn storage_slot_type_from_raw(slot_type: u8) -> Result<StorageSlotType, Co
     })
 }
 
-const fn storage_slot_type_to_raw(slot_type: StorageSlotType) -> u8 {
+const fn storage_slot_type_to_raw(slot_type: StorageSlotType) -> u32 {
     match slot_type {
         StorageSlotType::Map => 0,
         StorageSlotType::Value => 1,
@@ -253,53 +299,89 @@ pub struct AccountDetailsResponse {
     pub storage_proofs: Vec<StorageSlotMapProof>,
 }
 
-impl From<AccountHeader2> for proto::account::AccountHeader {
-    fn from(value: AccountHeader2) -> Self {
-        fn conv(word: Word) -> Option<proto::primitives::Digest> {
-            Some(proto::primitives::Digest::from(word))
-        }
+impl TryFrom<proto::rpc_store::account_proof::AccountDetailsResponse> for AccountDetailsResponse {
+    type Error = ConversionError;
 
-        let AccountHeader2 {
-            vault_root,
-            storage_commitment,
-            code_commitment,
-            nonce,
+    fn try_from(
+        value: proto::rpc_store::account_proof::AccountDetailsResponse,
+    ) -> Result<Self, Self::Error> {
+        let proto::rpc_store::account_proof::AccountDetailsResponse {
+            header,
+            storage_header,
+            account_code,
+            storage_maps,
         } = value;
-        Self {
-            vault_root: conv(vault_root),
-            storage_commitment: conv(storage_commitment),
-            code_commitment: conv(code_commitment),
-            nonce: nonce.as_int(),
-        }
+
+        let account_header = header
+            .ok_or(proto::rpc_store::account_proof::AccountDetailsResponse::missing_field(
+                stringify!(header),
+            ))?
+            .try_into()?;
+
+        let storage_header = storage_header.ok_or(
+            proto::rpc_store::account_proof::AccountDetailsResponse::missing_field(stringify!(
+                storage_header
+            )),
+        )?;
+
+        let storage_header_entries = storage_header
+            .slots
+            .into_iter()
+            .map(|slot| {
+                let slot_type = storage_slot_type_from_raw(slot.slot_type)?;
+                let commitment = slot
+                    .commitment
+                    .ok_or(proto::account::account_storage_header::StorageSlot::missing_field(
+                        stringify!(commitment),
+                    ))?
+                    .try_into()?;
+                Ok((slot_type, commitment))
+            })
+            .collect::<Result<Vec<_>, ConversionError>>()?;
+
+        let storage_header = AccountStorageHeader::new(storage_header_entries);
+
+        let storage_proofs = try_convert(storage_maps).collect::<Result<_, _>>()?;
+
+        Ok(AccountDetailsResponse {
+            account_header,
+            storage_header,
+            account_code,
+            storage_proofs,
+        })
     }
 }
 
-impl From<AccountHeader> for proto::account::AccountHeader {
-    fn from(value: AccountHeader) -> Self {
-        fn conv(word: Word) -> Option<proto::primitives::Digest> {
-            Some(proto::primitives::Digest::from(word))
-        }
+impl From<AccountDetailsResponse> for proto::rpc_store::account_proof::AccountDetailsResponse {
+    fn from(value: AccountDetailsResponse) -> Self {
+        let AccountDetailsResponse {
+            account_header,
+            storage_header,
+            account_code,
+            storage_proofs,
+        } = value;
 
-        Self {
-            vault_root: conv(value.vault_root()),
-            storage_commitment: conv(value.storage_commitment()),
-            code_commitment: conv(value.code_commitment()),
-            nonce: value.nonce().as_int(),
-        }
-    }
-}
+        let header = Some(proto::account::AccountHeader::from(account_header));
+        let storage_header = Some(proto::account::AccountStorageHeader::from(storage_header));
 
-impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
-    fn from(value: AccountStorageHeader) -> Self {
-        let slots = value
-            .slots()
-            .map(|(slot_type, slot_value)| proto::account::account_storage_header::StorageSlot {
-                slot_type: storage_slot_type_to_raw(*slot_type) as u32,
-                commitment: Some(proto::primitives::Digest::from(*slot_value)),
+        let storage_maps = storage_proofs
+            .into_iter()
+            .map(|proof| {
+                let storage_slot = u32::from(proof.storage_slot);
+                let smt_proof = Some(proto::primitives::SmtOpening::from(proof.proof));
+                proto::rpc_store::account_proof::account_details_response::StorageSlotMapProof {
+                    storage_slot,
+                    smt_proof,
+                }
             })
             .collect();
 
-        Self { slots }
+        Self {
+            header,
+            storage_header,
+            account_code,
+            storage_maps,
+        }
     }
 }
 
@@ -339,6 +421,7 @@ pub struct AccountProofResponse {
     pub witness: AccountWitnessRecord,
     pub account_details: Option<AccountDetailsResponse>,
 }
+
 impl TryFrom<proto::rpc_store::AccountProof> for AccountProofResponse {
     type Error = ConversionError;
 
@@ -350,8 +433,7 @@ impl TryFrom<proto::rpc_store::AccountProof> for AccountProofResponse {
 
         let witness = AccountWitnessRecord::try_from(witness)?;
 
-        let account_details =
-            details.map(|details| AccountDetailsResponse::try_from(details)).transpose()?;
+        let account_details = details.map(AccountDetailsResponse::try_from).transpose()?;
 
         Ok(AccountProofResponse {
             block_num: block_num.into(),
@@ -360,6 +442,7 @@ impl TryFrom<proto::rpc_store::AccountProof> for AccountProofResponse {
         })
     }
 }
+
 impl From<AccountProofResponse> for proto::rpc_store::AccountProof {
     fn from(value: AccountProofResponse) -> Self {
         let AccountProofResponse { block_num, witness, account_details } = value;
@@ -367,95 +450,9 @@ impl From<AccountProofResponse> for proto::rpc_store::AccountProof {
         proto::rpc_store::AccountProof {
             block_num: block_num.as_u32(),
             witness: Some(proto::account::AccountWitness::from(witness)),
-            details: account_details.map(|details| {
-                proto::rpc_store::account_proof::AccountDetailsResponse::from(details)
-            }),
+            details: account_details
+                .map(proto::rpc_store::account_proof::AccountDetailsResponse::from),
         }
-    }
-}
-impl From<AccountDetailsResponse> for proto::rpc_store::account_proof::AccountDetailsResponse {
-    fn from(value: AccountDetailsResponse) -> Self {
-        let AccountDetailsResponse {
-            account_header,
-            storage_header,
-            account_code,
-            storage_proofs,
-        } = value;
-
-        let header = Some(proto::account::AccountHeader::from(account_header));
-        let storage_header = Some(proto::account::AccountStorageHeader::from(storage_header));
-
-        let storage_maps = storage_proofs
-            .into_iter()
-            .map(|proof| {
-                let storage_slot = proof.storage_slot as u32;
-                let smt_proof = Some(proto::primitives::SmtOpening::from(proof.proof));
-                proto::rpc_store::account_proof::account_details_response::StorageSlotMapProof {
-                    storage_slot,
-                    smt_proof,
-                }
-            })
-            .collect();
-
-        Self {
-            header,
-            storage_header,
-            account_code,
-            storage_maps,
-        }
-    }
-}
-
-impl TryFrom<proto::rpc_store::account_proof::AccountDetailsResponse> for AccountDetailsResponse {
-    type Error = ConversionError;
-
-    fn try_from(
-        value: proto::rpc_store::account_proof::AccountDetailsResponse,
-    ) -> Result<Self, Self::Error> {
-        let proto::rpc_store::account_proof::AccountDetailsResponse {
-            header,
-            storage_header,
-            account_code,
-            storage_maps,
-        } = value;
-
-        let account_header = header
-            .ok_or(proto::rpc_store::account_proof::AccountDetailsResponse::missing_field(
-                stringify!(header),
-            ))?
-            .try_into()?;
-
-        let storage_header = storage_header.ok_or(
-            proto::rpc_store::account_proof::AccountDetailsResponse::missing_field(stringify!(
-                storage_header
-            )),
-        )?;
-
-        let storage_header_entries = storage_header
-            .slots
-            .into_iter()
-            .map(|slot| {
-                let slot_type = storage_slot_type_from_raw((slot.slot_type & 0xFF) as u8)?;
-                let commitment = slot
-                    .commitment
-                    .ok_or(proto::account::account_storage_header::StorageSlot::missing_field(
-                        stringify!(commitment),
-                    ))?
-                    .try_into()?;
-                Ok((slot_type, commitment))
-            })
-            .collect::<Result<Vec<_>, ConversionError>>()?;
-
-        let storage_header = AccountStorageHeader::new(storage_header_entries);
-
-        let storage_proofs = try_convert(storage_maps).collect::<Result<_, _>>()?;
-
-        Ok(AccountDetailsResponse {
-            account_header,
-            storage_header,
-            account_code,
-            storage_proofs,
-        })
     }
 }
 
@@ -466,17 +463,6 @@ impl TryFrom<proto::rpc_store::account_proof::AccountDetailsResponse> for Accoun
 pub struct AccountWitnessRecord {
     pub account_id: AccountId,
     pub witness: AccountWitness,
-}
-
-impl From<AccountWitnessRecord> for proto::account::AccountWitness {
-    fn from(from: AccountWitnessRecord) -> Self {
-        Self {
-            account_id: Some(from.account_id.into()),
-            witness_id: Some(from.witness.id().into()),
-            commitment: Some(from.witness.state_commitment().into()),
-            path: Some(from.witness.into_proof().into_parts().0.into()),
-        }
-    }
 }
 
 impl TryFrom<proto::account::AccountWitness> for AccountWitnessRecord {
@@ -516,6 +502,17 @@ impl TryFrom<proto::account::AccountWitness> for AccountWitnessRecord {
     }
 }
 
+impl From<AccountWitnessRecord> for proto::account::AccountWitness {
+    fn from(from: AccountWitnessRecord) -> Self {
+        Self {
+            account_id: Some(from.account_id.into()),
+            witness_id: Some(from.witness.id().into()),
+            commitment: Some(from.witness.state_commitment().into()),
+            path: Some(from.witness.into_proof().into_parts().0.into()),
+        }
+    }
+}
+
 // ACCOUNT STATE
 // ================================================================================================
 
@@ -535,17 +532,6 @@ impl Display for AccountState {
             self.account_id,
             format_opt(self.account_commitment.as_ref()),
         ))
-    }
-}
-
-impl From<AccountState>
-    for proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord
-{
-    fn from(from: AccountState) -> Self {
-        Self {
-            account_id: Some(from.account_id.into()),
-            account_commitment: from.account_commitment.map(Into::into),
-        }
     }
 }
 
@@ -583,16 +569,19 @@ impl TryFrom<proto::block_producer_store::transaction_inputs::AccountTransaction
     }
 }
 
-// ASSET
-// ================================================================================================
-
-impl From<Asset> for proto::primitives::Asset {
-    fn from(asset_from: Asset) -> Self {
-        proto::primitives::Asset {
-            asset: Some(Word::from(asset_from).into()),
+impl From<AccountState>
+    for proto::block_producer_store::transaction_inputs::AccountTransactionInputRecord
+{
+    fn from(from: AccountState) -> Self {
+        Self {
+            account_id: Some(from.account_id.into()),
+            account_commitment: from.account_commitment.map(Into::into),
         }
     }
 }
+
+// ASSET
+// ================================================================================================
 
 impl TryFrom<proto::primitives::Asset> for Asset {
     type Error = ConversionError;
@@ -602,6 +591,14 @@ impl TryFrom<proto::primitives::Asset> for Asset {
         let word = Word::try_from(inner)?;
 
         Asset::try_from(word).map_err(ConversionError::AssetError)
+    }
+}
+
+impl From<Asset> for proto::primitives::Asset {
+    fn from(asset_from: Asset) -> Self {
+        proto::primitives::Asset {
+            asset: Some(Word::from(asset_from).into()),
+        }
     }
 }
 
@@ -624,12 +621,6 @@ impl std::fmt::Display for NetworkAccountPrefix {
 impl NetworkAccountPrefix {
     pub fn inner(&self) -> u32 {
         self.0
-    }
-}
-
-impl From<NetworkAccountPrefix> for u32 {
-    fn from(value: NetworkAccountPrefix) -> Self {
-        value.inner()
     }
 }
 
@@ -667,6 +658,12 @@ impl TryFrom<NoteTag> for NetworkAccountPrefix {
         let tag_inner: u32 = tag.into();
         assert!(tag_inner >> 30 == 0, "first 2 bits have to be 0");
         Ok(NetworkAccountPrefix(tag_inner))
+    }
+}
+
+impl From<NetworkAccountPrefix> for u32 {
+    fn from(value: NetworkAccountPrefix) -> Self {
+        value.inner()
     }
 }
 

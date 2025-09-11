@@ -924,14 +924,12 @@ impl State {
                 }
 
                 // Only include unknown account code blobs
-                let account_code = account_detail_request
-                    .code_commitment
-                    .map(|known_code_commitment| {
+                let account_code =
+                    account_detail_request.code_commitment.and_then(|known_code_commitment| {
                         (known_code_commitment == details.code().commitment())
                             .not()
                             .then(|| details.code().to_bytes())
-                    })
-                    .flatten();
+                    });
 
                 let account_details_response = AccountDetailsResponse {
                     storage_header: details.storage().to_header(),

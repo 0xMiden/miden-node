@@ -92,6 +92,43 @@ pub struct TransactionSummary {
     pub transaction_id: TransactionId,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct TransactionHeader {
+    pub account_id: AccountId,
+    pub block_num: BlockNumber,
+    pub transaction_id: TransactionId,
+    pub initial_state_commitment: Word,
+    pub final_state_commitment: Word,
+    pub input_notes: Vec<Nullifier>, // Store nullifiers for input notes
+    pub output_notes: Vec<NoteId>,   // Store note IDs for output notes
+}
+
+impl TransactionHeader {
+    /// Convert to proto `TransactionHeader`, but requires note sync records for output notes.
+    /// For `sync_transactions` RPC, we need to fetch note sync records separately since we only
+    /// store note IDs in the database.
+    #[allow(clippy::wrong_self_convention)]
+    pub fn to_proto_with_note_records(
+        self,
+        note_records: Vec<NoteSyncRecord>,
+    ) -> proto::rpc_store::TransactionHeader {
+        let input_notes: Vec<proto::primitives::Digest> =
+            self.input_notes.iter().map(|nullifier| (*nullifier).into()).collect();
+
+        let output_notes: Vec<proto::note::NoteSyncRecord> =
+            note_records.into_iter().map(Into::into).collect();
+
+        proto::rpc_store::TransactionHeader {
+            block_num: self.block_num.as_u32(),
+            account_id: Some(self.account_id.into()),
+            initial_state_commitment: Some(self.initial_state_commitment.into()),
+            final_state_commitment: Some(self.final_state_commitment.into()),
+            input_notes,
+            output_notes,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoteRecord {
     pub block_num: BlockNumber,
@@ -551,14 +588,14 @@ impl Db {
         .await
     }
 
-    /// Returns the transactions headers for the specified accounts within the specified block
-    /// range.
+    /// Returns the complete transaction headers for the specified accounts within the specified
+    /// block range, including state commitments and note IDs.
     pub async fn select_transactions_headers(
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<Vec<TransactionSummary>> {
-        self.transact("transactions headers", move |conn| {
+    ) -> Result<Vec<TransactionHeader>> {
+        self.transact("full transactions headers", move |conn| {
             queries::select_transactions_headers(conn, &account_ids, block_range)
         })
         .await

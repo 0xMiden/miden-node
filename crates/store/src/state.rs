@@ -56,7 +56,6 @@ use crate::db::{
     NoteSyncUpdate,
     NullifierInfo,
     StateSyncUpdate,
-    TransactionSummary,
 };
 use crate::errors::{
     ApplyBlockError,
@@ -1049,13 +1048,13 @@ impl State {
         self.db.select_note_script_by_root(root).await
     }
 
-    /// Returns the transactions headers for the specified accounts within the specified block
-    /// range.
+    /// Returns the complete transaction headers for the specified accounts within the specified
+    /// block range, including state commitments and note IDs.
     pub async fn sync_transactions(
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<Vec<TransactionSummary>, DatabaseError> {
+    ) -> Result<Vec<crate::db::TransactionHeader>, DatabaseError> {
         self.db.select_transactions_headers(account_ids, block_range).await
     }
 

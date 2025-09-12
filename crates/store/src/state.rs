@@ -928,6 +928,8 @@ impl State {
                     Some(known_code_commitment)
                         if known_code_commitment == details.code().commitment() =>
                     {
+                        // the known code matches the expected commitment, which implies
+                        // the user already has that code
                         None
                     },
                     _ => Some(details.code().to_bytes()),

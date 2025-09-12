@@ -1,6 +1,6 @@
-# Runs build and install checks for the network monitoring binary.
+# Runs build and install checks for the network monitor binary.
 
-name: network-monitoring
+name: network-monitor
 
 on:
   push:
@@ -28,6 +28,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/next' }}
-      - name: Check network monitoring (release)
+      - name: Check network monitor (release)
         run: |
-          BUILD_PROTO=1 cargo check --locked -p miden-network-monitoring --release
+          BUILD_PROTO=1 cargo check --locked -p miden-network-monitor --release

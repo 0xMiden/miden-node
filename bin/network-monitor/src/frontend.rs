@@ -7,7 +7,7 @@ use axum::http::header;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 
-use crate::status::{MonitoringConfig, SharedStatus};
+use crate::status::{MonitorConfig, SharedStatus};
 
 /// Runs the frontend server.
 ///
@@ -17,7 +17,7 @@ use crate::status::{MonitoringConfig, SharedStatus};
 ///
 /// * `shared_status` - The shared status of the network.
 /// * `config` - The configuration of the network.
-pub async fn serve(shared_status: SharedStatus, config: MonitoringConfig) -> anyhow::Result<()> {
+pub async fn serve(shared_status: SharedStatus, config: MonitorConfig) -> anyhow::Result<()> {
     // build our application with routes
     let app = Router::new()
         // Serve embedded assets

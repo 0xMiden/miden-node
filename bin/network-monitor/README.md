@@ -1,36 +1,36 @@
-# Miden network monitoring
+# Miden network monitor
 
-A monitoring app for a Miden network's infrastructure.
+A monitor app for a Miden network's infrastructure.
 
 ## Installation
 
 The binary can be installed using the project's Makefile:
 
 ```bash
-make install-network-monitoring
+make install-network-monitor
 ```
 
 ## Configuration
 
-The monitoring application uses environment variables for configuration:
+The monitor application uses environment variables for configuration:
 
-- `MIDEN_MONITORING_RPC_URL`: RPC service URL (default: `http://localhost:50051`)
-- `MIDEN_MONITORING_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs (default: `http://localhost:50052`)
-- `MIDEN_MONITORING_PORT`: Web server port (default: `3000`)
+- `MIDEN_MONITOR_RPC_URL`: RPC service URL (default: `http://localhost:50051`)
+- `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs (default: `http://localhost:50052`)
+- `MIDEN_MONITOR_PORT`: Web server port (default: `3000`)
 
 ## Usage
 
 ```bash
 # Single remote prover
-MIDEN_MONITORING_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitoring
+MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor
 
 # Multiple remote provers
-MIDEN_MONITORING_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" miden-network-monitoring
+MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" miden-network-monitor
 ```
 
-## Currently Supported Monitoring
+## Currently Supported Monitor
 
-The monitoring application provides real-time status monitoring for the following Miden network components:
+The monitor application provides real-time status monitor for the following Miden network components:
 
 ### RPC Service
 - **Service Health**: Overall RPC service availability and status
@@ -51,18 +51,18 @@ The monitoring application provides real-time status monitoring for the followin
   - Worker health status (HEALTHY/UNHEALTHY/UNKNOWN)
   - Worker count per prover
 
-## Future Monitoring Items
+## Future Monitor Items
 
 Planned workflow testing features for future releases:
 
 ### Faucet Workflow Testing
-The monitoring application will test the faucet service by minting tokens from the official faucet. This test verifies that the faucet is operational and can successfully distribute tokens for testing purposes.
+The monitor application will test the faucet service by minting tokens from the official faucet. This test verifies that the faucet is operational and can successfully distribute tokens for testing purposes.
 
 ### Prover Workflow Testing
 The application will use the delegated prover to prove transactions, testing the proving infrastructure without requiring network submission. This includes testing with static transactions to validate proof generation capabilities and monitor prover performance under various loads.
 
 ### Network Transaction Testing
-The monitoring system will submit actual transactions to the network to perform end-to-end testing of the complete workflow. This test covers transaction creation, submission, processing, and confirmation, providing comprehensive validation of network functionality.
+The monitor system will submit actual transactions to the network to perform end-to-end testing of the complete workflow. This test covers transaction creation, submission, processing, and confirmation, providing comprehensive validation of network functionality.
 
 ## License
 This project is [MIT licensed](../../LICENSE).

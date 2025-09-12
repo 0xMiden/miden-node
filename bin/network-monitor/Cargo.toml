@@ -1,11 +1,11 @@
 [package]
 authors.workspace      = true
-description            = "Miden network monitoring"
+description            = "Miden network monitor"
 edition.workspace      = true
 homepage.workspace     = true
-keywords               = ["miden", "monitoring", "network"]
+keywords               = ["miden", "monitor", "network"]
 license.workspace      = true
-name                   = "miden-network-monitoring"
+name                   = "miden-network-monitor"
 readme.workspace       = true
 repository.workspace   = true
 rust-version.workspace = true

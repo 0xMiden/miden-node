@@ -102,9 +102,9 @@ install-remote-prover: ## Install remote prover's CLI
 install-stress-test: ## Installs stress-test binary
 	cargo install --path bin/stress-test --locked
 
-.PHONY: install-network-monitoring
-install-network-monitoring: ## Installs network monitoring binary
-	cargo install --path bin/network-monitoring --locked
+.PHONY: install-network-monitor
+install-network-monitor: ## Installs network monitor binary
+	cargo install --path bin/network-monitor --locked
 
 # --- docker --------------------------------------------------------------------------------------
 

@@ -2196,7 +2196,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "miden-network-monitoring"
+name = "miden-network-monitor"
 version = "0.12.0"
 dependencies = [
  "anyhow",

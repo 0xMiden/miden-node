@@ -9,12 +9,12 @@ mod frontend;
 mod status;
 
 use frontend::serve;
-use status::{MonitoringConfig, NetworkStatus, SharedStatus, check_status};
+use status::{MonitorConfig, NetworkStatus, SharedStatus, check_status};
 
 #[tokio::main]
 async fn main() {
     // Load configuration from environment variables
-    let config = match MonitoringConfig::from_env() {
+    let config = match MonitorConfig::from_env() {
         Ok(config) => {
             println!("Loaded configuration:");
             println!("  RPC URL: {}", config.rpc_url);

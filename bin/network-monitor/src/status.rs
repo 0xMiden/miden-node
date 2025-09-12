@@ -146,19 +146,19 @@ impl From<RpcStatus> for RpcStatusDetails {
 }
 
 #[derive(Debug, Clone)]
-pub struct MonitoringConfig {
+pub struct MonitorConfig {
     pub rpc_url: Url,
     pub remote_prover_urls: Vec<Url>,
     pub port: u16,
 }
 
-impl MonitoringConfig {
+impl MonitorConfig {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        let rpc_url = std::env::var("MIDEN_MONITORING_RPC_URL")
+        let rpc_url = std::env::var("MIDEN_MONITOR_RPC_URL")
             .unwrap_or_else(|_| "http://localhost:50051".to_string());
 
         // Parse multiple remote prover URLs from environment variable
-        let remote_prover_urls = std::env::var("MIDEN_MONITORING_REMOTE_PROVER_URLS")
+        let remote_prover_urls = std::env::var("MIDEN_MONITOR_REMOTE_PROVER_URLS")
             .unwrap_or_else(|_| "http://localhost:50052".to_string());
 
         let remote_prover_urls = remote_prover_urls
@@ -168,11 +168,11 @@ impl MonitoringConfig {
             .map(Url::parse)
             .collect::<Result<Vec<_>, _>>()?;
 
-        let port = std::env::var("MIDEN_MONITORING_PORT")
+        let port = std::env::var("MIDEN_MONITOR_PORT")
             .unwrap_or_else(|_| "3000".to_string())
             .parse::<u16>()?;
 
-        Ok(MonitoringConfig {
+        Ok(MonitorConfig {
             rpc_url: Url::parse(&rpc_url)?,
             remote_prover_urls,
             port,
@@ -258,7 +258,7 @@ async fn check_remote_prover_status(
 
 pub async fn check_status(
     shared_status: SharedStatus,
-    config: MonitoringConfig,
+    config: MonitorConfig,
 ) -> anyhow::Result<()> {
     let mut rpc = ClientBuilder::new(config.rpc_url.clone())
         .without_tls()

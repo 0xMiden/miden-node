@@ -1057,14 +1057,6 @@ impl State {
     ) -> Result<(BlockNumber, Vec<crate::db::TransactionHeader>), DatabaseError> {
         self.db.select_transactions_headers(account_ids, block_range).await
     }
-
-    /// Loads block data from the block store.
-    pub async fn load_block_data(
-        &self,
-        block_num: BlockNumber,
-    ) -> Result<Option<Vec<u8>>, std::io::Error> {
-        self.block_store.load_block(block_num).await
-    }
 }
 
 // UTILITIES

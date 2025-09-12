@@ -8,6 +8,7 @@ on:
         required: true
         type: choice
         options:
+          - miden-network-monitor
           - miden-node
           - miden-prover
           - miden-prover-proxy
@@ -16,6 +17,7 @@ on:
         description: "Name of crate directory"
         type: choice
         options:
+          - network-monitor
           - node
           - remote-prover
       package:
@@ -23,6 +25,7 @@ on:
         description: "Name of packaging directory"
         type: choice
         options:
+          - network-monitor
           - node
           - prover
           - prover-proxy
@@ -31,6 +34,7 @@ on:
         required: true
         type: choice
         options:
+          - miden-network-monitor
           - miden-node
           - miden-remote-prover
       version:
@@ -44,7 +48,7 @@ permissions:
 
 jobs:
   publish:
-    name: Publish Prover ${{ matrix.arch }} Debian
+    name: Publish ${{ inputs.service }} ${{ matrix.arch }} Debian
     strategy:
       matrix:
         arch: [amd64, arm64]

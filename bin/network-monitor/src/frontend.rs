@@ -22,7 +22,6 @@ pub async fn serve(shared_status: SharedStatus, config: MonitorConfig) -> anyhow
     let app = Router::new()
         // Serve embedded assets
         .route("/assets/index.css", get(serve_css))
-        .route("/assets/background.png", get(serve_background))
         .route("/assets/favicon.ico", get(serve_favicon))
         // Main dashboard route
         .route("/", get(get_dashboard))
@@ -55,14 +54,6 @@ async fn serve_css() -> Response {
     (
         [(header::CONTENT_TYPE, header::HeaderValue::from_static("text/css"))],
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.css")),
-    )
-        .into_response()
-}
-
-async fn serve_background() -> Response {
-    (
-        [(header::CONTENT_TYPE, header::HeaderValue::from_static("image/png"))],
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/background.png")),
     )
         .into_response()
 }

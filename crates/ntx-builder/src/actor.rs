@@ -16,11 +16,6 @@ use crate::store::{StoreClient, StoreError};
 use crate::transaction::NtxError;
 
 #[derive(Debug, Clone)]
-pub enum CoordinatorMessage {
-    MempoolEvent(MempoolEvent),
-}
-
-#[derive(Debug, Clone)]
 pub struct AccountActorConfig {
     pub tick_interval_ms: Duration,
     /// Address of the store gRPC server.
@@ -34,16 +29,13 @@ pub struct AccountActorConfig {
 
 pub struct AccountActorHandle {
     pub account_prefix: NetworkAccountPrefix,
-    pub coordinator_tx: mpsc::UnboundedSender<CoordinatorMessage>,
+    pub event_tx: mpsc::UnboundedSender<MempoolEvent>,
     pub join_handle: tokio::task::JoinHandle<()>,
 }
 
 impl AccountActorHandle {
-    pub fn send(
-        &self,
-        msg: CoordinatorMessage,
-    ) -> Result<(), mpsc::error::SendError<CoordinatorMessage>> {
-        self.coordinator_tx.send(msg)
+    pub fn send(&self, msg: MempoolEvent) -> Result<(), mpsc::error::SendError<MempoolEvent>> {
+        self.event_tx.send(msg)
     }
 
     pub fn is_finished(&self) -> bool {
@@ -59,7 +51,7 @@ impl AccountActorHandle {
 pub struct AccountActor {
     account_prefix: NetworkAccountPrefix,
     state: State,
-    coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
+    event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
     config: AccountActorConfig,
     store: StoreClient,
     block_producer: BlockProducerClient,
@@ -70,7 +62,7 @@ impl AccountActor {
     async fn new(
         account_prefix: NetworkAccountPrefix,
         account: Account,
-        coordinator_rx: mpsc::UnboundedReceiver<CoordinatorMessage>,
+        event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
         config: AccountActorConfig,
     ) -> Result<Self, StoreError> {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
@@ -80,7 +72,7 @@ impl AccountActor {
         Ok(Self {
             account_prefix,
             state,
-            coordinator_rx,
+            event_rx,
             config,
             store,
             block_producer,
@@ -94,9 +86,9 @@ impl AccountActor {
         account: Account,
         config: AccountActorConfig,
     ) -> Result<AccountActorHandle, StoreError> {
-        let (coordinator_tx, coordinator_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
 
-        let actor = AccountActor::new(account_prefix, account, coordinator_rx, config).await?;
+        let actor = AccountActor::new(account_prefix, account, event_rx, config).await?;
 
         let join_handle = tokio::spawn(async move {
             if let Err(error) = actor.run().await {
@@ -108,17 +100,13 @@ impl AccountActor {
             }
         });
 
-        Ok(AccountActorHandle {
-            account_prefix,
-            coordinator_tx,
-            join_handle,
-        })
+        Ok(AccountActorHandle { account_prefix, event_tx, join_handle })
     }
 
     #[instrument(target = COMPONENT, name = "account_actor.run", skip_all)]
     async fn run(mut self) -> anyhow::Result<()> {
         // First catch up with all pre-existing events.
-        while let Some(CoordinatorMessage::MempoolEvent(event)) = self.coordinator_rx.recv().await {
+        while let Some(event) = self.event_rx.recv().await {
             self.state.mempool_update(event).await?;
         }
 
@@ -129,9 +117,9 @@ impl AccountActor {
                 _next = interval.tick() => {
                     self.execute_transactions().await;
                 },
-                msg = self.coordinator_rx.recv() => {
+                msg = self.event_rx.recv() => {
                     match msg {
-                        Some(CoordinatorMessage::MempoolEvent(event)) => {
+                        Some(event) => {
                             if let Err(error) = self.state.mempool_update(event).await {
                                 tracing::error!(
                                     account = %self.account_prefix,

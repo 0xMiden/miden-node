@@ -12,7 +12,7 @@ use tokio::sync::Barrier;
 use tokio::time;
 use url::Url;
 
-use crate::actor::{AccountActor, AccountActorConfig, AccountActorHandle, CoordinatorMessage};
+use crate::actor::{AccountActor, AccountActorConfig, AccountActorHandle};
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
 
@@ -152,9 +152,7 @@ impl NetworkTransactionBuilder {
                     let actor_handle = actor_registry
                         .get(&account_prefix)
                         .expect("actor previously existed or inserted above");
-                    if let Err(error) =
-                        actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone()))
-                    {
+                    if let Err(error) = actor_handle.send(event.clone()) {
                         tracing::error!(
                             account = %account_prefix,
                             error = ?error,
@@ -166,9 +164,7 @@ impl NetworkTransactionBuilder {
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
                 for (account_prefix, actor_handle) in actor_registry {
-                    if let Err(error) =
-                        actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone()))
-                    {
+                    if let Err(error) = actor_handle.send(event.clone()) {
                         tracing::error!(
                             account = %account_prefix,
                             error = ?error,

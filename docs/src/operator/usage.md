@@ -46,8 +46,8 @@ miden-node bundled bootstrap \
   --genesis-config-file genesis.toml
 ```
 
-The genesis configuration file should contain at least one faucet, and optionally, wallet definitions
-with assets, for example:
+The genesis configuration file should contain fee parameters, the native faucet, optionally other
+fungible faucets, and also optionally, wallet definitions with assets, for example:
 
 ```toml
 # The UNIX timestamp of the genesis block. It will influence the hash of the genesis block.
@@ -55,6 +55,17 @@ timestamp = 1717344256
 # Defines the format of the block protocol to use for the genesis block.
 version   = 1
 
+# The native faucet to use for fees.
+[native_faucet]
+symbol     = "MIDEN"
+decimals   = 6
+max_supply = 100_000_000_000_000_000
+
+# The fee parameters to use for the genesis block.
+[fee_parameters]
+verification_base_fee = 0
+
+# Another fungible faucet (optional) to initialize at genesis.
 [[fungible_faucet]]
 # The token symbol to use for the token
 symbol       = "FUZZY"

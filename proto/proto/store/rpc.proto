@@ -102,8 +102,7 @@ message StoreStatus {
 
 // Returns the latest state proof of the specified accounts.
 message AccountProofRequest {
-    // Represents per-account requests where each account ID has its own list of
-    // (storage_slot_index, map_keys) pairs.
+    // Request the details for a public account.
     message AccountDetailsRequest {
         // Represents a storage slot index and the associated map keys.
         message StorageRequest {

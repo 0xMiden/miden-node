@@ -886,7 +886,8 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
-    /// Returns account proofs with optional account and storage headers.
+    /// Returns the respective account proof with optional details, such as asset and storage
+    /// entries.
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
@@ -924,12 +925,14 @@ impl State {
                 }
 
                 // Only include unknown account code blobs
-                let account_code =
-                    account_detail_request.code_commitment.and_then(|known_code_commitment| {
-                        (known_code_commitment == details.code().commitment())
-                            .not()
-                            .then(|| details.code().to_bytes())
-                    });
+                let account_code = match account_detail_request.code_commitment {
+                    Some(known_code_commitment)
+                        if known_code_commitment == details.code().commitment() =>
+                    {
+                        None
+                    },
+                    _ => Some(details.code().to_bytes()),
+                };
 
                 let account_details_response = AccountDetailsResponse {
                     storage_header: details.storage().to_header(),

@@ -26,8 +26,7 @@ pub struct AccountProofRequest {
 }
 /// Nested message and enum types in `AccountProofRequest`.
 pub mod account_proof_request {
-    /// Represents per-account requests where each account ID has its own list of
-    /// (storage_slot_index, map_keys) pairs.
+    /// Request the details for a public account.
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AccountDetailsRequest {
         /// Account code commitment corresponding to the last-known `AccountCode` for the requested
@@ -65,7 +64,8 @@ pub struct AccountProof {
     /// The account witness for the current state commitment of one account ID.
     #[prost(message, optional, tag = "2")]
     pub witness: ::core::option::Option<super::account::AccountWitness>,
-    /// State header for public accounts. Filled only if the flag `AccountDetailsRequest` was present and the account was a public account/the information was available.
+    /// State header for public accounts. Filled only if the flag `AccountDetailsRequest` was
+    /// present and the account was a public account/the information was available.
     #[prost(message, optional, tag = "3")]
     pub details: ::core::option::Option<account_proof::AccountDetailsResponse>,
 }

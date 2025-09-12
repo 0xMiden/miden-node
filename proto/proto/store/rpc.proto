@@ -160,7 +160,8 @@ message AccountProof {
     // The account witness for the current state commitment of one account ID.
     account.AccountWitness witness = 2;
 
-    // State header for public accounts. Filled only if the flag `AccountDetailsRequest` was present and the account was a public account/the information was available.
+    // State header for public accounts. Filled only if the flag `AccountDetailsRequest` was
+    // present and the account was a public account/the information was available.
     optional AccountDetailsResponse details = 3;
 }
 

@@ -83,9 +83,7 @@ impl NetworkTransactionBuilder {
                 if let Some(account) = account {
                     #[allow(clippy::map_entry, reason = "async closure")]
                     if !actor_registry.contains_key(&prefix) {
-                        let actor = AccountActor::spawn(prefix, account, config.clone())
-                            .await
-                            .expect("todo, could panic here");
+                        let actor = AccountActor::spawn(prefix, account, config.clone()).await?;
                         actor_registry.insert(prefix, actor);
                     }
                 }
@@ -216,42 +214,5 @@ impl NetworkTransactionBuilder {
         }
 
         affected_accounts
-    }
-}
-
-/// A wrapper around tokio's [`JoinSet`](tokio::task::JoinSet) which returns pending instead of
-/// [`None`] if its empty.
-///
-/// This makes it much more convenient to use in a `select!`.
-struct JoinSet<T>(tokio::task::JoinSet<T>);
-
-impl<T> JoinSet<T>
-where
-    T: 'static,
-{
-    fn new() -> Self {
-        Self(tokio::task::JoinSet::new())
-    }
-
-    fn spawn<F>(&mut self, task: F) -> tokio::task::AbortHandle
-    where
-        F: Future<Output = T>,
-        F: Send + 'static,
-        T: Send,
-    {
-        self.0.spawn(task)
-    }
-
-    async fn join_next_with_id(&mut self) -> Result<(tokio::task::Id, T), tokio::task::JoinError> {
-        if self.0.is_empty() {
-            std::future::pending().await
-        } else {
-            // Cannot be None as its not empty.
-            self.0.join_next_with_id().await.unwrap()
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.0.len()
     }
 }

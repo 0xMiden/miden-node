@@ -333,10 +333,6 @@ impl State {
         span.set_attribute("ntx.state.transactions", self.inflight_txs.len());
         span.set_attribute("ntx.state.notes.total", self.nullifier_idx.len());
     }
-
-    pub fn failed(&self) {
-        // todo?
-    }
 }
 
 /// The impact a transaction has on the state.

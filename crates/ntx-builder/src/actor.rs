@@ -189,7 +189,6 @@ impl AccountActor {
                     | NtxError::Submission(_)
                     | NtxError::Panic(_) => {},
                 }
-                self.state.failed(); // ?
             },
         }
     }

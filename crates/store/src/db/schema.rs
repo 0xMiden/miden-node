@@ -94,6 +94,7 @@ diesel::table! {
         final_state_commitment -> Binary,
         input_notes -> Binary,
         output_notes -> Binary,
+        size_in_bytes -> BigInt,
     }
 }
 

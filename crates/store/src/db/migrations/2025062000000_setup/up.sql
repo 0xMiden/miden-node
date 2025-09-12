@@ -126,6 +126,7 @@ CREATE TABLE transactions (
     final_state_commitment       BLOB    NOT NULL, -- State of the account after applying the transaction.
     input_notes                  BLOB    NOT NULL, -- Serialized vector with the Nullifier of the input notes.
     output_notes                 BLOB    NOT NULL, -- Serialized vector with the NoteId of the output notes.
+    size_in_bytes                INTEGER NOT NULL, -- Size of the row in bytes.
 
     PRIMARY KEY (transaction_id),
     FOREIGN KEY (account_id) REFERENCES accounts(account_id),

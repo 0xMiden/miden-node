@@ -1,3 +1,8 @@
+#![allow(
+    clippy::cast_possible_wrap,
+    reason = "We will not approach the item count where i64 and usize cause issues"
+)]
+
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Insertable, Queryable};
@@ -94,6 +99,7 @@ pub struct TransactionHeaderRaw {
     final_state_commitment: Vec<u8>,
     input_notes: Vec<u8>,
     output_notes: Vec<u8>,
+    size_in_bytes: i64,
 }
 
 impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
@@ -171,6 +177,7 @@ pub struct TransactionSummaryRowInsert {
     final_state_commitment: Vec<u8>,
     input_notes: Vec<u8>,
     output_notes: Vec<u8>,
+    size_in_bytes: i64,
 }
 
 impl TransactionSummaryRowInsert {
@@ -186,6 +193,11 @@ impl TransactionSummaryRowInsert {
         // Serialize output notes using binary format (store note IDs)
         let output_notes_binary = transaction_header.output_notes().to_bytes();
 
+        // Store the size required to store the row + the size that the output notes will take when
+        // casted to NoteSyncRecord (~500B per output note).
+        let size_in_bytes = (transaction_header.to_bytes().len()
+            + (transaction_header.output_notes().len() * 500)) as i64;
+
         Self {
             transaction_id: transaction_header.id().to_bytes(),
             account_id: transaction_header.account_id().to_bytes(),
@@ -194,6 +206,7 @@ impl TransactionSummaryRowInsert {
             final_state_commitment: transaction_header.final_state_commitment().to_bytes(),
             input_notes: input_notes_binary,
             output_notes: output_notes_binary,
+            size_in_bytes,
         }
     }
 }
@@ -237,8 +250,6 @@ pub fn select_transactions_headers(
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<crate::db::TransactionHeader>), DatabaseError> {
     const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
-    const ROW_OVERHEAD_BYTES: usize = 500 * 1024; // 500 KB per transaction header
-    const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES; // ~10 transactions
 
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
@@ -255,43 +266,31 @@ pub fn select_transactions_headers(
         .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
         .filter(schema::transactions::account_id.eq_any(desired_account_ids))
         .order((schema::transactions::block_num.asc(),))
-        .limit(i64::try_from(MAX_ROWS + 1).expect("should fit within i64"))
         .load::<TransactionHeaderRaw>(conn)
         .map_err(DatabaseError::from)?;
 
-    // Discard the last block in the response if we hit the row limit (assumes more than one block
-    // may be present)
-    let (last_block_included, transaction_headers) = if let Some(last_raw) = raw.last()
-        && raw.len() >= MAX_ROWS
-    {
-        let last_block_num = last_raw.block_num;
+    // Remove complete blocks from the end until we're under the size limit
+    let mut filtered_raw = raw;
+    while !filtered_raw.is_empty() {
+        let total_size: i64 = filtered_raw.iter().map(|tx| tx.size_in_bytes).sum();
 
-        // Take all transactions except those from the last block to avoid partial block data
-        let filtered_raw: Vec<_> =
-            raw.into_iter().take_while(|tx| tx.block_num != last_block_num).collect();
+        // If we're under the limit, we're done
+        if total_size <= MAX_PAYLOAD_BYTES as i64 {
+            break;
+        }
 
-        let headers: Result<Vec<crate::db::TransactionHeader>, _> =
-            filtered_raw.into_iter().map(std::convert::TryInto::try_into).collect();
+        // Find the last block number and remove all transactions from that block
+        let last_block_num = filtered_raw.last().unwrap().block_num;
+        filtered_raw.retain(|tx| tx.block_num != last_block_num);
+    }
 
-        let last_included_block =
-            if let Some(last_tx) = headers.as_ref().ok().and_then(|h| h.last()) {
-                last_tx.block_num
-            } else {
-                *block_range.start()
-            };
+    // Convert to transaction headers
+    let headers: Vec<crate::db::TransactionHeader> = filtered_raw
+        .into_iter()
+        .map(std::convert::TryInto::try_into)
+        .collect::<Result<Vec<_>, _>>()?;
 
-        (last_included_block, headers?)
-    } else {
-        // All results fit within the limit
-        let headers: Vec<crate::db::TransactionHeader> = raw
-            .into_iter()
-            .map(std::convert::TryInto::try_into)
-            .collect::<Result<Vec<_>, _>>()?;
+    let last_included_block = headers.last().map_or(*block_range.start(), |tx| tx.block_num);
 
-        let last_included_block = headers.last().map_or(*block_range.start(), |tx| tx.block_num);
-
-        (last_included_block, headers)
-    };
-
-    Ok((last_block_included, transaction_headers))
+    Ok((last_included_block, headers))
 }

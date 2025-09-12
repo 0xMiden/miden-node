@@ -280,8 +280,13 @@ pub fn select_transactions_headers(
         }
 
         // Find the last block number and remove all transactions from that block
-        let last_block_num = filtered_raw.last().unwrap().block_num;
-        filtered_raw.retain(|tx| tx.block_num != last_block_num);
+        if let Some(last_tx) = filtered_raw.last() {
+            let last_block_num = last_tx.block_num;
+            filtered_raw.retain(|tx| tx.block_num != last_block_num);
+        } else {
+            // This shouldn't happen since we check !filtered_raw.is_empty() above, but be safe
+            break;
+        }
     }
 
     // Convert to transaction headers

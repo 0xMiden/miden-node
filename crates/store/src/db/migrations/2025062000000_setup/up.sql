@@ -121,11 +121,11 @@ CREATE INDEX idx_nullifiers_block_num ON nullifiers(block_num);
 CREATE TABLE transactions (
     transaction_id               BLOB    NOT NULL,
     account_id                   BLOB    NOT NULL,
-    block_num                    INTEGER NOT NULL,
-    initial_state_commitment     BLOB    NOT NULL,
-    final_state_commitment       BLOB    NOT NULL,
-    input_notes                  BLOB    NOT NULL,
-    output_notes                 BLOB    NOT NULL,
+    block_num                    INTEGER NOT NULL, -- Block number in which the transaction was included.
+    initial_state_commitment     BLOB    NOT NULL, -- State of the account before applying the transaction.
+    final_state_commitment       BLOB    NOT NULL, -- State of the account after applying the transaction.
+    input_notes                  BLOB    NOT NULL, -- Serialized vector with the Nullifier of the input notes.
+    output_notes                 BLOB    NOT NULL, -- Serialized vector with the NoteId of the output notes.
 
     PRIMARY KEY (transaction_id),
     FOREIGN KEY (account_id) REFERENCES accounts(account_id),

@@ -185,14 +185,13 @@ impl State {
         span.set_attribute("mempool_event.kind", update.kind());
 
         match update {
-            // Note: this event will get triggered by normal user transactions, as well as our
-            // network transactions. The mempool does not distinguish between the two.
             MempoolEvent::TransactionAdded {
                 id,
                 nullifiers,
                 network_notes,
                 account_delta,
             } => {
+                // Filter network notes relevant to this account.
                 let network_notes = network_notes
                     .into_iter()
                     .filter_map(|note| match note {
@@ -202,7 +201,7 @@ impl State {
                         _ => None,
                     })
                     .collect::<Vec<_>>();
-                self.add_transaction(id, nullifiers, network_notes, account_delta).await?;
+                self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
             MempoolEvent::BlockCommitted { header, txs } => {
                 anyhow::ensure!(
@@ -228,26 +227,19 @@ impl State {
     }
 
     /// Handles a [`MempoolEvent::TransactionAdded`] event.
-    ///
-    /// Note that this will include our own network transactions as well as user submitted
-    /// transactions.
-    ///
-    /// This updates the state of network accounts affected by this transaction. Account state
-    /// may be loaded from the store if it isn't already known locally. This would be the case if
-    /// the network account has no inflight state changes.
-    async fn add_transaction(
+    fn add_transaction(
         &mut self,
         id: TransactionId,
         nullifiers: Vec<Nullifier>,
         network_notes: Vec<SingleTargetNetworkNote>,
         account_delta: Option<AccountUpdateDetails>,
-    ) -> anyhow::Result<()> {
+    ) {
         // Skip transactions we already know about.
         //
         // This can occur since both ntx builder and the mempool might inform us of the same
         // transaction. Once when it was submitted to the mempool, and once by the mempool event.
         if self.inflight_txs.contains_key(&id) {
-            return Ok(());
+            return;
         }
 
         let mut tx_impact = TransactionImpact::default();
@@ -255,15 +247,13 @@ impl State {
             let prefix = update.prefix();
             if prefix == self.prefix {
                 match update {
-                    NetworkAccountUpdate::New(account) => {
-                        let account_state = AccountState::from_uncommitted_account(account);
-                        self.account = account_state.into();
+                    NetworkAccountUpdate::New(_) => {
+                        // Do nothing. The coordinator created this actor on this event.
                     },
                     NetworkAccountUpdate::Delta(account_delta) => {
                         self.account.add_delta(&account_delta);
                     },
                 }
-
                 tx_impact.account_delta = Some(prefix);
             }
         }
@@ -278,7 +268,7 @@ impl State {
             // Ignore nullifiers that aren't network note nullifiers.
             if !self.nullifier_idx.contains(&nullifier) {
                 continue;
-            };
+            }
             tx_impact.nullifiers.insert(nullifier);
             // We don't use the entry wrapper here because the account must already exist.
             self.account.add_nullifier(nullifier);
@@ -287,8 +277,6 @@ impl State {
         if !tx_impact.is_empty() {
             self.inflight_txs.insert(id, tx_impact);
         }
-
-        Ok(())
     }
 
     /// Handles [`MempoolEvent::BlockCommitted`] events.
@@ -337,7 +325,7 @@ impl State {
         if let Some(prefix) = impact.account_delta {
             // We need to remove the account if this transaction created the account.
             if prefix == self.prefix {
-                self.account.revert_delta();
+                let _ = self.account.revert_delta();
             }
         }
     }

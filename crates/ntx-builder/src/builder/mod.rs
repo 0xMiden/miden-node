@@ -81,6 +81,7 @@ impl NetworkTransactionBuilder {
                 let prefix = note.account_prefix();
                 let account = store.get_network_account(prefix).await?;
                 if let Some(account) = account {
+                    #[allow(clippy::map_entry, reason = "async closure")]
                     if !actor_registry.contains_key(&prefix) {
                         let actor = AccountActor::spawn(prefix, account, config.clone())
                             .await
@@ -131,10 +132,11 @@ impl NetworkTransactionBuilder {
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 // Find affected accounts.
                 let affected_accounts =
-                    Self::find_affected_accounts(&account_delta, &network_notes);
+                    Self::find_affected_accounts(account_delta.as_ref(), network_notes);
 
                 for account_prefix in affected_accounts {
                     // Update registry - create actor if it doesn't exist.
+                    #[allow(clippy::map_entry, reason = "async closure")]
                     if !actor_registry.contains_key(&account_prefix) {
                         let account = store.get_network_account(account_prefix).await?;
                         if let Some(account) = account {
@@ -149,8 +151,9 @@ impl NetworkTransactionBuilder {
                     }
 
                     // Send event.
-                    let actor_handle =
-                        actor_registry.get(&account_prefix).expect("actor insertion is inevitable");
+                    let actor_handle = actor_registry
+                        .get(&account_prefix)
+                        .expect("actor previously existed or inserted above");
                     if let Err(error) =
                         actor_handle.send(CoordinatorMessage::MempoolEvent(event.clone()))
                     {
@@ -176,13 +179,13 @@ impl NetworkTransactionBuilder {
                     }
                 }
             },
-        };
+        }
 
         Ok(())
     }
 
     fn find_affected_accounts(
-        account_delta: &Option<AccountUpdateDetails>,
+        account_delta: Option<&AccountUpdateDetails>,
         network_notes: &[NetworkNote],
     ) -> HashSet<NetworkAccountPrefix> {
         let mut affected_accounts = HashSet::new();
@@ -216,7 +219,7 @@ impl NetworkTransactionBuilder {
     }
 }
 
-/// A wrapper arounnd tokio's [`JoinSet`](tokio::task::JoinSet) which returns pending instead of
+/// A wrapper around tokio's [`JoinSet`](tokio::task::JoinSet) which returns pending instead of
 /// [`None`] if its empty.
 ///
 /// This makes it much more convenient to use in a `select!`.

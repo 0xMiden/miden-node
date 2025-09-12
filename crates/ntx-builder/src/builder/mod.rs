@@ -8,10 +8,11 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
-use tokio::sync::Barrier;
+use tokio::sync::{Barrier, Semaphore};
 use tokio::time;
 use url::Url;
 
+use crate::MAX_IN_PROGRESS_TXS;
 use crate::actor::{AccountActor, AccountActorConfig, AccountActorHandle};
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
@@ -65,11 +66,12 @@ impl NetworkTransactionBuilder {
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
+        let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
         let config = AccountActorConfig {
-            tick_interval_ms: self.ticker_interval, // todo these should be separate values?
             store_url: self.store_url,
             block_producer_url: self.block_producer_url,
             tx_prover_url: self.tx_prover_url,
+            semaphore,
         };
 
         // Create initial actors for existing accounts.

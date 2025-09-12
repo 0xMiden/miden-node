@@ -1,11 +1,11 @@
-use std::time::Duration;
+use std::sync::Arc;
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_objects::account::Account;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 use tracing::instrument;
 use url::Url;
 
@@ -17,7 +17,7 @@ use crate::transaction::NtxError;
 
 #[derive(Debug, Clone)]
 pub struct AccountActorConfig {
-    pub tick_interval_ms: Duration,
+    pub semaphore: Arc<Semaphore>,
     /// Address of the store gRPC server.
     pub store_url: Url,
     /// Address of the block producer gRPC server.
@@ -52,10 +52,10 @@ pub struct AccountActor {
     account_prefix: NetworkAccountPrefix,
     state: State,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
-    config: AccountActorConfig,
     store: StoreClient,
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
+    semaphore: Arc<Semaphore>,
 }
 
 impl AccountActor {
@@ -69,14 +69,15 @@ impl AccountActor {
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let store = StoreClient::new(config.store_url.clone());
         let state = State::load(account_prefix, account, store.clone()).await?;
+        let semaphore = config.semaphore;
         Ok(Self {
             account_prefix,
             state,
             event_rx,
-            config,
             store,
             block_producer,
             prover,
+            semaphore,
         })
     }
 
@@ -110,11 +111,11 @@ impl AccountActor {
             self.state.mempool_update(event).await?;
         }
 
-        let mut interval = tokio::time::interval(self.config.tick_interval_ms);
-        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
+            let semaphore = self.semaphore.clone();
             tokio::select! {
-                _next = interval.tick() => {
+                permit = semaphore.acquire() => {
+                    let _permit = permit?;
                     self.execute_transactions().await;
                 },
                 msg = self.event_rx.recv() => {

@@ -11,6 +11,7 @@ const STORE_BLOCK_PRODUCER_PROTO: &str = "store/block_producer.proto";
 const STORE_SHARED_PROTO: &str = "store/shared.proto";
 const BLOCK_PRODUCER_PROTO: &str = "block_producer.proto";
 const REMOTE_PROVER_PROTO: &str = "remote_prover.proto";
+const ERRORS_PROTO: &str = "types/errors.proto";
 
 const RPC_DESCRIPTOR: &str = "rpc_file_descriptor.bin";
 const STORE_RPC_DESCRIPTOR: &str = "store_rpc_file_descriptor.bin";
@@ -19,6 +20,7 @@ const STORE_BLOCK_PRODUCER_DESCRIPTOR: &str = "store_block_producer_file_descrip
 const STORE_SHARED_DESCRIPTOR: &str = "store_shared_file_descriptor.bin";
 const BLOCK_PRODUCER_DESCRIPTOR: &str = "block_producer_file_descriptor.bin";
 const REMOTE_PROVER_DESCRIPTOR: &str = "remote_prover_file_descriptor.bin";
+const ERRORS_DESCRIPTOR: &str = "errors_file_descriptor.bin";
 
 /// Generates Rust protobuf bindings from .proto files.
 ///
@@ -69,6 +71,11 @@ fn main() -> anyhow::Result<()> {
     let block_producer_path = PathBuf::from(&out).join(BLOCK_PRODUCER_DESCRIPTOR);
     fs::write(&block_producer_path, block_producer_file_descriptor.encode_to_vec())
         .context("writing block producer file descriptor")?;
+
+    let errors_file_descriptor = protox::compile([ERRORS_PROTO], includes)?;
+    let errors_path = PathBuf::from(&out).join(ERRORS_DESCRIPTOR);
+    fs::write(&errors_path, errors_file_descriptor.encode_to_vec())
+        .context("writing errors file descriptor")?;
 
     Ok(())
 }

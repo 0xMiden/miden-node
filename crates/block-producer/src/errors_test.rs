@@ -1,8 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use miden_node_proto::generated::errors::SubmitProvenTransactionError;
     use miden_objects::block::BlockNumber;
 
-    use crate::errors::{AddTransactionError, SubmitTransactionErrorCode};
+    use crate::errors::AddTransactionError;
 
     // Helper function to parse error code from a tonic::Status
     fn parse_error_code(status: &tonic::Status) -> Option<u8> {
@@ -27,7 +28,7 @@ mod tests {
         assert!(status.message().contains("stale"));
 
         let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitTransactionErrorCode::InternalError as u8);
+        assert_eq!(error_code, SubmitProvenTransactionError::InternalError as u8);
     }
 
     #[test]
@@ -43,7 +44,7 @@ mod tests {
         assert!(status.message().contains("expired"));
 
         let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitTransactionErrorCode::TransactionExpired as u8);
+        assert_eq!(error_code, SubmitProvenTransactionError::TransactionExpired as u8);
     }
 
     #[test]
@@ -59,7 +60,7 @@ mod tests {
         assert!(status.message().contains("deserialization"));
 
         let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitTransactionErrorCode::DeserializationFailed as u8);
+        assert_eq!(error_code, SubmitProvenTransactionError::DeserializationFailed as u8);
     }
 
     #[test]
@@ -79,7 +80,7 @@ mod tests {
         assert!(status.message().contains("verification failed"));
 
         let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitTransactionErrorCode::InputNotesAlreadyConsumed as u8);
+        assert_eq!(error_code, SubmitProvenTransactionError::InputNotesAlreadyConsumed as u8);
 
         // Test UnauthenticatedNotesNotFound
         let note_ids = vec![NoteId::new(Word::default(), Word::default())];
@@ -91,6 +92,6 @@ mod tests {
         assert!(status.message().contains("verification failed"));
 
         let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitTransactionErrorCode::UnauthenticatedNotesNotFound as u8);
+        assert_eq!(error_code, SubmitProvenTransactionError::UnauthenticatedNotesNotFound as u8);
     }
 }

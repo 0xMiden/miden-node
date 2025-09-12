@@ -56,19 +56,22 @@ pub struct AccountDetails {
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// An account header.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountHeader {
-    /// Vault root hash.
+    /// The account ID.
     #[prost(message, optional, tag = "1")]
+    pub account_id: ::core::option::Option<AccountId>,
+    /// Vault root hash.
+    #[prost(message, optional, tag = "2")]
     pub vault_root: ::core::option::Option<super::primitives::Digest>,
     /// Storage root hash.
-    #[prost(message, optional, tag = "2")]
+    #[prost(message, optional, tag = "3")]
     pub storage_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Code root hash.
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "4")]
     pub code_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Account nonce.
-    #[prost(uint64, tag = "4")]
+    #[prost(uint64, tag = "5")]
     pub nonce: u64,
 }
 /// An account witness.

@@ -55,17 +55,20 @@ message AccountDetails {
 
 // An account header.
 message AccountHeader {
+    // The account ID.
+    AccountId account_id = 1;
+
     // Vault root hash.
-    primitives.Digest vault_root = 1;
+    primitives.Digest vault_root = 2;
 
     // Storage root hash.
-    primitives.Digest storage_commitment = 2;
+    primitives.Digest storage_commitment = 3;
 
     // Code root hash.
-    primitives.Digest code_commitment = 3;
+    primitives.Digest code_commitment = 4;
 
     // Account nonce.
-    uint64 nonce = 4;
+    uint64 nonce = 5;
 }
 
 // An account witness.

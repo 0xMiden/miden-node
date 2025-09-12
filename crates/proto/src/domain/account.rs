@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
 
 use miden_node_utils::formatting::format_opt;
+use miden_objects::Word;
 use miden_objects::account::{
     Account,
     AccountHeader,
@@ -12,7 +13,6 @@ use miden_objects::asset::Asset;
 use miden_objects::block::{AccountWitness, BlockNumber};
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
-use miden_objects::{Felt, Word};
 use thiserror::Error;
 
 use super::try_convert;
@@ -178,26 +178,24 @@ impl TryFrom<proto::rpc_store::account_proof_request::account_details_request::S
     }
 }
 
-// ACCOUNT DETAILS RESPONSE
+// ACCOUNT HEADER CONVERSIONS
 //================================================================================================
 
-pub struct AccountHeader2 {
-    pub vault_root: Word,
-    pub storage_commitment: Word,
-    pub code_commitment: Word,
-    pub nonce: Felt,
-}
-
-impl TryFrom<proto::account::AccountHeader> for AccountHeader2 {
+impl TryFrom<proto::account::AccountHeader> for AccountHeader {
     type Error = ConversionError;
 
     fn try_from(value: proto::account::AccountHeader) -> Result<Self, Self::Error> {
         let proto::account::AccountHeader {
+            account_id,
             vault_root,
             storage_commitment,
             code_commitment,
             nonce,
         } = value;
+
+        let account_id = account_id
+            .ok_or(proto::account::AccountHeader::missing_field(stringify!(account_id)))?
+            .try_into()?;
         let vault_root = vault_root
             .ok_or(proto::account::AccountHeader::missing_field(stringify!(vault_root)))?
             .try_into()?;
@@ -209,55 +207,24 @@ impl TryFrom<proto::account::AccountHeader> for AccountHeader2 {
             .try_into()?;
         let nonce = nonce.try_into().map_err(|_e| ConversionError::NotAValidFelt)?;
 
-        Ok(Self {
+        Ok(AccountHeader::new(
+            account_id,
+            nonce,
             vault_root,
             storage_commitment,
             code_commitment,
-            nonce,
-        })
-    }
-}
-
-impl From<AccountHeader> for AccountHeader2 {
-    fn from(value: AccountHeader) -> Self {
-        AccountHeader2 {
-            vault_root: value.vault_root(),
-            storage_commitment: value.storage_commitment(),
-            code_commitment: value.code_commitment(),
-            nonce: value.nonce(),
-        }
-    }
-}
-
-#[allow(clippy::unnecessary_wraps)]
-fn word_to_protobuf_primitive_digest(word: Word) -> Option<proto::primitives::Digest> {
-    Some(proto::primitives::Digest::from(word))
-}
-
-impl From<AccountHeader2> for proto::account::AccountHeader {
-    fn from(value: AccountHeader2) -> Self {
-        let AccountHeader2 {
-            vault_root,
-            storage_commitment,
-            code_commitment,
-            nonce,
-        } = value;
-        Self {
-            vault_root: word_to_protobuf_primitive_digest(vault_root),
-            storage_commitment: word_to_protobuf_primitive_digest(storage_commitment),
-            code_commitment: word_to_protobuf_primitive_digest(code_commitment),
-            nonce: nonce.as_int(),
-        }
+        ))
     }
 }
 
 impl From<AccountHeader> for proto::account::AccountHeader {
-    fn from(value: AccountHeader) -> Self {
-        Self {
-            vault_root: word_to_protobuf_primitive_digest(value.vault_root()),
-            storage_commitment: word_to_protobuf_primitive_digest(value.storage_commitment()),
-            code_commitment: word_to_protobuf_primitive_digest(value.code_commitment()),
-            nonce: value.nonce().as_int(),
+    fn from(header: AccountHeader) -> Self {
+        proto::account::AccountHeader {
+            account_id: Some(header.id().into()),
+            vault_root: Some(header.vault_root().into()),
+            storage_commitment: Some(header.storage_commitment().into()),
+            code_commitment: Some(header.code_commitment().into()),
+            nonce: header.nonce().as_int(),
         }
     }
 }
@@ -291,9 +258,9 @@ const fn storage_slot_type_to_raw(slot_type: StorageSlotType) -> u32 {
     }
 }
 
-///Represents account details returned in response to an account proof request.
+/// Represents account details returned in response to an account proof request.
 pub struct AccountDetailsResponse {
-    pub account_header: AccountHeader2,
+    pub account_header: AccountHeader,
     pub storage_header: AccountStorageHeader,
     pub account_code: Option<Vec<u8>>,
     pub storage_proofs: Vec<StorageSlotMapProof>,

@@ -4,14 +4,13 @@
 //! data is atomically written, and that reads are consistent.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
-use std::ops::{Not, RangeInclusive};
+use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 
 use miden_node_proto::AccountWitnessRecord;
 use miden_node_proto::domain::account::{
     AccountDetailsResponse,
-    AccountHeader2,
     AccountInfo,
     AccountProofRequest,
     AccountProofResponse,
@@ -935,8 +934,8 @@ impl State {
                 };
 
                 let account_details_response = AccountDetailsResponse {
+                    account_header: AccountHeader::from(details),
                     storage_header: details.storage().to_header(),
-                    account_header: AccountHeader2::from(AccountHeader::from(details)),
                     account_code,
                     storage_proofs,
                 };

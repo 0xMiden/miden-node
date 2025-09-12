@@ -108,13 +108,6 @@ impl State {
     }
 
     /// Selects the next candidate network transaction.
-    ///
-    /// Note that this marks the candidate account as in-progress and that it cannot be selected
-    /// again until either:
-    ///
-    ///   - it has been marked as failed if the transaction failed, or
-    ///   - the transaction was submitted successfully, indicated by the associated mempool event
-    ///     being submitted
     #[instrument(target = COMPONENT, name = "ntx.state.select_candidate", skip_all)]
     pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
         // Remove notes that have failed too many times.

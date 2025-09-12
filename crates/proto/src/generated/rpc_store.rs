@@ -400,7 +400,7 @@ pub struct TransactionHeader {
     /// Block number in which the transaction was executed.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
-    /// Account ID of the transaction.
+    /// ID of the account against which the transaction was executed.
     #[prost(message, optional, tag = "2")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
     /// State commitment of the account before the transaction was executed.
@@ -409,7 +409,7 @@ pub struct TransactionHeader {
     /// State commitment of the account after the transaction was executed.
     #[prost(message, optional, tag = "4")]
     pub final_state_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// Input notes of the transaction.
+    /// Nullifiers of the input notes of the transaction.
     #[prost(message, repeated, tag = "5")]
     pub input_notes: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Output notes of the transaction.

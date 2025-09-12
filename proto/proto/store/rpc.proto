@@ -467,7 +467,7 @@ message TransactionHeader {
     // Block number in which the transaction was executed.
     fixed32 block_num = 1;
 
-    // Account ID of the transaction.
+    // ID of the account against which the transaction was executed.
     account.AccountId account_id = 2;
 
     // State commitment of the account before the transaction was executed.
@@ -476,7 +476,7 @@ message TransactionHeader {
     // State commitment of the account after the transaction was executed.
     primitives.Digest final_state_commitment = 4;
 
-    // Input notes of the transaction.
+    // Nullifiers of the input notes of the transaction.
     repeated primitives.Digest input_notes = 5;
 
     // Output notes of the transaction.

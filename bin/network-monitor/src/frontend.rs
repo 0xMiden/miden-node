@@ -6,7 +6,9 @@ use axum::Router;
 use axum::http::header;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
+use tracing::{info, instrument};
 
+use crate::COMPONENT;
 use crate::status::{MonitorConfig, SharedStatus};
 
 /// Runs the frontend server.
@@ -30,8 +32,8 @@ pub async fn serve(shared_status: SharedStatus, config: MonitorConfig) -> anyhow
         .with_state(shared_status);
 
     let bind_address = format!("0.0.0.0:{}", config.port);
-    println!("Starting web server on {bind_address}");
-    println!("Dashboard available at: http://localhost:{}/", config.port);
+    info!("Starting web server on {bind_address}");
+    info!("Dashboard available at: http://localhost:{}/", config.port);
     let listener = tokio::net::TcpListener::bind(&bind_address)
         .await
         .context("Failed to bind to address")?;
@@ -43,6 +45,7 @@ async fn get_dashboard() -> Html<&'static str> {
     Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.html")))
 }
 
+#[instrument(target = COMPONENT, name = "frontend.get-status", skip_all, ret(level = "info"))]
 async fn get_status(
     axum::extract::State(shared_status): axum::extract::State<SharedStatus>,
 ) -> axum::response::Json<crate::status::NetworkStatus> {

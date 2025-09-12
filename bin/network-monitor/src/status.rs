@@ -14,7 +14,10 @@ use miden_node_proto::generated::rpc::RpcStatus;
 use miden_node_proto::generated::rpc_store::StoreStatus;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tracing::instrument;
 use url::Url;
+
+use crate::COMPONENT;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceStatus {
@@ -180,6 +183,7 @@ impl MonitorConfig {
     }
 }
 
+#[instrument(target = COMPONENT, name = "check-status.rpc", skip_all, ret(level = "info"))]
 async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
     current_time: u64,
@@ -212,6 +216,7 @@ async fn check_rpc_status(
     }
 }
 
+#[instrument(target = COMPONENT, name = "check-status.remote-prover", skip_all, ret(level = "info"))]
 async fn check_remote_prover_status(
     remote_prover: &mut miden_node_proto::clients::RemoteProverProxyClient,
     name: String,
@@ -256,6 +261,7 @@ async fn check_remote_prover_status(
     }
 }
 
+#[instrument(target = COMPONENT, name = "check-status", skip_all, ret(level = "info"), err)]
 pub async fn check_status(
     shared_status: SharedStatus,
     config: MonitorConfig,

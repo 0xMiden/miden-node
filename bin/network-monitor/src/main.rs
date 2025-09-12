@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Context;
+use miden_node_utils::logging::OpenTelemetry;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 
@@ -10,28 +11,23 @@ mod status;
 
 use frontend::serve;
 use status::{MonitorConfig, NetworkStatus, SharedStatus, check_status};
+use tracing::{error, info};
+
+/// Component identifier for structured logging and tracing
+pub const COMPONENT: &str = "miden-network-monitor";
 
 #[tokio::main]
-async fn main() {
+async fn main() -> anyhow::Result<()> {
+    miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
+
     // Load configuration from environment variables
     let config = match MonitorConfig::from_env() {
         Ok(config) => {
-            println!("Loaded configuration:");
-            println!("  RPC URL: {}", config.rpc_url);
-            println!(
-                "  Remote Prover URLs: {}",
-                config
-                    .remote_prover_urls
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            );
-            println!("  Port: {}", config.port);
+            info!("Loaded configuration: {:?}", config);
             config
         },
         Err(e) => {
-            eprintln!("Failed to load configuration: {e}");
+            error!("Failed to load configuration: {e}");
             std::process::exit(1);
         },
     };
@@ -75,5 +71,5 @@ async fn main() {
     let component = component_ids.get(&id).unwrap_or(&"unknown");
 
     // Exit with error context
-    err.context(format!("Component {component} failed")).unwrap();
+    err.context(format!("Component {component} failed"))
 }

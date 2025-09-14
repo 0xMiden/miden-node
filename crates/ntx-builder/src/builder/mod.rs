@@ -119,6 +119,10 @@ impl NetworkTransactionBuilder {
                 },
                 // Handle mempool events.
                 event = mempool_events.try_next() => {
+                    let event = event
+                        .context("mempool event stream ended")?
+                        .context("mempool event stream failed")?;
+
                     Self::handle_mempool_event(
                         event,
                         &mut actor_registry,
@@ -131,18 +135,13 @@ impl NetworkTransactionBuilder {
         }
     }
 
-    /// ... todo
     async fn handle_mempool_event(
-        event_result: Result<Option<MempoolEvent>, tonic::Status>,
+        event: MempoolEvent,
         actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
         actor_removal_queue: &mut VecDeque<NetworkAccountPrefix>,
         account_actor_config: AccountActorConfig,
         store: &StoreClient,
     ) -> anyhow::Result<()> {
-        let event = event_result
-            .context("mempool event stream ended")?
-            .context("mempool event stream failed")?;
-
         match &event {
             // Broadcast to affected actors.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
@@ -164,6 +163,7 @@ impl NetworkTransactionBuilder {
                                 account_actor_config.clone(),
                             )
                             .await?;
+                            // TODO: consider thinner event message.
                             Self::send_event(&actor_handle, event.clone(), actor_removal_queue);
                             actor_registry.insert(account_prefix, actor_handle);
                         } else {

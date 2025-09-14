@@ -5,6 +5,7 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_objects::account::Account;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
+use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{Semaphore, mpsc};
 use tracing::instrument;
 use url::Url;
@@ -97,9 +98,10 @@ impl AccountActor {
                 tracing::error!(
                     account = %account_prefix,
                     error = ?error,
-                    "Account actor failed"
+                    "account actor failed"
                 );
             }
+            // TODO: send a message back to the coordinator with the error?
         });
 
         Ok(AccountActorHandle { account_prefix, event_tx, join_handle })
@@ -107,35 +109,28 @@ impl AccountActor {
 
     #[instrument(target = COMPONENT, name = "account_actor.run", skip_all)]
     async fn run(mut self) -> anyhow::Result<()> {
-        // First catch up with all pre-existing events.
-        while let Some(event) = self.event_rx.recv().await {
-            self.state.mempool_update(event).await?;
-        }
-
         loop {
-            let semaphore = self.semaphore.clone();
-            tokio::select! {
-                permit = semaphore.acquire() => {
-                    let _permit = permit?;
-                    self.execute_transactions().await;
-                },
-                msg = self.event_rx.recv() => {
-                    match msg {
-                        Some(event) => {
-                            if let Err(error) = self.state.mempool_update(event).await {
-                                tracing::error!(
-                                    account = %self.account_prefix,
-                                    error = ?error,
-                                    "failed to update mempool"
-                                );
-                            }
-                        }
-                        None => {
-                            return Err(anyhow::anyhow!("coordinator channel closed"));
-                        }
-                    }
+            // First, process all available events to prevent starvation.
+            loop {
+                match self.event_rx.try_recv() {
+                    Ok(event) => {
+                        self.state.mempool_update(event).await?;
+                        // Continue processing more events.
+                    },
+                    Err(TryRecvError::Empty) => {
+                        // No more events available, break to execute transactions.
+                        break;
+                    },
+                    Err(TryRecvError::Disconnected) => {
+                        return Err(anyhow::anyhow!("coordinator channel closed"));
+                    },
                 }
             }
+
+            // Acquire permit and execute transactions.
+            let semaphore = self.semaphore.clone();
+            let _permit = semaphore.acquire().await?;
+            self.execute_transactions().await;
         }
     }
 

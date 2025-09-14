@@ -151,9 +151,18 @@ impl NetworkTransactionBuilder {
                     Self::find_affected_accounts(account_delta.as_ref(), network_notes);
 
                 for account_prefix in affected_accounts {
-                    // Update registry - create actor if it doesn't exist.
-                    #[allow(clippy::map_entry, reason = "async closure")]
-                    if !actor_registry.contains_key(&account_prefix) {
+                    // Retrieve or create the actor.
+                    if let Some(actor_handle) = actor_registry.get(&account_prefix) {
+                        if let Err(error) = actor_handle.send(event.clone()) {
+                            tracing::warn!(
+                                account = %actor_handle.account_prefix,
+                                error = ?error,
+                                "actor channel disconnected"
+                            );
+                            actor_removal_queue.push_back(account_prefix);
+                        }
+                    } else {
+                        // Try creating the actor.
                         let account = store.get_network_account(account_prefix).await?;
                         if let Some(account) = account {
                             let actor_handle = AccountActor::spawn(
@@ -162,23 +171,19 @@ impl NetworkTransactionBuilder {
                                 account_actor_config.clone(),
                             )
                             .await?;
+                            if let Err(error) = actor_handle.send(event.clone()) {
+                                tracing::warn!(
+                                    account = %actor_handle.account_prefix,
+                                    error = ?error,
+                                    "actor channel disconnected"
+                                );
+                                actor_removal_queue.push_back(account_prefix);
+                            }
                             actor_registry.insert(account_prefix, actor_handle);
+                        } else {
+                            tracing::warn!("network account {account_prefix} not found");
                         }
-                    }
-
-                    // Send event.
-                    let actor_handle = actor_registry
-                        .get(&account_prefix)
-                        .expect("actor previously existed or inserted above");
-                    // TODO: consider thinner event message.
-                    if let Err(error) = actor_handle.send(event.clone()) {
-                        tracing::warn!(
-                            account = %actor_handle.account_prefix,
-                            error = ?error,
-                            "actor channel disconnected"
-                        );
-                        actor_removal_queue.push_back(account_prefix);
-                    }
+                    };
                 }
             },
             // Broadcast to all actors.

@@ -180,17 +180,7 @@ impl State {
                 account_delta,
             } => {
                 // Filter network notes relevant to this account.
-                let network_notes = network_notes
-                    .into_iter()
-                    .filter_map(|note| match note {
-                        NetworkNote::SingleTarget(note)
-                            if note.account_prefix() == self.account_prefix =>
-                        {
-                            Some(note)
-                        },
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>();
+                let network_notes = to_single_target_prefix(self.account_prefix, network_notes);
                 self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
             MempoolEvent::BlockCommitted { header, txs } => {
@@ -357,4 +347,19 @@ impl TransactionImpact {
     fn is_empty(&self) -> bool {
         self.account_delta.is_none() && self.notes.is_empty() && self.nullifiers.is_empty()
     }
+}
+
+fn to_single_target_prefix(
+    account_prefix: NetworkAccountPrefix,
+    notes: Vec<NetworkNote>,
+) -> Vec<SingleTargetNetworkNote> {
+    notes
+        .into_iter()
+        .filter_map(|note| match note {
+            NetworkNote::SingleTarget(note) if note.account_prefix() == account_prefix => {
+                Some(note)
+            },
+            _ => None,
+        })
+        .collect::<Vec<_>>()
 }

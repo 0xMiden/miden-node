@@ -44,6 +44,7 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
+    /// ... todo
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url.clone());
         let block_producer = BlockProducerClient::new(self.block_producer_url.clone());
@@ -109,6 +110,7 @@ impl NetworkTransactionBuilder {
                                 account = %account_prefix,
                                 "actor finished unexpectedly, will respawn on next event"
                             );
+                            actor_removal_queue.push_back(*account_prefix);
                         }
                     }
                 },
@@ -125,7 +127,7 @@ impl NetworkTransactionBuilder {
         }
     }
 
-    /// Handles mempool events by routing them to affected account actors.
+    /// ... todo
     async fn handle_mempool_event(
         event_result: Result<Option<MempoolEvent>, tonic::Status>,
         actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
@@ -177,7 +179,7 @@ impl NetworkTransactionBuilder {
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
-                for (prefix, actor_handle) in actor_registry.iter() {
+                for (account_prefix, actor_handle) in actor_registry.iter() {
                     // TODO: consider thinner event message.
                     if let Err(error) = actor_handle.send(event.clone()) {
                         tracing::warn!(
@@ -185,7 +187,7 @@ impl NetworkTransactionBuilder {
                             error = ?error,
                             "actor channel disconnected"
                         );
-                        actor_removal_queue.push_back(*prefix);
+                        actor_removal_queue.push_back(*account_prefix);
                     }
                 }
             },

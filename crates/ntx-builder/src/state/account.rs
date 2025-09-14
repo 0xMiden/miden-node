@@ -95,7 +95,11 @@ pub struct AccountState {
 }
 
 impl AccountState {
-    pub fn new(prefix: NetworkAccountPrefix, account: Account, notes: Vec<NetworkNote>) -> Self {
+    pub fn new(
+        account_prefix: NetworkAccountPrefix,
+        account: Account,
+        notes: Vec<NetworkNote>,
+    ) -> Self {
         let mut state = Self {
             committed: Some(account),
             inflight: VecDeque::default(),
@@ -106,33 +110,13 @@ impl AccountState {
         for note in notes {
             // Currently only support single target network notes in NTB.
             if let NetworkNote::SingleTarget(note) = note {
-                if note.account_prefix() == prefix {
+                if note.account_prefix() == account_prefix {
                     state.add_note(note);
                 }
             }
         }
 
         state
-    }
-
-    /// Creates a new account state using the given value as the committed state.
-    pub fn from_committed_account(account: Account) -> Self {
-        Self {
-            committed: Some(account),
-            inflight: VecDeque::default(),
-            available_notes: HashMap::default(),
-            nullified_notes: HashMap::default(),
-        }
-    }
-
-    /// Creates a new account state where the creating transaction is still inflight.
-    pub fn from_uncommitted_account(account: Account) -> Self {
-        Self {
-            inflight: VecDeque::from([account]),
-            committed: None,
-            available_notes: HashMap::default(),
-            nullified_notes: HashMap::default(),
-        }
     }
 
     /// Returns an iterator over inflight notes that are not currently within their respective

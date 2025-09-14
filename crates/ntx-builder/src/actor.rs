@@ -34,8 +34,9 @@ pub struct AccountActorHandle {
 }
 
 impl AccountActorHandle {
-    pub fn send(&self, msg: MempoolEvent) -> Result<(), mpsc::error::SendError<MempoolEvent>> {
-        self.event_tx.send(msg)
+    pub fn send(&self, msg: MempoolEvent) -> anyhow::Result<()> {
+        self.event_tx.send(msg)?;
+        Ok(())
     }
 
     pub fn is_finished(&self) -> bool {
@@ -52,7 +53,7 @@ pub struct AccountActor {
     account_prefix: NetworkAccountPrefix,
     state: State,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
-    store: StoreClient,
+    store: StoreClient, // TODO: store is not used?
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
     semaphore: Arc<Semaphore>,

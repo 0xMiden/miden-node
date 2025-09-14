@@ -53,7 +53,7 @@ pub struct State {
     /// The chain MMR, which lags behind the tip by one block.
     chain_mmr: PartialBlockchain,
 
-    prefix: NetworkAccountPrefix,
+    account_prefix: NetworkAccountPrefix,
     account: AccountState,
 
     /// Uncommitted transactions which have a some impact on the network state.
@@ -76,7 +76,7 @@ impl State {
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(
-        prefix: NetworkAccountPrefix,
+        account_prefix: NetworkAccountPrefix,
         account: Account,
         store: StoreClient,
     ) -> Result<Self, StoreError> {
@@ -90,14 +90,14 @@ impl State {
 
         // TODO: only get notes relevant to this account
         let notes = store.get_unconsumed_network_notes().await?;
-        let account = AccountState::new(prefix, account, notes);
+        let account = AccountState::new(account_prefix, account, notes);
 
         let state = Self {
             chain_tip_header,
             chain_mmr,
             store,
             account,
-            prefix,
+            account_prefix,
             inflight_txs: BTreeMap::default(),
             nullifier_idx: HashSet::default(),
         };
@@ -139,11 +139,6 @@ impl State {
             chain_mmr: self.chain_mmr.clone(),
         }
         .into()
-    }
-
-    /// The latest block number the state knows of.
-    pub fn chain_tip(&self) -> BlockNumber {
-        self.chain_tip_header.block_num()
     }
 
     /// Updates the chain tip and MMR block count.
@@ -188,7 +183,9 @@ impl State {
                 let network_notes = network_notes
                     .into_iter()
                     .filter_map(|note| match note {
-                        NetworkNote::SingleTarget(note) if note.account_prefix() == self.prefix => {
+                        NetworkNote::SingleTarget(note)
+                            if note.account_prefix() == self.account_prefix =>
+                        {
                             Some(note)
                         },
                         _ => None,
@@ -210,7 +207,7 @@ impl State {
             },
             MempoolEvent::TransactionsReverted(txs) => {
                 for tx in txs {
-                    self.revert_transaction(tx);
+                    self.revert_transaction(tx)?;
                 }
             },
         }
@@ -237,8 +234,8 @@ impl State {
 
         let mut tx_impact = TransactionImpact::default();
         if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
-            let prefix = update.prefix();
-            if prefix == self.prefix {
+            let account_prefix = update.prefix();
+            if account_prefix == self.account_prefix {
                 match update {
                     NetworkAccountUpdate::New(_) => {
                         // Do nothing. The coordinator created this actor on this event.
@@ -247,11 +244,11 @@ impl State {
                         self.account.add_delta(&account_delta);
                     },
                 }
-                tx_impact.account_delta = Some(prefix);
+                tx_impact.account_delta = Some(account_prefix);
             }
         }
         for note in network_notes {
-            if note.account_prefix() == self.prefix {
+            if note.account_prefix() == self.account_prefix {
                 tx_impact.notes.insert(note.nullifier());
                 self.nullifier_idx.insert(note.nullifier());
                 self.account.add_note(note);
@@ -280,7 +277,7 @@ impl State {
         };
 
         if let Some(prefix) = impact.account_delta {
-            if prefix == self.prefix {
+            if prefix == self.account_prefix {
                 self.account.commit_delta();
             }
         }
@@ -302,14 +299,17 @@ impl State {
             return Ok(());
         };
 
-        if let Some(prefix) = impact.account_delta {
+        // Revert account creation.
+        if let Some(account_prefix) = impact.account_delta {
             // Account creation reverted, actor must stop.
-            if prefix == self.prefix && self.account.revert_delta() {
-                tracing::info!("todo");
+            if account_prefix == self.account_prefix && self.account.revert_delta() {
+                tracing::info!("account {} creation reverted", account_prefix);
+                // TODO: Do we actually want to error out here?
                 anyhow::bail!("account actor received account creation revert transaction");
             }
         }
 
+        // Revert notes.
         for note_nullifier in impact.notes {
             if self.nullifier_idx.contains(&note_nullifier) {
                 self.account.revert_note(note_nullifier);
@@ -317,9 +317,10 @@ impl State {
             }
         }
 
+        // Revert nullifiers.
         for nullifier in impact.nullifiers {
             if self.nullifier_idx.contains(&nullifier) {
-                self.account.revert_note(nullifier);
+                self.account.revert_nullifier(nullifier);
                 self.nullifier_idx.remove(&nullifier);
             }
         }

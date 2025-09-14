@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -75,7 +75,8 @@ impl NetworkTransactionBuilder {
         };
 
         // Create initial actors for existing accounts.
-        let mut actor_registry = HashMap::<NetworkAccountPrefix, AccountActorHandle>::new();
+        let mut actor_registry = HashMap::new();
+        let mut actor_removal_queue = VecDeque::new();
         let notes = store.get_unconsumed_network_notes().await?;
         for note in notes {
             // Currently only support single target network notes in NTB.
@@ -93,6 +94,13 @@ impl NetworkTransactionBuilder {
         }
 
         loop {
+            // Remove actors that have been marked for removal from the registry.
+            for prefix in actor_removal_queue.drain(..) {
+                let actor_handle =
+                    actor_registry.remove(&prefix).expect("actor must exist for removal");
+                actor_handle.abort();
+            }
+
             tokio::select! {
                 _tick = interval.tick() => {
                     for (account_prefix, actor_handle) in &actor_registry {
@@ -108,6 +116,7 @@ impl NetworkTransactionBuilder {
                     Self::handle_mempool_event(
                         event,
                         &mut actor_registry,
+                        &mut actor_removal_queue,
                         config.clone(),
                         &store,
                     ).await?;
@@ -120,6 +129,7 @@ impl NetworkTransactionBuilder {
     async fn handle_mempool_event(
         event_result: Result<Option<MempoolEvent>, tonic::Status>,
         actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
+        actor_removal_queue: &mut VecDeque<NetworkAccountPrefix>,
         account_actor_config: AccountActorConfig,
         store: &StoreClient,
     ) -> anyhow::Result<()> {
@@ -154,24 +164,28 @@ impl NetworkTransactionBuilder {
                     let actor_handle = actor_registry
                         .get(&account_prefix)
                         .expect("actor previously existed or inserted above");
+                    // TODO: consider thinner event message.
                     if let Err(error) = actor_handle.send(event.clone()) {
-                        tracing::error!(
-                            account = %account_prefix,
+                        tracing::warn!(
+                            account = %actor_handle.account_prefix,
                             error = ?error,
-                            "Failed to send mempool event to actor"
+                            "actor channel disconnected"
                         );
+                        actor_removal_queue.push_back(account_prefix);
                     }
                 }
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
-                for (account_prefix, actor_handle) in actor_registry {
+                for (prefix, actor_handle) in actor_registry.iter() {
+                    // TODO: consider thinner event message.
                     if let Err(error) = actor_handle.send(event.clone()) {
-                        tracing::error!(
-                            account = %account_prefix,
+                        tracing::warn!(
+                            account = %actor_handle.account_prefix,
                             error = ?error,
-                            "Failed to send mempool event to actor"
+                            "actor channel disconnected"
                         );
+                        actor_removal_queue.push_back(*prefix);
                     }
                 }
             },

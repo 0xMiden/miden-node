@@ -295,11 +295,20 @@ impl State {
     }
 
     /// Handles [`MempoolEvent::TransactionsReverted`] events.
-    fn revert_transaction(&mut self, tx: TransactionId) {
+    fn revert_transaction(&mut self, tx: TransactionId) -> anyhow::Result<()> {
         // We only track transactions which have an impact on the network state.
         let Some(impact) = self.inflight_txs.remove(&tx) else {
-            return;
+            // TODO: log something? handle this differently?
+            return Ok(());
         };
+
+        if let Some(prefix) = impact.account_delta {
+            // Account creation reverted, actor must stop.
+            if prefix == self.prefix && self.account.revert_delta() {
+                tracing::info!("todo");
+                anyhow::bail!("account actor received account creation revert transaction");
+            }
+        }
 
         for note_nullifier in impact.notes {
             if self.nullifier_idx.contains(&note_nullifier) {
@@ -315,12 +324,7 @@ impl State {
             }
         }
 
-        if let Some(prefix) = impact.account_delta {
-            // We need to remove the account if this transaction created the account.
-            if prefix == self.prefix {
-                let _ = self.account.revert_delta();
-            }
-        }
+        Ok(())
     }
 
     /// Adds stats to the current tracing span.

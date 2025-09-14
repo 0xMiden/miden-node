@@ -79,11 +79,12 @@ impl NetworkTransactionBuilder {
         let mut actor_registry = HashMap::new();
         let mut actor_removal_queue = VecDeque::new();
         let notes = store.get_unconsumed_network_notes().await?;
+        // Create initial set of actors based on all available notes.
         for note in notes {
             // Currently only support single target network notes in NTB.
             if let NetworkNote::SingleTarget(note) = note {
                 let prefix = note.account_prefix();
-                let account = store.get_network_account(prefix).await?;
+                let account = store.get_network_account(prefix).await?; // TODO: should we add a batch endpoint for this?
                 if let Some(account) = account {
                     #[allow(clippy::map_entry, reason = "async closure")]
                     if !actor_registry.contains_key(&prefix) {
@@ -94,15 +95,17 @@ impl NetworkTransactionBuilder {
             }
         }
 
+        // Main loop which manages actors and passes mempool events to them.
         loop {
             // Remove actors that have been marked for removal from the registry.
             for prefix in actor_removal_queue.drain(..) {
                 let actor_handle =
-                    actor_registry.remove(&prefix).expect("actor must exist for removal");
+                    actor_registry.remove(&prefix).expect("actor must exist for removal"); // TODO: could soften this to an error log.
                 actor_handle.abort();
             }
 
             tokio::select! {
+                // Manage actors periodically..
                 _tick = interval.tick() => {
                     for (account_prefix, actor_handle) in &actor_registry {
                         if actor_handle.is_finished() {
@@ -114,6 +117,7 @@ impl NetworkTransactionBuilder {
                         }
                     }
                 },
+                // Handle mempool events.
                 event = mempool_events.try_next() => {
                     Self::handle_mempool_event(
                         event,
@@ -222,8 +226,7 @@ impl NetworkTransactionBuilder {
         // Find affected accounts from network notes.
         for note in network_notes {
             if let NetworkNote::SingleTarget(note) = note {
-                let prefix = note.account_prefix();
-                affected_accounts.insert(prefix);
+                affected_accounts.insert(note.account_prefix());
             }
         }
 

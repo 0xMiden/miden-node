@@ -153,14 +153,7 @@ impl NetworkTransactionBuilder {
                 for account_prefix in affected_accounts {
                     // Retrieve or create the actor.
                     if let Some(actor_handle) = actor_registry.get(&account_prefix) {
-                        if let Err(error) = actor_handle.send(event.clone()) {
-                            tracing::warn!(
-                                account = %actor_handle.account_prefix,
-                                error = ?error,
-                                "actor channel disconnected"
-                            );
-                            actor_removal_queue.push_back(account_prefix);
-                        }
+                        Self::send_event(actor_handle, event.clone(), actor_removal_queue);
                     } else {
                         // Try creating the actor.
                         let account = store.get_network_account(account_prefix).await?;
@@ -171,38 +164,40 @@ impl NetworkTransactionBuilder {
                                 account_actor_config.clone(),
                             )
                             .await?;
-                            if let Err(error) = actor_handle.send(event.clone()) {
-                                tracing::warn!(
-                                    account = %actor_handle.account_prefix,
-                                    error = ?error,
-                                    "actor channel disconnected"
-                                );
-                                actor_removal_queue.push_back(account_prefix);
-                            }
+                            Self::send_event(&actor_handle, event.clone(), actor_removal_queue);
                             actor_registry.insert(account_prefix, actor_handle);
                         } else {
                             tracing::warn!("network account {account_prefix} not found");
                         }
-                    };
+                    }
                 }
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
-                for (account_prefix, actor_handle) in actor_registry.iter() {
+                for (_, actor_handle) in actor_registry.iter() {
                     // TODO: consider thinner event message.
-                    if let Err(error) = actor_handle.send(event.clone()) {
-                        tracing::warn!(
-                            account = %actor_handle.account_prefix,
-                            error = ?error,
-                            "actor channel disconnected"
-                        );
-                        actor_removal_queue.push_back(*account_prefix);
-                    }
+                    Self::send_event(actor_handle, event.clone(), actor_removal_queue);
                 }
             },
         }
 
         Ok(())
+    }
+
+    /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.
+    fn send_event(
+        actor_handle: &AccountActorHandle,
+        event: MempoolEvent,
+        actor_removal_queue: &mut VecDeque<NetworkAccountPrefix>,
+    ) {
+        if let Err(error) = actor_handle.send(event) {
+            tracing::warn!(
+                account = %actor_handle.account_prefix,
+                error = ?error,
+                "actor channel disconnected"
+            );
+            actor_removal_queue.push_back(actor_handle.account_prefix);
+        }
     }
 
     fn find_affected_accounts(

@@ -54,7 +54,6 @@ pub struct AccountActor {
     account_prefix: NetworkAccountPrefix,
     state: State,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
-    store: StoreClient, // TODO: store is not used?
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
     semaphore: Arc<Semaphore>,
@@ -70,13 +69,12 @@ impl AccountActor {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let store = StoreClient::new(config.store_url.clone());
-        let state = State::load(account_prefix, account, store.clone()).await?;
+        let state = State::load(account_prefix, account, store).await?;
         let semaphore = config.semaphore;
         Ok(Self {
             account_prefix,
             state,
             event_rx,
-            store,
             block_producer,
             prover,
             semaphore,
@@ -122,7 +120,7 @@ impl AccountActor {
                         break;
                     },
                     Err(TryRecvError::Disconnected) => {
-                        return Err(anyhow::anyhow!("coordinator channel closed"));
+                        anyhow::bail!("coordinator channel closed");
                     },
                 }
             }
@@ -161,7 +159,7 @@ impl AccountActor {
             },
             // Transaction execution failed.
             Err(err) => {
-                tracing::warn!(err = err.as_report(), "network transaction failed");
+                tracing::error!(err = err.as_report(), "network transaction failed");
                 match err {
                     NtxError::AllNotesFailed(failed) => {
                         let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();

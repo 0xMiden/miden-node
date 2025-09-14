@@ -64,9 +64,6 @@ pub struct State {
 
     /// A mapping of network note's to their account.
     nullifier_idx: HashSet<Nullifier>,
-
-    /// gRPC client used to retrieve the network account state from the store.
-    store: StoreClient,
 }
 
 impl State {
@@ -95,7 +92,6 @@ impl State {
         let state = Self {
             chain_tip_header,
             chain_mmr,
-            store,
             account,
             account_prefix,
             inflight_txs: BTreeMap::default(),

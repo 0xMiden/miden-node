@@ -67,6 +67,7 @@ impl NetworkTransactionBuilder {
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
+        // Create a semaphore to limit the number of in-progress transactions across all actors.
         let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
         let config = AccountActorConfig {
             store_url: self.store_url,
@@ -99,9 +100,14 @@ impl NetworkTransactionBuilder {
         loop {
             // Remove actors that have been marked for removal from the registry.
             for prefix in actor_removal_queue.drain(..) {
-                let actor_handle =
-                    actor_registry.remove(&prefix).expect("actor must exist for removal"); // TODO: could soften this to an error log.
-                actor_handle.abort();
+                if let Some(actor_handle) = actor_registry.remove(&prefix) {
+                    actor_handle.abort();
+                } else {
+                    tracing::error!(
+                        account = %prefix,
+                        "actor not found in registry for removal"
+                    );
+                }
             }
 
             tokio::select! {

@@ -121,6 +121,7 @@ impl NetworkTransactionBuilder {
                                 }
                                 AccountActorError::AccountCreationReverted(prefix) => {
                                     tracing::info!(prefix = ?prefix, "actor stopped due to account creation being reverted");
+                                    actor_registry.remove(&prefix);
                                 }
                             }
                         }

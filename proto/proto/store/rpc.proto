@@ -81,7 +81,7 @@ service Rpc {
     // Returns storage map updates for specified account and storage slots within a block range.
     rpc SyncStorageMaps(SyncStorageMapsRequest) returns (SyncStorageMapsResponse) {}
 
-    // Returns transactions headers for specific accounts within a block range.
+    // Returns transactions records for specific accounts within a block range.
     rpc SyncTransactions(SyncTransactionsRequest) returns (SyncTransactionsResponse) {}
 }
 

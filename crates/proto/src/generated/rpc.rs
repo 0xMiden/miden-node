@@ -499,7 +499,7 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "SyncStorageMaps"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns transactions headers for specific accounts within a block range.
+        /// Returns transactions records for specific accounts within a block range.
         pub async fn sync_transactions(
             &mut self,
             request: impl tonic::IntoRequest<
@@ -691,7 +691,7 @@ pub mod api_server {
             tonic::Response<super::super::rpc_store::SyncStorageMapsResponse>,
             tonic::Status,
         >;
-        /// Returns transactions headers for specific accounts within a block range.
+        /// Returns transactions records for specific accounts within a block range.
         async fn sync_transactions(
             &self,
             request: tonic::Request<super::super::rpc_store::SyncTransactionsRequest>,

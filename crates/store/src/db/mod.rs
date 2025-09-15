@@ -587,8 +587,8 @@ impl Db {
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
     ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
-        self.transact("full transactions headers", move |conn| {
-            queries::select_transactions_headers(conn, &account_ids, block_range)
+        self.transact("full transactions records", move |conn| {
+            queries::select_transactions_records(conn, &account_ids, block_range)
         })
         .await
     }

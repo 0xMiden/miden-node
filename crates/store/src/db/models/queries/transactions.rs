@@ -237,8 +237,8 @@ impl TransactionSummaryRowInsert {
 /// # Note
 /// This function returns complete transaction record information including state commitments
 /// and note IDs, allowing for direct conversion to proto `TransactionRecord` without loading
-/// full block data. The response is size-limited to ~5MB to prevent excessive memory usage.
-/// If the limit is reached, transactions from the last block are excluded to maintain consistency.
+/// full block data. We use a chunked loading strategy to prevent memory exhaustion attacks and
+/// ensure predictable resource usage.
 ///
 /// # Raw SQL
 /// ```sql
@@ -254,13 +254,17 @@ impl TransactionSummaryRowInsert {
 /// FROM transactions
 /// WHERE block_num > ?1 AND block_num <= ?2 AND account_id IN rarray(?3)
 /// ORDER BY block_num ASC
+/// LIMIT ?4 OFFSET ?5
 /// ```
-pub fn select_transactions_headers(
+/// Note: The query is executed in chunks of 1000 transactions to prevent loading
+/// excessive data and to stop as soon as the accumulated size approaches the 5MB limit.
+pub fn select_transactions_records(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
     const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
+    const CHUNK_SIZE: i64 = 1000; // Read 1000 transactions at a time
 
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
@@ -272,16 +276,63 @@ pub fn select_transactions_headers(
     }
 
     let desired_account_ids = serialize_vec(account_ids);
-    let raw = SelectDsl::select(schema::transactions::table, TransactionRecordRaw::as_select())
-        .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
-        .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
-        .filter(schema::transactions::account_id.eq_any(desired_account_ids))
-        .order((schema::transactions::block_num.asc(),))
-        .load::<TransactionRecordRaw>(conn)
-        .map_err(DatabaseError::from)?;
 
-    // Remove complete blocks from the end until we're under the size limit
-    let mut filtered_raw = raw;
+    // Read transactions in chunks to prevent loading excessive data and to stop
+    // as soon as we approach the size limit
+    let mut all_transactions = Vec::new();
+    let mut current_size = 0i64;
+    let mut offset = 0i64;
+
+    loop {
+        let chunk =
+            SelectDsl::select(schema::transactions::table, TransactionRecordRaw::as_select())
+                .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
+                .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
+                .filter(schema::transactions::account_id.eq_any(&desired_account_ids))
+                .order((schema::transactions::block_num.asc(),))
+                .offset(offset)
+                .limit(CHUNK_SIZE)
+                .load::<TransactionRecordRaw>(conn)
+                .map_err(DatabaseError::from)?;
+
+        // If no more data, we're done
+        if chunk.is_empty() {
+            break;
+        }
+
+        // Calculate the size of this chunk
+        let chunk_size: i64 = chunk.iter().map(|tx| tx.size_in_bytes).sum();
+
+        // If adding this chunk would exceed the limit, we need to be more careful
+        if current_size + chunk_size > MAX_PAYLOAD_BYTES as i64 {
+            // Add transactions from this chunk one by one until we hit the limit
+            for tx in chunk {
+                if current_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES as i64 {
+                    current_size += tx.size_in_bytes;
+                    all_transactions.push(tx);
+                } else {
+                    // Can't fit this transaction, stop here
+                    break;
+                }
+            }
+            break;
+        }
+
+        // The entire chunk fits, add it all
+        current_size += chunk_size;
+        let chunk_len = chunk.len() as i64;
+        all_transactions.extend(chunk);
+        offset += CHUNK_SIZE;
+
+        // If we got fewer transactions than requested, we've reached the end
+        if chunk_len < CHUNK_SIZE {
+            break;
+        }
+    }
+
+    // Ensure block consistency: remove complete blocks from the end until we're under the size
+    // limit
+    let mut filtered_raw = all_transactions;
     while !filtered_raw.is_empty() {
         let total_size: i64 = filtered_raw.iter().map(|tx| tx.size_in_bytes).sum();
 

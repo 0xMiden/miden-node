@@ -435,7 +435,7 @@ const fn storage_slot_type_to_raw(slot_type: StorageSlotType) -> u32 {
 }
 
 /// Represents account details returned in response to an account proof request.
-pub struct AccountDetailsResponse {
+pub struct AccountDetails {
     pub account_header: AccountHeader,
     pub account_code: Option<Vec<u8>>,
     pub vault_details: AccountVaultDetails,
@@ -445,7 +445,7 @@ pub struct AccountDetailsResponse {
 /// Represents the response to an account proof request.
 pub struct AccountProofResponse {
     pub witness: AccountWitness,
-    pub details: Option<AccountDetailsResponse>,
+    pub details: Option<AccountDetails>,
 }
 
 impl TryFrom<proto::rpc_store::AccountProofResponse> for AccountProofResponse {
@@ -475,15 +475,13 @@ impl From<AccountProofResponse> for proto::rpc_store::AccountProofResponse {
     }
 }
 
-impl TryFrom<proto::rpc_store::account_proof_response::AccountDetailsResponse>
-    for AccountDetailsResponse
-{
+impl TryFrom<proto::rpc_store::account_proof_response::AccountDetails> for AccountDetails {
     type Error = ConversionError;
 
     fn try_from(
-        value: proto::rpc_store::account_proof_response::AccountDetailsResponse,
+        value: proto::rpc_store::account_proof_response::AccountDetails,
     ) -> Result<Self, Self::Error> {
-        let proto::rpc_store::account_proof_response::AccountDetailsResponse {
+        let proto::rpc_store::account_proof_response::AccountDetails {
             header,
             code,
             vault_details,
@@ -491,31 +489,25 @@ impl TryFrom<proto::rpc_store::account_proof_response::AccountDetailsResponse>
         } = value;
 
         let account_header = header
-            .ok_or(
-                proto::rpc_store::account_proof_response::AccountDetailsResponse::missing_field(
-                    stringify!(header),
-                ),
-            )?
+            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
+                stringify!(header),
+            ))?
             .try_into()?;
 
         let vault_details = vault_details
-            .ok_or(
-                proto::rpc_store::account_proof_response::AccountDetailsResponse::missing_field(
-                    stringify!(vault_details),
-                ),
-            )?
+            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
+                stringify!(vault_details),
+            ))?
             .try_into()?;
         let account_code = code;
 
         let storage_details = storage_details
-            .ok_or(
-                proto::rpc_store::account_proof_response::AccountDetailsResponse::missing_field(
-                    stringify!(storage_details),
-                ),
-            )?
+            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
+                stringify!(storage_details),
+            ))?
             .try_into()?;
 
-        Ok(AccountDetailsResponse {
+        Ok(AccountDetails {
             account_header,
             account_code,
             vault_details,
@@ -524,11 +516,9 @@ impl TryFrom<proto::rpc_store::account_proof_response::AccountDetailsResponse>
     }
 }
 
-impl From<AccountDetailsResponse>
-    for proto::rpc_store::account_proof_response::AccountDetailsResponse
-{
-    fn from(value: AccountDetailsResponse) -> Self {
-        let AccountDetailsResponse {
+impl From<AccountDetails> for proto::rpc_store::account_proof_response::AccountDetails {
+    fn from(value: AccountDetails) -> Self {
+        let AccountDetails {
             account_header,
             account_code,
             storage_details,

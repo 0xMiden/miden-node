@@ -158,7 +158,7 @@ message AccountProofRequest {
 // Represents the result of getting account proof.
 message AccountProofResponse {
 
-    message AccountDetailsResponse {
+    message AccountDetails {
         // Account header.
         account.AccountHeader header = 1;
 
@@ -176,7 +176,7 @@ message AccountProofResponse {
     account.AccountWitness witness = 1;
 
     // Additional details for public accounts
-    optional AccountDetailsResponse details = 2;
+    optional AccountDetails details = 2;
 }
 
 // Account vault details for AccountProofResponse

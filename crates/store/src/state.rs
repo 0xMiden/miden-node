@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use miden_node_proto::domain::account::{
     AccountDetailRequest,
-    AccountDetailsResponse,
+    AccountDetails,
     AccountInfo,
     AccountProofRequest,
     AccountProofResponse,
@@ -991,7 +991,7 @@ impl State {
                     }
                 };
 
-                Some(AccountDetailsResponse {
+                Some(AccountDetails {
                     account_header: AccountHeader::from(details),
                     account_code,
                     vault_details,

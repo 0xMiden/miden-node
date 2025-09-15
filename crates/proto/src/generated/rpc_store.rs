@@ -93,12 +93,12 @@ pub struct AccountProofResponse {
     pub witness: ::core::option::Option<super::account::AccountWitness>,
     /// Additional details for public accounts
     #[prost(message, optional, tag = "2")]
-    pub details: ::core::option::Option<account_proof_response::AccountDetailsResponse>,
+    pub details: ::core::option::Option<account_proof_response::AccountDetails>,
 }
 /// Nested message and enum types in `AccountProofResponse`.
 pub mod account_proof_response {
     #[derive(Clone, PartialEq, ::prost::Message)]
-    pub struct AccountDetailsResponse {
+    pub struct AccountDetails {
         /// Account header.
         #[prost(message, optional, tag = "1")]
         pub header: ::core::option::Option<super::super::account::AccountHeader>,

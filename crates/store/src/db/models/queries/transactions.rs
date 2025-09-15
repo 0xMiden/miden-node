@@ -91,7 +91,7 @@ pub struct TransactionSummaryRaw {
 #[derive(Debug, Clone, PartialEq, Queryable, Selectable, QueryableByName)]
 #[diesel(table_name = schema::transactions)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct TransactionHeaderRaw {
+pub struct TransactionRecordRaw {
     account_id: Vec<u8>,
     block_num: i64,
     transaction_id: Vec<u8>,
@@ -113,9 +113,9 @@ impl TryInto<crate::db::TransactionSummary> for TransactionSummaryRaw {
     }
 }
 
-impl TryInto<crate::db::TransactionHeader> for TransactionHeaderRaw {
+impl TryInto<crate::db::TransactionRecord> for TransactionRecordRaw {
     type Error = DatabaseError;
-    fn try_into(self) -> Result<crate::db::TransactionHeader, Self::Error> {
+    fn try_into(self) -> Result<crate::db::TransactionRecord, Self::Error> {
         use miden_lib::utils::Deserializable;
         use miden_objects::Word;
 
@@ -128,7 +128,7 @@ impl TryInto<crate::db::TransactionHeader> for TransactionHeaderRaw {
         let input_notes: Vec<Nullifier> = Deserializable::read_from_bytes(&input_notes_binary)?;
         let output_notes: Vec<NoteId> = Deserializable::read_from_bytes(&output_notes_binary)?;
 
-        Ok(crate::db::TransactionHeader {
+        Ok(crate::db::TransactionRecord {
             account_id: AccountId::read_from_bytes(&self.account_id[..])?,
             block_num: BlockNumber::from_raw_sql(self.block_num)?,
             transaction_id: TransactionId::read_from_bytes(&self.transaction_id[..])?,
@@ -211,7 +211,7 @@ impl TransactionSummaryRowInsert {
     }
 }
 
-/// Select complete transaction headers for the given accounts and block range.
+/// Select complete transaction records for the given accounts and block range.
 ///
 /// # Parameters
 /// * `account_ids`: List of account IDs to filter by
@@ -219,13 +219,13 @@ impl TransactionSummaryRowInsert {
 /// * `block_range`: Range of blocks to include inclusive
 ///
 /// # Returns
-/// A tuple of (`last_block_included`, `transaction_headers`) where:
+/// A tuple of (`last_block_included`, `transaction_records`) where:
 /// - `last_block_included`: The highest block number included in the response
-/// - `transaction_headers`: Vector of transaction headers, limited by payload size
+/// - `transaction_records`: Vector of transaction records, limited by payload size
 ///
 /// # Note
-/// This function returns complete transaction header information including state commitments
-/// and note IDs, allowing for direct conversion to proto `TransactionHeader` without loading
+/// This function returns complete transaction record information including state commitments
+/// and note IDs, allowing for direct conversion to proto `TransactionRecord` without loading
 /// full block data. The response is size-limited to ~5MB to prevent excessive memory usage.
 /// If the limit is reached, transactions from the last block are excluded to maintain consistency.
 ///
@@ -248,7 +248,7 @@ pub fn select_transactions_headers(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
-) -> Result<(BlockNumber, Vec<crate::db::TransactionHeader>), DatabaseError> {
+) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
     const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
 
     QueryParamAccountIdLimit::check(account_ids.len())?;
@@ -261,12 +261,12 @@ pub fn select_transactions_headers(
     }
 
     let desired_account_ids = serialize_vec(account_ids);
-    let raw = SelectDsl::select(schema::transactions::table, TransactionHeaderRaw::as_select())
+    let raw = SelectDsl::select(schema::transactions::table, TransactionRecordRaw::as_select())
         .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
         .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
         .filter(schema::transactions::account_id.eq_any(desired_account_ids))
         .order((schema::transactions::block_num.asc(),))
-        .load::<TransactionHeaderRaw>(conn)
+        .load::<TransactionRecordRaw>(conn)
         .map_err(DatabaseError::from)?;
 
     // Remove complete blocks from the end until we're under the size limit
@@ -289,8 +289,8 @@ pub fn select_transactions_headers(
         }
     }
 
-    // Convert to transaction headers
-    let headers: Vec<crate::db::TransactionHeader> = filtered_raw
+    // Convert to transaction records
+    let headers: Vec<crate::db::TransactionRecord> = filtered_raw
         .into_iter()
         .map(std::convert::TryInto::try_into)
         .collect::<Result<Vec<_>, _>>()?;

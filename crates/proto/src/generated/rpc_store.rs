@@ -377,13 +377,13 @@ pub struct SyncTransactionsResponse {
     /// Pagination information.
     #[prost(message, optional, tag = "1")]
     pub pagination_info: ::core::option::Option<PaginationInfo>,
-    /// List of transaction headers.
+    /// List of transaction records.
     #[prost(message, repeated, tag = "2")]
-    pub transaction_headers: ::prost::alloc::vec::Vec<TransactionHeader>,
+    pub transaction_records: ::prost::alloc::vec::Vec<TransactionRecord>,
 }
-/// Represents a transaction header.
+/// Represents a transaction record.
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct TransactionHeader {
+pub struct TransactionRecord {
     /// Block number in which the transaction was executed.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,

@@ -445,12 +445,12 @@ message SyncTransactionsResponse {
     // Pagination information.
     PaginationInfo pagination_info = 1;
 
-    // List of transaction headers.
-    repeated TransactionHeader transaction_headers = 2;
+    // List of transaction records.
+    repeated TransactionRecord transaction_records = 2;
 }
 
-// Represents a transaction header.
-message TransactionHeader {
+// Represents a transaction record.
+message TransactionRecord {
     // Block number in which the transaction was executed.
     fixed32 block_num = 1;
 

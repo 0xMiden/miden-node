@@ -168,7 +168,7 @@ This endpoint enables clients to maintain an updated view of account storage.
 
 ### SyncTransactions
 
-Returns transaction headers for specific accounts within a block range.
+Returns transaction records for specific accounts within a block range.
 
 ---
 

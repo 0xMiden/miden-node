@@ -1034,14 +1034,14 @@ impl State {
         self.db.select_note_script_by_root(root).await
     }
 
-    /// Returns the complete transaction headers for the specified accounts within the specified
+    /// Returns the complete transaction records for the specified accounts within the specified
     /// block range, including state commitments and note IDs.
     pub async fn sync_transactions(
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<(BlockNumber, Vec<crate::db::TransactionHeader>), DatabaseError> {
-        self.db.select_transactions_headers(account_ids, block_range).await
+    ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
+        self.db.select_transactions_records(account_ids, block_range).await
     }
 }
 

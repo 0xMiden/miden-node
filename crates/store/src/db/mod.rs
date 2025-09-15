@@ -93,32 +93,32 @@ pub struct TransactionSummary {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct TransactionHeader {
-    pub account_id: AccountId,
+pub struct TransactionRecord {
     pub block_num: BlockNumber,
     pub transaction_id: TransactionId,
+    pub account_id: AccountId,
     pub initial_state_commitment: Word,
     pub final_state_commitment: Word,
     pub input_notes: Vec<Nullifier>, // Store nullifiers for input notes
     pub output_notes: Vec<NoteId>,   // Store note IDs for output notes
 }
 
-impl TransactionHeader {
-    /// Convert to proto `TransactionHeader`, but requires note sync records for output notes.
+impl TransactionRecord {
+    /// Convert to proto `TransactionRecord`, but requires note sync records for output notes.
     /// For `sync_transactions` RPC, we need to fetch note sync records separately since we only
     /// store note IDs in the database.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_proto_with_note_records(
         self,
         note_records: Vec<NoteSyncRecord>,
-    ) -> proto::rpc_store::TransactionHeader {
+    ) -> proto::rpc_store::TransactionRecord {
         let input_notes: Vec<proto::primitives::Digest> =
             self.input_notes.iter().map(|nullifier| (*nullifier).into()).collect();
 
         let output_notes: Vec<proto::note::NoteSyncRecord> =
             note_records.into_iter().map(Into::into).collect();
 
-        proto::rpc_store::TransactionHeader {
+        proto::rpc_store::TransactionRecord {
             block_num: self.block_num.as_u32(),
             account_id: Some(self.account_id.into()),
             initial_state_commitment: Some(self.initial_state_commitment.into()),
@@ -576,17 +576,17 @@ impl Db {
         .await
     }
 
-    /// Returns the complete transaction headers for the specified accounts within the specified
+    /// Returns the complete transaction records for the specified accounts within the specified
     /// block range, including state commitments and note IDs.
     ///
     /// Note: This method is size-limited (~5MB) and may not return all matching transactions
     /// if the limit is exceeded. Transactions from partial blocks are excluded to maintain
     /// consistency.
-    pub async fn select_transactions_headers(
+    pub async fn select_transactions_records(
         &self,
         account_ids: Vec<AccountId>,
         block_range: RangeInclusive<BlockNumber>,
-    ) -> Result<(BlockNumber, Vec<TransactionHeader>)> {
+    ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
         self.transact("full transactions headers", move |conn| {
             queries::select_transactions_headers(conn, &account_ids, block_range)
         })

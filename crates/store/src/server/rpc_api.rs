@@ -506,16 +506,16 @@ impl rpc_server::Rpc for StoreApi {
 
         let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
 
-        let (last_block_included, transaction_headers_db) = self
+        let (last_block_included, transaction_records_db) = self
             .state
             .sync_transactions(account_ids, block_range.clone())
             .await
             .map_err(internal_error)?;
 
-        // Convert database TransactionHeader to proto TransactionHeader
-        let mut transaction_headers = Vec::new();
+        // Convert database TransactionRecord to proto TransactionRecord
+        let mut transaction_records = Vec::new();
 
-        for tx_header in transaction_headers_db {
+        for tx_header in transaction_records_db {
             // Retrieve full note data for output notes from the database
             let note_records = self
                 .state
@@ -528,8 +528,8 @@ impl rpc_server::Rpc for StoreApi {
                 note_records.into_iter().map(std::convert::Into::into).collect();
 
             // Convert to proto using the helper method
-            let proto_header = tx_header.to_proto_with_note_records(note_sync_records);
-            transaction_headers.push(proto_header);
+            let proto_record = tx_header.to_proto_with_note_records(note_sync_records);
+            transaction_records.push(proto_record);
         }
 
         Ok(Response::new(proto::rpc_store::SyncTransactionsResponse {
@@ -537,7 +537,7 @@ impl rpc_server::Rpc for StoreApi {
                 chain_tip: chain_tip.as_u32(),
                 block_num: last_block_included.as_u32(),
             }),
-            transaction_headers,
+            transaction_records,
         }))
     }
 }

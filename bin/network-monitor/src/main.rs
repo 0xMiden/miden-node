@@ -66,13 +66,13 @@ async fn main() -> anyhow::Result<()> {
     let (id, err) = match component_result {
         Ok((id, Ok(_))) => (
             id,
-            Err::<(), anyhow::Error>(anyhow::anyhow!("Component completed unexpectedly")),
+            Err::<(), anyhow::Error>(anyhow::anyhow!("component completed unexpectedly")),
         ), // SAFETY: The JoinSet is definitely not empty.
         Ok((id, Err(err))) => (id, Err(err)), // SAFETY: The JoinSet is definitely not empty.
-        Err(join_err) => (join_err.id(), Err(join_err).context("Joining component task")),
+        Err(join_err) => (join_err.id(), Err(join_err).context("joining component task")),
     };
     let component = component_ids.get(&id).unwrap_or(&"unknown");
 
     // Exit with error context
-    err.context(format!("Component {component} failed"))
+    err.context(format!("component {component} failed"))
 }

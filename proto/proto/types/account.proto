@@ -28,6 +28,21 @@ message AccountSummary {
     uint32 block_num = 3;
 }
 
+// Represents the storage header of an account.
+message AccountStorageHeader {
+    // A single storage slot in the account storage header.
+    message StorageSlot {
+        // The type of the storage slot.
+        uint32 slot_type = 1;
+
+        // The commitment (Word) for this storage slot.
+        primitives.Digest commitment = 2;
+    }
+
+    // Storage slots with their types and commitments.
+    repeated StorageSlot slots = 1;
+}
+
 // An account details.
 message AccountDetails {
     // Account summary.
@@ -40,17 +55,20 @@ message AccountDetails {
 
 // An account header.
 message AccountHeader {
+    // The account ID.
+    AccountId account_id = 1;
+
     // Vault root hash.
-    primitives.Digest vault_root = 1;
+    primitives.Digest vault_root = 2;
 
     // Storage root hash.
-    primitives.Digest storage_commitment = 2;
+    primitives.Digest storage_commitment = 3;
 
     // Code root hash.
-    primitives.Digest code_commitment = 3;
+    primitives.Digest code_commitment = 4;
 
     // Account nonce.
-    uint64 nonce = 4;
+    uint64 nonce = 5;
 }
 
 // An account witness.

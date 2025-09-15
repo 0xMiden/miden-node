@@ -24,6 +24,26 @@ pub struct AccountSummary {
     #[prost(uint32, tag = "3")]
     pub block_num: u32,
 }
+/// Represents the storage header of an account.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AccountStorageHeader {
+    /// Storage slots with their types and commitments.
+    #[prost(message, repeated, tag = "1")]
+    pub slots: ::prost::alloc::vec::Vec<account_storage_header::StorageSlot>,
+}
+/// Nested message and enum types in `AccountStorageHeader`.
+pub mod account_storage_header {
+    /// A single storage slot in the account storage header.
+    #[derive(Clone, Copy, PartialEq, ::prost::Message)]
+    pub struct StorageSlot {
+        /// The type of the storage slot.
+        #[prost(uint32, tag = "1")]
+        pub slot_type: u32,
+        /// The commitment (Word) for this storage slot.
+        #[prost(message, optional, tag = "2")]
+        pub commitment: ::core::option::Option<super::super::primitives::Digest>,
+    }
+}
 /// An account details.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountDetails {
@@ -36,19 +56,22 @@ pub struct AccountDetails {
     pub details: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 /// An account header.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountHeader {
-    /// Vault root hash.
+    /// The account ID.
     #[prost(message, optional, tag = "1")]
+    pub account_id: ::core::option::Option<AccountId>,
+    /// Vault root hash.
+    #[prost(message, optional, tag = "2")]
     pub vault_root: ::core::option::Option<super::primitives::Digest>,
     /// Storage root hash.
-    #[prost(message, optional, tag = "2")]
+    #[prost(message, optional, tag = "3")]
     pub storage_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Code root hash.
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "4")]
     pub code_commitment: ::core::option::Option<super::primitives::Digest>,
     /// Account nonce.
-    #[prost(uint64, tag = "4")]
+    #[prost(uint64, tag = "5")]
     pub nonce: u64,
 }
 /// An account witness.

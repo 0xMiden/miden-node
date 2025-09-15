@@ -271,16 +271,13 @@ async fn check_rpc_status(
         Ok(response) => {
             let status = response.into_inner();
 
-            // Use From implementation to convert gRPC status to domain type
-            let rpc_details = RpcStatusDetails::from(status);
-
             ServiceStatus {
                 name: "RPC".to_string(),
                 status: "healthy".to_string(),
                 last_checked: current_time,
                 error: None,
                 details: Some(ServiceDetails {
-                    rpc_status: Some(rpc_details),
+                    rpc_status: Some(status.into()),
                     remote_prover_statuses: Vec::new(),
                 }),
             }
@@ -417,7 +414,7 @@ pub async fn check_status(
     loop {
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .context("Failed to get current time")?
+            .context("failed to get current time")?
             .as_secs();
 
         let mut services = Vec::new();

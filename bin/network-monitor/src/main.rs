@@ -11,7 +11,7 @@ mod status;
 
 use frontend::serve;
 use status::{MonitorConfig, NetworkStatus, SharedStatus, check_status};
-use tracing::{error, info};
+use tracing::info;
 
 /// Component identifier for structured logging and tracing
 pub const COMPONENT: &str = "miden-network-monitor";
@@ -30,8 +30,7 @@ async fn main() -> anyhow::Result<()> {
             config
         },
         Err(e) => {
-            error!("Failed to load configuration: {e}");
-            std::process::exit(1);
+            anyhow::bail!("failed to load configuration: {e}");
         },
     };
 
@@ -60,7 +59,7 @@ async fn main() -> anyhow::Result<()> {
     component_ids.insert(id, "status");
 
     // Wait for any task to complete or fail
-    let component_result = join_set.join_next_with_id().await.unwrap();
+    let component_result = join_set.join_next_with_id().await.expect("join set is not empty");
 
     // We expect components to run indefinitely, so we treat any return as fatal.
     let (id, err) = match component_result {
@@ -71,7 +70,7 @@ async fn main() -> anyhow::Result<()> {
         Ok((id, Err(err))) => (id, Err(err)), // SAFETY: The JoinSet is definitely not empty.
         Err(join_err) => (join_err.id(), Err(join_err).context("joining component task")),
     };
-    let component = component_ids.get(&id).unwrap_or(&"unknown");
+    let component = component_ids.get(&id).unwrap_or(&"unknown"); // SAFETY: The JoinSet is definitely not empty.
 
     // Exit with error context
     err.context(format!("component {component} failed"))

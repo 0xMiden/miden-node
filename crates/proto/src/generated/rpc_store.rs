@@ -31,18 +31,13 @@ pub mod account_proof_request {
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AccountDetailRequest {
         /// Last known code commitment to the client. The response will include account code
-        /// only if its commitment is different from this value.
-        ///
-        /// We could also extend this methodology to account storage and asset vault to return
-        /// data only if the client doesn't already have it.
+        /// only if its commitment is different from this value or if the value is not present.
         #[prost(message, optional, tag = "1")]
         pub code_commitment: ::core::option::Option<super::super::primitives::Digest>,
-        /// A flag indicating whether the response should include asset vault data; assets
-        /// will be returned only if the account contains a small number of assets
-        /// (e.g., under 1000).
+        /// A flag indicating whether to include asset vault data.
         ///
-        /// We could also make this more granular and request assets under specific keys, but
-        /// I'm not sure this is needed at the moment.
+        /// Assets will only be returned for small accounts with less than 100 asset entries,
+        /// otherwise they have to be requested separately.
         #[prost(bool, tag = "2")]
         pub include_assets: bool,
         /// Additional request per storage map.
@@ -56,7 +51,7 @@ pub mod account_proof_request {
         /// Represents a storage slot index and the associated map keys.
         #[derive(Clone, PartialEq, ::prost::Message)]
         pub struct StorageMapDetailRequest {
-            /// Storage slot index (\[0..255\])
+            /// Storage slot index (`\[0..255\]`).
             #[prost(uint32, tag = "1")]
             pub slot_index: u32,
             #[prost(oneof = "storage_map_detail_request::SlotData", tags = "2, 3")]
@@ -64,9 +59,10 @@ pub mod account_proof_request {
         }
         /// Nested message and enum types in `StorageMapDetailRequest`.
         pub mod storage_map_detail_request {
+            /// Indirection required for use in `oneof {..}` block.
             #[derive(Clone, PartialEq, ::prost::Message)]
             pub struct MapKeys {
-                /// A list of map keys (Digests) associated with this storage slot.
+                /// A list of map keys associated with this storage slot.
                 #[prost(message, repeated, tag = "1")]
                 pub map_keys: ::prost::alloc::vec::Vec<
                     super::super::super::super::primitives::Digest,
@@ -74,11 +70,11 @@ pub mod account_proof_request {
             }
             #[derive(Clone, PartialEq, ::prost::Oneof)]
             pub enum SlotData {
-                /// A flag asking to return all storage map data; valid only for small storage maps
-                /// (e.g., with fewer than 1000 entries).
+                /// Request to return all storage map data. If the number exceeds a threshold of 1000 entries,
+                /// the response will not contain them but must be requested separately.
                 #[prost(bool, tag = "2")]
                 AllEntries(bool),
-                /// A list of map keys (Digests) associated with this storage slot.
+                /// A list of map keys associated with the given storage slot identified by `slot_index`.
                 #[prost(message, tag = "3")]
                 MapKeys(MapKeys),
             }

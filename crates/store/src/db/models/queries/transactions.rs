@@ -193,10 +193,21 @@ impl TransactionSummaryRowInsert {
         // Serialize output notes using binary format (store note IDs)
         let output_notes_binary = transaction_header.output_notes().to_bytes();
 
-        // Store the size required to store the row + the size that the output notes will take when
-        // casted to NoteSyncRecord (~500B per output note).
-        let size_in_bytes = (transaction_header.to_bytes().len()
-            + (transaction_header.output_notes().len() * 500)) as i64;
+        // Manually calculate the estimated size of the transaction header to avoid
+        // the cost of serialization. The size estimation includes:
+        // - 4 bytes for block number
+        // - 32 bytes for transaction ID
+        // - 16 bytes for account ID
+        // - 64 bytes for initial + final state commitments (32 bytes each)
+        // - 32 bytes per input note (nullifier size)
+        // - 500 bytes per output note (estimated size when converted to NoteSyncRecord)
+        //
+        // Note: 500 bytes per output note is an over-estimate but ensures we don't
+        // exceed memory limits when these transactions are later converted to proto records.
+        let header_base_size = 4 + 32 + 16 + 64; // block_num + tx_id + account_id + commitments
+        let input_notes_size = transaction_header.input_notes().len() * 32;
+        let output_notes_size = transaction_header.output_notes().len() * 500;
+        let size_in_bytes = (header_base_size + input_notes_size + output_notes_size) as i64;
 
         Self {
             transaction_id: transaction_header.id().to_bytes(),
@@ -238,11 +249,11 @@ impl TransactionSummaryRowInsert {
 ///     initial_state_commitment,
 ///     final_state_commitment,
 ///     input_notes,
-///     output_notes
+///     output_notes,
+///     size_in_bytes
 /// FROM transactions
 /// WHERE block_num > ?1 AND block_num <= ?2 AND account_id IN rarray(?3)
 /// ORDER BY block_num ASC
-/// LIMIT ?4
 /// ```
 pub fn select_transactions_headers(
     conn: &mut SqliteConnection,

@@ -174,14 +174,14 @@ pub mod api_client {
             req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "GetAccountDetails"));
             self.inner.unary(req, path, codec).await
         }
-        /// Returns the latest state proofs of the specified accounts.
-        pub async fn get_account_proofs(
+        /// Returns the latest state proof of the specified account.
+        pub async fn get_account_proof(
             &mut self,
             request: impl tonic::IntoRequest<
-                super::super::rpc_store::AccountProofsRequest,
+                super::super::rpc_store::AccountProofRequest,
             >,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProofs>,
+            tonic::Response<super::super::rpc_store::AccountProof>,
             tonic::Status,
         > {
             self.inner
@@ -193,9 +193,9 @@ pub mod api_client {
                     )
                 })?;
             let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static("/rpc.Api/GetAccountProofs");
+            let path = http::uri::PathAndQuery::from_static("/rpc.Api/GetAccountProof");
             let mut req = request.into_request();
-            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "GetAccountProofs"));
+            req.extensions_mut().insert(GrpcMethod::new("rpc.Api", "GetAccountProof"));
             self.inner.unary(req, path, codec).await
         }
         /// Returns raw block data for the specified block number.
@@ -535,12 +535,12 @@ pub mod api_server {
             tonic::Response<super::super::account::AccountDetails>,
             tonic::Status,
         >;
-        /// Returns the latest state proofs of the specified accounts.
-        async fn get_account_proofs(
+        /// Returns the latest state proof of the specified account.
+        async fn get_account_proof(
             &self,
-            request: tonic::Request<super::super::rpc_store::AccountProofsRequest>,
+            request: tonic::Request<super::super::rpc_store::AccountProofRequest>,
         ) -> std::result::Result<
-            tonic::Response<super::super::rpc_store::AccountProofs>,
+            tonic::Response<super::super::rpc_store::AccountProof>,
             tonic::Status,
         >;
         /// Returns raw block data for the specified block number.
@@ -876,15 +876,15 @@ pub mod api_server {
                     };
                     Box::pin(fut)
                 }
-                "/rpc.Api/GetAccountProofs" => {
+                "/rpc.Api/GetAccountProof" => {
                     #[allow(non_camel_case_types)]
-                    struct GetAccountProofsSvc<T: Api>(pub Arc<T>);
+                    struct GetAccountProofSvc<T: Api>(pub Arc<T>);
                     impl<
                         T: Api,
                     > tonic::server::UnaryService<
-                        super::super::rpc_store::AccountProofsRequest,
-                    > for GetAccountProofsSvc<T> {
-                        type Response = super::super::rpc_store::AccountProofs;
+                        super::super::rpc_store::AccountProofRequest,
+                    > for GetAccountProofSvc<T> {
+                        type Response = super::super::rpc_store::AccountProof;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -892,12 +892,12 @@ pub mod api_server {
                         fn call(
                             &mut self,
                             request: tonic::Request<
-                                super::super::rpc_store::AccountProofsRequest,
+                                super::super::rpc_store::AccountProofRequest,
                             >,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                <T as Api>::get_account_proofs(&inner, request).await
+                                <T as Api>::get_account_proof(&inner, request).await
                             };
                             Box::pin(fut)
                         }
@@ -908,7 +908,7 @@ pub mod api_server {
                     let max_encoding_message_size = self.max_encoding_message_size;
                     let inner = self.inner.clone();
                     let fut = async move {
-                        let method = GetAccountProofsSvc(inner);
+                        let method = GetAccountProofSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

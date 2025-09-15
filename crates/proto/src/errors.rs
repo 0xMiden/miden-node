@@ -46,6 +46,8 @@ pub enum ConversionError {
         entity: &'static str,
         source: DeserializationError,
     },
+    #[error("enum variant discriminant out of range")]
+    EnumDiscriminantOutOfRange,
 }
 
 impl ConversionError {

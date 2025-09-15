@@ -24,6 +24,7 @@ protox      = { version = "0.8" }
 tonic-build = { version = "0.13" }
 
 [build-dependencies]
-anyhow = { workspace = true }
+fs-err = { workspace = true }
+miette = { version = "7.6" }
 prost  = { workspace = true }
 protox = { version = "0.8" }

@@ -101,7 +101,7 @@ impl GenesisState {
             empty_nullifier_tree.root(),
             empty_block_note_tree.root(),
             Word::empty(),
-            TransactionKernel::kernel_commitment(),
+            TransactionKernel.to_commitment(),
             Word::empty(),
             self.fee_parameters,
             self.timestamp,

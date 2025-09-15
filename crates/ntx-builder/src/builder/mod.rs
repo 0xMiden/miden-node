@@ -9,6 +9,7 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
 use tokio::sync::{Barrier, Semaphore};
+use tokio::task::{JoinError, JoinHandle, JoinSet};
 use tokio::time;
 use url::Url;
 
@@ -78,7 +79,6 @@ impl NetworkTransactionBuilder {
 
         // Create initial actors for existing accounts.
         let mut actor_registry = HashMap::new();
-        let mut actor_removal_queue = VecDeque::new();
         let notes = store.get_unconsumed_network_notes().await?;
         // Create initial set of actors based on all available notes.
         for note in notes {
@@ -89,37 +89,42 @@ impl NetworkTransactionBuilder {
                 if let Some(account) = account {
                     #[allow(clippy::map_entry, reason = "async closure")]
                     if !actor_registry.contains_key(&prefix) {
-                        let actor = AccountActor::spawn(prefix, account, config.clone()).await?;
-                        actor_registry.insert(prefix, actor);
+                        let (actor, handle) =
+                            AccountActor::new(prefix, account, config.clone()).await?;
+                        actor_registry.insert(prefix, handle);
                     }
                 }
             }
         }
 
         // Main loop which manages actors and passes mempool events to them.
+        let actor_join_set = JoinSet::new();
         loop {
-            // Remove actors that have been marked for removal from the registry.
-            for prefix in actor_removal_queue.drain(..) {
-                if let Some(actor_handle) = actor_registry.remove(&prefix) {
-                    actor_handle.abort();
-                } else {
-                    tracing::error!(
-                        account = %prefix,
-                        "actor not found in registry for removal"
-                    );
-                }
-            }
-
             tokio::select! {
-                // Manage actors periodically..
-                _tick = interval.tick() => {
+                // Handle actor completion.
+                actor_result = actor_join_set.join_next() => {
+                    match actor_result {
+                        Some(Ok(Ok(()))) =>  unreachable!("actor never finishes without error"),
+                        Some(Ok(Err(err))) => {
+                            // ...
+                        }
+                        Some(Err(err)) => {
+                            if err.is_panic() {
+                                tracing::error!("actor join set panicked: {:?}", err);
+                            } else {
+                                tracing::error!("actor join set failed: {:?}", err);
+                            }
+                        },
+                        None => {
+                            tracing::error!("actor join set unexpectedly empty");
+                        }
+                    }
                     for (account_prefix, actor_handle) in &actor_registry {
                         if actor_handle.is_finished() {
                             tracing::error!(
                                 account = %account_prefix,
                                 "actor finished unexpectedly, will respawn on next event"
                             );
-                            actor_removal_queue.push_back(*account_prefix);
                         }
                     }
                 },
@@ -132,7 +137,7 @@ impl NetworkTransactionBuilder {
                     Self::handle_mempool_event(
                         event,
                         &mut actor_registry,
-                        &mut actor_removal_queue,
+                        &mut actor_join_set,
                         config.clone(),
                         &store,
                     ).await?;
@@ -144,7 +149,7 @@ impl NetworkTransactionBuilder {
     async fn handle_mempool_event(
         event: MempoolEvent,
         actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
-        actor_removal_queue: &mut VecDeque<NetworkAccountPrefix>,
+        actor_join_set: &mut JoinSet<anyhow::Result<()>>,
         account_actor_config: AccountActorConfig,
         store: &StoreClient,
     ) -> anyhow::Result<()> {
@@ -158,20 +163,21 @@ impl NetworkTransactionBuilder {
                 for account_prefix in affected_accounts {
                     // Retrieve or create the actor.
                     if let Some(actor_handle) = actor_registry.get(&account_prefix) {
-                        Self::send_event(actor_handle, event.clone(), actor_removal_queue);
+                        Self::send_event(actor_handle, event.clone());
                     } else {
                         // Try creating the actor.
                         let account = store.get_network_account(account_prefix).await?;
                         if let Some(account) = account {
-                            let actor_handle = AccountActor::spawn(
+                            let (actor, handle) = AccountActor::new(
                                 account_prefix,
                                 account,
                                 account_actor_config.clone(),
                             )
                             .await?;
                             // TODO: consider thinner event message.
-                            Self::send_event(&actor_handle, event.clone(), actor_removal_queue);
-                            actor_registry.insert(account_prefix, actor_handle);
+                            actor_join_set.spawn(async move { actor.run().await });
+                            actor_registry.insert(account_prefix, handle);
+                            Self::send_event(&handle, event.clone());
                         } else {
                             tracing::warn!("network account {account_prefix} not found");
                         }
@@ -191,18 +197,13 @@ impl NetworkTransactionBuilder {
     }
 
     /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.
-    fn send_event(
-        actor_handle: &AccountActorHandle,
-        event: MempoolEvent,
-        actor_removal_queue: &mut VecDeque<NetworkAccountPrefix>,
-    ) {
+    fn send_event(actor_handle: &AccountActorHandle, event: MempoolEvent) {
         if let Err(error) = actor_handle.send(event) {
             tracing::warn!(
                 account = %actor_handle.account_prefix,
                 error = ?error,
                 "actor channel disconnected"
             );
-            actor_removal_queue.push_back(actor_handle.account_prefix);
         }
     }
 

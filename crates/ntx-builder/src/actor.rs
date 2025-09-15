@@ -7,10 +7,8 @@ use miden_objects::account::Account;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{Semaphore, mpsc};
-use tracing::instrument;
 use url::Url;
 
-use crate::COMPONENT;
 use crate::block_producer::BlockProducerClient;
 use crate::state::State;
 use crate::store::{StoreClient, StoreError};
@@ -31,21 +29,12 @@ pub struct AccountActorConfig {
 pub struct AccountActorHandle {
     pub account_prefix: NetworkAccountPrefix,
     pub event_tx: mpsc::UnboundedSender<MempoolEvent>,
-    pub join_handle: tokio::task::JoinHandle<()>,
 }
 
 impl AccountActorHandle {
     pub fn send(&self, msg: MempoolEvent) -> anyhow::Result<()> {
         self.event_tx.send(msg)?;
         Ok(())
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.join_handle.is_finished()
-    }
-
-    pub fn abort(&self) {
-        self.join_handle.abort();
     }
 }
 
@@ -60,53 +49,31 @@ pub struct AccountActor {
 }
 
 impl AccountActor {
-    async fn new(
+    pub async fn new(
         account_prefix: NetworkAccountPrefix,
         account: Account,
-        event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
         config: AccountActorConfig,
-    ) -> Result<Self, StoreError> {
+    ) -> Result<(Self, AccountActorHandle), StoreError> {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let store = StoreClient::new(config.store_url.clone());
         let state = State::load(account_prefix, account, store).await?;
         let semaphore = config.semaphore;
-        Ok(Self {
+
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let actor = Self {
             account_prefix,
             state,
             event_rx,
             block_producer,
             prover,
             semaphore,
-        })
+        };
+        let handle = AccountActorHandle { account_prefix, event_tx };
+        Ok((actor, handle))
     }
 
-    /// Spawns the actor and returns a handle to it.
-    pub async fn spawn(
-        account_prefix: NetworkAccountPrefix,
-        account: Account,
-        config: AccountActorConfig,
-    ) -> Result<AccountActorHandle, StoreError> {
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-
-        let actor = AccountActor::new(account_prefix, account, event_rx, config).await?;
-
-        let join_handle = tokio::spawn(async move {
-            if let Err(error) = actor.run().await {
-                tracing::error!(
-                    account = %account_prefix,
-                    error = ?error,
-                    "account actor failed"
-                );
-            }
-            // TODO: send a message back to the coordinator with the error?
-        });
-
-        Ok(AccountActorHandle { account_prefix, event_tx, join_handle })
-    }
-
-    #[instrument(target = COMPONENT, name = "account_actor.run", skip_all)]
-    async fn run(mut self) -> anyhow::Result<()> {
+    pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             // First, process all available events to prevent starvation.
             loop {

@@ -109,36 +109,32 @@ message AccountProofRequest {
     message AccountDetailRequest {
         // Represents a storage slot index and the associated map keys.
         message StorageMapDetailRequest {
+            // Indirection required for use in `oneof {..}` block.
             message MapKeys {
-                // A list of map keys (Digests) associated with this storage slot.
+                // A list of map keys associated with this storage slot.
                 repeated primitives.Digest map_keys = 1;
             }
-            // Storage slot index ([0..255])
+            // Storage slot index (`[0..255]`).
             uint32 slot_index = 1;
 
             oneof slot_data {
-                // A flag asking to return all storage map data; valid only for small storage maps
-                // (e.g., with fewer than 1000 entries).
+                // Request to return all storage map data. If the number exceeds a threshold of 1000 entries,
+                // the response will not contain them but must be requested separately.
                 bool all_entries = 2;
 
-                // A list of map keys (Digests) associated with this storage slot.
+                // A list of map keys associated with the given storage slot identified by `slot_index`.
                 MapKeys map_keys = 3;
             }
         }
 
         // Last known code commitment to the client. The response will include account code
-        // only if its commitment is different from this value.
-        //
-        // We could also extend this methodology to account storage and asset vault to return
-        // data only if the client doesn't already have it.
-        primitives.Digest code_commitment = 1;
+        // only if its commitment is different from this value or if the value is not present.
+        optional primitives.Digest code_commitment = 1;
 
-        // A flag indicating whether the response should include asset vault data; assets
-        // will be returned only if the account contains a small number of assets
-        // (e.g., under 1000).
+        // A flag indicating whether to include asset vault data.
         //
-        // We could also make this more granular and request assets under specific keys, but
-        // I'm not sure this is needed at the moment.
+        // Assets will only be returned for small accounts with less than 100 asset entries,
+        // otherwise they have to be requested separately.
         bool include_assets = 2;
 
         // Additional request per storage map.

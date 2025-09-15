@@ -16,7 +16,7 @@ workspace = true
 
 [dependencies]
 anyhow           = { workspace = true }
-axum             = { version = "0.8.4" }
+axum             = { version = "0.8" }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 serde            = { features = ["derive"], version = "1.0" }

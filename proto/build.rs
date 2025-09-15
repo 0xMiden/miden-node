@@ -84,7 +84,8 @@ fn main() -> miette::Result<()> {
     let errors_file_descriptor = protox::compile([ERRORS_PROTO], includes)?;
     let errors_path = PathBuf::from(&out).join(ERRORS_DESCRIPTOR);
     fs::write(&errors_path, errors_file_descriptor.encode_to_vec())
-        .context("writing errors file descriptor")?;
+        .into_diagnostic()
+        .wrap_err("writing errors file descriptor")?;
 
     Ok(())
 }

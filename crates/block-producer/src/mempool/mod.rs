@@ -27,6 +27,7 @@ use crate::{COMPONENT, DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH}
 mod batch_graph;
 mod graph;
 mod inflight_state;
+mod state_dag;
 mod subscription;
 mod transaction_expiration;
 mod transaction_graph;

@@ -29,24 +29,44 @@ use crate::store::StoreClient;
 /// transactions that consume them (reaching out to the store to retrieve state as necessary).
 pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
-    pub store_url: Url,
+    store_url: Url,
     /// Address of the block producer gRPC server.
-    pub block_producer_url: Url,
+    block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the perofmrance impact.
-    pub tx_prover_url: Option<Url>,
+    tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
-    pub ticker_interval: Duration,
+    ticker_interval: Duration,
     /// A checkpoint used to sync start-up process with the block-producer.
     ///
     /// This informs the block-producer when we have subscribed to mempool events and that it is
     /// safe to begin block-production.
-    pub bp_checkpoint: Arc<Barrier>,
+    bp_checkpoint: Arc<Barrier>,
+
+    actor_registry: HashMap<NetworkAccountPrefix, AccountActorHandle>,
+    actor_join_set: JoinSet<Result<(), AccountActorError>>,
 }
 
 impl NetworkTransactionBuilder {
-    /// ... todo
-    pub async fn serve_new(self) -> anyhow::Result<()> {
+    pub fn new(
+        store_url: Url,
+        block_producer_url: Url,
+        tx_prover_url: Option<Url>,
+        ticker_interval: Duration,
+        bp_checkpoint: Arc<Barrier>,
+    ) -> Self {
+        Self {
+            store_url,
+            block_producer_url,
+            tx_prover_url,
+            ticker_interval,
+            bp_checkpoint,
+            actor_registry: HashMap::new(),
+            actor_join_set: JoinSet::new(),
+        }
+    }
+
+    pub async fn run(mut self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url.clone());
         let block_producer = BlockProducerClient::new(self.block_producer_url.clone());
 
@@ -71,14 +91,13 @@ impl NetworkTransactionBuilder {
         // Create a semaphore to limit the number of in-progress transactions across all actors.
         let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
         let config = AccountActorConfig {
-            store_url: self.store_url,
-            block_producer_url: self.block_producer_url,
-            tx_prover_url: self.tx_prover_url,
+            store_url: self.store_url.clone(),
+            block_producer_url: self.block_producer_url.clone(),
+            tx_prover_url: self.tx_prover_url.clone(),
             semaphore,
         };
 
         // Create initial actors for existing accounts.
-        let mut actor_registry = HashMap::new();
         let notes = store.get_unconsumed_network_notes().await?;
         // Create initial set of actors based on all available notes.
         for note in notes {
@@ -88,21 +107,20 @@ impl NetworkTransactionBuilder {
                 let account = store.get_network_account(prefix).await?; // TODO: should we add a batch endpoint for this?
                 if let Some(account) = account {
                     #[allow(clippy::map_entry, reason = "async closure")]
-                    if !actor_registry.contains_key(&prefix) {
+                    if !self.actor_registry.contains_key(&prefix) {
                         let (_actor, handle) =
                             AccountActor::new(prefix, account, config.clone()).await?;
-                        actor_registry.insert(prefix, handle);
+                        self.actor_registry.insert(prefix, handle);
                     }
                 }
             }
         }
 
         // Main loop which manages actors and passes mempool events to them.
-        let mut actor_join_set: JoinSet<Result<(), AccountActorError>> = JoinSet::new();
         loop {
             tokio::select! {
                 // Handle actor completion.
-                actor_result = actor_join_set.join_next() => {
+                actor_result = self.actor_join_set.join_next() => {
                     match actor_result {
                         Some(Ok(Ok(()))) =>  unreachable!("actor never finishes without error"),
                         Some(Ok(Err(err))) => {
@@ -121,7 +139,7 @@ impl NetworkTransactionBuilder {
                                 }
                                 AccountActorError::AccountCreationReverted(prefix) => {
                                     tracing::info!(prefix = ?prefix, "actor stopped due to account creation being reverted");
-                                    actor_registry.remove(&prefix);
+                                    self.actor_registry.remove(&prefix);
                                 }
                             }
                         }
@@ -139,7 +157,7 @@ impl NetworkTransactionBuilder {
                         }
                     }
                     // Clean up finished actors
-                    for account_prefix in actor_registry.keys() {
+                    for account_prefix in self.actor_registry.keys() {
                         tracing::debug!(
                             account = %account_prefix,
                             "checking actor status"
@@ -152,10 +170,8 @@ impl NetworkTransactionBuilder {
                         .context("mempool event stream ended")?
                         .context("mempool event stream failed")?;
 
-                    Self::handle_mempool_event(
+                    self.handle_mempool_event(
                         event,
-                        &mut actor_registry,
-                        &mut actor_join_set,
                         config.clone(),
                         &store,
                     ).await?;
@@ -165,9 +181,8 @@ impl NetworkTransactionBuilder {
     }
 
     async fn handle_mempool_event(
+        &mut self,
         event: MempoolEvent,
-        actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
-        actor_join_set: &mut JoinSet<Result<(), AccountActorError>>,
         account_actor_config: AccountActorConfig,
         store: &StoreClient,
     ) -> anyhow::Result<()> {
@@ -180,7 +195,7 @@ impl NetworkTransactionBuilder {
 
                 for account_prefix in affected_accounts {
                     // Retrieve or create the actor.
-                    if let Some(actor_handle) = actor_registry.get(&account_prefix) {
+                    if let Some(actor_handle) = self.actor_registry.get(&account_prefix) {
                         Self::send_event(actor_handle, event.clone());
                     } else {
                         // Try creating the actor.
@@ -192,10 +207,10 @@ impl NetworkTransactionBuilder {
                                 account_actor_config.clone(),
                             )
                             .await?;
-                            actor_join_set.spawn(async move { actor.run().await });
+                            self.actor_join_set.spawn(async move { actor.run().await });
                             // TODO: consider thinner event message.
                             Self::send_event(&handle, event.clone());
-                            actor_registry.insert(account_prefix, handle);
+                            self.actor_registry.insert(account_prefix, handle);
                         } else {
                             tracing::warn!("network account {account_prefix} not found");
                         }
@@ -204,10 +219,10 @@ impl NetworkTransactionBuilder {
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
-                for (_, actor_handle) in actor_registry.iter() {
+                self.actor_registry.iter().for_each(|(_, actor_handle)| {
                     // TODO: consider thinner event message.
                     Self::send_event(actor_handle, event.clone());
-                }
+                });
             },
         }
 

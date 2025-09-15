@@ -120,11 +120,11 @@ impl BundledCommand {
     async fn start(
         rpc_url: Url,
         data_directory: PathBuf,
-        ntx_builder: NtxBuilderConfig,
+        ntx_config: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
         grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
-        let should_start_ntb = !ntx_builder.disabled;
+        let should_start_ntb = !ntx_config.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
         // before each component is fully started up.
         //
@@ -249,14 +249,14 @@ impl BundledCommand {
                     let block_producer_url =
                         Url::parse(&format!("http://{block_producer_address}"))
                             .context("Failed to parse URL")?;
-                    NetworkTransactionBuilder {
-                        store_url: store_ntx_builder_url,
+                    NetworkTransactionBuilder::new(
+                        store_ntx_builder_url,
                         block_producer_url,
-                        tx_prover_url: ntx_builder.tx_prover_url,
-                        ticker_interval: ntx_builder.ticker_interval,
-                        bp_checkpoint: checkpoint,
-                    }
-                    .serve_new()
+                        ntx_config.tx_prover_url,
+                        ntx_config.ticker_interval,
+                        checkpoint,
+                    )
+                    .run()
                     .await
                     .context("failed while serving ntx builder component")
                 })

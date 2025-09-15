@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::{Account, AccountId, PartialAccount};
+use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
 use miden_objects::asset::AssetWitness;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
@@ -305,6 +305,38 @@ impl DataStore for NtxDataStore {
                     source: Some(Box::new(err)),
                 }
             })
+        }
+    }
+
+    fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        map_root: Word,
+        map_key: Word,
+    ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
+        let account = self.account.clone();
+        async move {
+            if account.id() != account_id {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
+
+            let mut map_witness = None;
+            for slot in account.storage().slots() {
+                if let StorageSlot::Map(map) = slot {
+                    if map.root() == map_root {
+                        map_witness = Some(map.open(&map_key));
+                    }
+                }
+            }
+
+            if let Some(map_witness) = map_witness {
+                Ok(map_witness)
+            } else {
+                Err(DataStoreError::Other {
+                    error_msg: "account storage does not contain the expected root".into(),
+                    source: None,
+                })
+            }
         }
     }
 }

@@ -14,6 +14,7 @@ use miden_objects::transaction::{PartialBlockchain, TransactionId};
 use tracing::instrument;
 
 use crate::COMPONENT;
+use crate::actor::AccountActorError;
 use crate::store::{StoreClient, StoreError};
 
 mod account;
@@ -164,7 +165,7 @@ impl State {
 
     /// Updates state with the mempool event.
     #[instrument(target = COMPONENT, name = "ntx.state.mempool_update", skip_all)]
-    pub async fn mempool_update(&mut self, update: MempoolEvent) -> anyhow::Result<()> {
+    pub async fn mempool_update(&mut self, update: MempoolEvent) -> Result<(), AccountActorError> {
         let span = tracing::Span::current();
         span.set_attribute("mempool_event.kind", update.kind());
 
@@ -180,12 +181,12 @@ impl State {
                 self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
             MempoolEvent::BlockCommitted { header, txs } => {
-                anyhow::ensure!(
-                    header.prev_block_commitment() == self.chain_tip_header.commitment(),
-                    "New block's parent commitment {} does not match local chain tip {}",
-                    header.prev_block_commitment(),
-                    self.chain_tip_header.commitment()
-                );
+                if header.prev_block_commitment() == self.chain_tip_header.commitment() {
+                    return Err(AccountActorError::CommittedBlockMismatch {
+                        parent_block: header.prev_block_commitment(),
+                        current_block: self.chain_tip_header.commitment(),
+                    });
+                }
                 self.update_chain_tip(header);
                 for tx in txs {
                     self.commit_transaction(tx);
@@ -278,10 +279,10 @@ impl State {
     }
 
     /// Handles [`MempoolEvent::TransactionsReverted`] events.
-    fn revert_transaction(&mut self, tx: TransactionId) -> anyhow::Result<()> {
+    fn revert_transaction(&mut self, tx: TransactionId) -> Result<(), AccountActorError> {
         // We only track transactions which have an impact on the network state.
         let Some(impact) = self.inflight_txs.remove(&tx) else {
-            // TODO: log something? handle this differently?
+            tracing::debug!("transaction {tx} not found in inflight transactions");
             return Ok(());
         };
 
@@ -289,9 +290,7 @@ impl State {
         if let Some(account_prefix) = impact.account_delta {
             // Account creation reverted, actor must stop.
             if account_prefix == self.account_prefix && self.account.revert_delta() {
-                tracing::info!("account {} creation reverted", account_prefix);
-                // TODO: Do we actually want to error out here?
-                anyhow::bail!("account actor received account creation revert transaction");
+                return Err(AccountActorError::AccountCreationReverted(account_prefix));
             }
         }
 

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -9,12 +9,12 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
 use tokio::sync::{Barrier, Semaphore};
-use tokio::task::{JoinError, JoinHandle, JoinSet};
+use tokio::task::JoinSet;
 use tokio::time;
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
-use crate::actor::{AccountActor, AccountActorConfig, AccountActorHandle};
+use crate::actor::{AccountActor, AccountActorConfig, AccountActorError, AccountActorHandle};
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
 
@@ -89,7 +89,7 @@ impl NetworkTransactionBuilder {
                 if let Some(account) = account {
                     #[allow(clippy::map_entry, reason = "async closure")]
                     if !actor_registry.contains_key(&prefix) {
-                        let (actor, handle) =
+                        let (_actor, handle) =
                             AccountActor::new(prefix, account, config.clone()).await?;
                         actor_registry.insert(prefix, handle);
                     }
@@ -98,7 +98,7 @@ impl NetworkTransactionBuilder {
         }
 
         // Main loop which manages actors and passes mempool events to them.
-        let actor_join_set = JoinSet::new();
+        let mut actor_join_set: JoinSet<Result<(), AccountActorError>> = JoinSet::new();
         loop {
             tokio::select! {
                 // Handle actor completion.
@@ -106,26 +106,43 @@ impl NetworkTransactionBuilder {
                     match actor_result {
                         Some(Ok(Ok(()))) =>  unreachable!("actor never finishes without error"),
                         Some(Ok(Err(err))) => {
-                            // ...
+                            match err {
+                                AccountActorError::ChannelClosed => {
+                                    // TODO: Handle coordinator channel closed
+                                    tracing::error!(err = ?err, "actor stopped due to closed channel");
+                                }
+                                AccountActorError::SemaphoreError(_) => {
+                                    // TODO: Handle semaphore acquisition failure
+                                    tracing::error!(err = ?err, "actor stopped due to semaphore error");
+                                }
+                                AccountActorError::CommittedBlockMismatch{..} => {
+                                    // TODO: Handle mismatched committed block
+                                    tracing::error!(err = ?err, "actor stopped due to mismatched committed block");
+                                }
+                                AccountActorError::AccountCreationReverted(prefix) => {
+                                    tracing::info!(prefix = ?prefix, "actor stopped due to account creation being reverted");
+                                }
+                            }
                         }
                         Some(Err(err)) => {
                             if err.is_panic() {
-                                tracing::error!("actor join set panicked: {:?}", err);
+                                tracing::error!(err = ?err, "actor join set panicked");
+                                // TODO: exit?
                             } else {
-                                tracing::error!("actor join set failed: {:?}", err);
+                                tracing::error!(err = ?err, "actor join set failed");
+                                // TODO: exit?
                             }
                         },
                         None => {
                             tracing::error!("actor join set unexpectedly empty");
                         }
                     }
-                    for (account_prefix, actor_handle) in &actor_registry {
-                        if actor_handle.is_finished() {
-                            tracing::error!(
-                                account = %account_prefix,
-                                "actor finished unexpectedly, will respawn on next event"
-                            );
-                        }
+                    // Clean up finished actors
+                    for account_prefix in actor_registry.keys() {
+                        tracing::debug!(
+                            account = %account_prefix,
+                            "checking actor status"
+                        );
                     }
                 },
                 // Handle mempool events.
@@ -149,7 +166,7 @@ impl NetworkTransactionBuilder {
     async fn handle_mempool_event(
         event: MempoolEvent,
         actor_registry: &mut HashMap<NetworkAccountPrefix, AccountActorHandle>,
-        actor_join_set: &mut JoinSet<anyhow::Result<()>>,
+        actor_join_set: &mut JoinSet<Result<(), AccountActorError>>,
         account_actor_config: AccountActorConfig,
         store: &StoreClient,
     ) -> anyhow::Result<()> {
@@ -174,10 +191,10 @@ impl NetworkTransactionBuilder {
                                 account_actor_config.clone(),
                             )
                             .await?;
-                            // TODO: consider thinner event message.
                             actor_join_set.spawn(async move { actor.run().await });
-                            actor_registry.insert(account_prefix, handle);
+                            // TODO: consider thinner event message.
                             Self::send_event(&handle, event.clone());
+                            actor_registry.insert(account_prefix, handle);
                         } else {
                             tracing::warn!("network account {account_prefix} not found");
                         }
@@ -188,7 +205,7 @@ impl NetworkTransactionBuilder {
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
                 for (_, actor_handle) in actor_registry.iter() {
                     // TODO: consider thinner event message.
-                    Self::send_event(actor_handle, event.clone(), actor_removal_queue);
+                    Self::send_event(actor_handle, event.clone());
                 }
             },
         }

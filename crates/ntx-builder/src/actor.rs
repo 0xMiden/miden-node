@@ -3,6 +3,7 @@ use std::sync::Arc;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
+use miden_objects::Word;
 use miden_objects::account::Account;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::mpsc::error::TryRecvError;
@@ -13,6 +14,30 @@ use crate::block_producer::BlockProducerClient;
 use crate::state::State;
 use crate::store::{StoreClient, StoreError};
 use crate::transaction::NtxError;
+
+// ERRORS
+// ================================================================================================
+
+/// Errors that can occur during `AccountActor` execution
+#[derive(Debug, thiserror::Error)]
+pub enum AccountActorError {
+    /// Channel to coordinator was closed
+    #[error("coordinator channel closed")]
+    ChannelClosed,
+
+    /// Failed to acquire semaphore permit
+    #[error("failed to acquire semaphore permit: {0}")]
+    SemaphoreError(#[from] tokio::sync::AcquireError),
+
+    #[error(
+        "new block's parent commitment {parent_block} does not match local chain tip {current_block}"
+    )]
+    CommittedBlockMismatch { parent_block: Word, current_block: Word },
+
+    /// Failed to update mempool state
+    #[error("account creation reverted: {0}")]
+    AccountCreationReverted(NetworkAccountPrefix),
+}
 
 #[derive(Debug, Clone)]
 pub struct AccountActorConfig {
@@ -73,7 +98,7 @@ impl AccountActor {
         Ok((actor, handle))
     }
 
-    pub async fn run(mut self) -> anyhow::Result<()> {
+    pub async fn run(mut self) -> Result<(), AccountActorError> {
         loop {
             // First, process all available events to prevent starvation.
             loop {
@@ -87,14 +112,14 @@ impl AccountActor {
                         break;
                     },
                     Err(TryRecvError::Disconnected) => {
-                        anyhow::bail!("coordinator channel closed");
+                        return Err(AccountActorError::ChannelClosed);
                     },
                 }
             }
 
             // Acquire permit and execute transactions.
             let semaphore = self.semaphore.clone();
-            let _permit = semaphore.acquire().await?;
+            let _permit = semaphore.acquire().await.map_err(AccountActorError::SemaphoreError)?;
             self.execute_transactions().await;
         }
     }

@@ -19,6 +19,7 @@ use miden_node_proto::generated::rpc::RpcStatus;
 use miden_node_proto::generated::rpc_store::StoreStatus;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tokio::time::MissedTickBehavior;
 use tracing::instrument;
 use url::Url;
 
@@ -411,7 +412,13 @@ pub async fn check_status(
         })
         .collect();
 
+    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    // Don't delay the first tick
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
     loop {
+        interval.tick().await;
+
         let current_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .context("failed to get current time")?
@@ -437,7 +444,5 @@ pub async fn check_status(
             status.services = services;
             status.last_updated = current_time;
         }
-
-        tokio::time::sleep(Duration::from_secs(3)).await;
     }
 }

@@ -16,6 +16,9 @@ use tracing::{error, info};
 /// Component identifier for structured logging and tracing
 pub const COMPONENT: &str = "miden-network-monitor";
 
+// MAIN
+// ================================================================================================
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;

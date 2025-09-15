@@ -1,3 +1,8 @@
+//! Network monitor status checker.
+//!
+//! This module contains the logic for checking the status of the network monitor.
+//! It is used to check the status of the network monitor and to update the shared status.
+
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -19,6 +24,14 @@ use url::Url;
 
 use crate::COMPONENT;
 
+// SERVICE STATUS CHECKER
+// ================================================================================================
+
+/// Status of a service.
+///
+/// This struct contains the status of a service, the last time it was checked, and any errors that
+/// occurred. It also contains the details of the service, which is a union of the details of the
+/// service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceStatus {
     pub name: String,
@@ -28,12 +41,19 @@ pub struct ServiceStatus {
     pub details: Option<ServiceDetails>,
 }
 
+/// Details of a service.
+///
+/// This struct contains the details of a service, which is a union of the details of the service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceDetails {
     pub rpc_status: Option<RpcStatusDetails>,
     pub remote_prover_statuses: Vec<RemoteProverStatusDetails>,
 }
 
+/// Details of an RPC service.
+///
+/// This struct contains the details of an RPC service, which is a union of the details of the RPC
+/// service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RpcStatusDetails {
     pub version: String,
@@ -42,6 +62,10 @@ pub struct RpcStatusDetails {
     pub block_producer_status: Option<BlockProducerStatusDetails>,
 }
 
+/// Details of a store service.
+///
+/// This struct contains the details of a store service, which is a union of the details of the
+/// store service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoreStatusDetails {
     pub version: String,
@@ -49,12 +73,20 @@ pub struct StoreStatusDetails {
     pub chain_tip: u32,
 }
 
+/// Details of a block producer service.
+///
+/// This struct contains the details of a block producer service, which is a union of the details
+/// of the block producer service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockProducerStatusDetails {
     pub version: String,
     pub status: String,
 }
 
+/// Details of a remote prover service.
+///
+/// This struct contains the details of a remote prover service, which is a union of the details
+/// of the remote prover service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteProverStatusDetails {
     pub name: String,
@@ -64,6 +96,10 @@ pub struct RemoteProverStatusDetails {
     pub workers: Vec<WorkerStatusDetails>,
 }
 
+/// Details of a worker service.
+///
+/// This struct contains the details of a worker service, which is a union of the details of the
+/// worker service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatusDetails {
     pub address: String,
@@ -71,15 +107,27 @@ pub struct WorkerStatusDetails {
     pub status: String,
 }
 
+/// Status of a network.
+///
+/// This struct contains the status of a network, which is a union of the status of the network.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkStatus {
     pub services: Vec<ServiceStatus>,
     pub last_updated: u64,
 }
 
+/// Shared status of the network.
+///
+/// This struct contains the shared status of the network, which is a union of the shared status of
+/// the network.
 pub type SharedStatus = Arc<Mutex<NetworkStatus>>;
 
-// From implementations for converting gRPC types to domain types
+// FROM IMPLEMENTATIONS
+// ================================================================================================
+
+/// From implementations for converting gRPC types to domain types
+///
+/// This implementation converts a `StoreStatus` to a `StoreStatusDetails`.
 impl From<StoreStatus> for StoreStatusDetails {
     fn from(status: StoreStatus) -> Self {
         Self {
@@ -148,14 +196,30 @@ impl From<RpcStatus> for RpcStatusDetails {
     }
 }
 
+// MONITOR CONFIGURATION
+// ================================================================================================
+
+/// Configuration for the monitor.
+///
+/// This struct contains the configuration for the monitor.
 #[derive(Debug, Clone)]
 pub struct MonitorConfig {
+    /// The URL of the RPC service.
     pub rpc_url: Url,
+    /// The URLs of the remote provers.
     pub remote_prover_urls: Vec<Url>,
+    /// The port of the monitor.
     pub port: u16,
 }
 
 impl MonitorConfig {
+    /// Loads the configuration from the environment variables.
+    ///
+    /// This function loads the configuration from the environment variables.
+    /// The environment variables are:
+    /// - `MIDEN_MONITOR_RPC_URL`: The URL of the RPC service.
+    /// - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: The URLs of the remote provers, comma separated.
+    /// - `MIDEN_MONITOR_PORT`: The port of the monitor.
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         let rpc_url = std::env::var("MIDEN_MONITOR_RPC_URL")
             .unwrap_or_else(|_| "http://localhost:50051".to_string());
@@ -183,6 +247,21 @@ impl MonitorConfig {
     }
 }
 
+// RPC STATUS CHECKER
+// ================================================================================================
+
+/// Checks the status of the RPC service.
+///
+/// This function checks the status of the RPC service.
+///
+/// # Arguments
+///
+/// * `rpc` - The RPC client.
+/// * `current_time` - The current time.
+///
+/// # Returns
+///
+/// A `ServiceStatus` containing the status of the RPC service.
 #[instrument(target = COMPONENT, name = "check-status.rpc", skip_all, ret(level = "info"))]
 async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
@@ -216,6 +295,23 @@ async fn check_rpc_status(
     }
 }
 
+// REMOTE PROVER STATUS CHECKER
+// ================================================================================================
+
+/// Checks the status of the remote prover service.
+///
+/// This function checks the status of the remote prover service.
+///
+/// # Arguments
+///
+/// * `remote_prover` - The remote prover client.
+/// * `name` - The name of the remote prover.
+/// * `url` - The URL of the remote prover.
+/// * `current_time` - The current time.
+///
+/// # Returns
+///
+/// A `ServiceStatus` containing the status of the remote prover service.
 #[instrument(target = COMPONENT, name = "check-status.remote-prover", skip_all, ret(level = "info"))]
 async fn check_remote_prover_status(
     remote_prover: &mut miden_node_proto::clients::RemoteProverProxyClient,
@@ -261,6 +357,29 @@ async fn check_remote_prover_status(
     }
 }
 
+// NETWORK STATUS CHECKER
+// ================================================================================================
+
+/// Checks the status of the network.
+///
+/// This function checks the status of the network.
+///
+/// # Arguments
+///
+/// * `shared_status` - The shared status of the network.
+/// * `config` - The configuration for the monitor.
+///
+/// # Returns
+///
+/// A Result containing the status of the network.
+///
+/// # Errors
+///
+/// This function can return an error if the current time cannot be retrieved.
+///
+/// # Panics
+///
+/// This function can panic if the shared status cannot be locked.
 #[instrument(target = COMPONENT, name = "check-status", skip_all, ret(level = "info"), err)]
 pub async fn check_status(
     shared_status: SharedStatus,

@@ -1,97 +1,59 @@
 #[cfg(test)]
 mod tests {
     use miden_node_proto::generated::errors::SubmitProvenTransactionError;
+    use miden_objects::Word;
     use miden_objects::block::BlockNumber;
+    use miden_objects::note::{NoteId, Nullifier};
+    use miden_tx::utils::DeserializationError;
 
-    use crate::errors::AddTransactionError;
+    use crate::errors::{AddTransactionError, VerifyTxError};
 
-    // Helper function to parse error code from a tonic::Status
-    fn parse_error_code(status: &tonic::Status) -> Option<u8> {
-        let details_bytes = status.details();
-        if details_bytes.len() == 1 {
-            Some(details_bytes[0])
-        } else {
-            None
-        }
-    }
-
+    #[rstest::rstest]
     #[test]
-    fn test_stale_inputs_error() {
-        let input_block = BlockNumber::from_epoch(100);
-        let stale_limit = BlockNumber::from_epoch(150);
+    #[case::inputs_already_consumed_error(
+        AddTransactionError::VerificationFailed(
+            VerifyTxError::InputNotesAlreadyConsumed(vec![Nullifier::dummy(1)])
+        ),
+        SubmitProvenTransactionError::InputNotesAlreadyConsumed,
+        "verification failed",
+    )]
+    #[case::unauthenticated_notes_not_found_error(
+        AddTransactionError::VerificationFailed(
+            VerifyTxError::UnauthenticatedNotesNotFound(vec![NoteId::new(Word::default(), Word::default())])
+        ),
+        SubmitProvenTransactionError::UnauthenticatedNotesNotFound,
+        "verification failed",
+    )]
+    #[case::stale_inputs_error(
+        AddTransactionError::StaleInputs { input_block: BlockNumber::from(100), stale_limit: BlockNumber::from(150) },
+        SubmitProvenTransactionError::InternalError,
+        "Internal error",
+    )]
+    #[case::expired_error(
+        AddTransactionError::Expired { expired_at: BlockNumber::from(200), limit: BlockNumber::from(250) },
+        SubmitProvenTransactionError::TransactionExpired,
+        "expired",
+    )]
+    #[case::transaction_deserialization_failed_error(
+        AddTransactionError::TransactionDeserializationFailed(DeserializationError::InvalidValue("test error".to_string())),
+        SubmitProvenTransactionError::DeserializationFailed,
+        "deserialization",
+    )]
+    fn submit_transaction_error_mapping(
+        #[case] uut: AddTransactionError,
+        #[case] expected: SubmitProvenTransactionError,
+        #[case] message: &str,
+    ) {
+        let status = tonic::Status::from(uut);
+        assert_eq!(status.code(), expected.tonic_code());
+        assert!(status.message().contains(message));
 
-        let error = AddTransactionError::StaleInputs { input_block, stale_limit };
-
-        let status: tonic::Status = error.into();
-
-        assert_eq!(status.code(), tonic::Code::Internal);
-        assert!(status.message().contains("stale"));
-
-        let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitProvenTransactionError::InternalError as u8);
-    }
-
-    #[test]
-    fn test_expired_error() {
-        let expired_at = BlockNumber::from_epoch(200);
-        let limit = BlockNumber::from_epoch(250);
-
-        let error = AddTransactionError::Expired { expired_at, limit };
-
-        let status: tonic::Status = error.into();
-
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-        assert!(status.message().contains("expired"));
-
-        let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitProvenTransactionError::TransactionExpired as u8);
-    }
-
-    #[test]
-    fn test_deserialization_failed_error() {
-        use miden_objects::utils::DeserializationError;
-
-        let source_error = DeserializationError::InvalidValue("test error".to_string());
-        let error = AddTransactionError::TransactionDeserializationFailed(source_error);
-
-        let status: tonic::Status = error.into();
-
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-        assert!(status.message().contains("deserialization"));
-
-        let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitProvenTransactionError::DeserializationFailed as u8);
-    }
-
-    #[test]
-    fn test_verification_errors() {
-        use miden_objects::Word;
-        use miden_objects::note::{NoteId, Nullifier};
-
-        use crate::errors::VerifyTxError;
-
-        // Test InputNotesAlreadyConsumed
-        let nullifiers = vec![Nullifier::dummy(1)];
-        let verify_error = VerifyTxError::InputNotesAlreadyConsumed(nullifiers);
-        let error = AddTransactionError::VerificationFailed(verify_error);
-        let status: tonic::Status = error.into();
-
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-        assert!(status.message().contains("verification failed"));
-
-        let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitProvenTransactionError::InputNotesAlreadyConsumed as u8);
-
-        // Test UnauthenticatedNotesNotFound
-        let note_ids = vec![NoteId::new(Word::default(), Word::default())];
-        let verify_error = VerifyTxError::UnauthenticatedNotesNotFound(note_ids);
-        let error = AddTransactionError::VerificationFailed(verify_error);
-        let status: tonic::Status = error.into();
-
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-        assert!(status.message().contains("verification failed"));
-
-        let error_code = parse_error_code(&status).expect("Expected error code in details");
-        assert_eq!(error_code, SubmitProvenTransactionError::UnauthenticatedNotesNotFound as u8);
+        let api_code = match status.details() {
+            &[single] => single,
+            other => panic!(
+                "Details should contain exactly one byte for the api error code, but got {other:?}"
+            ),
+        };
+        assert_eq!(api_code, expected.api_code());
     }
 }

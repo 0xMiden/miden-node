@@ -51,6 +51,7 @@ miden-objects         = { default-features = true, features = ["testing"], works
 miden-tx              = { features = ["testing"], workspace = true }
 pretty_assertions     = "1.4"
 rand_chacha           = { default-features = false, version = "0.9" }
+rstest                = { workspace = true }
 serial_test           = "3.2"
 tempfile              = { version = "3.20" }
 tokio                 = { features = ["test-util"], workspace = true }

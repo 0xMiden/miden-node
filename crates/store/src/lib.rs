@@ -3,6 +3,7 @@ use std::time::Duration;
 mod blocks;
 mod db;
 mod errors;
+mod foo;
 pub mod genesis;
 mod server;
 pub mod state;

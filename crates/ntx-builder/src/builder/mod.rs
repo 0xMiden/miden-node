@@ -128,10 +128,6 @@ impl NetworkTransactionBuilder {
                                     // TODO: Handle store error
                                     tracing::error!(err = ?err, "actor stopped due to store error");
                                 }
-                                AccountActorError::ChannelClosed => {
-                                    // TODO: Handle coordinator channel closed
-                                    tracing::error!(err = ?err, "actor stopped due to closed channel");
-                                }
                                 AccountActorError::SemaphoreError(_) => {
                                     // TODO: Handle semaphore acquisition failure
                                     tracing::error!(err = ?err, "actor stopped due to semaphore error");

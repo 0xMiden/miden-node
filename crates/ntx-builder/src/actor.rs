@@ -5,12 +5,11 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{Semaphore, mpsc};
 use url::Url;
 
 use crate::block_producer::BlockProducerClient;
-use crate::state::State;
+use crate::state::{State, TransactionCandidate};
 use crate::store::{StoreClient, StoreError};
 use crate::transaction::NtxError;
 
@@ -25,10 +24,6 @@ pub enum AccountActorError {
 
     #[error("failed to use store: {0}")]
     StoreError(#[from] Box<StoreError>),
-
-    /// Channel to coordinator was closed
-    #[error("coordinator channel closed")]
-    ChannelClosed,
 
     /// Failed to acquire semaphore permit
     #[error("failed to acquire semaphore permit: {0}")]
@@ -108,39 +103,37 @@ impl AccountActor {
         };
         let mut state = State::load(self.account_prefix, account, store).await.map_err(Box::new)?;
 
+        let semaphore = self.semaphore.clone();
         loop {
-            // First, process all available events to prevent starvation.
-            loop {
-                match self.event_rx.try_recv() {
-                    Ok(event) => {
-                        state.mempool_update(event).await?;
-                        // Continue processing more events.
-                    },
-                    Err(TryRecvError::Empty) => {
-                        // No more events available, break to execute transactions.
-                        break;
-                    },
-                    Err(TryRecvError::Disconnected) => {
-                        return Err(AccountActorError::ChannelClosed);
-                    },
+            tokio::select! {
+                event = self.event_rx.recv() => {
+                    // End if channel is closed.
+                    let Some(event) = event else {
+                         return Ok(());
+                    };
+                    state.mempool_update(event).await?;
+                },
+                permit = semaphore.acquire() => {
+                    match permit {
+                        Ok(_permit) => {
+                            if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) {
+                                self.execute_transactions(&mut state, tx_candidate).await;
+                            }
+                        }
+                        Err(err) => {
+                            return Err(AccountActorError::SemaphoreError(err));
+                        }
+                    }
                 }
             }
-
-            // Acquire permit and execute transactions.
-            let semaphore = self.semaphore.clone();
-            let _permit = semaphore.acquire().await.map_err(AccountActorError::SemaphoreError)?;
-            self.execute_transactions(&mut state).await;
         }
     }
 
-    async fn execute_transactions(&mut self, state: &mut State) {
-        // Select a transaction to execute.
-        let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
-            tracing::debug!(
-                account = %self.account_prefix,
-                "no candidate network transaction available");
-            return;
-        };
+    async fn execute_transactions(
+        &mut self,
+        state: &mut State,
+        tx_candidate: TransactionCandidate,
+    ) {
         let block_num = tx_candidate.chain_tip_header.block_num();
 
         // Execute the selected transaction.

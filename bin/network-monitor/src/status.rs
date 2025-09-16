@@ -271,7 +271,7 @@ impl From<RpcStatus> for RpcStatusDetails {
 ///
 /// # Returns
 ///
-/// A `JoinHandle` for the spawned task.
+/// `Ok(())` if the task completes successfully, or an error if the task fails.
 #[instrument(target = COMPONENT, name = "rpc-status-task", skip_all)]
 async fn run_rpc_status_task(
     rpc_url: Url,
@@ -360,7 +360,8 @@ async fn check_rpc_status(
 ///
 /// # Returns
 ///
-/// A `Result` indicating success or failure.
+/// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
+/// connection issues or failures while checking the remote prover status.
 #[instrument(target = COMPONENT, name = "remote-prover-status-task", skip_all)]
 async fn run_remote_prover_status_task(
     prover_url: Url,
@@ -506,11 +507,11 @@ async fn update_shared_status(
 ///
 /// # Returns
 ///
-/// A Result indicating success or failure.
-///
-/// # Errors
-///
-/// This function can return an error if tasks fail to spawn or communication fails.
+/// `Ok(())` when the status monitoring coordinator shuts down gracefully. Returns an error if
+/// there are critical failures such as:
+/// - Failed to acquire locks on the shared status during updates
+/// - Watch channel communication between monitoring tasks and coordinator fails
+/// - The main coordinator loop encounters an unrecoverable error while processing status updates
 #[instrument(target = COMPONENT, name = "check-status", skip_all, ret(level = "info"), err)]
 pub async fn check_status(
     shared_status: SharedStatus,

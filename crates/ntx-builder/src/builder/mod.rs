@@ -8,13 +8,13 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
-use tokio::sync::{Barrier, Semaphore};
+use tokio::sync::{Barrier, Semaphore, mpsc};
 use tokio::task::JoinSet;
 use tokio::time;
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
-use crate::actor::{AccountActor, AccountActorConfig, AccountActorError, AccountActorHandle};
+use crate::actor::{AccountActor, AccountActorConfig, AccountActorError};
 use crate::block_producer::BlockProducerClient;
 use crate::store::StoreClient;
 
@@ -42,8 +42,9 @@ pub struct NetworkTransactionBuilder {
     /// This informs the block-producer when we have subscribed to mempool events and that it is
     /// safe to begin block-production.
     bp_checkpoint: Arc<Barrier>,
-
-    actor_registry: HashMap<NetworkAccountPrefix, AccountActorHandle>,
+    /// ...
+    actor_registry: HashMap<NetworkAccountPrefix, mpsc::UnboundedSender<MempoolEvent>>,
+    /// ...
     actor_join_set: JoinSet<Result<(), AccountActorError>>,
 }
 
@@ -186,20 +187,19 @@ impl NetworkTransactionBuilder {
 
                 for account_prefix in affected_accounts {
                     // Retrieve or create the actor.
-                    if let Some(actor_handle) = self.actor_registry.get(&account_prefix) {
-                        Self::send_event(actor_handle, event.clone());
+                    if let Some(event_tx) = self.actor_registry.get(&account_prefix) {
+                        Self::send_event(account_prefix, event_tx, event.clone());
                     } else {
                         // Try creating the actor.
-                        let handle = self.spawn_actor(account_prefix, account_actor_config);
-                        Self::send_event(&handle, event.clone());
+                        let event_tx = self.spawn_actor(account_prefix, account_actor_config);
+                        Self::send_event(account_prefix, &event_tx, event.clone());
                     }
                 }
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
-                self.actor_registry.iter().for_each(|(_, actor_handle)| {
-                    // TODO: consider thinner event message.
-                    Self::send_event(actor_handle, event.clone());
+                self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
+                    Self::send_event(*account_prefix, event_tx, event.clone());
                 });
             },
         }
@@ -209,18 +209,22 @@ impl NetworkTransactionBuilder {
         &mut self,
         account_prefix: NetworkAccountPrefix,
         config: &AccountActorConfig,
-    ) -> AccountActorHandle {
-        let (actor, handle) = AccountActor::new(account_prefix, config);
-        self.actor_registry.insert(account_prefix, handle.clone());
+    ) -> mpsc::UnboundedSender<MempoolEvent> {
+        let (actor, event_tx) = AccountActor::new(account_prefix, config);
+        self.actor_registry.insert(account_prefix, event_tx.clone());
         self.actor_join_set.spawn(async move { actor.run().await });
-        handle
+        event_tx
     }
 
     /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.
-    fn send_event(actor_handle: &AccountActorHandle, event: MempoolEvent) {
-        if let Err(error) = actor_handle.send(event) {
+    fn send_event(
+        account_prefix: NetworkAccountPrefix,
+        event_tx: &mpsc::UnboundedSender<MempoolEvent>,
+        event: MempoolEvent,
+    ) {
+        if let Err(error) = event_tx.send(event) {
             tracing::warn!(
-                account = %actor_handle.account_prefix,
+                account = %account_prefix,
                 error = ?error,
                 "actor channel disconnected"
             );

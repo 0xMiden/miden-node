@@ -51,19 +51,6 @@ pub struct AccountActorConfig {
     pub tx_prover_url: Option<Url>,
 }
 
-#[derive(Clone)]
-pub struct AccountActorHandle {
-    pub account_prefix: NetworkAccountPrefix,
-    pub event_tx: mpsc::UnboundedSender<MempoolEvent>,
-}
-
-impl AccountActorHandle {
-    pub fn send(&self, msg: MempoolEvent) -> anyhow::Result<()> {
-        self.event_tx.send(msg)?;
-        Ok(())
-    }
-}
-
 /// Account actor that manages state and processes transactions for a single network account.
 pub struct AccountActor {
     account_prefix: NetworkAccountPrefix,
@@ -78,7 +65,7 @@ impl AccountActor {
     pub fn new(
         account_prefix: NetworkAccountPrefix,
         config: &AccountActorConfig,
-    ) -> (Self, AccountActorHandle) {
+    ) -> (Self, mpsc::UnboundedSender<MempoolEvent>) {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
@@ -91,8 +78,7 @@ impl AccountActor {
             prover,
             semaphore,
         };
-        let handle = AccountActorHandle { account_prefix, event_tx };
-        (actor, handle)
+        (actor, event_tx)
     }
 
     pub async fn run(mut self) -> Result<(), AccountActorError> {

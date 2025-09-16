@@ -7,6 +7,7 @@ use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
+use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
 use tokio::sync::{Barrier, Semaphore};
 use tokio::task::JoinSet;
@@ -108,9 +109,7 @@ impl NetworkTransactionBuilder {
                 if let Some(account) = account {
                     #[allow(clippy::map_entry, reason = "async closure")]
                     if !self.actor_registry.contains_key(&prefix) {
-                        let (_actor, handle) =
-                            AccountActor::new(prefix, account, config.clone()).await?;
-                        self.actor_registry.insert(prefix, handle);
+                        self.spawn_actor(prefix, account, config.clone()).await?;
                     }
                 }
             }
@@ -201,16 +200,10 @@ impl NetworkTransactionBuilder {
                         // Try creating the actor.
                         let account = store.get_network_account(account_prefix).await?;
                         if let Some(account) = account {
-                            let (actor, handle) = AccountActor::new(
-                                account_prefix,
-                                account,
-                                account_actor_config.clone(),
-                            )
-                            .await?;
-                            self.actor_join_set.spawn(async move { actor.run().await });
-                            // TODO: consider thinner event message.
+                            let handle = self
+                                .spawn_actor(account_prefix, account, account_actor_config.clone())
+                                .await?;
                             Self::send_event(&handle, event.clone());
-                            self.actor_registry.insert(account_prefix, handle);
                         } else {
                             tracing::warn!("network account {account_prefix} not found");
                         }
@@ -227,6 +220,18 @@ impl NetworkTransactionBuilder {
         }
 
         Ok(())
+    }
+
+    async fn spawn_actor(
+        &mut self,
+        prefix: NetworkAccountPrefix,
+        account: Account,
+        config: AccountActorConfig,
+    ) -> anyhow::Result<AccountActorHandle> {
+        let (actor, handle) = AccountActor::new(prefix, account, config).await?;
+        self.actor_registry.insert(prefix, handle.clone());
+        self.actor_join_set.spawn(async move { actor.run().await });
+        Ok(handle)
     }
 
     /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.

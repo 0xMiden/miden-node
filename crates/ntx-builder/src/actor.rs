@@ -51,6 +51,7 @@ pub struct AccountActorConfig {
     pub tx_prover_url: Option<Url>,
 }
 
+#[derive(Clone)]
 pub struct AccountActorHandle {
     pub account_prefix: NetworkAccountPrefix,
     pub event_tx: mpsc::UnboundedSender<MempoolEvent>,

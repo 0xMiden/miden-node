@@ -78,13 +78,13 @@ impl AccountActor {
     pub async fn new(
         account_prefix: NetworkAccountPrefix,
         account: Account,
-        config: AccountActorConfig,
+        config: &AccountActorConfig,
     ) -> Result<(Self, AccountActorHandle), StoreError> {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let store = StoreClient::new(config.store_url.clone());
         let state = State::load(account_prefix, account, store).await?;
-        let semaphore = config.semaphore;
+        let semaphore = config.semaphore.clone();
 
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let actor = Self {

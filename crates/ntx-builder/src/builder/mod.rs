@@ -109,7 +109,7 @@ impl NetworkTransactionBuilder {
                 if let Some(account) = account {
                     #[allow(clippy::map_entry, reason = "async closure")]
                     if !self.actor_registry.contains_key(&prefix) {
-                        self.spawn_actor(prefix, account, config.clone()).await?;
+                        self.spawn_actor(prefix, account, &config).await?;
                     }
                 }
             }
@@ -201,7 +201,7 @@ impl NetworkTransactionBuilder {
                         let account = store.get_network_account(account_prefix).await?;
                         if let Some(account) = account {
                             let handle = self
-                                .spawn_actor(account_prefix, account, account_actor_config.clone())
+                                .spawn_actor(account_prefix, account, &account_actor_config)
                                 .await?;
                             Self::send_event(&handle, event.clone());
                         } else {
@@ -226,7 +226,7 @@ impl NetworkTransactionBuilder {
         &mut self,
         prefix: NetworkAccountPrefix,
         account: Account,
-        config: AccountActorConfig,
+        config: &AccountActorConfig,
     ) -> anyhow::Result<AccountActorHandle> {
         let (actor, handle) = AccountActor::new(prefix, account, config).await?;
         self.actor_registry.insert(prefix, handle.clone());

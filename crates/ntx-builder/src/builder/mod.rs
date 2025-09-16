@@ -7,7 +7,6 @@ use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
 use tokio::sync::{Barrier, Semaphore};
 use tokio::task::JoinSet;
@@ -105,12 +104,9 @@ impl NetworkTransactionBuilder {
             // Currently only support single target network notes in NTB.
             if let NetworkNote::SingleTarget(note) = note {
                 let prefix = note.account_prefix();
-                let account = store.get_network_account(prefix).await?; // TODO: should we add a batch endpoint for this?
-                if let Some(account) = account {
-                    #[allow(clippy::map_entry, reason = "async closure")]
-                    if !self.actor_registry.contains_key(&prefix) {
-                        self.spawn_actor(prefix, account, &config).await?;
-                    }
+                #[allow(clippy::map_entry, reason = "async closure")]
+                if !self.actor_registry.contains_key(&prefix) {
+                    self.spawn_actor(prefix, &config);
                 }
             }
         }
@@ -124,6 +120,14 @@ impl NetworkTransactionBuilder {
                         Some(Ok(Ok(()))) =>  unreachable!("actor never finishes without error"),
                         Some(Ok(Err(err))) => {
                             match err {
+                                AccountActorError::AccountNotFound(prefix) => {
+                                    // TODO: Handle account not found error
+                                    tracing::error!(prefix = ?prefix, "actor stopped due to account not found");
+                                }
+                                AccountActorError::StoreError(err) => {
+                                    // TODO: Handle store error
+                                    tracing::error!(err = ?err, "actor stopped due to store error");
+                                }
                                 AccountActorError::ChannelClosed => {
                                     // TODO: Handle coordinator channel closed
                                     tracing::error!(err = ?err, "actor stopped due to closed channel");
@@ -170,21 +174,19 @@ impl NetworkTransactionBuilder {
                         .context("mempool event stream failed")?;
 
                     self.handle_mempool_event(
-                        event,
-                        config.clone(),
-                        &store,
-                    ).await?;
+                        &event,
+                        &config,
+                    );
                 },
             }
         }
     }
 
-    async fn handle_mempool_event(
+    fn handle_mempool_event(
         &mut self,
-        event: MempoolEvent,
-        account_actor_config: AccountActorConfig,
-        store: &StoreClient,
-    ) -> anyhow::Result<()> {
+        event: &MempoolEvent,
+        account_actor_config: &AccountActorConfig,
+    ) {
         match &event {
             // Broadcast to affected actors.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
@@ -198,15 +200,8 @@ impl NetworkTransactionBuilder {
                         Self::send_event(actor_handle, event.clone());
                     } else {
                         // Try creating the actor.
-                        let account = store.get_network_account(account_prefix).await?;
-                        if let Some(account) = account {
-                            let handle = self
-                                .spawn_actor(account_prefix, account, &account_actor_config)
-                                .await?;
-                            Self::send_event(&handle, event.clone());
-                        } else {
-                            tracing::warn!("network account {account_prefix} not found");
-                        }
+                        let handle = self.spawn_actor(account_prefix, account_actor_config);
+                        Self::send_event(&handle, event.clone());
                     }
                 }
             },
@@ -218,20 +213,17 @@ impl NetworkTransactionBuilder {
                 });
             },
         }
-
-        Ok(())
     }
 
-    async fn spawn_actor(
+    fn spawn_actor(
         &mut self,
-        prefix: NetworkAccountPrefix,
-        account: Account,
+        account_prefix: NetworkAccountPrefix,
         config: &AccountActorConfig,
-    ) -> anyhow::Result<AccountActorHandle> {
-        let (actor, handle) = AccountActor::new(prefix, account, config).await?;
-        self.actor_registry.insert(prefix, handle.clone());
+    ) -> AccountActorHandle {
+        let (actor, handle) = AccountActor::new(account_prefix, config);
+        self.actor_registry.insert(account_prefix, handle.clone());
         self.actor_join_set.spawn(async move { actor.run().await });
-        Ok(handle)
+        handle
     }
 
     /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.

@@ -4,7 +4,6 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
-use miden_objects::account::Account;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{Semaphore, mpsc};
@@ -21,6 +20,12 @@ use crate::transaction::NtxError;
 /// Errors that can occur during `AccountActor` execution
 #[derive(Debug, thiserror::Error)]
 pub enum AccountActorError {
+    #[error("account does not exist: {0}")]
+    AccountNotFound(NetworkAccountPrefix),
+
+    #[error("failed to use store: {0}")]
+    StoreError(#[from] Box<StoreError>),
+
     /// Channel to coordinator was closed
     #[error("coordinator channel closed")]
     ChannelClosed,
@@ -67,7 +72,7 @@ impl AccountActorHandle {
 /// Account actor that manages state and processes transactions for a single network account.
 pub struct AccountActor {
     account_prefix: NetworkAccountPrefix,
-    state: State,
+    store_url: Url,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
@@ -75,37 +80,40 @@ pub struct AccountActor {
 }
 
 impl AccountActor {
-    pub async fn new(
+    pub fn new(
         account_prefix: NetworkAccountPrefix,
-        account: Account,
         config: &AccountActorConfig,
-    ) -> Result<(Self, AccountActorHandle), StoreError> {
+    ) -> (Self, AccountActorHandle) {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
-        let store = StoreClient::new(config.store_url.clone());
-        let state = State::load(account_prefix, account, store).await?;
-        let semaphore = config.semaphore.clone();
-
         let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let semaphore = config.semaphore.clone();
         let actor = Self {
             account_prefix,
-            state,
+            store_url: config.store_url.clone(),
             event_rx,
             block_producer,
             prover,
             semaphore,
         };
         let handle = AccountActorHandle { account_prefix, event_tx };
-        Ok((actor, handle))
+        (actor, handle)
     }
 
     pub async fn run(mut self) -> Result<(), AccountActorError> {
+        let store = StoreClient::new(self.store_url.clone());
+        let account = store.get_network_account(self.account_prefix).await.map_err(Box::new)?;
+        let Some(account) = account else {
+            return Err(AccountActorError::AccountNotFound(self.account_prefix));
+        };
+        let mut state = State::load(self.account_prefix, account, store).await.map_err(Box::new)?;
+
         loop {
             // First, process all available events to prevent starvation.
             loop {
                 match self.event_rx.try_recv() {
                     Ok(event) => {
-                        self.state.mempool_update(event).await?;
+                        state.mempool_update(event).await?;
                         // Continue processing more events.
                     },
                     Err(TryRecvError::Empty) => {
@@ -121,13 +129,13 @@ impl AccountActor {
             // Acquire permit and execute transactions.
             let semaphore = self.semaphore.clone();
             let _permit = semaphore.acquire().await.map_err(AccountActorError::SemaphoreError)?;
-            self.execute_transactions().await;
+            self.execute_transactions(&mut state).await;
         }
     }
 
-    async fn execute_transactions(&mut self) {
+    async fn execute_transactions(&mut self, state: &mut State) {
         // Select a transaction to execute.
-        let Some(tx_candidate) = self.state.select_candidate(crate::MAX_NOTES_PER_TX) else {
+        let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) else {
             tracing::debug!(
                 account = %self.account_prefix,
                 "no candidate network transaction available");
@@ -148,7 +156,7 @@ impl AccountActor {
             // Execution completed with some failed notes.
             Ok(failed) => {
                 let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                self.state.notes_failed(notes.as_slice(), block_num);
+                state.notes_failed(notes.as_slice(), block_num);
             },
             // Transaction execution failed.
             Err(err) => {
@@ -156,7 +164,7 @@ impl AccountActor {
                 match err {
                     NtxError::AllNotesFailed(failed) => {
                         let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
-                        self.state.notes_failed(notes.as_slice(), block_num);
+                        state.notes_failed(notes.as_slice(), block_num);
                     },
                     NtxError::InputNotes(_)
                     | NtxError::NoteFilter(_)

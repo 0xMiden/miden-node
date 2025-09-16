@@ -156,15 +156,9 @@ impl NetworkTransactionBuilder {
                             }
                         },
                         None => {
-                            tracing::error!("actor join set unexpectedly empty");
+                            tracing::warn!("actor join set is empty");
+                            tokio::time::sleep(Duration::from_secs(1)).await;
                         }
-                    }
-                    // Clean up finished actors
-                    for account_prefix in self.actor_registry.keys() {
-                        tracing::debug!(
-                            account = %account_prefix,
-                            "checking actor status"
-                        );
                     }
                 },
                 // Handle mempool events.

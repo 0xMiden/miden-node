@@ -104,48 +104,53 @@ pub enum AddTransactionError {
 // Error codes for gRPC Status::details
 // =================================================================================================
 
-impl From<AddTransactionError> for tonic::Status {
-    fn from(value: AddTransactionError) -> Self {
-        let (error_code, grpc_code) = match &value {
+impl AddTransactionError {
+    fn api_error(&self) -> SubmitProvenTransactionError {
+        match self {
             AddTransactionError::VerificationFailed(tx_verify_error) => match tx_verify_error {
-                VerifyTxError::InputNotesAlreadyConsumed(_) => (
-                    SubmitProvenTransactionError::InputNotesAlreadyConsumed as u8,
-                    tonic::Code::InvalidArgument,
-                ),
-                VerifyTxError::UnauthenticatedNotesNotFound(_) => (
-                    SubmitProvenTransactionError::UnauthenticatedNotesNotFound as u8,
-                    tonic::Code::InvalidArgument,
-                ),
-                VerifyTxError::OutputNotesAlreadyExist(_) => (
-                    SubmitProvenTransactionError::OutputNotesAlreadyExist as u8,
-                    tonic::Code::InvalidArgument,
-                ),
-                VerifyTxError::IncorrectAccountInitialCommitment { .. } => (
-                    SubmitProvenTransactionError::IncorrectAccountInitialCommitment as u8,
-                    tonic::Code::InvalidArgument,
-                ),
-                VerifyTxError::InvalidTransactionProof(_) => (
-                    SubmitProvenTransactionError::InvalidTransactionProof as u8,
-                    tonic::Code::InvalidArgument,
-                ),
+                VerifyTxError::InputNotesAlreadyConsumed(_) => {
+                    SubmitProvenTransactionError::InputNotesAlreadyConsumed
+                },
                 VerifyTxError::StoreConnectionFailed(_) => {
-                    (SubmitProvenTransactionError::InternalError as u8, tonic::Code::Internal)
+                    SubmitProvenTransactionError::InternalError
+                },
+                VerifyTxError::UnauthenticatedNotesNotFound(_) => {
+                    SubmitProvenTransactionError::UnauthenticatedNotesNotFound
+                },
+                VerifyTxError::OutputNotesAlreadyExist(_) => {
+                    SubmitProvenTransactionError::OutputNotesAlreadyExist
+                },
+                VerifyTxError::IncorrectAccountInitialCommitment { .. } => {
+                    SubmitProvenTransactionError::IncorrectAccountInitialCommitment
+                },
+                VerifyTxError::InvalidTransactionProof(_) => {
+                    SubmitProvenTransactionError::InvalidTransactionProof
                 },
             },
-            AddTransactionError::StaleInputs { .. } => {
-                (SubmitProvenTransactionError::InternalError as u8, tonic::Code::Internal)
+            AddTransactionError::StaleInputs { .. } => SubmitProvenTransactionError::InternalError,
+            AddTransactionError::Expired { .. } => SubmitProvenTransactionError::TransactionExpired,
+            AddTransactionError::TransactionDeserializationFailed(_) => {
+                SubmitProvenTransactionError::DeserializationFailed
             },
-            AddTransactionError::Expired { .. } => (
-                SubmitProvenTransactionError::TransactionExpired as u8,
-                tonic::Code::InvalidArgument,
-            ),
-            AddTransactionError::TransactionDeserializationFailed(_) => (
-                SubmitProvenTransactionError::DeserializationFailed as u8,
-                tonic::Code::InvalidArgument,
-            ),
+        }
+    }
+}
+
+impl From<AddTransactionError> for tonic::Status {
+    fn from(value: AddTransactionError) -> Self {
+        let api_error = value.api_error();
+
+        let message = if api_error.is_internal() {
+            "Internal error".to_owned()
+        } else {
+            value.as_report()
         };
 
-        tonic::Status::with_details(grpc_code, value.to_string(), vec![error_code].into())
+        tonic::Status::with_details(
+            api_error.tonic_code(),
+            message,
+            vec![api_error.api_code()].into(),
+        )
     }
 }
 

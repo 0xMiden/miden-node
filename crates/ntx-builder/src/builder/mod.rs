@@ -207,10 +207,15 @@ impl NetworkTransactionBuilder {
         config: &AccountActorConfig,
         store: StoreClient,
     ) -> anyhow::Result<Option<mpsc::UnboundedSender<MempoolEvent>>> {
+        // Fetch the account from the store.
         let account = store.get_network_account(account_prefix).await?;
         let Some(account) = account else { return Ok(None) };
+
+        // Load the account state from the store.
         let state = State::load(account_prefix, account, store).await?;
         let (actor, event_tx) = AccountActor::new(config);
+
+        // Update the actor registry with the new actor and run the actor.
         self.actor_registry.insert(account_prefix, event_tx.clone());
         self.actor_join_set.spawn(async move { actor.run(state).await });
         Ok(Some(event_tx))

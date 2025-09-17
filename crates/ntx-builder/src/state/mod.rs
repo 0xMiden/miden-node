@@ -86,7 +86,7 @@ impl State {
         let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
 
-        // TODO: only get notes relevant to this account
+        // TODO: only get notes relevant to this account.
         let notes = store.get_unconsumed_network_notes().await?;
         let account = AccountState::new(account_prefix, account, notes);
 

@@ -21,11 +21,12 @@ pub enum ActorShutdownReason {
 
 #[derive(Debug, Clone)]
 pub struct AccountActorConfig {
+    /// Semaphore for limiting the number of concurrent transactions across all network accounts.
     pub semaphore: Arc<Semaphore>,
     /// Address of the block producer gRPC server.
     pub block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
-    /// undesirable due to the perofmrance impact.
+    // undesirable due to the performance impact.
     pub tx_prover_url: Option<Url>,
 }
 

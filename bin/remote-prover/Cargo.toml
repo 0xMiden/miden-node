@@ -35,6 +35,7 @@ miden-node-utils      = { workspace = true }
 miden-objects         = { features = ["std"], workspace = true }
 miden-tx              = { features = ["std"], workspace = true }
 miden-tx-batch-prover = { features = ["std"], workspace = true }
+opentelemetry         = { version = "0.30" }
 pingora               = { features = ["lb"], version = "0.5" }
 pingora-core          = { version = "0.5" }
 pingora-limits        = { version = "0.5" }
@@ -53,6 +54,7 @@ tonic-health          = { version = "0.13" }
 tonic-web             = { version = "0.13" }
 tower-http            = { features = ["trace"], workspace = true }
 tracing               = { version = "0.1" }
+tracing-opentelemetry = { version = "0.31" }
 uuid                  = { features = ["v4"], version = "1.16" }
 
 [dev-dependencies]

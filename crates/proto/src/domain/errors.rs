@@ -13,6 +13,9 @@ impl SubmitProvenTransactionError {
     }
 
     pub fn is_internal(&self) -> bool {
-        matches!(self, SubmitProvenTransactionError::InternalError)
+        matches!(
+            self,
+            SubmitProvenTransactionError::InternalError | SubmitProvenTransactionError::Unspecified
+        )
     }
 }

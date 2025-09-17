@@ -6,6 +6,16 @@ transactions and query the state of the blockchain.
 The gRPC service definition can be found in the Miden node's `proto`
 [directory](https://github.com/0xMiden/miden-node/tree/main/proto) in the `rpc.proto` file.
 
+## Error Handling
+
+The Miden node uses standard gRPC error reporting mechanisms. When an RPC call fails, a `Status` object is returned containing:
+
+- **Status Code**: Standard gRPC status codes (`INVALID_ARGUMENT`, `INTERNAL`, etc.).
+- **Message**: Human-readable error description.
+- **Details**: Additional structured error information (when available).
+
+For critical operations like transaction submission, detailed error codes are provided in the `Status.details` field to help clients understand the specific failure reason and take appropriate action.
+
 <!--toc:start-->
 
 - [CheckNullifiers](#checknullifiers)
@@ -56,6 +66,24 @@ Request the script for a note by its root.
 ## SubmitProvenTransaction
 
 Submit a transaction to the network.
+
+This endpoint accepts a proven transaction and attempts to add it to the mempool for inclusion in future blocks. The transaction must be properly formatted and include a valid execution proof.
+
+### Error Codes
+
+When transaction submission fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                                    | Value | gRPC Status        | Description                                                   |
+|-----------------------------------------------|-------|--------------------|---------------------------------------------------------------|
+| `SUBMIT_PROVEN_TRANSACTION_ERROR_UNSPECIFIED` | 0     | `INTERNAL`         | Default/unspecified error                                     |
+| `INTERNAL_ERROR`                              | 1     | `INTERNAL`         | Internal server error occurred                                |
+| `DESERIALIZATION_FAILED`                      | 2     | `INVALID_ARGUMENT` | Transaction could not be deserialized                         |
+| `INVALID_TRANSACTION_PROOF`                   | 3     | `INVALID_ARGUMENT` | Transaction execution proof is invalid                        |
+| `INCORRECT_ACCOUNT_INITIAL_COMMITMENT`        | 4     | `INVALID_ARGUMENT` | Account's initial state doesn't match current state           |
+| `INPUT_NOTES_ALREADY_CONSUMED`                | 5     | `INVALID_ARGUMENT` | Input notes have already been consumed by another transaction |
+| `UNAUTHENTICATED_NOTES_NOT_FOUND`             | 6     | `INVALID_ARGUMENT` | Required unauthenticated notes were not found                 |
+| `OUTPUT_NOTES_ALREADY_EXIST`                  | 7     | `INVALID_ARGUMENT` | Output note IDs are already in use                            |
+| `TRANSACTION_EXPIRED`                         | 8     | `INVALID_ARGUMENT` | Transaction has exceeded its expiration block height          |
 
 ## SyncNullifiers
 
@@ -108,11 +136,3 @@ This endpoint enables clients to maintain an updated view of account storage.
 ## Status
 
 Request the status of the node components. The response contains the current version of the RPC component and the connection status of the other components, including their versions and the number of the most recent block in the chain (chain tip).
-
-## SyncStorageMaps
-
-Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
-
-Caller specifies the `account_id` of the public account and the block range (`block_from`, `block_to`) for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
-
-This endpoint enables clients to maintain an updated view of account storage.

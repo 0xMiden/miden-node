@@ -161,6 +161,10 @@ impl NetworkTransactionBuilder {
         }
     }
 
+    #[tracing::instrument(
+        name = "ntx.builder.handle_mempool_event",
+        skip(self, account_actor_config, store)
+    )]
     async fn handle_mempool_event(
         &mut self,
         event: &MempoolEvent,
@@ -201,6 +205,7 @@ impl NetworkTransactionBuilder {
     }
 
     /// Spawns a new actor and registers it with the builder if the account is present in the store.
+    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, config, store))]
     async fn spawn_actor(
         &mut self,
         account_prefix: NetworkAccountPrefix,

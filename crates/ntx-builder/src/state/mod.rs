@@ -29,7 +29,7 @@ const MAX_BLOCK_COUNT: usize = 4;
 ///
 /// Contains the data pertaining to a specific network account which can be used to build a network
 /// transaction.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TransactionCandidate {
     /// The current inflight state of the account.
     pub account: Account,

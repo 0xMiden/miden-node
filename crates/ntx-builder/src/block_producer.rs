@@ -44,7 +44,7 @@ impl BlockProducerClient {
 
         Self { client: block_producer }
     }
-    #[instrument(target = COMPONENT, name = "block_producer.client.submit_proven_transaction", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx.block_producer.client.submit_proven_transaction", skip_all, err)]
     pub async fn submit_proven_transaction(
         &self,
         proven_tx: ProvenTransaction,
@@ -56,7 +56,7 @@ impl BlockProducerClient {
         Ok(())
     }
 
-    #[instrument(target = COMPONENT, name = "block_producer.client.subscribe_to_mempool", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "ntx.block_producer.client.subscribe_to_mempool", skip_all, err)]
     pub async fn subscribe_to_mempool_with_retry(
         &self,
         chain_tip: BlockNumber,

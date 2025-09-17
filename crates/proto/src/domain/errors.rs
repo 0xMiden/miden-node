@@ -7,7 +7,8 @@ impl SubmitProvenTransactionError {
 
     pub fn tonic_code(&self) -> tonic::Code {
         match self {
-            SubmitProvenTransactionError::InternalError => tonic::Code::Internal,
+            SubmitProvenTransactionError::InternalError
+            | SubmitProvenTransactionError::Unspecified => tonic::Code::Internal,
             _ => tonic::Code::InvalidArgument,
         }
     }

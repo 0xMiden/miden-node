@@ -1,4 +1,4 @@
-use crate::generated::errors::SubmitProvenTransactionError;
+use crate::generated::errors::{SubmitProvenBatchError, SubmitProvenTransactionError};
 
 impl SubmitProvenTransactionError {
     pub fn api_code(&self) -> u8 {
@@ -7,8 +7,9 @@ impl SubmitProvenTransactionError {
 
     pub fn tonic_code(&self) -> tonic::Code {
         match self {
-            SubmitProvenTransactionError::InternalError
-            | SubmitProvenTransactionError::Unspecified => tonic::Code::Internal,
+            SubmitProvenTransactionError::Internal | SubmitProvenTransactionError::Unspecified => {
+                tonic::Code::Internal
+            },
             _ => tonic::Code::InvalidArgument,
         }
     }
@@ -16,7 +17,26 @@ impl SubmitProvenTransactionError {
     pub fn is_internal(&self) -> bool {
         matches!(
             self,
-            SubmitProvenTransactionError::InternalError | SubmitProvenTransactionError::Unspecified
+            SubmitProvenTransactionError::Internal | SubmitProvenTransactionError::Unspecified
         )
+    }
+}
+
+impl SubmitProvenBatchError {
+    pub fn api_code(&self) -> u8 {
+        *self as u8
+    }
+
+    pub fn tonic_code(&self) -> tonic::Code {
+        match self {
+            SubmitProvenBatchError::Internal | SubmitProvenBatchError::Unspecified => {
+                tonic::Code::Internal
+            },
+            SubmitProvenBatchError::DeserializationFailed => tonic::Code::InvalidArgument,
+        }
+    }
+
+    pub fn is_internal(&self) -> bool {
+        matches!(self, SubmitProvenBatchError::Internal | SubmitProvenBatchError::Unspecified)
     }
 }

@@ -1,5 +1,6 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated as proto;
 use miden_node_proto::generated::errors::SubmitProvenTransactionError;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_opt;
@@ -111,9 +112,7 @@ impl AddTransactionError {
                 VerifyTxError::InputNotesAlreadyConsumed(_) => {
                     SubmitProvenTransactionError::InputNotesAlreadyConsumed
                 },
-                VerifyTxError::StoreConnectionFailed(_) => {
-                    SubmitProvenTransactionError::InternalError
-                },
+                VerifyTxError::StoreConnectionFailed(_) => SubmitProvenTransactionError::Internal,
                 VerifyTxError::UnauthenticatedNotesNotFound(_) => {
                     SubmitProvenTransactionError::UnauthenticatedNotesNotFound
                 },
@@ -127,7 +126,7 @@ impl AddTransactionError {
                     SubmitProvenTransactionError::InvalidTransactionProof
                 },
             },
-            AddTransactionError::StaleInputs { .. } => SubmitProvenTransactionError::InternalError,
+            AddTransactionError::StaleInputs { .. } => SubmitProvenTransactionError::Internal,
             AddTransactionError::Expired { .. } => SubmitProvenTransactionError::TransactionExpired,
             AddTransactionError::TransactionDeserializationFailed(_) => {
                 SubmitProvenTransactionError::DeserializationFailed
@@ -166,11 +165,31 @@ pub enum SubmitProvenBatchError {
     Deserialization(#[source] miden_objects::utils::DeserializationError),
 }
 
+impl SubmitProvenBatchError {
+    fn api_error(&self) -> proto::errors::SubmitProvenBatchError {
+        match self {
+            SubmitProvenBatchError::Deserialization(_) => {
+                proto::errors::SubmitProvenBatchError::DeserializationFailed
+            },
+        }
+    }
+}
+
 impl From<SubmitProvenBatchError> for tonic::Status {
     fn from(value: SubmitProvenBatchError) -> Self {
-        match value {
-            SubmitProvenBatchError::Deserialization(_) => Self::invalid_argument(value.as_report()),
-        }
+        let api_error = value.api_error();
+
+        let message = if api_error.is_internal() {
+            "Internal error".to_owned()
+        } else {
+            value.as_report()
+        };
+
+        tonic::Status::with_details(
+            api_error.tonic_code(),
+            message,
+            vec![api_error.api_code()].into(),
+        )
     }
 }
 

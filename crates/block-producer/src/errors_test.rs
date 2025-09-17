@@ -26,7 +26,7 @@ mod tests {
     )]
     #[case::stale_inputs_error(
         AddTransactionError::StaleInputs { input_block: BlockNumber::from(100), stale_limit: BlockNumber::from(150) },
-        SubmitProvenTransactionError::InternalError,
+        SubmitProvenTransactionError::Internal,
         "Internal error",
     )]
     #[case::expired_error(

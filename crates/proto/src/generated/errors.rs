@@ -2,14 +2,15 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SubmitProvenTransactionError {
-    InternalError = 0,
-    DeserializationFailed = 1,
-    InvalidTransactionProof = 2,
-    IncorrectAccountInitialCommitment = 3,
-    InputNotesAlreadyConsumed = 4,
-    UnauthenticatedNotesNotFound = 5,
-    OutputNotesAlreadyExist = 6,
-    TransactionExpired = 7,
+    Unspecified = 0,
+    InternalError = 1,
+    DeserializationFailed = 2,
+    InvalidTransactionProof = 3,
+    IncorrectAccountInitialCommitment = 4,
+    InputNotesAlreadyConsumed = 5,
+    UnauthenticatedNotesNotFound = 6,
+    OutputNotesAlreadyExist = 7,
+    TransactionExpired = 8,
 }
 impl SubmitProvenTransactionError {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -18,6 +19,7 @@ impl SubmitProvenTransactionError {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
+            Self::Unspecified => "SUBMIT_PROVEN_TRANSACTION_ERROR_UNSPECIFIED",
             Self::InternalError => "INTERNAL_ERROR",
             Self::DeserializationFailed => "DESERIALIZATION_FAILED",
             Self::InvalidTransactionProof => "INVALID_TRANSACTION_PROOF",
@@ -33,6 +35,7 @@ impl SubmitProvenTransactionError {
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
+            "SUBMIT_PROVEN_TRANSACTION_ERROR_UNSPECIFIED" => Some(Self::Unspecified),
             "INTERNAL_ERROR" => Some(Self::InternalError),
             "DESERIALIZATION_FAILED" => Some(Self::DeserializationFailed),
             "INVALID_TRANSACTION_PROOF" => Some(Self::InvalidTransactionProof),

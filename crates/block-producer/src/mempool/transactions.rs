@@ -1,13 +1,12 @@
 use std::collections::{HashMap, HashSet};
 
-use miden_objects::batch::BatchId;
 use miden_objects::block::BlockNumber;
 use miden_objects::transaction::TransactionId;
 
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::mempool::state_dag::{NodeId, StateGraph};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Transactions {
     raw: HashMap<TransactionId, AuthenticatedTransaction>,
     unprocessed: HashSet<TransactionId>,
@@ -76,28 +75,17 @@ impl<'a> TransactionCandidate<'a> {
             .expect("all candidates are tracked and we have exclusive control of origin")
     }
 
-    #[must_use]
-    pub fn select(self, dag: &StateGraph) -> HashSet<BatchId> {
+    pub fn select(self, dag: &StateGraph) {
         self.origin.unprocessed.remove(&self.candidate);
         self.origin.candidates.remove(&self.candidate);
 
         let children =
             dag.children(self.candidate).expect("state DAG should contain the tx candidate");
-        let mut user_batches = HashSet::default();
 
         for child in children {
-            match child {
-                NodeId::Transaction(child) => self.origin.candidacy_check(child, dag),
-                NodeId::Batch(user_batch) => {
-                    user_batches.insert(user_batch);
-                    continue;
-                },
-                NodeId::Block(_) => {
-                    panic!("a candidate transaction cannot have a block child");
-                },
-            };
+            if let NodeId::Transaction(child) = child {
+                self.origin.candidacy_check(child, dag);
+            }
         }
-
-        user_batches
     }
 }

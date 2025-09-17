@@ -7,7 +7,7 @@ use miden_objects::transaction::TransactionId;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::mempool::state_dag::{NodeId, StateGraph};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Batches {
     user_batches: HashMap<BatchId, ProvenBatch>,
     proposed: HashMap<BatchId, (Vec<TransactionId>, BlockNumber)>,
@@ -29,12 +29,12 @@ impl Batches {
         self.unprocessed.insert(id);
     }
 
-    pub fn remove(&mut self, id: BatchId) {
+    pub fn remove(&mut self, id: BatchId) -> Option<ProvenBatch> {
         self.user_batches.remove(&id);
         self.proposed.remove(&id);
-        self.proven.remove(&id);
         self.unprocessed.remove(&id);
         self.candidates.remove(&id);
+        self.proven.remove(&id)
     }
 
     pub fn submit_proof(&mut self, proof: ProvenBatch, dag: &StateGraph) {
@@ -53,6 +53,41 @@ impl Batches {
         }
         self.proven.insert(id, proof);
         self.candidacy_check(id, dag);
+    }
+
+    pub fn check_user_batches(&mut self, dag: &StateGraph) {
+        'again: loop {
+            let user_batches = self.user_batches.keys().copied().collect::<Vec<_>>();
+            'next: for id in user_batches {
+                let parents = dag.parents(id).expect("user batch should be present in state DAG");
+
+                for parent in parents {
+                    match parent {
+                        NodeId::Transaction(_) => continue 'next,
+                        NodeId::Batch(parent) if self.user_batches.contains_key(&parent) => {
+                            continue 'next;
+                        },
+                        _ => {},
+                    }
+                }
+
+                let batch = self
+                    .user_batches
+                    .remove(&id)
+                    .expect("must exist as we're iterating over the keys");
+                self.proven.insert(id, batch);
+                self.candidacy_check(id, dag);
+                continue 'again;
+            }
+        }
+    }
+
+    pub fn next_candidate(&mut self) -> Option<BatchCandidate<'_>> {
+        self.candidates
+            .iter()
+            .next()
+            .copied()
+            .map(|batch| BatchCandidate::new(self, batch))
     }
 
     fn candidacy_check(&mut self, id: BatchId, dag: &StateGraph) {

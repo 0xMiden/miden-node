@@ -141,7 +141,7 @@ impl StateGraph {
     pub fn commit_block(
         &mut self,
         block_number: BlockNumber,
-        batches: &[BatchId],
+        batches: impl Iterator<Item = BatchId>,
     ) -> GraphResult<()> {
         todo!();
     }

@@ -44,13 +44,7 @@ async fn main() -> anyhow::Result<()> {
     let mut component_ids: HashMap<_, String> = HashMap::new();
 
     // Create initial empty status for services
-    let initial_rpc_status = ServiceStatus {
-        name: "RPC".to_string(),
-        status: "unknown".to_string(),
-        last_checked: 0,
-        error: None,
-        details: None,
-    };
+    let initial_rpc_status = ServiceStatus::new("RPC".to_string());
 
     // Spawn the RPC checker
     let (rpc_tx, rpc_rx) = watch::channel(initial_rpc_status);
@@ -62,23 +56,18 @@ async fn main() -> anyhow::Result<()> {
     let mut prover_rxs = Vec::new();
     for (i, prover_url) in config.remote_prover_urls.iter().enumerate() {
         let name = format!("Prover-{}", i + 1);
-        let initial_prover_status = ServiceStatus {
-            name: format!("Remote Prover ({name})"),
-            status: "unknown".to_string(),
-            last_checked: 0,
-            error: None,
-            details: None,
-        };
+        let initial_prover_status = ServiceStatus::new(format!("Remote Prover ({name})"));
 
         let (prover_tx, prover_rx) = watch::channel(initial_prover_status);
         prover_rxs.push(prover_rx);
 
-        let prover_url_clone = prover_url.clone();
-        let name_clone = name.clone();
         let component_name = format!("prover-checker-{}", i + 1);
         let id = tasks
-            .spawn(async move {
-                run_remote_prover_status_task(prover_url_clone, name_clone, prover_tx).await
+            .spawn({
+                let prover_url = prover_url.clone();
+                let name = name.clone();
+
+                run_remote_prover_status_task(prover_url, name, prover_tx)
             })
             .id();
         component_ids.insert(id, component_name);

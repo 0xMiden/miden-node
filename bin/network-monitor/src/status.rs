@@ -100,6 +100,22 @@ pub struct ServiceStatus {
     pub details: Option<ServiceDetails>,
 }
 
+impl ServiceStatus {
+    /// Creates a new `ServiceStatus` with the given name and default values.
+    ///
+    /// The `status` is initialized as "unknown", `last_checked` as 0, and both `error` and
+    /// `details` as None.
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            status: "unknown".to_string(),
+            last_checked: 0,
+            error: None,
+            details: None,
+        }
+    }
+}
+
 /// Details of a service.
 ///
 /// This struct contains the details of a service, which is a union of the details of the service.

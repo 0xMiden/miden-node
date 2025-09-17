@@ -4,33 +4,63 @@ use std::collections::{HashMap, HashSet};
 
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::batch::BatchId;
-use miden_objects::block::BlockNumber;
+use miden_objects::batch::{BatchId, ProvenBatch};
+use miden_objects::block::{BlockNumber, ProvenBlock};
 use miden_objects::note::{NoteId, Nullifier};
 use miden_objects::transaction::TransactionId;
+
+use crate::domain::transaction::AuthenticatedTransaction;
+use crate::mempool::state_dag::account::AccountState;
 
 mod account;
 
 // NODE TRAIT
 // ================================================================================================
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum NodeId {
     Transaction(TransactionId),
     Batch(BatchId),
     Block(BlockNumber),
 }
 
-pub trait Node {
-    fn id(&self) -> NodeId;
+impl From<TransactionId> for NodeId {
+    fn from(value: TransactionId) -> Self {
+        Self::Transaction(value)
+    }
+}
 
-    fn account_transitions(&self) -> impl Iterator<Item = (AccountId, Word, Word)>;
+impl From<BatchId> for NodeId {
+    fn from(value: BatchId) -> Self {
+        Self::Batch(value)
+    }
+}
 
-    fn nullifiers(&self) -> impl Iterator<Item = Nullifier>;
+impl From<BlockNumber> for NodeId {
+    fn from(value: BlockNumber) -> Self {
+        Self::Block(value)
+    }
+}
 
-    fn unauthenticated_notes(&self) -> impl Iterator<Item = NoteId>;
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
+struct Node {
+    account_updates: Vec<(AccountId, Word, Word)>,
+    nullifiers: Vec<Nullifier>,
+    output_notes: Vec<NodeId>,
+}
 
-    fn output_notes(&self) -> impl Iterator<Item = NoteId>;
+impl From<&AuthenticatedTransaction> for Node {
+    fn from(value: &AuthenticatedTransaction) -> Self {
+        todo!()
+    }
+}
+
+impl Node {
+    fn extend(&mut self, other: &Self) {
+        // TODO: more
+        self.nullifiers.extend(&other.nullifiers);
+        self.output_notes.extend(&other.output_notes);
+    }
 }
 
 // GRAPH ERRORS
@@ -39,114 +69,94 @@ pub trait Node {
 type GraphResult<T> = Result<T, GraphError>;
 
 #[derive(thiserror::Error, Debug)]
-pub enum GraphError {}
+pub enum GraphError {
+    #[error("node {0:?} is not present in the graph")]
+    UnknownNode(NodeId),
+}
 
 // STATE DAG
 // ================================================================================================
 
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct StateGraph {
-    accounts: HashMap<AccountId, account::AccountState>,
+    accounts: HashMap<AccountId, AccountState>,
     nullifiers: HashSet<Nullifier>,
+
+    nodes: HashMap<NodeId, Node>,
 }
 
 impl StateGraph {
-    /// Marks all state created by the [`Node`] as committed. The node will no longer be considered
-    /// as either parent nor child in the depedency graph.
-    ///
-    /// Data is retained until it is [pruned](Self::prune) to provide overlap with the committed
-    /// state in the store.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any of the expected data is not associated with the [`Node`].
-    pub fn commit(&mut self, node: &impl Node) -> GraphResult<()> {
-        // We preserve atomicity by cloning the data we want to mutate and replacing it once it all
-        // succeeds. This may seem wasteful, but its easy and may even be cheaper than doing a full
-        // accounting.
+    pub fn parents(&self, id: impl Into<NodeId>) -> GraphResult<HashSet<NodeId>> {
+        let node = self.get_node(id)?;
+        let parents = HashSet::default();
 
-        // TODO: do the other things as well.
-        let mut updated_accounts = HashMap::new();
-        for (account_id, from, to) in node.account_transitions() {
-            let mut account = self.accounts.get(&account_id).cloned().expect("throw error");
-            account.commit(node.id(), from, to)?;
+        // TODO: lookup parents via state.
 
-            if updated_accounts.insert(account_id, account).is_some() {
-                todo!("error");
-            }
-        }
+        Ok(parents)
+    }
 
-        // Note: HashMap::extend does replace as intended.
-        self.accounts.extend(updated_accounts);
-        // Note: no need to touch nullifiers since those contain no dependency information. They
-        // are therefore simply removed in pruning.
+    pub fn children(&self, id: impl Into<NodeId>) -> GraphResult<HashSet<NodeId>> {
+        let node = self.get_node(id)?;
+        let children = HashSet::default();
+
+        // TODO: lookup children via state.
+
+        Ok(children)
+    }
+
+    pub fn append_transaction(&mut self, tx: &AuthenticatedTransaction) -> GraphResult<()> {
+        let node = Node::from(tx);
+        let id = NodeId::from(tx.id());
+
+        // TODO: perform state checks
+        // TODO: update state
+
+        self.nodes.insert(id, node);
 
         Ok(())
     }
 
-    /// Prunes the node's state from the graph.
-    ///
-    /// State which is actively in use (i.e. being depended on) is still retained. It is however
-    /// marked as pruned and will be removed once it is no longer in use.
-    pub fn prune(&mut self, node: &impl Node) -> GraphResult<()> {
-        // We preserve atomicity by cloning the data we want to mutate and replacing it once it all
-        // succeeds. This may seem wasteful, but its easy and may even be cheaper than doing a full
-        // accounting.
+    pub fn insert_batch(
+        &mut self,
+        batch_id: BatchId,
+        txs: impl Iterator<Item = TransactionId>,
+    ) -> GraphResult<()> {
+        let id = NodeId::from(batch_id);
 
-        for nullifier in node.nullifiers() {
-            if !self.nullifiers.contains(&nullifier) {
-                todo!("throw error");
-            }
+        let mut node = Node::default();
+        for tx in txs {
+            let tx = self.get_node(tx)?;
+            node.extend(tx);
         }
 
-        let mut updated_accounts = HashMap::new();
-        for (account_id, _from, to) in node.account_transitions() {
-            let mut account = self.accounts.get(&account_id).cloned().expect("throw error");
-            account.prune(to);
+        // TODO: perform state checks
+        // TODO: remove existing node
+        // TODO: update state information with new NodeID
 
-            // Only retain account's that are still in-use.
-            if !account.is_unused() {
-                if updated_accounts.insert(account_id, account).is_some() {
-                    todo!("error");
-                }
-            }
-        }
-
-        // Note: HashMap::extend does replace as intended.
-        self.accounts.extend(updated_accounts);
-        for nullifier in node.nullifiers() {
-            self.nullifiers.remove(&nullifier);
-        }
+        self.nodes.insert(id, node);
 
         Ok(())
     }
-}
 
-/// Represents a committed part of state within the graph.
-///
-/// It distinguishes between recently committed state (`Committed::Recent`) and state whose block
-/// has been pruned locally, but which cannot be removed yet as other inflight state depends on it.
-#[derive(Clone)]
-enum Committed<T> {
-    /// State from a recently committed block.
-    ///
-    /// The mempool retains recently committed state to provide an overlap with the state in the
-    /// store. This extends the time that a new transaction or batch have to fetch data from the
-    /// store without racing against committed state being dropped from the mempool.
-    Recent(T),
-    /// State who's block is no longer retained locally in the mempool, but which is still required
-    /// as a foundation for inflight state.
-    Pruned(T),
-}
-
-impl<T> Committed<T> {
-    fn inner(&self) -> &T {
-        match self {
-            Committed::Recent(inner) => inner,
-            Committed::Pruned(inner) => inner,
-        }
+    pub fn commit_block(
+        &mut self,
+        block_number: BlockNumber,
+        batches: &[BatchId],
+    ) -> GraphResult<()> {
+        todo!();
     }
 
-    fn is_pruned(&self) -> bool {
-        matches!(self, Committed::Pruned(_))
+    pub fn prune_block(&mut self, block: BlockNumber) -> GraphResult<()> {
+        todo!();
+    }
+
+    // Submit a batch..
+    // Commit a block..
+    // Prune a block..
+
+    /// Returns the associated [`Node`] or [`GraphError::UnknownNode`] if it doesn't exist.
+    fn get_node(&self, id: impl Into<NodeId>) -> GraphResult<&Node> {
+        let id = id.into();
+        self.nodes.get(&id).ok_or_else(|| GraphError::UnknownNode(id))
     }
 }

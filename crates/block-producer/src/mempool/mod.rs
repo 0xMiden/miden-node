@@ -1,14 +1,10 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
-use batch_graph::BatchGraph;
-use graph::GraphError;
-use inflight_state::InflightState;
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::batch::{BatchId, ProvenBatch};
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::transaction::TransactionId;
+use miden_objects::block::{BlockHeader, BlockNumber, ProvenBlock};
+use miden_objects::transaction::{TransactionHeader, TransactionId};
 use miden_objects::{
     MAX_ACCOUNTS_PER_BATCH,
     MAX_INPUT_NOTES_PER_BATCH,
@@ -18,19 +14,17 @@ use subscription::SubscriptionProvider;
 use tokio::sync::{Mutex, MutexGuard, mpsc};
 use tracing::{instrument, warn};
 use transaction_expiration::TransactionExpirations;
-use transaction_graph::TransactionGraph;
 
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::AddTransactionError;
+use crate::mempool::state_dag::{NodeId, StateGraph};
 use crate::{COMPONENT, DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH};
 
-mod batch_graph;
-mod graph;
-mod inflight_state;
+mod batches;
 mod state_dag;
 mod subscription;
 mod transaction_expiration;
-mod transaction_graph;
+mod transactions;
 
 #[cfg(test)]
 mod tests;
@@ -146,29 +140,30 @@ impl SharedMempool {
 
 #[derive(Clone, Debug)]
 pub struct Mempool {
-    /// The latest inflight state of each account.
-    ///
-    /// Accounts without inflight transactions are not stored.
-    state: InflightState,
+    state: state_dag::StateGraph,
 
-    /// Inflight transactions.
-    transactions: TransactionGraph,
+    txs: transactions::Transactions,
 
-    /// Tracks inflight transaction expirations.
-    ///
-    /// This is used to identify inflight transactions that have become invalid once their
-    /// expiration block constraint has been violated. This occurs naturally as blocks get
-    /// committed and the chain grows.
-    expirations: TransactionExpirations,
+    user_batches: HashMap<BatchId, ProvenBatch>,
 
-    /// Inflight batches.
-    batches: BatchGraph,
+    proven_batches: HashMap<BatchId, ProvenBatch>,
 
+    batches_queued: HashSet<BatchId>,
+    batches_selectable: HashSet<BatchId>,
+    batches_inprogress: HashMap<BatchId, Vec<TransactionId>>,
+
+    // Batches can be
+    // - user (but this is separate)
+    // - in-progress
+    // - in-queue
+    // - in-block
     /// The current block height of the chain.
     chain_tip: BlockNumber,
+    expiration_slack: u32,
 
     /// The current inflight block, if any.
     block_in_progress: Option<BTreeSet<BatchId>>,
+    recent_blocks: VecDeque<ProvenBlock>,
 
     block_budget: BlockBudget,
     batch_budget: BatchBudget,
@@ -180,26 +175,28 @@ pub struct Mempool {
 impl PartialEq for Mempool {
     fn eq(&self, other: &Self) -> bool {
         // We use this deconstructive pattern to ensure we adapt this whenever fields are changed.
-        let Self {
-            state,
-            transactions,
-            expirations,
-            batches,
-            chain_tip,
-            block_in_progress,
-            block_budget,
-            batch_budget,
-            subscription: _,
-        } = self;
+        // let Self {
+        //     state,
+        //     transactions,
+        //     expirations,
+        //     batches,
+        //     chain_tip,
+        //     block_in_progress,
+        //     block_budget,
+        //     batch_budget,
+        //     subscription: _,
+        //     selectable_transactions,
+        // } = self;
 
-        state == &other.state
-            && transactions == &other.transactions
-            && expirations == &other.expirations
-            && batches == &other.batches
-            && chain_tip == &other.chain_tip
-            && block_in_progress == &other.block_in_progress
-            && block_budget == &other.block_budget
-            && batch_budget == &other.batch_budget
+        // state == &other.state
+        //     && transactions == &other.transactions
+        //     && expirations == &other.expirations
+        //     && batches == &other.batches
+        //     && chain_tip == &other.chain_tip
+        //     && block_in_progress == &other.block_in_progress
+        //     && block_budget == &other.block_budget
+        //     && batch_budget == &other.batch_budget
+        todo!();
     }
 }
 
@@ -228,17 +225,24 @@ impl Mempool {
         state_retention: usize,
         expiration_slack: u32,
     ) -> Mempool {
-        Self {
-            chain_tip,
-            batch_budget,
-            block_budget,
-            state: InflightState::new(chain_tip, state_retention, expiration_slack),
-            block_in_progress: None,
-            transactions: TransactionGraph::default(),
-            batches: BatchGraph::default(),
-            expirations: TransactionExpirations::default(),
-            subscription: SubscriptionProvider::new(chain_tip),
-        }
+        // Self {
+        //     chain_tip,
+        //     batch_budget,
+        //     block_budget,
+        //     state: StateGraph::default(),
+        //     block_in_progress: None,
+        //     expirations: TransactionExpirations::default(),
+        //     subscription: SubscriptionProvider::new(chain_tip),
+        //     transactions: HashMap::default(),
+        //     proven_batches: HashMap::default(),
+        //     selected_batches: HashMap::default(),
+        //     selectable_transactions: HashSet::default(),
+        //     selected_transactions: HashSet::default(),
+        //     selectable_batches: HashSet::default(),
+        //     expiration_slack,
+        //     recent_blocks: todo!(),
+        // }
+        todo!()
     }
 
     /// Adds a transaction to the mempool.
@@ -257,13 +261,14 @@ impl Mempool {
         &mut self,
         transaction: AuthenticatedTransaction,
     ) -> Result<BlockNumber, AddTransactionError> {
+        self.expiration_check(transaction.expires_at())?;
+        self.input_staleness_check(transaction.authentication_height())?;
+
         // Add transaction to inflight state.
-        let parents = self.state.add_transaction(&transaction)?;
+        self.state.append_transaction(&transaction).expect("map err");
         self.subscription.transaction_added(&transaction);
-        self.expirations.insert(transaction.id(), transaction.expires_at());
-        self.transactions
-            .insert(transaction, parents)
-            .expect("Transaction should insert after passing inflight state");
+        self.txs.insert(transaction, &self.state);
+
         self.inject_telemetry();
 
         Ok(self.chain_tip)
@@ -276,14 +281,35 @@ impl Mempool {
     /// Returns `None` if no transactions are available.
     #[instrument(target = COMPONENT, name = "mempool.select_batch", skip_all)]
     pub fn select_batch(&mut self) -> Option<(BatchId, Vec<AuthenticatedTransaction>)> {
-        let (batch, parents) = self.transactions.select_batch(self.batch_budget);
+        let mut budget = self.batch_budget.clone();
+        let mut batch = Vec::with_capacity(budget.transactions);
+
+        let mut user_batches = HashSet::new();
+
+        loop {
+            let Some(candidate) = self.txs.next_candidate() else {
+                break;
+            };
+
+            // Adhere to batch budget.
+            if budget.check_then_subtract(candidate.get()) == BudgetStatus::Exceeded {
+                break;
+            }
+
+            batch.push(candidate.get().clone());
+            user_batches.extend(candidate.select(&self.state));
+        }
+
+        self.user_batch_check(user_batches);
+
         if batch.is_empty() {
             return None;
         }
-        let tx_ids = batch.iter().map(|tx| (tx.id(), tx.account_id())).collect::<Vec<_>>();
 
-        let batch_id = self.batches.insert(tx_ids, parents).expect("Selected batch should insert");
-        self.inject_telemetry();
+        let batch_id = BatchId::from_ids(batch.iter().map(|tx| (tx.id(), tx.account_id())));
+        let txs = batch.iter().map(AuthenticatedTransaction::id).collect();
+
+        self.batches_inprogress.insert(batch_id, txs);
 
         Some((batch_id, batch))
     }
@@ -293,37 +319,49 @@ impl Mempool {
     /// Transactions are placed back in the queue.
     #[instrument(target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
     pub fn rollback_batch(&mut self, batch: BatchId) {
-        // Batch may already have been removed as part of a parent batches failure.
-        if !self.batches.contains(&batch) {
-            return;
-        }
+        // // Batch may already have been removed as part of a parent batches failure.
+        // let Some(txs) = self.batches_inprogress.remove(&batch) else {
+        //     return;
+        // };
 
-        let removed_batches =
-            self.batches.remove_batches([batch].into()).expect("Batch was not present");
+        // let removed_batches = self
+        //     .proven_batches
+        //     .remove_batches([batch].into())
+        //     .expect("Batch was not present");
 
-        let transactions = removed_batches.values().flatten().copied().collect();
+        // let transactions = removed_batches.values().flatten().copied().collect();
 
-        self.transactions
-            .requeue_transactions(transactions)
-            .expect("Transaction should requeue");
+        // self.transactions
+        //     .requeue_transactions(transactions)
+        //     .expect("Transaction should requeue");
 
-        tracing::warn!(
-            %batch,
-            descendents=?removed_batches.keys(),
-            "Batch failed, dropping all inflight descendent batches, impacted transactions are back in queue."
-        );
+        // tracing::warn!(
+        //     %batch,
+        //     descendents=?removed_batches.keys(),
+        //     "Batch failed, dropping all inflight descendent batches, impacted transactions are
+        // back in queue." );
         self.inject_telemetry();
     }
 
     /// Marks a batch as proven if it exists.
     #[instrument(target = COMPONENT, name = "mempool.commit_batch", skip_all)]
     pub fn commit_batch(&mut self, batch: ProvenBatch) {
-        // Batch may have been removed as part of a parent batches failure.
-        if !self.batches.contains(&batch.id()) {
+        let id = batch.id();
+
+        // Batches can be invalidated if their ancestors are reverted.
+        if self.batches_inprogress.remove(&batch.id()).is_none() {
             return;
         }
 
-        self.batches.submit_proof(batch).expect("Batch proof should submit");
+        self.state.insert_batch(
+            batch.id(),
+            batch.transactions().as_slice().iter().map(TransactionHeader::id),
+        )
+        .expect("this is an inflight batch who's transactions should therefore all be in the state DAG");
+
+        self.proven_batches.insert(id, batch);
+        self.batch_selection_check(id);
+
         self.inject_telemetry();
     }
 
@@ -340,11 +378,58 @@ impl Mempool {
     pub fn select_block(&mut self) -> (BlockNumber, Vec<ProvenBatch>) {
         assert!(self.block_in_progress.is_none(), "Cannot have two blocks inflight.");
 
-        let batches = self.batches.select_block(self.block_budget);
-        self.block_in_progress = Some(batches.iter().map(ProvenBatch::id).collect());
-        self.inject_telemetry();
+        let mut budget = self.block_budget.clone();
+        let mut batch = Vec::with_capacity(budget.batches);
 
-        (self.chain_tip.child(), batches)
+        loop {
+            //     // Select an arbitrary available transaction for now. This would be a place to
+            // order     // by fees or some other strategy.
+            //     let Some(candidate) = self.selectable_transactions.iter().next() else {
+            //         break;
+            //     };
+
+            //     let tx = self
+            //         .transactions
+            //         .get(&candidate)
+            //         .expect("A selectable transaction's data should exist in the mempool");
+
+            //     // Adhere to batch budget.
+            //     if budget.check_then_subtract(tx) == BudgetStatus::Exceeded {
+            //         break;
+            //     }
+
+            //     batch.push(tx.clone());
+            //     self.selectable_transactions.remove(&tx.id());
+            //     self.selected_transactions.insert(tx.id());
+
+            //     let children = self.state.children(tx);
+            //     for child in children {
+            //         if let NodeId::Transaction(child) = child {
+            //             self.tx_selection_check(&child);
+            //         }
+            //     }
+        }
+
+        // if batch.is_empty() {
+        //     return None;
+        // }
+
+        // let batch_id = BatchId::from_ids(batch.iter().map(|tx| (tx.id(), tx.account_id())));
+
+        // // Update the graph by replacing the tx nodes with the single new batch node.
+        // self.state
+        //     .replace_unchecked(NodeId::Batch(batch_id), &batch)
+        //     .expect("this is well formed");
+        // self.selected_batches
+        //     .insert(batch_id, batch.iter().map(AuthenticatedTransaction::id).collect());
+
+        // Some((batch_id, batch))
+
+        // self.block_in_progress = Some(batches.iter().map(ProvenBatch::id).collect());
+        // self.inject_telemetry();
+
+        // (self.chain_tip.child(), batches)
+        todo!();
     }
 
     /// Notify the pool that the in flight block was successfully committed to the chain.
@@ -364,14 +449,13 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self, header: BlockHeader) {
-        // Remove committed batches and transactions from graphs.
+    pub fn commit_block(&mut self, block: ProvenBlock) {
+        // Mark data as committed in the DAG.
+        // Remove batch and transaction data as it is no longer required.
+        // Update recent history.
+        // Revert expired data.
+
         let batches = self.block_in_progress.take().expect("No block in progress to commit");
-        let transactions =
-            self.batches.prune_committed(&batches).expect("Batches failed to commit");
-        self.transactions
-            .commit_transactions(&transactions)
-            .expect("Transaction graph malformed");
 
         // Remove the committed transactions from expiration tracking.
         self.expirations.remove(transactions.iter());
@@ -415,7 +499,7 @@ impl Mempool {
         let txs = batches
             .into_iter()
             .flat_map(|batch_id| {
-                self.batches
+                self.proven_batches
                     .get_transactions(&batch_id)
                     .expect("batch from a block must be in the mempool")
             })
@@ -458,8 +542,9 @@ impl Mempool {
         tracing::Span::current().record("transactions.expired.ids", tracing::field::debug(&txs));
 
         // Revert all transactions and their descendents, and their associated batches.
-        let reverted = self.transactions.remove_transactions(txs)?;
-        let batches_reverted = self.batches.remove_batches_with_transactions(reverted.iter());
+        let reverted = self.submitted_transactions.remove_transactions(txs)?;
+        let batches_reverted =
+            self.proven_batches.remove_batches_with_transactions(reverted.iter());
 
         // Requeue transactions that are disjoint from the reverted set, but were part of the
         // reverted batches.
@@ -468,7 +553,7 @@ impl Mempool {
             .flatten()
             .filter(|tx| !reverted.contains(tx))
             .collect();
-        self.transactions
+        self.submitted_transactions
             .requeue_transactions(to_requeue)
             .expect("transactions from batches must be requeueable");
 
@@ -497,6 +582,116 @@ impl Mempool {
         self.subscription.subscribe(chain_tip)
     }
 
+    fn tx_selection_check(&mut self, tx: TransactionId) {
+        assert!(
+            !self.txs_queued.contains(&tx),
+            "selection check for transaction {tx} which is already marked as processed"
+        );
+
+        let parents = self.state.parents(tx).expect(
+            "selection check should only occur for transactions which are in the state DAG",
+        );
+
+        // A transaction becomes selectable once _all_ its parents have been selected.
+        //
+        // Note that this requirement also extends to user submitted batches since these can build
+        // on unbatched transactions and are therefore "blocked" as well.
+        for parent in parents {
+            match parent {
+                NodeId::Transaction(parent) if self.txs_queued.contains(&parent) => return,
+                NodeId::Batch(parent) if self.user_batches.contains(&parent) => return,
+                _ => {},
+            }
+        }
+
+        self.txs_selectable.insert(tx);
+    }
+
+    fn batch_selection_check(&mut self, batch: BatchId) {
+        // assert!(
+        //     !self.txs_queued.contains(&tx),
+        //     "selection check for transaction {tx} which is already marked as processed"
+        // );
+
+        let parents = self
+            .state
+            .parents(batch)
+            .expect("selection check should only occur for batches which are in the state DAG");
+
+        // A batch is selectable once all of its parents have been included in a block.
+        for parent in parents {
+            match parent {
+                NodeId::Transaction(_) => return,
+                NodeId::Batch(parent) if self.user_batches.contains(&parent) => return,
+                NodeId::Batch(parent) if self.batches_queued.contains(&parent) => return,
+                _ => {},
+            }
+        }
+
+        self.batches_selectable.insert(batch);
+    }
+
+    fn user_batch_check(&mut self, mut to_check: HashSet<BatchId>) {
+        'outer: while let Some(batch) = to_check.iter().next().copied() {
+            to_check.remove(&batch);
+
+            let parents = self.state.parents(batch).expect(
+                "user batch check should only occur for batches which are in the state DAG",
+            );
+            for parent in parents {
+                match parent {
+                    NodeId::Transaction(_) => continue 'outer,
+                    NodeId::Batch(parent) if self.user_batches.contains(&parent) => {
+                        continue 'outer;
+                    },
+                    _ => {},
+                }
+            }
+
+            // Promoting this user batch could unlock child batches, so add them to the list.
+            let children = self.state.children(batch).expect(
+                "user batch check should only occur for batches which are in the state DAG",
+            );
+            for child in children {
+                if let NodeId::Batch(child) = child {
+                    to_check.insert(child);
+                }
+            }
+
+            self.user_batches.remove(&batch);
+            self.batch_selection_check(batch);
+        }
+    }
+
+    fn expiration_check(&self, expired_at: BlockNumber) -> Result<(), AddTransactionError> {
+        let limit = self.chain_tip + self.expiration_slack;
+
+        if expired_at <= limit {
+            return Err(AddTransactionError::Expired { expired_at, limit });
+        }
+
+        Ok(())
+    }
+
+    fn input_staleness_check(
+        &self,
+        authentication_height: BlockNumber,
+    ) -> Result<(), AddTransactionError> {
+        let stale_limit = self
+            .recent_blocks
+            .front()
+            .map(|block| block.header().block_num())
+            .unwrap_or_default();
+        if authentication_height < stale_limit {
+            return Err(AddTransactionError::StaleInputs {
+                input_block: authentication_height,
+                stale_limit,
+            });
+        }
+
+        Ok(())
+    }
+
     /// Adds mempool stats to the current tracing span.
     ///
     /// Note that these are only visible in the OpenTelemetry context, as conventional tracing
@@ -504,14 +699,14 @@ impl Mempool {
     fn inject_telemetry(&self) {
         let span = tracing::Span::current();
 
-        span.set_attribute("mempool.transactions.total", self.transactions.len());
-        span.set_attribute("mempool.transactions.roots", self.transactions.num_roots());
-        span.set_attribute("mempool.accounts", self.state.num_accounts());
-        span.set_attribute("mempool.nullifiers", self.state.num_nullifiers());
-        span.set_attribute("mempool.output_notes", self.state.num_notes_created());
-        span.set_attribute("mempool.batches.pending", self.batches.num_pending());
-        span.set_attribute("mempool.batches.proven", self.batches.num_proven());
-        span.set_attribute("mempool.batches.total", self.batches.len());
-        span.set_attribute("mempool.batches.roots", self.batches.num_roots());
+        // span.set_attribute("mempool.transactions.total", self.transactions.len());
+        // span.set_attribute("mempool.transactions.roots", self.transactions.num_roots());
+        // span.set_attribute("mempool.accounts", self.state.num_accounts());
+        // span.set_attribute("mempool.nullifiers", self.state.num_nullifiers());
+        // span.set_attribute("mempool.output_notes", self.state.num_notes_created());
+        // span.set_attribute("mempool.batches.pending", self.batches.num_pending());
+        // span.set_attribute("mempool.batches.proven", self.batches.num_proven());
+        // span.set_attribute("mempool.batches.total", self.batches.len());
+        // span.set_attribute("mempool.batches.roots", self.batches.num_roots());
     }
 }

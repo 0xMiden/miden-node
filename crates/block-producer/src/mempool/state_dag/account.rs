@@ -2,22 +2,22 @@ use std::collections::VecDeque;
 
 use miden_objects::Word;
 
-use super::{Committed, GraphResult, NodeId};
+use super::{GraphResult, NodeId};
 
 /// Holds the state commitment transitions for a single account.
 ///
 /// The latest committed commitment is also retained.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AccountState {
     /// The latest committed account commitment.
-    pub(crate) committed: Committed<Word>,
+    committed: Committed,
 
     /// Uncommitted account transitions in chronological order.
     ///
     /// Represented as a chain of `(node ID, from -> to)` commitments, with the first entry's
     /// `from` matching `self.committed`, and each subsequent entry having
     /// `transitions[n].to == transitions[n+1].from`.
-    pub(crate) transitions: VecDeque<(NodeId, Word, Word)>,
+    transitions: VecDeque<(NodeId, Word, Word)>,
 }
 
 impl AccountState {
@@ -58,19 +58,20 @@ impl AccountState {
     ///
     /// Returns an error if the latest account commitment does not match `from`.
     pub(crate) fn append(&mut self, id: NodeId, from: Word, to: Word) -> GraphResult<()> {
-        let current = self
-            .transitions
-            .back()
-            .map(|(_id, _from, to)| to)
-            .unwrap_or(self.committed.inner());
-
-        if current != &from {
+        if self.current_commitment() != &from {
             todo!("return error");
         }
 
         self.transitions.push_back((id, from, to));
 
         Ok(())
+    }
+
+    pub(crate) fn current_commitment(&self) -> &Word {
+        self.transitions
+            .back()
+            .map(|(_id, _from, to)| to)
+            .unwrap_or(self.committed.inner())
     }
 
     /// Reverts the given account transition from the account state.
@@ -120,5 +121,35 @@ impl AccountState {
     /// committed state has been pruned.
     pub(crate) fn is_unused(&self) -> bool {
         self.committed.is_pruned() && self.transitions.is_empty()
+    }
+}
+
+/// Represents a committed part of state within the graph.
+///
+/// It distinguishes between recently committed state (`Committed::Recent`) and state whose block
+/// has been pruned locally, but which cannot be removed yet as other inflight state depends on it.
+#[derive(Clone, PartialEq, Debug)]
+enum Committed {
+    /// State from a recently committed block.
+    ///
+    /// The mempool retains recently committed state to provide an overlap with the state in the
+    /// store. This extends the time that a new transaction or batch have to fetch data from the
+    /// store without racing against committed state being dropped from the mempool.
+    Recent(Word),
+    /// State who's block is no longer retained locally in the mempool, but which is still required
+    /// as a foundation for inflight state.
+    Pruned(Word),
+}
+
+impl Committed {
+    fn inner(&self) -> &Word {
+        match self {
+            Committed::Recent(inner) => inner,
+            Committed::Pruned(inner) => inner,
+        }
+    }
+
+    fn is_pruned(&self) -> bool {
+        matches!(self, Committed::Pruned(_))
     }
 }

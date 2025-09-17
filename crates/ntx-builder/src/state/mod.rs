@@ -14,7 +14,7 @@ use miden_objects::transaction::{PartialBlockchain, TransactionId};
 use tracing::instrument;
 
 use crate::COMPONENT;
-use crate::actor::AccountActorError;
+use crate::actor::ActorShutdownReason;
 use crate::store::{StoreClient, StoreError};
 
 mod account;
@@ -165,7 +165,7 @@ impl State {
 
     /// Updates state with the mempool event.
     #[instrument(target = COMPONENT, name = "ntx.state.mempool_update", skip_all)]
-    pub async fn mempool_update(&mut self, update: MempoolEvent) -> Result<(), AccountActorError> {
+    pub async fn mempool_update(&mut self, update: MempoolEvent) -> Option<ActorShutdownReason> {
         let span = tracing::Span::current();
         span.set_attribute("mempool_event.kind", update.kind());
 
@@ -182,7 +182,7 @@ impl State {
             },
             MempoolEvent::BlockCommitted { header, txs } => {
                 if header.prev_block_commitment() == self.chain_tip_header.commitment() {
-                    return Err(AccountActorError::CommittedBlockMismatch {
+                    return Some(ActorShutdownReason::CommittedBlockMismatch {
                         parent_block: header.prev_block_commitment(),
                         current_block: self.chain_tip_header.commitment(),
                     });
@@ -194,13 +194,17 @@ impl State {
             },
             MempoolEvent::TransactionsReverted(txs) => {
                 for tx in txs {
-                    self.revert_transaction(tx)?;
+                    let shutdown_reason = self.revert_transaction(tx);
+                    if shutdown_reason.is_some() {
+                        return shutdown_reason;
+                    }
                 }
             },
         }
         self.inject_telemetry();
 
-        Ok(())
+        // No shutdown, continue running actor.
+        None
     }
 
     /// Handles a [`MempoolEvent::TransactionAdded`] event.
@@ -279,18 +283,18 @@ impl State {
     }
 
     /// Handles [`MempoolEvent::TransactionsReverted`] events.
-    fn revert_transaction(&mut self, tx: TransactionId) -> Result<(), AccountActorError> {
+    fn revert_transaction(&mut self, tx: TransactionId) -> Option<ActorShutdownReason> {
         // We only track transactions which have an impact on the network state.
         let Some(impact) = self.inflight_txs.remove(&tx) else {
             tracing::debug!("transaction {tx} not found in inflight transactions");
-            return Ok(());
+            return None;
         };
 
         // Revert account creation.
         if let Some(account_prefix) = impact.account_delta {
             // Account creation reverted, actor must stop.
             if account_prefix == self.account_prefix && self.account.revert_delta() {
-                return Err(AccountActorError::AccountCreationReverted(account_prefix));
+                return Some(ActorShutdownReason::AccountReverted(account_prefix));
             }
         }
 
@@ -310,7 +314,7 @@ impl State {
             }
         }
 
-        Ok(())
+        None
     }
 
     /// Adds stats to the current tracing span.

@@ -5,45 +5,23 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::sync::{Semaphore, mpsc};
+use tokio::sync::{AcquireError, Semaphore, mpsc};
 use url::Url;
 
 use crate::block_producer::BlockProducerClient;
 use crate::state::{State, TransactionCandidate};
-use crate::store::{StoreClient, StoreError};
 use crate::transaction::NtxError;
 
-// ERRORS
-// ================================================================================================
-
-/// Errors that can occur during `AccountActor` execution
-#[derive(Debug, thiserror::Error)]
-pub enum AccountActorError {
-    #[error("account does not exist: {0}")]
-    AccountNotFound(NetworkAccountPrefix),
-
-    #[error("failed to use store: {0}")]
-    StoreError(#[from] Box<StoreError>),
-
-    /// Failed to acquire semaphore permit
-    #[error("failed to acquire semaphore permit: {0}")]
-    SemaphoreError(#[from] tokio::sync::AcquireError),
-
-    #[error(
-        "new block's parent commitment {parent_block} does not match local chain tip {current_block}"
-    )]
+pub enum ActorShutdownReason {
+    AccountReverted(NetworkAccountPrefix),
+    EventChannelClosed,
+    SemaphoreFailed(AcquireError),
     CommittedBlockMismatch { parent_block: Word, current_block: Word },
-
-    /// Failed to update mempool state
-    #[error("account creation reverted: {0}")]
-    AccountCreationReverted(NetworkAccountPrefix),
 }
 
 #[derive(Debug, Clone)]
 pub struct AccountActorConfig {
     pub semaphore: Arc<Semaphore>,
-    /// Address of the store gRPC server.
-    pub store_url: Url,
     /// Address of the block producer gRPC server.
     pub block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
@@ -53,8 +31,6 @@ pub struct AccountActorConfig {
 
 /// Account actor that manages state and processes transactions for a single network account.
 pub struct AccountActor {
-    account_prefix: NetworkAccountPrefix,
-    store_url: Url,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
@@ -62,17 +38,12 @@ pub struct AccountActor {
 }
 
 impl AccountActor {
-    pub fn new(
-        account_prefix: NetworkAccountPrefix,
-        config: &AccountActorConfig,
-    ) -> (Self, mpsc::UnboundedSender<MempoolEvent>) {
+    pub fn new(config: &AccountActorConfig) -> (Self, mpsc::UnboundedSender<MempoolEvent>) {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let semaphore = config.semaphore.clone();
         let actor = Self {
-            account_prefix,
-            store_url: config.store_url.clone(),
             event_rx,
             block_producer,
             prover,
@@ -81,23 +52,17 @@ impl AccountActor {
         (actor, event_tx)
     }
 
-    pub async fn run(mut self) -> Result<(), AccountActorError> {
-        let store = StoreClient::new(self.store_url.clone());
-        let account = store.get_network_account(self.account_prefix).await.map_err(Box::new)?;
-        let Some(account) = account else {
-            return Err(AccountActorError::AccountNotFound(self.account_prefix));
-        };
-        let mut state = State::load(self.account_prefix, account, store).await.map_err(Box::new)?;
-
+    pub async fn run(mut self, mut state: State) -> ActorShutdownReason {
         let semaphore = self.semaphore.clone();
         loop {
             tokio::select! {
                 event = self.event_rx.recv() => {
-                    // End if channel is closed.
                     let Some(event) = event else {
-                         return Ok(());
+                         return ActorShutdownReason::EventChannelClosed;
                     };
-                    state.mempool_update(event).await?;
+                    if let Some(shutdown_reason) = state.mempool_update(event).await {
+                        return shutdown_reason;
+                    }
                 },
                 permit = semaphore.acquire() => {
                     match permit {
@@ -107,7 +72,7 @@ impl AccountActor {
                             }
                         }
                         Err(err) => {
-                            return Err(AccountActorError::SemaphoreError(err));
+                            return ActorShutdownReason::SemaphoreFailed(err);
                         }
                     }
                 }

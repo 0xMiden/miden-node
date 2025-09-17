@@ -14,8 +14,9 @@ use tokio::time;
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
-use crate::actor::{AccountActor, AccountActorConfig, AccountActorError};
+use crate::actor::{AccountActor, AccountActorConfig, ActorShutdownReason};
 use crate::block_producer::BlockProducerClient;
+use crate::state::State;
 use crate::store::StoreClient;
 
 // NETWORK TRANSACTION BUILDER
@@ -45,7 +46,7 @@ pub struct NetworkTransactionBuilder {
     /// ...
     actor_registry: HashMap<NetworkAccountPrefix, mpsc::UnboundedSender<MempoolEvent>>,
     /// ...
-    actor_join_set: JoinSet<Result<(), AccountActorError>>,
+    actor_join_set: JoinSet<ActorShutdownReason>,
 }
 
 impl NetworkTransactionBuilder {
@@ -92,7 +93,6 @@ impl NetworkTransactionBuilder {
         // Create a semaphore to limit the number of in-progress transactions across all actors.
         let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
         let config = AccountActorConfig {
-            store_url: self.store_url.clone(),
             block_producer_url: self.block_producer_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
             semaphore,
@@ -107,7 +107,7 @@ impl NetworkTransactionBuilder {
                 let prefix = note.account_prefix();
                 #[allow(clippy::map_entry, reason = "async closure")]
                 if !self.actor_registry.contains_key(&prefix) {
-                    self.spawn_actor(prefix, &config);
+                    self.spawn_actor(prefix, &config, store.clone()).await?;
                 }
             }
         }
@@ -118,39 +118,26 @@ impl NetworkTransactionBuilder {
                 // Handle actor completion.
                 actor_result = self.actor_join_set.join_next() => {
                     match actor_result {
-                        Some(Ok(Ok(()))) =>  unreachable!("actor never finishes without error"),
-                        Some(Ok(Err(err))) => {
-                            match err {
-                                AccountActorError::AccountNotFound(prefix) => {
-                                    // TODO: Handle account not found error
-                                    tracing::error!(prefix = ?prefix, "actor stopped due to account not found");
-                                }
-                                AccountActorError::StoreError(err) => {
-                                    // TODO: Handle store error
-                                    tracing::error!(err = ?err, "actor stopped due to store error");
-                                }
-                                AccountActorError::SemaphoreError(_) => {
-                                    // TODO: Handle semaphore acquisition failure
-                                    tracing::error!(err = ?err, "actor stopped due to semaphore error");
-                                }
-                                AccountActorError::CommittedBlockMismatch{..} => {
-                                    // TODO: Handle mismatched committed block
-                                    tracing::error!(err = ?err, "actor stopped due to mismatched committed block");
-                                }
-                                AccountActorError::AccountCreationReverted(prefix) => {
-                                    tracing::info!(prefix = ?prefix, "actor stopped due to account creation being reverted");
-                                    self.actor_registry.remove(&prefix);
-                                }
+                        Some(Ok(shutdown_reason)) =>  match shutdown_reason {
+                            ActorShutdownReason::AccountReverted(account_prefix) => {
+                                tracing::info!("account reverted: {}", account_prefix);
+                                self.actor_registry.remove(&account_prefix);
                             }
-                        }
+                            ActorShutdownReason::EventChannelClosed => {
+                                anyhow::bail!("event channel closed");
+                            }
+                            ActorShutdownReason::CommittedBlockMismatch {parent_block, current_block} => {
+                                tracing::error!("committed block mismatch: current={}, current={}", parent_block, current_block);
+                            }
+                            ActorShutdownReason::SemaphoreFailed(err) => {
+                                return Err(err).context("semaphore failed");
+                            }
+                        },
                         Some(Err(err)) => {
                             if err.is_panic() {
-                                tracing::error!(err = ?err, "actor join set panicked");
-                                // TODO: exit?
-                            } else {
-                                tracing::error!(err = ?err, "actor join set failed");
-                                // TODO: exit?
+                                return Err(err).context("actor join set panicked");
                             }
+                            return Err(err).context("actor join set failed");
                         },
                         None => {
                             tracing::warn!("actor join set is empty");
@@ -167,17 +154,19 @@ impl NetworkTransactionBuilder {
                     self.handle_mempool_event(
                         &event,
                         &config,
-                    );
+                        store.clone(),
+                    ).await?;
                 },
             }
         }
     }
 
-    fn handle_mempool_event(
+    async fn handle_mempool_event(
         &mut self,
         event: &MempoolEvent,
         account_actor_config: &AccountActorConfig,
-    ) {
+        store: StoreClient,
+    ) -> anyhow::Result<()> {
         match &event {
             // Broadcast to affected actors.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
@@ -191,29 +180,40 @@ impl NetworkTransactionBuilder {
                         Self::send_event(account_prefix, event_tx, event.clone());
                     } else {
                         // Try creating the actor.
-                        let event_tx = self.spawn_actor(account_prefix, account_actor_config);
-                        Self::send_event(account_prefix, &event_tx, event.clone());
+                        let event_tx = self
+                            .spawn_actor(account_prefix, account_actor_config, store.clone())
+                            .await?;
+                        if let Some(event_tx) = event_tx {
+                            Self::send_event(account_prefix, &event_tx, event.clone());
+                        }
                     }
                 }
+                Ok(())
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
                 self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
                     Self::send_event(*account_prefix, event_tx, event.clone());
                 });
+                Ok(())
             },
         }
     }
 
-    fn spawn_actor(
+    /// Spawns a new actor and registers it with the builder if the account is present in the store.
+    async fn spawn_actor(
         &mut self,
         account_prefix: NetworkAccountPrefix,
         config: &AccountActorConfig,
-    ) -> mpsc::UnboundedSender<MempoolEvent> {
-        let (actor, event_tx) = AccountActor::new(account_prefix, config);
+        store: StoreClient,
+    ) -> anyhow::Result<Option<mpsc::UnboundedSender<MempoolEvent>>> {
+        let account = store.get_network_account(account_prefix).await?;
+        let Some(account) = account else { return Ok(None) };
+        let state = State::load(account_prefix, account, store).await?;
+        let (actor, event_tx) = AccountActor::new(config);
         self.actor_registry.insert(account_prefix, event_tx.clone());
-        self.actor_join_set.spawn(async move { actor.run().await });
-        event_tx
+        self.actor_join_set.spawn(async move { actor.run(state).await });
+        Ok(Some(event_tx))
     }
 
     /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.

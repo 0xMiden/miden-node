@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Miden Network Monitor</title>
+    <link rel="stylesheet" href="/assets/index.css">
+    <link rel="icon" href="/assets/favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon"></div>
+                <div class="logo-text">Miden <span class="highlight">Network</span></div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="form-title">Network Status Dashboard</div>
+            
+            <div id="status-container">
+                <div class="loading-section">
+                    <div class="loader"></div>
+                </div>
+            </div>
+
+            <div class="note">
+                Last updated: <span id="last-updated">-</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <div class="footer-content">
+            <div class="footer-section">
+                <div class="footer-label">Network Status</div>
+                <div class="footer-value" id="overall-status">Checking...</div>
+            </div>
+            <div class="footer-section tokens-section">
+                <div class="footer-label">Services</div>
+                <div class="footer-value" id="services-count">-</div>
+            </div>
+        </div>
+        <div class="footer-line"></div>
+    </div>
+
+    <script>
+        let statusData = null;
+        let updateInterval = null;
+
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/status');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                statusData = await response.json();
+                updateDisplay();
+            } catch (error) {
+                console.error('Error fetching status:', error);
+                showError('Failed to fetch network status: ' + error.message);
+            }
+        }
+
+        function updateDisplay() {
+            if (!statusData) return;
+
+            const container = document.getElementById('status-container');
+            const lastUpdated = document.getElementById('last-updated');
+            const overallStatus = document.getElementById('overall-status');
+            const servicesCount = document.getElementById('services-count');
+
+            // Update last updated time
+            const lastUpdateTime = new Date(statusData.last_updated * 1000);
+            lastUpdated.textContent = lastUpdateTime.toLocaleString();
+
+            // Count healthy vs unhealthy services
+            const healthyServices = statusData.services.filter(s => s.status === 'healthy').length;
+            const totalServices = statusData.services.length;
+            const allHealthy = healthyServices === totalServices;
+
+            // Update footer
+            overallStatus.textContent = allHealthy ? 'All Systems Operational' : `${healthyServices}/${totalServices} Services Healthy`;
+            overallStatus.style.color = allHealthy ? '#22C55D' : '#ff5500';
+            servicesCount.textContent = `${totalServices} Services`;
+
+            // Generate status cards
+            container.innerHTML = statusData.services.map(service => {
+                const isHealthy = service.status === 'healthy';
+                const statusColor = isHealthy ? '#22C55D' : '#ff5500';
+                const statusIcon = isHealthy ? '✓' : '✗';
+                
+                let detailsHtml = '';
+                if (service.details) {
+                    const details = service.details;
+                    detailsHtml = `
+                        <div class="service-details">
+                            ${details.rpc_status ? `
+                                <div class="detail-item"><strong>Version:</strong> ${details.rpc_status.version}</div>
+                                ${details.rpc_status.genesis_commitment ? `
+                                    <div class="detail-item">
+                                        <strong>Genesis:</strong> 
+                                        <span class="genesis-value">${details.rpc_status.genesis_commitment.substring(0, 20)}...</span>
+                                        <button class="copy-button" onclick="copyToClipboard('${details.rpc_status.genesis_commitment}', event)" title="Copy full genesis commitment">
+                                            <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                ` : ''}
+                                ${details.rpc_status.store_status ? `
+                                    <div class="nested-status">
+                                        <strong>Store:</strong> ${details.rpc_status.store_status.version} - ${details.rpc_status.store_status.status}
+                                        ${details.rpc_status.store_status.chain_tip ? ` (Tip: ${details.rpc_status.store_status.chain_tip})` : ''}
+                                    </div>
+                                ` : ''}
+                                ${details.rpc_status.block_producer_status ? `
+                                    <div class="nested-status">
+                                        <strong>Block Producer:</strong> ${details.rpc_status.block_producer_status.version} - ${details.rpc_status.block_producer_status.status}
+                                    </div>
+                                ` : ''}
+                            ` : ''}
+                            ${details.remote_prover_statuses && details.remote_prover_statuses.length > 0 ? `
+                                ${details.remote_prover_statuses.map(prover => `
+                                    <div class="nested-status">
+                                        <strong>${prover.name} (${prover.url}):</strong>
+                                        <div class="detail-item"><strong>Version:</strong> ${prover.version}</div>
+                                        <div class="nested-status">
+                                            <strong>Supported Proof Type:</strong> ${prover.supported_proof_type}
+                                        </div>
+                                        ${prover.workers && prover.workers.length > 0 ? `
+                                            <div class="nested-status">
+                                                <strong>Workers (${prover.workers.length}):</strong>
+                                                ${prover.workers.map(worker => `
+                                                    <div class="worker-status">
+                                                        <span class="worker-address">${worker.address}</span> - 
+                                                        <span class="worker-version">${worker.version}</span> - 
+                                                        <span class="worker-status-badge ${worker.status === 'HEALTHY' ? 'healthy' : worker.status === 'UNHEALTHY' ? 'unhealthy' : 'unknown'}">${worker.status}</span>
+                                                    </div>
+                                                `).join('')}
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
+                            ` : ''}
+                        </div>
+                    `;
+                }
+
+                return `
+                    <div class="service-card ${isHealthy ? 'healthy' : 'unhealthy'}">
+                        <div class="service-header">
+                            <div class="service-name">${service.name}</div>
+                            <div class="service-status" style="color: ${statusColor}">
+                                ${statusIcon} ${service.status.toUpperCase()}
+                            </div>
+                        </div>
+                        ${service.error ? `<div class="service-error">${service.error}</div>` : ''}
+                        ${detailsHtml}
+                        <div class="service-timestamp">
+                            Last checked: ${new Date(service.last_checked * 1000).toLocaleString()}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Add refresh button
+            container.innerHTML += `
+                <div class="button-group" style="margin-top: 20px;">
+                    <button class="button" onclick="fetchStatus()">
+                        <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                        </svg>
+                        Refresh Status
+                    </button>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const container = document.getElementById('status-container');
+            container.innerHTML = `
+                <div class="error-message" style="display: block;">
+                    ${message}
+                </div>
+                <div class="button-group" style="margin-top: 20px;">
+                    <button class="button" onclick="fetchStatus()">
+                        <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                        </svg>
+                        Retry
+                    </button>
+                </div>
+            `;
+        }
+
+        async function copyToClipboard(text, event) {
+            try {
+                await navigator.clipboard.writeText(text);
+                // Show a brief success indicator
+                const button = event.target.closest('.copy-button');
+                const originalContent = button.innerHTML;
+                button.innerHTML = '<svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+                button.style.color = '#22C55D';
+                
+                setTimeout(() => {
+                    button.innerHTML = originalContent;
+                    button.style.color = '';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy: ', err);
+                // Fallback for older browsers
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+        }
+
+        // Initial load and set up auto-refresh
+        fetchStatus();
+        updateInterval = setInterval(fetchStatus, 10000); // Refresh every 10 seconds
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (updateInterval) {
+                clearInterval(updateInterval);
+            }
+        });
+    </script>
+</body>
+</html>

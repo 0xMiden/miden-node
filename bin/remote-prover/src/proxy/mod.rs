@@ -310,7 +310,7 @@ impl opentelemetry::propagation::Injector for PingoraHeaderInjector<'_> {
         // Convert key to owned string to satisfy lifetime requirements
         if let Err(e) = self.0.insert_header(key.to_string(), value) {
             // Log error but don't fail the request if header injection fails
-            tracing::warn!(target: COMPONENT, "Failed to inject OpenTelemetry header {}: {}", key, e);
+            tracing::warn!(target: COMPONENT, header = %key, err = %e, "Failed to inject OpenTelemetry header");
         }
     }
 }

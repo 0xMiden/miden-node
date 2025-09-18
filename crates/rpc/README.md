@@ -94,6 +94,8 @@ When transaction submission fails, detailed error information is provided throug
 | `OUTPUT_NOTES_ALREADY_EXIST`                  | 7     | `INVALID_ARGUMENT` | Output note IDs are already in use                            |
 | `TRANSACTION_EXPIRED`                         | 8     | `INVALID_ARGUMENT` | Transaction has exceeded its expiration block height          |
 
+**Error Details Serialization**: The `Status.details` field contains a single byte with the numeric error code value. Clients can decode this by reading `details[0]` to get the error code (0-8) and mapping it to the corresponding enum value.
+
 Clients should inspect both the gRPC status code and the detailed error code in the `Status.details` field to determine the appropriate response. For `INTERNAL_ERROR` cases, the detailed error message is replaced with a generic message for security reasons.
 
 ---

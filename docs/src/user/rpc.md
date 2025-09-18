@@ -16,6 +16,25 @@ The Miden node uses standard gRPC error reporting mechanisms. When an RPC call f
 
 For critical operations like transaction submission, detailed error codes are provided in the `Status.details` field to help clients understand the specific failure reason and take appropriate action.
 
+### Error Details Format
+
+The `Status.details` field contains the specific error code serialized as raw bytes:
+
+- **Format**: Single byte containing the numeric error code value
+- **Decoding**: Read the first byte to get the error code
+- **Mapping**: Map the numeric value to the corresponding error enum
+
+**Example decoding** (pseudocode):
+```
+if status.details.length > 0:
+    error_code = status.details[0]  // Extract first byte
+    switch error_code:
+        case 1: return "INTERNAL_ERROR"
+        case 2: return "DESERIALIZATION_FAILED"
+        case 5: return "INPUT_NOTES_ALREADY_CONSUMED"
+        // ... etc
+```
+
 <!--toc:start-->
 
 - [CheckNullifiers](#checknullifiers)

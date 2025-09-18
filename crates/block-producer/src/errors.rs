@@ -149,6 +149,9 @@ impl From<AddTransactionError> for tonic::Status {
         tonic::Status::with_details(
             api_error.tonic_code(),
             message,
+            // Details are serialized as a single byte containing the error code value.
+            // Clients can decode this by reading the first byte of the details field.
+            // Example: details[0] will contain the SubmitProvenTransactionError enum value (0-8)
             vec![api_error.api_code()].into(),
         )
     }

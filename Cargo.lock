@@ -2498,6 +2498,7 @@ dependencies = [
  "miden-tx",
  "miden-tx-batch-prover",
  "miette",
+ "opentelemetry",
  "pingora",
  "pingora-core",
  "pingora-limits",
@@ -2519,6 +2520,7 @@ dependencies = [
  "tonic-web",
  "tower-http",
  "tracing",
+ "tracing-opentelemetry",
  "uuid",
 ]
 

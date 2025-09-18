@@ -94,26 +94,31 @@ impl ProverRpcApi {
         name = "remote_prover.prove_tx",
         skip_all,
         ret(level = "debug"),
-        fields(id = tracing::field::Empty),
+        fields(request_id = %request_id, transaction_id = tracing::field::Empty),
         err
     )]
     pub async fn prove_tx(
         &self,
         transaction_witness: TransactionWitness,
+        request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Transaction(prover) = &self.prover else {
             return Err(Status::unimplemented("Transaction prover is not enabled"));
         };
 
-        let proof = prover
+        let locked_prover = prover
             .try_lock()
-            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
-            .prove(transaction_witness)
-            .map_err(internal_error)?;
+            .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?;
+
+        // Add a small delay to simulate longer proving time for testing
+        #[cfg(test)]
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+        let proof = locked_prover.prove(transaction_witness).map_err(internal_error)?;
 
         // Record the transaction_id in the current tracing span
         let transaction_id = proof.id();
-        tracing::Span::current().record("id", tracing::field::display(&transaction_id));
+        tracing::Span::current().record("transaction_id", tracing::field::display(&transaction_id));
 
         Ok(Response::new(proto::remote_prover::Proof { payload: proof.to_bytes() }))
     }
@@ -124,12 +129,13 @@ impl ProverRpcApi {
         name = "remote_prover.prove_batch",
         skip_all,
         ret(level = "debug"),
-        fields(id = tracing::field::Empty),
+        fields(request_id = %request_id, batch_id = tracing::field::Empty),
         err
     )]
     pub fn prove_batch(
         &self,
         proposed_batch: ProposedBatch,
+        request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Batch(prover) = &self.prover else {
             return Err(Status::unimplemented("Batch prover is not enabled"));
@@ -143,7 +149,7 @@ impl ProverRpcApi {
 
         // Record the batch_id in the current tracing span
         let batch_id = proven_batch.id();
-        tracing::Span::current().record("id", tracing::field::display(&batch_id));
+        tracing::Span::current().record("batch_id", tracing::field::display(&batch_id));
 
         Ok(Response::new(proto::remote_prover::Proof { payload: proven_batch.to_bytes() }))
     }
@@ -154,12 +160,13 @@ impl ProverRpcApi {
         name = "remote_prover.prove_block",
         skip_all,
         ret(level = "debug"),
-        fields(id = tracing::field::Empty),
+        fields(request_id = %request_id, block_id = tracing::field::Empty),
         err
     )]
     pub fn prove_block(
         &self,
         proposed_block: ProposedBlock,
+        request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Block(prover) = &self.prover else {
             return Err(Status::unimplemented("Block prover is not enabled"));
@@ -173,8 +180,7 @@ impl ProverRpcApi {
 
         // Record the commitment of the block in the current tracing span
         let block_id = proven_block.commitment();
-
-        tracing::Span::current().record("id", tracing::field::display(&block_id));
+        tracing::Span::current().record("block_id", tracing::field::display(&block_id));
 
         Ok(Response::new(proto::remote_prover::Proof { payload: proven_block.to_bytes() }))
     }
@@ -187,25 +193,40 @@ impl ProverApi for ProverRpcApi {
         name = "remote_prover.prove",
         skip_all,
         ret(level = "debug"),
-        fields(id = tracing::field::Empty),
+        fields(request_id = tracing::field::Empty),
         err
     )]
     async fn prove(
         &self,
         request: Request<proto::remote_prover::ProofRequest>,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
-        match request.get_ref().proof_type() {
+        // Extract X-Request-ID header for trace correlation
+        let request_id = request
+            .metadata()
+            .get("x-request-id")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("unknown")
+            .to_string(); // Convert to owned string to avoid lifetime issues
+
+        // Record the request_id in the current tracing span
+        tracing::Span::current().record("request_id", &request_id);
+
+        // Extract the proof type and payload
+        let proof_request = request.into_inner();
+        let proof_type = proof_request.proof_type();
+
+        match proof_type {
             proto::remote_prover::ProofType::Transaction => {
-                let tx_witness = request.into_inner().try_into().map_err(invalid_argument)?;
-                self.prove_tx(tx_witness).await
+                let tx_witness = proof_request.try_into().map_err(invalid_argument)?;
+                self.prove_tx(tx_witness, &request_id).await
             },
             proto::remote_prover::ProofType::Batch => {
-                let proposed_batch = request.into_inner().try_into().map_err(invalid_argument)?;
-                self.prove_batch(proposed_batch)
+                let proposed_batch = proof_request.try_into().map_err(invalid_argument)?;
+                self.prove_batch(proposed_batch, &request_id)
             },
             proto::remote_prover::ProofType::Block => {
-                let proposed_block = request.into_inner().try_into().map_err(invalid_argument)?;
-                self.prove_block(proposed_block)
+                let proposed_block = proof_request.try_into().map_err(invalid_argument)?;
+                self.prove_block(proposed_block, &request_id)
             },
         }
     }

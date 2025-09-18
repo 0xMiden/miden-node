@@ -294,6 +294,27 @@ impl RequestQueue {
 /// Shared state. It keeps track of the order of the requests to then assign them to the workers.
 static QUEUE: LazyLock<RequestQueue> = LazyLock::new(RequestQueue::new);
 
+// OPENTELEMETRY CONTEXT INJECTION
+// ================================================================================================
+
+/// Pingora `RequestHeader` injector for OpenTelemetry trace context propagation.
+///
+/// This allows the proxy to inject trace context into headers that will be forwarded
+/// to worker nodes, enabling proper parent-child trace relationships.
+struct PingoraHeaderInjector<'a>(&'a mut pingora::http::RequestHeader);
+
+impl opentelemetry::propagation::Injector for PingoraHeaderInjector<'_> {
+    /// Set a key and value in the `RequestHeader` using pingora's API
+    fn set(&mut self, key: &str, value: String) {
+        // Use pingora's insert_header method which handles the proper header insertion
+        // Convert key to owned string to satisfy lifetime requirements
+        if let Err(e) = self.0.insert_header(key.to_string(), value) {
+            // Log error but don't fail the request if header injection fails
+            tracing::warn!(target: COMPONENT, header = %key, err = %e, "Failed to inject OpenTelemetry header");
+        }
+    }
+}
+
 // REQUEST CONTEXT
 // ================================================================================================
 
@@ -510,7 +531,9 @@ impl ProxyHttp for LoadBalancer {
 
     /// Applies the necessary filters to the request before sending it to the upstream server.
     ///
-    /// Here we ensure that the correct headers are forwarded for gRPC requests.
+    /// Here we ensure that the correct headers are forwarded for gRPC requests and inject
+    /// the X-Request-ID header and OpenTelemetry trace context for trace correlation between proxy
+    /// and worker.
     ///
     /// This method is called right after [`Self::upstream_peer()`] returns a [`HttpPeer`] and a
     /// connection is established with the worker.
@@ -530,6 +553,20 @@ impl ProxyHttp for LoadBalancer {
         {
             // Ensure the correct host and gRPC headers are forwarded
             upstream_request.insert_header("content-type", "application/grpc")?;
+        }
+
+        // Always inject X-Request-ID header for trace correlation
+        // This allows the worker traces to be correlated with the proxy traces
+        upstream_request.insert_header("x-request-id", _ctx.request_id.to_string())?;
+
+        // Inject OpenTelemetry trace context for proper trace propagation
+        // This allows the worker trace to be a child of the proxy trace
+        {
+            use tracing_opentelemetry::OpenTelemetrySpanExt;
+            let ctx = tracing::Span::current().context();
+            opentelemetry::global::get_text_map_propagator(|propagator| {
+                propagator.inject_context(&ctx, &mut PingoraHeaderInjector(upstream_request));
+            });
         }
 
         Ok(())

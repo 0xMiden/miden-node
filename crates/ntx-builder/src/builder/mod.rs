@@ -127,7 +127,7 @@ impl NetworkTransactionBuilder {
                                 anyhow::bail!("event channel closed");
                             }
                             ActorShutdownReason::CommittedBlockMismatch {parent_block, current_block} => {
-                                tracing::error!("committed block mismatch: current={}, current={}", parent_block, current_block);
+                                tracing::error!("committed block mismatch: parent={}, current={}", parent_block, current_block);
                             }
                             ActorShutdownReason::SemaphoreFailed(err) => {
                                 return Err(err).context("semaphore failed");
@@ -140,8 +140,7 @@ impl NetworkTransactionBuilder {
                             return Err(err).context("actor join set failed");
                         },
                         None => {
-                            tracing::warn!("actor join set is empty");
-                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            tokio::time::sleep(Duration::from_secs(2)).await;
                         }
                     }
                 },
@@ -163,7 +162,7 @@ impl NetworkTransactionBuilder {
 
     #[tracing::instrument(
         name = "ntx.builder.handle_mempool_event",
-        skip(self, account_actor_config, store)
+        skip(self, event, account_actor_config, store)
     )]
     async fn handle_mempool_event(
         &mut self,

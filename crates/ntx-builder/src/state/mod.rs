@@ -181,7 +181,7 @@ impl State {
                 self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
             MempoolEvent::BlockCommitted { header, txs } => {
-                if header.prev_block_commitment() == self.chain_tip_header.commitment() {
+                if header.prev_block_commitment() != self.chain_tip_header.commitment() {
                     return Some(ActorShutdownReason::CommittedBlockMismatch {
                         parent_block: header.prev_block_commitment(),
                         current_block: self.chain_tip_header.commitment(),

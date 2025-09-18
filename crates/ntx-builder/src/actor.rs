@@ -81,7 +81,7 @@ impl AccountActor {
         }
     }
 
-    #[tracing::instrument(name = "ntx.actor.execute_transactions", skip(self, state))]
+    #[tracing::instrument(name = "ntx.actor.execute_transactions", skip(self, state, tx_candidate))]
     async fn execute_transactions(
         &mut self,
         state: &mut State,

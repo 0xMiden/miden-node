@@ -16,7 +16,11 @@ pub enum ActorShutdownReason {
     AccountReverted(NetworkAccountPrefix),
     EventChannelClosed,
     SemaphoreFailed(AcquireError),
-    CommittedBlockMismatch { parent_block: Word, current_block: Word },
+    CommittedBlockMismatch {
+        account_prefix: NetworkAccountPrefix,
+        parent_block: Word,
+        current_block: Word,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -70,6 +74,8 @@ impl AccountActor {
                         Ok(_permit) => {
                             if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) {
                                 self.execute_transactions(&mut state, tx_candidate).await;
+                            } else {
+                                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                             }
                         }
                         Err(err) => {

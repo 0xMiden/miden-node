@@ -183,6 +183,7 @@ impl State {
             MempoolEvent::BlockCommitted { header, txs } => {
                 if header.prev_block_commitment() != self.chain_tip_header.commitment() {
                     return Some(ActorShutdownReason::CommittedBlockMismatch {
+                        account_prefix: self.account_prefix,
                         parent_block: header.prev_block_commitment(),
                         current_block: self.chain_tip_header.commitment(),
                     });

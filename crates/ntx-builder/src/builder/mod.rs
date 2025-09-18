@@ -104,10 +104,11 @@ impl NetworkTransactionBuilder {
         for note in notes {
             // Currently only support single target network notes in NTB.
             if let NetworkNote::SingleTarget(note) = note {
-                let prefix = note.account_prefix();
+                let account_prefix = note.account_prefix();
                 #[allow(clippy::map_entry, reason = "async closure")]
-                if !self.actor_registry.contains_key(&prefix) {
-                    self.spawn_actor(prefix, &config, store.clone()).await?;
+                if !self.actor_registry.contains_key(&account_prefix) {
+                    self.spawn_actor(account_prefix, &config, store.clone()).await?;
+                    tracing::info!("created initial actor for account prefix: {}", account_prefix);
                 }
             }
         }
@@ -123,11 +124,12 @@ impl NetworkTransactionBuilder {
                                 tracing::info!("account reverted: {}", account_prefix);
                                 self.actor_registry.remove(&account_prefix);
                             }
+                            ActorShutdownReason::CommittedBlockMismatch {account_prefix, parent_block, current_block} => {
+                                tracing::error!("committed block mismatch: parent={}, current={}", parent_block, current_block);
+                                self.actor_registry.remove(&account_prefix);
+                            }
                             ActorShutdownReason::EventChannelClosed => {
                                 anyhow::bail!("event channel closed");
-                            }
-                            ActorShutdownReason::CommittedBlockMismatch {parent_block, current_block} => {
-                                tracing::error!("committed block mismatch: parent={}, current={}", parent_block, current_block);
                             }
                             ActorShutdownReason::SemaphoreFailed(err) => {
                                 return Err(err).context("semaphore failed");
@@ -186,6 +188,7 @@ impl NetworkTransactionBuilder {
                         let event_tx = self
                             .spawn_actor(account_prefix, account_actor_config, store.clone())
                             .await?;
+                        tracing::info!("created new actor for account prefix: {}", account_prefix);
                         if let Some(event_tx) = event_tx {
                             Self::send_event(account_prefix, &event_tx, event.clone());
                         }

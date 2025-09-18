@@ -6,11 +6,10 @@ impl SubmitProvenTransactionError {
     }
 
     pub fn tonic_code(&self) -> tonic::Code {
-        match self {
-            SubmitProvenTransactionError::Internal | SubmitProvenTransactionError::Unspecified => {
-                tonic::Code::Internal
-            },
-            _ => tonic::Code::InvalidArgument,
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
         }
     }
 
@@ -28,11 +27,10 @@ impl SubmitProvenBatchError {
     }
 
     pub fn tonic_code(&self) -> tonic::Code {
-        match self {
-            SubmitProvenBatchError::Internal | SubmitProvenBatchError::Unspecified => {
-                tonic::Code::Internal
-            },
-            SubmitProvenBatchError::DeserializationFailed => tonic::Code::InvalidArgument,
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
         }
     }
 

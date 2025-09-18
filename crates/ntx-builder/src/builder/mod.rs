@@ -99,7 +99,7 @@ impl NetworkTransactionBuilder {
         };
 
         // Create initial actors for existing accounts.
-        let notes = store.get_unconsumed_network_notes().await?;
+        let notes = store.get_unconsumed_network_notes().await?; // TODO(serge): replace with new endpoint to return ALL known network accounts.
         // Create initial set of actors based on all available notes.
         for note in notes {
             // Currently only support single target network notes in NTB.
@@ -173,11 +173,15 @@ impl NetworkTransactionBuilder {
         store: StoreClient,
     ) -> anyhow::Result<()> {
         match &event {
+            // TODO(serge): First create the new endpoint to return all network accounts then updated this:
+            // TODO(serge): Don't create actors from store here. Only from transactions.
             // Broadcast to affected actors.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 // Find affected accounts.
                 let affected_accounts =
                     Self::find_affected_accounts(account_delta.as_ref(), network_notes);
+
+                // TODO(serge): spawn actor for newly created accounts via account delta. And send the transaction to the actor.
 
                 for account_prefix in affected_accounts {
                     // Retrieve or create the actor.
@@ -198,6 +202,7 @@ impl NetworkTransactionBuilder {
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
+                // TODO(serge): update chain tip here via R/W lock. Don't send blockcommitted to actors.
                 self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
                     Self::send_event(*account_prefix, event_tx, event.clone());
                 });
@@ -215,7 +220,7 @@ impl NetworkTransactionBuilder {
         store: StoreClient,
     ) -> anyhow::Result<Option<mpsc::UnboundedSender<MempoolEvent>>> {
         // Fetch the account from the store.
-        let account = store.get_network_account(account_prefix).await?;
+        let account = store.get_network_account(account_prefix).await?; // TODO(serge): still spawn actor despite lack of network account?
         let Some(account) = account else { return Ok(None) };
 
         // Load the account state from the store.

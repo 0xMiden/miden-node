@@ -4,6 +4,7 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
+use miden_objects::block::BlockNumber;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::{AcquireError, Semaphore, mpsc};
 use url::Url;
@@ -18,8 +19,8 @@ pub enum ActorShutdownReason {
     SemaphoreFailed(AcquireError),
     CommittedBlockMismatch {
         account_prefix: NetworkAccountPrefix,
-        parent_block: Word,
-        current_block: Word,
+        parent_block: BlockNumber,
+        current_block: BlockNumber,
     },
 }
 

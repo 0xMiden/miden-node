@@ -83,6 +83,7 @@ impl State {
             .await?
             .expect("store should contain a latest block");
 
+        // TODO(serge): coordinator manages one instance and shares it. R/W lock coordinator overwrites on block commit.
         let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
 
@@ -184,8 +185,8 @@ impl State {
                 if header.prev_block_commitment() != self.chain_tip_header.commitment() {
                     return Some(ActorShutdownReason::CommittedBlockMismatch {
                         account_prefix: self.account_prefix,
-                        parent_block: header.prev_block_commitment(),
-                        current_block: self.chain_tip_header.commitment(),
+                        parent_block: header.block_num(),
+                        current_block: self.chain_tip_header.block_num(),
                     });
                 }
                 self.update_chain_tip(header);
@@ -230,6 +231,7 @@ impl State {
             if account_prefix == self.account_prefix {
                 match update {
                     NetworkAccountUpdate::New(_) => {
+                        // TODO(serge): double check what else was happening here before.
                         // Do nothing. The coordinator created this actor on this event.
                     },
                     NetworkAccountUpdate::Delta(account_delta) => {

@@ -444,7 +444,7 @@ fn sql_unconsumed_network_notes() {
     // An arbitrary public account (network note tag requires public account).
     create_block(conn, block_num);
 
-    let account_notes = vec![
+    let account_notes = [
         make_account_and_note(conn, block_num, [0u8; 32], AccountStorageMode::Public),
         make_account_and_note(conn, block_num, [1u8; 32], AccountStorageMode::Network),
     ];

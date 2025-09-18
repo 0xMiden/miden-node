@@ -313,45 +313,35 @@ impl Mempool {
         let batch_id = BatchId::from_ids(batch.iter().map(|tx| (tx.id(), tx.account_id())));
         self.batches.insert(batch_id, &batch);
         self.batches.check_user_batches(&self.state);
-        self.state.insert_batch(batch_id, batch.iter().map(|tx| tx.id()));
+        self.state
+            .insert_batch(batch_id, batch.iter().map(|tx| tx.id()))
+            .expect("batch should insert as it consists of transactions selected in DAG order");
 
         Some((batch_id, batch))
     }
 
     /// Drops the failed batch and all of its descendants.
     ///
-    /// Transactions are requeued.
+    /// Transactions are _not_ requeued.
     #[instrument(target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
     pub fn rollback_batch(&mut self, batch: BatchId) {
-        // // Batch may already have been removed as part of a parent batches failure.
-        // let Some(txs) = self.batches_inprogress.remove(&batch) else {
-        //     return;
-        // };
+        // Batch may already have been removed as part of a parent batch's failure.
+        if !self.batches.contains_proposed(&batch) {
+            return;
+        }
 
-        // let removed_batches = self
-        //     .proven_batches
-        //     .remove_batches([batch].into())
-        //     .expect("Batch was not present");
-
-        // let transactions = removed_batches.values().flatten().copied().collect();
-
-        // self.transactions
-        //     .requeue_transactions(transactions)
-        //     .expect("Transaction should requeue");
-
-        // tracing::warn!(
-        //     %batch,
-        //     descendents=?removed_batches.keys(),
-        //     "Batch failed, dropping all inflight descendent batches, impacted transactions are
-        // back in queue." );
+        self.revert(batch.into());
         self.inject_telemetry();
     }
 
     /// Marks a batch as proven if it exists.
     #[instrument(target = COMPONENT, name = "mempool.commit_batch", skip_all)]
     pub fn commit_batch(&mut self, batch: ProvenBatch) {
-        self.batches.submit_proof(batch, &self.state);
+        if !self.batches.contains_proposed(&batch.id()) {
+            return;
+        }
 
+        self.batches.submit_proof(batch, &self.state);
         self.inject_telemetry();
     }
 
@@ -384,6 +374,7 @@ impl Mempool {
             candidate.select(&self.state);
         }
 
+        // TODO: submit block to state
         self.block_in_progress = Some(block.iter().map(ProvenBatch::id).collect());
         self.inject_telemetry();
 
@@ -409,12 +400,17 @@ impl Mempool {
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
     pub fn commit_block(&mut self, block: BlockHeader) {
         let batches = self.block_in_progress.take().expect("No block in progress to commit");
-        self.state.commit_block(block.block_num(), batches.iter().copied());
+        // TODO: this should become just the block number
+        self.state
+            .commit_block(block.block_num(), batches.iter().copied())
+            .expect("block should commit since there was one in progress");
         self.recent_blocks.push_back(block.block_num());
 
         if self.recent_blocks.len() > self.state_retention {
             let pruned = self.recent_blocks.pop_front().unwrap();
-            self.state.prune_block(pruned);
+            self.state
+                .prune_block(pruned)
+                .expect("pruning block should succeed as it is chronologically ordered");
         }
 
         for batch in batches {
@@ -448,27 +444,10 @@ impl Mempool {
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.rollback_block", skip_all)]
     pub fn rollback_block(&mut self) {
-        let batches = self.block_in_progress.take().expect("No block in progress to be failed");
+        assert!(self.block_in_progress.is_some(), "A block must be in progress to rollback");
 
-        // Revert all transactions. This is the nuclear (but simplest) solution.
-        //
-        // We currently don't have a way of determining why this block failed so take the safe route
-        // and just nuke all associated transactions.
-        //
-        // TODO: improve this strategy, e.g. count txn failures (as well as in e.g. batch failures),
-        // and only revert upon exceeding some threshold.
-        // let txs = batches
-        //     .into_iter()
-        //     .flat_map(|batch_id| {
-        //         self.proven_batches
-        //             .get_transactions(&batch_id)
-        //             .expect("batch from a block must be in the mempool")
-        //     })
-        //     .copied()
-        //     .collect();
-        // self.revert_transactions(txs)
-        //     .expect("transactions from a block must be part of the mempool");
-        // self.inject_telemetry();
+        self.revert(self.chain_tip.child().into());
+        self.inject_telemetry();
     }
 
     /// Gets all transactions that expire at the new chain tip and reverts them (and their
@@ -482,50 +461,6 @@ impl Mempool {
         //     .expect("expired transactions must be part of the mempool");
 
         // expired
-    }
-
-    /// Reverts the given transactions and their descendents from the mempool.
-    ///
-    /// This includes removing them from the transaction and batch graphs, as well as cleaning up
-    /// their inflight state and expiration mappings.
-    ///
-    /// Transactions that were in reverted batches but that are disjoint from the reverted
-    /// transactions (i.e. not descendents) are requeued and _not_ reverted.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any transaction was not in the transaction graph i.e. if the transaction
-    /// is unknown.
-    #[instrument(target = COMPONENT, name = "mempool.revert_transactions", skip_all, fields(transactions.expired.ids))]
-    fn revert_transactions(
-        &mut self,
-        txs: Vec<TransactionId>,
-    ) -> Result<BTreeSet<TransactionId>, GraphError<TransactionId>> {
-        tracing::Span::current().record("transactions.expired.ids", tracing::field::debug(&txs));
-
-        // Revert all transactions and their descendents, and their associated batches.
-        let reverted = self.submitted_transactions.remove_transactions(txs)?;
-        let batches_reverted =
-            self.proven_batches.remove_batches_with_transactions(reverted.iter());
-
-        // Requeue transactions that are disjoint from the reverted set, but were part of the
-        // reverted batches.
-        let to_requeue = batches_reverted
-            .into_values()
-            .flatten()
-            .filter(|tx| !reverted.contains(tx))
-            .collect();
-        self.submitted_transactions
-            .requeue_transactions(to_requeue)
-            .expect("transactions from batches must be requeueable");
-
-        // Cleanup state.
-        self.expirations.remove(reverted.iter());
-        self.state.revert_transactions(reverted.clone());
-
-        self.subscription.txs_reverted(reverted.clone());
-
-        Ok(reverted)
     }
 
     /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.
@@ -542,6 +477,50 @@ impl Mempool {
         chain_tip: BlockNumber,
     ) -> Result<mpsc::Receiver<MempoolEvent>, BlockNumber> {
         self.subscription.subscribe(chain_tip)
+    }
+
+    /// Fully reverts the node and all of its ancestors.
+    fn revert(&mut self, node: NodeId) {
+        // Find all descendents using state DAG. We need to revert all of them, in reverse order
+        // i.e. so we're only reverting a node with no ancestors. To this end, we'll track each
+        // ancestors parents and children.
+        let mut children = HashMap::new();
+        let mut parents = HashMap::new();
+
+        let mut to_process = vec![node];
+        let mut processed = HashSet::new();
+        while let Some(process) = to_process.pop() {
+            if processed.contains(&process) {
+                continue;
+            }
+
+            parents.insert(process, self.state.parents(process).unwrap());
+            children.insert(process, self.state.children(process).unwrap());
+            processed.insert(process);
+        }
+
+        while !children.is_empty() {
+            let Some((&node, _)) = children.iter().find(|(_, children)| children.is_empty()) else {
+                panic!("Nodes remaining while reverting but none are valid to revert next");
+            };
+
+            children.remove(&node).unwrap();
+            for parent in parents.remove(&node).unwrap() {
+                children.get_mut(&parent).unwrap().remove(&node);
+            }
+
+            match node {
+                NodeId::Transaction(tx) => self.txs.remove(tx),
+                NodeId::Batch(batch_id) => {
+                    self.batches.remove(batch_id);
+                },
+                NodeId::Block(_) => {
+                    self.block_in_progress.take();
+                },
+            }
+
+            // TODO: remove from state DAG
+        }
     }
 
     fn expiration_check(&self, expired_at: BlockNumber) -> Result<(), AddTransactionError> {

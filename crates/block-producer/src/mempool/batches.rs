@@ -37,6 +37,10 @@ impl Batches {
         self.proven.remove(&id)
     }
 
+    pub fn contains_proposed(&self, id: &BatchId) -> bool {
+        self.proposed.contains_key(id)
+    }
+
     pub fn submit_proof(&mut self, proof: ProvenBatch, dag: &StateGraph) {
         let id = proof.id();
 
@@ -126,7 +130,6 @@ impl<'a> BatchCandidate<'a> {
             .expect("all candidates are tracked and we have exclusive control of origin")
     }
 
-    #[must_use]
     pub fn select(self, dag: &StateGraph) {
         self.origin.candidates.remove(&self.candidate);
         self.origin.unprocessed.remove(&self.candidate);

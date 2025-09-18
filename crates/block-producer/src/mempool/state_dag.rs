@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_variables, reason = "wip")]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use miden_objects::Word;
 use miden_objects::account::AccountId;
@@ -16,6 +16,16 @@ mod account;
 
 // NODE TRAIT
 // ================================================================================================
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+enum Id {
+    Transaction(TransactionId),
+    UserBatch(BatchId),
+    ProposedBatch(BatchId),
+    ProvenBatch(BatchId),
+    ProposedBlock(BlockNumber),
+    CommittedBlock(BlockNumber),
+}
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub enum NodeId {

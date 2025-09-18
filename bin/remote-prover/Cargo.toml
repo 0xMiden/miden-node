@@ -53,7 +53,7 @@ tonic                 = { default-features = false, features = ["codegen", "pros
 tonic-health          = { version = "0.13" }
 tonic-web             = { version = "0.13" }
 tower-http            = { features = ["trace"], workspace = true }
-tracing               = { version = "0.1" }
+tracing               = { workspace = true }
 tracing-opentelemetry = { version = "0.31" }
 uuid                  = { features = ["v4"], version = "1.16" }
 

@@ -1,0 +1,25 @@
+[package]
+authors.workspace      = true
+description            = "Miden network monitor"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["miden", "monitor", "network"]
+license.workspace      = true
+name                   = "miden-network-monitor"
+readme.workspace       = true
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow           = { workspace = true }
+axum             = { version = "0.8" }
+miden-node-proto = { workspace = true }
+miden-node-utils = { workspace = true }
+serde            = { features = ["derive"], version = "1.0" }
+tokio            = { features = ["full"], workspace = true }
+tracing          = { workspace = true }
+url              = { features = ["serde"], workspace = true }

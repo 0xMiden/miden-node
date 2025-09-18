@@ -22,13 +22,39 @@ use crate::mempool::{BatchBudget, BlockBudget, BudgetStatus};
 // STATE DAG
 // ================================================================================================
 
+/// Tracks the inflight state of the mempool and models the relationship of the transactions,
+/// batches and blocks as a DAG.
+///
+/// This model allows it to propose batches and blocks from the available transactions and proven
+/// batches respectively. New transactions are validated against the current inflight state.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StateDag {
+    /// The DAG nodes describing the transactions, batches and blocks currently in the mempool.
+    ///
+    /// Only active nodes are stored e.g. a proposed batch will _replace_ all its transaction
+    /// nodes. Relationships between the nodes are inferred using the state which essentially
+    /// describes the edges of the DAG.
+    ///
+    /// This is kept in-sync with the state property i.e. the state is an aggregation of the
+    /// nodes' state.
     nodes: Nodes,
+
+    /// Describes the committed, created and consumed state of the nodes in the graph. The creating
+    /// and consuming [`NodeId's`] are stored alongside the state, which allows this to act as the
+    /// edges of the DAG.
     state: InflightState,
 
-    // Configuration
+    /// Number of committed block's whose state we retain.
+    ///
+    /// This provides an overlap with the committed state from the store, giving new data's
+    /// authentication inputs a grace period before it is submitted to the mempool. Without this,
+    /// fetching the inputs from the store would race against new block being committed.
     state_retention: NonZeroUsize,
+
+    /// How far from the current chain tip submitted data may expire.
+    ///
+    /// This prevents us from dealing with data that expires before it can be committed in a
+    /// reasonable time.
     expiration_slack: u32,
 }
 
@@ -36,11 +62,16 @@ pub struct StateDag {
 struct InflightState {
     chain_tip: BlockNumber,
     nullifiers: HashSet<Nullifier>,
+    // TODO: track account state
+    // TODO: track notes
 }
 
 // DAG NODES
 // ================================================================================================
 
+/// Uniquely identifies a node in the DAG.
+///
+/// This effectively describes the lifecycle of a transaction in the mempool.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 enum NodeId {
     Transaction(TransactionId),
@@ -66,6 +97,9 @@ struct ProvenBatchNode {
 #[derive(Clone, Debug, PartialEq)]
 struct BlockNode(Vec<ProvenBatchNode>);
 
+/// Describes a DAG node's impact on the state.
+///
+/// This is used to determine what state data is created or consumed by this node.
 trait Node {}
 
 impl Node for TransactionNode {}
@@ -73,6 +107,13 @@ impl Node for ProposedBatchNode {}
 impl Node for ProvenBatchNode {}
 impl Node for BlockNode {}
 
+/// Contains the current nodes of the state DAG.
+///
+/// Nodes are purposefully not stored as a single collection since we often want to iterate through
+/// specific node types e.g. all available transactions.
+///
+/// This data _must_ be kept in sync with the [`InflightState's`] [`NodeIds`] since these are used
+/// as the edges of the graph.
 #[derive(Clone, Debug, PartialEq, Default)]
 struct Nodes {
     // Nodes in the DAG
@@ -88,6 +129,7 @@ struct Nodes {
 // ================================================================================================
 
 impl StateDag {
+    /// Creates an empty [`StateDag`] with the given configuration.
     pub fn new(
         chain_tip: BlockNumber,
         state_retention: NonZeroUsize,
@@ -101,6 +143,7 @@ impl StateDag {
         }
     }
 
+    /// Appends the transaction to the state graph if possible.
     pub fn append_transaction(
         &mut self,
         tx: Arc<AuthenticatedTransaction>,
@@ -120,10 +163,24 @@ impl StateDag {
         Ok(())
     }
 
+    /// Selects a set of transactions for inclusion in a batch within the constraints of the budget.
+    ///
+    /// Returns [`None`] if no transactions are available for selection.
     pub fn propose_batch(
         &mut self,
         mut budget: BatchBudget,
     ) -> Option<(BatchId, Vec<Arc<AuthenticatedTransaction>>)> {
+        // The selection algorithm is fairly neanderthal in nature.
+        //
+        // We iterate over all transaction nodes, each time selecting the first transaction which
+        // has no parent nodes that are unselected transactions. This is fairly primitive, but
+        // avoids the manual bookkeeping of which transactions are selectable.
+        //
+        // This is still reasonably performant given that we only retain unselected transactions as
+        // transaction nodes i.e. selected transactions become batch nodes.
+        //
+        // The additional bookkeeping can be implemented once we have fee related strategies. KISS.
+
         let mut selected = Vec::new();
 
         'outer: loop {
@@ -344,14 +401,41 @@ impl StateDag {
         Ok(())
     }
 
-    fn insert_into_state_unchecked(&mut self, id: NodeId) {}
+    /// Blindly inserts the node's state data into [`InflightState`] and associates it with the
+    /// [`NodeId`].
+    ///
+    /// For state data that already exists, this is equivalent to overwriting the [`NodeId`]
+    /// associated with the data.
+    ///
+    /// Callers _must_ ensure that the data is inline with the DAG expectations _and_ that the node
+    /// data is already present in [`Nodes`].
+    fn insert_into_state_unchecked(&mut self, id: NodeId) {
+        todo!()
+    }
 
+    /// Returns all _uncommitted_ parent node's of the given [`NodeId`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided node is not present in the DAG.
     fn parents(&self, id: NodeId) -> HashSet<NodeId> {
         todo!();
     }
 
-    fn revert_subtree_unchecked(&mut self, id: NodeId) {}
+    /// Reverts the given node and **all** of its descendents.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the provided node is not present in the DAG.
+    fn revert_subtree_unchecked(&mut self, id: NodeId) {
+        todo!();
+    }
 
+    /// Marks the block's associated state as pruned, and removes it if it is no longer depedended
+    /// on.
+    ///
+    /// [`InflightState`] retains pruned data until the consumer of it is either committed or
+    /// reverted.
     fn prune_unchecked(&mut self, number: BlockNumber, node: BlockNode) {
         todo!();
     }

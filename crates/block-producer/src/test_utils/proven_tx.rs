@@ -1,4 +1,5 @@
 use std::ops::Range;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use miden_node_utils::fee::test_fee;
@@ -38,7 +39,7 @@ impl MockProvenTxBuilder {
     }
 
     /// Generates 3 random, sequential transactions acting on the same account.
-    pub fn sequential() -> [AuthenticatedTransaction; 3] {
+    pub fn sequential() -> [Arc<AuthenticatedTransaction>; 3] {
         let mut rng = rand::rng();
         let mock_account: MockPrivateAccount<4> = rng.random::<u32>().into();
 
@@ -50,7 +51,7 @@ impl MockProvenTxBuilder {
                     mock_account.states[i + 1],
                 )
             })
-            .map(|tx| AuthenticatedTransaction::from_inner(tx.build()))
+            .map(|tx| Arc::new(AuthenticatedTransaction::from_inner(tx.build())))
             .collect_vec()
             .try_into()
             .expect("Sizes should match")

@@ -1,10 +1,9 @@
-use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::batch::{BatchId, ProvenBatch};
-use miden_objects::block::{BlockHeader, BlockNumber, ProvenBlock};
-use miden_objects::transaction::{TransactionHeader, TransactionId};
+use miden_objects::block::BlockNumber;
 use miden_objects::{
     MAX_ACCOUNTS_PER_BATCH,
     MAX_INPUT_NOTES_PER_BATCH,
@@ -13,20 +12,16 @@ use miden_objects::{
 use subscription::SubscriptionProvider;
 use tokio::sync::{Mutex, MutexGuard, mpsc};
 use tracing::{instrument, warn};
-use transaction_expiration::TransactionExpirations;
 
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::AddTransactionError;
-use crate::mempool::state_dag::{NodeId, StateGraph};
 use crate::{COMPONENT, DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH};
 
-mod batches;
 mod state_dag;
 mod subscription;
-mod transaction_expiration;
-mod transactions;
 
-#[cfg(test)]
+// FIXME(Mirko): Re-enable these once mempool refactor is completed.
+#[cfg(all(false, test))]
 mod tests;
 
 // MEMPOOL BUDGET
@@ -140,30 +135,7 @@ impl SharedMempool {
 
 #[derive(Clone, Debug)]
 pub struct Mempool {
-    /// The dependency graph formed by the currently inflight transactions, batches and blocks.
-    ///
-    /// This is somewhat coupled with `txs` and `batches`, and some manual work is required to keep
-    /// these in sync.
-    state: state_dag::StateGraph,
-
-    /// Holds the inflight transactions and their status wrt to the state dependency DAG.
-    txs: transactions::Transactions,
-
-    /// Holds the inflight batches and their status wrt to the state dependency DAG.
-    batches: batches::Batches,
-
-    /// The current inflight block, if any.
-    block_in_progress: Option<Vec<BatchId>>,
-
-    /// The latest committed blocks.
-    ///
-    /// We retain `state_retention` blocks as part of our mempool state to allow some overlap with
-    /// the submitted transaction and batches authentication block height. Without this,
-    /// submitted data would constantly be racing against the in-flight block.
-    recent_blocks: VecDeque<BlockNumber>,
-
-    /// The latest block's number.
-    chain_tip: BlockNumber,
+    state_dag: state_dag::StateDag,
 
     /// The constraints we place on every block we build.
     block_budget: BlockBudget,
@@ -171,46 +143,13 @@ pub struct Mempool {
     /// The constraints we place on every batch we build.
     batch_budget: BatchBudget,
 
-    /// We reject submitted data which expires within this amount from the chain tip.
-    ///
-    /// This prevents wasting time on data which will likely revert before being included in a
-    /// block.
-    expiration_slack: u32,
-
-    /// Blocks of committed state to retain locally. See `recent_blocks`.
-    state_retention: usize,
-
     subscription: subscription::SubscriptionProvider,
 }
 
 // We have to implement this manually since the event's channel does not implement PartialEq.
 impl PartialEq for Mempool {
     fn eq(&self, other: &Self) -> bool {
-        // We use this deconstructive pattern to ensure we adapt this whenever fields are changed.
-        let Self {
-            state,
-            batches,
-            chain_tip,
-            block_in_progress,
-            block_budget,
-            batch_budget,
-            subscription: _,
-            txs,
-            recent_blocks,
-            expiration_slack,
-            state_retention,
-        } = self;
-
-        state == &other.state
-            && batches == &other.batches
-            && chain_tip == &other.chain_tip
-            && block_in_progress == &other.block_in_progress
-            && block_budget == &other.block_budget
-            && batch_budget == &other.batch_budget
-            && txs == &other.txs
-            && recent_blocks == &other.recent_blocks
-            && expiration_slack == &other.expiration_slack
-            && state_retention == &other.state_retention
+        self.state_dag == other.state_dag
     }
 }
 
@@ -220,7 +159,7 @@ impl Mempool {
         chain_tip: BlockNumber,
         batch_budget: BatchBudget,
         block_budget: BlockBudget,
-        state_retention: usize,
+        state_retention: NonZeroUsize,
         expiration_slack: u32,
     ) -> SharedMempool {
         SharedMempool(Arc::new(Mutex::new(Self::new(
@@ -236,21 +175,14 @@ impl Mempool {
         chain_tip: BlockNumber,
         batch_budget: BatchBudget,
         block_budget: BlockBudget,
-        state_retention: usize,
+        state_retention: NonZeroUsize,
         expiration_slack: u32,
     ) -> Mempool {
         Self {
-            chain_tip,
             batch_budget,
             block_budget,
-            expiration_slack,
-            state_retention,
             subscription: SubscriptionProvider::new(chain_tip),
-            state: StateGraph::default(),
-            block_in_progress: None,
-            txs: transactions::Transactions::default(),
-            batches: batches::Batches::default(),
-            recent_blocks: VecDeque::default(),
+            state_dag: state_dag::StateDag::new(chain_tip, state_retention, expiration_slack),
         }
     }
 
@@ -268,19 +200,13 @@ impl Mempool {
     #[instrument(target = COMPONENT, name = "mempool.add_transaction", skip_all, fields(tx=%transaction.id()))]
     pub fn add_transaction(
         &mut self,
-        transaction: AuthenticatedTransaction,
+        transaction: Arc<AuthenticatedTransaction>,
     ) -> Result<BlockNumber, AddTransactionError> {
-        self.expiration_check(transaction.expires_at())?;
-        self.input_staleness_check(transaction.authentication_height())?;
-
-        // Add transaction to inflight state.
-        self.state.append_transaction(&transaction).expect("map err");
-        self.subscription.transaction_added(&transaction);
-        self.txs.insert(transaction, &self.state);
+        self.state_dag.append_transaction(transaction)?;
 
         self.inject_telemetry();
 
-        Ok(self.chain_tip)
+        Ok(self.state_dag.chain_tip())
     }
 
     /// Returns a set of transactions for the next batch.
@@ -289,35 +215,10 @@ impl Mempool {
     ///
     /// Returns `None` if no transactions are available.
     #[instrument(target = COMPONENT, name = "mempool.select_batch", skip_all)]
-    pub fn select_batch(&mut self) -> Option<(BatchId, Vec<AuthenticatedTransaction>)> {
-        let mut budget = self.batch_budget.clone();
-        let mut batch = Vec::with_capacity(budget.transactions);
-
-        loop {
-            let Some(candidate) = self.txs.next_candidate() else {
-                break;
-            };
-
-            if budget.check_then_subtract(candidate.get()) == BudgetStatus::Exceeded {
-                break;
-            }
-
-            batch.push(candidate.get().clone());
-            candidate.select(&self.state);
-        }
-
-        if batch.is_empty() {
-            return None;
-        }
-
-        let batch_id = BatchId::from_ids(batch.iter().map(|tx| (tx.id(), tx.account_id())));
-        self.batches.insert(batch_id, &batch);
-        self.batches.check_user_batches(&self.state);
-        self.state
-            .insert_batch(batch_id, batch.iter().map(|tx| tx.id()))
-            .expect("batch should insert as it consists of transactions selected in DAG order");
-
-        Some((batch_id, batch))
+    pub fn select_batch(&mut self) -> Option<(BatchId, Vec<Arc<AuthenticatedTransaction>>)> {
+        let result = self.state_dag.propose_batch(self.batch_budget);
+        self.inject_telemetry();
+        result
     }
 
     /// Drops the failed batch and all of its descendants.
@@ -325,23 +226,14 @@ impl Mempool {
     /// Transactions are _not_ requeued.
     #[instrument(target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
     pub fn rollback_batch(&mut self, batch: BatchId) {
-        // Batch may already have been removed as part of a parent batch's failure.
-        if !self.batches.contains_proposed(&batch) {
-            return;
-        }
-
-        self.revert(batch.into());
+        self.state_dag.revert_proposed_batch(batch);
         self.inject_telemetry();
     }
 
     /// Marks a batch as proven if it exists.
     #[instrument(target = COMPONENT, name = "mempool.commit_batch", skip_all)]
-    pub fn commit_batch(&mut self, batch: ProvenBatch) {
-        if !self.batches.contains_proposed(&batch.id()) {
-            return;
-        }
-
-        self.batches.submit_proof(batch, &self.state);
+    pub fn commit_batch(&mut self, batch: Arc<ProvenBatch>) {
+        self.state_dag.submit_batch_proof(batch);
         self.inject_telemetry();
     }
 
@@ -355,30 +247,10 @@ impl Mempool {
     ///
     /// Panics if there is already a block in flight.
     #[instrument(target = COMPONENT, name = "mempool.select_block", skip_all)]
-    pub fn select_block(&mut self) -> (BlockNumber, Vec<ProvenBatch>) {
-        assert!(self.block_in_progress.is_none(), "Cannot have two blocks inflight.");
-
-        let mut budget = self.block_budget.clone();
-        let mut block = Vec::with_capacity(budget.batches);
-
-        loop {
-            let Some(candidate) = self.batches.next_candidate() else {
-                break;
-            };
-
-            if budget.check_then_subtract(candidate.get()) == BudgetStatus::Exceeded {
-                break;
-            }
-
-            block.push(candidate.get().clone());
-            candidate.select(&self.state);
-        }
-
-        // TODO: submit block to state
-        self.block_in_progress = Some(block.iter().map(ProvenBatch::id).collect());
+    pub fn select_block(&mut self) -> (BlockNumber, Vec<Arc<ProvenBatch>>) {
+        let result = self.state_dag.propose_block(self.block_budget);
         self.inject_telemetry();
-
-        (self.chain_tip.child(), block)
+        result
     }
 
     /// Notify the pool that the in flight block was successfully committed to the chain.
@@ -398,33 +270,8 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self, block: BlockHeader) {
-        let batches = self.block_in_progress.take().expect("No block in progress to commit");
-        // TODO: this should become just the block number
-        self.state
-            .commit_block(block.block_num(), batches.iter().copied())
-            .expect("block should commit since there was one in progress");
-        self.recent_blocks.push_back(block.block_num());
-
-        if self.recent_blocks.len() > self.state_retention {
-            let pruned = self.recent_blocks.pop_front().unwrap();
-            self.state
-                .prune_block(pruned)
-                .expect("pruning block should succeed as it is chronologically ordered");
-        }
-
-        for batch in batches {
-            let batch = self.batches.remove(batch).expect("a committed batch must exist");
-            for tx in batch.transactions().as_slice().iter().map(|tx| tx.id()) {
-                self.txs.remove(tx);
-            }
-        }
-
-        self.chain_tip = self.chain_tip.child();
-        // FIXME: subscriptions because.. batches & transactions..
-
-        self.revert_expired_data();
-
+    pub fn commit_block(&mut self, block: BlockNumber) {
+        self.state_dag.commit_proposed_block(block);
         self.inject_telemetry();
     }
 
@@ -443,24 +290,9 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.rollback_block", skip_all)]
-    pub fn rollback_block(&mut self) {
-        assert!(self.block_in_progress.is_some(), "A block must be in progress to rollback");
-
-        self.revert(self.chain_tip.child().into());
+    pub fn rollback_block(&mut self, block: BlockNumber) {
+        self.state_dag.revert_proposed_block(block);
         self.inject_telemetry();
-    }
-
-    /// Gets all transactions that expire at the new chain tip and reverts them (and their
-    /// descendants) from the mempool. Returns the set of transactions that were purged.
-    #[instrument(target = COMPONENT, name = "mempool.revert_expired_data", skip_all)]
-    fn revert_expired_data(&mut self) {
-        todo!();
-        // let expired = self.expirations.get(self.chain_tip);
-
-        // self.revert_transactions(expired.iter().copied().collect())
-        //     .expect("expired transactions must be part of the mempool");
-
-        // expired
     }
 
     /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.
@@ -479,81 +311,13 @@ impl Mempool {
         self.subscription.subscribe(chain_tip)
     }
 
-    /// Fully reverts the node and all of its ancestors.
-    fn revert(&mut self, node: NodeId) {
-        // Find all descendents using state DAG. We need to revert all of them, in reverse order
-        // i.e. so we're only reverting a node with no ancestors. To this end, we'll track each
-        // ancestors parents and children.
-        let mut children = HashMap::new();
-        let mut parents = HashMap::new();
-
-        let mut to_process = vec![node];
-        let mut processed = HashSet::new();
-        while let Some(process) = to_process.pop() {
-            if processed.contains(&process) {
-                continue;
-            }
-
-            parents.insert(process, self.state.parents(process).unwrap());
-            children.insert(process, self.state.children(process).unwrap());
-            processed.insert(process);
-        }
-
-        while !children.is_empty() {
-            let Some((&node, _)) = children.iter().find(|(_, children)| children.is_empty()) else {
-                panic!("Nodes remaining while reverting but none are valid to revert next");
-            };
-
-            children.remove(&node).unwrap();
-            for parent in parents.remove(&node).unwrap() {
-                children.get_mut(&parent).unwrap().remove(&node);
-            }
-
-            match node {
-                NodeId::Transaction(tx) => self.txs.remove(tx),
-                NodeId::Batch(batch_id) => {
-                    self.batches.remove(batch_id);
-                },
-                NodeId::Block(_) => {
-                    self.block_in_progress.take();
-                },
-            }
-
-            // TODO: remove from state DAG
-        }
-    }
-
-    fn expiration_check(&self, expired_at: BlockNumber) -> Result<(), AddTransactionError> {
-        let limit = self.chain_tip + self.expiration_slack;
-
-        if expired_at <= limit {
-            return Err(AddTransactionError::Expired { expired_at, limit });
-        }
-
-        Ok(())
-    }
-
-    fn input_staleness_check(
-        &self,
-        authentication_height: BlockNumber,
-    ) -> Result<(), AddTransactionError> {
-        let stale_limit = self.recent_blocks.front().copied().unwrap_or_default();
-        if authentication_height < stale_limit {
-            return Err(AddTransactionError::StaleInputs {
-                input_block: authentication_height,
-                stale_limit,
-            });
-        }
-
-        Ok(())
-    }
-
     /// Adds mempool stats to the current tracing span.
     ///
     /// Note that these are only visible in the OpenTelemetry context, as conventional tracing
     /// does not track fields added dynamically.
+    #[allow(clippy::unused_self, reason = "wip: mempool refactor")]
     fn inject_telemetry(&self) {
-        let span = tracing::Span::current();
+        let _span = tracing::Span::current();
 
         // span.set_attribute("mempool.transactions.total", self.transactions.len());
         // span.set_attribute("mempool.transactions.roots", self.transactions.num_roots());

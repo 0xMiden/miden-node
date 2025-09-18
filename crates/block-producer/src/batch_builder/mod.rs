@@ -1,4 +1,6 @@
 use std::num::NonZeroUsize;
+use std::ops::Deref;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::never::Never;
@@ -198,12 +200,16 @@ impl BatchJob {
     async fn get_batch_inputs(
         &self,
         batch: SelectedBatch,
-    ) -> Result<(Vec<AuthenticatedTransaction>, BatchInputs), BuildBatchError> {
-        let block_references =
-            batch.transactions.iter().map(AuthenticatedTransaction::reference_block);
+    ) -> Result<(Vec<Arc<AuthenticatedTransaction>>, BatchInputs), BuildBatchError> {
+        let block_references = batch
+            .transactions
+            .iter()
+            .map(Deref::deref)
+            .map(AuthenticatedTransaction::reference_block);
         let unauthenticated_notes = batch
             .transactions
             .iter()
+            .map(Deref::deref)
             .flat_map(AuthenticatedTransaction::unauthenticated_notes);
 
         self.store
@@ -215,11 +221,14 @@ impl BatchJob {
 
     #[instrument(target = COMPONENT, name = "batch_builder.propose_batch", skip_all, err)]
     async fn propose_batch(
-        transactions: Vec<AuthenticatedTransaction>,
+        transactions: Vec<Arc<AuthenticatedTransaction>>,
         inputs: BatchInputs,
     ) -> Result<ProposedBatch, BuildBatchError> {
-        let transactions =
-            transactions.iter().map(AuthenticatedTransaction::proven_transaction).collect();
+        let transactions = transactions
+            .iter()
+            .map(Deref::deref)
+            .map(AuthenticatedTransaction::proven_transaction)
+            .collect();
 
         ProposedBatch::new(
             transactions,
@@ -234,7 +243,7 @@ impl BatchJob {
     async fn prove_batch(
         &self,
         proposed_batch: ProposedBatch,
-    ) -> Result<ProvenBatch, BuildBatchError> {
+    ) -> Result<Arc<ProvenBatch>, BuildBatchError> {
         Span::current().set_attribute("prover.kind", self.batch_prover.kind());
 
         let proven_batch = match &self.batch_prover {
@@ -256,7 +265,7 @@ impl BatchJob {
                 MIN_PROOF_SECURITY_LEVEL,
             ))
         } else {
-            Ok(proven_batch)
+            Ok(Arc::new(proven_batch))
         }
     }
 
@@ -275,7 +284,7 @@ impl BatchJob {
     }
 
     #[instrument(target = COMPONENT, name = "batch_builder.commit_batch", skip_all)]
-    async fn commit_batch(&self, batch: ProvenBatch) {
+    async fn commit_batch(&self, batch: Arc<ProvenBatch>) {
         self.mempool.lock().await.commit_batch(batch);
     }
 
@@ -287,7 +296,7 @@ impl BatchJob {
 
 struct SelectedBatch {
     id: BatchId,
-    transactions: Vec<AuthenticatedTransaction>,
+    transactions: Vec<Arc<AuthenticatedTransaction>>,
 }
 
 // BATCH PROVER
@@ -328,6 +337,7 @@ impl TelemetryInjectorExt for SelectedBatch {
             "transactions.input_notes.count",
             self.transactions
                 .iter()
+                .map(Deref::deref)
                 .map(AuthenticatedTransaction::input_note_count)
                 .sum::<usize>(),
         );
@@ -335,6 +345,7 @@ impl TelemetryInjectorExt for SelectedBatch {
             "transactions.output_notes.count",
             self.transactions
                 .iter()
+                .map(Deref::deref)
                 .map(AuthenticatedTransaction::output_note_count)
                 .sum::<usize>(),
         );

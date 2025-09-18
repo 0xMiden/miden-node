@@ -37,7 +37,7 @@ const SERVER_NUM_BATCH_BUILDERS: NonZeroUsize = NonZeroUsize::new(2).unwrap();
 ///
 /// This determines the grace period incoming transactions have between fetching their input from
 /// the store and verification in the mempool.
-const SERVER_MEMPOOL_STATE_RETENTION: usize = 5;
+const SERVER_MEMPOOL_STATE_RETENTION: NonZeroUsize = NonZeroUsize::new(5).unwrap();
 
 /// Transactions are rejected by the mempool if there is less than this amount of blocks between the
 /// chain tip and the transaction's expiration block.

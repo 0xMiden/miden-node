@@ -1,4 +1,5 @@
-use std::ops::Range;
+use std::ops::{Deref, Range};
+use std::sync::Arc;
 
 use futures::FutureExt;
 use futures::never::Never;
@@ -104,9 +105,10 @@ impl BlockBuilder {
     async fn build_block(&self, mempool: &SharedMempool) {
         use futures::TryFutureExt;
 
-        Self::select_block(mempool)
-            .inspect(SelectedBlock::inject_telemetry)
-            .then(|selected| self.get_block_inputs(selected))
+        let selected = Self::select_block(mempool).inspect(SelectedBlock::inject_telemetry).await;
+        let block_num = selected.block_number;
+
+        self.get_block_inputs(selected)
             .inspect_ok(BlockBatchesAndInputs::inject_telemetry)
             .and_then(|inputs| self.propose_block(inputs))
             .inspect_ok(ProposedBlock::inject_telemetry)
@@ -118,7 +120,7 @@ impl BlockBuilder {
             .and_then(|proven_block| self.commit_block(mempool, proven_block))
             // Handle errors by propagating the error to the root span and rolling back the block.
             .inspect_err(|err| Span::current().set_error(err))
-            .or_else(|_err| self.rollback_block(mempool).never_error())
+            .or_else(|_err| self.rollback_block(mempool, block_num).never_error())
             // All errors were handled and discarded above, so this is just type juggling
             // to drop the result.
             .unwrap_or_else(|_: Never| ())
@@ -169,9 +171,12 @@ impl BlockBuilder {
                 .cloned()
                 .filter_map(|note| note.header().map(NoteHeader::id))
         });
-        let block_references_iter = batch_iter.clone().map(ProvenBatch::reference_block_num);
-        let account_ids_iter = batch_iter.clone().flat_map(ProvenBatch::updated_accounts);
-        let created_nullifiers_iter = batch_iter.flat_map(ProvenBatch::created_nullifiers);
+        let block_references_iter =
+            batch_iter.clone().map(Deref::deref).map(ProvenBatch::reference_block_num);
+        let account_ids_iter =
+            batch_iter.clone().map(Deref::deref).flat_map(ProvenBatch::updated_accounts);
+        let created_nullifiers_iter =
+            batch_iter.map(Deref::deref).flat_map(ProvenBatch::created_nullifiers);
 
         let inputs = self
             .store
@@ -193,6 +198,7 @@ impl BlockBuilder {
         batches_inputs: BlockBatchesAndInputs,
     ) -> Result<ProposedBlock, BuildBlockError> {
         let BlockBatchesAndInputs { batches, inputs } = batches_inputs;
+        let batches = batches.into_iter().map(Arc::unwrap_or_clone).collect();
 
         let proposed_block =
             ProposedBlock::new(inputs, batches).map_err(BuildBlockError::ProposeBlockFailed)?;
@@ -230,14 +236,14 @@ impl BlockBuilder {
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        mempool.lock().await.commit_block(built_block.header().clone());
+        mempool.lock().await.commit_block(built_block.header().block_num());
 
         Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.rollback_block", skip_all)]
-    async fn rollback_block(&self, mempool: &SharedMempool) {
-        mempool.lock().await.rollback_block();
+    async fn rollback_block(&self, mempool: &SharedMempool, block: BlockNumber) {
+        mempool.lock().await.rollback_block(block);
     }
 
     #[instrument(target = COMPONENT, name = "block_builder.simulate_proving", skip_all)]
@@ -270,7 +276,7 @@ impl BlockBuilder {
 /// telemetry in-between the selection and fetching the required [`BlockInputs`].
 struct SelectedBlock {
     block_number: BlockNumber,
-    batches: Vec<ProvenBatch>,
+    batches: Vec<Arc<ProvenBatch>>,
 }
 
 impl TelemetryInjectorExt for SelectedBlock {
@@ -289,7 +295,7 @@ impl TelemetryInjectorExt for SelectedBlock {
 /// A wrapper around the inputs needed to build a [`ProposedBlock`], primarily used to be able to
 /// inject telemetry in-between fetching block inputs and proposing the block.
 struct BlockBatchesAndInputs {
-    batches: Vec<ProvenBatch>,
+    batches: Vec<Arc<ProvenBatch>>,
     inputs: BlockInputs,
 }
 

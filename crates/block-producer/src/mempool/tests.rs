@@ -13,7 +13,7 @@ impl Mempool {
             BlockNumber::GENESIS,
             BatchBudget::default(),
             BlockBudget::default(),
-            5,
+            NonZeroUsize::new(5).unwrap(),
             u32::default(),
         )
     }

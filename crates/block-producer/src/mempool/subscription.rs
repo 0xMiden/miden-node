@@ -1,3 +1,5 @@
+#![allow(dead_code, reason = "WIP: mempoool refactor")]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Mul;
 

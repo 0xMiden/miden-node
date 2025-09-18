@@ -378,7 +378,7 @@ impl BlockProducerRpcServer {
         let inputs = self.store.get_tx_inputs(&tx).await.map_err(VerifyTxError::from)?;
 
         // SAFETY: we assume that the rpc component has verified the transaction proof already.
-        let tx = AuthenticatedTransaction::new(tx, inputs)?;
+        let tx = AuthenticatedTransaction::new_unchecked(tx, inputs).map(Arc::new)?;
 
         self.mempool.lock().await.lock().await.add_transaction(tx).map(|block_height| {
             proto::block_producer::SubmitProvenTransactionResponse {

@@ -3,9 +3,9 @@ use std::time::Duration;
 mod blocks;
 mod db;
 mod errors;
-mod foo;
 pub mod genesis;
 mod server;
+mod smt_overlays;
 pub mod state;
 
 pub use genesis::GenesisState;

@@ -60,6 +60,16 @@ impl AccountActor {
 
     pub async fn run(mut self, mut state: State) -> ActorShutdownReason {
         let semaphore = self.semaphore.clone();
+        // TODO(serge): when would you wait - e.g. no notes to consume and tx in flight that you are
+        // waiting on. if tx succeeded, st self to inflight tx with tx id and wait mempool
+        // event to come through indicating completion. then flip back and go again. reset
+        // permit to be actual permit. similarly if you failed enough times, do the same. give up on
+        // account. if you receive mempool event while in state waiting for tx, unlock
+        // yourself.
+        use futures::FutureExt;
+        // Use this to toggle between the semaphore and pending futures so that we don't thrash the
+        // transaction execution flow when there is nothing to process.
+        let mut toggle_fut = semaphore.acquire().boxed();
         loop {
             tokio::select! {
                 event = self.event_rx.recv() => {
@@ -69,15 +79,18 @@ impl AccountActor {
                     if let Some(shutdown_reason) = state.mempool_update(event).await {
                         return shutdown_reason;
                     }
+                    // Re-enable the semaphore, allow transactions to be processed.
+                    toggle_fut = semaphore.acquire().boxed();
                 },
-                permit = semaphore.acquire() => {
+                permit = toggle_fut => {
                     match permit {
                         Ok(_permit) => {
                             if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) {
                                 self.execute_transactions(&mut state, tx_candidate).await;
-                            } else {
-                                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                                // TODO(serge): determine whether you need to do permit or pending state
                             }
+                            // Disable the semaphore, allow events to be received.
+                            toggle_fut = std::future::pending().boxed();
                         }
                         Err(err) => {
                             return ActorShutdownReason::SemaphoreFailed(err);

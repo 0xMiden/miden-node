@@ -83,7 +83,8 @@ impl State {
             .await?
             .expect("store should contain a latest block");
 
-        // TODO(serge): coordinator manages one instance and shares it. R/W lock coordinator overwrites on block commit.
+        // TODO(serge): coordinator manages one instance and shares it. R/W lock coordinator
+        // overwrites on block commit.
         let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("PartialBlockchain should build from latest partial MMR");
 

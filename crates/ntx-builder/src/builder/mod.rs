@@ -173,15 +173,16 @@ impl NetworkTransactionBuilder {
         store: StoreClient,
     ) -> anyhow::Result<()> {
         match &event {
-            // TODO(serge): First create the new endpoint to return all network accounts then updated this:
-            // TODO(serge): Don't create actors from store here. Only from transactions.
-            // Broadcast to affected actors.
+            // TODO(serge): First create the new endpoint to return all network accounts then
+            // updated this: TODO(serge): Don't create actors from store here. Only from
+            // transactions. Broadcast to affected actors.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 // Find affected accounts.
                 let affected_accounts =
                     Self::find_affected_accounts(account_delta.as_ref(), network_notes);
 
-                // TODO(serge): spawn actor for newly created accounts via account delta. And send the transaction to the actor.
+                // TODO(serge): spawn actor for newly created accounts via account delta. And send
+                // the transaction to the actor.
 
                 for account_prefix in affected_accounts {
                     // Retrieve or create the actor.
@@ -202,7 +203,8 @@ impl NetworkTransactionBuilder {
             },
             // Broadcast to all actors.
             MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
-                // TODO(serge): update chain tip here via R/W lock. Don't send blockcommitted to actors.
+                // TODO(serge): update chain tip here via R/W lock. Don't send blockcommitted to
+                // actors.
                 self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
                     Self::send_event(*account_prefix, event_tx, event.clone());
                 });

@@ -2194,6 +2194,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-network-monitor"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "miden-node-proto",
+ "miden-node-utils",
+ "serde",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "miden-node"
 version = "0.12.0"
 dependencies = [

@@ -311,14 +311,13 @@ fn create_note(faucet_id: AccountId, target_id: AccountId, rng: &mut RpoRandomCo
 /// the given index.
 fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorageMode) -> Account {
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
-    let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
+    AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
         .with_auth_component(AuthRpoFalcon512::new(public_key))
         .with_component(BasicWallet)
         .build()
-        .unwrap();
-    new_account
+        .unwrap()
 }
 
 /// Creates a new faucet account.
@@ -329,14 +328,13 @@ fn create_faucet() -> Account {
     let init_seed = [0_u8; 32];
 
     let token_symbol = TokenSymbol::new("TEST").unwrap();
-    let (new_faucet, _seed) = AccountBuilder::new(init_seed)
+    AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
         .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
         .build()
-        .unwrap();
-    new_faucet
+        .unwrap()
 }
 
 /// Creates a proven batch from a list of transactions and a reference block.

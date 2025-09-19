@@ -6,6 +6,7 @@ use miden_objects::asset::AssetWitness;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
+    AccountInputs,
     ExecutedTransaction,
     InputNote,
     InputNotes,
@@ -261,7 +262,7 @@ impl DataStore for NtxDataStore {
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
     ) -> impl FutureMaybeSend<
-        Result<(PartialAccount, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
+        Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>,
     > {
         let account = self.account.clone();
         async move {
@@ -276,8 +277,18 @@ impl DataStore for NtxDataStore {
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
 
-            Ok((account.into(), None, self.reference_header.clone(), self.chain_mmr.clone()))
+            let partial_account = PartialAccount::from(&account);
+
+            Ok((partial_account, self.reference_header.clone(), self.chain_mmr.clone()))
         }
+    }
+
+    fn get_foreign_account_inputs(
+        &self,
+        foreign_account_id: AccountId,
+        _ref_block: BlockNumber,
+    ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
+        async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
     }
 
     fn get_vault_asset_witness(

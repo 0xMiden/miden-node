@@ -27,7 +27,7 @@ use miden_objects::account::{
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
 use miden_objects::block::FeeParameters;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
-use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, Word, ZERO};
+use miden_objects::{AccountError, Felt, FieldElement, ONE, TokenSymbolError, Word, ZERO};
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -166,8 +166,13 @@ impl GenesisConfig {
                 AccountType::RegularAccountImmutableCode
             };
             let account_storage_mode = storage_mode.into();
-            let (mut wallet_account, wallet_account_seed) =
+            let mut wallet_account =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
+            let wallet_account_seed = wallet_account.seed().ok_or_else(|| {
+                GenesisConfigError::Account(AccountError::other(
+                    "basic wallet account seed is missing",
+                ))
+            })?;
 
             // Add fungible assets and track the faucet adjustments per faucet/asset.
             let wallet_fungible_asset_update =
@@ -353,12 +358,17 @@ impl FungibleFaucetConfig {
         let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
 
         // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
-        let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
+        let faucet_account = AccountBuilder::new(init_seed)
             .account_type(AccountType::FungibleFaucet)
             .storage_mode(storage_mode.into())
             .with_auth_component(auth)
             .with_component(component)
             .build()?;
+        let faucet_account_seed = faucet_account.seed().ok_or_else(|| {
+            GenesisConfigError::Account(AccountError::other(
+                "fungible faucet account seed is missing",
+            ))
+        })?;
 
         debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
 

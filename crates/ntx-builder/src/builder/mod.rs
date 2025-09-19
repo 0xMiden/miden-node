@@ -110,9 +110,10 @@ impl NetworkTransactionBuilder {
         let mut interval = tokio::time::interval(self.ticker_interval);
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
+        // Create chain state that will be updated by the coordinator and read by actors.
+        let chain_state = ChainState::new(chain_tip_header, chain_mmr);
         // Create a semaphore to limit the number of in-progress transactions across all actors.
         let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
-        let chain_state = ChainState::new(chain_tip_header, chain_mmr);
         let config = AccountActorConfig {
             block_producer_url: self.block_producer_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
@@ -121,17 +122,15 @@ impl NetworkTransactionBuilder {
         };
 
         // Create initial actors for existing accounts.
-        let notes = store.get_unconsumed_network_notes().await?; // TODO(serge): replace with new endpoint to return ALL known network accounts.
-        // Create initial set of actors based on all available notes.
-        for note in notes {
-            // Currently only support single target network notes in NTB.
-            if let NetworkNote::SingleTarget(note) = note {
-                let account_prefix = note.account_prefix();
-                #[allow(clippy::map_entry, reason = "async closure")]
-                if !self.actor_registry.contains_key(&account_prefix) {
-                    self.spawn_actor(account_prefix, &config, store.clone()).await?;
-                    tracing::info!("created initial actor for account prefix: {}", account_prefix);
-                }
+        let accounts = store.get_network_accounts().await?;
+        // Create initial set of actors based on all network accounts.
+        for account in accounts {
+            let account_prefix = NetworkAccountPrefix::try_from(account.id())
+                .expect("store endpoint only returns network accounts");
+            #[allow(clippy::map_entry, reason = "async closure")]
+            if !self.actor_registry.contains_key(&account_prefix) {
+                self.spawn_actor(account_prefix, &config, store.clone()).await?;
+                tracing::info!("created initial actor for account prefix: {}", account_prefix);
             }
         }
 
@@ -197,9 +196,8 @@ impl NetworkTransactionBuilder {
         chain_state: ChainState,
     ) -> anyhow::Result<()> {
         match &event {
-            // TODO(serge): First create the new endpoint to return all network accounts then
-            // updated this: TODO(serge): Don't create actors from store here. Only from
-            // transactions. Broadcast to affected actors.
+            // TODO(serge): Don't create actors from store here. Only from transactions. Broadcast
+            // to affected actors.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 // Find affected accounts.
                 let affected_accounts =

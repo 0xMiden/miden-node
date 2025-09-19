@@ -161,6 +161,27 @@ impl StoreClient {
 
         Ok(account)
     }
+    #[instrument(target = COMPONENT, name = "store.client.get_network_accounts", skip_all, err)]
+    pub async fn get_network_accounts(&self) -> Result<Vec<Account>, StoreError> {
+        let request = tonic::Request::new(proto::ntx_builder_store::GetNetworkAccountsRequest {});
+
+        let response = self.inner.clone().get_network_accounts(request).await?.into_inner();
+
+        let accounts: Result<Vec<Account>, ConversionError> = response
+            .accounts
+            .into_iter()
+            .map(|account_details| match account_details.details {
+                Some(details) => Account::read_from_bytes(&details)
+                    .map_err(|err| ConversionError::deserialization_error("account", err)),
+                None => Err(ConversionError::MissingFieldInProtobufRepresentation {
+                    entity: "AccountDetails",
+                    field_name: "details",
+                }),
+            })
+            .collect();
+
+        Ok(accounts?)
+    }
 }
 
 // Store errors

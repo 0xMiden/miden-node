@@ -418,6 +418,13 @@ impl Db {
         .await
     }
 
+    /// Loads all network account details from the DB.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_all_network_accounts(&self) -> Result<Vec<AccountInfo>> {
+        self.transact("Get all network accounts", |conn| queries::select_all_network_accounts(conn))
+            .await
+    }
+
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_state_sync(
         &self,

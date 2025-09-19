@@ -321,6 +321,25 @@ pub(crate) fn select_all_accounts(
     Ok(account_infos)
 }
 
+pub(crate) fn select_all_network_accounts(
+    conn: &mut SqliteConnection,
+) -> Result<Vec<AccountInfo>, DatabaseError> {
+    let accounts_raw = QueryDsl::select(
+        schema::accounts::table
+            .left_join(
+                schema::account_codes::table.on(schema::accounts::code_commitment
+                    .eq(schema::account_codes::code_commitment.nullable())),
+            )
+            .filter(schema::accounts::network_account_id_prefix.is_not_null()),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
+    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
+        accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
+    )?;
+    Ok(account_infos)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StorageMapValue {
     pub block_num: BlockNumber,

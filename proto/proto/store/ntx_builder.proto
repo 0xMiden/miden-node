@@ -30,6 +30,8 @@ service NtxBuilder {
 
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
+
+    rpc GetNetworkAccounts(GetNetworkAccountsRequest) returns (NetworkAccounts) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX
@@ -97,6 +99,21 @@ message UnconsumedNetworkNotes {
     // The list of unconsumed network notes.
     repeated note.NetworkNote notes = 2;
 }
+
+// GET NETWORK ACCOUNTS
+// ================================================================================================
+
+// Request message for getting all network accounts.
+message GetNetworkAccountsRequest {
+    // This request has no parameters - it returns all network accounts.
+}
+
+// Represents the result of getting the network accounts.
+message NetworkAccounts {
+  // The list of network accounts.
+  repeated account.AccountDetails accounts = 1;
+}
+
 
 // GET CURRENT BLOCKCHAIN DATA
 // ================================================================================================

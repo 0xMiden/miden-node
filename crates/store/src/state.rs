@@ -886,6 +886,11 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
+    /// Returns details for all public (on-chain) network accounts.
+    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountInfo>, DatabaseError> {
+        self.db.select_all_network_accounts().await
+    }
+
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     pub async fn get_account_proof(

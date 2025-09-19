@@ -64,6 +64,18 @@ pub struct UnconsumedNetworkNotes {
     #[prost(message, repeated, tag = "2")]
     pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
 }
+/// Request message for getting all network accounts.
+///
+/// This request has no parameters - it returns all network accounts.
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+pub struct GetNetworkAccountsRequest {}
+/// Represents the result of getting the network accounts.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct NetworkAccounts {
+    /// The list of network accounts.
+    #[prost(message, repeated, tag = "1")]
+    pub accounts: ::prost::alloc::vec::Vec<super::account::AccountDetails>,
+}
 /// Current blockchain data based on the requested block number.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CurrentBlockchainData {
@@ -323,6 +335,32 @@ pub mod ntx_builder_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn get_network_accounts(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetNetworkAccountsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::NetworkAccounts>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ntx_builder_store.NtxBuilder/GetNetworkAccounts",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("ntx_builder_store.NtxBuilder", "GetNetworkAccounts"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -381,6 +419,10 @@ pub mod ntx_builder_server {
             tonic::Response<super::MaybeAccountDetails>,
             tonic::Status,
         >;
+        async fn get_network_accounts(
+            &self,
+            request: tonic::Request<super::GetNetworkAccountsRequest>,
+        ) -> std::result::Result<tonic::Response<super::NetworkAccounts>, tonic::Status>;
     }
     /// Store API for the network transaction builder component
     #[derive(Debug)]
@@ -702,6 +744,52 @@ pub mod ntx_builder_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNetworkAccountDetailsByPrefixSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ntx_builder_store.NtxBuilder/GetNetworkAccounts" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetNetworkAccountsSvc<T: NtxBuilder>(pub Arc<T>);
+                    impl<
+                        T: NtxBuilder,
+                    > tonic::server::UnaryService<super::GetNetworkAccountsRequest>
+                    for GetNetworkAccountsSvc<T> {
+                        type Response = super::NetworkAccounts;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetNetworkAccountsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as NtxBuilder>::get_network_accounts(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetNetworkAccountsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

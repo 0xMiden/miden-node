@@ -72,16 +72,6 @@ impl State {
         account: Account,
         store: StoreClient,
     ) -> Result<Self, StoreError> {
-        //let (chain_tip_header, chain_mmr) = store
-        //    .get_latest_blockchain_data_with_retry()
-        //    .await?
-        //    .expect("store should contain a latest block");
-
-        //// TODO(serge): coordinator manages one instance and shares it. R/W lock coordinator
-        //// overwrites on block commit.
-        //let chain_mmr = PartialBlockchain::new(chain_mmr, [])
-        //    .expect("PartialBlockchain should build from latest partial MMR");
-
         // TODO: only get notes relevant to this account.
         let notes = store.get_unconsumed_network_notes().await?;
         let account = AccountState::new(account_prefix, account, notes);

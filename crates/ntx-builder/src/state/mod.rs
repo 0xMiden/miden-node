@@ -19,12 +19,6 @@ use crate::store::{StoreClient, StoreError};
 
 mod account;
 
-// CONSTANTS
-// =================================================================================================
-
-/// The maximum number of blocks to keep in memory while tracking the chain tip.
-const MAX_BLOCK_COUNT: usize = 4;
-
 /// A candidate network transaction.
 ///
 /// Contains the data pertaining to a specific network account which can be used to build a network

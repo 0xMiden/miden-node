@@ -23,6 +23,12 @@ use crate::block_producer::BlockProducerClient;
 use crate::state::State;
 use crate::store::StoreClient;
 
+// CONSTANTS
+// =================================================================================================
+
+/// The maximum number of blocks to keep in memory while tracking the chain tip.
+const MAX_BLOCK_COUNT: usize = 4;
+
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
 
@@ -149,10 +155,6 @@ impl NetworkTransactionBuilder {
                                 tracing::info!("account reverted: {}", account_prefix);
                                 self.actor_registry.remove(&account_prefix);
                             }
-                            ActorShutdownReason::CommittedBlockMismatch {account_prefix, parent_block, current_block} => {
-                                tracing::error!("committed block mismatch: parent={}, current={}", parent_block, current_block);
-                                self.actor_registry.remove(&account_prefix);
-                            }
                             ActorShutdownReason::EventChannelClosed => {
                                 anyhow::bail!("event channel closed");
                             }
@@ -260,11 +262,12 @@ impl NetworkTransactionBuilder {
         *chain_tip_header = tip;
 
         // Keep MMR pruned.
-        let pruned_block_height = (chain_mmr.chain_length().as_usize().saturating_sub(4)) as u32; // TODO: find MAX_BLOCK_COUNT
+        let pruned_block_height =
+            (chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
         chain_mmr.prune_to(..pruned_block_height.into());
     }
 
-    /// Spawns a new actor and registers it with the builder if the account is present in the store.
+    /// Spawns a new actor to manage the state of the provided network account.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config, store))]
     async fn spawn_actor(
         &mut self,
@@ -276,10 +279,12 @@ impl NetworkTransactionBuilder {
         // Load the account state from the store.
         let block_num = config.chain_state.chain_tip_header.read().await.block_num();
         let state = State::load(account, account_prefix, store, block_num).await?;
-        let (actor, event_tx) = AccountActor::new(config);
 
-        // Update the actor registry with the new actor and run the actor.
+        // Construct the actor and add it to the registry for subsequent messaging.
+        let (actor, event_tx) = AccountActor::new(config);
         self.actor_registry.insert(account_prefix, event_tx.clone());
+
+        // Run the actor.
         self.actor_join_set.spawn(async move { actor.run(state).await });
         Ok(())
     }
@@ -308,11 +313,11 @@ impl NetworkTransactionBuilder {
         // Find affected accounts from account delta.
         if let Some(delta) = account_delta {
             let account_prefix = match delta {
-                AccountUpdateDetails::New(account) => None, // These updates are handled elsewhere.
                 AccountUpdateDetails::Delta(delta) => {
                     NetworkAccountPrefix::try_from(delta.id()).ok()
                 },
-                AccountUpdateDetails::Private => None,
+                // New accounts are handled elsewhere. Private accounts are not handled at all.
+                AccountUpdateDetails::New(_) | AccountUpdateDetails::Private => None,
             };
 
             if let Some(prefix) = account_prefix {

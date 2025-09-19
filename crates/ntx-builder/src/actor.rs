@@ -3,10 +3,8 @@ use std::sync::Arc;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
-use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::transaction::PartialBlockchain;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
+use tokio::sync::{AcquireError, Semaphore, mpsc};
 use url::Url;
 
 use crate::block_producer::BlockProducerClient;
@@ -18,11 +16,6 @@ pub enum ActorShutdownReason {
     AccountReverted(NetworkAccountPrefix),
     EventChannelClosed,
     SemaphoreFailed(AcquireError),
-    CommittedBlockMismatch {
-        account_prefix: NetworkAccountPrefix,
-        parent_block: BlockNumber,
-        current_block: BlockNumber,
-    },
 }
 
 #[derive(Debug, Clone)]

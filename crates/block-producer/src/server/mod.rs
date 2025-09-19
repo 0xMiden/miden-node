@@ -34,14 +34,9 @@ use crate::errors::{
     SubmitProvenBatchError,
     VerifyTxError,
 };
-use crate::mempool::{BatchBudget, BlockBudget, Mempool, SharedMempool};
+use crate::mempool::{BatchBudget, BlockBudget, Mempool, MempoolConfig, SharedMempool};
 use crate::store::StoreClient;
-use crate::{
-    COMPONENT,
-    SERVER_MEMPOOL_EXPIRATION_SLACK,
-    SERVER_MEMPOOL_STATE_RETENTION,
-    SERVER_NUM_BATCH_BUILDERS,
-};
+use crate::{COMPONENT, SERVER_NUM_BATCH_BUILDERS};
 
 /// The block producer server.
 ///
@@ -130,16 +125,15 @@ impl BlockProducer {
             self.batch_prover_url,
             self.batch_interval,
         );
-        let mempool = Mempool::shared(
-            chain_tip,
-            BatchBudget {
+        let mempool = MempoolConfig {
+            batch_budget: BatchBudget {
                 transactions: self.max_txs_per_batch,
                 ..BatchBudget::default()
             },
-            BlockBudget { batches: self.max_batches_per_block },
-            SERVER_MEMPOOL_STATE_RETENTION,
-            SERVER_MEMPOOL_EXPIRATION_SLACK,
-        );
+            block_budget: BlockBudget { batches: self.max_batches_per_block },
+            ..Default::default()
+        };
+        let mempool = Mempool::shared(chain_tip, mempool);
 
         // Spawn rpc server and batch and block provers.
         //

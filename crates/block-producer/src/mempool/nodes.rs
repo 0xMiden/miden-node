@@ -1,0 +1,187 @@
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+
+use miden_objects::Word;
+use miden_objects::account::AccountId;
+use miden_objects::batch::{BatchId, ProvenBatch};
+use miden_objects::block::BlockNumber;
+use miden_objects::note::{NoteHeader, NoteId, Nullifier};
+use miden_objects::transaction::{TransactionHeader, TransactionId};
+
+use crate::domain::transaction::AuthenticatedTransaction;
+
+/// Uniquely identifies a node in the mempool.
+///
+/// This effectively describes the lifecycle of a transaction in the mempool.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum NodeId {
+    Transaction(TransactionId),
+    // UserBatch(BatchId),
+    ProposedBatch(BatchId),
+    ProvenBatch(BatchId),
+    Block(BlockNumber),
+}
+
+/// A node representing a [`AuthenticatedTransaction`] which is waiting for inclusion in a batch.
+///
+/// Once this is selected for inclusion in a batch it will be moved inside a [`ProposedBatchNode`].
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct TransactionNode(pub Arc<AuthenticatedTransaction>);
+
+/// Represents a batch which has been proposed by the mempool and which is undergoing proving.
+///
+/// Once proven it transitions to a [`ProvenBatchNode`].
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ProposedBatchNode(pub Vec<TransactionNode>);
+
+/// Represents a [`ProvenBatch`] which is waiting for inclusion in a block.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct ProvenBatchNode {
+    /// We need to store this in addition to the proven batch because [`ProvenBatch`] erases the
+    /// transaction information. We need the original information if we want to rollback the batch
+    /// but retain the transactions.
+    pub(crate) txs: Vec<TransactionNode>,
+    pub(crate) inner: Arc<ProvenBatch>,
+}
+
+impl ProvenBatchNode {
+    pub(crate) fn tx_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
+        self.inner.transactions().as_slice().iter()
+    }
+}
+
+/// Represents a block - both committed and in-progress.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct BlockNode(pub Vec<ProvenBatchNode>);
+
+/// Describes a node's impact on the state.
+///
+/// This is used to determine what state data is created or consumed by this node.
+pub(crate) trait Node {
+    /// All [`Nullifier`]s created by this node, **including** nullifiers for erased notes. This
+    /// may not be strictly necessary but it removes having to worry about reverting batches and
+    /// blocks with erased notes -- since these would otherwise have different state impact than
+    /// the transactions within them.
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_>;
+
+    /// All output notes created by this node, **including** nullifiers for erased notes. This
+    /// may not be strictly necessary but it removes having to worry about reverting batches and
+    /// blocks with erased notes -- since these would otherwise have different state impact than
+    /// the transactions within them.
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_>;
+}
+
+impl Node for TransactionNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.0.nullifiers())
+    }
+
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.output_note_ids())
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.unauthenticated_notes())
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        let update = self.0.account_update();
+        Box::new(std::iter::once((
+            update.account_id(),
+            update.initial_state_commitment(),
+            update.final_state_commitment(),
+        )))
+    }
+}
+
+impl Node for ProposedBatchNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.0.iter().flat_map(Node::nullifiers))
+    }
+
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::output_notes))
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::unauthenticated_notes))
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        Box::new(self.0.iter().flat_map(Node::account_updates))
+    }
+}
+
+impl Node for ProvenBatchNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.tx_headers().flat_map(|tx| tx.input_notes().iter().copied()))
+    }
+
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.tx_headers().flat_map(|tx| tx.output_notes().iter().copied()))
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(
+            self.inner
+                .input_notes()
+                .iter()
+                .filter_map(|note| note.header())
+                .map(NoteHeader::id),
+        )
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        Box::new(self.inner.account_updates().values().map(|update| {
+            (
+                update.account_id(),
+                update.initial_state_commitment(),
+                update.final_state_commitment(),
+            )
+        }))
+    }
+}
+
+impl Node for BlockNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.0.iter().flat_map(Node::nullifiers))
+    }
+
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::output_notes))
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::unauthenticated_notes))
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        Box::new(self.0.iter().flat_map(Node::account_updates))
+    }
+}
+
+/// Contains the current nodes of the state DAG.
+///
+/// Nodes are purposefully not stored as a single collection since we often want to iterate
+/// through specific node types e.g. all available transactions.
+///
+/// This data _must_ be kept in sync with the [`InflightState's`] [`NodeIds`] since these are
+/// used as the edges of the graph.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub(crate) struct Nodes {
+    // Nodes in the DAG
+    pub(crate) txs: HashMap<TransactionId, TransactionNode>,
+    // user_batches: HashMap<BatchId, ProvenBatchNode>,
+    pub(crate) proposed_batches: HashMap<BatchId, ProposedBatchNode>,
+    pub(crate) proven_batches: HashMap<BatchId, ProvenBatchNode>,
+    pub(crate) proposed_block: Option<(BlockNumber, BlockNode)>,
+    pub(crate) committed_blocks: VecDeque<(BlockNumber, BlockNode)>,
+}
+
+impl Nodes {
+    pub(crate) fn oldest_committed_block(&self) -> Option<BlockNumber> {
+        self.committed_blocks.front().map(|(number, _)| *number)
+    }
+}

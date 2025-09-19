@@ -4,127 +4,54 @@ use std::sync::Arc;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::batch::{BatchId, ProvenBatch};
 use miden_objects::block::BlockNumber;
-use miden_objects::{
-    MAX_ACCOUNTS_PER_BATCH,
-    MAX_INPUT_NOTES_PER_BATCH,
-    MAX_OUTPUT_NOTES_PER_BATCH,
-};
 use subscription::SubscriptionProvider;
 use tokio::sync::{Mutex, MutexGuard, mpsc};
 use tracing::{instrument, warn};
 
 use crate::domain::transaction::AuthenticatedTransaction;
-use crate::errors::AddTransactionError;
-use crate::{COMPONENT, DEFAULT_MAX_BATCHES_PER_BLOCK, DEFAULT_MAX_TXS_PER_BATCH};
+use crate::errors::{AddTransactionError, VerifyTxError};
+use crate::mempool::budget::BudgetStatus;
+use crate::mempool::nodes::{
+    BlockNode,
+    NodeId,
+    ProposedBatchNode,
+    ProvenBatchNode,
+    TransactionNode,
+};
+use crate::{COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION};
 
-mod state_dag;
+mod budget;
+pub use budget::{BatchBudget, BlockBudget};
+
+mod nodes;
+mod state;
 mod subscription;
 
 // FIXME(Mirko): Re-enable these once mempool refactor is completed.
 #[cfg(all(false, test))]
 mod tests;
 
-// MEMPOOL BUDGET
-// ================================================================================================
-
-/// Limits placed on a batch's contents.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct BatchBudget {
-    /// Maximum number of transactions allowed in a batch.
-    pub transactions: usize,
-    /// Maximum number of input notes allowed.
-    pub input_notes: usize,
-    /// Maximum number of output notes allowed.
-    pub output_notes: usize,
-    /// Maximum number of updated accounts.
-    pub accounts: usize,
-}
-
-/// Limits placed on a blocks's contents.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub struct BlockBudget {
-    /// Maximum number of batches allowed in a block.
-    pub batches: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum BudgetStatus {
-    /// The operation remained within the budget.
-    WithinScope,
-    /// The operation exceeded the budget.
-    Exceeded,
-}
-
-impl Default for BatchBudget {
-    fn default() -> Self {
-        Self {
-            transactions: DEFAULT_MAX_TXS_PER_BATCH,
-            input_notes: MAX_INPUT_NOTES_PER_BATCH,
-            output_notes: MAX_OUTPUT_NOTES_PER_BATCH,
-            accounts: MAX_ACCOUNTS_PER_BATCH,
-        }
-    }
-}
-
-impl Default for BlockBudget {
-    fn default() -> Self {
-        Self { batches: DEFAULT_MAX_BATCHES_PER_BLOCK }
-    }
-}
-
-impl BatchBudget {
-    /// Attempts to consume the transaction's resources from the budget.
-    ///
-    /// Returns [`BudgetStatus::Exceeded`] if the transaction would exceed the remaining budget,
-    /// otherwise returns [`BudgetStatus::Ok`] and subtracts the resources from the budger.
-    #[must_use]
-    fn check_then_subtract(&mut self, tx: &AuthenticatedTransaction) -> BudgetStatus {
-        // This type assertion reminds us to update the account check if we ever support multiple
-        // account updates per tx.
-        const ACCOUNT_UPDATES_PER_TX: usize = 1;
-        let _: miden_objects::account::AccountId = tx.account_update().account_id();
-
-        let output_notes = tx.output_note_count();
-        let input_notes = tx.input_note_count();
-
-        if self.transactions == 0
-            || self.accounts < ACCOUNT_UPDATES_PER_TX
-            || self.input_notes < input_notes
-            || self.output_notes < output_notes
-        {
-            return BudgetStatus::Exceeded;
-        }
-
-        self.transactions -= 1;
-        self.accounts -= ACCOUNT_UPDATES_PER_TX;
-        self.input_notes -= input_notes;
-        self.output_notes -= output_notes;
-
-        BudgetStatus::WithinScope
-    }
-}
-
-impl BlockBudget {
-    /// Attempts to consume the batch's resources from the budget.
-    ///
-    /// Returns [`BudgetStatus::Exceeded`] if the batch would exceed the remaining budget,
-    /// otherwise returns [`BudgetStatus::Ok`].
-    #[must_use]
-    fn check_then_subtract(&mut self, _batch: &ProvenBatch) -> BudgetStatus {
-        if self.batches == 0 {
-            BudgetStatus::Exceeded
-        } else {
-            self.batches -= 1;
-            BudgetStatus::WithinScope
-        }
-    }
-}
-
-// MEMPOOL
-// ================================================================================================
-
 #[derive(Clone)]
 pub struct SharedMempool(Arc<Mutex<Mempool>>);
+
+#[derive(Debug, Clone)]
+pub struct MempoolConfig {
+    pub block_budget: BlockBudget,
+    pub batch_budget: BatchBudget,
+    pub expiration_slack: u32,
+    pub state_retention: NonZeroUsize,
+}
+
+impl Default for MempoolConfig {
+    fn default() -> Self {
+        Self {
+            block_budget: BlockBudget::default(),
+            batch_budget: BatchBudget::default(),
+            expiration_slack: SERVER_MEMPOOL_EXPIRATION_SLACK,
+            state_retention: SERVER_MEMPOOL_STATE_RETENTION,
+        }
+    }
+}
 
 impl SharedMempool {
     #[instrument(target = COMPONENT, name = "mempool.lock", skip_all)]
@@ -135,54 +62,39 @@ impl SharedMempool {
 
 #[derive(Clone, Debug)]
 pub struct Mempool {
-    state_dag: state_dag::StateDag,
+    /// Contains the aggregated state of all transactions, batches and blocks currently inflight in
+    /// the mempool. Combines with `nodes` to describe the mempool's state graph.
+    state: state::InflightState,
 
-    /// The constraints we place on every block we build.
-    block_budget: BlockBudget,
+    /// Contains all the transactions, batches and blocks currently in the mempool.
+    nodes: nodes::Nodes,
 
-    /// The constraints we place on every batch we build.
-    batch_budget: BatchBudget,
+    chain_tip: BlockNumber,
 
+    config: MempoolConfig,
     subscription: subscription::SubscriptionProvider,
 }
 
-// We have to implement this manually since the event's channel does not implement PartialEq.
+// We have to implement this manually since the subscription channel does not implement PartialEq.
 impl PartialEq for Mempool {
     fn eq(&self, other: &Self) -> bool {
-        self.state_dag == other.state_dag
+        self.state == other.state && self.nodes == other.nodes
     }
 }
 
 impl Mempool {
     /// Creates a new [`SharedMempool`] with the provided configuration.
-    pub fn shared(
-        chain_tip: BlockNumber,
-        batch_budget: BatchBudget,
-        block_budget: BlockBudget,
-        state_retention: NonZeroUsize,
-        expiration_slack: u32,
-    ) -> SharedMempool {
-        SharedMempool(Arc::new(Mutex::new(Self::new(
-            chain_tip,
-            batch_budget,
-            block_budget,
-            state_retention,
-            expiration_slack,
-        ))))
+    pub fn shared(chain_tip: BlockNumber, config: MempoolConfig) -> SharedMempool {
+        SharedMempool(Arc::new(Mutex::new(Self::new(chain_tip, config))))
     }
 
-    fn new(
-        chain_tip: BlockNumber,
-        batch_budget: BatchBudget,
-        block_budget: BlockBudget,
-        state_retention: NonZeroUsize,
-        expiration_slack: u32,
-    ) -> Mempool {
+    fn new(chain_tip: BlockNumber, config: MempoolConfig) -> Mempool {
         Self {
-            batch_budget,
-            block_budget,
+            config,
+            chain_tip,
             subscription: SubscriptionProvider::new(chain_tip),
-            state_dag: state_dag::StateDag::new(chain_tip, state_retention, expiration_slack),
+            state: state::InflightState::default(),
+            nodes: nodes::Nodes::default(),
         }
     }
 
@@ -197,16 +109,47 @@ impl Mempool {
     /// # Errors
     ///
     /// Returns an error if the transaction's initial conditions don't match the current state.
-    #[instrument(target = COMPONENT, name = "mempool.add_transaction", skip_all, fields(tx=%transaction.id()))]
+    #[instrument(target = COMPONENT, name = "mempool.add_transaction", skip_all, fields(tx=%tx.id()))]
     pub fn add_transaction(
         &mut self,
-        transaction: Arc<AuthenticatedTransaction>,
+        tx: Arc<AuthenticatedTransaction>,
     ) -> Result<BlockNumber, AddTransactionError> {
-        self.state_dag.append_transaction(transaction)?;
+        self.authentication_staleness_check(tx.authentication_height())?;
+        self.expiration_check(tx.expires_at())?;
+
+        // The transaction should append to the existing mempool state.
+        let account_commitment = self
+            .state
+            .account_commitment(&tx.account_id())
+            .or(tx.store_account_state())
+            .unwrap_or_default();
+        if tx.account_update().initial_state_commitment() != account_commitment {
+            return Err(VerifyTxError::IncorrectAccountInitialCommitment {
+                tx_initial_account_commitment: tx.account_update().initial_state_commitment(),
+                current_account_commitment: account_commitment,
+            }
+            .into());
+        }
+        let double_spend = self.state.nullifiers_exist(tx.nullifiers());
+        if !double_spend.is_empty() {
+            return Err(VerifyTxError::InputNotesAlreadyConsumed(double_spend).into());
+        }
+        let duplicates = self.state.output_notes_exist(tx.output_note_ids());
+        if !duplicates.is_empty() {
+            return Err(VerifyTxError::OutputNotesAlreadyExist(duplicates).into());
+        }
+
+        // Insert the transaction node.
+        let tx_id = tx.id();
+        let node_id = NodeId::Transaction(tx.id());
+        let node = TransactionNode(tx);
+
+        self.state.insert(node_id, &node);
+        self.nodes.txs.insert(tx_id, node);
 
         self.inject_telemetry();
 
-        Ok(self.state_dag.chain_tip())
+        Ok(self.chain_tip)
     }
 
     /// Returns a set of transactions for the next batch.
@@ -216,24 +159,97 @@ impl Mempool {
     /// Returns `None` if no transactions are available.
     #[instrument(target = COMPONENT, name = "mempool.select_batch", skip_all)]
     pub fn select_batch(&mut self) -> Option<(BatchId, Vec<Arc<AuthenticatedTransaction>>)> {
-        let result = self.state_dag.propose_batch(self.batch_budget);
+        // The selection algorithm is fairly neanderthal in nature.
+        //
+        // We iterate over all transaction nodes, each time selecting the first transaction which
+        // has no parent nodes that are unselected transactions. This is fairly primitive, but
+        // avoids the manual bookkeeping of which transactions are selectable.
+        //
+        // This is still reasonably performant given that we only retain unselected transactions as
+        // transaction nodes i.e. selected transactions become batch nodes.
+        //
+        // The additional bookkeeping can be implemented once we have fee related strategies. KISS.
+
+        let mut selected = Vec::new();
+        let mut budget = self.config.batch_budget;
+
+        'outer: loop {
+            'next_candidate: for candidate in self.nodes.txs.values() {
+                if selected.contains(&candidate.0.id()) {
+                    continue;
+                }
+
+                let parents = self.state.parents(candidate);
+                for parent in parents {
+                    match parent {
+                        NodeId::Transaction(parent) if !selected.contains(&parent) => {
+                            continue 'next_candidate;
+                        },
+                        _ => {},
+                    }
+                }
+
+                if budget.check_then_subtract(&candidate.0) == BudgetStatus::Exceeded {
+                    break 'outer;
+                }
+
+                selected.push(candidate.0.id());
+                continue 'outer;
+            }
+
+            break 'outer;
+        }
+
+        if selected.is_empty() {
+            return None;
+        }
+
+        // Assemble batch and update internal state.
+        let mut batch_node = ProposedBatchNode(vec![]);
+        for tx in selected {
+            // SAFETY: Selected txs come from the transaction pool and are unique.
+            let tx = self.nodes.txs.remove(&tx).unwrap();
+            self.state.remove(&tx);
+            batch_node.0.push(tx);
+        }
+
+        let batch_id =
+            BatchId::from_transactions(batch_node.0.iter().map(|tx| tx.0.raw_proven_transaction()));
+        let batch = batch_node.0.iter().map(|tx| Arc::clone(&tx.0)).collect();
+
+        self.state.insert(NodeId::ProposedBatch(batch_id), &batch_node);
+        self.nodes.proposed_batches.insert(batch_id, batch_node);
+
         self.inject_telemetry();
-        result
+        Some((batch_id, batch))
     }
 
     /// Drops the failed batch and all of its descendants.
     ///
     /// Transactions are _not_ requeued.
+    #[allow(clippy::unused_self, reason = "wip")]
     #[instrument(target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
-    pub fn rollback_batch(&mut self, batch: BatchId) {
-        self.state_dag.revert_proposed_batch(batch);
-        self.inject_telemetry();
+    pub fn rollback_batch(&mut self, _batch: BatchId) {
+        todo!();
+        // self.inject_telemetry();
     }
 
     /// Marks a batch as proven if it exists.
     #[instrument(target = COMPONENT, name = "mempool.commit_batch", skip_all)]
     pub fn commit_batch(&mut self, batch: Arc<ProvenBatch>) {
-        self.state_dag.submit_batch_proof(batch);
+        // Due to the distributed nature of the system, its possible that a proposed batch was
+        // already proven, or already reverted. This guards against this eventuality.
+        let Some(proposed) = self.nodes.proposed_batches.remove(&batch.id()) else {
+            return;
+        };
+
+        let batch_id = batch.id();
+        self.state.remove(&proposed);
+
+        let node = ProvenBatchNode { txs: proposed.0, inner: batch };
+        self.state.insert(NodeId::ProvenBatch(batch_id), &node);
+        self.nodes.proven_batches.insert(batch_id, node);
+
         self.inject_telemetry();
     }
 
@@ -248,9 +264,58 @@ impl Mempool {
     /// Panics if there is already a block in flight.
     #[instrument(target = COMPONENT, name = "mempool.select_block", skip_all)]
     pub fn select_block(&mut self) -> (BlockNumber, Vec<Arc<ProvenBatch>>) {
-        let result = self.state_dag.propose_block(self.block_budget);
+        assert!(
+            self.nodes.proposed_block.is_none(),
+            "block {} is already in progress",
+            self.nodes.proposed_block.as_ref().unwrap().0
+        );
+
+        let mut selected = Vec::new();
+        let mut budget = self.config.block_budget;
+
+        'outer: loop {
+            'next_candidate: for candidate in self.nodes.proven_batches.values() {
+                if selected.contains(&candidate.inner.id()) {
+                    continue;
+                }
+
+                let parents = self.state.parents(candidate);
+                for parent in parents {
+                    match parent {
+                        NodeId::ProvenBatch(batch) if selected.contains(&batch) => {},
+                        NodeId::Block(_) => {},
+                        _ => continue 'next_candidate,
+                    }
+                }
+
+                if budget.check_then_subtract(&candidate.inner) == BudgetStatus::Exceeded {
+                    break 'outer;
+                }
+
+                selected.push(candidate.inner.id());
+                continue 'outer;
+            }
+
+            break 'outer;
+        }
+
+        // Assemble batch and update internal state.
+        let mut block_node = BlockNode(vec![]);
+        for batch in selected {
+            // SAFETY: Selected txs come from the transaction pool and are unique.
+            let batch = self.nodes.proven_batches.remove(&batch).unwrap();
+            self.state.remove(&batch);
+            block_node.0.push(batch);
+        }
+
+        let block_number = self.chain_tip.child();
+        let block = block_node.0.iter().map(|batch| Arc::clone(&batch.inner)).collect();
+
+        self.state.insert(NodeId::Block(block_number), &block_node);
+        self.nodes.proposed_block = Some((block_number, block_node));
+
         self.inject_telemetry();
-        result
+        (block_number, block)
     }
 
     /// Notify the pool that the in flight block was successfully committed to the chain.
@@ -270,8 +335,20 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self, block: BlockNumber) {
-        self.state_dag.commit_proposed_block(block);
+    pub fn commit_block(&mut self, to_commit: BlockNumber) {
+        let block = self
+            .nodes
+            .proposed_block
+            .take_if(|(proposed, _)| proposed == &to_commit)
+            .expect("block must be in progress to commit");
+
+        self.nodes.committed_blocks.push_back(block);
+        self.chain_tip = self.chain_tip.child();
+
+        if self.nodes.committed_blocks.len() > self.config.state_retention.get() {
+            let (_number, node) = self.nodes.committed_blocks.pop_front().unwrap();
+            self.state.remove(&node);
+        }
         self.inject_telemetry();
     }
 
@@ -291,8 +368,25 @@ impl Mempool {
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.rollback_block", skip_all)]
     pub fn rollback_block(&mut self, block: BlockNumber) {
-        self.state_dag.revert_proposed_block(block);
-        self.inject_telemetry();
+        // Only revert if the given block is actually inflight.
+        //
+        // This guards against extreme circumstances where multiple block proofs may be inflight at
+        // once. Due to the distributed nature of the node, one can imagine a scenario where
+        // multiple provers get the same job for example.
+        //
+        // FIXME: We should consider a more robust check here to identify the block by a hash.
+        //        If multiple jobs are possible, then so are multiple variants with the same block
+        //        number.
+        if self
+            .nodes
+            .proposed_block
+            .as_ref()
+            .is_none_or(|(proposed, _)| proposed != &block)
+        {
+            return;
+        }
+        todo!();
+        // self.inject_telemetry();
     }
 
     /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.
@@ -328,5 +422,30 @@ impl Mempool {
         // span.set_attribute("mempool.batches.proven", self.batches.num_proven());
         // span.set_attribute("mempool.batches.total", self.batches.len());
         // span.set_attribute("mempool.batches.roots", self.batches.num_roots());
+    }
+
+    fn authentication_staleness_check(
+        &self,
+        authentication_height: BlockNumber,
+    ) -> Result<(), AddTransactionError> {
+        let oldest = self.nodes.oldest_committed_block().unwrap_or_default();
+
+        if authentication_height < oldest {
+            return Err(AddTransactionError::StaleInputs {
+                input_block: authentication_height,
+                stale_limit: oldest,
+            });
+        }
+
+        Ok(())
+    }
+
+    fn expiration_check(&self, expired_at: BlockNumber) -> Result<(), AddTransactionError> {
+        let limit = self.chain_tip + self.config.expiration_slack;
+        if expired_at <= limit {
+            return Err(AddTransactionError::Expired { expired_at, limit });
+        }
+
+        Ok(())
     }
 }

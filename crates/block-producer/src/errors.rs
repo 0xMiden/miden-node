@@ -1,7 +1,6 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
 use miden_node_utils::ErrorReport;
-use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};

@@ -42,10 +42,14 @@ pub struct TransactionCandidate {
 
 #[derive(Clone)]
 pub struct State {
+    /// The network account prefix corresponding to the network account this state represents.
     account_prefix: NetworkAccountPrefix,
+
+    /// Component of this state which Contains the committed and inflight account updates as well
+    /// as available and nullified notes.
     account: AccountState,
 
-    /// Uncommitted transactions which have a some impact on the network state.
+    /// Uncommitted transactions which have some impact on the network state.
     ///
     /// This is tracked so we can commit or revert such transaction effects. Transactions _without_
     /// an impact are ignored.
@@ -67,7 +71,6 @@ impl State {
         store: StoreClient,
         block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
-        // Get only notes relevant to this account up to the current block.
         let notes = store
             .get_unconsumed_network_notes_for_account(account_prefix, block_num.as_u32())
             .await?;

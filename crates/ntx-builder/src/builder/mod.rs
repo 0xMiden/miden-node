@@ -150,8 +150,8 @@ impl NetworkTransactionBuilder {
         loop {
             tokio::select! {
                 // Handle actor result.
-                actor_result = self.coordinator.join_set().join_next() => {
-                    self.coordinator.handle_actor_result(actor_result).await?;
+                result = self.coordinator.try_next() => {
+                    result?;
                 },
                 // Handle mempool events.
                 event = mempool_events.try_next() => {

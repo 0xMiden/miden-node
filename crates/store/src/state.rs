@@ -914,7 +914,9 @@ impl State {
             let info = self.db.select_account(account_id).await?;
 
             // if we get a query for a private account, we'll return `None`
-            if let Some(details) = info.details {
+            let Some(details) = info.details else {
+                return Err(AccountError::StorageSlotNotMap(slot_index).into());
+            };
                 let slot_headers = Vec::from_iter(
                     details
                         .storage()

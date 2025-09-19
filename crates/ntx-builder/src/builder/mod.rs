@@ -204,14 +204,13 @@ impl NetworkTransactionBuilder {
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) {
-                        let event_tx = self
-                            .spawn_actor(
-                                account.clone(),
-                                account_prefix,
-                                account_actor_config,
-                                store.clone(),
-                            )
-                            .await?;
+                        self.spawn_actor(
+                            account.clone(),
+                            account_prefix,
+                            account_actor_config,
+                            store.clone(),
+                        )
+                        .await?;
                         tracing::info!("created new actor for account prefix: {}", account_prefix);
                     }
                 }
@@ -250,14 +249,14 @@ impl NetworkTransactionBuilder {
     }
 
     /// Spawns a new actor and registers it with the builder if the account is present in the store.
-    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, config, store))]
+    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config, store))]
     async fn spawn_actor(
         &mut self,
         account: Account,
         account_prefix: NetworkAccountPrefix,
         config: &AccountActorConfig,
         store: StoreClient,
-    ) -> anyhow::Result<mpsc::UnboundedSender<MempoolEvent>> {
+    ) -> anyhow::Result<()> {
         // Load the account state from the store.
         let block_num = config.chain_state.chain_tip_header.read().await.block_num();
         let state = State::load(account, account_prefix, store, block_num).await?;
@@ -266,7 +265,7 @@ impl NetworkTransactionBuilder {
         // Update the actor registry with the new actor and run the actor.
         self.actor_registry.insert(account_prefix, event_tx.clone());
         self.actor_join_set.spawn(async move { actor.run(state).await });
-        Ok(event_tx)
+        Ok(())
     }
 
     /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.

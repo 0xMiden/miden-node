@@ -161,6 +161,49 @@ impl StoreClient {
 
         Ok(account)
     }
+
+    /// Returns the list of unconsumed network notes for a specific network account up to a
+    /// specified block.
+    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes_for_account", skip_all, err)]
+    pub async fn get_unconsumed_network_notes_for_account(
+        &self,
+        network_account_prefix: NetworkAccountPrefix,
+        block_num: u32,
+    ) -> Result<Vec<NetworkNote>, StoreError> {
+        let mut all_notes = Vec::new();
+        let mut page_token: Option<u64> = None;
+
+        loop {
+            let req = proto::ntx_builder_store::UnconsumedNetworkNotesForAccountRequest {
+                page_token,
+                page_size: 128,
+                network_account_id_prefix: network_account_prefix.inner(),
+                block_num,
+            };
+            let resp = self
+                .inner
+                .clone()
+                .get_unconsumed_network_notes_for_account(req)
+                .await?
+                .into_inner();
+
+            let page: Vec<NetworkNote> = resp
+                .notes
+                .into_iter()
+                .map(NetworkNote::try_from)
+                .collect::<Result<Vec<_>, _>>()?;
+
+            all_notes.extend(page);
+
+            match resp.next_token {
+                Some(token) => page_token = Some(token),
+                None => break,
+            }
+        }
+
+        Ok(all_notes)
+    }
+
     #[instrument(target = COMPONENT, name = "store.client.get_network_accounts", skip_all, err)]
     pub async fn get_network_accounts(&self) -> Result<Vec<Account>, StoreError> {
         let request = tonic::Request::new(proto::ntx_builder_store::GetNetworkAccountsRequest {});

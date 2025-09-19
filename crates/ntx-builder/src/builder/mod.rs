@@ -261,7 +261,8 @@ impl NetworkTransactionBuilder {
         store: StoreClient,
     ) -> anyhow::Result<mpsc::UnboundedSender<MempoolEvent>> {
         // Load the account state from the store.
-        let state = State::load(account_prefix, account, store).await?;
+        let block_num = config.chain_state.chain_tip_header.read().await.block_num();
+        let state = State::load(account_prefix, account, store, block_num).await?;
         let (actor, event_tx) = AccountActor::new(config);
 
         // Update the actor registry with the new actor and run the actor.

@@ -71,9 +71,12 @@ impl State {
         account_prefix: NetworkAccountPrefix,
         account: Account,
         store: StoreClient,
+        block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
-        // TODO: only get notes relevant to this account.
-        let notes = store.get_unconsumed_network_notes().await?;
+        // Get only notes relevant to this account up to the current block
+        let notes = store
+            .get_unconsumed_network_notes_for_account(account_prefix, block_num.as_u32())
+            .await?;
         let account = AccountState::new(account_prefix, account, notes);
 
         let state = Self {

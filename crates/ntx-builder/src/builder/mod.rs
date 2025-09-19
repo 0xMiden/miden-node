@@ -7,6 +7,7 @@ use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
+use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::PartialMmr;
@@ -129,8 +130,11 @@ impl NetworkTransactionBuilder {
                 .expect("store endpoint only returns network accounts");
             #[allow(clippy::map_entry, reason = "async closure")]
             if !self.actor_registry.contains_key(&account_prefix) {
-                self.spawn_actor(account_prefix, &config, store.clone()).await?;
-                tracing::info!("created initial actor for account prefix: {}", account_prefix);
+                let account = store.get_network_account(account_prefix).await?;
+                if let Some(account) = account {
+                    self.spawn_actor(account, account_prefix, &config, store.clone()).await?;
+                    tracing::info!("created initial actor for account prefix: {}", account_prefix);
+                }
             }
         }
 
@@ -186,7 +190,7 @@ impl NetworkTransactionBuilder {
 
     #[tracing::instrument(
         name = "ntx.builder.handle_mempool_event",
-        skip(self, event, account_actor_config, store)
+        skip(self, event, account_actor_config, store, chain_state)
     )]
     async fn handle_mempool_event(
         &mut self,
@@ -196,29 +200,21 @@ impl NetworkTransactionBuilder {
         chain_state: ChainState,
     ) -> anyhow::Result<()> {
         match &event {
-            // TODO(serge): Don't create actors from store here. Only from transactions. Broadcast
-            // to affected actors.
+            // Spawn new actors for account creation transactions.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
-                // Find affected accounts.
-                let affected_accounts =
-                    Self::find_affected_accounts(account_delta.as_ref(), network_notes);
-
-                // TODO(serge): spawn actor for newly created accounts via account delta. And send
-                // the transaction to the actor.
-
-                for account_prefix in affected_accounts {
-                    // Retrieve or create the actor.
-                    if let Some(event_tx) = self.actor_registry.get(&account_prefix) {
-                        Self::send_event(account_prefix, event_tx, event.clone());
-                    } else {
-                        // Try creating the actor.
+                if let Some(AccountUpdateDetails::New(account)) = account_delta {
+                    if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) {
                         let event_tx = self
-                            .spawn_actor(account_prefix, account_actor_config, store.clone())
+                            .spawn_actor(
+                                account.clone(),
+                                account_prefix,
+                                account_actor_config,
+                                store.clone(),
+                            )
                             .await?;
                         tracing::info!("created new actor for account prefix: {}", account_prefix);
-                        if let Some(event_tx) = event_tx {
-                            Self::send_event(account_prefix, &event_tx, event.clone());
-                        }
+                        // Send the new actor the event also.
+                        Self::send_event(account_prefix, &event_tx, event.clone());
                     }
                 }
                 Ok(())
@@ -259,14 +255,11 @@ impl NetworkTransactionBuilder {
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, config, store))]
     async fn spawn_actor(
         &mut self,
+        account: Account,
         account_prefix: NetworkAccountPrefix,
         config: &AccountActorConfig,
         store: StoreClient,
-    ) -> anyhow::Result<Option<mpsc::UnboundedSender<MempoolEvent>>> {
-        // Fetch the account from the store.
-        let account = store.get_network_account(account_prefix).await?; // TODO(serge): still spawn actor despite lack of network account?
-        let Some(account) = account else { return Ok(None) };
-
+    ) -> anyhow::Result<mpsc::UnboundedSender<MempoolEvent>> {
         // Load the account state from the store.
         let state = State::load(account_prefix, account, store).await?;
         let (actor, event_tx) = AccountActor::new(config);
@@ -274,7 +267,7 @@ impl NetworkTransactionBuilder {
         // Update the actor registry with the new actor and run the actor.
         self.actor_registry.insert(account_prefix, event_tx.clone());
         self.actor_join_set.spawn(async move { actor.run(state).await });
-        Ok(Some(event_tx))
+        Ok(event_tx)
     }
 
     /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.
@@ -290,38 +283,5 @@ impl NetworkTransactionBuilder {
                 "actor channel disconnected"
             );
         }
-    }
-
-    fn find_affected_accounts(
-        account_delta: Option<&AccountUpdateDetails>,
-        network_notes: &[NetworkNote],
-    ) -> HashSet<NetworkAccountPrefix> {
-        let mut affected_accounts = HashSet::new();
-
-        // Find affected accounts from account delta.
-        if let Some(delta) = account_delta {
-            let account_prefix = match delta {
-                AccountUpdateDetails::New(account) => {
-                    NetworkAccountPrefix::try_from(account.id()).ok()
-                },
-                AccountUpdateDetails::Delta(delta) => {
-                    NetworkAccountPrefix::try_from(delta.id()).ok()
-                },
-                AccountUpdateDetails::Private => None,
-            };
-
-            if let Some(prefix) = account_prefix {
-                affected_accounts.insert(prefix);
-            }
-        }
-
-        // Find affected accounts from network notes.
-        for note in network_notes {
-            if let NetworkNote::SingleTarget(note) = note {
-                affected_accounts.insert(note.account_prefix());
-            }
-        }
-
-        affected_accounts
     }
 }

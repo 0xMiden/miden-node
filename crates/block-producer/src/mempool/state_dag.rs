@@ -12,11 +12,11 @@ use std::sync::Arc;
 
 use miden_objects::batch::{BatchId, ProvenBatch};
 use miden_objects::block::BlockNumber;
-use miden_objects::note::Nullifier;
-use miden_objects::transaction::TransactionId;
+use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::transaction::{TransactionHeader, TransactionId};
 
 use crate::domain::transaction::AuthenticatedTransaction;
-use crate::errors::AddTransactionError;
+use crate::errors::{AddTransactionError, VerifyTxError};
 use crate::mempool::{BatchBudget, BlockBudget, BudgetStatus};
 
 // STATE DAG
@@ -61,9 +61,55 @@ pub struct StateDag {
 #[derive(Clone, Debug, PartialEq, Default)]
 struct InflightState {
     chain_tip: BlockNumber,
+
+    /// Contains _all_ nullifiers created by inflight transactions, batches and blocks, including
+    /// the recently committed blocks.
+    ///
+    /// This _includes_ erased nullifiers to make state reversion and re-insertion easier to reason
+    /// about.
     nullifiers: HashSet<Nullifier>,
+
+    /// Contains _all_ notes created by inflight transactions, batches and blocks, including
+    /// the recently committed blocks.
+    ///
+    /// This _includes_ erased notes to make state reversion and re-insertion easier to reason
+    /// about.
+    ///
+    /// This is tracked separately from note creation and consumption as those may exclude erased
+    /// notes.
+    output_notes: HashSet<NoteId>,
     // TODO: track account state
     // TODO: track notes
+}
+
+impl InflightState {
+    fn nullifier_check(
+        &self,
+        nullifiers: impl Iterator<Item = Nullifier>,
+    ) -> Result<(), AddTransactionError> {
+        let exists = nullifiers
+            .filter(|nullifier| self.nullifiers.contains(nullifier))
+            .collect::<Vec<_>>();
+
+        if exists.is_empty() {
+            Ok(())
+        } else {
+            Err(VerifyTxError::InputNotesAlreadyConsumed(exists).into())
+        }
+    }
+
+    fn output_notes_check(
+        &self,
+        notes: impl Iterator<Item = NoteId>,
+    ) -> Result<(), AddTransactionError> {
+        let exists = notes.filter(|note| self.output_notes.contains(note)).collect::<Vec<_>>();
+
+        if exists.is_empty() {
+            Ok(())
+        } else {
+            Err(VerifyTxError::OutputNotesAlreadyExist(exists).into())
+        }
+    }
 }
 
 // DAG NODES
@@ -94,6 +140,12 @@ struct ProvenBatchNode {
     inner: Arc<ProvenBatch>,
 }
 
+impl ProvenBatchNode {
+    fn tx_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
+        self.inner.transactions().as_slice().iter()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct BlockNode(Vec<ProvenBatchNode>);
 
@@ -102,32 +154,46 @@ struct BlockNode(Vec<ProvenBatchNode>);
 /// This is used to determine what state data is created or consumed by this node.
 trait Node {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_>;
+    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
 }
 
 impl Node for TransactionNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
         Box::new(self.0.nullifiers())
     }
+
+    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.output_note_ids())
+    }
 }
+
 impl Node for ProposedBatchNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
         Box::new(self.0.iter().flat_map(Node::nullifiers))
     }
-}
-impl Node for ProvenBatchNode {
-    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
-        Box::new(
-            self.inner
-                .transactions()
-                .as_slice()
-                .iter()
-                .flat_map(|tx| tx.input_notes().iter().copied()),
-        )
+
+    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::all_output_notes))
     }
 }
+
+impl Node for ProvenBatchNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.tx_headers().flat_map(|tx| tx.input_notes().iter().copied()))
+    }
+
+    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.tx_headers().flat_map(|tx| tx.output_notes().iter().copied()))
+    }
+}
+
 impl Node for BlockNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
         Box::new(self.0.iter().flat_map(Node::nullifiers))
+    }
+
+    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::all_output_notes))
     }
 }
 
@@ -199,7 +265,10 @@ impl StateDag {
         let node_id = NodeId::Transaction(tx.id());
         let node = TransactionNode(tx);
 
-        // TODO: check state is available
+        self.state.nullifier_check(node.nullifiers())?;
+        self.state.output_notes_check(node.all_output_notes())?;
+        // TODO: unauthenticated note check
+        // TODO: account state check
 
         self.nodes.txs.insert(tx_id, node);
         self.insert_into_state_unchecked(node_id);
@@ -458,6 +527,7 @@ impl StateDag {
         let node = self.nodes.get(&id).expect("node must exist in the DAG");
 
         self.state.nullifiers.extend(node.nullifiers());
+        self.state.output_notes.extend(node.all_output_notes());
     }
 
     /// Returns all _uncommitted_ parent node's of the given [`NodeId`].
@@ -485,6 +555,10 @@ impl StateDag {
     fn prune_unchecked(&mut self, number: BlockNumber, node: BlockNode) {
         for nullifier in node.nullifiers() {
             self.state.nullifiers.remove(&nullifier);
+        }
+
+        for note in node.all_output_notes() {
+            self.state.output_notes.remove(&note);
         }
     }
 }

@@ -2201,8 +2201,12 @@ dependencies = [
  "axum",
  "miden-node-proto",
  "miden-node-utils",
+ "miden-objects",
+ "miden-testing",
+ "miden-tx",
  "serde",
  "tokio",
+ "tonic",
  "tracing",
  "url",
 ]

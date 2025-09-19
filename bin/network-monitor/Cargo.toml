@@ -19,7 +19,11 @@ anyhow           = { workspace = true }
 axum             = { version = "0.8" }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
+miden-objects    = { features = ["std", "testing"], workspace = true }
+miden-testing    = { workspace = true }
+miden-tx         = { workspace = true }
 serde            = { features = ["derive"], version = "1.0" }
 tokio            = { features = ["full"], workspace = true }
+tonic            = { features = ["codegen", "prost", "tls-native-roots", "transport"], workspace = true }
 tracing          = { workspace = true }
 url              = { features = ["serde"], workspace = true }

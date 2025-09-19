@@ -12,13 +12,17 @@ use tokio::sync::watch;
 use tracing::{info, instrument};
 
 use crate::COMPONENT;
-use crate::status::{MonitorConfig, NetworkStatus, ServiceStatus};
+use crate::config::MonitorConfig;
+use crate::status::{NetworkStatus, ServiceStatus};
+
+// SERVER STATE
+// ================================================================================================
 
 /// State for the web server containing watch receivers for all services.
 #[derive(Clone)]
 pub struct ServerState {
     pub rpc: watch::Receiver<ServiceStatus>,
-    pub provers: Vec<watch::Receiver<ServiceStatus>>,
+    pub provers: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
 }
 
 /// Runs the frontend server.
@@ -70,8 +74,9 @@ async fn get_status(
     services.push(server_state.rpc.borrow().clone());
 
     // Collect all remote prover statuses
-    for prover_rx in &server_state.provers {
-        services.push(prover_rx.borrow().clone());
+    for (prover_status_rx, prover_test_rx) in &server_state.provers {
+        services.push(prover_status_rx.borrow().clone());
+        services.push(prover_test_rx.borrow().clone());
     }
 
     let network_status = NetworkStatus { services, last_updated: current_time };

@@ -203,6 +203,7 @@ impl NetworkTransactionBuilder {
             // Spawn new actors for account creation transactions.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
+                    // Handle account creation.
                     if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) {
                         self.spawn_actor(
                             account.clone(),
@@ -213,12 +214,27 @@ impl NetworkTransactionBuilder {
                         .await?;
                         tracing::info!("created new actor for account prefix: {}", account_prefix);
                     }
+                    Ok(())
+                } else {
+                    let affected_accounts =
+                        Self::find_affected_accounts(account_delta.as_ref(), network_notes);
+
+                    for account_prefix in affected_accounts {
+                        // Retrieve or create the actor.
+                        if let Some(event_tx) = self.actor_registry.get(&account_prefix) {
+                            Self::send_event(account_prefix, event_tx, event.clone());
+                        }
+                    }
+                    Ok(())
                 }
-                Ok(())
             },
             // Update chain state and do not broadcast.
             MempoolEvent::BlockCommitted { header, .. } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
+                // TODO: should we send this through?
+                self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
+                    Self::send_event(*account_prefix, event_tx, event.clone());
+                });
                 Ok(())
             },
             // Broadcast to all actors.
@@ -281,5 +297,36 @@ impl NetworkTransactionBuilder {
                 "actor channel disconnected"
             );
         }
+    }
+
+    fn find_affected_accounts(
+        account_delta: Option<&AccountUpdateDetails>,
+        network_notes: &[NetworkNote],
+    ) -> HashSet<NetworkAccountPrefix> {
+        let mut affected_accounts = HashSet::new();
+
+        // Find affected accounts from account delta.
+        if let Some(delta) = account_delta {
+            let account_prefix = match delta {
+                AccountUpdateDetails::New(account) => None, // These updates are handled elsewhere.
+                AccountUpdateDetails::Delta(delta) => {
+                    NetworkAccountPrefix::try_from(delta.id()).ok()
+                },
+                AccountUpdateDetails::Private => None,
+            };
+
+            if let Some(prefix) = account_prefix {
+                affected_accounts.insert(prefix);
+            }
+        }
+
+        // Find affected accounts from network notes.
+        for note in network_notes {
+            if let NetworkNote::SingleTarget(note) = note {
+                affected_accounts.insert(note.account_prefix());
+            }
+        }
+
+        affected_accounts
     }
 }

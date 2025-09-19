@@ -100,12 +100,36 @@ struct BlockNode(Vec<ProvenBatchNode>);
 /// Describes a DAG node's impact on the state.
 ///
 /// This is used to determine what state data is created or consumed by this node.
-trait Node {}
+trait Node {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_>;
+}
 
-impl Node for TransactionNode {}
-impl Node for ProposedBatchNode {}
-impl Node for ProvenBatchNode {}
-impl Node for BlockNode {}
+impl Node for TransactionNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.0.nullifiers())
+    }
+}
+impl Node for ProposedBatchNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.0.iter().flat_map(Node::nullifiers))
+    }
+}
+impl Node for ProvenBatchNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(
+            self.inner
+                .transactions()
+                .as_slice()
+                .iter()
+                .flat_map(|tx| tx.input_notes().iter().copied()),
+        )
+    }
+}
+impl Node for BlockNode {
+    fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
+        Box::new(self.0.iter().flat_map(Node::nullifiers))
+    }
+}
 
 /// Contains the current nodes of the state DAG.
 ///
@@ -123,6 +147,26 @@ struct Nodes {
     proven_batches: HashMap<BatchId, ProvenBatchNode>,
     proposed_block: Option<(BlockNumber, BlockNode)>,
     committed_blocks: VecDeque<(BlockNumber, BlockNode)>,
+}
+
+impl Nodes {
+    fn get(&self, id: &NodeId) -> Option<&dyn Node> {
+        match id {
+            NodeId::Transaction(id) => self.txs.get(id).map(|x| x as &dyn Node),
+            NodeId::ProposedBatch(id) => self.proposed_batches.get(id).map(|x| x as &dyn Node),
+            NodeId::ProvenBatch(id) => self.proven_batches.get(id).map(|x| x as &dyn Node),
+            NodeId::ProposedBlock(id) => self
+                .proposed_block
+                .as_ref()
+                .filter(|(number, _)| number == id)
+                .map(|(_, x)| x as &dyn Node),
+            NodeId::CommittedBlock(id) => self
+                .committed_blocks
+                .iter()
+                .find(|(number, _)| number == id)
+                .map(|(_, x)| x as &dyn Node),
+        }
+    }
 }
 
 // STATE DAG PUBLIC API
@@ -410,7 +454,10 @@ impl StateDag {
     /// Callers _must_ ensure that the data is inline with the DAG expectations _and_ that the node
     /// data is already present in [`Nodes`].
     fn insert_into_state_unchecked(&mut self, id: NodeId) {
-        todo!()
+        // SAFETY: The node is expected to exist as part of this functions invariants.
+        let node = self.nodes.get(&id).expect("node must exist in the DAG");
+
+        self.state.nullifiers.extend(node.nullifiers());
     }
 
     /// Returns all _uncommitted_ parent node's of the given [`NodeId`].
@@ -431,12 +478,13 @@ impl StateDag {
         todo!();
     }
 
-    /// Marks the block's associated state as pruned, and removes it if it is no longer depedended
-    /// on.
+    /// Marks the block's associated state as pruned, removing the state if its no longer used.
     ///
     /// [`InflightState`] retains pruned data until the consumer of it is either committed or
     /// reverted.
     fn prune_unchecked(&mut self, number: BlockNumber, node: BlockNode) {
-        todo!();
+        for nullifier in node.nullifiers() {
+            self.state.nullifiers.remove(&nullifier);
+        }
     }
 }

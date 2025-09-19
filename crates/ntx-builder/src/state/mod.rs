@@ -68,12 +68,12 @@ impl State {
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]
     pub async fn load(
-        account_prefix: NetworkAccountPrefix,
         account: Account,
+        account_prefix: NetworkAccountPrefix,
         store: StoreClient,
         block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
-        // Get only notes relevant to this account up to the current block
+        // Get only notes relevant to this account up to the current block.
         let notes = store
             .get_unconsumed_network_notes_for_account(account_prefix, block_num.as_u32())
             .await?;
@@ -156,20 +156,6 @@ impl State {
                 let network_notes = to_single_target_prefix(self.account_prefix, network_notes);
                 self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
-            MempoolEvent::BlockCommitted { header, txs } => {
-                // TODO: still need commit_transaction?
-                //if header.prev_block_commitment() != self.chain_tip_header.commitment() {
-                //    return Some(ActorShutdownReason::CommittedBlockMismatch {
-                //        account_prefix: self.account_prefix,
-                //        parent_block: header.block_num(),
-                //        current_block: self.chain_tip_header.block_num(),
-                //    });
-                //}
-                //self.update_chain_tip(header);
-                //for tx in txs {
-                //self.commit_transaction(tx);
-                //}
-            },
             MempoolEvent::TransactionsReverted(txs) => {
                 for tx in txs {
                     let shutdown_reason = self.revert_transaction(tx);
@@ -178,6 +164,7 @@ impl State {
                     }
                 }
             },
+            MempoolEvent::BlockCommitted { .. } => {},
         }
         self.inject_telemetry();
 
@@ -206,13 +193,10 @@ impl State {
             let account_prefix = update.prefix();
             if account_prefix == self.account_prefix {
                 match update {
-                    NetworkAccountUpdate::New(_) => {
-                        // TODO(serge): double check what else was happening here before.
-                        // Do nothing. The coordinator created this actor on this event.
-                    },
                     NetworkAccountUpdate::Delta(account_delta) => {
                         self.account.add_delta(&account_delta);
                     },
+                    NetworkAccountUpdate::New(_) => {},
                 }
                 tx_impact.account_delta = Some(account_prefix);
             }

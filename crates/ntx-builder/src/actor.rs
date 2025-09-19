@@ -64,14 +64,8 @@ impl AccountActor {
     }
 
     pub async fn run(mut self, mut state: State) -> ActorShutdownReason {
-        let semaphore = self.semaphore.clone();
-        // TODO(serge): when would you wait - e.g. no notes to consume and tx in flight that you are
-        // waiting on. if tx succeeded, st self to inflight tx with tx id and wait mempool
-        // event to come through indicating completion. then flip back and go again. reset
-        // permit to be actual permit. similarly if you failed enough times, do the same. give up on
-        // account. if you receive mempool event while in state waiting for tx, unlock
-        // yourself.
         use futures::FutureExt;
+        let semaphore = self.semaphore.clone();
         // Use this to toggle between the semaphore and pending futures so that we don't thrash the
         // transaction execution flow when there is nothing to process.
         let mut toggle_fut = semaphore.acquire().boxed();
@@ -94,7 +88,6 @@ impl AccountActor {
                             let chain_mmr =  self.chain_state.chain_mmr.read().await.clone();
                             if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX, chain_tip_header, chain_mmr) {
                                 self.execute_transactions(&mut state, tx_candidate).await;
-                                // TODO(serge): determine whether you need to do permit or pending state
                             }
                             // Disable the semaphore, allow events to be received.
                             toggle_fut = std::future::pending().boxed();

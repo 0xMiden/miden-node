@@ -213,8 +213,6 @@ impl NetworkTransactionBuilder {
                             )
                             .await?;
                         tracing::info!("created new actor for account prefix: {}", account_prefix);
-                        // Send the new actor the event also.
-                        Self::send_event(account_prefix, &event_tx, event.clone());
                     }
                 }
                 Ok(())
@@ -262,7 +260,7 @@ impl NetworkTransactionBuilder {
     ) -> anyhow::Result<mpsc::UnboundedSender<MempoolEvent>> {
         // Load the account state from the store.
         let block_num = config.chain_state.chain_tip_header.read().await.block_num();
-        let state = State::load(account_prefix, account, store, block_num).await?;
+        let state = State::load(account, account_prefix, store, block_num).await?;
         let (actor, event_tx) = AccountActor::new(config);
 
         // Update the actor registry with the new actor and run the actor.

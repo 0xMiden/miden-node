@@ -6,10 +6,13 @@
     reason = "wip"
 )]
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
+use miden_objects::Word;
+use miden_objects::account::AccountId;
 use miden_objects::batch::{BatchId, ProvenBatch};
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
@@ -61,25 +64,40 @@ pub struct StateDag {
 #[derive(Clone, Debug, PartialEq, Default)]
 struct InflightState {
     chain_tip: BlockNumber,
-
-    /// Contains _all_ nullifiers created by inflight transactions, batches and blocks, including
-    /// the recently committed blocks.
-    ///
-    /// This _includes_ erased nullifiers to make state reversion and re-insertion easier to reason
-    /// about.
     nullifiers: HashSet<Nullifier>,
+    output_notes: HashMap<NoteId, NodeId>,
+    authenticated_notes: HashMap<NoteId, NodeId>,
+    accounts: HashMap<AccountId, AccountUpdates>,
+}
 
-    /// Contains _all_ notes created by inflight transactions, batches and blocks, including
-    /// the recently committed blocks.
-    ///
-    /// This _includes_ erased notes to make state reversion and re-insertion easier to reason
-    /// about.
-    ///
-    /// This is tracked separately from note creation and consumption as those may exclude erased
-    /// notes.
-    output_notes: HashSet<NoteId>,
-    // TODO: track account state
-    // TODO: track notes
+#[derive(Clone, Debug, PartialEq, Default)]
+struct AccountUpdates {
+    from: HashMap<Word, NodeId>,
+    to: HashMap<Word, NodeId>,
+}
+
+impl AccountUpdates {
+    fn latest_commitment(&self) -> Word {
+        self.to
+            .keys()
+            .find(|commitment| !self.from.contains_key(commitment))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.from.is_empty() && self.to.is_empty()
+    }
+
+    fn remove(&mut self, from: Word, to: Word) {
+        self.from.remove(&from);
+        self.to.remove(&to);
+    }
+
+    fn insert(&mut self, id: NodeId, from: Word, to: Word) {
+        self.from.insert(from, id);
+        self.to.insert(to, id);
+    }
 }
 
 impl InflightState {
@@ -102,13 +120,88 @@ impl InflightState {
         &self,
         notes: impl Iterator<Item = NoteId>,
     ) -> Result<(), AddTransactionError> {
-        let exists = notes.filter(|note| self.output_notes.contains(note)).collect::<Vec<_>>();
+        let exists = notes.filter(|note| self.output_notes.contains_key(note)).collect::<Vec<_>>();
 
         if exists.is_empty() {
             Ok(())
         } else {
             Err(VerifyTxError::OutputNotesAlreadyExist(exists).into())
         }
+    }
+
+    /// The latest account commitment tracked by the inflight state.
+    ///
+    /// A [`None`] value _does not_ mean this account doesn't exist at all, but rather that it has
+    /// no inflight nodes.
+    fn account_commitment(&self, account: &AccountId) -> Option<Word> {
+        self.accounts.get(account).map(AccountUpdates::latest_commitment)
+    }
+
+    fn remove(&mut self, node: &dyn Node) {
+        for nullifier in node.nullifiers() {
+            self.nullifiers.remove(&nullifier);
+        }
+
+        for note in node.output_notes() {
+            self.output_notes.remove(&note);
+        }
+
+        for note in node.unauthenticated_notes() {
+            self.authenticated_notes.remove(&note);
+        }
+
+        for (account, from, to) in node.account_updates() {
+            let Entry::Occupied(entry) =
+                self.accounts.entry(account).and_modify(|entry| entry.remove(from, to))
+            else {
+                // TODO: consider panicking since this shouldn't happen? But we don't assert about
+                // either..
+                continue;
+            };
+
+            if entry.get().is_empty() {
+                entry.remove_entry();
+            }
+        }
+    }
+
+    fn insert(&mut self, id: NodeId, node: &dyn Node) {
+        self.nullifiers.extend(node.nullifiers());
+        self.output_notes.extend(node.output_notes().map(|note| (note, id)));
+        self.authenticated_notes
+            .extend(node.unauthenticated_notes().map(|note| (note, id)));
+
+        for (account, from, to) in node.account_updates() {
+            self.accounts.entry(account).or_default().insert(id, from, to);
+        }
+    }
+
+    /// The [`NodeIds`] which the given node depends on.
+    ///
+    /// Note that the result is invalidated by mutating the state.
+    fn parents(&self, node: &dyn Node) -> HashSet<NodeId> {
+        let note_parents = node
+            .unauthenticated_notes()
+            .filter_map(|note| self.output_notes.get(&note))
+            .copied();
+
+        // TODO: chain with account parents
+
+        note_parents.collect()
+    }
+
+    /// The [`NodeIds`] which depend on the given node.
+    ///
+    /// Note that the result is invalidated by mutating the state.
+    fn children(&self, node: &dyn Node) -> HashSet<NodeId> {
+        let note_children = node
+            .output_notes()
+            .filter_map(|note| self.authenticated_notes.get(&note))
+            .copied();
+
+        // TODO: chain with account children
+
+        note_children.collect()
     }
 }
 
@@ -124,8 +217,7 @@ enum NodeId {
     // UserBatch(BatchId),
     ProposedBatch(BatchId),
     ProvenBatch(BatchId),
-    ProposedBlock(BlockNumber),
-    CommittedBlock(BlockNumber),
+    Block(BlockNumber),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -154,7 +246,9 @@ struct BlockNode(Vec<ProvenBatchNode>);
 /// This is used to determine what state data is created or consumed by this node.
 trait Node {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_>;
-    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_>;
 }
 
 impl Node for TransactionNode {
@@ -162,8 +256,21 @@ impl Node for TransactionNode {
         Box::new(self.0.nullifiers())
     }
 
-    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
         Box::new(self.0.output_note_ids())
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.unauthenticated_notes())
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        let update = self.0.account_update();
+        Box::new(std::iter::once((
+            update.account_id(),
+            update.initial_state_commitment(),
+            update.final_state_commitment(),
+        )))
     }
 }
 
@@ -172,8 +279,16 @@ impl Node for ProposedBatchNode {
         Box::new(self.0.iter().flat_map(Node::nullifiers))
     }
 
-    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(Node::all_output_notes))
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::output_notes))
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::unauthenticated_notes))
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        Box::new(self.0.iter().flat_map(Node::account_updates))
     }
 }
 
@@ -182,8 +297,28 @@ impl Node for ProvenBatchNode {
         Box::new(self.tx_headers().flat_map(|tx| tx.input_notes().iter().copied()))
     }
 
-    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
         Box::new(self.tx_headers().flat_map(|tx| tx.output_notes().iter().copied()))
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(
+            self.inner
+                .input_notes()
+                .iter()
+                .filter_map(|note| note.header())
+                .map(|note| note.id()),
+        )
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        Box::new(self.inner.account_updates().iter().map(|(_, update)| {
+            (
+                update.account_id(),
+                update.initial_state_commitment(),
+                update.final_state_commitment(),
+            )
+        }))
     }
 }
 
@@ -192,8 +327,16 @@ impl Node for BlockNode {
         Box::new(self.0.iter().flat_map(Node::nullifiers))
     }
 
-    fn all_output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(Node::all_output_notes))
+    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::output_notes))
+    }
+
+    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+        Box::new(self.0.iter().flat_map(Node::unauthenticated_notes))
+    }
+
+    fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
+        Box::new(self.0.iter().flat_map(Node::account_updates))
     }
 }
 
@@ -221,14 +364,10 @@ impl Nodes {
             NodeId::Transaction(id) => self.txs.get(id).map(|x| x as &dyn Node),
             NodeId::ProposedBatch(id) => self.proposed_batches.get(id).map(|x| x as &dyn Node),
             NodeId::ProvenBatch(id) => self.proven_batches.get(id).map(|x| x as &dyn Node),
-            NodeId::ProposedBlock(id) => self
-                .proposed_block
-                .as_ref()
-                .filter(|(number, _)| number == id)
-                .map(|(_, x)| x as &dyn Node),
-            NodeId::CommittedBlock(id) => self
+            NodeId::Block(id) => self
                 .committed_blocks
                 .iter()
+                .chain(&self.proposed_block)
                 .find(|(number, _)| number == id)
                 .map(|(_, x)| x as &dyn Node),
         }
@@ -261,17 +400,29 @@ impl StateDag {
         self.authentication_staleness_check(tx.authentication_height())?;
         self.expiration_check(tx.expires_at())?;
 
+        // The transaction should append to the existing mempool state.
+        let account_commitment = self
+            .state
+            .account_commitment(&tx.account_id())
+            .or(tx.store_account_state())
+            .unwrap_or_default();
+        if tx.account_update().initial_state_commitment() != account_commitment {
+            return Err(VerifyTxError::IncorrectAccountInitialCommitment {
+                tx_initial_account_commitment: tx.account_update().initial_state_commitment(),
+                current_account_commitment: account_commitment,
+            }
+            .into());
+        }
+        self.state.nullifier_check(tx.nullifiers())?;
+        self.state.output_notes_check(tx.output_note_ids())?;
+
+        // Insert the transaction node.
         let tx_id = tx.id();
         let node_id = NodeId::Transaction(tx.id());
         let node = TransactionNode(tx);
 
-        self.state.nullifier_check(node.nullifiers())?;
-        self.state.output_notes_check(node.all_output_notes())?;
-        // TODO: unauthenticated note check
-        // TODO: account state check
-
+        self.state.insert(node_id, &node);
         self.nodes.txs.insert(tx_id, node);
-        self.insert_into_state_unchecked(node_id);
 
         Ok(())
     }
@@ -297,12 +448,12 @@ impl StateDag {
         let mut selected = Vec::new();
 
         'outer: loop {
-            'next_candidate: for candidate in self.nodes.txs.values().map(|tx| &tx.0) {
-                if selected.contains(&candidate.id()) {
+            'next_candidate: for candidate in self.nodes.txs.values() {
+                if selected.contains(&candidate.0.id()) {
                     continue;
                 }
 
-                let parents = self.parents(NodeId::Transaction(candidate.id()));
+                let parents = self.state.parents(candidate);
                 for parent in parents {
                     match parent {
                         NodeId::Transaction(parent) if !selected.contains(&parent) => {
@@ -312,11 +463,11 @@ impl StateDag {
                     }
                 }
 
-                if budget.check_then_subtract(candidate.as_ref()) == BudgetStatus::Exceeded {
+                if budget.check_then_subtract(&candidate.0) == BudgetStatus::Exceeded {
                     break 'outer;
                 }
 
-                selected.push(candidate.id());
+                selected.push(candidate.0.id());
                 continue 'outer;
             }
 
@@ -328,20 +479,20 @@ impl StateDag {
         }
 
         // Assemble batch and update internal state.
-        let mut tx_nodes = Vec::with_capacity(selected.len());
+        let mut batch_node = ProposedBatchNode(vec![]);
         for tx in selected {
             // SAFETY: Selected txs come from the transaction pool and are unique.
-            tx_nodes.push(self.nodes.txs.remove(&tx).unwrap());
+            let tx = self.nodes.txs.remove(&tx).unwrap();
+            self.state.remove(&tx);
+            batch_node.0.push(tx);
         }
 
         let batch_id =
-            BatchId::from_transactions(tx_nodes.iter().map(|tx| tx.0.raw_proven_transaction()));
-        let node = ProposedBatchNode(tx_nodes);
-        let batch = node.0.iter().map(|tx| Arc::clone(&tx.0)).collect();
+            BatchId::from_transactions(batch_node.0.iter().map(|tx| tx.0.raw_proven_transaction()));
+        let batch = batch_node.0.iter().map(|tx| Arc::clone(&tx.0)).collect();
 
-        self.nodes.proposed_batches.insert(batch_id, node);
-        // FIXME: missing safety
-        self.insert_into_state_unchecked(NodeId::ProposedBatch(batch_id));
+        self.state.insert(NodeId::ProposedBatch(batch_id), &batch_node);
+        self.nodes.proposed_batches.insert(batch_id, batch_node);
 
         Some((batch_id, batch))
     }
@@ -360,17 +511,17 @@ impl StateDag {
     pub fn submit_batch_proof(&mut self, proof: Arc<ProvenBatch>) {
         // Due to the distributed nature of the system, its possible that a proposed batch was
         // already proven, or already reverted. This guards against this eventuality.
-        let Some(ProposedBatchNode(txs)) = self.nodes.proposed_batches.remove(&proof.id()) else {
+        let Some(proposed) = self.nodes.proposed_batches.remove(&proof.id()) else {
             return;
         };
 
         // Propagate the node ID change internally.
         let batch_id = proof.id();
-        let node = ProvenBatchNode { txs, inner: proof };
-        self.nodes.proven_batches.insert(batch_id, node);
+        self.state.remove(&proposed);
 
-        // FIXME: missing safety
-        self.insert_into_state_unchecked(NodeId::ProvenBatch(batch_id));
+        let node = ProvenBatchNode { txs: proposed.0, inner: proof };
+        self.state.insert(NodeId::ProvenBatch(batch_id), &node);
+        self.nodes.proven_batches.insert(batch_id, node);
     }
 
     pub fn propose_block(
@@ -386,30 +537,25 @@ impl StateDag {
         let mut selected = Vec::new();
 
         'outer: loop {
-            'next_candidate: for candidate in
-                self.nodes.proven_batches.values().map(|node| &node.inner)
-            {
-                if selected.contains(&candidate.id()) {
+            'next_candidate: for candidate in self.nodes.proven_batches.values() {
+                if selected.contains(&candidate.inner.id()) {
                     continue;
                 }
 
-                let parents = self.parents(NodeId::ProvenBatch(candidate.id()));
+                let parents = self.state.parents(candidate);
                 for parent in parents {
                     match parent {
-                        NodeId::ProposedBlock(block) => panic!(
-                            "Block selection encountered an existing proposed block ID {block} while navigating the state DAG"
-                        ),
                         NodeId::ProvenBatch(batch) if selected.contains(&batch) => {},
-                        NodeId::CommittedBlock(_) => {},
+                        NodeId::Block(_) => {},
                         _ => continue 'next_candidate,
                     }
                 }
 
-                if budget.check_then_subtract(candidate.as_ref()) == BudgetStatus::Exceeded {
+                if budget.check_then_subtract(&candidate.inner) == BudgetStatus::Exceeded {
                     break 'outer;
                 }
 
-                selected.push(candidate.id());
+                selected.push(candidate.inner.id());
                 continue 'outer;
             }
 
@@ -417,19 +563,19 @@ impl StateDag {
         }
 
         // Assemble batch and update internal state.
-        let mut batch_nodes = Vec::with_capacity(selected.len());
+        let mut block_node = BlockNode(vec![]);
         for batch in selected {
             // SAFETY: Selected txs come from the transaction pool and are unique.
-            batch_nodes.push(self.nodes.proven_batches.remove(&batch).unwrap());
+            let batch = self.nodes.proven_batches.remove(&batch).unwrap();
+            self.state.remove(&batch);
+            block_node.0.push(batch);
         }
 
         let block_number = self.state.chain_tip.child();
-        let node = BlockNode(batch_nodes);
-        let block = node.0.iter().map(|batch| Arc::clone(&batch.inner)).collect();
+        let block = block_node.0.iter().map(|batch| Arc::clone(&batch.inner)).collect();
 
-        self.nodes.proposed_block = Some((block_number, node));
-        // FIXME: missing safety
-        self.insert_into_state_unchecked(NodeId::ProposedBlock(block_number));
+        self.state.insert(NodeId::Block(block_number), &block_node);
+        self.nodes.proposed_block = Some((block_number, block_node));
 
         (block_number, block)
     }
@@ -454,7 +600,7 @@ impl StateDag {
         }
 
         // FIXME: missing safety
-        self.revert_subtree_unchecked(NodeId::ProposedBlock(block));
+        self.revert_subtree_unchecked(NodeId::Block(block));
     }
 
     pub fn commit_proposed_block(&mut self, to_commit: BlockNumber) {
@@ -465,13 +611,11 @@ impl StateDag {
             .expect("block must be in progress to commit");
 
         self.nodes.committed_blocks.push_back(block);
-        // FIXME: Missing safety
-        self.insert_into_state_unchecked(NodeId::CommittedBlock(to_commit));
         self.state.chain_tip = to_commit;
 
         if self.nodes.committed_blocks.len() > self.state_retention.get() {
             let (number, node) = self.nodes.committed_blocks.pop_front().unwrap();
-            self.prune_unchecked(number, node);
+            self.state.remove(&node);
         }
     }
 
@@ -514,31 +658,6 @@ impl StateDag {
         Ok(())
     }
 
-    /// Blindly inserts the node's state data into [`InflightState`] and associates it with the
-    /// [`NodeId`].
-    ///
-    /// For state data that already exists, this is equivalent to overwriting the [`NodeId`]
-    /// associated with the data.
-    ///
-    /// Callers _must_ ensure that the data is inline with the DAG expectations _and_ that the node
-    /// data is already present in [`Nodes`].
-    fn insert_into_state_unchecked(&mut self, id: NodeId) {
-        // SAFETY: The node is expected to exist as part of this functions invariants.
-        let node = self.nodes.get(&id).expect("node must exist in the DAG");
-
-        self.state.nullifiers.extend(node.nullifiers());
-        self.state.output_notes.extend(node.all_output_notes());
-    }
-
-    /// Returns all _uncommitted_ parent node's of the given [`NodeId`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the provided node is not present in the DAG.
-    fn parents(&self, id: NodeId) -> HashSet<NodeId> {
-        todo!();
-    }
-
     /// Reverts the given node and **all** of its descendents.
     ///
     /// # Panics
@@ -546,19 +665,5 @@ impl StateDag {
     /// Panics if the provided node is not present in the DAG.
     fn revert_subtree_unchecked(&mut self, id: NodeId) {
         todo!();
-    }
-
-    /// Marks the block's associated state as pruned, removing the state if its no longer used.
-    ///
-    /// [`InflightState`] retains pruned data until the consumer of it is either committed or
-    /// reverted.
-    fn prune_unchecked(&mut self, number: BlockNumber, node: BlockNode) {
-        for nullifier in node.nullifiers() {
-            self.state.nullifiers.remove(&nullifier);
-        }
-
-        for note in node.all_output_notes() {
-            self.state.output_notes.remove(&note);
-        }
     }
 }

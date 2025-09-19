@@ -8,7 +8,10 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
-use tokio::sync::{Barrier, Semaphore, mpsc};
+use miden_objects::block::BlockHeader;
+use miden_objects::crypto::merkle::PartialMmr;
+use miden_objects::transaction::PartialBlockchain;
+use tokio::sync::{Barrier, RwLock, Semaphore, mpsc};
 use tokio::task::JoinSet;
 use tokio::time;
 use url::Url;
@@ -49,6 +52,23 @@ pub struct NetworkTransactionBuilder {
     actor_join_set: JoinSet<ActorShutdownReason>,
 }
 
+#[derive(Debug, Clone)]
+pub struct ChainState {
+    pub chain_tip_header: Arc<RwLock<BlockHeader>>,
+    pub chain_mmr: Arc<RwLock<PartialBlockchain>>,
+}
+
+impl ChainState {
+    fn new(chain_tip_header: BlockHeader, chain_mmr: PartialMmr) -> Self {
+        let chain_mmr = PartialBlockchain::new(chain_mmr, [])
+            .expect("partial blockchain should build from partial mmr");
+        Self {
+            chain_tip_header: RwLock::new(chain_tip_header).into(),
+            chain_mmr: RwLock::new(chain_mmr).into(),
+        }
+    }
+}
+
 impl NetworkTransactionBuilder {
     pub fn new(
         store_url: Url,
@@ -72,7 +92,7 @@ impl NetworkTransactionBuilder {
         let store = StoreClient::new(self.store_url.clone());
         let block_producer = BlockProducerClient::new(self.block_producer_url.clone());
 
-        let (chain_tip_header, _) = store
+        let (chain_tip_header, chain_mmr) = store
             .get_latest_blockchain_data_with_retry()
             .await?
             .expect("store should contain a latest block");
@@ -92,10 +112,12 @@ impl NetworkTransactionBuilder {
 
         // Create a semaphore to limit the number of in-progress transactions across all actors.
         let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
+        let chain_state = ChainState::new(chain_tip_header, chain_mmr);
         let config = AccountActorConfig {
             block_producer_url: self.block_producer_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
             semaphore,
+            chain_state: chain_state.clone(),
         };
 
         // Create initial actors for existing accounts.
@@ -156,6 +178,7 @@ impl NetworkTransactionBuilder {
                         &event,
                         &config,
                         store.clone(),
+                        chain_state.clone(),
                     ).await?;
                 },
             }
@@ -171,6 +194,7 @@ impl NetworkTransactionBuilder {
         event: &MempoolEvent,
         account_actor_config: &AccountActorConfig,
         store: StoreClient,
+        chain_state: ChainState,
     ) -> anyhow::Result<()> {
         match &event {
             // TODO(serge): First create the new endpoint to return all network accounts then
@@ -201,16 +225,36 @@ impl NetworkTransactionBuilder {
                 }
                 Ok(())
             },
+            // Update chain state and do not broadcast.
+            MempoolEvent::BlockCommitted { header, .. } => {
+                self.update_chain_tip(header.clone(), chain_state).await;
+                Ok(())
+            },
             // Broadcast to all actors.
-            MempoolEvent::BlockCommitted { .. } | MempoolEvent::TransactionsReverted(_) => {
-                // TODO(serge): update chain tip here via R/W lock. Don't send blockcommitted to
-                // actors.
+            MempoolEvent::TransactionsReverted(_) => {
                 self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
                     Self::send_event(*account_prefix, event_tx, event.clone());
                 });
                 Ok(())
             },
         }
+    }
+
+    /// Updates the chain tip and MMR block count.
+    ///
+    /// Blocks in the MMR are pruned if the block count exceeds the maximum.
+    async fn update_chain_tip(&mut self, tip: BlockHeader, chain_state: ChainState) {
+        // Update MMR which lags by one block.
+        let mut chain_mmr = chain_state.chain_mmr.write().await;
+        let mut chain_tip_header = chain_state.chain_tip_header.write().await;
+        chain_mmr.add_block(chain_tip_header.clone(), true);
+
+        // Set the new tip.
+        *chain_tip_header = tip;
+
+        // Keep MMR pruned.
+        let pruned_block_height = (chain_mmr.chain_length().as_usize().saturating_sub(4)) as u32; // TODO: find MAX_BLOCK_COUNT
+        chain_mmr.prune_to(..pruned_block_height.into());
     }
 
     /// Spawns a new actor and registers it with the builder if the account is present in the store.

@@ -3,13 +3,14 @@ use std::sync::Arc;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
-use miden_objects::Word;
-use miden_objects::block::BlockNumber;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::transaction::PartialBlockchain;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::sync::{AcquireError, Semaphore, mpsc};
+use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
 use url::Url;
 
 use crate::block_producer::BlockProducerClient;
+use crate::builder::ChainState;
 use crate::state::{State, TransactionCandidate};
 use crate::transaction::NtxError;
 
@@ -33,6 +34,8 @@ pub struct AccountActorConfig {
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     // undesirable due to the performance impact.
     pub tx_prover_url: Option<Url>,
+    /// ...
+    pub chain_state: ChainState,
 }
 
 /// Account actor that manages state and processes transactions for a single network account.
@@ -41,6 +44,7 @@ pub struct AccountActor {
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
     semaphore: Arc<Semaphore>,
+    chain_state: ChainState,
 }
 
 impl AccountActor {
@@ -54,6 +58,7 @@ impl AccountActor {
             block_producer,
             prover,
             semaphore,
+            chain_state: config.chain_state.clone(),
         };
         (actor, event_tx)
     }
@@ -85,7 +90,9 @@ impl AccountActor {
                 permit = toggle_fut => {
                     match permit {
                         Ok(_permit) => {
-                            if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX) {
+                            let chain_tip_header =  self.chain_state.chain_tip_header.read().await.clone();
+                            let chain_mmr =  self.chain_state.chain_mmr.read().await.clone();
+                            if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX, chain_tip_header, chain_mmr) {
                                 self.execute_transactions(&mut state, tx_candidate).await;
                                 // TODO(serge): determine whether you need to do permit or pending state
                             }

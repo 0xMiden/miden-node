@@ -48,12 +48,6 @@ pub struct TransactionCandidate {
 
 #[derive(Clone)]
 pub struct State {
-    /// The latest committed block header.
-    chain_tip_header: BlockHeader,
-
-    /// The chain MMR, which lags behind the tip by one block.
-    chain_mmr: PartialBlockchain,
-
     account_prefix: NetworkAccountPrefix,
     account: AccountState,
 
@@ -78,23 +72,21 @@ impl State {
         account: Account,
         store: StoreClient,
     ) -> Result<Self, StoreError> {
-        let (chain_tip_header, chain_mmr) = store
-            .get_latest_blockchain_data_with_retry()
-            .await?
-            .expect("store should contain a latest block");
+        //let (chain_tip_header, chain_mmr) = store
+        //    .get_latest_blockchain_data_with_retry()
+        //    .await?
+        //    .expect("store should contain a latest block");
 
-        // TODO(serge): coordinator manages one instance and shares it. R/W lock coordinator
-        // overwrites on block commit.
-        let chain_mmr = PartialBlockchain::new(chain_mmr, [])
-            .expect("PartialBlockchain should build from latest partial MMR");
+        //// TODO(serge): coordinator manages one instance and shares it. R/W lock coordinator
+        //// overwrites on block commit.
+        //let chain_mmr = PartialBlockchain::new(chain_mmr, [])
+        //    .expect("PartialBlockchain should build from latest partial MMR");
 
         // TODO: only get notes relevant to this account.
         let notes = store.get_unconsumed_network_notes().await?;
         let account = AccountState::new(account_prefix, account, notes);
 
         let state = Self {
-            chain_tip_header,
-            chain_mmr,
             account,
             account_prefix,
             inflight_txs: BTreeMap::default(),
@@ -108,7 +100,12 @@ impl State {
 
     /// Selects the next candidate network transaction.
     #[instrument(target = COMPONENT, name = "ntx.state.select_candidate", skip_all)]
-    pub fn select_candidate(&mut self, limit: NonZeroUsize) -> Option<TransactionCandidate> {
+    pub fn select_candidate(
+        &mut self,
+        limit: NonZeroUsize,
+        chain_tip_header: BlockHeader,
+        chain_mmr: PartialBlockchain,
+    ) -> Option<TransactionCandidate> {
         // Remove notes that have failed too many times.
         self.account.drop_failing_notes(Self::MAX_NOTE_ATTEMPTS);
 
@@ -121,7 +118,7 @@ impl State {
         // Select notes from the account that can be consumed or are ready for a retry.
         let notes = self
             .account
-            .available_notes(&self.chain_tip_header.block_num())
+            .available_notes(&chain_tip_header.block_num())
             .take(limit.get())
             .cloned()
             .collect::<Vec<_>>();
@@ -134,26 +131,10 @@ impl State {
         TransactionCandidate {
             account: self.account.latest_account(),
             notes,
-            chain_tip_header: self.chain_tip_header.clone(),
-            chain_mmr: self.chain_mmr.clone(),
+            chain_tip_header,
+            chain_mmr,
         }
         .into()
-    }
-
-    /// Updates the chain tip and MMR block count.
-    ///
-    /// Blocks in the MMR are pruned if the block count exceeds the maximum.
-    fn update_chain_tip(&mut self, tip: BlockHeader) {
-        // Update MMR which lags by one block.
-        self.chain_mmr.add_block(self.chain_tip_header.clone(), true);
-
-        // Set the new tip.
-        self.chain_tip_header = tip;
-
-        // Keep MMR pruned.
-        let pruned_block_height =
-            (self.chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
-        self.chain_mmr.prune_to(..pruned_block_height.into());
     }
 
     /// Marks notes of a previously selected candidate as failed.
@@ -183,17 +164,18 @@ impl State {
                 self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
             MempoolEvent::BlockCommitted { header, txs } => {
-                if header.prev_block_commitment() != self.chain_tip_header.commitment() {
-                    return Some(ActorShutdownReason::CommittedBlockMismatch {
-                        account_prefix: self.account_prefix,
-                        parent_block: header.block_num(),
-                        current_block: self.chain_tip_header.block_num(),
-                    });
-                }
-                self.update_chain_tip(header);
-                for tx in txs {
-                    self.commit_transaction(tx);
-                }
+                // TODO: still need commit_transaction?
+                //if header.prev_block_commitment() != self.chain_tip_header.commitment() {
+                //    return Some(ActorShutdownReason::CommittedBlockMismatch {
+                //        account_prefix: self.account_prefix,
+                //        parent_block: header.block_num(),
+                //        current_block: self.chain_tip_header.block_num(),
+                //    });
+                //}
+                //self.update_chain_tip(header);
+                //for tx in txs {
+                //self.commit_transaction(tx);
+                //}
             },
             MempoolEvent::TransactionsReverted(txs) => {
                 for tx in txs {

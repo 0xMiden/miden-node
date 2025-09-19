@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -7,27 +7,47 @@ use futures::TryStreamExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::PartialMmr;
 use miden_objects::transaction::PartialBlockchain;
-use tokio::sync::{Barrier, RwLock, Semaphore, mpsc};
-use tokio::task::JoinSet;
+use tokio::sync::{Barrier, RwLock, Semaphore};
 use tokio::time;
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
-use crate::actor::{AccountActor, AccountActorConfig, ActorShutdownReason};
+use crate::actor::AccountActorConfig;
 use crate::block_producer::BlockProducerClient;
-use crate::state::State;
+use crate::builder::coordinator::Coordinator;
 use crate::store::StoreClient;
+
+mod coordinator;
 
 // CONSTANTS
 // =================================================================================================
 
 /// The maximum number of blocks to keep in memory while tracking the chain tip.
 const MAX_BLOCK_COUNT: usize = 4;
+
+// CHAIN STATE
+// ================================================================================================
+
+#[derive(Debug, Clone)]
+pub struct ChainState {
+    pub chain_tip_header: Arc<RwLock<BlockHeader>>,
+    pub chain_mmr: Arc<RwLock<PartialBlockchain>>,
+}
+
+impl ChainState {
+    fn new(chain_tip_header: BlockHeader, chain_mmr: PartialMmr) -> Self {
+        let chain_mmr = PartialBlockchain::new(chain_mmr, [])
+            .expect("partial blockchain should build from partial mmr");
+        Self {
+            chain_tip_header: RwLock::new(chain_tip_header).into(),
+            chain_mmr: RwLock::new(chain_mmr).into(),
+        }
+    }
+}
 
 // NETWORK TRANSACTION BUILDER
 // ================================================================================================
@@ -53,27 +73,8 @@ pub struct NetworkTransactionBuilder {
     /// This informs the block-producer when we have subscribed to mempool events and that it is
     /// safe to begin block-production.
     bp_checkpoint: Arc<Barrier>,
-    /// ...
-    actor_registry: HashMap<NetworkAccountPrefix, mpsc::UnboundedSender<MempoolEvent>>,
-    /// ...
-    actor_join_set: JoinSet<ActorShutdownReason>,
-}
-
-#[derive(Debug, Clone)]
-pub struct ChainState {
-    pub chain_tip_header: Arc<RwLock<BlockHeader>>,
-    pub chain_mmr: Arc<RwLock<PartialBlockchain>>,
-}
-
-impl ChainState {
-    fn new(chain_tip_header: BlockHeader, chain_mmr: PartialMmr) -> Self {
-        let chain_mmr = PartialBlockchain::new(chain_mmr, [])
-            .expect("partial blockchain should build from partial mmr");
-        Self {
-            chain_tip_header: RwLock::new(chain_tip_header).into(),
-            chain_mmr: RwLock::new(chain_mmr).into(),
-        }
-    }
+    /// Coordinator for managing actor tasks.
+    coordinator: Coordinator,
 }
 
 impl NetworkTransactionBuilder {
@@ -90,8 +91,7 @@ impl NetworkTransactionBuilder {
             tx_prover_url,
             ticker_interval,
             bp_checkpoint,
-            actor_registry: HashMap::new(),
-            actor_join_set: JoinSet::new(),
+            coordinator: Coordinator::default(),
         }
     }
 
@@ -135,10 +135,12 @@ impl NetworkTransactionBuilder {
             let account_prefix = NetworkAccountPrefix::try_from(account.id())
                 .expect("store endpoint only returns network accounts");
             #[allow(clippy::map_entry, reason = "async closure")]
-            if !self.actor_registry.contains_key(&account_prefix) {
+            if !self.coordinator.contains(account_prefix) {
                 let account = store.get_network_account(account_prefix).await?;
                 if let Some(account) = account {
-                    self.spawn_actor(account, account_prefix, &config, store.clone()).await?;
+                    self.coordinator
+                        .spawn_actor(account, account_prefix, &config, store.clone())
+                        .await?;
                     tracing::info!("created initial actor for account prefix: {}", account_prefix);
                 }
             }
@@ -147,31 +149,9 @@ impl NetworkTransactionBuilder {
         // Main loop which manages actors and passes mempool events to them.
         loop {
             tokio::select! {
-                // Handle actor completion.
-                actor_result = self.actor_join_set.join_next() => {
-                    match actor_result {
-                        Some(Ok(shutdown_reason)) =>  match shutdown_reason {
-                            ActorShutdownReason::AccountReverted(account_prefix) => {
-                                tracing::info!("account reverted: {}", account_prefix);
-                                self.actor_registry.remove(&account_prefix);
-                            }
-                            ActorShutdownReason::EventChannelClosed => {
-                                anyhow::bail!("event channel closed");
-                            }
-                            ActorShutdownReason::SemaphoreFailed(err) => {
-                                return Err(err).context("semaphore failed");
-                            }
-                        },
-                        Some(Err(err)) => {
-                            if err.is_panic() {
-                                return Err(err).context("actor join set panicked");
-                            }
-                            return Err(err).context("actor join set failed");
-                        },
-                        None => {
-                            tokio::time::sleep(Duration::from_secs(2)).await;
-                        }
-                    }
+                // Handle actor result.
+                actor_result = self.coordinator.join_set().join_next() => {
+                    self.coordinator.handle_actor_result(actor_result).await?;
                 },
                 // Handle mempool events.
                 event = mempool_events.try_next() => {
@@ -207,13 +187,14 @@ impl NetworkTransactionBuilder {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     // Handle account creation.
                     if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) {
-                        self.spawn_actor(
-                            account.clone(),
-                            account_prefix,
-                            account_actor_config,
-                            store.clone(),
-                        )
-                        .await?;
+                        self.coordinator
+                            .spawn_actor(
+                                account.clone(),
+                                account_prefix,
+                                account_actor_config,
+                                store.clone(),
+                            )
+                            .await?;
                         tracing::info!("created new actor for account prefix: {}", account_prefix);
                     }
                     Ok(())
@@ -222,10 +203,7 @@ impl NetworkTransactionBuilder {
                         Self::find_affected_accounts(account_delta.as_ref(), network_notes);
 
                     for account_prefix in affected_accounts {
-                        // Retrieve or create the actor.
-                        if let Some(event_tx) = self.actor_registry.get(&account_prefix) {
-                            Self::send_event(account_prefix, event_tx, event.clone());
-                        }
+                        self.coordinator.send_event(account_prefix, event.clone());
                     }
                     Ok(())
                 }
@@ -234,16 +212,12 @@ impl NetworkTransactionBuilder {
             MempoolEvent::BlockCommitted { header, .. } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
                 // TODO: should we send this through?
-                self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
-                    Self::send_event(*account_prefix, event_tx, event.clone());
-                });
+                self.coordinator.broadcast_event(event);
                 Ok(())
             },
             // Broadcast to all actors.
             MempoolEvent::TransactionsReverted(_) => {
-                self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
-                    Self::send_event(*account_prefix, event_tx, event.clone());
-                });
+                self.coordinator.broadcast_event(event);
                 Ok(())
             },
         }
@@ -265,43 +239,6 @@ impl NetworkTransactionBuilder {
         let pruned_block_height =
             (chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
         chain_mmr.prune_to(..pruned_block_height.into());
-    }
-
-    /// Spawns a new actor to manage the state of the provided network account.
-    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config, store))]
-    async fn spawn_actor(
-        &mut self,
-        account: Account,
-        account_prefix: NetworkAccountPrefix,
-        config: &AccountActorConfig,
-        store: StoreClient,
-    ) -> anyhow::Result<()> {
-        // Load the account state from the store.
-        let block_num = config.chain_state.chain_tip_header.read().await.block_num();
-        let state = State::load(account, account_prefix, store, block_num).await?;
-
-        // Construct the actor and add it to the registry for subsequent messaging.
-        let (actor, event_tx) = AccountActor::new(config);
-        self.actor_registry.insert(account_prefix, event_tx.clone());
-
-        // Run the actor.
-        self.actor_join_set.spawn(async move { actor.run(state).await });
-        Ok(())
-    }
-
-    /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.
-    fn send_event(
-        account_prefix: NetworkAccountPrefix,
-        event_tx: &mpsc::UnboundedSender<MempoolEvent>,
-        event: MempoolEvent,
-    ) {
-        if let Err(error) = event_tx.send(event) {
-            tracing::warn!(
-                account = %account_prefix,
-                error = ?error,
-                "actor channel disconnected"
-            );
-        }
     }
 
     fn find_affected_accounts(

@@ -321,6 +321,11 @@ pub(crate) fn select_all_accounts(
     Ok(account_infos)
 }
 
+/// Select all network accounts from the DB using the given [`SqliteConnection`].
+///
+/// # Returns
+///
+/// A vector with network accounts, or an error.
 pub(crate) fn select_all_network_accounts(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<AccountInfo>, DatabaseError> {

@@ -133,6 +133,7 @@ impl StoreClient {
         Ok(all_notes)
     }
 
+    #[allow(dead_code)]
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,

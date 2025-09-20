@@ -32,13 +32,18 @@ const MAX_BLOCK_COUNT: usize = 4;
 // CHAIN STATE
 // ================================================================================================
 
+/// Contains information about the chain that is relevant to the [`NetworkTransactionBuilder`] and
+/// all account actors managed by the [`Coordinator`]
 #[derive(Debug, Clone)]
 pub struct ChainState {
+    /// The current tip of the chain.
     pub chain_tip_header: Arc<RwLock<BlockHeader>>,
+    /// A partial representation of the latest state of the chain.
     pub chain_mmr: Arc<RwLock<PartialBlockchain>>,
 }
 
 impl ChainState {
+    /// Constructs a new instance of [`ChainState`].
     fn new(chain_tip_header: BlockHeader, chain_mmr: PartialMmr) -> Self {
         let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("partial blockchain should build from partial mmr");
@@ -58,6 +63,9 @@ impl ChainState {
 /// against network accounts. These notes are identified and communicated by the block producer.
 /// The service maintains a list of unconsumed notes and periodically executes and proves
 /// transactions that consume them (reaching out to the store to retrieve state as necessary).
+///
+/// The builder manages the [`Coordinator`] which is responsible for creating and maintaining
+/// tasks for every known network account.
 pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
     store_url: Url,
@@ -78,6 +86,7 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
+    /// Creates a new instance of the network transaction builder.
     pub fn new(
         store_url: Url,
         block_producer_url: Url,
@@ -95,6 +104,7 @@ impl NetworkTransactionBuilder {
         }
     }
 
+    /// Runs the network transaction builder until a fatal error occurs.
     pub async fn run(mut self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url.clone());
         let block_producer = BlockProducerClient::new(self.block_producer_url.clone());
@@ -128,22 +138,17 @@ impl NetworkTransactionBuilder {
             chain_state: chain_state.clone(),
         };
 
-        // Create initial actors for existing accounts.
+        // Create initial set of actors based on all known network accounts.
         let accounts = store.get_network_accounts().await?;
-        // Create initial set of actors based on all network accounts.
         for account in accounts {
             let account_prefix = NetworkAccountPrefix::try_from(account.id())
-                .expect("store endpoint only returns network accounts");
-            #[allow(clippy::map_entry, reason = "async closure")]
-            if !self.coordinator.contains(account_prefix) {
-                let account = store.get_network_account(account_prefix).await?;
-                if let Some(account) = account {
-                    self.coordinator
-                        .spawn_actor(account, account_prefix, &config, store.clone())
-                        .await?;
-                    tracing::info!("created initial actor for account prefix: {}", account_prefix);
-                }
-            }
+                .expect("get_network_accounts endpoint only returns network accounts");
+
+            self.coordinator
+                .spawn_actor(account, account_prefix, &config, store.clone())
+                .await?;
+
+            tracing::info!("created initial actor for account prefix: {}", account_prefix);
         }
 
         // Main loop which manages actors and passes mempool events to them.
@@ -170,6 +175,8 @@ impl NetworkTransactionBuilder {
         }
     }
 
+    /// Handles mempool events by sending them to actors via the coordinator and/or spawning new
+    /// actors as required.
     #[tracing::instrument(
         name = "ntx.builder.handle_mempool_event",
         skip(self, event, account_actor_config, store, chain_state)
@@ -182,10 +189,9 @@ impl NetworkTransactionBuilder {
         chain_state: ChainState,
     ) -> anyhow::Result<()> {
         match &event {
-            // Spawn new actors for account creation transactions.
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
-                    // Handle account creation.
+                    // Spawn new actors for account creation transactions.
                     if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) {
                         self.coordinator
                             .spawn_actor(
@@ -199,9 +205,9 @@ impl NetworkTransactionBuilder {
                     }
                     Ok(())
                 } else {
+                    // Send event to affected accounts.
                     let affected_accounts =
                         Self::find_affected_accounts(account_delta.as_ref(), network_notes);
-
                     for account_prefix in affected_accounts {
                         self.coordinator.send_event(account_prefix, event.clone());
                     }
@@ -241,6 +247,7 @@ impl NetworkTransactionBuilder {
         chain_mmr.prune_to(..pruned_block_height.into());
     }
 
+    /// Finds the list of accounts affected by a given account delta and network notes.
     fn find_affected_accounts(
         account_delta: Option<&AccountUpdateDetails>,
         network_notes: &[NetworkNote],

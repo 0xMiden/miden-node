@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use futures::FutureExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
@@ -41,6 +42,8 @@ pub struct AccountActor {
 }
 
 impl AccountActor {
+    /// Constructs a new account actor and corresponding messaging channel with the given
+    /// configuration.
     pub fn new(config: &AccountActorConfig) -> (Self, mpsc::UnboundedSender<MempoolEvent>) {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
@@ -56,8 +59,9 @@ impl AccountActor {
         (actor, event_tx)
     }
 
+    /// Runs the account actor, processing events and managing state until a reason to shutdown is
+    /// encountered.
     pub async fn run(mut self, mut state: State) -> ActorShutdownReason {
-        use futures::FutureExt;
         let semaphore = self.semaphore.clone();
         // Use this to toggle between the semaphore and pending futures so that we don't thrash the
         // transaction execution flow when there is nothing to process.
@@ -77,8 +81,10 @@ impl AccountActor {
                 permit = toggle_fut => {
                     match permit {
                         Ok(_permit) => {
+                            // Read the chain state.
                             let chain_tip_header =  self.chain_state.chain_tip_header.read().await.clone();
                             let chain_mmr =  self.chain_state.chain_mmr.read().await.clone();
+                            // Find a candidate transaction and execute it.
                             if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX, chain_tip_header, chain_mmr) {
                                 self.execute_transactions(&mut state, tx_candidate).await;
                             }
@@ -94,6 +100,7 @@ impl AccountActor {
         }
     }
 
+    /// Execute a transaction candidate and mark notes as failed as required.
     #[tracing::instrument(name = "ntx.actor.execute_transactions", skip(self, state, tx_candidate))]
     async fn execute_transactions(
         &mut self,

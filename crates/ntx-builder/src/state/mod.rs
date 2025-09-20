@@ -150,7 +150,8 @@ impl State {
                 account_delta,
             } => {
                 // Filter network notes relevant to this account.
-                let network_notes = to_single_target_prefix(self.account_prefix, network_notes);
+                let network_notes =
+                    filter_by_prefix_and_map_to_single_target(self.account_prefix, network_notes);
                 self.add_transaction(id, nullifiers, network_notes, account_delta);
             },
             MempoolEvent::TransactionsReverted(txs) => {
@@ -313,7 +314,8 @@ impl TransactionImpact {
     }
 }
 
-fn to_single_target_prefix(
+/// Filters network notes by prefix and maps them to single target network notes.
+fn filter_by_prefix_and_map_to_single_target(
     account_prefix: NetworkAccountPrefix,
     notes: Vec<NetworkNote>,
 ) -> Vec<SingleTargetNetworkNote> {

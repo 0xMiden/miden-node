@@ -15,6 +15,7 @@ use crate::store::StoreClient;
 // COORDINATOR
 // ================================================================================================
 
+/// Coordinator for managing [`AccountActor`] instances, tasks, and associated communication.
 #[derive(Default)]
 pub struct Coordinator {
     /// Mapping of network account prefixes to their respective message channels. When actors are

@@ -64,8 +64,7 @@ impl ChainState {
 /// The service maintains a list of unconsumed notes and periodically executes and proves
 /// transactions that consume them (reaching out to the store to retrieve state as necessary).
 ///
-/// The builder manages the [`Coordinator`] which is responsible for creating and maintaining
-/// tasks for every known network account.
+/// The builder manages the tasks for every network account on the chain through the coordinator.
 pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
     store_url: Url,

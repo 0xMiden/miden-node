@@ -208,9 +208,7 @@ impl StoreClient {
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_accounts", skip_all, err)]
     pub async fn get_network_accounts(&self) -> Result<Vec<Account>, StoreError> {
-        let request = tonic::Request::new(proto::ntx_builder_store::GetNetworkAccountsRequest {});
-
-        let response = self.inner.clone().get_network_accounts(request).await?.into_inner();
+        let response = self.inner.clone().get_network_accounts(()).await?.into_inner();
 
         let accounts: Result<Vec<Account>, ConversionError> = response
             .accounts

@@ -64,11 +64,6 @@ pub struct UnconsumedNetworkNotes {
     #[prost(message, repeated, tag = "2")]
     pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
 }
-/// Request message for getting all network accounts.
-///
-/// This request has no parameters - it returns all network accounts.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
-pub struct GetNetworkAccountsRequest {}
 /// Represents the result of getting the network accounts.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NetworkAccounts {
@@ -337,7 +332,7 @@ pub mod ntx_builder_client {
         }
         pub async fn get_network_accounts(
             &mut self,
-            request: impl tonic::IntoRequest<super::GetNetworkAccountsRequest>,
+            request: impl tonic::IntoRequest<()>,
         ) -> std::result::Result<
             tonic::Response<super::NetworkAccounts>,
             tonic::Status,
@@ -421,7 +416,7 @@ pub mod ntx_builder_server {
         >;
         async fn get_network_accounts(
             &self,
-            request: tonic::Request<super::GetNetworkAccountsRequest>,
+            request: tonic::Request<()>,
         ) -> std::result::Result<tonic::Response<super::NetworkAccounts>, tonic::Status>;
     }
     /// Store API for the network transaction builder component
@@ -762,19 +757,14 @@ pub mod ntx_builder_server {
                 "/ntx_builder_store.NtxBuilder/GetNetworkAccounts" => {
                     #[allow(non_camel_case_types)]
                     struct GetNetworkAccountsSvc<T: NtxBuilder>(pub Arc<T>);
-                    impl<
-                        T: NtxBuilder,
-                    > tonic::server::UnaryService<super::GetNetworkAccountsRequest>
+                    impl<T: NtxBuilder> tonic::server::UnaryService<()>
                     for GetNetworkAccountsSvc<T> {
                         type Response = super::NetworkAccounts;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
                         >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::GetNetworkAccountsRequest>,
-                        ) -> Self::Future {
+                        fn call(&mut self, request: tonic::Request<()>) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
                                 <T as NtxBuilder>::get_network_accounts(&inner, request)

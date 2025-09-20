@@ -199,7 +199,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     )]
     async fn get_network_accounts(
         &self,
-        _request: Request<proto::ntx_builder_store::GetNetworkAccountsRequest>,
+        _request: Request<()>,
     ) -> Result<Response<proto::ntx_builder_store::NetworkAccounts>, Status> {
         let account_infos = self.state.get_all_network_accounts().await.map_err(internal_error)?;
 

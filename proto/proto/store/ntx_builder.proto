@@ -7,6 +7,7 @@ import "types/blockchain.proto";
 import "types/note.proto";
 import "types/primitives.proto";
 import "store/shared.proto";
+import "google/protobuf/empty.proto";
 
 // NTX BUILDER STORE API
 // ================================================================================================
@@ -31,7 +32,7 @@ service NtxBuilder {
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
 
-    rpc GetNetworkAccounts(GetNetworkAccountsRequest) returns (NetworkAccounts) {}
+    rpc GetNetworkAccounts(google.protobuf.Empty) returns (NetworkAccounts) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX
@@ -102,11 +103,6 @@ message UnconsumedNetworkNotes {
 
 // GET NETWORK ACCOUNTS
 // ================================================================================================
-
-// Request message for getting all network accounts.
-message GetNetworkAccountsRequest {
-    // This request has no parameters - it returns all network accounts.
-}
 
 // Represents the result of getting the network accounts.
 message NetworkAccounts {

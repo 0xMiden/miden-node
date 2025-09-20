@@ -42,6 +42,7 @@
 - [BREAKING] Refactored protobuf messages ([#1045](https://github.com/0xMiden/miden-node/pull/#1045)).
 - Added `SyncStorageMaps` gRPC endpoint for retrieving account storage maps ([#1140](https://github.com/0xMiden/miden-node/pull/1140), [#1132](https://github.com/0xMiden/miden-node/pull/1132)).
 - Added `SyncAccountVault` gRPC endpoints for retrieving account assets ([#1176](https://github.com/0xMiden/miden-node/pull/1176)).
+- Refactored Network Transaction Builder to manage dedicated tasks for every network account in the chain ([#1219](https://github.com/0xMiden/miden-node/pull/1219)).
 
 ### Changes
 

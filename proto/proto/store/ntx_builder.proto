@@ -110,7 +110,6 @@ message NetworkAccounts {
   repeated account.AccountDetails accounts = 1;
 }
 
-
 // GET CURRENT BLOCKCHAIN DATA
 // ================================================================================================
 

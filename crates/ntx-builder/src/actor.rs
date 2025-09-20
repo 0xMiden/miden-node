@@ -28,7 +28,7 @@ pub struct AccountActorConfig {
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     // undesirable due to the performance impact.
     pub tx_prover_url: Option<Url>,
-    /// ...
+    /// The latest chain state that account actors can rely on.
     pub chain_state: ChainState,
 }
 

@@ -50,7 +50,7 @@ impl Coordinator {
         Ok(())
     }
 
-    /// Sends an event to an actor handle and queues it for removal if the channel is disconnected.
+    /// Sends an event to a single account actor.
     pub fn send_event(&self, account_prefix: NetworkAccountPrefix, event: MempoolEvent) {
         if let Some(event_tx) = self.actor_registry.get(&account_prefix) {
             if let Err(error) = event_tx.send(event) {
@@ -63,8 +63,7 @@ impl Coordinator {
         }
     }
 
-    /// Broadcasts an event to all actor handles and queues them for removal if the channel is
-    /// disconnected.
+    /// Broadcasts an event to all account actors.
     pub fn broadcast_event(&self, event: &MempoolEvent) {
         self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
             if let Err(error) = event_tx.send(event.clone()) {
@@ -77,7 +76,8 @@ impl Coordinator {
         });
     }
 
-    /// Tries to get the next result from the actor join set and handles it.
+    /// Tries to get the next result from the actor join set and then handles it depending on the
+    /// reason the actor shutdown.
     pub async fn try_next(&mut self) -> anyhow::Result<()> {
         let actor_result = self.actor_join_set.join_next().await;
         match actor_result {
@@ -101,6 +101,7 @@ impl Coordinator {
             },
             None => {
                 // There are no actors to wait for. Sleep to avoid thrashing.
+                // This should only happen on local environments.
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 Ok(())
             },

@@ -32,6 +32,7 @@ service NtxBuilder {
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
 
+    // Returns a list of all network accounts.
     rpc GetNetworkAccounts(google.protobuf.Empty) returns (NetworkAccounts) {}
 }
 

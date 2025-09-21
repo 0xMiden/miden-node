@@ -208,7 +208,7 @@ impl NetworkTransactionBuilder {
                     let affected_accounts =
                         Self::find_affected_accounts(account_delta.as_ref(), network_notes);
                     for account_prefix in affected_accounts {
-                        self.coordinator.send_event(account_prefix, event.clone());
+                        self.coordinator.send_event(account_prefix, event);
                     }
                     Ok(())
                 }

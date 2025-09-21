@@ -51,28 +51,18 @@ impl Coordinator {
     }
 
     /// Sends an event to a single account actor.
-    pub fn send_event(&self, account_prefix: NetworkAccountPrefix, event: MempoolEvent) {
+    ///
+    /// If the provided account prefix is not found in the registry, the event is discarded.
+    pub fn send_event(&self, account_prefix: NetworkAccountPrefix, event: &MempoolEvent) {
         if let Some(event_tx) = self.actor_registry.get(&account_prefix) {
-            if let Err(error) = event_tx.send(event) {
-                tracing::warn!(
-                    account = %account_prefix,
-                    error = ?error,
-                    "actor channel disconnected"
-                );
-            }
+            Self::send(event_tx, event, account_prefix);
         }
     }
 
     /// Broadcasts an event to all account actors.
     pub fn broadcast_event(&self, event: &MempoolEvent) {
         self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
-            if let Err(error) = event_tx.send(event.clone()) {
-                tracing::warn!(
-                    account = %account_prefix,
-                    error = ?error,
-                    "actor channel disconnected"
-                );
-            }
+            Self::send(event_tx, event, *account_prefix);
         });
     }
 
@@ -105,6 +95,21 @@ impl Coordinator {
                 tokio::time::sleep(Duration::from_secs(2)).await;
                 Ok(())
             },
+        }
+    }
+
+    /// Helper function to send an event to a single account actor.
+    fn send(
+        event_tx: &mpsc::UnboundedSender<MempoolEvent>,
+        event: &MempoolEvent,
+        account_prefix: NetworkAccountPrefix,
+    ) {
+        if let Err(error) = event_tx.send(event.clone()) {
+            tracing::warn!(
+                account = %account_prefix,
+                error = ?error,
+                "actor channel disconnected"
+            );
         }
     }
 }

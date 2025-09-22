@@ -251,10 +251,18 @@ impl TransactionSummaryRowInsert {
 ///     input_notes,
 ///     output_notes,
 ///     size_in_bytes
-/// FROM transactions
-/// WHERE block_num > ?1 AND block_num <= ?2 AND account_id IN rarray(?3)
-/// ORDER BY block_num ASC
-/// LIMIT ?4 OFFSET ?5
+/// FROM
+///     transactions
+/// WHERE
+///     block_num > ?1
+///     AND block_num <= ?2
+///     AND account_id IN rarray(?3)
+/// ORDER BY
+///     block_num ASC
+/// LIMIT
+///     ?4
+/// OFFSET
+///     ?5
 /// ```
 /// Note: The query is executed in chunks of 1000 transactions to prevent loading
 /// excessive data and to stop as soon as the accumulated size approaches the 5MB limit.

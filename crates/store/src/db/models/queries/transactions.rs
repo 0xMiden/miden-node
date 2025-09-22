@@ -291,7 +291,7 @@ pub fn select_transactions_records(
     // Read transactions in chunks to prevent loading excessive data and to stop
     // as soon as we approach the size limit
     let mut all_transactions = Vec::new();
-    let mut current_size = 0i64;
+    let mut total_size = 0i64;
     let mut offset = 0i64;
 
     loop {
@@ -315,8 +315,8 @@ pub fn select_transactions_records(
         let chunk_len = chunk.len() as i64;
         let mut added_from_chunk = 0;
         for tx in chunk {
-            if current_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES as i64 {
-                current_size += tx.size_in_bytes;
+            if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES as i64 {
+                total_size += tx.size_in_bytes;
                 all_transactions.push(tx);
                 added_from_chunk += 1;
             } else {
@@ -341,18 +341,19 @@ pub fn select_transactions_records(
     // Ensure block consistency: remove complete blocks from the end until we're under the size
     // limit
     let mut filtered_raw = all_transactions;
-    while !filtered_raw.is_empty() {
-        let total_size: i64 = filtered_raw.iter().map(|tx| tx.size_in_bytes).sum();
 
-        // If we're under the limit, we're done
-        if total_size <= MAX_PAYLOAD_BYTES as i64 {
-            break;
-        }
-
-        // Find the last block number and remove all transactions from that block
+    while total_size > MAX_PAYLOAD_BYTES as i64 {
         if let Some(last_tx) = filtered_raw.last() {
             let last_block_num = last_tx.block_num;
+            // Calculate the size of transactions we're about to remove
+            let removed_size: i64 = filtered_raw
+                .iter()
+                .filter(|tx| tx.block_num == last_block_num)
+                .map(|tx| tx.size_in_bytes)
+                .sum();
+
             filtered_raw.retain(|tx| tx.block_num != last_block_num);
+            total_size -= removed_size;
         } else {
             // This shouldn't happen since we check !filtered_raw.is_empty() above, but be safe
             break;

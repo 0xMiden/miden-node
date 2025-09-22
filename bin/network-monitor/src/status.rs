@@ -34,6 +34,7 @@ const DEFAULT_PORT: u16 = 3000;
 const RPC_URL_ENV_VAR: &str = "MIDEN_MONITOR_RPC_URL";
 const REMOTE_PROVER_URLS_ENV_VAR: &str = "MIDEN_MONITOR_REMOTE_PROVER_URLS";
 const PORT_ENV_VAR: &str = "MIDEN_MONITOR_PORT";
+pub(crate) const ENABLE_OTEL_ENV_VAR: &str = "MIDEN_MONITOR_ENABLE_OTEL";
 
 /// Configuration for the monitor.
 ///

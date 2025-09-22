@@ -17,6 +17,7 @@ The monitor application uses environment variables for configuration:
 - `MIDEN_MONITOR_RPC_URL`: RPC service URL (default: `http://localhost:50051`)
 - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs (default: `http://localhost:50052`)
 - `MIDEN_MONITOR_PORT`: Web server port (default: `3000`)
+- `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing (default: `false`)
 
 ## Usage
 

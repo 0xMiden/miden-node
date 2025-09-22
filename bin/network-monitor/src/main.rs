@@ -12,6 +12,8 @@ use frontend::{ServerState, serve};
 use status::{MonitorConfig, ServiceStatus, run_remote_prover_status_task, run_rpc_status_task};
 use tracing::info;
 
+use crate::status::ENABLE_OTEL_ENV_VAR;
+
 /// Component identifier for structured logging and tracing
 pub const COMPONENT: &str = "miden-network-monitor";
 
@@ -27,7 +29,15 @@ pub const COMPONENT: &str = "miden-network-monitor";
 /// unexpectedly, the entire process exits.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
+    if std::env::var(ENABLE_OTEL_ENV_VAR)
+        .unwrap_or_default()
+        .parse::<bool>()
+        .unwrap_or_default()
+    {
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Enabled)?;
+    } else {
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
+    }
 
     // Load configuration from environment variables
     let config = match MonitorConfig::from_env() {

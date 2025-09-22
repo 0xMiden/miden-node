@@ -106,7 +106,7 @@ pub async fn run_remote_prover_test_task(
         .without_metadata_genesis()
         .connect_lazy::<RemoteProverClient>();
 
-    let mut interval = tokio::time::interval(Duration::from_secs(30)); // Test every 30 seconds
+    let mut interval = tokio::time::interval(Duration::from_secs(2 * 60)); // Test every 2 minutes
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     let mut success_count = 0u64;

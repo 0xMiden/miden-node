@@ -26,13 +26,59 @@ pub(crate) enum NodeId {
 ///
 /// Once this is selected for inclusion in a batch it will be moved inside a [`ProposedBatchNode`].
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TransactionNode(pub Arc<AuthenticatedTransaction>);
+pub(crate) struct TransactionNode(Arc<AuthenticatedTransaction>);
+
+impl TransactionNode {
+    pub fn new(inner: Arc<AuthenticatedTransaction>) -> Self {
+        Self(inner)
+    }
+
+    pub fn id(&self) -> TransactionId {
+        self.0.id()
+    }
+
+    pub fn inner(&self) -> &Arc<AuthenticatedTransaction> {
+        &self.0
+    }
+}
 
 /// Represents a batch which has been proposed by the mempool and which is undergoing proving.
 ///
 /// Once proven it transitions to a [`ProvenBatchNode`].
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ProposedBatchNode(pub Vec<TransactionNode>);
+#[derive(Clone, Debug, PartialEq, Default)]
+pub(crate) struct ProposedBatchNode(Vec<Arc<AuthenticatedTransaction>>);
+
+impl ProposedBatchNode {
+    pub fn push(&mut self, tx: Arc<AuthenticatedTransaction>) {
+        self.0.push(tx);
+    }
+
+    pub fn contains(&mut self, id: TransactionId) -> bool {
+        self.0.iter().find(|tx| tx.id() == id).is_some()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub fn calculate_id(&self) -> BatchId {
+        BatchId::from_transactions(
+            self.0
+                .iter()
+                .map(AsRef::as_ref)
+                .map(AuthenticatedTransaction::raw_proven_transaction),
+        )
+    }
+
+    pub fn transactions(&self) -> &[Arc<AuthenticatedTransaction>] {
+        &self.0
+    }
+
+    pub fn with_proof(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
+        let Self(txs) = self;
+        ProvenBatchNode { txs, inner: proof }
+    }
+}
 
 /// Represents a [`ProvenBatch`] which is waiting for inclusion in a block.
 #[derive(Clone, Debug, PartialEq)]
@@ -40,19 +86,46 @@ pub(crate) struct ProvenBatchNode {
     /// We need to store this in addition to the proven batch because [`ProvenBatch`] erases the
     /// transaction information. We need the original information if we want to rollback the batch
     /// but retain the transactions.
-    pub(crate) txs: Vec<TransactionNode>,
-    pub(crate) inner: Arc<ProvenBatch>,
+    txs: Vec<Arc<AuthenticatedTransaction>>,
+    inner: Arc<ProvenBatch>,
 }
 
 impl ProvenBatchNode {
     pub(crate) fn tx_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
         self.inner.transactions().as_slice().iter()
     }
+
+    pub(crate) fn id(&self) -> BatchId {
+        self.inner.id()
+    }
+
+    pub fn inner(&self) -> &Arc<ProvenBatch> {
+        &self.inner
+    }
 }
 
 /// Represents a block - both committed and in-progress.
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct BlockNode(pub Vec<ProvenBatchNode>);
+#[derive(Clone, Debug, PartialEq, Default)]
+pub(crate) struct BlockNode {
+    txs: Vec<Arc<AuthenticatedTransaction>>,
+    batches: Vec<Arc<ProvenBatch>>,
+}
+
+impl BlockNode {
+    pub fn push(&mut self, batch: ProvenBatchNode) {
+        let ProvenBatchNode { txs, inner } = batch;
+        self.txs.extend(txs);
+        self.batches.push(inner);
+    }
+
+    pub fn contains(&self, id: BatchId) -> bool {
+        self.batches.iter().find(|batch| batch.id() == id).is_some()
+    }
+
+    pub fn batches(&self) -> &[Arc<ProvenBatch>] {
+        &self.batches
+    }
+}
 
 /// Describes a node's impact on the state.
 ///
@@ -98,19 +171,26 @@ impl Node for TransactionNode {
 
 impl Node for ProposedBatchNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
-        Box::new(self.0.iter().flat_map(Node::nullifiers))
+        Box::new(self.0.iter().flat_map(|tx| tx.nullifiers()))
     }
 
     fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(Node::output_notes))
+        Box::new(self.0.iter().flat_map(|tx| tx.output_note_ids()))
     }
 
     fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(Node::unauthenticated_notes))
+        Box::new(self.0.iter().flat_map(|tx| tx.unauthenticated_notes()))
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
-        Box::new(self.0.iter().flat_map(Node::account_updates))
+        Box::new(self.0.iter().flat_map(|tx| {
+            let update = tx.account_update();
+            std::iter::once((
+                update.account_id(),
+                update.initial_state_commitment(),
+                update.final_state_commitment(),
+            ))
+        }))
     }
 }
 
@@ -146,19 +226,32 @@ impl Node for ProvenBatchNode {
 
 impl Node for BlockNode {
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_> {
-        Box::new(self.0.iter().flat_map(Node::nullifiers))
+        Box::new(self.txs.iter().flat_map(|tx| tx.nullifiers()))
     }
 
     fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(Node::output_notes))
+        Box::new(self.txs.iter().flat_map(|tx| tx.output_note_ids()))
     }
 
     fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(Node::unauthenticated_notes))
+        Box::new(self.batches.iter().flat_map(|batch| {
+            batch
+                .input_notes()
+                .iter()
+                .filter_map(|note| note.header().map(|header| header.id()))
+        }))
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
-        Box::new(self.0.iter().flat_map(Node::account_updates))
+        Box::new(self.batches.iter().flat_map(|batch| batch.account_updates()).map(
+            |(_, update)| {
+                (
+                    update.account_id(),
+                    update.initial_state_commitment(),
+                    update.final_state_commitment(),
+                )
+            },
+        ))
     }
 }
 

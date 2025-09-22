@@ -11,13 +11,7 @@ use tracing::{instrument, warn};
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{AddTransactionError, VerifyTxError};
 use crate::mempool::budget::BudgetStatus;
-use crate::mempool::nodes::{
-    BlockNode,
-    NodeId,
-    ProposedBatchNode,
-    ProvenBatchNode,
-    TransactionNode,
-};
+use crate::mempool::nodes::{BlockNode, NodeId, ProposedBatchNode, TransactionNode};
 use crate::{COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION};
 
 mod budget;
@@ -140,12 +134,9 @@ impl Mempool {
         }
 
         // Insert the transaction node.
-        let tx_id = tx.id();
-        let node_id = NodeId::Transaction(tx.id());
-        let node = TransactionNode(tx);
-
-        self.state.insert(node_id, &node);
-        self.nodes.txs.insert(tx_id, node);
+        let tx = TransactionNode::new(tx);
+        self.state.insert(NodeId::Transaction(tx.id()), &tx);
+        self.nodes.txs.insert(tx.id(), tx);
 
         self.inject_telemetry();
 
@@ -165,63 +156,65 @@ impl Mempool {
         // has no parent nodes that are unselected transactions. This is fairly primitive, but
         // avoids the manual bookkeeping of which transactions are selectable.
         //
+        // Note that selecting a transaction can unblock other transactions. This implementation
+        // handles this by resetting the iteration whenever a transaction is selected.
+        //
         // This is still reasonably performant given that we only retain unselected transactions as
         // transaction nodes i.e. selected transactions become batch nodes.
         //
         // The additional bookkeeping can be implemented once we have fee related strategies. KISS.
 
-        let mut selected = Vec::new();
+        let mut selected = ProposedBatchNode::default();
         let mut budget = self.config.batch_budget;
 
-        'outer: loop {
-            'next_candidate: for candidate in self.nodes.txs.values() {
-                if selected.contains(&candidate.0.id()) {
-                    continue;
-                }
+        let mut candidates = self.nodes.txs.values();
 
-                let parents = self.state.parents(candidate);
-                for parent in parents {
-                    match parent {
-                        NodeId::Transaction(parent) if !selected.contains(&parent) => {
-                            continue 'next_candidate;
-                        },
-                        _ => {},
-                    }
-                }
-
-                if budget.check_then_subtract(&candidate.0) == BudgetStatus::Exceeded {
-                    break 'outer;
-                }
-
-                selected.push(candidate.0.id());
-                continue 'outer;
+        'next: while let Some(candidate) = candidates.next() {
+            if selected.contains(candidate.id()) {
+                continue 'next;
             }
 
-            break 'outer;
+            // A transaction may be placed in a batch IFF all parents were already in a batch (or
+            // are part of this one).
+            for parent in self.state.parents(candidate) {
+                match parent {
+                    // TODO(mirko): Once user batches are supported, they will also need to be
+                    // checked here.
+                    NodeId::Transaction(parent) if !selected.contains(parent) => continue 'next,
+                    NodeId::Transaction(_)
+                    | NodeId::ProposedBatch(_)
+                    | NodeId::ProvenBatch(_)
+                    | NodeId::Block(_) => {},
+                }
+            }
+
+            if budget.check_then_subtract(&candidate.inner()) == BudgetStatus::Exceeded {
+                break;
+            }
+
+            candidates = self.nodes.txs.values();
+            selected.push(candidate.inner().clone());
         }
 
         if selected.is_empty() {
             return None;
         }
 
-        // Assemble batch and update internal state.
-        let mut batch_node = ProposedBatchNode(vec![]);
-        for tx in selected {
-            // SAFETY: Selected txs come from the transaction pool and are unique.
-            let tx = self.nodes.txs.remove(&tx).unwrap();
-            self.state.remove(&tx);
-            batch_node.0.push(tx);
+        let batch_id = selected.calculate_id();
+        let batch_txs = selected.transactions().to_vec();
+
+        for tx in &batch_txs {
+            let node =
+                self.nodes.txs.remove(&tx.id()).expect("selected transaction node must exist");
+            self.state.remove(&node);
         }
+        self.state.insert(NodeId::ProposedBatch(batch_id), &selected);
+        self.nodes.proposed_batches.insert(batch_id, selected);
 
-        let batch_id =
-            BatchId::from_transactions(batch_node.0.iter().map(|tx| tx.0.raw_proven_transaction()));
-        let batch = batch_node.0.iter().map(|tx| Arc::clone(&tx.0)).collect();
-
-        self.state.insert(NodeId::ProposedBatch(batch_id), &batch_node);
-        self.nodes.proposed_batches.insert(batch_id, batch_node);
+        // TODO(mirko): Selecting a batch can unblock user batches, which should be checked here.
 
         self.inject_telemetry();
-        Some((batch_id, batch))
+        Some((batch_id, batch_txs))
     }
 
     /// Drops the failed batch and all of its descendants.
@@ -236,19 +229,18 @@ impl Mempool {
 
     /// Marks a batch as proven if it exists.
     #[instrument(target = COMPONENT, name = "mempool.commit_batch", skip_all)]
-    pub fn commit_batch(&mut self, batch: Arc<ProvenBatch>) {
+    pub fn commit_batch(&mut self, proof: Arc<ProvenBatch>) {
         // Due to the distributed nature of the system, its possible that a proposed batch was
         // already proven, or already reverted. This guards against this eventuality.
-        let Some(proposed) = self.nodes.proposed_batches.remove(&batch.id()) else {
+        let Some(proposed) = self.nodes.proposed_batches.remove(&proof.id()) else {
             return;
         };
 
-        let batch_id = batch.id();
         self.state.remove(&proposed);
 
-        let node = ProvenBatchNode { txs: proposed.0, inner: batch };
-        self.state.insert(NodeId::ProvenBatch(batch_id), &node);
-        self.nodes.proven_batches.insert(batch_id, node);
+        let proven = proposed.with_proof(proof);
+        self.state.insert(NodeId::ProvenBatch(proven.id()), &proven);
+        self.nodes.proven_batches.insert(proven.id(), proven);
 
         self.inject_telemetry();
     }
@@ -264,58 +256,63 @@ impl Mempool {
     /// Panics if there is already a block in flight.
     #[instrument(target = COMPONENT, name = "mempool.select_block", skip_all)]
     pub fn select_block(&mut self) -> (BlockNumber, Vec<Arc<ProvenBatch>>) {
+        // The selection algorithm is fairly neanderthal in nature.
+        //
+        // We iterate over all proven batch nodes, each time selecting the first which has no
+        // parent nodes that are unselected batches.
+        //
+        // Note that selecting a batch can unblock other batches. This implementation handles this
+        // by resetting the iteration whenever a batch is selected.
+
         assert!(
             self.nodes.proposed_block.is_none(),
             "block {} is already in progress",
             self.nodes.proposed_block.as_ref().unwrap().0
         );
 
-        let mut selected = Vec::new();
+        let mut selected = BlockNode::default();
         let mut budget = self.config.block_budget;
+        let mut candidates = self.nodes.proven_batches.values();
 
-        'outer: loop {
-            'next_candidate: for candidate in self.nodes.proven_batches.values() {
-                if selected.contains(&candidate.inner.id()) {
-                    continue;
-                }
-
-                let parents = self.state.parents(candidate);
-                for parent in parents {
-                    match parent {
-                        NodeId::ProvenBatch(batch) if selected.contains(&batch) => {},
-                        NodeId::Block(_) => {},
-                        _ => continue 'next_candidate,
-                    }
-                }
-
-                if budget.check_then_subtract(&candidate.inner) == BudgetStatus::Exceeded {
-                    break 'outer;
-                }
-
-                selected.push(candidate.inner.id());
-                continue 'outer;
+        'next: while let Some(candidate) = candidates.next() {
+            if selected.contains(candidate.id()) {
+                continue 'next;
             }
 
-            break 'outer;
+            // A batch is selectable if all parents are already blocks, or if the batch is part of
+            // the current block selection.
+            for parent in self.state.parents(candidate) {
+                match parent {
+                    NodeId::Block(_) => {},
+                    NodeId::ProvenBatch(parent) if !selected.contains(parent) => {},
+                    _ => continue 'next,
+                }
+            }
+
+            if budget.check_then_subtract(candidate.inner()) == BudgetStatus::Exceeded {
+                break;
+            }
+
+            // Reset iteration as this batch could have unblocked previous batches.
+            candidates = self.nodes.proven_batches.values();
+            selected.push(candidate.clone());
         }
 
-        // Assemble batch and update internal state.
-        let mut block_node = BlockNode(vec![]);
-        for batch in selected {
-            // SAFETY: Selected txs come from the transaction pool and are unique.
-            let batch = self.nodes.proven_batches.remove(&batch).unwrap();
+        // Replace the batches with the block in state and nodes.
+        for batch in selected.batches() {
+            // SAFETY: Selected batches came from nodes, and are unique.
+            let batch = self.nodes.proven_batches.remove(&batch.id()).unwrap();
             self.state.remove(&batch);
-            block_node.0.push(batch);
         }
 
         let block_number = self.chain_tip.child();
-        let block = block_node.0.iter().map(|batch| Arc::clone(&batch.inner)).collect();
+        let batches = selected.batches().to_vec();
 
-        self.state.insert(NodeId::Block(block_number), &block_node);
-        self.nodes.proposed_block = Some((block_number, block_node));
+        self.state.insert(NodeId::Block(block_number), &selected);
+        self.nodes.proposed_block = Some((block_number, selected));
 
         self.inject_telemetry();
-        (block_number, block)
+        (block_number, batches)
     }
 
     /// Notify the pool that the in flight block was successfully committed to the chain.

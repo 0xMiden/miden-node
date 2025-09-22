@@ -61,17 +61,6 @@ impl From<proto::remote_prover::ProofType> for ProofType {
 // REMOTE PROVER TEST TYPES
 // ================================================================================================
 
-/// Status of a remote transaction prover test.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ProverTestStatus {
-    pub name: String,
-    pub status: String,
-    pub last_tested: u64,
-    pub error: Option<String>,
-    pub test_details: Option<ProverTestDetails>,
-    pub proof_type: Option<ProofType>,
-}
-
 /// Details of a remote transaction prover test.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProverTestDetails {
@@ -164,7 +153,7 @@ pub async fn run_remote_prover_test_task(
 ///
 /// # Returns
 ///
-/// A `ProverTestStatus` containing the results of the proof test.
+/// A `ServiceStatus` containing the results of the proof test.
 #[instrument(target = COMPONENT, name = "test-remote-prover", skip_all, ret(level = "info"))]
 async fn test_remote_prover(
     client: &mut miden_node_proto::clients::RemoteProverClient,

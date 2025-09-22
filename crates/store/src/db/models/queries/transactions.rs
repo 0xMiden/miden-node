@@ -264,8 +264,11 @@ impl TransactionSummaryRowInsert {
 /// OFFSET
 ///     ?5
 /// ```
-/// Note: The query is executed in chunks of 1000 transactions to prevent loading
-/// excessive data and to stop as soon as the accumulated size approaches the 5MB limit.
+/// Notes:
+/// - The query is executed in chunks of 1000 transactions to prevent loading
+///   excessive data and to stop as soon as the accumulated size approaches the 4MB limit.
+/// - Given the size of note records, 1000 records are guaranteed never to return more than about
+///   60MB of data.
 pub fn select_transactions_records(
     conn: &mut SqliteConnection,
     account_ids: &[AccountId],

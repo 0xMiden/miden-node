@@ -261,9 +261,8 @@ impl DataStore for NtxDataStore {
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> impl FutureMaybeSend<
-        Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>,
-    > {
+    ) -> impl FutureMaybeSend<Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>>
+    {
         let account = self.account.clone();
         async move {
             if account.id() != account_id {

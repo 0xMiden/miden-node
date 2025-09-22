@@ -124,6 +124,9 @@ name = "anyhow"
 version = "1.0.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
+dependencies = [
+ "backtrace",
+]
 
 [[package]]
 name = "arc-swap"
@@ -2056,7 +2059,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=tomyrd-fix-partial-storage-map#ac7e6d394b0a11cd18eba851b121f2ad64668a3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#413ffab9de4b2e5bc2d811f8419fb8c3caf97cd7"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2128,7 +2131,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=tomyrd-fix-partial-storage-map#ac7e6d394b0a11cd18eba851b121f2ad64668a3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#413ffab9de4b2e5bc2d811f8419fb8c3caf97cd7"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2444,7 +2447,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=tomyrd-fix-partial-storage-map#ac7e6d394b0a11cd18eba851b121f2ad64668a3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#413ffab9de4b2e5bc2d811f8419fb8c3caf97cd7"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2577,7 +2580,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=tomyrd-fix-partial-storage-map#ac7e6d394b0a11cd18eba851b121f2ad64668a3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#413ffab9de4b2e5bc2d811f8419fb8c3caf97cd7"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2597,7 +2600,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=tomyrd-fix-partial-storage-map#ac7e6d394b0a11cd18eba851b121f2ad64668a3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#413ffab9de4b2e5bc2d811f8419fb8c3caf97cd7"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2612,7 +2615,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=tomyrd-fix-partial-storage-map#ac7e6d394b0a11cd18eba851b121f2ad64668a3a"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#413ffab9de4b2e5bc2d811f8419fb8c3caf97cd7"
 dependencies = [
  "miden-objects",
  "miden-tx",

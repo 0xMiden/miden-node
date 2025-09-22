@@ -265,8 +265,8 @@ impl TransactionSummaryRowInsert {
 ///     ?5
 /// ```
 /// Notes:
-/// - The query is executed in chunks of 1000 transactions to prevent loading
-///   excessive data and to stop as soon as the accumulated size approaches the 4MB limit.
+/// - The query is executed in chunks of 1000 transactions to prevent loading excessive data and to
+///   stop as soon as the accumulated size approaches the 4MB limit.
 /// - Given the size of note records, 1000 records are guaranteed never to return more than about
 ///   60MB of data.
 pub fn select_transactions_records(
@@ -311,28 +311,25 @@ pub fn select_transactions_records(
             break;
         }
 
-        // Calculate the size of this chunk
-        let chunk_size: i64 = chunk.iter().map(|tx| tx.size_in_bytes).sum();
-
-        // If adding this chunk would exceed the limit, we need to be more careful
-        if current_size + chunk_size > MAX_PAYLOAD_BYTES as i64 {
-            // Add transactions from this chunk one by one until we hit the limit
-            for tx in chunk {
-                if current_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES as i64 {
-                    current_size += tx.size_in_bytes;
-                    all_transactions.push(tx);
-                } else {
-                    // Can't fit this transaction, stop here
-                    break;
-                }
+        // Add transactions from this chunk one by one until we hit the limit
+        let chunk_len = chunk.len() as i64;
+        let mut added_from_chunk = 0;
+        for tx in chunk {
+            if current_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES as i64 {
+                current_size += tx.size_in_bytes;
+                all_transactions.push(tx);
+                added_from_chunk += 1;
+            } else {
+                // Can't fit this transaction, stop here
+                break;
             }
+        }
+
+        // If we couldn't add all transactions from this chunk, we've hit the size limit
+        if added_from_chunk < chunk_len {
             break;
         }
 
-        // The entire chunk fits, add it all
-        current_size += chunk_size;
-        let chunk_len = chunk.len() as i64;
-        all_transactions.extend(chunk);
         offset += CHUNK_SIZE;
 
         // If we got fewer transactions than requested, we've reached the end

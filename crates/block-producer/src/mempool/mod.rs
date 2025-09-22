@@ -218,7 +218,7 @@ impl Mempool {
                 }
             }
 
-            if budget.check_then_subtract(&candidate.inner()) == BudgetStatus::Exceeded {
+            if budget.check_then_subtract(candidate.inner()) == BudgetStatus::Exceeded {
                 break;
             }
 
@@ -256,7 +256,7 @@ impl Mempool {
         // already proven, or already reverted. This guards against this eventuality.
         if !self.nodes.proposed_batches.contains_key(&batch) {
             return;
-        };
+        }
 
         // TODO(mirko): This will be somewhat complicated by the introduction of user batches
         // since these don't have all inner txs present and therefore must at least partially
@@ -543,6 +543,7 @@ impl Mempool {
             }
             .unwrap();
 
+            to_process.extend(self.state.children(node.as_ref()));
             self.state.remove(node.as_ref());
             reverted.insert(id, node);
         }

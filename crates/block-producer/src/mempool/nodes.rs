@@ -58,7 +58,7 @@ impl ProposedBatchNode {
     }
 
     pub fn contains(&mut self, id: TransactionId) -> bool {
-        self.0.iter().find(|tx| tx.id() == id).is_some()
+        self.0.iter().any(|tx| tx.id() == id)
     }
 
     pub fn is_empty(&self) -> bool {
@@ -127,7 +127,7 @@ impl BlockNode {
     }
 
     pub fn contains(&self, id: BatchId) -> bool {
-        self.batches.iter().find(|batch| batch.id() == id).is_some()
+        self.batches.iter().any(|batch| batch.id() == id)
     }
 
     pub fn batches(&self) -> &[Arc<ProvenBatch>] {
@@ -256,10 +256,7 @@ impl Node for BlockNode {
 
     fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
         Box::new(self.batches.iter().flat_map(|batch| {
-            batch
-                .input_notes()
-                .iter()
-                .filter_map(|note| note.header().map(|header| header.id()))
+            batch.input_notes().iter().filter_map(|note| note.header().map(NoteHeader::id))
         }))
     }
 

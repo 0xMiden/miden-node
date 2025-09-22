@@ -155,7 +155,6 @@ impl AccountUpdates {
         self.to.get(from)
     }
 
-    #[expect(dead_code, reason = "wip")]
     fn child(&self, to: &Word) -> Option<&NodeId> {
         self.from.get(to)
     }

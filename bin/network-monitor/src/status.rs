@@ -1,9 +1,8 @@
 //! Network monitor status checker.
 //!
-//! This module contains the logic for checking the status of the network monitor.
-//! It is used to check the status of the network monitor and to update the shared status.
+//! This module contains the logic for checking the status of network services.
+//! Individual status checker tasks send updates via watch channels to the web server.
 
-use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
@@ -18,7 +17,7 @@ use miden_node_proto::generated::remote_prover::{
 use miden_node_proto::generated::rpc::RpcStatus;
 use miden_node_proto::generated::rpc_store::StoreStatus;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 use tracing::instrument;
 use url::Url;
@@ -101,6 +100,22 @@ pub struct ServiceStatus {
     pub details: Option<ServiceDetails>,
 }
 
+impl ServiceStatus {
+    /// Creates a new `ServiceStatus` with the given name and default values.
+    ///
+    /// The `status` is initialized as "unknown", `last_checked` as 0, and both `error` and
+    /// `details` as None.
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            status: "unknown".to_string(),
+            last_checked: 0,
+            error: None,
+            details: None,
+        }
+    }
+}
+
 /// Details of a service.
 ///
 /// This struct contains the details of a service, which is a union of the details of the service.
@@ -175,12 +190,6 @@ pub struct NetworkStatus {
     pub services: Vec<ServiceStatus>,
     pub last_updated: u64,
 }
-
-/// Shared status of the network.
-///
-/// This struct contains the shared status of the network, which is a union of the shared status of
-/// the network.
-pub type SharedStatus = Arc<Mutex<NetworkStatus>>;
 
 // FROM IMPLEMENTATIONS
 // ================================================================================================
@@ -259,6 +268,49 @@ impl From<RpcStatus> for RpcStatusDetails {
 // RPC STATUS CHECKER
 // ================================================================================================
 
+/// Runs a task that continuously checks RPC status and updates a watch channel.
+///
+/// This function spawns a task that periodically checks the RPC service status
+/// and sends updates through a watch channel.
+///
+/// # Arguments
+///
+/// * `rpc_url` - The URL of the RPC service.
+/// * `status_sender` - The sender for the watch channel.
+///
+/// # Returns
+///
+/// `Ok(())` if the task completes successfully, or an error if the task fails.
+#[instrument(target = COMPONENT, name = "rpc-status-task", skip_all)]
+pub async fn run_rpc_status_task(
+    rpc_url: Url,
+    status_sender: watch::Sender<ServiceStatus>,
+) -> anyhow::Result<()> {
+    let mut rpc = ClientBuilder::new(rpc_url)
+        .without_tls()
+        .without_timeout()
+        .without_metadata_version()
+        .without_metadata_genesis()
+        .connect_lazy::<Rpc>();
+
+    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("failed to get current time")?
+            .as_secs();
+
+        let status = check_rpc_status(&mut rpc, current_time).await;
+
+        // Send the status update (ignore if no receivers)
+        let _ = status_sender.send(status);
+    }
+}
+
 /// Checks the status of the RPC service.
 ///
 /// This function checks the status of the RPC service.
@@ -303,6 +355,59 @@ async fn check_rpc_status(
 
 // REMOTE PROVER STATUS CHECKER
 // ================================================================================================
+
+/// Runs a task that continuously checks remote prover status and updates a watch channel.
+///
+/// This function spawns a task that periodically checks a remote prover service status
+/// and sends updates through a watch channel.
+///
+/// # Arguments
+///
+/// * `prover_url` - The URL of the remote prover service.
+/// * `name` - The name of the remote prover.
+/// * `status_sender` - The sender for the watch channel.
+///
+/// # Returns
+///
+/// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
+/// connection issues or failures while checking the remote prover status.
+#[instrument(target = COMPONENT, name = "remote-prover-status-task", skip_all)]
+pub async fn run_remote_prover_status_task(
+    prover_url: Url,
+    name: String,
+    status_sender: watch::Sender<ServiceStatus>,
+) -> anyhow::Result<()> {
+    let url_str = prover_url.to_string();
+    let mut remote_prover = ClientBuilder::new(prover_url)
+        .without_tls()
+        .without_timeout()
+        .without_metadata_version()
+        .without_metadata_genesis()
+        .connect_lazy::<RemoteProverProxy>();
+
+    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("failed to get current time")?
+            .as_secs();
+
+        let status = check_remote_prover_status(
+            &mut remote_prover,
+            name.clone(),
+            url_str.clone(),
+            current_time,
+        )
+        .await;
+
+        // Send the status update (ignore if no receivers)
+        let _ = status_sender.send(status);
+    }
+}
 
 /// Checks the status of the remote prover service.
 ///
@@ -360,97 +465,5 @@ async fn check_remote_prover_status(
             error: Some(e.to_string()),
             details: None,
         },
-    }
-}
-
-// NETWORK STATUS CHECKER
-// ================================================================================================
-
-/// Checks the status of the network.
-///
-/// This function checks the status of the network.
-///
-/// # Arguments
-///
-/// * `shared_status` - The shared status of the network.
-/// * `config` - The configuration for the monitor.
-///
-/// # Returns
-///
-/// A Result containing the status of the network.
-///
-/// # Errors
-///
-/// This function can return an error if the current time cannot be retrieved.
-///
-/// # Panics
-///
-/// This function can panic if the shared status cannot be locked.
-#[instrument(target = COMPONENT, name = "check-status", skip_all, ret(level = "info"), err)]
-pub async fn check_status(
-    shared_status: SharedStatus,
-    config: MonitorConfig,
-) -> anyhow::Result<()> {
-    let mut rpc = ClientBuilder::new(config.rpc_url.clone())
-        .without_tls()
-        .without_timeout()
-        .without_metadata_version()
-        .without_metadata_genesis()
-        .connect_lazy::<Rpc>();
-
-    // Create remote prover clients for each URL
-    let mut remote_provers: Vec<(
-        String,
-        String,
-        miden_node_proto::clients::RemoteProverProxyClient,
-    )> = config
-        .remote_prover_urls
-        .iter()
-        .enumerate()
-        .map(|(i, url)| {
-            let name = format!("Prover-{}", i + 1);
-            let url_str = url.to_string();
-            let client = ClientBuilder::new(url.clone())
-                .without_tls()
-                .without_timeout()
-                .without_metadata_version()
-                .without_metadata_genesis()
-                .connect_lazy::<RemoteProverProxy>();
-            (name, url_str, client)
-        })
-        .collect();
-
-    let mut interval = tokio::time::interval(Duration::from_secs(3));
-    // Don't delay the first tick
-    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-    loop {
-        interval.tick().await;
-
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")?
-            .as_secs();
-
-        let mut services = Vec::new();
-
-        // Check RPC status
-        let rpc_status = check_rpc_status(&mut rpc, current_time).await;
-        services.push(rpc_status);
-
-        // Check each Remote Prover status
-        for (name, url, remote_prover) in &mut remote_provers {
-            let remote_prover_status =
-                check_remote_prover_status(remote_prover, name.clone(), url.clone(), current_time)
-                    .await;
-            services.push(remote_prover_status);
-        }
-
-        // Update shared status
-        {
-            let mut status = shared_status.lock().await;
-            status.services = services;
-            status.last_updated = current_time;
-        }
     }
 }

@@ -1,15 +1,25 @@
 //! This file explicitly embeds each of the frontend files into the binary using `include_str!` and
 //! `include_bytes!`.
 
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
 use anyhow::Context;
 use axum::Router;
 use axum::http::header;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
+use tokio::sync::watch;
 use tracing::{info, instrument};
 
 use crate::COMPONENT;
-use crate::status::{MonitorConfig, SharedStatus};
+use crate::status::{MonitorConfig, NetworkStatus, ServiceStatus};
+
+/// State for the web server containing watch receivers for all services.
+#[derive(Clone)]
+pub struct ServerState {
+    pub rpc: watch::Receiver<ServiceStatus>,
+    pub provers: Vec<watch::Receiver<ServiceStatus>>,
+}
 
 /// Runs the frontend server.
 ///
@@ -17,9 +27,9 @@ use crate::status::{MonitorConfig, SharedStatus};
 ///
 /// # Arguments
 ///
-/// * `shared_status` - The shared status of the network.
+/// * `server_state` - The server state containing watch receivers for all services.
 /// * `config` - The configuration of the network.
-pub async fn serve(shared_status: SharedStatus, config: MonitorConfig) -> anyhow::Result<()> {
+pub async fn serve(server_state: ServerState, config: MonitorConfig) -> anyhow::Result<()> {
     // build our application with routes
     let app = Router::new()
         // Serve embedded assets
@@ -29,7 +39,7 @@ pub async fn serve(shared_status: SharedStatus, config: MonitorConfig) -> anyhow
         .route("/", get(get_dashboard))
         // API route for status data
         .route("/status", get(get_status))
-        .with_state(shared_status);
+        .with_state(server_state);
 
     let bind_address = format!("0.0.0.0:{}", config.port);
     info!("Starting web server on {bind_address}");
@@ -47,10 +57,26 @@ async fn get_dashboard() -> Html<&'static str> {
 
 #[instrument(target = COMPONENT, name = "frontend.get-status", skip_all, ret(level = "info"))]
 async fn get_status(
-    axum::extract::State(shared_status): axum::extract::State<SharedStatus>,
-) -> axum::response::Json<crate::status::NetworkStatus> {
-    let status = shared_status.lock().await;
-    axum::response::Json(status.clone())
+    axum::extract::State(server_state): axum::extract::State<ServerState>,
+) -> axum::response::Json<NetworkStatus> {
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))
+        .as_secs();
+
+    let mut services = Vec::new();
+
+    // Collect RPC status
+    services.push(server_state.rpc.borrow().clone());
+
+    // Collect all remote prover statuses
+    for prover_rx in &server_state.provers {
+        services.push(prover_rx.borrow().clone());
+    }
+
+    let network_status = NetworkStatus { services, last_updated: current_time };
+
+    axum::response::Json(network_status)
 }
 
 async fn serve_css() -> Response {

@@ -5,6 +5,7 @@ pub mod account;
 pub mod block_producer;
 pub mod block_producer_store;
 pub mod blockchain;
+pub mod errors;
 pub mod note;
 pub mod ntx_builder_store;
 pub mod primitives;

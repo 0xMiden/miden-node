@@ -77,7 +77,27 @@ Returns the script for a note by its root.
 
 ### SubmitProvenTransaction
 
-Submits proven transaction to the Miden network.
+Submits a proven transaction to the Miden network for inclusion in future blocks. The transaction must be properly formatted and include a valid execution proof.
+
+#### Error Handling
+
+When transaction submission fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                             | Value | gRPC Status        | Description                                                   |
+|----------------------------------------|-------|--------------------|---------------------------------------------------------------|
+| `UNSPECIFIED_ERROR`                    | 0     | `INTERNAL`         | Default/unspecified error                                     |
+| `INTERNAL_ERROR`                       | 1     | `INTERNAL`         | Internal server error occurred                                |
+| `DESERIALIZATION_FAILED`               | 2     | `INVALID_ARGUMENT` | Transaction could not be deserialized                         |
+| `INVALID_TRANSACTION_PROOF`            | 3     | `INVALID_ARGUMENT` | Transaction execution proof is invalid                        |
+| `INCORRECT_ACCOUNT_INITIAL_COMMITMENT` | 4     | `INVALID_ARGUMENT` | Account's initial state doesn't match current state           |
+| `INPUT_NOTES_ALREADY_CONSUMED`         | 5     | `INVALID_ARGUMENT` | Input notes have already been consumed by another transaction |
+| `UNAUTHENTICATED_NOTES_NOT_FOUND`      | 6     | `INVALID_ARGUMENT` | Required unauthenticated notes were not found                 |
+| `OUTPUT_NOTES_ALREADY_EXIST`           | 7     | `INVALID_ARGUMENT` | Output note IDs are already in use                            |
+| `TRANSACTION_EXPIRED`                  | 8     | `INVALID_ARGUMENT` | Transaction has exceeded its expiration block height          |
+
+**Error Details Serialization**: The `Status.details` field contains a single byte with the numeric error code value. Clients can decode this by reading `details[0]` to get the error code (0-8) and mapping it to the corresponding enum value.
+
+Clients should inspect both the gRPC status code and the detailed error code in the `Status.details` field to determine the appropriate response. For `INTERNAL_ERROR` cases, the detailed error message is replaced with a generic message for security reasons.
 
 ---
 

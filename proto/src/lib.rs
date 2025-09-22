@@ -56,3 +56,10 @@ pub fn block_producer_api_descriptor() -> FileDescriptorSet {
     FileDescriptorSet::decode(&bytes[..])
         .expect("bytes should be a valid file descriptor created by build.rs")
 }
+
+/// Returns the Protobuf file descriptor for the errors API.
+pub fn errors_api_descriptor() -> FileDescriptorSet {
+    let bytes = include_bytes!(concat!(env!("OUT_DIR"), "/", "errors_file_descriptor.bin"));
+    FileDescriptorSet::decode(&bytes[..])
+        .expect("bytes should be a valid file descriptor created by build.rs")
+}

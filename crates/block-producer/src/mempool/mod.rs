@@ -477,8 +477,26 @@ impl Mempool {
     }
 
     /// Reverts expired transactions and batches as per the current `chain_tip`.
-    fn revert_expired_nodes(&self) {
-        // TODO(mirko): Identify expired nodes and revert them.
+    fn revert_expired_nodes(&mut self) {
+        let expired_txs = self.nodes.txs.iter().filter_map(|(id, node)| {
+            (node.expires_at() <= self.chain_tip).then_some(NodeId::Transaction(*id))
+        });
+        let expired_proposed_batches =
+            self.nodes.proposed_batches.iter().filter_map(|(id, node)| {
+                (node.expires_at() <= self.chain_tip).then_some(NodeId::ProposedBatch(*id))
+            });
+        let expired_proven_batches = self.nodes.proven_batches.iter().filter_map(|(id, node)| {
+            (node.expires_at() <= self.chain_tip).then_some(NodeId::ProvenBatch(*id))
+        });
+
+        let expired = expired_proven_batches
+            .chain(expired_proposed_batches)
+            .chain(expired_txs)
+            .collect::<Vec<_>>();
+        for node in expired {
+            // TODO(mirko): Log these nicely somehow.
+            let _reverted = self.revert_subtree(node);
+        }
     }
 
     /// Reverts the subtree with the given root and returns the reverted nodes. Does nothing if the

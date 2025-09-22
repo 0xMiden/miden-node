@@ -258,13 +258,15 @@ impl TransactionSummaryRowInsert {
 ///     AND block_num <= ?2
 ///     AND account_id IN rarray(?3)
 /// ORDER BY
-///     block_num ASC
+///     block_num ASC,
+///     transaction_id ASC
 /// LIMIT
 ///     ?4
 /// OFFSET
 ///     ?5
 /// ```
 /// Notes:
+/// - Uses stable ordering (block_num, transaction_id) to ensure consistent results across paginated queries
 /// - The query is executed in chunks of 1000 transactions to prevent loading excessive data and to
 ///   stop as soon as the accumulated size approaches the 4MB limit.
 /// - Given the size of note records, 1000 records are guaranteed never to return more than about
@@ -300,7 +302,7 @@ pub fn select_transactions_records(
                 .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
                 .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
                 .filter(schema::transactions::account_id.eq_any(&desired_account_ids))
-                .order((schema::transactions::block_num.asc(),))
+                .order((schema::transactions::block_num.asc(), schema::transactions::transaction_id.asc()))
                 .offset(offset)
                 .limit(CHUNK_SIZE)
                 .load::<TransactionRecordRaw>(conn)

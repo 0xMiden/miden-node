@@ -415,6 +415,8 @@ impl Mempool {
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
     pub fn commit_block(&mut self, to_commit: BlockNumber) {
+        // TODO(mirko): check for expired batches and transactions.
+
         let block = self
             .nodes
             .proposed_block
@@ -464,8 +466,41 @@ impl Mempool {
         {
             return;
         }
-        todo!();
-        // self.inject_telemetry();
+
+        // Remove all descendents. No re-inserting at all.
+        let mut processed = HashSet::<NodeId>::default();
+        let mut to_process = Vec::<NodeId>::new();
+        to_process.push(NodeId::Block(block));
+
+        while let Some(id) = to_process.pop() {
+            if processed.contains(&id) {
+                continue;
+            }
+
+            // SAFETY: all IDs come from the state DAG and must therefore exist. The processed check
+            // above also prevents removing a node twice.
+            let node: Box<dyn Node> = match id {
+                NodeId::Transaction(id) => {
+                    self.nodes.txs.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
+                },
+                NodeId::ProposedBatch(id) => {
+                    self.nodes.proposed_batches.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
+                },
+                NodeId::ProvenBatch(id) => {
+                    self.nodes.proven_batches.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
+                },
+                NodeId::Block(id) => {
+                    panic!("found a block descendent {id} while rolling back block {block}");
+                },
+            }
+            .unwrap();
+
+            to_process.extend(self.state.children(node.as_ref()));
+            self.state.remove(node.as_ref());
+            processed.insert(id);
+        }
+
+        self.inject_telemetry();
     }
 
     /// Creates a subscription to [`MempoolEvent`] which will be emitted in the order they occur.

@@ -27,6 +27,7 @@
 //!   a block.
 //! - Reverting a node reverts all descendents as well.
 
+use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -40,7 +41,7 @@ use tracing::{instrument, warn};
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::{AddTransactionError, VerifyTxError};
 use crate::mempool::budget::BudgetStatus;
-use crate::mempool::nodes::{BlockNode, NodeId, ProposedBatchNode, TransactionNode};
+use crate::mempool::nodes::{BlockNode, Node, NodeId, ProposedBatchNode, TransactionNode};
 use crate::{COMPONENT, SERVER_MEMPOOL_EXPIRATION_SLACK, SERVER_MEMPOOL_STATE_RETENTION};
 
 mod budget;
@@ -248,12 +249,64 @@ impl Mempool {
 
     /// Drops the failed batch and all of its descendants.
     ///
-    /// Transactions are _not_ requeued.
-    #[allow(clippy::unused_self, reason = "wip")]
+    /// Transactions are re-queued.
     #[instrument(target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
-    pub fn rollback_batch(&mut self, _batch: BatchId) {
-        todo!();
-        // self.inject_telemetry();
+    pub fn rollback_batch(&mut self, batch: BatchId) {
+        // Due to the distributed nature of the system, its possible that a proposed batch was
+        // already proven, or already reverted. This guards against this eventuality.
+        if !self.nodes.proposed_batches.contains_key(&batch) {
+            return;
+        };
+
+        // TODO(mirko): This will be somewhat complicated by the introduction of user batches
+        // since these don't have all inner txs present and therefore must at least partially
+        // revert their own tx descendents.
+
+        // Remove all descendent batches and reinsert their transactions. This is safe to do since
+        // a batch's state impact is the aggregation of its transactions.
+        let mut processed = HashSet::<NodeId>::default();
+        let mut to_process = Vec::default();
+        to_process.push(NodeId::ProposedBatch(batch));
+
+        while let Some(id) = to_process.pop() {
+            if processed.contains(&id) {
+                continue;
+            }
+
+            let to_reinsert = match id {
+                // We want to re-queue transactions, so we may as well leave them in place.
+                NodeId::Transaction(_) => continue,
+                NodeId::ProposedBatch(batch_id) => {
+                    // SAFETY: all IDs originate from within the graph and therefore must be valid.
+                    let node = self.nodes.proposed_batches.remove(&batch_id).unwrap();
+                    to_process.extend(self.state.children(&node));
+                    self.state.remove(&node);
+                    node.transactions().to_vec()
+                },
+                NodeId::ProvenBatch(batch_id) => {
+                    // SAFETY: all IDs originate from within the graph and therefore must be valid.
+                    let node = self.nodes.proven_batches.remove(&batch_id).unwrap();
+                    to_process.extend(self.state.children(&node));
+                    self.state.remove(&node);
+                    node.transactions().to_vec()
+                },
+                NodeId::Block(block) => {
+                    // A block requries that all ancestors be blocks, and therefore this should not
+                    // be possible. See block selection for more info.
+                    panic!("found block {block} descendent while rolling back batch {batch}")
+                },
+            };
+
+            for tx in to_reinsert {
+                let node = TransactionNode::new(tx);
+                self.state.insert(NodeId::Transaction(node.id()), &node);
+                self.nodes.txs.insert(node.id(), node);
+            }
+
+            processed.insert(id);
+        }
+
+        self.inject_telemetry();
     }
 
     /// Marks a batch as proven if it exists.

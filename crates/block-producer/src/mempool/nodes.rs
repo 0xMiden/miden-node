@@ -102,6 +102,10 @@ impl ProvenBatchNode {
     pub fn inner(&self) -> &Arc<ProvenBatch> {
         &self.inner
     }
+
+    pub fn transactions(&self) -> &[Arc<AuthenticatedTransaction>] {
+        &self.txs
+    }
 }
 
 /// Represents a block - both committed and in-progress.

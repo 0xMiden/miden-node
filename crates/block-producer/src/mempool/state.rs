@@ -84,7 +84,7 @@ impl InflightState {
         }
     }
 
-    /// The [`NodeIds`] which the given node depends on.
+    /// The [`NodeId`]s which the given node directly depends on.
     ///
     /// Note that the result is invalidated by mutating the state.
     pub(crate) fn parents(&self, node: &dyn Node) -> HashSet<NodeId> {
@@ -101,10 +101,10 @@ impl InflightState {
         account_parents.chain(note_parents).copied().collect()
     }
 
-    /// The [`NodeIds`] which depend on the given node.
+    /// The [`NodeId`]s which depend directly on the given node.
     ///
     /// Note that the result is invalidated by mutating the state.
-    pub(crate) fn _children(&self, node: &dyn Node) -> HashSet<NodeId> {
+    pub(crate) fn children(&self, node: &dyn Node) -> HashSet<NodeId> {
         let note_children =
             node.output_notes().filter_map(|note| self.authenticated_notes.get(&note));
 

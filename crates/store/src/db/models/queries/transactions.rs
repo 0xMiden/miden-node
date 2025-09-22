@@ -271,7 +271,7 @@ pub fn select_transactions_records(
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
-    const MAX_PAYLOAD_BYTES: usize = 5 * 1024 * 1024; // 5 MB
+    const MAX_PAYLOAD_BYTES: usize = 4 * 1024 * 1024; // 4 MB
     const CHUNK_SIZE: i64 = 1000; // Read 1000 transactions at a time
 
     QueryParamAccountIdLimit::check(account_ids.len())?;

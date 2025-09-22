@@ -1,3 +1,32 @@
+//! The [`Mempool`] is responsible for receiving transactions, and proposing transactions for
+//! inclusion in batches, and proposing batches for inclusion in the next block.
+//!
+//! It performs this task by maintaining a directed acyclic graph (DAG). Nodes in this graph
+//! represent transactions, batches and blocks. The DAG nature of the graph is important as this
+//! allows us to propose batches and blocks such that they only depend on already proposed nodes.
+//!
+//! This requirement allows us to create sensible nodes such that they are not co-dependent aka have
+//! no cycles. A cycle between batches would require that all batches within that cycle _must_ all
+//! be committed as part of the same block. This follows from the requirement that the next block
+//! in the blockchain _must_ be a transition from the current latest block's state.
+//!
+//! While this is technically possible, the bookkeeping and implementation to allow this are
+//! infeasible, and both blocks and batches have constraints. This is also undersireable since if
+//! one component of such a cycle fails or expires, then all others would likewise need to be
+//! reverted.
+//!
+//! The DAG nature of the graph is maintained by:
+//!
+//! - Ensuring incoming transactions are only ever appended to the current graph. This in turn
+//!   implies that the transaction's state transition must build on top of the current mempool
+//!   state.
+//! - Parent/child edges between nodes in the graph are formed via state dependency.
+//! - Transactions are proposed for batch inclusion only once _all_ its ancestors have already been
+//!   included in a batch.
+//! - Similarly, batches are proposed for block inclusion once _all_ ancestors have been included in
+//!   a block.
+//! - Reverting a node reverts all descendents as well.
+
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 

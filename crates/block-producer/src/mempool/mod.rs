@@ -27,7 +27,7 @@
 //!   a block.
 //! - Reverting a node reverts all descendents as well.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
@@ -231,7 +231,7 @@ impl Mempool {
         }
 
         let batch_id = selected.calculate_id();
-        let batch_txs = selected.transactions().to_vec();
+        let batch_txs = selected.transactions().cloned().collect::<Vec<_>>();
 
         for tx in &batch_txs {
             let node =
@@ -247,7 +247,7 @@ impl Mempool {
         Some((batch_id, batch_txs))
     }
 
-    /// Drops the failed batch and all of its descendants.
+    /// Drops the proposed batch and all of its descendants.
     ///
     /// Transactions are re-queued.
     #[instrument(target = COMPONENT, name = "mempool.rollback_batch", skip_all)]
@@ -262,48 +262,16 @@ impl Mempool {
         // since these don't have all inner txs present and therefore must at least partially
         // revert their own tx descendents.
 
-        // Remove all descendent batches and reinsert their transactions. This is safe to do since
+        // Remove all descendents and reinsert their transactions. This is safe to do since
         // a batch's state impact is the aggregation of its transactions.
-        let mut processed = HashSet::<NodeId>::default();
-        let mut to_process = Vec::default();
-        to_process.push(NodeId::ProposedBatch(batch));
+        let reverted = self.revert_subtree(NodeId::ProposedBatch(batch));
 
-        while let Some(id) = to_process.pop() {
-            if processed.contains(&id) {
-                continue;
+        for (_, node) in reverted {
+            for tx in node.transactions() {
+                let tx = TransactionNode::new(Arc::clone(tx));
+                self.state.insert(NodeId::Transaction(tx.id()), &tx);
+                self.nodes.txs.insert(tx.id(), tx);
             }
-
-            let to_reinsert = match id {
-                // We want to re-queue transactions, so we may as well leave them in place.
-                NodeId::Transaction(_) => continue,
-                NodeId::ProposedBatch(batch_id) => {
-                    // SAFETY: all IDs originate from within the graph and therefore must be valid.
-                    let node = self.nodes.proposed_batches.remove(&batch_id).unwrap();
-                    to_process.extend(self.state.children(&node));
-                    self.state.remove(&node);
-                    node.transactions().to_vec()
-                },
-                NodeId::ProvenBatch(batch_id) => {
-                    // SAFETY: all IDs originate from within the graph and therefore must be valid.
-                    let node = self.nodes.proven_batches.remove(&batch_id).unwrap();
-                    to_process.extend(self.state.children(&node));
-                    self.state.remove(&node);
-                    node.transactions().to_vec()
-                },
-                NodeId::Block(block) => {
-                    // A block requries that all ancestors be blocks, and therefore this should not
-                    // be possible. See block selection for more info.
-                    panic!("found block {block} descendent while rolling back batch {batch}")
-                },
-            };
-
-            for tx in to_reinsert {
-                let node = TransactionNode::new(tx);
-                self.state.insert(NodeId::Transaction(node.id()), &node);
-                self.nodes.txs.insert(node.id(), node);
-            }
-
-            processed.insert(id);
         }
 
         self.inject_telemetry();
@@ -415,8 +383,6 @@ impl Mempool {
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
     pub fn commit_block(&mut self, to_commit: BlockNumber) {
-        // TODO(mirko): check for expired batches and transactions.
-
         let block = self
             .nodes
             .proposed_block
@@ -430,6 +396,7 @@ impl Mempool {
             let (_number, node) = self.nodes.committed_blocks.pop_front().unwrap();
             self.state.remove(&node);
         }
+        self.revert_expired_nodes();
         self.inject_telemetry();
     }
 
@@ -468,37 +435,8 @@ impl Mempool {
         }
 
         // Remove all descendents. No re-inserting at all.
-        let mut processed = HashSet::<NodeId>::default();
-        let mut to_process = Vec::<NodeId>::new();
-        to_process.push(NodeId::Block(block));
-
-        while let Some(id) = to_process.pop() {
-            if processed.contains(&id) {
-                continue;
-            }
-
-            // SAFETY: all IDs come from the state DAG and must therefore exist. The processed check
-            // above also prevents removing a node twice.
-            let node: Box<dyn Node> = match id {
-                NodeId::Transaction(id) => {
-                    self.nodes.txs.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
-                },
-                NodeId::ProposedBatch(id) => {
-                    self.nodes.proposed_batches.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
-                },
-                NodeId::ProvenBatch(id) => {
-                    self.nodes.proven_batches.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
-                },
-                NodeId::Block(id) => {
-                    panic!("found a block descendent {id} while rolling back block {block}");
-                },
-            }
-            .unwrap();
-
-            to_process.extend(self.state.children(node.as_ref()));
-            self.state.remove(node.as_ref());
-            processed.insert(id);
-        }
+        let _reverted = self.revert_subtree(NodeId::Block(block));
+        // TODO(mirko): Add reverted nodes as events.
 
         self.inject_telemetry();
     }
@@ -536,6 +474,62 @@ impl Mempool {
         // span.set_attribute("mempool.batches.proven", self.batches.num_proven());
         // span.set_attribute("mempool.batches.total", self.batches.len());
         // span.set_attribute("mempool.batches.roots", self.batches.num_roots());
+    }
+
+    /// Reverts expired transactions and batches as per the current `chain_tip`.
+    fn revert_expired_nodes(&self) {
+        // TODO(mirko): Identify expired nodes and revert them.
+    }
+
+    /// Reverts the subtree with the given root and returns the reverted nodes. Does nothing if the
+    /// root node does not exist to allow using this in cases where multiple overlapping calls to
+    /// this are made.
+    fn revert_subtree(&mut self, root: NodeId) -> HashMap<NodeId, Box<dyn Node>> {
+        let root_exists = match root {
+            NodeId::Transaction(id) => self.nodes.txs.contains_key(&id),
+            NodeId::ProposedBatch(id) => self.nodes.proposed_batches.contains_key(&id),
+            NodeId::ProvenBatch(id) => self.nodes.proven_batches.contains_key(&id),
+            NodeId::Block(id) => {
+                self.nodes.proposed_block.as_ref().is_some_and(|(number, _)| *number == id)
+            },
+        };
+        if !root_exists {
+            return HashMap::default();
+        }
+
+        let mut to_process = vec![root];
+        let mut reverted = HashMap::default();
+
+        while let Some(id) = to_process.pop() {
+            if reverted.contains_key(&id) {
+                continue;
+            }
+
+            // SAFETY: all IDs come from the state DAG and must therefore exist. The processed check
+            // above also prevents removing a node twice.
+            let node: Box<dyn Node> = match id {
+                NodeId::Transaction(id) => {
+                    self.nodes.txs.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
+                },
+                NodeId::ProposedBatch(id) => {
+                    self.nodes.proposed_batches.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
+                },
+                NodeId::ProvenBatch(id) => {
+                    self.nodes.proven_batches.remove(&id).map(|x| Box::new(x) as Box<dyn Node>)
+                },
+                NodeId::Block(id) => self
+                    .nodes
+                    .proposed_block
+                    .take_if(|(number, _)| number == &id)
+                    .map(|(_, x)| Box::new(x) as Box<dyn Node>),
+            }
+            .unwrap();
+
+            self.state.remove(node.as_ref());
+            reverted.insert(id, node);
+        }
+
+        reverted
     }
 
     fn authentication_staleness_check(

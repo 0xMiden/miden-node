@@ -40,6 +40,10 @@ impl TransactionNode {
     pub fn inner(&self) -> &Arc<AuthenticatedTransaction> {
         &self.0
     }
+
+    pub fn expires_at(&self) -> BlockNumber {
+        self.0.expires_at()
+    }
 }
 
 /// Represents a batch which has been proposed by the mempool and which is undergoing proving.
@@ -70,13 +74,13 @@ impl ProposedBatchNode {
         )
     }
 
-    pub fn transactions(&self) -> &[Arc<AuthenticatedTransaction>] {
-        &self.0
-    }
-
     pub fn with_proof(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
         let Self(txs) = self;
         ProvenBatchNode { txs, inner: proof }
+    }
+
+    pub fn expires_at(&self) -> BlockNumber {
+        self.0.iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
     }
 }
 
@@ -103,8 +107,8 @@ impl ProvenBatchNode {
         &self.inner
     }
 
-    pub fn transactions(&self) -> &[Arc<AuthenticatedTransaction>] {
-        &self.txs
+    pub fn expires_at(&self) -> BlockNumber {
+        self.inner.batch_expiration_block_num()
     }
 }
 
@@ -148,6 +152,7 @@ pub(crate) trait Node {
     fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
     fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_>;
+    fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_>;
 }
 
 impl Node for TransactionNode {
@@ -170,6 +175,10 @@ impl Node for TransactionNode {
             update.initial_state_commitment(),
             update.final_state_commitment(),
         )))
+    }
+
+    fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
+        Box::new(std::iter::once(&self.0))
     }
 }
 
@@ -195,6 +204,10 @@ impl Node for ProposedBatchNode {
                 update.final_state_commitment(),
             ))
         }))
+    }
+
+    fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
+        Box::new(self.0.iter())
     }
 }
 
@@ -226,6 +239,10 @@ impl Node for ProvenBatchNode {
             )
         }))
     }
+
+    fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
+        Box::new(self.txs.iter())
+    }
 }
 
 impl Node for BlockNode {
@@ -256,6 +273,10 @@ impl Node for BlockNode {
                 )
             },
         ))
+    }
+
+    fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_> {
+        Box::new(self.txs.iter())
     }
 }
 

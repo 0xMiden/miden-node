@@ -176,6 +176,7 @@ impl StoreClient {
         let mut all_notes = Vec::new();
         let mut page_token: Option<u64> = None;
 
+        let mut store_client = self.inner.clone();
         loop {
             let req = proto::ntx_builder_store::UnconsumedNetworkNotesForAccountRequest {
                 page_token,
@@ -183,12 +184,8 @@ impl StoreClient {
                 network_account_id_prefix: network_account_prefix.inner(),
                 block_num,
             };
-            let resp = self
-                .inner
-                .clone()
-                .get_unconsumed_network_notes_for_account(req)
-                .await?
-                .into_inner();
+            let resp =
+                store_client.get_unconsumed_network_notes_for_account(req).await?.into_inner();
 
             let page: Vec<NetworkNote> = resp
                 .notes

@@ -15,6 +15,7 @@ use tracing::instrument;
 
 use crate::COMPONENT;
 use crate::actor::ActorShutdownReason;
+use crate::builder::ChainState;
 use crate::store::{StoreClient, StoreError};
 
 mod account;
@@ -93,8 +94,7 @@ impl State {
     pub fn select_candidate(
         &mut self,
         limit: NonZeroUsize,
-        chain_tip_header: BlockHeader,
-        chain_mmr: PartialBlockchain,
+        chain_state: ChainState,
     ) -> Option<TransactionCandidate> {
         // Remove notes that have failed too many times.
         self.account.drop_failing_notes(Self::MAX_NOTE_ATTEMPTS);
@@ -108,7 +108,7 @@ impl State {
         // Select notes from the account that can be consumed or are ready for a retry.
         let notes = self
             .account
-            .available_notes(&chain_tip_header.block_num())
+            .available_notes(&chain_state.chain_tip_header.block_num())
             .take(limit.get())
             .cloned()
             .collect::<Vec<_>>();
@@ -118,6 +118,7 @@ impl State {
             return None;
         }
 
+        let (chain_tip_header, chain_mmr) = chain_state.into_parts();
         TransactionCandidate {
             account: self.account.latest_account(),
             notes,

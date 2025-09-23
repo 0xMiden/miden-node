@@ -37,9 +37,9 @@ const MAX_BLOCK_COUNT: usize = 4;
 #[derive(Debug, Clone)]
 pub struct ChainState {
     /// The current tip of the chain.
-    pub chain_tip_header: Arc<RwLock<BlockHeader>>,
+    pub chain_tip_header: BlockHeader,
     /// A partial representation of the latest state of the chain.
-    pub chain_mmr: Arc<RwLock<PartialBlockchain>>,
+    pub chain_mmr: PartialBlockchain,
 }
 
 impl ChainState {
@@ -47,10 +47,13 @@ impl ChainState {
     fn new(chain_tip_header: BlockHeader, chain_mmr: PartialMmr) -> Self {
         let chain_mmr = PartialBlockchain::new(chain_mmr, [])
             .expect("partial blockchain should build from partial mmr");
-        Self {
-            chain_tip_header: RwLock::new(chain_tip_header).into(),
-            chain_mmr: RwLock::new(chain_mmr).into(),
-        }
+        Self { chain_tip_header, chain_mmr }
+    }
+
+    /// Consumes the chain state and returns the chain tip header and the partial blockchain as a
+    /// tuple.
+    pub fn into_parts(self) -> (BlockHeader, PartialBlockchain) {
+        (self.chain_tip_header, self.chain_mmr)
     }
 }
 
@@ -127,7 +130,7 @@ impl NetworkTransactionBuilder {
         interval.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
         // Create chain state that will be updated by the coordinator and read by actors.
-        let chain_state = ChainState::new(chain_tip_header, chain_mmr);
+        let chain_state = Arc::new(RwLock::new(ChainState::new(chain_tip_header, chain_mmr)));
         // Create a semaphore to limit the number of in-progress transactions across all actors.
         let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
         let config = AccountActorConfig {
@@ -185,7 +188,7 @@ impl NetworkTransactionBuilder {
         event: &MempoolEvent,
         account_actor_config: &AccountActorConfig,
         store: StoreClient,
-        chain_state: ChainState,
+        chain_state: Arc<RwLock<ChainState>>,
     ) -> anyhow::Result<()> {
         match &event {
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
@@ -231,19 +234,22 @@ impl NetworkTransactionBuilder {
     /// Updates the chain tip and MMR block count.
     ///
     /// Blocks in the MMR are pruned if the block count exceeds the maximum.
-    async fn update_chain_tip(&mut self, tip: BlockHeader, chain_state: ChainState) {
+    async fn update_chain_tip(&mut self, tip: BlockHeader, chain_state: Arc<RwLock<ChainState>>) {
+        // Lock the chain state.
+        let mut chain_state = chain_state.write().await;
+
         // Update MMR which lags by one block.
-        let mut chain_mmr = chain_state.chain_mmr.write().await;
-        let mut chain_tip_header = chain_state.chain_tip_header.write().await;
-        chain_mmr.add_block(chain_tip_header.clone(), true);
+        let mmr_tip = chain_state.chain_tip_header.clone();
+        chain_state.chain_mmr.add_block(mmr_tip, true);
 
         // Set the new tip.
-        *chain_tip_header = tip;
+        chain_state.chain_tip_header = tip;
 
         // Keep MMR pruned.
         let pruned_block_height =
-            (chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT)) as u32;
-        chain_mmr.prune_to(..pruned_block_height.into());
+            (chain_state.chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT))
+                as u32;
+        chain_state.chain_mmr.prune_to(..pruned_block_height.into());
     }
 
     /// Finds the list of accounts affected by a given account delta and network notes.

@@ -38,7 +38,7 @@ impl Coordinator {
         store: StoreClient,
     ) -> anyhow::Result<()> {
         // Load the account state from the store.
-        let block_num = config.chain_state.chain_tip_header.read().await.block_num();
+        let block_num = config.chain_state.read().await.chain_tip_header.block_num();
         let state = State::load(account, account_prefix, store, block_num).await?;
 
         // Construct the actor and add it to the registry for subsequent messaging.

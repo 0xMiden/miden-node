@@ -5,7 +5,7 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
-use tokio::sync::{AcquireError, Semaphore, mpsc};
+use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
 use url::Url;
 
 use crate::block_producer::BlockProducerClient;
@@ -29,7 +29,7 @@ pub struct AccountActorConfig {
     // undesirable due to the performance impact.
     pub tx_prover_url: Option<Url>,
     /// The latest chain state that account actors can rely on.
-    pub chain_state: ChainState,
+    pub chain_state: Arc<RwLock<ChainState>>,
 }
 
 /// Account actor that manages state and processes transactions for a single network account.
@@ -38,7 +38,7 @@ pub struct AccountActor {
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
     semaphore: Arc<Semaphore>,
-    chain_state: ChainState,
+    chain_state: Arc<RwLock<ChainState>>,
 }
 
 impl AccountActor {
@@ -82,10 +82,9 @@ impl AccountActor {
                     match permit {
                         Ok(_permit) => {
                             // Read the chain state.
-                            let chain_tip_header =  self.chain_state.chain_tip_header.read().await.clone();
-                            let chain_mmr =  self.chain_state.chain_mmr.read().await.clone();
+                            let chain_state = self.chain_state.read().await.clone();
                             // Find a candidate transaction and execute it.
-                            if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX, chain_tip_header, chain_mmr) {
+                            if let Some(tx_candidate) = state.select_candidate(crate::MAX_NOTES_PER_TX, chain_state) {
                                 self.execute_transactions(&mut state, tx_candidate).await;
                             }
                             // Disable the semaphore, allow events to be received.

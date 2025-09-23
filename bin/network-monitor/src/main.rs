@@ -16,10 +16,10 @@ mod status;
 use config::MonitorConfig;
 use remote_prover::run_remote_prover_test_task;
 use status::{ServiceStatus, run_remote_prover_status_task, run_rpc_status_task};
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::frontend::{ServerState, serve};
-use crate::remote_prover::generate_prover_test_payload;
+use crate::remote_prover::{ProofType, generate_prover_test_payload};
 use crate::status::{check_remote_prover_status, check_rpc_status};
 
 /// Component identifier for structured logging and tracing
@@ -177,8 +177,6 @@ async fn initialize_prover_tasks(
             .id();
         component_ids.insert(id, component_name);
 
-        let payload = generate_prover_test_payload(&initial_prover_status).await;
-
         // Extract proof_type directly from the service status
         let proof_type = match &initial_prover_status.details {
             crate::status::ServiceDetails::RemoteProverStatus(details) => {
@@ -187,23 +185,37 @@ async fn initialize_prover_tasks(
             _ => unreachable!("This is for remote provers only"),
         };
 
-        // Spawn the remote prover test task
-        let (prover_test_tx, prover_test_rx) = watch::channel(initial_prover_status.clone());
+        // Only spawn test tasks for transaction provers
+        let prover_test_rx = if matches!(proof_type, ProofType::Transaction) {
+            debug!("Starting transaction proof tests for prover: {}", name);
+            let payload = generate_prover_test_payload(&initial_prover_status).await;
+            let (prover_test_tx, prover_test_rx) = watch::channel(initial_prover_status.clone());
 
-        let id = tasks
-            .spawn(async move {
-                Box::pin(run_remote_prover_test_task(
-                    prover_url.clone(),
-                    &name,
-                    proof_type,
-                    payload,
-                    prover_test_tx,
-                ))
-                .await
-            })
-            .id();
-        let component_name = format!("prover-test-{}", i + 1);
-        component_ids.insert(id, component_name);
+            let id = tasks
+                .spawn(async move {
+                    Box::pin(run_remote_prover_test_task(
+                        prover_url.clone(),
+                        &name,
+                        proof_type,
+                        payload,
+                        prover_test_tx,
+                    ))
+                    .await
+                })
+                .id();
+            let component_name = format!("prover-test-{}", i + 1);
+            component_ids.insert(id, component_name);
+
+            prover_test_rx
+        } else {
+            debug!(
+                "Skipping prover tests for {} (supports {:?} proofs, only testing Transaction proofs)",
+                name, proof_type
+            );
+            // For non-transaction provers, create a dummy receiver with no test task
+            let (_tx, rx) = watch::channel(initial_prover_status.clone());
+            rx
+        };
 
         prover_rxs.push((prover_status_rx, prover_test_rx));
     }

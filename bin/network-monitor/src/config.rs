@@ -14,7 +14,7 @@ const DEFAULT_PORT: u16 = 3000;
 const RPC_URL_ENV_VAR: &str = "MIDEN_MONITOR_RPC_URL";
 const REMOTE_PROVER_URLS_ENV_VAR: &str = "MIDEN_MONITOR_REMOTE_PROVER_URLS";
 const PORT_ENV_VAR: &str = "MIDEN_MONITOR_PORT";
-pub const ENABLE_OTEL_ENV_VAR: &str = "MIDEN_MONITOR_ENABLE_OTEL";
+const ENABLE_OTEL_ENV_VAR: &str = "MIDEN_MONITOR_ENABLE_OTEL";
 
 /// Configuration for the monitor.
 ///
@@ -27,6 +27,8 @@ pub struct MonitorConfig {
     pub remote_prover_urls: Vec<Url>,
     /// The port of the monitor.
     pub port: u16,
+    /// Whether to enable OpenTelemetry.
+    pub enable_otel: bool,
 }
 
 impl MonitorConfig {
@@ -38,6 +40,7 @@ impl MonitorConfig {
     /// - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: The URLs of the remote provers for status checking,
     ///   comma separated.
     /// - `MIDEN_MONITOR_PORT`: The port of the monitor.
+    /// - `MIDEN_MONITOR_ENABLE_OTEL`: Whether to enable OpenTelemetry.
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
         let rpc_url =
             std::env::var(RPC_URL_ENV_VAR).unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
@@ -57,10 +60,16 @@ impl MonitorConfig {
             .unwrap_or_else(|_| DEFAULT_PORT.to_string())
             .parse::<u16>()?;
 
+        let enable_otel = std::env::var(ENABLE_OTEL_ENV_VAR)
+            .unwrap_or_default()
+            .parse::<bool>()
+            .unwrap_or_default();
+
         Ok(MonitorConfig {
             rpc_url: Url::parse(&rpc_url)?,
             remote_prover_urls,
             port,
+            enable_otel,
         })
     }
 }

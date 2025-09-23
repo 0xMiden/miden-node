@@ -18,7 +18,6 @@ use remote_prover::run_remote_prover_test_task;
 use status::{ServiceStatus, run_remote_prover_status_task, run_rpc_status_task};
 use tracing::info;
 
-use crate::config::ENABLE_OTEL_ENV_VAR;
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::generate_prover_test_payload;
 use crate::status::{check_remote_prover_status, check_rpc_status};
@@ -38,16 +37,6 @@ pub const COMPONENT: &str = "miden-network-monitor";
 /// unexpectedly, the entire process exits.
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if std::env::var(ENABLE_OTEL_ENV_VAR)
-        .unwrap_or_default()
-        .parse::<bool>()
-        .unwrap_or_default()
-    {
-        miden_node_utils::logging::setup_tracing(OpenTelemetry::Enabled)?;
-    } else {
-        miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
-    }
-
     // Load configuration from environment variables
     let config = match MonitorConfig::from_env() {
         Ok(config) => {
@@ -58,6 +47,12 @@ async fn main() -> anyhow::Result<()> {
             anyhow::bail!("failed to load configuration: {e}");
         },
     };
+
+    if config.enable_otel {
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Enabled)?;
+    } else {
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
+    }
 
     let mut tasks = JoinSet::new();
     let mut component_ids: HashMap<_, String> = HashMap::new();

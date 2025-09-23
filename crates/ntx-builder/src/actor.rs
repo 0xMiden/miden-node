@@ -32,7 +32,7 @@ pub struct AccountActorConfig {
 }
 
 #[derive(Default, Debug)]
-enum ActorState {
+enum ActorMode {
     #[default]
     AwaitingEvents,
     ExecutingTransactions,
@@ -41,7 +41,7 @@ enum ActorState {
 
 /// Account actor that manages state and processes transactions for a single network account.
 pub struct AccountActor {
-    state: ActorState,
+    state: ActorMode,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
@@ -56,7 +56,7 @@ impl AccountActor {
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let actor = Self {
-            state: ActorState::default(),
+            state: ActorMode::default(),
             event_rx,
             block_producer,
             prover,
@@ -68,38 +68,39 @@ impl AccountActor {
     /// Runs the account actor, processing events and managing state until a reason to shutdown is
     /// encountered.
     pub async fn run(mut self, mut state: State, semaphore: Arc<Semaphore>) -> ActorShutdownReason {
-        // Use this to toggle between the semaphore and pending futures so that we don't thrash the
-        // transaction execution flow when there is nothing to process.
         loop {
+            // Enable or disable transaction execution based on actor mode.
             let tx_execution_fut = match self.state {
                 // Disable transaction execution.
-                ActorState::AwaitingEvents | ActorState::AwaitingCommit(_) => {
+                ActorMode::AwaitingEvents | ActorMode::AwaitingCommit(_) => {
                     std::future::pending().boxed()
                 },
                 // Enable transaction execution.
-                ActorState::ExecutingTransactions => semaphore.acquire().boxed(),
+                ActorMode::ExecutingTransactions => semaphore.acquire().boxed(),
             };
             tokio::select! {
+                // Handle mempool events.
                 event = self.event_rx.recv() => {
                     let Some(event) = event else {
                          return ActorShutdownReason::EventChannelClosed;
                     };
                     // Re-enable transaction execution if the transaction being waited on has been
                     // committed.
-                    if let ActorState::AwaitingCommit(tx_id) = self.state {
+                    if let ActorMode::AwaitingCommit(tx_id) = self.state {
                         if let MempoolEvent::BlockCommitted { txs, .. } = &event {
                             if txs.contains(&tx_id) {
-                                self.state = ActorState::ExecutingTransactions;
+                                self.state = ActorMode::ExecutingTransactions;
                             }
                         }
                     } else {
-                        self.state = ActorState::ExecutingTransactions;
+                        self.state = ActorMode::ExecutingTransactions;
                     }
                     // Update state.
                     if let Some(shutdown_reason) = state.mempool_update(event).await {
                         return shutdown_reason;
                     }
                 },
+                // Execute transactions.
                 permit = tx_execution_fut => {
                     match permit {
                         Ok(_permit) => {
@@ -110,7 +111,7 @@ impl AccountActor {
                                 self.execute_transactions(&mut state, tx_candidate).await;
                             } else {
                                 // No transactions to execute, wait for events.
-                                self.state = ActorState::AwaitingEvents;
+                                self.state = ActorMode::AwaitingEvents;
                             }
                         }
                         Err(err) => {
@@ -143,13 +144,13 @@ impl AccountActor {
         match execution_result {
             // Execution completed without failed notes.
             Ok((tx_id, failed)) if failed.is_empty() => {
-                self.state = ActorState::AwaitingCommit(tx_id);
+                self.state = ActorMode::AwaitingCommit(tx_id);
             },
             // Execution completed with some failed notes.
             Ok((tx_id, failed)) => {
                 let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
                 state.notes_failed(notes.as_slice(), block_num);
-                self.state = ActorState::AwaitingCommit(tx_id);
+                self.state = ActorMode::AwaitingCommit(tx_id);
             },
             // Transaction execution failed.
             Err(err) => {
@@ -158,7 +159,7 @@ impl AccountActor {
                     NtxError::AllNotesFailed(failed) => {
                         let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
                         state.notes_failed(notes.as_slice(), block_num);
-                        self.state = ActorState::AwaitingEvents;
+                        self.state = ActorMode::AwaitingEvents;
                     },
                     NtxError::InputNotes(_)
                     | NtxError::NoteFilter(_)
@@ -166,7 +167,7 @@ impl AccountActor {
                     | NtxError::Proving(_)
                     | NtxError::Submission(_)
                     | NtxError::Panic(_) => {
-                        self.state = ActorState::AwaitingEvents;
+                        self.state = ActorMode::AwaitingEvents;
                     },
                 }
             },

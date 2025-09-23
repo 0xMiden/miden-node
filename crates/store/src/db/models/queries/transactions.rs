@@ -278,7 +278,7 @@ pub fn select_transactions_records(
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
     const MAX_PAYLOAD_BYTES: usize = 4 * 1024 * 1024; // 4 MB
-    const CHUNK_SIZE: i64 = 1000; // Read 1000 transactions at a time
+    const NUM_TXS_PER_CHUNK: i64 = 1000; // Read 1000 transactions at a time
 
     QueryParamAccountIdLimit::check(account_ids.len())?;
 
@@ -308,7 +308,7 @@ pub fn select_transactions_records(
                     schema::transactions::transaction_id.asc(),
                 ))
                 .offset(offset)
-                .limit(CHUNK_SIZE)
+                .limit(NUM_TXS_PER_CHUNK)
                 .load::<TransactionRecordRaw>(conn)
                 .map_err(DatabaseError::from)?;
 
@@ -336,10 +336,10 @@ pub fn select_transactions_records(
             break;
         }
 
-        offset += CHUNK_SIZE;
+        offset += NUM_TXS_PER_CHUNK;
 
         // If we got fewer transactions than requested, we've reached the end
-        if chunk_len < CHUNK_SIZE {
+        if chunk_len < NUM_TXS_PER_CHUNK {
             break;
         }
     }

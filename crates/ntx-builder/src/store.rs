@@ -3,7 +3,8 @@ use std::time::Duration;
 use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_node_proto::errors::ConversionError;
+use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
+use miden_node_proto::generated::account::AccountDetails;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_objects::account::Account;
@@ -216,10 +217,7 @@ impl StoreClient {
             .map(|account_details| match account_details.details {
                 Some(details) => Account::read_from_bytes(&details)
                     .map_err(|err| ConversionError::deserialization_error("account", err)),
-                None => Err(ConversionError::MissingFieldInProtobufRepresentation {
-                    entity: "AccountDetails",
-                    field_name: "details",
-                }),
+                None => Err(AccountDetails::missing_field("details")),
             })
             .collect();
 

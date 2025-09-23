@@ -318,7 +318,6 @@ pub fn select_transactions_records(
         }
 
         // Add transactions from this chunk one by one until we hit the limit
-        let chunk_len = chunk.len() as i64;
         let mut added_from_chunk = 0;
         for tx in chunk {
             if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES as i64 {
@@ -331,17 +330,12 @@ pub fn select_transactions_records(
             }
         }
 
-        // If we couldn't add all transactions from this chunk, we've hit the size limit
-        if added_from_chunk < chunk_len {
+        // Break if chunk incomplete (size limit hit or data exhausted)
+        if added_from_chunk < NUM_TXS_PER_CHUNK {
             break;
         }
 
         offset += NUM_TXS_PER_CHUNK;
-
-        // If we got fewer transactions than requested, we've reached the end
-        if chunk_len < NUM_TXS_PER_CHUNK {
-            break;
-        }
     }
 
     // Ensure block consistency: remove complete blocks from the end until we're under the size

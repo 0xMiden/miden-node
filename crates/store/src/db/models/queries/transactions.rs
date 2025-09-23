@@ -338,25 +338,19 @@ pub fn select_transactions_records(
         offset += NUM_TXS_PER_CHUNK;
     }
 
-    // Ensure block consistency: remove complete blocks from the end until we're under the size
-    // limit
+    // Ensure block consistency: remove the last block if it's incomplete
+    // (we may have stopped loading mid-block due to size constraints)
     let mut filtered_raw = all_transactions;
 
-    while total_size > MAX_PAYLOAD_BYTES as i64 {
-        if let Some(last_tx) = filtered_raw.last() {
-            let last_block_num = last_tx.block_num;
-            // Calculate the size of transactions we're about to remove
-            let removed_size: i64 = filtered_raw
-                .iter()
-                .filter(|tx| tx.block_num == last_block_num)
-                .map(|tx| tx.size_in_bytes)
-                .sum();
+    if filtered_raw.len() > 1 {
+        let last_idx = filtered_raw.len() - 1;
+        let last_block_num = filtered_raw[last_idx].block_num;
+        let prev_block_num = filtered_raw[last_idx - 1].block_num;
 
+        // If the last transaction is from the same block as the previous one,
+        // we may have stopped mid-block, so remove the entire last block
+        if last_block_num == prev_block_num {
             filtered_raw.retain(|tx| tx.block_num != last_block_num);
-            total_size -= removed_size;
-        } else {
-            // This shouldn't happen since we check !filtered_raw.is_empty() above, but be safe
-            break;
         }
     }
 

@@ -198,7 +198,7 @@ async fn test_remote_prover(
                 name: name.to_string(),
                 status: Status::Unhealthy,
                 last_checked: current_time,
-                error: Some(e.to_string()),
+                error: Some(tonic_status_to_json(&e)),
                 details: ServiceDetails::RemoteProverTest(ProverTestDetails {
                     test_duration_ms: 0,
                     proof_size_bytes: 0,
@@ -209,6 +209,44 @@ async fn test_remote_prover(
             }
         },
     }
+}
+
+/// Converts a `tonic::Status` error to a JSON string with structured error information.
+///
+/// This function extracts the code, message, details, and metadata from a `tonic::Status`
+/// error and serializes them into a JSON string for structured error reporting.
+///
+/// # Arguments
+///
+/// * `status` - The `tonic::Status` error to convert.
+///
+/// # Returns
+///
+/// A JSON string containing the structured error information.
+fn tonic_status_to_json(status: &tonic::Status) -> String {
+    let error_json = serde_json::json!({
+        "code": format!("{:?}", status.code()),
+        "message": status.message(),
+        "details": if status.details().is_empty() {
+            serde_json::Value::Null
+        } else {
+            serde_json::Value::String(format!("details present ({} bytes)", status.details().len()))
+        },
+        "metadata": {
+            "headers": status.metadata().iter().map(|kv| {
+                match kv {
+                    tonic::metadata::KeyAndValueRef::Ascii(key, value) => {
+                        (key.as_str(), value.to_str().unwrap_or("<invalid ascii>"))
+                    },
+                    tonic::metadata::KeyAndValueRef::Binary(key, _value) => {
+                        (key.as_str(), "<binary data>")
+                    }
+                }
+            }).collect::<std::collections::HashMap<_, _>>()
+        }
+    });
+
+    error_json.to_string()
 }
 
 // PROPOSED BLOCK GENERATOR

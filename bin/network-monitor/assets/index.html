@@ -240,7 +240,22 @@
                                         ${service.testError ? `
                                             <div class="metric-row error">
                                                 <span class="metric-label">Test Error:</span>
-                                                <span class="metric-value">${service.testError}</span>
+                                                <span class="metric-value">
+                                                    ${(() => {
+                                                        try {
+                                                            const errorObj = JSON.parse(service.testError);
+                                                            return errorObj.code || 'Unknown error code';
+                                                        } catch (e) {
+                                                            return service.testError;
+                                                        }
+                                                    })()}
+                                                    <button class="copy-button" data-json="${service.testError.replace(/"/g, '&quot;')}" onclick="copyToClipboard(this.dataset.json, event)" title="Copy error JSON">
+                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                        </svg>
+                                                    </button>
+                                                </span>
                                             </div>
                                         ` : ''}
                                     </div>

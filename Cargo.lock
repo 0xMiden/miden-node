@@ -2205,6 +2205,7 @@ dependencies = [
  "miden-testing",
  "miden-tx",
  "serde",
+ "serde_json",
  "tokio",
  "tonic",
  "tracing",

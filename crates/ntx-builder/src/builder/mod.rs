@@ -11,7 +11,7 @@ use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::PartialMmr;
 use miden_objects::transaction::PartialBlockchain;
-use tokio::sync::{Barrier, RwLock, Semaphore};
+use tokio::sync::{Barrier, RwLock};
 use tokio::time;
 use url::Url;
 
@@ -102,7 +102,7 @@ impl NetworkTransactionBuilder {
             tx_prover_url,
             ticker_interval,
             bp_checkpoint,
-            coordinator: Coordinator::default(),
+            coordinator: Coordinator::new(MAX_IN_PROGRESS_TXS),
         }
     }
 
@@ -132,11 +132,9 @@ impl NetworkTransactionBuilder {
         // Create chain state that will be updated by the coordinator and read by actors.
         let chain_state = Arc::new(RwLock::new(ChainState::new(chain_tip_header, chain_mmr)));
         // Create a semaphore to limit the number of in-progress transactions across all actors.
-        let semaphore = Arc::new(Semaphore::new(MAX_IN_PROGRESS_TXS));
         let config = AccountActorConfig {
             block_producer_url: self.block_producer_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
-            semaphore,
             chain_state: chain_state.clone(),
         };
 
@@ -219,7 +217,6 @@ impl NetworkTransactionBuilder {
             // Update chain state and do not broadcast.
             MempoolEvent::BlockCommitted { header, .. } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
-                // TODO: should we send this through?
                 self.coordinator.broadcast_event(event);
                 Ok(())
             },

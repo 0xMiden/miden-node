@@ -164,7 +164,6 @@ impl State {
                 }
             },
             MempoolEvent::BlockCommitted { txs, .. } => {
-                // TODO: should we actually do this?
                 for tx in txs {
                     self.commit_transaction(tx);
                 }

@@ -13,6 +13,7 @@ use miden_objects::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionArgs,
+    TransactionId,
 };
 use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
@@ -101,7 +102,7 @@ impl NtxContext {
     pub fn execute_transaction(
         self,
         tx: TransactionCandidate,
-    ) -> impl FutureMaybeSend<NtxResult<Vec<FailedNote>>> {
+    ) -> impl FutureMaybeSend<NtxResult<(TransactionId, Vec<FailedNote>)>> {
         let TransactionCandidate {
             account,
             notes,
@@ -123,8 +124,9 @@ impl NtxContext {
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed)).await?;
+                let tx_id = proven.id();
                 self.submit(proven).await?;
-                Ok(failed)
+                Ok((tx_id, failed))
             }
             .in_current_span()
             .await

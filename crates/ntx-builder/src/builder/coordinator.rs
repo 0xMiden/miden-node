@@ -1,11 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::account::Account;
-use tokio::sync::mpsc;
+use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
 use crate::actor::{AccountActor, AccountActorConfig, ActorShutdownReason};
@@ -16,7 +17,6 @@ use crate::store::StoreClient;
 // ================================================================================================
 
 /// Coordinator for managing [`AccountActor`] instances, tasks, and associated communication.
-#[derive(Default)]
 pub struct Coordinator {
     /// Mapping of network account prefixes to their respective message channels. When actors are
     /// spawned, this registry is updated. The builder uses this registry to communicate with the
@@ -25,9 +25,20 @@ pub struct Coordinator {
     /// Join set for managing actor tasks. When an actor task completes, the actor's corresponding
     /// data from the registry is removed.
     actor_join_set: JoinSet<ActorShutdownReason>,
+    /// Semaphore for limiting the number of concurrent transactions across all network accounts.
+    semaphore: Arc<Semaphore>,
 }
 
 impl Coordinator {
+    /// Creates a new coordinator with the specified maximum number of inflight transactions.
+    pub fn new(max_inflight_transactions: usize) -> Self {
+        Self {
+            actor_registry: HashMap::new(),
+            actor_join_set: JoinSet::new(),
+            semaphore: Arc::new(Semaphore::new(max_inflight_transactions)),
+        }
+    }
+
     /// Spawns a new actor to manage the state of the provided network account.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config, store))]
     pub async fn spawn_actor(
@@ -46,7 +57,8 @@ impl Coordinator {
         self.actor_registry.insert(account_prefix, event_tx.clone());
 
         // Run the actor.
-        self.actor_join_set.spawn(async move { actor.run(state).await });
+        let semaphore = self.semaphore.clone();
+        self.actor_join_set.spawn(async move { actor.run(state, semaphore).await });
         Ok(())
     }
 

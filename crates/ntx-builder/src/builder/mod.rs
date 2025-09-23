@@ -141,14 +141,7 @@ impl NetworkTransactionBuilder {
         // Create initial set of actors based on all known network accounts.
         let accounts = store.get_network_accounts().await?;
         for account in accounts {
-            let account_prefix = NetworkAccountPrefix::try_from(account.id())
-                .expect("get_network_accounts endpoint only returns network accounts");
-
-            self.coordinator
-                .spawn_actor(account, account_prefix, &config, store.clone())
-                .await?;
-
-            tracing::info!("created initial actor for account prefix: {}", account_prefix);
+            self.coordinator.spawn_actor(account, &config, store.clone()).await?;
         }
 
         // Main loop which manages actors and passes mempool events to them.
@@ -192,17 +185,9 @@ impl NetworkTransactionBuilder {
             MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     // Spawn new actors for account creation transactions.
-                    if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) {
-                        self.coordinator
-                            .spawn_actor(
-                                account.clone(),
-                                account_prefix,
-                                account_actor_config,
-                                store.clone(),
-                            )
-                            .await?;
-                        tracing::info!("created new actor for account prefix: {}", account_prefix);
-                    }
+                    self.coordinator
+                        .spawn_actor(account.clone(), account_actor_config, store.clone())
+                        .await?;
                     Ok(())
                 } else {
                     // Send event to affected accounts.

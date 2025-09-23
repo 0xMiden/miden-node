@@ -40,14 +40,21 @@ impl Coordinator {
     }
 
     /// Spawns a new actor to manage the state of the provided network account.
+    ///
+    /// If the account is not a network account, the function returns Ok(()) without spawning an
+    /// actor.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config, store))]
     pub async fn spawn_actor(
         &mut self,
         account: Account,
-        account_prefix: NetworkAccountPrefix,
         config: &AccountActorConfig,
         store: StoreClient,
     ) -> anyhow::Result<()> {
+        // Only spawn actors for network accounts.
+        let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) else {
+            return Ok(());
+        };
+
         // Load the account state from the store.
         let block_num = config.chain_state.read().await.chain_tip_header.block_num();
         let state = State::load(account, account_prefix, store, block_num).await?;
@@ -59,6 +66,8 @@ impl Coordinator {
         // Run the actor.
         let semaphore = self.semaphore.clone();
         self.actor_join_set.spawn(async move { actor.run(state, semaphore).await });
+
+        tracing::info!("created actor for account prefix: {}", account_prefix);
         Ok(())
     }
 

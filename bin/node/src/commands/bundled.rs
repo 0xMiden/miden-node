@@ -124,7 +124,6 @@ impl BundledCommand {
         block_producer: BlockProducerConfig,
         grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
-        let should_start_ntb = !ntx_config.disabled;
         // Start listening on all gRPC urls so that inter-component connections can be created
         // before each component is fully started up.
         //
@@ -180,6 +179,7 @@ impl BundledCommand {
             .id();
 
         // A sync point between the ntb and block-producer components.
+        let should_start_ntb = !ntx_config.disabled;
         let checkpoint = if should_start_ntb {
             Barrier::new(2)
         } else {

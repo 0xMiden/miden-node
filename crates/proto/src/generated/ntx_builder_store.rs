@@ -330,6 +330,7 @@ pub mod ntx_builder_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Returns a list of all network accounts.
         pub async fn get_network_accounts(
             &mut self,
             request: impl tonic::IntoRequest<()>,
@@ -414,6 +415,7 @@ pub mod ntx_builder_server {
             tonic::Response<super::MaybeAccountDetails>,
             tonic::Status,
         >;
+        /// Returns a list of all network accounts.
         async fn get_network_accounts(
             &self,
             request: tonic::Request<()>,

@@ -1,12 +1,9 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
-use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_node_proto::domain::note::NetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::PartialMmr;
@@ -182,7 +179,7 @@ impl NetworkTransactionBuilder {
         chain_state: Arc<RwLock<ChainState>>,
     ) -> anyhow::Result<()> {
         match &event {
-            MempoolEvent::TransactionAdded { account_delta, network_notes, .. } => {
+            MempoolEvent::TransactionAdded { account_delta, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     // Spawn new actors for account creation transactions.
                     self.coordinator
@@ -190,12 +187,8 @@ impl NetworkTransactionBuilder {
                         .await?;
                     Ok(())
                 } else {
-                    // Send event to affected accounts.
-                    let affected_accounts =
-                        Self::find_affected_accounts(account_delta.as_ref(), network_notes);
-                    for account_prefix in affected_accounts {
-                        self.coordinator.send_event(account_prefix, event);
-                    }
+                    // Broadcast event.
+                    self.coordinator.broadcast_event(event);
                     Ok(())
                 }
             },
@@ -232,37 +225,5 @@ impl NetworkTransactionBuilder {
             (chain_state.chain_mmr.chain_length().as_usize().saturating_sub(MAX_BLOCK_COUNT))
                 as u32;
         chain_state.chain_mmr.prune_to(..pruned_block_height.into());
-    }
-
-    /// Finds the list of accounts affected by a given account delta and network notes.
-    fn find_affected_accounts(
-        account_delta: Option<&AccountUpdateDetails>,
-        network_notes: &[NetworkNote],
-    ) -> HashSet<NetworkAccountPrefix> {
-        let mut affected_accounts = HashSet::new();
-
-        // Find affected accounts from account delta.
-        if let Some(delta) = account_delta {
-            let account_prefix = match delta {
-                AccountUpdateDetails::Delta(delta) => {
-                    NetworkAccountPrefix::try_from(delta.id()).ok()
-                },
-                // New accounts are handled elsewhere. Private accounts are not handled at all.
-                AccountUpdateDetails::New(_) | AccountUpdateDetails::Private => None,
-            };
-
-            if let Some(prefix) = account_prefix {
-                affected_accounts.insert(prefix);
-            }
-        }
-
-        // Find affected accounts from network notes.
-        for note in network_notes {
-            if let NetworkNote::SingleTarget(note) = note {
-                affected_accounts.insert(note.account_prefix());
-            }
-        }
-
-        affected_accounts
     }
 }

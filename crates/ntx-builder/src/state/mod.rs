@@ -56,7 +56,7 @@ pub struct State {
     /// an impact are ignored.
     inflight_txs: BTreeMap<TransactionId, TransactionImpact>,
 
-    /// A mapping of network note's to their account.
+    /// A set of nullifiers which have been registered for the network account.
     nullifier_idx: HashSet<Nullifier>,
 }
 
@@ -75,7 +75,7 @@ impl State {
         let notes = store
             .get_unconsumed_network_notes_for_account(account_prefix, block_num.as_u32())
             .await?;
-        let account = AccountState::new(account_prefix, account, notes);
+        let account = AccountState::new(account, notes);
 
         let state = Self {
             account,

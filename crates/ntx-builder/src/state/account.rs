@@ -95,11 +95,7 @@ pub struct AccountState {
 }
 
 impl AccountState {
-    pub fn new(
-        account_prefix: NetworkAccountPrefix,
-        account: Account,
-        notes: Vec<NetworkNote>,
-    ) -> Self {
+    pub fn new(account: Account, notes: Vec<NetworkNote>) -> Self {
         let mut state = Self {
             committed: Some(account),
             inflight: VecDeque::default(),
@@ -110,9 +106,7 @@ impl AccountState {
         for note in notes {
             // Currently only support single target network notes in NTB.
             if let NetworkNote::SingleTarget(note) = note {
-                if note.account_prefix() == account_prefix {
-                    state.add_note(note);
-                }
+                state.add_note(note);
             }
         }
 

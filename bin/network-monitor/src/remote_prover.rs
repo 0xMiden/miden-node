@@ -9,14 +9,11 @@ use anyhow::Context;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverClient};
 use miden_node_proto::generated as proto;
 use miden_objects::asset::{Asset, FungibleAsset};
-use miden_objects::batch::ProposedBatch;
-use miden_objects::block::ProposedBlock;
 use miden_objects::note::NoteType;
 use miden_objects::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
 use miden_objects::transaction::TransactionWitness;
 use miden_testing::{Auth, MockChainBuilder};
 use miden_tx::utils::Serializable;
-use miden_tx::{LocalTransactionProver, ProvingOptions};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
@@ -249,29 +246,6 @@ fn tonic_status_to_json(status: &tonic::Status) -> String {
     error_json.to_string()
 }
 
-// PROPOSED BLOCK GENERATOR
-// ================================================================================================
-
-pub fn generate_proposed_block() -> ProposedBlock {
-    let mockchain = miden_testing::MockChain::new();
-    mockchain.propose_block(vec![]).expect("Empty blocks are valid")
-}
-
-// PROPOSED BATCH GENERATOR
-// ================================================================================================
-
-pub async fn generate_proposed_batch() -> ProposedBatch {
-    let mockchain = miden_testing::MockChain::new();
-
-    let transaction = generate_mock_transaction().await.expect("Transaction wasn't generated");
-
-    let proven_tx = LocalTransactionProver::new(ProvingOptions::default())
-        .prove(transaction)
-        .unwrap();
-
-    mockchain.propose_transaction_batch(vec![proven_tx]).expect("Batch is valid")
-}
-
 // TRANSACTION WITNESS GENERATOR
 // ================================================================================================
 
@@ -331,26 +305,9 @@ pub async fn generate_mock_transaction() -> anyhow::Result<TransactionWitness> {
 // GENERATE TEST REQUEST PAYLOAD
 // ================================================================================================
 
-pub(crate) async fn generate_prover_test_payload(
-    service_status: &ServiceStatus,
-) -> proto::remote_prover::ProofRequest {
-    match service_status.details.clone() {
-        ServiceDetails::RemoteProverStatus(remote_prover_status_details) => {
-            match remote_prover_status_details.supported_proof_type {
-                ProofType::Transaction => proto::remote_prover::ProofRequest {
-                    proof_type: proto::remote_prover::ProofType::Transaction.into(),
-                    payload: generate_mock_transaction().await.unwrap().to_bytes(),
-                },
-                ProofType::Block => proto::remote_prover::ProofRequest {
-                    proof_type: proto::remote_prover::ProofType::Block.into(),
-                    payload: generate_proposed_block().to_bytes(),
-                },
-                ProofType::Batch => proto::remote_prover::ProofRequest {
-                    proof_type: proto::remote_prover::ProofType::Batch.into(),
-                    payload: generate_proposed_batch().await.to_bytes(),
-                },
-            }
-        },
-        _ => unreachable!("This is for remote provers only"),
+pub(crate) async fn generate_prover_test_payload() -> proto::remote_prover::ProofRequest {
+    proto::remote_prover::ProofRequest {
+        proof_type: proto::remote_prover::ProofType::Transaction.into(),
+        payload: generate_mock_transaction().await.unwrap().to_bytes(),
     }
 }

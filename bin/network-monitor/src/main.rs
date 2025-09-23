@@ -188,7 +188,7 @@ async fn initialize_prover_tasks(
         // Only spawn test tasks for transaction provers
         let prover_test_rx = if matches!(proof_type, ProofType::Transaction) {
             debug!("Starting transaction proof tests for prover: {}", name);
-            let payload = generate_prover_test_payload(&initial_prover_status).await;
+            let payload = generate_prover_test_payload().await;
             let (prover_test_tx, prover_test_rx) = watch::channel(initial_prover_status.clone());
 
             let id = tasks

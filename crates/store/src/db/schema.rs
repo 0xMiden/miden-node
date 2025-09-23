@@ -1,7 +1,7 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
-    account_storage_map_values (account_id, block_num, slot, key, is_latest_update) {
+    account_storage_map_values (account_id, block_num, slot, key) {
         account_id -> Binary,
         block_num -> BigInt,
         slot -> Integer,

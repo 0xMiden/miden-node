@@ -189,15 +189,15 @@ impl AccountUpdates {
 
     /// Returns the node ID that updated this account's commitment to the given value.
     ///
-    /// In other words, this returns the node ID where `node.to == from`. This infers the
+    /// In other words, this returns the ID of `node` where `node.to == from`. This infers the
     /// parent-child relationship where `parent.to == child.from`.
     fn parent(&self, from: &Word) -> Option<&NodeId> {
         self.to.get(from)
     }
 
-    /// Returns the node ID that consumed the given commitment,
+    /// Returns the node ID that consumed the given commitment.
     ///
-    /// In other words, this returns the node ID where `node.from == to`. This infers the
+    /// In other words, this returns the ID of `node` where `node.from == to`. This infers the
     /// parent-child relationship where `parent.to == child.from`.
     fn child(&self, to: &Word) -> Option<&NodeId> {
         self.from.get(to)

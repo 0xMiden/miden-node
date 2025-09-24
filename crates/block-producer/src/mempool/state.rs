@@ -74,6 +74,11 @@ impl InflightState {
         self.accounts.get(account).map(AccountUpdates::latest_commitment)
     }
 
+    /// Removes all the state of the node from tracking.
+    ///
+    /// Note that this simply removes the data and does not check that the data was associated with
+    /// the [`Node`] at the time of removal. The caller is responsible for ensuring that the given
+    /// node was still active in the state.
     pub(crate) fn remove(&mut self, node: &dyn Node) {
         for nullifier in node.nullifiers() {
             self.nullifiers.remove(&nullifier);
@@ -102,6 +107,8 @@ impl InflightState {
         }
     }
 
+    /// Inserts the node into the state, associating the data with the node's ID. This powers the
+    /// parent and child relationship lookups.
     pub(crate) fn insert(&mut self, id: NodeId, node: &dyn Node) {
         self.nullifiers.extend(node.nullifiers());
         self.output_notes.extend(node.output_notes().map(|note| (note, id)));

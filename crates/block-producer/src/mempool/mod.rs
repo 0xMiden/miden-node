@@ -1,14 +1,23 @@
 //! The [`Mempool`] is responsible for receiving transactions, and proposing transactions for
 //! inclusion in batches, and proposing batches for inclusion in the next block.
 //!
-//! It performs this task by maintaining a directed acyclic graph (DAG). Nodes in this graph
-//! represent transactions, batches and blocks. The DAG nature of the graph is important as this
-//! allows us to propose batches and blocks such that they only depend on already proposed nodes.
+//! It performs these tasks by maintaining a dependency graph between all inflight transactions,
+//! batches and blocks. A parent-child dependency edge between two nodes exists whenever the child
+//! consumes a piece of state that the parent node created. To be more specific, node `A` is a
+//! child of node `B`:
 //!
-//! This requirement allows us to create sensible nodes such that they are not co-dependent aka have
-//! no cycles. A cycle between batches would require that all batches within that cycle _must_ all
-//! be committed as part of the same block. This follows from the requirement that the next block
-//! in the blockchain _must_ be a transition from the current latest block's state.
+//! - if `B` created an output note which is the input note of `A`, or
+//! - if `B` updated account `x` to state `x'`, and `A` is updating the account from `x' -> x''`.
+//!
+//! Maintaining this dependency graph simplifies selecting transactions for new batches, and
+//! selecting batches for new blocks. This follows from the blockchain requirement that each block
+//! must build on the state of the previous block. This in turn implies that a child node can never
+//! be committed in a block before all of its parents.
+//!
+//! The mempool also enforces that the graph contains no cycles i.e. that the dependency graph
+//! is always a directed acyclic graph (DAG). While technically not illegal from a protocol
+//! perspective, allowing cycles between nodes would require that all nodes within the cycle be
+//! committed within the same block.
 //!
 //! While this is technically possible, the bookkeeping and implementation to allow this are
 //! infeasible, and both blocks and batches have constraints. This is also undersireable since if
@@ -22,9 +31,9 @@
 //!   state.
 //! - Parent/child edges between nodes in the graph are formed via state dependency.
 //! - Transactions are proposed for batch inclusion only once _all_ its ancestors have already been
-//!   included in a batch.
+//!   included in a batch (or are part of the currently proposed batch).
 //! - Similarly, batches are proposed for block inclusion once _all_ ancestors have been included in
-//!   a block.
+//!   a block (or are part of the currently proposed block).
 //! - Reverting a node reverts all descendents as well.
 
 use std::collections::HashMap;

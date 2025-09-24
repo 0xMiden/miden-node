@@ -277,7 +277,7 @@ pub fn select_transactions_records(
     account_ids: &[AccountId],
     block_range: RangeInclusive<BlockNumber>,
 ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
-    const MAX_PAYLOAD_BYTES: usize = 4 * 1024 * 1024; // 4 MB
+    const MAX_PAYLOAD_BYTES: i64 = 4 * 1024 * 1024; // 4 MB
     const NUM_TXS_PER_CHUNK: i64 = 1000; // Read 1000 transactions at a time
 
     QueryParamAccountIdLimit::check(account_ids.len())?;
@@ -320,7 +320,7 @@ pub fn select_transactions_records(
         // Add transactions from this chunk one by one until we hit the limit
         let mut added_from_chunk = 0;
         for tx in chunk {
-            if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES as i64 {
+            if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES {
                 total_size += tx.size_in_bytes;
                 all_transactions.push(tx);
                 added_from_chunk += 1;
@@ -342,7 +342,7 @@ pub fn select_transactions_records(
     // (we may have stopped loading mid-block due to size constraints)
     let mut filtered_raw = all_transactions;
 
-    if filtered_raw.len() > 1 {
+    if total_size >= MAX_PAYLOAD_BYTES {
         let last_idx = filtered_raw.len() - 1;
         let last_block_num = filtered_raw[last_idx].block_num;
         let prev_block_num = filtered_raw[last_idx - 1].block_num;

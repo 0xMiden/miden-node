@@ -23,6 +23,7 @@ use crate::status::{NetworkStatus, ServiceStatus};
 pub struct ServerState {
     pub rpc: watch::Receiver<ServiceStatus>,
     pub provers: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
+    pub faucet: Option<watch::Receiver<ServiceStatus>>,
 }
 
 /// Runs the frontend server.
@@ -77,6 +78,11 @@ async fn get_status(
     for (prover_status_rx, prover_test_rx) in &server_state.provers {
         services.push(prover_status_rx.borrow().clone());
         services.push(prover_test_rx.borrow().clone());
+    }
+
+    // Collect faucet status if available
+    if let Some(faucet_rx) = &server_state.faucet {
+        services.push(faucet_rx.borrow().clone());
     }
 
     let network_status = NetworkStatus { services, last_updated: current_time };

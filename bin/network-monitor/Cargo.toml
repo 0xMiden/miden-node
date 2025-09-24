@@ -22,8 +22,10 @@ miden-node-utils = { workspace = true }
 miden-objects    = { features = ["std", "testing"], workspace = true }
 miden-testing    = { workspace = true }
 miden-tx         = { workspace = true }
+reqwest          = { features = ["json"], version = "0.12" }
 serde            = { features = ["derive"], version = "1.0" }
 serde_json       = { version = "1.0" }
+sha2             = { version = "0.10" }
 tokio            = { features = ["full"], workspace = true }
 tonic            = { features = ["codegen", "prost", "tls-native-roots", "transport"], workspace = true }
 tracing          = { workspace = true }

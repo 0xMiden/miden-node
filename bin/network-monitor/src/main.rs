@@ -9,18 +9,20 @@ use tokio::sync::watch::Receiver;
 use tokio::task::{Id, JoinSet};
 
 mod config;
+mod faucet;
 mod frontend;
 mod remote_prover;
 mod status;
 
 use config::MonitorConfig;
+use faucet::run_faucet_test_task;
 use remote_prover::run_remote_prover_test_task;
 use status::{ServiceStatus, run_remote_prover_status_task, run_rpc_status_task};
 use tracing::{debug, info};
 
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload};
-use crate::status::{check_remote_prover_status, check_rpc_status};
+use crate::status::{ServiceDetails, Status, check_remote_prover_status, check_rpc_status};
 
 /// Component identifier for structured logging and tracing
 pub const COMPONENT: &str = "miden-network-monitor";
@@ -63,8 +65,11 @@ async fn main() -> anyhow::Result<()> {
     // Initialize the prover checkers & tests tasks.
     let prover_rxs = initialize_prover_tasks(&config, &mut tasks, &mut component_ids).await;
 
+    // Initialize the faucet testing task.
+    let faucet_rx = initialize_faucet_task(&config, &mut tasks, &mut component_ids);
+
     // Initialize HTTP server.
-    initialize_http_server(&config, rpc_rx, prover_rxs, &mut tasks, &mut component_ids);
+    initialize_http_server(&config, rpc_rx, prover_rxs, faucet_rx, &mut tasks, &mut component_ids);
 
     handle_failure(tasks, component_ids).await
 }
@@ -223,6 +228,65 @@ async fn initialize_prover_tasks(
     prover_rxs
 }
 
+// FAUCET TASK INITIALIZER
+// ================================================================================================
+
+/// Initializes the faucet testing task.
+///
+/// This function initializes the faucet testing task and returns a receiver for the faucet status.
+///
+/// # Arguments
+///
+/// * `config` - The configuration for the faucet service.
+/// * `tasks` - The join set for the tasks.
+/// * `component_ids` - The component IDs.
+///
+/// # Returns
+///
+/// An optional receiver for the faucet status.
+fn initialize_faucet_task(
+    config: &MonitorConfig,
+    tasks: &mut JoinSet<Result<(), anyhow::Error>>,
+    component_ids: &mut HashMap<Id, String>,
+) -> Option<Receiver<ServiceStatus>> {
+    if let Some(faucet_url) = &config.faucet_url {
+        let current_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .context("failed to get current time")
+            .expect("Should work in std")
+            .as_secs();
+
+        // Create initial faucet test status
+        let initial_faucet_status = ServiceStatus {
+            name: "Faucet".to_string(),
+            status: Status::Unknown,
+            last_checked: current_time,
+            error: None,
+            details: ServiceDetails::FaucetTest(crate::faucet::FaucetTestDetails {
+                test_duration_ms: 0,
+                success_count: 0,
+                failure_count: 0,
+                last_tx_id: None,
+                last_note_id: None,
+                challenge_difficulty: None,
+            }),
+        };
+
+        // Spawn the faucet testing task
+        let (faucet_tx, faucet_rx) = watch::channel(initial_faucet_status);
+        let faucet_url = faucet_url.clone();
+        let id = tasks
+            .spawn(async move { run_faucet_test_task(faucet_url, faucet_tx).await })
+            .id();
+        component_ids.insert(id, "faucet-test".to_string());
+
+        Some(faucet_rx)
+    } else {
+        info!("Faucet URL not configured, skipping faucet testing");
+        None
+    }
+}
+
 // HTTP SERVER INITIALIZER
 // ================================================================================================
 
@@ -235,16 +299,22 @@ async fn initialize_prover_tasks(
 /// * `config` - The configuration for the HTTP server.
 /// * `rpc_rx` - The receiver for the RPC status.
 /// * `prover_rxs` - The receivers for the prover status.
+/// * `faucet_rx` - The optional receiver for the faucet status.
 /// * `tasks` - The join set for the tasks.
 /// * `component_ids` - The component IDs.
 pub(crate) fn initialize_http_server(
     config: &MonitorConfig,
     rpc_rx: Receiver<ServiceStatus>,
     prover_rxs: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
+    faucet_rx: Option<Receiver<ServiceStatus>>,
     tasks: &mut JoinSet<Result<(), anyhow::Error>>,
     component_ids: &mut HashMap<Id, String>,
 ) {
-    let server_state = ServerState { rpc: rpc_rx, provers: prover_rxs };
+    let server_state = ServerState {
+        rpc: rpc_rx,
+        provers: prover_rxs,
+        faucet: faucet_rx,
+    };
 
     let server_config = config.clone();
     let id = tasks.spawn(async move { serve(server_state, server_config).await }).id();

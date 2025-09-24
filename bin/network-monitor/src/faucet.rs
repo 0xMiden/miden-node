@@ -127,8 +127,11 @@ pub async fn run_faucet_test_task(
             details: ServiceDetails::FaucetTest(test_details),
         };
 
-        // Send the status update (ignore if no receivers)
-        let _ = status_sender.send(status);
+        // Send the status update; exit if no receivers (shutdown signal)
+        if status_sender.send(status).is_err() {
+            info!("No receivers for faucet status updates, shutting down");
+            return Ok(());
+        }
     }
 }
 

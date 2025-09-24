@@ -17,9 +17,33 @@ use crate::mempool::nodes::{Node, NodeId};
 /// than is available at this level.
 #[derive(Clone, Debug, PartialEq, Default)]
 pub(crate) struct InflightState {
+    /// All nullifiers created by inflight state.
+    ///
+    /// This _includes_ nullifiers from erased notes to simpify reverting nodes and requeuing
+    /// their transactions. If this weren't the case, then its possible that a batch contains an
+    /// erased note which can clash with another inflight transaction. If we were to revert this
+    /// batch and requeue its transactions, then this would be illegal. This is possible to handle
+    /// but would be painful ito bookkeeping.
+    ///
+    /// Instead we opt to include erased notes in the tracking here, which allows us to revert the
+    /// batch and requeue its transactions without having to worry about note clashes.
     nullifiers: HashSet<Nullifier>,
+
+    /// All created notes and the ID of the node that created it.
+    ///
+    /// This _includes_ erased notes, see `nullifiers` for more information.
     output_notes: HashMap<NoteId, NodeId>,
-    authenticated_notes: HashMap<NoteId, NodeId>,
+
+    /// Maps all unauthenticated notes to the node ID that consumed them.
+    ///
+    /// This can be combined with `output_notes` to infer a parent<->child relationship between
+    /// nodes i.e. the parent node that created a note and the child node that consumed the note.
+    ///
+    /// It is the callers responsibility to ensure that all unauthenticated notes exist as output
+    /// notes at the time when a new transaction or batch node is inserted.
+    unauthenticated_notes: HashMap<NoteId, NodeId>,
+
+    /// All inflight account commitment transitions.
     accounts: HashMap<AccountId, AccountUpdates>,
 }
 
@@ -35,6 +59,11 @@ impl InflightState {
     /// Returns all output notes which already exist.
     pub(crate) fn output_notes_exist(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
         notes.filter(|note| self.output_notes.contains_key(note)).collect()
+    }
+
+    /// Returns all output notes which don't exist.
+    pub(crate) fn output_notes_missing(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
+        notes.filter(|note| !self.output_notes.contains_key(note)).collect()
     }
 
     /// The latest account commitment tracked by the inflight state.
@@ -55,7 +84,7 @@ impl InflightState {
         }
 
         for note in node.unauthenticated_notes() {
-            self.authenticated_notes.remove(&note);
+            self.unauthenticated_notes.remove(&note);
         }
 
         for (account, from, to) in node.account_updates() {
@@ -76,7 +105,7 @@ impl InflightState {
     pub(crate) fn insert(&mut self, id: NodeId, node: &dyn Node) {
         self.nullifiers.extend(node.nullifiers());
         self.output_notes.extend(node.output_notes().map(|note| (note, id)));
-        self.authenticated_notes
+        self.unauthenticated_notes
             .extend(node.unauthenticated_notes().map(|note| (note, id)));
 
         for (account, from, to) in node.account_updates() {
@@ -106,7 +135,7 @@ impl InflightState {
     /// Note that the result is invalidated by mutating the state.
     pub(crate) fn children(&self, node: &dyn Node) -> HashSet<NodeId> {
         let note_children =
-            node.output_notes().filter_map(|note| self.authenticated_notes.get(&note));
+            node.output_notes().filter_map(|note| self.unauthenticated_notes.get(&note));
 
         let account_children = node
             .account_updates()

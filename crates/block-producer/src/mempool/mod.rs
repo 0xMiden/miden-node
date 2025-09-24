@@ -60,9 +60,30 @@ pub struct SharedMempool(Arc<Mutex<Mempool>>);
 
 #[derive(Debug, Clone)]
 pub struct MempoolConfig {
+    /// The constraints each proposed block must adhere to.
     pub block_budget: BlockBudget,
+
+    /// The constraints each proposed batch must adhere to.
     pub batch_budget: BatchBudget,
+
+    /// How close to the chain tip the mempool will allow submitted transactions and batches to
+    /// expire.
+    ///
+    /// Submitted data which expires within this number of blocks to the chain tip will be
+    /// rejected. This prevents accepting data which will likely expire before it can be
+    /// included in a block.
     pub expiration_slack: u32,
+
+    /// The number of recently committed blocks retained by the mempool.
+    ///
+    /// This retained state provides an overlap with the committed chain state in the store which
+    /// mitigates race conditions for transaction and batch authentication.
+    ///
+    /// Authentication is done against the store state _before_ arriving at the mempool, and there
+    /// is therefore opportunity for the chain state to have changed between authentication and the
+    /// mempool handling the authenticated data. Retaining the recent blocks locally therefore
+    /// guarantees that the mempool can verify the data against the additional changes so long as
+    /// the data was authenticated against one of the retained blocks.
     pub state_retention: NonZeroUsize,
 }
 
@@ -141,7 +162,12 @@ impl Mempool {
         self.authentication_staleness_check(tx.authentication_height())?;
         self.expiration_check(tx.expires_at())?;
 
-        // The transaction should append to the existing mempool state.
+        // The transaction should append to the existing mempool state. This means:
+        //
+        // - The current account commitment should match the tx's initial state.
+        // - No duplicate nullifiers are created.
+        // - No duplicate notes are created.
+        // - All unauthenticated notes exist as output notes.
         let account_commitment = self
             .state
             .account_commitment(&tx.account_id())
@@ -161,6 +187,10 @@ impl Mempool {
         let duplicates = self.state.output_notes_exist(tx.output_note_ids());
         if !duplicates.is_empty() {
             return Err(VerifyTxError::OutputNotesAlreadyExist(duplicates).into());
+        }
+        let missing = self.state.output_notes_missing(tx.unauthenticated_notes());
+        if !missing.is_empty() {
+            return Err(VerifyTxError::UnauthenticatedNotesNotFound(missing).into());
         }
 
         // Insert the transaction node.

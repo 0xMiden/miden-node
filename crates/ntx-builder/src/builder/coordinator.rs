@@ -64,7 +64,7 @@ impl Coordinator {
 
         // Run the actor.
         let semaphore = self.semaphore.clone();
-        self.actor_join_set.spawn(async move { actor.run(state, semaphore).await });
+        self.actor_join_set.spawn(Box::pin(actor.run(state, semaphore)));
 
         tracing::info!("created actor for account prefix: {}", account_prefix);
         Ok(())

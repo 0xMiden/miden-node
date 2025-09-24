@@ -7,7 +7,12 @@
 //! child of node `B`:
 //!
 //! - if `B` created an output note which is the input note of `A`, or
-//! - if `B` updated account `x` to state `x'`, and `A` is updating the account from `x' -> x''`.
+//! - if `B` updated an account to state `x'`, and `A` is updating this account from `x' -> x''`.
+//!
+//! Note that note dependency can only be tracked for unauthenticated input notes, because
+//! authenticated notes have their IDs erased. This isn't a problem because authenticated notes are
+//! guaranteed to be part of the committed state already by definition, and therefore we don't need
+//! to concern ourselves with them. Double spending is also not possible because of nullifiers.
 //!
 //! Maintaining this dependency graph simplifies selecting transactions for new batches, and
 //! selecting batches for new blocks. This follows from the blockchain requirement that each block
@@ -415,7 +420,7 @@ impl Mempool {
     /// # Returns
     ///
     /// Returns a set of transactions that were purged from the mempool because they can no longer
-    /// be included in in the chain (e.g., expired transactions and their descendants).
+    /// be included in the chain (e.g., expired transactions and their descendants).
     ///
     /// # Panics
     ///
@@ -473,7 +478,14 @@ impl Mempool {
             return;
         }
 
-        // Remove all descendents. No re-inserting at all.
+        // Remove all descendents _without_ reinserting the transactions.
+        //
+        // This is done to prevent a system bug from causing repeated failures if we keep retrying
+        // the same transactions. Since we can't trivially identify the cause of the block
+        // failure, we take the safe route and nuke all associated state.
+        //
+        // A more refined approach could be to tag the offending transactions and then evict them
+        // once a certain failure threshold has been met.
         let _reverted = self.revert_subtree(NodeId::Block(block));
         // TODO(mirko): Add reverted nodes as events.
 

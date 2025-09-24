@@ -145,12 +145,15 @@ pub(crate) trait Node {
     /// the transactions within them.
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_>;
 
-    /// All output notes created by this node, **including** nullifiers for erased notes. This
-    /// may not be strictly necessary but it removes having to worry about reverting batches and
-    /// blocks with erased notes -- since these would otherwise have different state impact than
-    /// the transactions within them.
+    /// All output notes created by this node, **including** erased notes. This may not be strictly
+    /// necessary but it removes having to worry about reverting batches and blocks with erased
+    /// notes -- since these would otherwise have different state impact than the transactions
+    /// within them.
     fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
     fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
+    /// The account state commitment updates caused by this node.
+    ///
+    /// Output tuple represents each updates `(account ID, initial commitment, final commitment)`.
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_>;
     fn transactions(&self) -> Box<dyn Iterator<Item = &Arc<AuthenticatedTransaction>> + '_>;
 }

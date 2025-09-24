@@ -155,7 +155,7 @@ impl NetworkTransactionBuilder {
                         .context("mempool event stream failed")?;
 
                     self.handle_mempool_event(
-                        &event,
+                        event,
                         &config,
                         store.clone(),
                         chain_state.clone(),
@@ -173,7 +173,7 @@ impl NetworkTransactionBuilder {
     )]
     async fn handle_mempool_event(
         &mut self,
-        event: &MempoolEvent,
+        event: MempoolEvent,
         account_actor_config: &AccountActorConfig,
         store: StoreClient,
         chain_state: Arc<RwLock<ChainState>>,
@@ -188,19 +188,19 @@ impl NetworkTransactionBuilder {
                     Ok(())
                 } else {
                     // Broadcast event.
-                    self.coordinator.broadcast_event(event);
+                    self.coordinator.broadcast_event(&event);
                     Ok(())
                 }
             },
-            // Update chain state and do not broadcast.
+            // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, .. } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
-                self.coordinator.broadcast_event(event);
+                self.coordinator.broadcast_event(&event);
                 Ok(())
             },
             // Broadcast to all actors.
             MempoolEvent::TransactionsReverted(_) => {
-                self.coordinator.broadcast_event(event);
+                self.coordinator.broadcast_event(&event);
                 Ok(())
             },
         }

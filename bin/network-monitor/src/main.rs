@@ -249,42 +249,42 @@ fn initialize_faucet_task(
     tasks: &mut JoinSet<Result<(), anyhow::Error>>,
     component_ids: &mut HashMap<Id, String>,
 ) -> Option<Receiver<ServiceStatus>> {
-    if let Some(faucet_url) = &config.faucet_url {
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")
-            .expect("Should work in std")
-            .as_secs();
-
-        // Create initial faucet test status
-        let initial_faucet_status = ServiceStatus {
-            name: "Faucet".to_string(),
-            status: Status::Unknown,
-            last_checked: current_time,
-            error: None,
-            details: ServiceDetails::FaucetTest(crate::faucet::FaucetTestDetails {
-                test_duration_ms: 0,
-                success_count: 0,
-                failure_count: 0,
-                last_tx_id: None,
-                last_note_id: None,
-                challenge_difficulty: None,
-            }),
-        };
-
-        // Spawn the faucet testing task
-        let (faucet_tx, faucet_rx) = watch::channel(initial_faucet_status);
-        let faucet_url = faucet_url.clone();
-        let id = tasks
-            .spawn(async move { run_faucet_test_task(faucet_url, faucet_tx).await })
-            .id();
-        component_ids.insert(id, "faucet-test".to_string());
-
-        Some(faucet_rx)
-    } else {
+    let Some(faucet_url) = &config.faucet_url else {
         info!("Faucet URL not configured, skipping faucet testing");
-        None
-    }
+        return None;
+    };
+
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("failed to get current time")
+        .expect("Should work in std")
+        .as_secs();
+
+    // Create initial faucet test status
+    let initial_faucet_status = ServiceStatus {
+        name: "Faucet".to_string(),
+        status: Status::Unknown,
+        last_checked: current_time,
+        error: None,
+        details: ServiceDetails::FaucetTest(crate::faucet::FaucetTestDetails {
+            test_duration_ms: 0,
+            success_count: 0,
+            failure_count: 0,
+            last_tx_id: None,
+            last_note_id: None,
+            challenge_difficulty: None,
+        }),
+    };
+
+    // Spawn the faucet testing task
+    let (faucet_tx, faucet_rx) = watch::channel(initial_faucet_status);
+    let faucet_url = faucet_url.clone();
+    let id = tasks
+        .spawn(async move { run_faucet_test_task(faucet_url, faucet_tx).await })
+        .id();
+    component_ids.insert(id, "faucet-test".to_string());
+
+    Some(faucet_rx)
 }
 
 // HTTP SERVER INITIALIZER

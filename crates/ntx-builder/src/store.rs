@@ -104,7 +104,7 @@ impl StoreClient {
     }
 
     /// Returns the list of unconsumed network notes.
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
     pub async fn get_unconsumed_network_notes(&self) -> Result<Vec<NetworkNote>, StoreError> {
         let mut all_notes = Vec::new();
@@ -134,7 +134,7 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,

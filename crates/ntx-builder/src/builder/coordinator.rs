@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
@@ -102,10 +101,8 @@ impl Coordinator {
                 }
             },
             None => {
-                // There are no actors to wait for. Sleep to avoid thrashing.
-                // This should only happen on local environments.
-                tokio::time::sleep(Duration::from_secs(2)).await;
-                Ok(())
+                // There are no actors to wait for. Wait indefinitely until actors are spawned.
+                std::future::pending().await
             },
         }
     }

@@ -85,10 +85,10 @@ impl AccountActor {
                          return ActorShutdownReason::EventChannelClosed;
                     };
                     // Re-enable transaction execution if the transaction being waited on has been
-                    // committed.
-                    if let ActorMode::AwaitingCommit(tx_id) = self.state {
-                        if let MempoolEvent::BlockCommitted { txs, .. } = &event {
-                            if txs.contains(&tx_id) {
+                    // added to the mempool.
+                    if let ActorMode::AwaitingCommit(ref awaited_id) = self.state {
+                        if let MempoolEvent::TransactionAdded { id, .. } = &event {
+                            if id == awaited_id {
                                 self.state = ActorMode::ExecutingTransactions;
                             }
                         }

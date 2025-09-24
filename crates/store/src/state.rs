@@ -18,7 +18,6 @@ use miden_node_proto::domain::account::{
     AccountStorageMapDetails,
     AccountVaultDetails,
     NetworkAccountPrefix,
-    SlotData,
     StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
@@ -930,36 +929,13 @@ impl State {
                 let mut storage_map_details = Vec::<AccountStorageMapDetails>::new();
 
                 for StorageMapRequest { slot_index, slot_data } in storage_requests {
-                    if let Some(StorageSlot::Map(storage_map)) =
+                    let Some(StorageSlot::Map(storage_map)) =
                         details.storage().slots().get(slot_index as usize)
-                    {
-                        if storage_map.entries().nth(RESPONSE_COUNT_LIMIT).is_some() {
-                            storage_map_details.push(AccountStorageMapDetails {
-                                slot_index,
-                                too_many_entries: true,
-                                map_entries: Vec::new(),
-                            });
-                        } else {
-                            let converter =
-                                |key: &Word, value: &Word| -> (Word, Word) { (*key, *value) };
-                            let map_entries = match slot_data {
-                                SlotData::All => Vec::from_iter(
-                                    storage_map.entries().map(|(k, v)| converter(k, v)),
-                                ),
-                                SlotData::MapKeys(keys) => Vec::from_iter(
-                                    keys.iter().map(|key| converter(key, &storage_map.get(key))),
-                                ),
-                            };
-
-                            storage_map_details.push(AccountStorageMapDetails {
-                                slot_index,
-                                too_many_entries: false,
-                                map_entries,
-                            });
-                        }
-                    } else {
+                    else {
                         return Err(AccountError::StorageSlotNotMap(slot_index).into());
-                    }
+                    };
+                    let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+                    storage_map_details.push(details);
                 }
 
                 // Only include unknown account code blobs
@@ -975,7 +951,7 @@ impl State {
                 // TODO: Handle vault details based on new proto structure
                 let vault_details = if include_assets {
                     // was: include_assets
-                    if details.vault().asset_tree().entries().nth(RESPONSE_COUNT_LIMIT).is_some() {
+                    if details.vault().asset_tree().num_leaves() > RESPONSE_COUNT_LIMIT {
                         AccountVaultDetails {
                             too_many_assets: true,
                             assets: Vec::new(),

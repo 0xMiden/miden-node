@@ -7,6 +7,7 @@ use miden_objects::account::{
     AccountHeader,
     AccountId,
     AccountStorageHeader,
+    StorageMap,
     StorageSlotType,
 };
 use miden_objects::asset::Asset;
@@ -384,6 +385,44 @@ pub struct AccountStorageMapDetails {
     pub slot_index: u8,
     pub too_many_entries: bool,
     pub map_entries: Vec<(Word, Word)>,
+}
+
+impl AccountStorageMapDetails {
+    const MAX_RETURN_ENTRIES: usize = 1000;
+
+    pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
+        let exceeds = if let SlotData::MapKeys(keys) = &slot_data {
+            keys.len() > Self::MAX_RETURN_ENTRIES
+        } else {
+            storage_map.entries().nth(Self::MAX_RETURN_ENTRIES).is_some()
+        };
+        if exceeds {
+            Self::too_many_entries(slot_index)
+        } else {
+            Self::from_slot_data(slot_index, slot_data, storage_map)
+        }
+    }
+
+    pub fn from_slot_data(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
+        let map_entries = match slot_data {
+            SlotData::All => Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v))),
+            SlotData::MapKeys(keys) => {
+                Vec::from_iter(keys.iter().map(|key| (*key, storage_map.get(key))))
+            },
+        };
+        Self {
+            slot_index,
+            too_many_entries: false,
+            map_entries,
+        }
+    }
+    pub fn too_many_entries(slot_index: u8) -> Self {
+        Self {
+            slot_index,
+            too_many_entries: true,
+            map_entries: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -70,7 +70,7 @@ impl AccountActor {
     pub async fn run(mut self, mut state: State, semaphore: Arc<Semaphore>) -> ActorShutdownReason {
         loop {
             // Enable or disable transaction execution based on actor mode.
-            let tx_execution_fut = match self.state {
+            let tx_permit_acquisition = match self.state {
                 // Disable transaction execution.
                 ActorMode::AwaitingEvents | ActorMode::AwaitingCommit(_) => {
                     std::future::pending().boxed()
@@ -101,7 +101,7 @@ impl AccountActor {
                     }
                 },
                 // Execute transactions.
-                permit = tx_execution_fut => {
+                permit = tx_permit_acquisition => {
                     match permit {
                         Ok(_permit) => {
                             // Read the chain state.

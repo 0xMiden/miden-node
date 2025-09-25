@@ -1,90 +1,56 @@
 //! Network monitor status checker.
 //!
-//! This module contains the logic for checking the status of the network monitor.
-//! It is used to check the status of the network monitor and to update the shared status.
+//! This module contains the logic for checking the status of network services.
+//! Individual status checker tasks send updates via watch channels to the web server.
 
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use anyhow::Context;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::generated as proto;
 use miden_node_proto::generated::block_producer::BlockProducerStatus;
-use miden_node_proto::generated::remote_prover::{
-    ProofType,
-    ProxyStatus,
-    ProxyWorkerStatus,
-    WorkerHealthStatus,
-};
 use miden_node_proto::generated::rpc::RpcStatus;
 use miden_node_proto::generated::rpc_store::StoreStatus;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
-use tracing::instrument;
+use tracing::{info, instrument};
 use url::Url;
 
-use crate::COMPONENT;
+use crate::faucet::FaucetTestDetails;
+use crate::remote_prover::{ProofType, ProverTestDetails};
+use crate::{COMPONENT, current_unix_timestamp_secs};
 
-// MONITOR CONFIGURATION
+// STATUS
 // ================================================================================================
 
-const DEFAULT_RPC_URL: &str = "http://localhost:50051";
-const DEFAULT_REMOTE_PROVER_URLS: &str = "http://localhost:50052";
-const DEFAULT_PORT: u16 = 3000;
-
-const RPC_URL_ENV_VAR: &str = "MIDEN_MONITOR_RPC_URL";
-const REMOTE_PROVER_URLS_ENV_VAR: &str = "MIDEN_MONITOR_REMOTE_PROVER_URLS";
-const PORT_ENV_VAR: &str = "MIDEN_MONITOR_PORT";
-
-/// Configuration for the monitor.
-///
-/// This struct contains the configuration for the monitor.
-#[derive(Debug, Clone)]
-pub struct MonitorConfig {
-    /// The URL of the RPC service.
-    pub rpc_url: Url,
-    /// The URLs of the remote provers.
-    pub remote_prover_urls: Vec<Url>,
-    /// The port of the monitor.
-    pub port: u16,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) enum Status {
+    Healthy,
+    Unhealthy,
+    Unknown,
 }
 
-impl MonitorConfig {
-    /// Loads the configuration from the environment variables.
-    ///
-    /// This function loads the configuration from the environment variables.
-    /// The environment variables are:
-    /// - `MIDEN_MONITOR_RPC_URL`: The URL of the RPC service.
-    /// - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: The URLs of the remote provers, comma separated.
-    /// - `MIDEN_MONITOR_PORT`: The port of the monitor.
-    pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
-        let rpc_url =
-            std::env::var(RPC_URL_ENV_VAR).unwrap_or_else(|_| DEFAULT_RPC_URL.to_string());
-
-        // Parse multiple remote prover URLs from environment variable
-        let remote_prover_urls = std::env::var(REMOTE_PROVER_URLS_ENV_VAR)
-            .unwrap_or_else(|_| DEFAULT_REMOTE_PROVER_URLS.to_string());
-
-        let remote_prover_urls = remote_prover_urls
-            .split(',')
-            .map(str::trim)
-            .filter(|url| !url.is_empty())
-            .map(Url::parse)
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let port = std::env::var(PORT_ENV_VAR)
-            .unwrap_or_else(|_| DEFAULT_PORT.to_string())
-            .parse::<u16>()?;
-
-        Ok(MonitorConfig {
-            rpc_url: Url::parse(&rpc_url)?,
-            remote_prover_urls,
-            port,
-        })
+impl From<String> for Status {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "HEALTHY" | "connected" => Status::Healthy,
+            "UNHEALTHY" | "disconnected" => Status::Unhealthy,
+            _ => Status::Unknown,
+        }
     }
 }
 
-// SERVICE STATUS CHECKER
+impl From<proto::remote_prover::WorkerHealthStatus> for Status {
+    fn from(value: proto::remote_prover::WorkerHealthStatus) -> Self {
+        match value {
+            proto::remote_prover::WorkerHealthStatus::Unknown => Status::Unknown,
+            proto::remote_prover::WorkerHealthStatus::Healthy => Status::Healthy,
+            proto::remote_prover::WorkerHealthStatus::Unhealthy => Status::Unhealthy,
+        }
+    }
+}
+
+// SERVICE STATUS
 // ================================================================================================
 
 /// Status of a service.
@@ -95,19 +61,20 @@ impl MonitorConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceStatus {
     pub name: String,
-    pub status: String,
+    pub status: Status,
     pub last_checked: u64,
     pub error: Option<String>,
-    pub details: Option<ServiceDetails>,
+    pub details: ServiceDetails,
 }
 
 /// Details of a service.
-///
-/// This struct contains the details of a service, which is a union of the details of the service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceDetails {
-    pub rpc_status: Option<RpcStatusDetails>,
-    pub remote_prover_statuses: Vec<RemoteProverStatusDetails>,
+pub enum ServiceDetails {
+    RpcStatus(RpcStatusDetails),
+    RemoteProverStatus(RemoteProverStatusDetails),
+    RemoteProverTest(ProverTestDetails),
+    FaucetTest(FaucetTestDetails),
+    Error,
 }
 
 /// Details of an RPC service.
@@ -129,7 +96,7 @@ pub struct RpcStatusDetails {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoreStatusDetails {
     pub version: String,
-    pub status: String,
+    pub status: Status,
     pub chain_tip: u32,
 }
 
@@ -140,7 +107,7 @@ pub struct StoreStatusDetails {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlockProducerStatusDetails {
     pub version: String,
-    pub status: String,
+    pub status: Status,
 }
 
 /// Details of a remote prover service.
@@ -149,10 +116,9 @@ pub struct BlockProducerStatusDetails {
 /// of the remote prover service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteProverStatusDetails {
-    pub name: String,
     pub url: String,
     pub version: String,
-    pub supported_proof_type: String,
+    pub supported_proof_type: ProofType,
     pub workers: Vec<WorkerStatusDetails>,
 }
 
@@ -164,7 +130,7 @@ pub struct RemoteProverStatusDetails {
 pub struct WorkerStatusDetails {
     pub address: String,
     pub version: String,
-    pub status: String,
+    pub status: Status,
 }
 
 /// Status of a network.
@@ -176,12 +142,6 @@ pub struct NetworkStatus {
     pub last_updated: u64,
 }
 
-/// Shared status of the network.
-///
-/// This struct contains the shared status of the network, which is a union of the shared status of
-/// the network.
-pub type SharedStatus = Arc<Mutex<NetworkStatus>>;
-
 // FROM IMPLEMENTATIONS
 // ================================================================================================
 
@@ -189,57 +149,50 @@ pub type SharedStatus = Arc<Mutex<NetworkStatus>>;
 ///
 /// This implementation converts a `StoreStatus` to a `StoreStatusDetails`.
 impl From<StoreStatus> for StoreStatusDetails {
-    fn from(status: StoreStatus) -> Self {
+    fn from(value: StoreStatus) -> Self {
         Self {
-            version: status.version,
-            status: status.status,
-            chain_tip: status.chain_tip,
+            version: value.version,
+            status: value.status.into(),
+            chain_tip: value.chain_tip,
         }
     }
 }
 
 impl From<BlockProducerStatus> for BlockProducerStatusDetails {
-    fn from(status: BlockProducerStatus) -> Self {
+    fn from(value: BlockProducerStatus) -> Self {
         Self {
-            version: status.version,
-            status: status.status,
+            version: value.version,
+            status: value.status.into(),
         }
     }
 }
 
-impl From<ProxyWorkerStatus> for WorkerStatusDetails {
-    fn from(worker: ProxyWorkerStatus) -> Self {
-        let status_str = match WorkerHealthStatus::try_from(worker.status) {
-            Ok(WorkerHealthStatus::Healthy) => "HEALTHY",
-            Ok(WorkerHealthStatus::Unhealthy) => "UNHEALTHY",
-            Ok(WorkerHealthStatus::Unknown) | Err(_) => "UNKNOWN",
-        };
+impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
+    fn from(value: proto::remote_prover::ProxyWorkerStatus) -> Self {
+        let status =
+            proto::remote_prover::WorkerHealthStatus::try_from(value.status).unwrap().into();
 
         Self {
-            address: worker.address,
-            version: worker.version,
-            status: status_str.to_string(),
+            address: value.address,
+            version: value.version,
+            status,
         }
     }
 }
 
 impl RemoteProverStatusDetails {
-    pub fn from_proxy_status(status: ProxyStatus, name: String, url: String) -> Self {
-        let proof_type_str = match ProofType::try_from(status.supported_proof_type) {
-            Ok(ProofType::Transaction) => "TRANSACTION",
-            Ok(ProofType::Batch) => "BATCH",
-            Ok(ProofType::Block) => "BLOCK",
-            Err(_) => "UNKNOWN",
-        };
+    pub fn from_proxy_status(status: proto::remote_prover::ProxyStatus, url: String) -> Self {
+        let proof_type = proto::remote_prover::ProofType::try_from(status.supported_proof_type)
+            .unwrap()
+            .into();
 
         let workers: Vec<WorkerStatusDetails> =
             status.workers.into_iter().map(WorkerStatusDetails::from).collect();
 
         Self {
-            name,
             url,
             version: status.version,
-            supported_proof_type: proof_type_str.to_string(),
+            supported_proof_type: proof_type,
             workers,
         }
     }
@@ -259,6 +212,47 @@ impl From<RpcStatus> for RpcStatusDetails {
 // RPC STATUS CHECKER
 // ================================================================================================
 
+/// Runs a task that continuously checks RPC status and updates a watch channel.
+///
+/// This function spawns a task that periodically checks the RPC service status
+/// and sends updates through a watch channel.
+///
+/// # Arguments
+///
+/// * `rpc_url` - The URL of the RPC service.
+/// * `status_sender` - The sender for the watch channel.
+///
+/// # Returns
+///
+/// `Ok(())` if the task completes successfully, or an error if the task fails.
+#[instrument(target = COMPONENT, name = "rpc-status-task", skip_all)]
+pub async fn run_rpc_status_task(rpc_url: Url, status_sender: watch::Sender<ServiceStatus>) {
+    let mut rpc = ClientBuilder::new(rpc_url)
+        .with_tls()
+        .expect("TLS is enabled")
+        .with_timeout(Duration::from_secs(10))
+        .without_metadata_version()
+        .without_metadata_genesis()
+        .connect_lazy::<Rpc>();
+
+    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+
+        let current_time = current_unix_timestamp_secs();
+
+        let status = check_rpc_status(&mut rpc, current_time).await;
+
+        // Send the status update; exit if no receivers (shutdown signal)
+        if status_sender.send(status).is_err() {
+            info!("No receivers for RPC status updates, shutting down");
+            return;
+        }
+    }
+}
+
 /// Checks the status of the RPC service.
 ///
 /// This function checks the status of the RPC service.
@@ -272,7 +266,7 @@ impl From<RpcStatus> for RpcStatusDetails {
 ///
 /// A `ServiceStatus` containing the status of the RPC service.
 #[instrument(target = COMPONENT, name = "check-status.rpc", skip_all, ret(level = "info"))]
-async fn check_rpc_status(
+pub(crate) async fn check_rpc_status(
     rpc: &mut miden_node_proto::clients::RpcClient,
     current_time: u64,
 ) -> ServiceStatus {
@@ -282,27 +276,78 @@ async fn check_rpc_status(
 
             ServiceStatus {
                 name: "RPC".to_string(),
-                status: "healthy".to_string(),
+                status: Status::Healthy,
                 last_checked: current_time,
                 error: None,
-                details: Some(ServiceDetails {
-                    rpc_status: Some(status.into()),
-                    remote_prover_statuses: Vec::new(),
-                }),
+                details: ServiceDetails::RpcStatus(status.into()),
             }
         },
         Err(e) => ServiceStatus {
             name: "RPC".to_string(),
-            status: "unhealthy".to_string(),
+            status: Status::Unhealthy,
             last_checked: current_time,
             error: Some(e.to_string()),
-            details: None,
+            details: ServiceDetails::Error,
         },
     }
 }
 
 // REMOTE PROVER STATUS CHECKER
 // ================================================================================================
+
+/// Runs a task that continuously checks remote prover status and updates a watch channel.
+///
+/// This function spawns a task that periodically checks a remote prover service status
+/// and sends updates through a watch channel.
+///
+/// # Arguments
+///
+/// * `prover_url` - The URL of the remote prover service.
+/// * `name` - The name of the remote prover.
+/// * `status_sender` - The sender for the watch channel.
+///
+/// # Returns
+///
+/// `Ok(())` if the monitoring task runs and completes successfully, or an error if there are
+/// connection issues or failures while checking the remote prover status.
+#[instrument(target = COMPONENT, name = "remote-prover-status-task", skip_all)]
+pub async fn run_remote_prover_status_task(
+    prover_url: Url,
+    name: String,
+    status_sender: watch::Sender<ServiceStatus>,
+) {
+    let url_str = prover_url.to_string();
+    let mut remote_prover = ClientBuilder::new(prover_url)
+        .with_tls()
+        .expect("TLS is enabled")
+        .with_timeout(Duration::from_secs(10))
+        .without_metadata_version()
+        .without_metadata_genesis()
+        .connect_lazy::<RemoteProverProxy>();
+
+    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    loop {
+        interval.tick().await;
+
+        let current_time = current_unix_timestamp_secs();
+
+        let status = check_remote_prover_status(
+            &mut remote_prover,
+            name.clone(),
+            url_str.clone(),
+            current_time,
+        )
+        .await;
+
+        // Send the status update; exit if no receivers (shutdown signal)
+        if status_sender.send(status).is_err() {
+            info!("No receivers for remote prover status updates, shutting down");
+            return;
+        }
+    }
+}
 
 /// Checks the status of the remote prover service.
 ///
@@ -319,8 +364,8 @@ async fn check_rpc_status(
 ///
 /// A `ServiceStatus` containing the status of the remote prover service.
 #[instrument(target = COMPONENT, name = "check-status.remote-prover", skip_all, ret(level = "info"))]
-async fn check_remote_prover_status(
-    remote_prover: &mut miden_node_proto::clients::RemoteProverProxyClient,
+pub(crate) async fn check_remote_prover_status(
+    remote_prover: &mut miden_node_proto::clients::RemoteProverProxyStatusClient,
     name: String,
     url: String,
     current_time: u64,
@@ -330,127 +375,31 @@ async fn check_remote_prover_status(
             let status = response.into_inner();
 
             // Use the new method to convert gRPC status to domain type
-            let remote_prover_details =
-                RemoteProverStatusDetails::from_proxy_status(status, name.clone(), url);
+            let remote_prover_details = RemoteProverStatusDetails::from_proxy_status(status, url);
 
             // Determine overall health based on worker statuses
             let overall_health = if remote_prover_details.workers.is_empty() {
-                "unknown"
-            } else if remote_prover_details.workers.iter().any(|w| w.status == "HEALTHY") {
-                "healthy"
+                Status::Unknown
+            } else if remote_prover_details.workers.iter().any(|w| w.status == Status::Healthy) {
+                Status::Healthy
             } else {
-                "unhealthy"
+                Status::Unhealthy
             };
 
             ServiceStatus {
                 name: format!("Remote Prover ({name})"),
-                status: overall_health.to_string(),
+                status: overall_health,
                 last_checked: current_time,
                 error: None,
-                details: Some(ServiceDetails {
-                    rpc_status: None,
-                    remote_prover_statuses: vec![remote_prover_details],
-                }),
+                details: ServiceDetails::RemoteProverStatus(remote_prover_details),
             }
         },
         Err(e) => ServiceStatus {
             name: format!("Remote Prover ({name})"),
-            status: "unhealthy".to_string(),
+            status: Status::Unhealthy,
             last_checked: current_time,
             error: Some(e.to_string()),
-            details: None,
+            details: ServiceDetails::Error,
         },
-    }
-}
-
-// NETWORK STATUS CHECKER
-// ================================================================================================
-
-/// Checks the status of the network.
-///
-/// This function checks the status of the network.
-///
-/// # Arguments
-///
-/// * `shared_status` - The shared status of the network.
-/// * `config` - The configuration for the monitor.
-///
-/// # Returns
-///
-/// A Result containing the status of the network.
-///
-/// # Errors
-///
-/// This function can return an error if the current time cannot be retrieved.
-///
-/// # Panics
-///
-/// This function can panic if the shared status cannot be locked.
-#[instrument(target = COMPONENT, name = "check-status", skip_all, ret(level = "info"), err)]
-pub async fn check_status(
-    shared_status: SharedStatus,
-    config: MonitorConfig,
-) -> anyhow::Result<()> {
-    let mut rpc = ClientBuilder::new(config.rpc_url.clone())
-        .without_tls()
-        .without_timeout()
-        .without_metadata_version()
-        .without_metadata_genesis()
-        .connect_lazy::<Rpc>();
-
-    // Create remote prover clients for each URL
-    let mut remote_provers: Vec<(
-        String,
-        String,
-        miden_node_proto::clients::RemoteProverProxyClient,
-    )> = config
-        .remote_prover_urls
-        .iter()
-        .enumerate()
-        .map(|(i, url)| {
-            let name = format!("Prover-{}", i + 1);
-            let url_str = url.to_string();
-            let client = ClientBuilder::new(url.clone())
-                .without_tls()
-                .without_timeout()
-                .without_metadata_version()
-                .without_metadata_genesis()
-                .connect_lazy::<RemoteProverProxy>();
-            (name, url_str, client)
-        })
-        .collect();
-
-    let mut interval = tokio::time::interval(Duration::from_secs(3));
-    // Don't delay the first tick
-    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-    loop {
-        interval.tick().await;
-
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")?
-            .as_secs();
-
-        let mut services = Vec::new();
-
-        // Check RPC status
-        let rpc_status = check_rpc_status(&mut rpc, current_time).await;
-        services.push(rpc_status);
-
-        // Check each Remote Prover status
-        for (name, url, remote_prover) in &mut remote_provers {
-            let remote_prover_status =
-                check_remote_prover_status(remote_prover, name.clone(), url.clone(), current_time)
-                    .await;
-            services.push(remote_prover_status);
-        }
-
-        // Update shared status
-        {
-            let mut status = shared_status.lock().await;
-            status.services = services;
-            status.last_updated = current_time;
-        }
     }
 }

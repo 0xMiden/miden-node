@@ -124,6 +124,9 @@ name = "anyhow"
 version = "1.0.99"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0674a1ddeecb70197781e945de4b3b8ffb61fa939a5597bcf48503737663100"
+dependencies = [
+ "backtrace",
+]
 
 [[package]]
 name = "arc-swap"
@@ -1510,7 +1513,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -2056,7 +2059,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#fdf7c0e47191277a95f0ce29abb7b2d7f0a9d754"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#c5a7457c9fdf042e541db5bf5b33c1cb75ea4217"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2128,7 +2131,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#fdf7c0e47191277a95f0ce29abb7b2d7f0a9d754"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#c5a7457c9fdf042e541db5bf5b33c1cb75ea4217"
 dependencies = [
  "miden-assembly",
  "miden-objects",
@@ -2201,8 +2204,15 @@ dependencies = [
  "axum",
  "miden-node-proto",
  "miden-node-utils",
+ "miden-objects",
+ "miden-testing",
+ "miden-tx",
+ "reqwest",
  "serde",
+ "serde_json",
+ "sha2",
  "tokio",
+ "tonic",
  "tracing",
  "url",
 ]
@@ -2444,7 +2454,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#fdf7c0e47191277a95f0ce29abb7b2d7f0a9d754"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#c5a7457c9fdf042e541db5bf5b33c1cb75ea4217"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2577,7 +2587,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#fdf7c0e47191277a95f0ce29abb7b2d7f0a9d754"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#c5a7457c9fdf042e541db5bf5b33c1cb75ea4217"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2597,7 +2607,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#fdf7c0e47191277a95f0ce29abb7b2d7f0a9d754"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#c5a7457c9fdf042e541db5bf5b33c1cb75ea4217"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2612,7 +2622,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#fdf7c0e47191277a95f0ce29abb7b2d7f0a9d754"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#c5a7457c9fdf042e541db5bf5b33c1cb75ea4217"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -3260,7 +3270,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "sfv",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "strum",
  "strum_macros",
  "tokio",
@@ -4343,6 +4353,17 @@ dependencies = [
  "base64",
  "indexmap 2.11.0",
  "rust_decimal",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
 ]
 
 [[package]]

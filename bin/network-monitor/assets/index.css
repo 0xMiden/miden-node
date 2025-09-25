@@ -54,7 +54,17 @@ body {
 
 .main-content {
     width: 100%;
-    max-width: 400px;
+    max-width: 1200px;
+    padding: 0 20px;
+}
+
+.form-title {
+    font-size: 28px;
+    font-weight: 500;
+    color: #333;
+    text-align: center;
+    margin-bottom: 32px;
+    letter-spacing: -0.02em;
 }
 
 .button-group {
@@ -173,6 +183,7 @@ body {
     font-size: 14px;
     white-space: pre-wrap;
     z-index: 2;
+    grid-column: 1 / -1; /* Span the full width of the grid when in grid context */
 }
 
 @media (max-width: 768px) {
@@ -198,8 +209,9 @@ body {
     border: 0.5px solid #e0e0e0;
     border-radius: 8px;
     padding: 20px;
-    margin-bottom: 16px;
     transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
 }
 
 .service-card:hover {
@@ -220,6 +232,7 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+    flex-shrink: 0;
 }
 
 .service-name {
@@ -244,6 +257,12 @@ body {
     margin-bottom: 12px;
     border: 1px solid #fecaca;
 }
+
+.service-content {
+    flex: 1;
+    margin-bottom: 8px;
+}
+
 
 .service-details {
     margin: 12px 0;
@@ -308,12 +327,21 @@ body {
 .service-timestamp {
     font-size: 11px;
     color: #999;
-    margin-top: 8px;
+    margin-top: auto;
+    padding-top: 8px;
     font-style: italic;
+    flex-shrink: 0;
+    border-top: 1px solid #f0f0f0;
 }
 
 #status-container {
     min-height: 200px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .loading-section {
@@ -321,6 +349,7 @@ body {
     align-items: center;
     justify-content: center;
     min-height: 200px;
+    grid-column: 1 / -1; /* Span the full width of the grid when in grid context */
 }
 
 /* Responsive adjustments for service cards */
@@ -384,4 +413,89 @@ body {
 .worker-status-badge.unknown {
     background: #fff3cd;
     color: #856404;
+}
+
+/* Transaction Prover Test Styles */
+.test-metrics {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 4px;
+}
+
+.test-metrics.healthy {
+    background: rgba(34, 197, 93, 0.05);
+    border-left: 3px solid #22C55D;
+}
+
+.test-metrics.unhealthy {
+    background: rgba(255, 85, 0, 0.05);
+    border-left: 3px solid #ff5500;
+}
+
+.metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 4px 0;
+    font-size: 12px;
+}
+
+.metric-label {
+    color: #333;
+    font-weight: 500;
+}
+
+.metric-value {
+    font-family: "DM Mono", monospace;
+    font-weight: 500;
+}
+
+.test-metrics.healthy .metric-value {
+    color: #22C55D;
+}
+
+.test-metrics.unhealthy .metric-value {
+    color: #ff5500;
+}
+
+/* Refresh button container */
+.refresh-button-container {
+    grid-column: 1 / -1; /* Span the full width of the grid */
+    margin-top: 20px;
+}
+
+/* Responsive adjustments for test metrics */
+@media (max-width: 768px) {
+    .metric-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+    }
+
+    /* Adjust grid for mobile */
+    #status-container {
+        grid-template-columns: 1fr;
+    }
+
+    .main-content {
+        padding: 0 16px;
+    }
+}
+
+/* Additional responsive breakpoints */
+@media (max-width: 480px) {
+    #status-container {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .service-card {
+        padding: 16px;
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    #status-container {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
 }

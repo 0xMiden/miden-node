@@ -271,7 +271,6 @@ fn initialize_faucet_task(
             success_count: 0,
             failure_count: 0,
             last_tx_id: None,
-            last_note_id: None,
             challenge_difficulty: None,
         }),
     };

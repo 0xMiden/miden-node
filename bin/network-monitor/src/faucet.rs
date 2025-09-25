@@ -39,7 +39,6 @@ pub struct FaucetTestDetails {
     pub success_count: u64,
     pub failure_count: u64,
     pub last_tx_id: Option<String>,
-    pub last_note_id: Option<String>,
     pub challenge_difficulty: Option<u64>,
 }
 
@@ -56,6 +55,7 @@ struct PowChallengeResponse {
 #[derive(Debug, Deserialize)]
 struct GetTokensResponse {
     tx_id: String,
+    #[allow(dead_code)] // Note ID is part of API response but not used in monitoring
     note_id: String,
 }
 
@@ -84,7 +84,6 @@ pub async fn run_faucet_test_task(
     let mut success_count = 0u64;
     let mut failure_count = 0u64;
     let mut last_tx_id = None;
-    let mut last_note_id = None;
     let mut last_challenge_difficulty = None;
 
     let mut interval = tokio::time::interval(TEST_INTERVAL);
@@ -104,9 +103,8 @@ pub async fn run_faucet_test_task(
             Ok((result, challenge_difficulty)) => {
                 success_count += 1;
                 last_tx_id = Some(result.tx_id.clone());
-                last_note_id = Some(result.note_id.clone());
                 last_challenge_difficulty = Some(challenge_difficulty);
-                info!("Faucet test successful: tx_id={}, note_id={}", result.tx_id, result.note_id);
+                info!("Faucet test successful: tx_id={}", result.tx_id);
             },
             Err(e) => {
                 failure_count += 1;
@@ -121,7 +119,6 @@ pub async fn run_faucet_test_task(
             success_count,
             failure_count,
             last_tx_id: last_tx_id.clone(),
-            last_note_id: last_note_id.clone(),
             challenge_difficulty: last_challenge_difficulty,
         };
 

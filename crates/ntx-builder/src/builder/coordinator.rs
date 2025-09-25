@@ -40,11 +40,7 @@ impl Coordinator {
     /// If the account is not a network account, the function returns Ok(()) without spawning an
     /// actor.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
-    pub async fn spawn_actor(
-        &mut self,
-        origin: AccountOrigin,
-        config: &AccountActorConfig,
-    ) -> anyhow::Result<()> {
+    pub async fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
         let account_prefix = origin.prefix();
         // Construct the actor and add it to the registry for subsequent messaging.
         let (actor, event_tx) = AccountActor::new(origin, config);
@@ -55,7 +51,6 @@ impl Coordinator {
         self.actor_join_set.spawn(Box::pin(actor.run(semaphore)));
 
         tracing::info!("created actor for account prefix: {}", account_prefix);
-        Ok(())
     }
 
     /// Broadcasts an event to all account actors.

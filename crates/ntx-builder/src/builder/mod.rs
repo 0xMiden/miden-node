@@ -143,7 +143,7 @@ impl NetworkTransactionBuilder {
             if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
                 self.coordinator
                     .spawn_actor(AccountOrigin::store(account_prefix), &config)
-                    .await?;
+                    .await;
             }
         }
 
@@ -164,7 +164,7 @@ impl NetworkTransactionBuilder {
                         event,
                         &config,
                         chain_state.clone(),
-                    ).await?;
+                    ).await;
                 },
             }
         }
@@ -181,31 +181,27 @@ impl NetworkTransactionBuilder {
         event: MempoolEvent,
         account_actor_config: &AccountActorConfig,
         chain_state: Arc<RwLock<ChainState>>,
-    ) -> anyhow::Result<()> {
+    ) {
         match &event {
             MempoolEvent::TransactionAdded { account_delta, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     // Spawn new actors for account creation transactions.
                     if let Some(account) = AccountOrigin::transaction(account) {
-                        self.coordinator.spawn_actor(account, account_actor_config).await?;
+                        self.coordinator.spawn_actor(account, account_actor_config).await;
                     }
-                    Ok(())
                 } else {
                     // Broadcast event.
                     self.coordinator.broadcast_event(&event);
-                    Ok(())
                 }
             },
             // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, .. } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
                 self.coordinator.broadcast_event(&event);
-                Ok(())
             },
             // Broadcast to all actors.
             MempoolEvent::TransactionsReverted(_) => {
                 self.coordinator.broadcast_event(&event);
-                Ok(())
             },
         }
     }

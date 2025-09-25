@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::Context;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
 use miden_node_utils::logging::OpenTelemetry;
 use tokio::sync::watch;
@@ -92,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
 /// A receiver for the RPC status.
 pub(crate) async fn initialize_rpc_status_checker(
     config: &MonitorConfig,
-    tasks: &mut JoinSet<Result<(), anyhow::Error>>,
+    tasks: &mut JoinSet<()>,
     component_ids: &mut HashMap<Id, String>,
 ) -> Receiver<ServiceStatus> {
     // Create initial status for RPC service
@@ -104,11 +103,7 @@ pub(crate) async fn initialize_rpc_status_checker(
         .without_metadata_genesis()
         .connect_lazy::<Rpc>();
 
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("failed to get current time")
-        .expect("Should work in std")
-        .as_secs();
+    let current_time = current_unix_timestamp_secs();
 
     let initial_rpc_status = check_rpc_status(&mut rpc, current_time).await;
 
@@ -139,7 +134,7 @@ pub(crate) async fn initialize_rpc_status_checker(
 /// A vector of receivers for the prover status.
 async fn initialize_prover_tasks(
     config: &MonitorConfig,
-    tasks: &mut JoinSet<Result<(), anyhow::Error>>,
+    tasks: &mut JoinSet<()>,
     component_ids: &mut HashMap<Id, String>,
 ) -> Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)> {
     let mut prover_rxs = Vec::new();
@@ -154,11 +149,7 @@ async fn initialize_prover_tasks(
             .without_metadata_genesis()
             .connect_lazy::<RemoteProverProxy>();
 
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")
-            .expect("Should work in std")
-            .as_secs();
+        let current_time = current_unix_timestamp_secs();
 
         let initial_prover_status = check_remote_prover_status(
             &mut remote_prover,
@@ -205,7 +196,7 @@ async fn initialize_prover_tasks(
                         payload,
                         prover_test_tx,
                     ))
-                    .await
+                    .await;
                 })
                 .id();
             let component_name = format!("prover-test-{}", i + 1);
@@ -246,7 +237,7 @@ async fn initialize_prover_tasks(
 /// An optional receiver for the faucet status.
 fn initialize_faucet_task(
     config: &MonitorConfig,
-    tasks: &mut JoinSet<Result<(), anyhow::Error>>,
+    tasks: &mut JoinSet<()>,
     component_ids: &mut HashMap<Id, String>,
 ) -> Option<Receiver<ServiceStatus>> {
     let Some(faucet_url) = &config.faucet_url else {
@@ -254,11 +245,7 @@ fn initialize_faucet_task(
         return None;
     };
 
-    let current_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("failed to get current time")
-        .expect("Should work in std")
-        .as_secs();
+    let current_time = current_unix_timestamp_secs();
 
     // Create initial faucet test status
     let initial_faucet_status = ServiceStatus {
@@ -306,7 +293,7 @@ pub(crate) fn initialize_http_server(
     rpc_rx: Receiver<ServiceStatus>,
     prover_rxs: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
     faucet_rx: Option<Receiver<ServiceStatus>>,
-    tasks: &mut JoinSet<Result<(), anyhow::Error>>,
+    tasks: &mut JoinSet<()>,
     component_ids: &mut HashMap<Id, String>,
 ) {
     let server_state = ServerState {
@@ -336,7 +323,7 @@ pub(crate) fn initialize_http_server(
 ///
 /// An error if the task fails.
 async fn handle_failure(
-    mut tasks: JoinSet<Result<(), anyhow::Error>>,
+    mut tasks: JoinSet<()>,
     component_ids: HashMap<Id, String>,
 ) -> anyhow::Result<()> {
     // Wait for any task to complete or fail
@@ -344,15 +331,25 @@ async fn handle_failure(
 
     // We expect components to run indefinitely, so we treat any return as fatal.
     let (id, err) = match component_result {
-        Ok((id, Ok(_))) => (
-            id,
-            Err::<(), anyhow::Error>(anyhow::anyhow!("component completed unexpectedly")),
-        ),
-        Ok((id, Err(err))) => (id, Err(err)),
-        Err(join_err) => (join_err.id(), Err(join_err).context("joining component task")),
+        Ok((id, ())) => (id, anyhow::anyhow!("component completed unexpectedly")),
+        Err(join_err) => (join_err.id(), anyhow::Error::from(join_err)),
     };
     let component_name = component_ids.get(&id).map_or("unknown", String::as_str);
 
     // Exit with error context
-    err.context(format!("component {component_name} failed"))
+    Err(err.context(format!("component {component_name} failed")))
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Gets the current Unix timestamp in seconds.
+///
+/// This function is infallible - if the system time is somehow before Unix epoch
+/// (extremely unlikely), it returns 0.
+pub fn current_unix_timestamp_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_else(|_| Duration::from_secs(0))  // Fallback to 0 if before Unix epoch
+        .as_secs()
 }

@@ -3,7 +3,7 @@
 //! This module contains the logic for periodically testing remote transaction prover functionality
 //! by sending mock transactions and checking for successful transaction proof generation.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverClient};
@@ -18,11 +18,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
 use tonic::Request;
-use tracing::instrument;
+use tracing::{info, instrument};
 use url::Url;
 
-use crate::COMPONENT;
 use crate::status::{ServiceDetails, ServiceStatus, Status};
+use crate::{COMPONENT, current_unix_timestamp_secs};
 
 // PROOF TYPE
 // ================================================================================================
@@ -94,7 +94,7 @@ pub async fn run_remote_prover_test_task(
     proof_type: ProofType,
     serialized_request_payload: proto::remote_prover::ProofRequest,
     status_sender: watch::Sender<ServiceStatus>,
-) -> anyhow::Result<()> {
+) {
     let mut client = ClientBuilder::new(prover_url)
         .with_tls()
         .expect("TLS is enabled")
@@ -112,10 +112,7 @@ pub async fn run_remote_prover_test_task(
     loop {
         interval.tick().await;
 
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")?
-            .as_secs();
+        let current_time = current_unix_timestamp_secs();
 
         let status = test_remote_prover(
             &mut client,
@@ -128,8 +125,11 @@ pub async fn run_remote_prover_test_task(
         )
         .await;
 
-        // Send the status update (ignore if no receivers)
-        let _ = status_sender.send(status);
+        // Send the status update; exit if no receivers (shutdown signal)
+        if status_sender.send(status).is_err() {
+            info!("No receivers for remote prover status updates, shutting down");
+            return;
+        }
     }
 }
 

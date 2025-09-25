@@ -3,7 +3,7 @@
 //! This module contains the logic for periodically testing faucet functionality
 //! by requesting proof-of-work challenges, solving them, and submitting token requests.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::Context;
 use miden_objects::account::AccountId;
@@ -16,8 +16,8 @@ use tokio::time::MissedTickBehavior;
 use tracing::{debug, info, instrument, warn};
 use url::Url;
 
-use crate::COMPONENT;
 use crate::status::{ServiceDetails, ServiceStatus, Status};
+use crate::{COMPONENT, current_unix_timestamp_secs};
 
 // CONSTANTS
 // ================================================================================================
@@ -76,10 +76,7 @@ struct GetTokensResponse {
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
 #[instrument(target = COMPONENT, name = "faucet-test-task", skip_all)]
-pub async fn run_faucet_test_task(
-    faucet_url: Url,
-    status_sender: watch::Sender<ServiceStatus>,
-) -> anyhow::Result<()> {
+pub async fn run_faucet_test_task(faucet_url: Url, status_sender: watch::Sender<ServiceStatus>) {
     let client = Client::new();
     let mut success_count = 0u64;
     let mut failure_count = 0u64;
@@ -92,10 +89,7 @@ pub async fn run_faucet_test_task(
     loop {
         interval.tick().await;
 
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")?
-            .as_secs();
+        let current_time = current_unix_timestamp_secs();
 
         let start_time = std::time::Instant::now();
 
@@ -137,7 +131,7 @@ pub async fn run_faucet_test_task(
         // Send the status update; exit if no receivers (shutdown signal)
         if status_sender.send(status).is_err() {
             info!("No receivers for faucet status updates, shutting down");
-            return Ok(());
+            return;
         }
     }
 }

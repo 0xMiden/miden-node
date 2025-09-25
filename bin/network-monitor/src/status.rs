@@ -3,9 +3,8 @@
 //! This module contains the logic for checking the status of network services.
 //! Individual status checker tasks send updates via watch channels to the web server.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use anyhow::Context;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
 use miden_node_proto::generated as proto;
 use miden_node_proto::generated::block_producer::BlockProducerStatus;
@@ -14,12 +13,12 @@ use miden_node_proto::generated::rpc_store::StoreStatus;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 use tokio::time::MissedTickBehavior;
-use tracing::instrument;
+use tracing::{info, instrument};
 use url::Url;
 
-use crate::COMPONENT;
 use crate::faucet::FaucetTestDetails;
 use crate::remote_prover::{ProofType, ProverTestDetails};
+use crate::{COMPONENT, current_unix_timestamp_secs};
 
 // STATUS
 // ================================================================================================
@@ -227,12 +226,10 @@ impl From<RpcStatus> for RpcStatusDetails {
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
 #[instrument(target = COMPONENT, name = "rpc-status-task", skip_all)]
-pub async fn run_rpc_status_task(
-    rpc_url: Url,
-    status_sender: watch::Sender<ServiceStatus>,
-) -> anyhow::Result<()> {
+pub async fn run_rpc_status_task(rpc_url: Url, status_sender: watch::Sender<ServiceStatus>) {
     let mut rpc = ClientBuilder::new(rpc_url)
-        .with_tls()?
+        .with_tls()
+        .expect("TLS is enabled")
         .with_timeout(Duration::from_secs(10))
         .without_metadata_version()
         .without_metadata_genesis()
@@ -244,15 +241,15 @@ pub async fn run_rpc_status_task(
     loop {
         interval.tick().await;
 
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")?
-            .as_secs();
+        let current_time = current_unix_timestamp_secs();
 
         let status = check_rpc_status(&mut rpc, current_time).await;
 
-        // Send the status update (ignore if no receivers)
-        let _ = status_sender.send(status);
+        // Send the status update; exit if no receivers (shutdown signal)
+        if status_sender.send(status).is_err() {
+            info!("No receivers for RPC status updates, shutting down");
+            return;
+        }
     }
 }
 
@@ -318,10 +315,11 @@ pub async fn run_remote_prover_status_task(
     prover_url: Url,
     name: String,
     status_sender: watch::Sender<ServiceStatus>,
-) -> anyhow::Result<()> {
+) {
     let url_str = prover_url.to_string();
     let mut remote_prover = ClientBuilder::new(prover_url)
-        .with_tls()?
+        .with_tls()
+        .expect("TLS is enabled")
         .with_timeout(Duration::from_secs(10))
         .without_metadata_version()
         .without_metadata_genesis()
@@ -333,10 +331,7 @@ pub async fn run_remote_prover_status_task(
     loop {
         interval.tick().await;
 
-        let current_time = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("failed to get current time")?
-            .as_secs();
+        let current_time = current_unix_timestamp_secs();
 
         let status = check_remote_prover_status(
             &mut remote_prover,
@@ -346,8 +341,11 @@ pub async fn run_remote_prover_status_task(
         )
         .await;
 
-        // Send the status update (ignore if no receivers)
-        let _ = status_sender.send(status);
+        // Send the status update; exit if no receivers (shutdown signal)
+        if status_sender.send(status).is_err() {
+            info!("No receivers for remote prover status updates, shutting down");
+            return;
+        }
     }
 }
 

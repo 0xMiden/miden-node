@@ -3,7 +3,6 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use anyhow::Context;
 use axum::Router;
 use axum::http::header;
 use axum::response::{Html, IntoResponse, Response};
@@ -34,7 +33,7 @@ pub struct ServerState {
 ///
 /// * `server_state` - The server state containing watch receivers for all services.
 /// * `config` - The configuration of the network.
-pub async fn serve(server_state: ServerState, config: MonitorConfig) -> anyhow::Result<()> {
+pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     // build our application with routes
     let app = Router::new()
         // Serve embedded assets
@@ -51,9 +50,8 @@ pub async fn serve(server_state: ServerState, config: MonitorConfig) -> anyhow::
     info!("Dashboard available at: http://localhost:{}/", config.port);
     let listener = tokio::net::TcpListener::bind(&bind_address)
         .await
-        .context("Failed to bind to address")?;
-    axum::serve(listener, app).await.context("Failed to start web server")?;
-    Ok(())
+        .expect("Failed to bind to address");
+    axum::serve(listener, app).await.expect("Failed to start web server");
 }
 
 async fn get_dashboard() -> Html<&'static str> {

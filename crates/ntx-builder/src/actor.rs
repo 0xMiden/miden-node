@@ -40,7 +40,7 @@ pub struct AccountActorConfig {
 #[derive(Debug)]
 pub enum AccountOrigin {
     /// Accounts that have been created by a transaction.
-    Transaction(Account),
+    Transaction(Box<Account>),
     /// Accounts that already exist in the store.
     Store(NetworkAccountPrefix),
 }
@@ -49,7 +49,7 @@ impl AccountOrigin {
     /// Returns an [`AccountOrigin::Transaction`] if the account is a network account.
     pub fn transaction(account: Account) -> Option<Self> {
         if account.is_network() {
-            Some(AccountOrigin::Transaction(account))
+            Some(AccountOrigin::Transaction(account.into()))
         } else {
             None
         }
@@ -124,7 +124,7 @@ impl AccountActor {
                     .await
                     .expect("actor should be able to load account")
                     .expect("actor account should exist"),
-                AccountOrigin::Transaction(ref account) => account.clone(),
+                AccountOrigin::Transaction(ref account) => *(account.clone()),
             }
         };
         let block_num = self.chain_state.read().await.chain_tip_header.block_num();

@@ -123,7 +123,7 @@ impl InflightState {
     /// The [`NodeId`]s which the given node directly depends on.
     ///
     /// Note that the result is invalidated by mutating the state.
-    pub(crate) fn parents(&self, node: &dyn Node) -> HashSet<NodeId> {
+    pub(crate) fn parents(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
         let note_parents =
             node.unauthenticated_notes().filter_map(|note| self.output_notes.get(&note));
 
@@ -134,13 +134,19 @@ impl InflightState {
             })
             .flatten();
 
-        account_parents.chain(note_parents).copied().collect()
+        account_parents
+            .chain(note_parents)
+            .copied()
+            // Its possible for a node to have internal state connecting to itself. For example,
+            // a proposed batch has not erased the internally produced and consumed notes.
+            .filter(|parent| parent != &id)
+            .collect()
     }
 
     /// The [`NodeId`]s which depend directly on the given node.
     ///
     /// Note that the result is invalidated by mutating the state.
-    pub(crate) fn children(&self, node: &dyn Node) -> HashSet<NodeId> {
+    pub(crate) fn children(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
         let note_children =
             node.output_notes().filter_map(|note| self.unauthenticated_notes.get(&note));
 
@@ -151,7 +157,13 @@ impl InflightState {
             })
             .flatten();
 
-        account_children.chain(note_children).copied().collect()
+        account_children
+            .chain(note_children)
+            .copied()
+            // Its possible for a node to have internal state connecting to itself. For example,
+            // a proposed batch has not erased the internally produced and consumed notes.
+            .filter(|child| child != &id)
+            .collect()
     }
 }
 

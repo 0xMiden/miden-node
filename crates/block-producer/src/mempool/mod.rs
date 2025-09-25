@@ -250,7 +250,7 @@ impl Mempool {
 
             // A transaction may be placed in a batch IFF all parents were already in a batch (or
             // are part of this one).
-            for parent in self.state.parents(candidate) {
+            for parent in self.state.parents(NodeId::Transaction(candidate.id()), candidate) {
                 match parent {
                     // TODO(mirko): Once user batches are supported, they will also need to be
                     // checked here.
@@ -375,7 +375,7 @@ impl Mempool {
 
             // A batch is selectable if all parents are already blocks, or if the batch is part of
             // the current block selection.
-            for parent in self.state.parents(candidate) {
+            for parent in self.state.parents(NodeId::ProvenBatch(candidate.id()), candidate) {
                 match parent {
                     NodeId::Block(_) => {},
                     NodeId::ProvenBatch(parent) if !selected.contains(parent) => {},
@@ -594,7 +594,7 @@ impl Mempool {
             }
             .unwrap();
 
-            to_process.extend(self.state.children(node.as_ref()));
+            to_process.extend(self.state.children(id, node.as_ref()));
             self.state.remove(node.as_ref());
             reverted.insert(id, node);
         }

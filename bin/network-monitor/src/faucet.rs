@@ -39,7 +39,7 @@ pub struct FaucetTestDetails {
     pub success_count: u64,
     pub failure_count: u64,
     pub last_tx_id: Option<String>,
-    pub challenge_difficulty: Option<u64>,
+    pub challenge_difficulty: Option<u32>,
 }
 
 /// Response from the faucet's `/pow` endpoint.
@@ -155,7 +155,7 @@ pub async fn run_faucet_test_task(
 async fn perform_faucet_test(
     client: &Client,
     faucet_url: &Url,
-) -> anyhow::Result<(GetTokensResponse, u64)> {
+) -> anyhow::Result<(GetTokensResponse, u32)> {
     // Use a test account ID - convert to AccountId and format properly
     let account_id = AccountId::try_from(ACCOUNT_ID_SENDER)
         .context("Failed to create AccountId from test constant")?;
@@ -205,7 +205,7 @@ async fn perform_faucet_test(
     let tokens_response: GetTokensResponse = serde_json::from_str(&response_text)
         .with_context(|| format!("Failed to parse tokens response: {response_text}"))?;
 
-    Ok((tokens_response, challenge_response.target))
+    Ok((tokens_response, challenge_response.target.leading_zeros()))
 }
 
 /// Solves a proof-of-work challenge using SHA-256 hashing.
@@ -220,7 +220,12 @@ async fn perform_faucet_test(
 /// The nonce that solves the challenge, or an error if no solution is found within reasonable
 /// bounds.
 fn solve_pow_challenge(challenge: &str, target: u64) -> anyhow::Result<u64> {
-    debug!("Solving PoW challenge: challenge={}, target={}", challenge, target);
+    debug!(
+        "Solving PoW challenge: challenge={}, target={} (~{} bits)",
+        challenge,
+        target,
+        target.leading_zeros(),
+    );
     // Try up to 100 million nonces.
     for nonce in 0..MAX_CHALLENGE_ATTEMPTS {
         let mut hasher = Sha256::new();
@@ -232,13 +237,25 @@ fn solve_pow_challenge(challenge: &str, target: u64) -> anyhow::Result<u64> {
         let hash_as_u64 = u64::from_be_bytes(hash_result[..8].try_into().unwrap());
 
         if hash_as_u64 < target {
-            debug!("PoW solution found! nonce={}, hash={}, target={}", nonce, hash_as_u64, target);
+            debug!(
+                "PoW solution found! nonce={}, hash={}, target={} (~{} bits)",
+                nonce,
+                hash_as_u64,
+                target,
+                target.leading_zeros(),
+            );
             return Ok(nonce);
         }
 
         // Log progress every 100k attempts
         if nonce % 100_000 == 0 && nonce > 0 {
-            debug!("PoW attempt {}: current_hash={}, target={}", nonce, hash_as_u64, target);
+            debug!(
+                "PoW attempt {}: current_hash={}, target={} (~{} bits)",
+                nonce,
+                hash_as_u64,
+                target,
+                target.leading_zeros(),
+            );
         }
     }
 

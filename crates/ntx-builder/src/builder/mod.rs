@@ -186,7 +186,7 @@ impl NetworkTransactionBuilder {
             MempoolEvent::TransactionAdded { account_delta, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     // Spawn new actors for account creation transactions.
-                    if let Some(account) = AccountOrigin::transaction(account.clone()) {
+                    if let Some(account) = AccountOrigin::transaction(account) {
                         self.coordinator.spawn_actor(account, account_actor_config).await?;
                     }
                     Ok(())

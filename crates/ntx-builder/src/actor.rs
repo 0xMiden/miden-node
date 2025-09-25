@@ -47,9 +47,9 @@ pub enum AccountOrigin {
 
 impl AccountOrigin {
     /// Returns an [`AccountOrigin::Transaction`] if the account is a network account.
-    pub fn transaction(account: Account) -> Option<Self> {
+    pub fn transaction(account: &Account) -> Option<Self> {
         if account.is_network() {
-            Some(AccountOrigin::Transaction(account.into()))
+            Some(AccountOrigin::Transaction(account.clone().into()))
         } else {
             None
         }

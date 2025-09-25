@@ -1,7 +1,5 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
-use miden_node_proto::generated as proto;
-use miden_node_proto::generated::errors::SubmitProvenTransactionError;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;
@@ -102,34 +100,35 @@ pub enum AddTransactionError {
     },
 }
 
-// Error codes for gRPC Status::details
-// =================================================================================================
-
 impl AddTransactionError {
-    fn api_error(&self) -> SubmitProvenTransactionError {
+    fn api_error(&self) -> SubmitProvenTransactionGrpcError {
         match self {
             AddTransactionError::VerificationFailed(tx_verify_error) => match tx_verify_error {
                 VerifyTxError::InputNotesAlreadyConsumed(_) => {
-                    SubmitProvenTransactionError::InputNotesAlreadyConsumed
+                    SubmitProvenTransactionGrpcError::InputNotesAlreadyConsumed
                 },
-                VerifyTxError::StoreConnectionFailed(_) => SubmitProvenTransactionError::Internal,
+                VerifyTxError::StoreConnectionFailed(_) => {
+                    SubmitProvenTransactionGrpcError::Internal
+                },
                 VerifyTxError::UnauthenticatedNotesNotFound(_) => {
-                    SubmitProvenTransactionError::UnauthenticatedNotesNotFound
+                    SubmitProvenTransactionGrpcError::UnauthenticatedNotesNotFound
                 },
                 VerifyTxError::OutputNotesAlreadyExist(_) => {
-                    SubmitProvenTransactionError::OutputNotesAlreadyExist
+                    SubmitProvenTransactionGrpcError::OutputNotesAlreadyExist
                 },
                 VerifyTxError::IncorrectAccountInitialCommitment { .. } => {
-                    SubmitProvenTransactionError::IncorrectAccountInitialCommitment
+                    SubmitProvenTransactionGrpcError::IncorrectAccountInitialCommitment
                 },
                 VerifyTxError::InvalidTransactionProof(_) => {
-                    SubmitProvenTransactionError::InvalidTransactionProof
+                    SubmitProvenTransactionGrpcError::InvalidTransactionProof
                 },
             },
-            AddTransactionError::StaleInputs { .. } => SubmitProvenTransactionError::Internal,
-            AddTransactionError::Expired { .. } => SubmitProvenTransactionError::TransactionExpired,
+            AddTransactionError::StaleInputs { .. } => SubmitProvenTransactionGrpcError::Internal,
+            AddTransactionError::Expired { .. } => {
+                SubmitProvenTransactionGrpcError::TransactionExpired
+            },
             AddTransactionError::TransactionDeserializationFailed(_) => {
-                SubmitProvenTransactionError::DeserializationFailed
+                SubmitProvenTransactionGrpcError::DeserializationFailed
             },
         }
     }
@@ -156,6 +155,40 @@ impl From<AddTransactionError> for tonic::Status {
     }
 }
 
+// Submit proven transaction error codes for gRPC Status::details
+// =================================================================================================
+
+#[derive(Debug, Copy, Clone)]
+#[repr(u8)]
+pub(crate) enum SubmitProvenTransactionGrpcError {
+    Internal = 0,
+    DeserializationFailed = 1,
+    InvalidTransactionProof = 2,
+    IncorrectAccountInitialCommitment = 3,
+    InputNotesAlreadyConsumed = 4,
+    UnauthenticatedNotesNotFound = 5,
+    OutputNotesAlreadyExist = 6,
+    TransactionExpired = 7,
+}
+
+impl SubmitProvenTransactionGrpcError {
+    pub fn api_code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn tonic_code(self) -> tonic::Code {
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
+        }
+    }
+
+    pub fn is_internal(self) -> bool {
+        matches!(self, SubmitProvenTransactionGrpcError::Internal)
+    }
+}
+
 // Submit proven batch by user errors
 // =================================================================================================
 
@@ -166,10 +199,10 @@ pub enum SubmitProvenBatchError {
 }
 
 impl SubmitProvenBatchError {
-    fn api_error(&self) -> proto::errors::SubmitProvenBatchError {
+    fn api_error(&self) -> SubmitProvenBatchGrpcError {
         match self {
             SubmitProvenBatchError::Deserialization(_) => {
-                proto::errors::SubmitProvenBatchError::DeserializationFailed
+                SubmitProvenBatchGrpcError::DeserializationFailed
             },
         }
     }
@@ -190,6 +223,35 @@ impl From<SubmitProvenBatchError> for tonic::Status {
             message,
             vec![api_error.api_code()].into(),
         )
+    }
+}
+
+// Submit proven batch error codes for gRPC Status::details
+// =================================================================================================
+
+#[derive(Debug, Copy, Clone)]
+#[repr(u8)]
+pub(crate) enum SubmitProvenBatchGrpcError {
+    #[allow(dead_code)]
+    Internal = 0,
+    DeserializationFailed = 1,
+}
+
+impl SubmitProvenBatchGrpcError {
+    pub fn api_code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn tonic_code(self) -> tonic::Code {
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
+        }
+    }
+
+    pub fn is_internal(self) -> bool {
+        matches!(self, SubmitProvenBatchGrpcError::Internal)
     }
 }
 

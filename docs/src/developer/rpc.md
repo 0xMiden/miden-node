@@ -18,3 +18,51 @@ If there is a mismatch in version, clients will encounter an error while executi
 - gRPC message: Missing required ACCEPT header
 
 The server will reject any version that does not have the same major and minor version to it. This behaviour will change after v1.0.0., at which point only the major version will be taken into account.
+
+## Error Handling
+
+The RPC component uses domain-specific error enums for structured error reporting instead of proto-generated error types. This provides better control over error codes and makes error handling more maintainable.
+
+### Error Architecture
+
+Error handling follows this pattern:
+
+1. **Domain Errors**: Business logic errors are defined in domain-specific enums
+2. **gRPC Conversion**: Domain errors are converted to gRPC `Status` objects with structured details
+3. **Error Details**: Specific error codes are embedded in `Status.details` as single bytes
+
+### SubmitProvenTransaction Errors
+
+Transaction submission errors are:
+
+```rust
+enum SubmitProvenTransactionGrpcError {
+    Internal = 0,
+    DeserializationFailed = 1,
+    InvalidTransactionProof = 2,
+    IncorrectAccountInitialCommitment = 3,
+    InputNotesAlreadyConsumed = 4,
+    UnauthenticatedNotesNotFound = 5,
+    OutputNotesAlreadyExist = 6,
+    TransactionExpired = 7,
+}
+```
+
+Error codes are embedded as single bytes in `Status.details`
+
+<!--
+
+TODO: show this once the endpoint is public
+
+### SubmitProvenBatch Errors
+
+Batch submission errors are:
+
+```rust
+enum SubmitProvenBatchGrpcError {
+    Internal = 0,
+    DeserializationFailed = 1,
+}
+```
+
+-->

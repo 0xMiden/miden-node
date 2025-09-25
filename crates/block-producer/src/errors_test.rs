@@ -1,12 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use miden_node_proto::generated::errors::SubmitProvenTransactionError;
     use miden_objects::Word;
     use miden_objects::block::BlockNumber;
     use miden_objects::note::{NoteId, Nullifier};
     use miden_tx::utils::DeserializationError;
 
-    use crate::errors::{AddTransactionError, VerifyTxError};
+    use crate::errors::{AddTransactionError, SubmitProvenTransactionGrpcError, VerifyTxError};
 
     #[rstest::rstest]
     #[test]
@@ -14,34 +13,34 @@ mod tests {
         AddTransactionError::VerificationFailed(
             VerifyTxError::InputNotesAlreadyConsumed(vec![Nullifier::dummy(1)])
         ),
-        SubmitProvenTransactionError::InputNotesAlreadyConsumed,
+        SubmitProvenTransactionGrpcError::InputNotesAlreadyConsumed,
         "verification failed",
     )]
     #[case::unauthenticated_notes_not_found_error(
         AddTransactionError::VerificationFailed(
             VerifyTxError::UnauthenticatedNotesNotFound(vec![NoteId::new(Word::default(), Word::default())])
         ),
-        SubmitProvenTransactionError::UnauthenticatedNotesNotFound,
+        SubmitProvenTransactionGrpcError::UnauthenticatedNotesNotFound,
         "verification failed",
     )]
     #[case::stale_inputs_error(
         AddTransactionError::StaleInputs { input_block: BlockNumber::from(100), stale_limit: BlockNumber::from(150) },
-        SubmitProvenTransactionError::Internal,
+        SubmitProvenTransactionGrpcError::Internal,
         "Internal error",
     )]
     #[case::expired_error(
         AddTransactionError::Expired { expired_at: BlockNumber::from(200), limit: BlockNumber::from(250) },
-        SubmitProvenTransactionError::TransactionExpired,
+        SubmitProvenTransactionGrpcError::TransactionExpired,
         "expired",
     )]
     #[case::transaction_deserialization_failed_error(
         AddTransactionError::TransactionDeserializationFailed(DeserializationError::InvalidValue("test error".to_string())),
-        SubmitProvenTransactionError::DeserializationFailed,
+        SubmitProvenTransactionGrpcError::DeserializationFailed,
         "deserialization",
     )]
     fn submit_transaction_error_mapping(
         #[case] uut: AddTransactionError,
-        #[case] expected: SubmitProvenTransactionError,
+        #[case] expected: SubmitProvenTransactionGrpcError,
         #[case] message: &str,
     ) {
         let status = tonic::Status::from(uut);

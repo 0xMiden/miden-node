@@ -39,7 +39,7 @@ impl Coordinator {
     ///
     /// If the account is not a network account, the function returns Ok(()) without spawning an
     /// actor.
-    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config))]
+    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
     pub async fn spawn_actor(
         &mut self,
         origin: AccountOrigin,

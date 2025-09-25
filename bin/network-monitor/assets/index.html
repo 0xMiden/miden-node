@@ -179,7 +179,7 @@
                                 ${details.RpcStatus.genesis_commitment ? `
                                     <div class="detail-item">
                                         <strong>Genesis:</strong> 
-                                        <span class="genesis-value">${details.RpcStatus.genesis_commitment.substring(0, 20)}...</span>
+                                        <span class="genesis-value">0x${details.RpcStatus.genesis_commitment.substring(0, 20)}...</span>
                                         <button class="copy-button" onclick="copyToClipboard('${details.RpcStatus.genesis_commitment}', event)" title="Copy full genesis commitment">
                                             <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                 <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>

@@ -8,6 +8,7 @@ use std::ops::RangeInclusive;
 use diesel::prelude::{Insertable, Queryable};
 use diesel::query_dsl::methods::SelectDsl;
 use diesel::{
+    BoolExpressionMethods,
     ExpressionMethods,
     QueryDsl,
     QueryableByName,
@@ -257,17 +258,19 @@ impl TransactionSummaryRowInsert {
 ///     block_num > ?1
 ///     AND block_num <= ?2
 ///     AND account_id IN rarray(?3)
+///     AND (
+///         block_num > ?4 OR (block_num = ?4 AND transaction_id > ?5)
+///     )  -- cursor-based pagination
 /// ORDER BY
 ///     block_num ASC,
 ///     transaction_id ASC
 /// LIMIT
-///     ?4
-/// OFFSET
-///     ?5
+///     ?6
 /// ```
 /// Notes:
 /// - Uses stable ordering (`block_num`, `transaction_id`) to ensure consistent results across
-///   paginated queries
+///   paginated queries.
+/// - Uses cursor-based pagination.
 /// - The query is executed in chunks of 1000 transactions to prevent loading excessive data and to
 ///   stop as soon as the accumulated size approaches the 4MB limit.
 /// - Given the size of note records, 1000 records are guaranteed never to return more than about
@@ -295,22 +298,36 @@ pub fn select_transactions_records(
     // as soon as we approach the size limit
     let mut all_transactions = Vec::new();
     let mut total_size = 0i64;
-    let mut offset = 0i64;
+    let mut last_block_num: Option<i64> = None;
+    let mut last_transaction_id: Option<Vec<u8>> = None;
 
     loop {
-        let chunk =
+        let mut query =
             SelectDsl::select(schema::transactions::table, TransactionRecordRaw::as_select())
                 .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
                 .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
                 .filter(schema::transactions::account_id.eq_any(&desired_account_ids))
-                .order((
-                    schema::transactions::block_num.asc(),
-                    schema::transactions::transaction_id.asc(),
-                ))
-                .offset(offset)
-                .limit(NUM_TXS_PER_CHUNK)
-                .load::<TransactionRecordRaw>(conn)
-                .map_err(DatabaseError::from)?;
+                .into_boxed();
+
+        // Apply cursor-based pagination using the last seen (block_num, transaction_id)
+        if let (Some(last_block), Some(last_tx_id)) = (last_block_num, &last_transaction_id) {
+            query = query.filter(
+                schema::transactions::block_num
+                    .gt(last_block)
+                    .or(schema::transactions::block_num
+                        .eq(last_block)
+                        .and(schema::transactions::transaction_id.gt(last_tx_id))),
+            );
+        }
+
+        let chunk = query
+            .order((
+                schema::transactions::block_num.asc(),
+                schema::transactions::transaction_id.asc(),
+            ))
+            .limit(NUM_TXS_PER_CHUNK)
+            .load::<TransactionRecordRaw>(conn)
+            .map_err(DatabaseError::from)?;
 
         // If no more data, we're done
         if chunk.is_empty() {
@@ -322,6 +339,9 @@ pub fn select_transactions_records(
         for tx in chunk {
             if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES {
                 total_size += tx.size_in_bytes;
+                // Update cursor position for next iteration
+                last_block_num = Some(tx.block_num);
+                last_transaction_id = Some(tx.transaction_id.clone());
                 all_transactions.push(tx);
                 added_from_chunk += 1;
             } else {
@@ -334,8 +354,6 @@ pub fn select_transactions_records(
         if added_from_chunk < NUM_TXS_PER_CHUNK {
             break;
         }
-
-        offset += NUM_TXS_PER_CHUNK;
     }
 
     // Ensure block consistency: remove the last block if it's incomplete

@@ -169,8 +169,6 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     fn try_from(value: proto::account::AccountStorageHeader) -> Result<Self, Self::Error> {
         let proto::account::AccountStorageHeader { slots } = value;
 
-        // Convert slots to AccountStorageHeader format
-        // This is a simplified conversion - adjust based on actual requirements
         let items = slots
             .into_iter()
             .map(|slot| {
@@ -181,8 +179,6 @@ impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
             })
             .collect::<Result<Vec<_>, ConversionError>>()?;
 
-        // Create AccountStorageHeader from the items
-        // Note: This might need adjustment based on the actual AccountStorageHeader constructor
         Ok(AccountStorageHeader::new(items))
     }
 }

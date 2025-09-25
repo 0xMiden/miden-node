@@ -14,7 +14,7 @@ use tokio::time;
 use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
-use crate::actor::AccountActorConfig;
+use crate::actor::{AccountActorConfig, AccountOrigin};
 use crate::block_producer::BlockProducerClient;
 use crate::builder::coordinator::Coordinator;
 use crate::store::StoreClient;
@@ -134,15 +134,16 @@ impl NetworkTransactionBuilder {
             block_producer_url: self.block_producer_url.clone(),
             tx_prover_url: self.tx_prover_url.clone(),
             chain_state: chain_state.clone(),
+            store: store.clone(),
         };
 
         // Create initial set of actors based on all known network accounts.
         let account_ids = store.get_network_accounts().await?;
         for account_id in account_ids {
             if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
-                if let Some(account) = store.get_network_account(account_prefix).await? {
-                    self.coordinator.spawn_actor(account, &config, store.clone()).await?;
-                }
+                self.coordinator
+                    .spawn_actor(AccountOrigin::store(account_prefix), &config)
+                    .await?;
             }
         }
 
@@ -162,7 +163,6 @@ impl NetworkTransactionBuilder {
                     self.handle_mempool_event(
                         event,
                         &config,
-                        store.clone(),
                         chain_state.clone(),
                     ).await?;
                 },
@@ -174,22 +174,21 @@ impl NetworkTransactionBuilder {
     /// actors as required.
     #[tracing::instrument(
         name = "ntx.builder.handle_mempool_event",
-        skip(self, event, account_actor_config, store, chain_state)
+        skip(self, event, account_actor_config, chain_state)
     )]
     async fn handle_mempool_event(
         &mut self,
         event: MempoolEvent,
         account_actor_config: &AccountActorConfig,
-        store: StoreClient,
         chain_state: Arc<RwLock<ChainState>>,
     ) -> anyhow::Result<()> {
         match &event {
             MempoolEvent::TransactionAdded { account_delta, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     // Spawn new actors for account creation transactions.
-                    self.coordinator
-                        .spawn_actor(account.clone(), account_actor_config, store.clone())
-                        .await?;
+                    if let Some(account) = AccountOrigin::transaction(account.clone()) {
+                        self.coordinator.spawn_actor(account, account_actor_config).await?;
+                    }
                     Ok(())
                 } else {
                     // Broadcast event.

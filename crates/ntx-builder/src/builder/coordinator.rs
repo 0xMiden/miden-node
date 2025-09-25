@@ -4,13 +4,10 @@ use std::sync::Arc;
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
-use miden_objects::account::Account;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 
-use crate::actor::{AccountActor, AccountActorConfig, ActorShutdownReason};
-use crate::state::State;
-use crate::store::StoreClient;
+use crate::actor::{AccountActor, AccountActorConfig, AccountOrigin, ActorShutdownReason};
 
 // COORDINATOR
 // ================================================================================================
@@ -42,29 +39,20 @@ impl Coordinator {
     ///
     /// If the account is not a network account, the function returns Ok(()) without spawning an
     /// actor.
-    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config, store))]
+    #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, account, config))]
     pub async fn spawn_actor(
         &mut self,
-        account: Account,
+        origin: AccountOrigin,
         config: &AccountActorConfig,
-        store: StoreClient,
     ) -> anyhow::Result<()> {
-        // Only spawn actors for network accounts.
-        let Ok(account_prefix) = NetworkAccountPrefix::try_from(account.id()) else {
-            return Ok(());
-        };
-
-        // Load the account state from the store.
-        let block_num = config.chain_state.read().await.chain_tip_header.block_num();
-        let state = State::load(account, account_prefix, store, block_num).await?;
-
+        let account_prefix = origin.prefix();
         // Construct the actor and add it to the registry for subsequent messaging.
-        let (actor, event_tx) = AccountActor::new(config);
+        let (actor, event_tx) = AccountActor::new(origin, config);
         self.actor_registry.insert(account_prefix, event_tx.clone());
 
         // Run the actor.
         let semaphore = self.semaphore.clone();
-        self.actor_join_set.spawn(Box::pin(actor.run(state, semaphore)));
+        self.actor_join_set.spawn(Box::pin(actor.run(semaphore)));
 
         tracing::info!("created actor for account prefix: {}", account_prefix);
         Ok(())
@@ -95,6 +83,7 @@ impl Coordinator {
             },
             Some(Err(err)) => {
                 if err.is_panic() {
+                    // TODO: this can be relaxed to be an error log.
                     Err(err).context("actor join set panicked")
                 } else {
                     Err(err).context("actor join set failed")

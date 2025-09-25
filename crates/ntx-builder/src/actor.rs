@@ -4,6 +4,7 @@ use futures::FutureExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
+use miden_objects::account::Account;
 use miden_objects::transaction::TransactionId;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
@@ -12,6 +13,7 @@ use url::Url;
 use crate::block_producer::BlockProducerClient;
 use crate::builder::ChainState;
 use crate::state::{State, TransactionCandidate};
+use crate::store::StoreClient;
 use crate::transaction::NtxError;
 
 pub enum ActorShutdownReason {
@@ -20,8 +22,11 @@ pub enum ActorShutdownReason {
     SemaphoreFailed(AcquireError),
 }
 
+/// Configuration that is required by all account actors.
 #[derive(Debug, Clone)]
 pub struct AccountActorConfig {
+    /// Client for interacting with the store in order to load account state.
+    pub store: StoreClient,
     /// Address of the block producer gRPC server.
     pub block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
@@ -31,6 +36,41 @@ pub struct AccountActorConfig {
     pub chain_state: Arc<RwLock<ChainState>>,
 }
 
+/// The origin of the account which the actor will use to initialize the account state.
+#[derive(Debug)]
+pub enum AccountOrigin {
+    /// Accounts that have been created by a transaction.
+    Transaction(Account),
+    /// Accounts that already exist in the store.
+    Store(NetworkAccountPrefix),
+}
+
+impl AccountOrigin {
+    /// Returns an [`AccountOrigin::Transaction`] if the account is a network account.
+    pub fn transaction(account: Account) -> Option<Self> {
+        if account.is_network() {
+            Some(AccountOrigin::Transaction(account))
+        } else {
+            None
+        }
+    }
+
+    /// Returns an [`AccountOrigin::Store`].
+    pub fn store(prefix: NetworkAccountPrefix) -> Self {
+        AccountOrigin::Store(prefix)
+    }
+
+    /// Returns the [`NetworkAccountPrefix`] of the account.
+    pub fn prefix(&self) -> NetworkAccountPrefix {
+        match self {
+            AccountOrigin::Transaction(account) => NetworkAccountPrefix::try_from(account.id())
+                .expect("actor accounts are always network accounts"),
+            AccountOrigin::Store(prefix) => *prefix,
+        }
+    }
+}
+
+/// The mode of operation that the account actor is currently performing.
 #[derive(Default, Debug)]
 enum ActorMode {
     #[default]
@@ -41,6 +81,8 @@ enum ActorMode {
 
 /// Account actor that manages state and processes transactions for a single network account.
 pub struct AccountActor {
+    origin: AccountOrigin,
+    store: StoreClient,
     state: ActorMode,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
     block_producer: BlockProducerClient,
@@ -51,11 +93,16 @@ pub struct AccountActor {
 impl AccountActor {
     /// Constructs a new account actor and corresponding messaging channel with the given
     /// configuration.
-    pub fn new(config: &AccountActorConfig) -> (Self, mpsc::UnboundedSender<MempoolEvent>) {
+    pub fn new(
+        origin: AccountOrigin,
+        config: &AccountActorConfig,
+    ) -> (Self, mpsc::UnboundedSender<MempoolEvent>) {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let actor = Self {
+            origin,
+            store: config.store.clone(),
             state: ActorMode::default(),
             event_rx,
             block_producer,
@@ -67,7 +114,24 @@ impl AccountActor {
 
     /// Runs the account actor, processing events and managing state until a reason to shutdown is
     /// encountered.
-    pub async fn run(mut self, mut state: State, semaphore: Arc<Semaphore>) -> ActorShutdownReason {
+    pub async fn run(mut self, semaphore: Arc<Semaphore>) -> ActorShutdownReason {
+        // Load the account state from the store and set up the account actor state.
+        let account = {
+            match self.origin {
+                AccountOrigin::Store(account_prefix) => self
+                    .store
+                    .get_network_account(account_prefix)
+                    .await
+                    .expect("actor should be able to load account")
+                    .expect("actor account should exist"),
+                AccountOrigin::Transaction(ref account) => account.clone(),
+            }
+        };
+        let block_num = self.chain_state.read().await.chain_tip_header.block_num();
+        let mut state = State::load(account, self.origin.prefix(), &self.store, block_num)
+            .await
+            .expect("actor should be able to load account state");
+
         loop {
             // Enable or disable transaction execution based on actor mode.
             let tx_permit_acquisition = match self.state {

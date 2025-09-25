@@ -69,7 +69,7 @@ impl State {
     pub async fn load(
         account: Account,
         account_prefix: NetworkAccountPrefix,
-        store: StoreClient,
+        store: &StoreClient,
         block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
         let notes = store

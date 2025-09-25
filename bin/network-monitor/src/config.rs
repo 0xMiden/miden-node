@@ -9,10 +9,12 @@ use url::Url;
 
 const DEFAULT_RPC_URL: &str = "http://localhost:50051";
 const DEFAULT_REMOTE_PROVER_URLS: &str = "http://localhost:50052";
+const DEFAULT_FAUCET_URL: &str = "http://localhost:8080";
 const DEFAULT_PORT: u16 = 3000;
 
 const RPC_URL_ENV_VAR: &str = "MIDEN_MONITOR_RPC_URL";
 const REMOTE_PROVER_URLS_ENV_VAR: &str = "MIDEN_MONITOR_REMOTE_PROVER_URLS";
+const FAUCET_URL_ENV_VAR: &str = "MIDEN_MONITOR_FAUCET_URL";
 const PORT_ENV_VAR: &str = "MIDEN_MONITOR_PORT";
 const ENABLE_OTEL_ENV_VAR: &str = "MIDEN_MONITOR_ENABLE_OTEL";
 
@@ -25,6 +27,8 @@ pub struct MonitorConfig {
     pub rpc_url: Url,
     /// The URLs of the remote provers for status checking.
     pub remote_prover_urls: Vec<Url>,
+    /// The URL of the faucet service for testing.
+    pub faucet_url: Option<Url>,
     /// The port of the monitor.
     pub port: u16,
     /// Whether to enable OpenTelemetry.
@@ -39,6 +43,7 @@ impl MonitorConfig {
     /// - `MIDEN_MONITOR_RPC_URL`: The URL of the RPC service.
     /// - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: The URLs of the remote provers for status checking,
     ///   comma separated.
+    /// - `MIDEN_MONITOR_FAUCET_URL`: The URL of the faucet service for testing (optional).
     /// - `MIDEN_MONITOR_PORT`: The port of the monitor.
     /// - `MIDEN_MONITOR_ENABLE_OTEL`: Whether to enable OpenTelemetry.
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error>> {
@@ -56,6 +61,13 @@ impl MonitorConfig {
             .map(Url::parse)
             .collect::<Result<Vec<_>, _>>()?;
 
+        // Parse optional faucet URL
+        let faucet_url = if let Ok(url_str) = std::env::var(FAUCET_URL_ENV_VAR) {
+            Some(Url::parse(&url_str)?)
+        } else {
+            Some(Url::parse(DEFAULT_FAUCET_URL)?)
+        };
+
         let port = std::env::var(PORT_ENV_VAR)
             .unwrap_or_else(|_| DEFAULT_PORT.to_string())
             .parse::<u16>()?;
@@ -68,6 +80,7 @@ impl MonitorConfig {
         Ok(MonitorConfig {
             rpc_url: Url::parse(&rpc_url)?,
             remote_prover_urls,
+            faucet_url,
             port,
             enable_otel,
         })

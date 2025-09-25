@@ -18,6 +18,7 @@ use tracing::instrument;
 use url::Url;
 
 use crate::COMPONENT;
+use crate::faucet::FaucetTestDetails;
 use crate::remote_prover::{ProofType, ProverTestDetails};
 
 // STATUS
@@ -73,6 +74,7 @@ pub enum ServiceDetails {
     RpcStatus(RpcStatusDetails),
     RemoteProverStatus(RemoteProverStatusDetails),
     RemoteProverTest(ProverTestDetails),
+    FaucetTest(FaucetTestDetails),
     Error,
 }
 

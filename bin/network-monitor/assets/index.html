@@ -221,6 +221,40 @@
                                     ` : ''}
                                 </div>
                             ` : ''}
+                            ${details.FaucetTest ? `
+                                <div class="nested-status">
+                                    <strong>Faucet Testing:</strong>
+                                    <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
+                                        <div class="metric-row">
+                                            <span class="metric-label">Success Rate:</span>
+                                            <span class="metric-value">${details.FaucetTest.success_count}/${details.FaucetTest.success_count + details.FaucetTest.failure_count}</span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Last Response Time:</span>
+                                            <span class="metric-value">${details.FaucetTest.test_duration_ms}ms</span>
+                                        </div>
+                                        ${details.FaucetTest.last_tx_id ? `
+                                            <div class="metric-row">
+                                                <span class="metric-label">Last TX ID:</span>
+                                                <span class="metric-value">${details.FaucetTest.last_tx_id.substring(0, 16)}...
+                                                    <button class="copy-button" onclick="copyToClipboard('${details.FaucetTest.last_tx_id}', event)" title="Copy full TX ID">
+                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                        </svg>
+                                                    </button>
+                                                </span>
+                                            </div>
+                                        ` : ''}
+                                        ${details.FaucetTest.challenge_difficulty ? `
+                                            <div class="metric-row">
+                                                <span class="metric-label">Last Challenge Difficulty:</span>
+                                                <span class="metric-value">~${details.FaucetTest.challenge_difficulty} bits</span>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                </div>
+                            ` : ''}
                             ${service.testDetails ? `
                                 <div class="nested-status">
                                     <strong>Proof Generation Testing (${service.testDetails.proof_type}):</strong>

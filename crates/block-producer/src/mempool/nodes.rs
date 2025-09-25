@@ -74,7 +74,7 @@ impl ProposedBatchNode {
         )
     }
 
-    pub fn with_proof(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
+    pub fn to_proven_batch_node(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
         let Self(txs) = self;
         ProvenBatchNode { txs, inner: proof }
     }

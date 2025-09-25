@@ -332,7 +332,7 @@ impl Mempool {
 
         self.state.remove(&proposed);
 
-        let proven = proposed.with_proof(proof);
+        let proven = proposed.to_proven_batch_node(proof);
         self.state.insert(NodeId::ProvenBatch(proven.id()), &proven);
         self.nodes.proven_batches.insert(proven.id(), proven);
 

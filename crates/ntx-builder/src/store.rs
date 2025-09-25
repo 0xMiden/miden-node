@@ -3,11 +3,10 @@ use std::time::Duration;
 use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
-use miden_node_proto::errors::{ConversionError, MissingFieldHelper};
-use miden_node_proto::generated::account::AccountDetails;
+use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
-use miden_objects::account::Account;
+use miden_objects::account::{Account, AccountId};
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
 use miden_tx::utils::Deserializable;
@@ -134,7 +133,6 @@ impl StoreClient {
         Ok(all_notes)
     }
 
-    #[expect(dead_code)]
     #[instrument(target = COMPONENT, name = "store.client.get_network_account", skip_all, err)]
     pub async fn get_network_account(
         &self,
@@ -205,16 +203,15 @@ impl StoreClient {
     }
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_accounts", skip_all, err)]
-    pub async fn get_network_accounts(&self) -> Result<Vec<Account>, StoreError> {
+    pub async fn get_network_accounts(&self) -> Result<Vec<AccountId>, StoreError> {
         let response = self.inner.clone().get_network_accounts(()).await?.into_inner();
 
-        let accounts: Result<Vec<Account>, ConversionError> = response
+        let accounts: Result<Vec<AccountId>, ConversionError> = response
             .accounts
             .into_iter()
-            .map(|account_details| match account_details.details {
-                Some(details) => Account::read_from_bytes(&details)
-                    .map_err(|err| ConversionError::deserialization_error("account", err)),
-                None => Err(AccountDetails::missing_field("details")),
+            .map(|account_id| {
+                AccountId::read_from_bytes(&account_id.id)
+                    .map_err(|err| ConversionError::deserialization_error("account_id", err))
             })
             .collect();
 

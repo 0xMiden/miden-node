@@ -203,8 +203,10 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     ) -> Result<Response<proto::ntx_builder_store::NetworkAccounts>, Status> {
         let account_infos = self.state.get_all_network_accounts().await.map_err(internal_error)?;
 
-        let accounts: Vec<proto::account::AccountDetails> =
-            account_infos.into_iter().map(|account_info| (&account_info).into()).collect();
+        let accounts: Vec<proto::account::AccountId> = account_infos
+            .into_iter()
+            .map(|account_info| account_info.summary.account_id.into())
+            .collect();
 
         Ok(Response::new(proto::ntx_builder_store::NetworkAccounts { accounts }))
     }

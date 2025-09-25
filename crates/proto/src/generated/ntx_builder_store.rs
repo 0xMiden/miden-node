@@ -64,12 +64,12 @@ pub struct UnconsumedNetworkNotes {
     #[prost(message, repeated, tag = "2")]
     pub notes: ::prost::alloc::vec::Vec<super::note::NetworkNote>,
 }
-/// Represents the result of getting the network accounts.
+/// Represents the result of getting the network account ids.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct NetworkAccounts {
     /// The list of network accounts.
     #[prost(message, repeated, tag = "1")]
-    pub accounts: ::prost::alloc::vec::Vec<super::account::AccountDetails>,
+    pub accounts: ::prost::alloc::vec::Vec<super::account::AccountId>,
 }
 /// Current blockchain data based on the requested block number.
 #[derive(Clone, PartialEq, ::prost::Message)]

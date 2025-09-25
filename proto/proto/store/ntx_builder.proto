@@ -105,10 +105,10 @@ message UnconsumedNetworkNotes {
 // GET NETWORK ACCOUNTS
 // ================================================================================================
 
-// Represents the result of getting the network accounts.
+// Represents the result of getting the network account ids.
 message NetworkAccounts {
   // The list of network accounts.
-  repeated account.AccountDetails accounts = 1;
+  repeated account.AccountId accounts = 1;
 }
 
 // GET CURRENT BLOCKCHAIN DATA

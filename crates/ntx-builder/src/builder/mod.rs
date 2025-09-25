@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
+use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::BlockHeader;
@@ -136,9 +137,13 @@ impl NetworkTransactionBuilder {
         };
 
         // Create initial set of actors based on all known network accounts.
-        let accounts = store.get_network_accounts().await?;
-        for account in accounts {
-            self.coordinator.spawn_actor(account, &config, store.clone()).await?;
+        let account_ids = store.get_network_accounts().await?;
+        for account_id in account_ids {
+            if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
+                if let Some(account) = store.get_network_account(account_prefix).await? {
+                    self.coordinator.spawn_actor(account, &config, store.clone()).await?;
+                }
+            }
         }
 
         // Main loop which manages actors and passes mempool events to them.

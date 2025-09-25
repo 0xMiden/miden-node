@@ -19,6 +19,16 @@ use url::Url;
 use crate::COMPONENT;
 use crate::status::{ServiceDetails, ServiceStatus, Status};
 
+// CONSTANTS
+// ================================================================================================
+
+/// Maximum number of attempts to solve a `PoW` challenge.
+const MAX_CHALLENGE_ATTEMPTS: u64 = 100_000_000;
+/// Amount of tokens to mint.
+const MINT_AMOUNT: u64 = 1_000_000; // 1 token with 6 decimals
+/// Interval between faucet tests.
+const TEST_INTERVAL: Duration = Duration::from_secs(2 * 60);
+
 // FAUCET TEST TYPES
 // ================================================================================================
 
@@ -77,7 +87,7 @@ pub async fn run_faucet_test_task(
     let mut last_note_id = None;
     let mut last_challenge_difficulty = None;
 
-    let mut interval = tokio::time::interval(Duration::from_secs(2 * 60)); // Test every 2 minutes
+    let mut interval = tokio::time::interval(TEST_INTERVAL);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     loop {
@@ -180,14 +190,13 @@ async fn perform_faucet_test(
 
     // Step 3: Request tokens with the solution
     let tokens_url = faucet_url.join("/get_tokens")?;
-    let asset_amount = 1_000_000u64; // 1 token with 6 decimals
 
     let response = client
         .get(tokens_url)
         .query(&[
             ("account_id", account_id.as_str()),
             ("is_private_note", "false"),
-            ("asset_amount", &asset_amount.to_string()),
+            ("asset_amount", &MINT_AMOUNT.to_string()),
             ("challenge", &challenge_response.challenge),
             ("nonce", &nonce.to_string()),
         ])
@@ -215,8 +224,8 @@ async fn perform_faucet_test(
 /// bounds.
 fn solve_pow_challenge(challenge: &str, target: u64) -> anyhow::Result<u64> {
     debug!("Solving PoW challenge: challenge={}, target={}", challenge, target);
-    // Try up to 10 million nonces - this should be reasonable for most difficulties
-    for nonce in 0..10_000_000u64 {
+    // Try up to 100 million nonces.
+    for nonce in 0..MAX_CHALLENGE_ATTEMPTS {
         let mut hasher = Sha256::new();
         hasher.update(challenge.as_bytes());
         hasher.update(nonce.to_be_bytes());
@@ -236,5 +245,5 @@ fn solve_pow_challenge(challenge: &str, target: u64) -> anyhow::Result<u64> {
         }
     }
 
-    anyhow::bail!("Failed to solve PoW challenge within 10M attempts")
+    anyhow::bail!("Failed to solve PoW challenge within 100M attempts")
 }

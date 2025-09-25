@@ -81,24 +81,31 @@ impl InflightState {
     /// node was still active in the state.
     pub(crate) fn remove(&mut self, node: &dyn Node) {
         for nullifier in node.nullifiers() {
-            self.nullifiers.remove(&nullifier);
+            assert!(
+                self.nullifiers.remove(&nullifier),
+                "Nullifier {nullifier} was not present for removal"
+            );
         }
 
         for note in node.output_notes() {
-            self.output_notes.remove(&note);
+            assert!(
+                self.output_notes.remove(&note).is_some(),
+                "Output note {note} was not present for removal"
+            );
         }
 
         for note in node.unauthenticated_notes() {
-            self.unauthenticated_notes.remove(&note);
+            assert!(
+                self.unauthenticated_notes.remove(&note).is_some(),
+                "Unauthenticated note {note} was not present for removal"
+            );
         }
 
         for (account, from, to) in node.account_updates() {
             let Entry::Occupied(entry) =
                 self.accounts.entry(account).and_modify(|entry| entry.remove(from, to))
             else {
-                // TODO: consider panicking since this shouldn't happen? But we don't assert
-                // about either..
-                continue;
+                panic!("Account {account} update ({from} -> {to}) was not present for removal");
             };
 
             if entry.get().is_empty() {
@@ -190,13 +197,29 @@ impl AccountUpdates {
     }
 
     fn remove(&mut self, from: Word, to: Word) {
-        self.from.remove(&from);
-        self.to.remove(&to);
+        let from_removed = self
+            .from
+            .remove(&from)
+            .expect("should only be removing account updates from nodes that are present");
+        let to_removed = self
+            .to
+            .remove(&to)
+            .expect("should only be removing account updates from nodes that are present");
+        assert_eq!(
+            from_removed, to_removed,
+            "Account updates should be removed as a pair with the same node ID"
+        );
     }
 
     fn insert(&mut self, id: NodeId, from: Word, to: Word) {
-        self.from.insert(from, id);
-        self.to.insert(to, id);
+        assert!(
+            self.from.insert(from, id).is_none(),
+            "Account already contained the commitment {from} when inserting {id:?}"
+        );
+        assert!(
+            self.to.insert(to, id).is_none(),
+            "Account already contained the commitment {to} when inserting {id:?}"
+        );
     }
 
     /// Returns the node ID that updated this account's commitment to the given value.

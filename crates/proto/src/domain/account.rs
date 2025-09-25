@@ -10,7 +10,7 @@ use miden_objects::account::{
     StorageMap,
     StorageSlotType,
 };
-use miden_objects::asset::Asset;
+use miden_objects::asset::{Asset, AssetVault};
 use miden_objects::block::{AccountWitness, BlockNumber};
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
@@ -347,6 +347,29 @@ impl From<AccountStorageHeader> for proto::account::AccountStorageHeader {
 pub struct AccountVaultDetails {
     pub too_many_assets: bool,
     pub assets: Vec<Asset>,
+}
+impl AccountVaultDetails {
+    const MAX_RETURN_ENTRIES: usize = 1000;
+
+    pub fn new(vault: &AssetVault) -> Self {
+        if vault.asset_tree().num_leaves() > Self::MAX_RETURN_ENTRIES {
+            Self {
+                too_many_assets: true,
+                assets: Vec::new(),
+            }
+        } else {
+            Self {
+                too_many_assets: false,
+                assets: Vec::from_iter(vault.assets()),
+            }
+        }
+    }
+    pub fn too_many() -> Self {
+        Self {
+            too_many_assets: false,
+            assets: Vec::new(),
+        }
+    }
 }
 
 impl TryFrom<proto::rpc_store::AccountVaultDetails> for AccountVaultDetails {

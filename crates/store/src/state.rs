@@ -894,10 +894,6 @@ impl State {
         &self,
         account_request: AccountProofRequest,
     ) -> Result<AccountProofResponse, DatabaseError> {
-        // If this number is exceed
-        // TODO use a total size to derive
-        const RESPONSE_COUNT_LIMIT: usize = 100;
-
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
@@ -914,70 +910,60 @@ impl State {
 
             // if we get a query for a private account, we'll return `None`
             let Some(details) = info.details else {
-                return Err(AccountError::StorageSlotNotMap(slot_index).into());
+                return Ok(AccountProofResponse {
+                    witness: inner_state.account_tree.open(account_id),
+                    details: None,
+                });
             };
-                let slot_headers = Vec::from_iter(
-                    details
-                        .storage()
-                        .slots()
-                        .iter()
-                        .map(|storage_slot| (storage_slot.slot_type(), storage_slot.value())),
-                );
 
-                let storage_header = AccountStorageHeader::new(slot_headers);
+            let slot_headers = Vec::from_iter(
+                details
+                    .storage()
+                    .slots()
+                    .iter()
+                    .map(|storage_slot| (storage_slot.slot_type(), storage_slot.value())),
+            );
 
-                let mut storage_map_details = Vec::<AccountStorageMapDetails>::new();
+            let storage_header = AccountStorageHeader::new(slot_headers);
 
-                for StorageMapRequest { slot_index, slot_data } in storage_requests {
-                    let Some(StorageSlot::Map(storage_map)) =
-                        details.storage().slots().get(slot_index as usize)
-                    else {
-                        return Err(AccountError::StorageSlotNotMap(slot_index).into());
-                    };
-                    let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
-                    storage_map_details.push(details);
-                }
+            let mut storage_map_details = Vec::<AccountStorageMapDetails>::new();
 
-                // Only include unknown account code blobs
-                let account_code = (code_commitment != Some(details.code().commitment()))
-                    .then(|| details.code().to_bytes());
-
-                // storage details
-                let storage_details = AccountStorageDetails {
-                    header: storage_header,
-                    map_details: storage_map_details,
+            for StorageMapRequest { slot_index, slot_data } in storage_requests {
+                let Some(StorageSlot::Map(storage_map)) =
+                    details.storage().slots().get(slot_index as usize)
+                else {
+                    return Err(AccountError::StorageSlotNotMap(slot_index).into());
                 };
-
-                // TODO: Handle vault details based on new proto structure
-                let vault_details = if include_assets {
-                    // was: include_assets
-                    if details.vault().asset_tree().num_leaves() > RESPONSE_COUNT_LIMIT {
-                        AccountVaultDetails {
-                            too_many_assets: true,
-                            assets: Vec::new(),
-                        }
-                    } else {
-                        AccountVaultDetails {
-                            too_many_assets: false,
-                            assets: Vec::from_iter(details.vault().assets()),
-                        }
-                    }
-                } else {
-                    AccountVaultDetails {
-                        too_many_assets: false,
-                        assets: Vec::new(),
-                    }
-                };
-
-                Some(AccountDetails {
-                    account_header: AccountHeader::from(details),
-                    account_code,
-                    vault_details,
-                    storage_details,
-                })
-            } else {
-                None
+                let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+                storage_map_details.push(details);
             }
+
+            // Only include unknown account code blobs
+            let account_code = (code_commitment != Some(details.code().commitment()))
+                .then(|| details.code().to_bytes());
+
+            // storage details
+            let storage_details = AccountStorageDetails {
+                header: storage_header,
+                map_details: storage_map_details,
+            };
+
+            // Handle vault details based on the proto structure.
+            // If include_assets is true, we fetch the actual assets from the vault.
+            // If the account has too many assets, we set a flag and return an empty list
+            // to avoid overwhelming the response.
+            let vault_details = if include_assets {
+                AccountVaultDetails::new(details.vault())
+            } else {
+                AccountVaultDetails::too_many()
+            };
+
+            Some(AccountDetails {
+                account_header: AccountHeader::from(details),
+                account_code,
+                vault_details,
+                storage_details,
+            })
         } else {
             None
         };

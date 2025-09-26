@@ -74,36 +74,7 @@ async fn main() -> anyhow::Result<()> {
     };
     tasks.spawn_http_server(server_state, config);
 
-    handle_failure(tasks).await
-}
-
-// HANDLE FAILURE
-// ================================================================================================
-
-/// Handles the failure of a task.
-///
-/// This function handles the failure of a task.
-///
-/// # Arguments
-///
-/// * `tasks` - The tasks management structure.
-///
-/// # Returns
-///
-/// An error if the task fails.
-async fn handle_failure(mut tasks: Tasks) -> anyhow::Result<()> {
-    // Wait for any task to complete or fail
-    let component_result = tasks.join_next_with_id().await.expect("join set is not empty");
-
-    // We expect components to run indefinitely, so we treat any return as fatal.
-    let (id, err) = match component_result {
-        Ok((id, ())) => (id, anyhow::anyhow!("component completed unexpectedly")),
-        Err(join_err) => (join_err.id(), anyhow::Error::from(join_err)),
-    };
-    let component_name = tasks.get_component_name(id).map_or("unknown", String::as_str);
-
-    // Exit with error context
-    Err(err.context(format!("component {component_name} failed")))
+    tasks.handle_failure().await
 }
 
 // TASKS MANAGEMENT
@@ -286,6 +257,29 @@ impl Tasks {
     /// Get the component name for a given task ID.
     fn get_component_name(&self, id: Id) -> Option<&String> {
         self.names.get(&id)
+    }
+
+    /// Handles the failure of a task.
+    ///
+    /// This method waits for any task to complete or fail and returns an error.
+    /// Since we expect components to run indefinitely, any task completion is treated as fatal.
+    ///
+    /// # Returns
+    ///
+    /// An error if any task fails or completes unexpectedly.
+    async fn handle_failure(&mut self) -> anyhow::Result<()> {
+        // Wait for any task to complete or fail
+        let component_result = self.join_next_with_id().await.expect("join set is not empty");
+
+        // We expect components to run indefinitely, so we treat any return as fatal.
+        let (id, err) = match component_result {
+            Ok((id, ())) => (id, anyhow::anyhow!("component completed unexpectedly")),
+            Err(join_err) => (join_err.id(), anyhow::Error::from(join_err)),
+        };
+        let component_name = self.get_component_name(id).map_or("unknown", String::as_str);
+
+        // Exit with error context
+        Err(err.context(format!("component {component_name} failed")))
     }
 }
 

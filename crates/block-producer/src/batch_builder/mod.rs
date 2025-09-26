@@ -277,6 +277,7 @@ impl BatchJob {
 
     #[instrument(target = COMPONENT, name = "batch_builder.commit_batch", skip_all)]
     async fn commit_batch(&self, batch: ProvenBatch) {
+        // Log the batch details.
         let transaction_ids = batch
             .transactions()
             .as_slice()

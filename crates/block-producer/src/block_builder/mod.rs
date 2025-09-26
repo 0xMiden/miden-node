@@ -230,6 +230,21 @@ impl BlockBuilder {
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
+        // Log the block details.
+        let tx_ids = built_block
+            .transactions()
+            .as_slice()
+            .iter()
+            .map(|tx_header| tx_header.id())
+            .collect::<Vec<_>>();
+        tracing::info!(
+            target: COMPONENT,
+            block_num = %built_block.header().block_num(),
+            transaction_count = tx_ids.len(),
+            transaction_ids = ?tx_ids,
+            "Committing batch"
+        );
+
         mempool.lock().await.commit_block(built_block.header().clone());
 
         Ok(())

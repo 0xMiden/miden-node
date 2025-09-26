@@ -3,7 +3,7 @@
 //! This module contains the configuration structures and constants for the network monitor.
 //! Configuration for the monitor.
 //!
-//! ```
+//! ```text
 //! Usage: miden-network-monitor [OPTIONS]
 //!
 //! Options:

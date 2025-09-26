@@ -361,24 +361,16 @@ pub fn select_transactions_records(
     let mut filtered_raw = all_transactions;
 
     if total_size >= MAX_PAYLOAD_BYTES {
-        let last_idx = filtered_raw.len() - 1;
-        let last_block_num = filtered_raw[last_idx].block_num;
-        let prev_block_num = filtered_raw[last_idx - 1].block_num;
-
-        // If the last transaction is from the same block as the previous one,
-        // we may have stopped mid-block, so remove the entire last block
-        if last_block_num == prev_block_num {
+        if let Some(last_tx) = filtered_raw.last() {
+            let last_block_num = last_tx.block_num;
             filtered_raw.retain(|tx| tx.block_num != last_block_num);
         }
     }
 
     // Convert to transaction records
-    let headers: Vec<crate::db::TransactionRecord> = filtered_raw
-        .into_iter()
-        .map(std::convert::TryInto::try_into)
-        .collect::<Result<Vec<_>, _>>()?;
+    let headers: Vec<crate::db::TransactionRecord> = vec_raw_try_into(filtered_raw)?;
 
-    let last_included_block = headers.last().map_or(*block_range.start(), |tx| tx.block_num);
+    let last_included_block = headers.last().map_or(*block_range.end(), |tx| tx.block_num);
 
     Ok((last_included_block, headers))
 }

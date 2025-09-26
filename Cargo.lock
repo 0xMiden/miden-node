@@ -2202,6 +2202,7 @@ version = "0.12.0"
 dependencies = [
  "anyhow",
  "axum",
+ "clap 4.5.47",
  "miden-node-proto",
  "miden-node-utils",
  "miden-objects",

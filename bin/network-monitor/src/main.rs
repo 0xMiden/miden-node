@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use clap::Parser;
 use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
 use miden_node_utils::logging::OpenTelemetry;
 use tokio::sync::watch;
@@ -26,6 +27,84 @@ use crate::status::{ServiceDetails, Status, check_remote_prover_status, check_rp
 
 /// Component identifier for structured logging and tracing
 pub const COMPONENT: &str = "miden-network-monitor";
+
+// MAIN
+// ================================================================================================
+
+/// Network Monitor main function.
+///
+/// This implementation spawns independent status checker tasks for each service (RPC and remote
+/// provers) that communicate via watch channels. Each task continuously monitors its service and
+/// sends status updates through a `watch::Sender`. The web server holds all the `watch::Receiver`
+/// ends and aggregates status on-demand when serving HTTP requests. If any task terminates
+/// unexpectedly, the entire process exits.
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Load configuration from command-line arguments and environment variables
+    let config = MonitorConfig::parse();
+    info!("Loaded configuration: {:?}", config);
+
+    if config.enable_otel {
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Enabled)?;
+    } else {
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
+    }
+
+    let mut tasks = Tasks::new();
+
+    // Initialize the RPC Status endpoint checker task.
+    let rpc_rx = tasks.spawn_rpc_checker(config.rpc_url.clone()).await?;
+
+    // Initialize the prover checkers & tests tasks.
+    let prover_rxs = tasks.spawn_prover_tasks(config.remote_prover_urls.clone()).await?;
+
+    // Initialize the faucet testing task.
+    let faucet_rx = if let Some(faucet_url) = &config.faucet_url {
+        Some(tasks.spawn_faucet(faucet_url.clone()))
+    } else {
+        info!("Faucet URL not configured, skipping faucet testing");
+        None
+    };
+
+    // Initialize HTTP server.
+    let server_state = ServerState {
+        rpc: rpc_rx,
+        provers: prover_rxs,
+        faucet: faucet_rx,
+    };
+    tasks.spawn_http_server(server_state, config);
+
+    handle_failure(tasks).await
+}
+
+// HANDLE FAILURE
+// ================================================================================================
+
+/// Handles the failure of a task.
+///
+/// This function handles the failure of a task.
+///
+/// # Arguments
+///
+/// * `tasks` - The tasks management structure.
+///
+/// # Returns
+///
+/// An error if the task fails.
+async fn handle_failure(mut tasks: Tasks) -> anyhow::Result<()> {
+    // Wait for any task to complete or fail
+    let component_result = tasks.join_next_with_id().await.expect("join set is not empty");
+
+    // We expect components to run indefinitely, so we treat any return as fatal.
+    let (id, err) = match component_result {
+        Ok((id, ())) => (id, anyhow::anyhow!("component completed unexpectedly")),
+        Err(join_err) => (join_err.id(), anyhow::Error::from(join_err)),
+    };
+    let component_name = tasks.get_component_name(id).map_or("unknown", String::as_str);
+
+    // Exit with error context
+    Err(err.context(format!("component {component_name} failed")))
+}
 
 // TASKS MANAGEMENT
 // ================================================================================================
@@ -208,91 +287,6 @@ impl Tasks {
     fn get_component_name(&self, id: Id) -> Option<&String> {
         self.names.get(&id)
     }
-}
-
-// MAIN
-// ================================================================================================
-
-/// Network Monitor main function.
-///
-/// This implementation spawns independent status checker tasks for each service (RPC and remote
-/// provers) that communicate via watch channels. Each task continuously monitors its service and
-/// sends status updates through a `watch::Sender`. The web server holds all the `watch::Receiver`
-/// ends and aggregates status on-demand when serving HTTP requests. If any task terminates
-/// unexpectedly, the entire process exits.
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // Load configuration from environment variables
-    let config = match MonitorConfig::from_env() {
-        Ok(config) => {
-            info!("Loaded configuration: {:?}", config);
-            config
-        },
-        Err(e) => {
-            anyhow::bail!("failed to load configuration: {e}");
-        },
-    };
-
-    if config.enable_otel {
-        miden_node_utils::logging::setup_tracing(OpenTelemetry::Enabled)?;
-    } else {
-        miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
-    }
-
-    let mut tasks = Tasks::new();
-
-    // Initialize the RPC Status endpoint checker task.
-    let rpc_rx = tasks.spawn_rpc_checker(config.rpc_url.clone()).await?;
-
-    // Initialize the prover checkers & tests tasks.
-    let prover_rxs = tasks.spawn_prover_tasks(config.remote_prover_urls.clone()).await?;
-
-    // Initialize the faucet testing task.
-    let faucet_rx = if let Some(faucet_url) = &config.faucet_url {
-        Some(tasks.spawn_faucet(faucet_url.clone()))
-    } else {
-        info!("Faucet URL not configured, skipping faucet testing");
-        None
-    };
-
-    // Initialize HTTP server.
-    let server_state = ServerState {
-        rpc: rpc_rx,
-        provers: prover_rxs,
-        faucet: faucet_rx,
-    };
-    tasks.spawn_http_server(server_state, config);
-
-    handle_failure(tasks).await
-}
-
-// HANDLE FAILURE
-// ================================================================================================
-
-/// Handles the failure of a task.
-///
-/// This function handles the failure of a task.
-///
-/// # Arguments
-///
-/// * `tasks` - The tasks management structure.
-///
-/// # Returns
-///
-/// An error if the task fails.
-async fn handle_failure(mut tasks: Tasks) -> anyhow::Result<()> {
-    // Wait for any task to complete or fail
-    let component_result = tasks.join_next_with_id().await.expect("join set is not empty");
-
-    // We expect components to run indefinitely, so we treat any return as fatal.
-    let (id, err) = match component_result {
-        Ok((id, ())) => (id, anyhow::anyhow!("component completed unexpectedly")),
-        Err(join_err) => (join_err.id(), anyhow::Error::from(join_err)),
-    };
-    let component_name = tasks.get_component_name(id).map_or("unknown", String::as_str);
-
-    // Exit with error context
-    Err(err.context(format!("component {component_name} failed")))
 }
 
 // HELPERS

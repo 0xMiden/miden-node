@@ -1,6 +1,47 @@
 //! Network monitor configuration.
 //!
 //! This module contains the configuration structures and constants for the network monitor.
+//! Configuration for the monitor.
+//!
+//! ```
+//! Usage: miden-network-monitor [OPTIONS]
+//!
+//! Options:
+//!       --rpc-url <RPC_URL>
+//!           The URL of the RPC service
+//!
+//!           [env: MIDEN_MONITOR_RPC_URL=]
+//!           [default: http://localhost:50051]
+//!
+//!       --remote-prover-urls <REMOTE_PROVER_URLS>
+//!           The URLs of the remote provers for status checking (comma-separated)
+//!
+//!           [env: MIDEN_MONITOR_REMOTE_PROVER_URLS=]
+//!           [default: http://localhost:50052]
+//!
+//!       --faucet-url <FAUCET_URL>
+//!           The URL of the faucet service for testing (optional)
+//!
+//!           [env: MIDEN_MONITOR_FAUCET_URL=]
+//!           [default: http://localhost:8080]
+//!
+//!   -p, --port <PORT>
+//!           The port of the monitor
+//!
+//!           [env: MIDEN_MONITOR_PORT=]
+//!           [default: 3000]
+//!
+//!       --enable-otel
+//!           Whether to enable OpenTelemetry
+//!
+//!           [env: MIDEN_MONITOR_ENABLE_OTEL=]
+//!
+//!   -h, --help
+//!           Print help (see a summary with '-h')
+//!
+//!   -V, --version
+//!           Print version
+//! ```
 
 use clap::Parser;
 use url::Url;

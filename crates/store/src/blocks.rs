@@ -84,6 +84,13 @@ impl BlockStore {
             tokio::fs::create_dir_all(epoch_path).await?;
         }
 
+        tracing::info!(
+            target: COMPONENT,
+            block_num = %block_num,
+            block_size_kb = data.len() / 1024,
+            "Block saved to disk"
+        );
+
         tokio::fs::write(block_path, data).await
     }
 
@@ -96,6 +103,14 @@ impl BlockStore {
         if !epoch_path.exists() {
             std::fs::create_dir_all(epoch_path)?;
         }
+
+        let block_size = data.len();
+        tracing::info!(
+            target: COMPONENT,
+            block_num = %block_num,
+            block_size_kb = data.len() / 1024,
+            "Block saved to disk (blocking)"
+        );
 
         std::fs::write(block_path, data)
     }

@@ -172,6 +172,7 @@ impl BatchJob {
             .and_then(|(txs, inputs)| Self::propose_batch(txs, inputs) )
             .inspect_ok(TelemetryInjectorExt::inject_telemetry)
             .and_then(|proposed| self.prove_batch(proposed))
+
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
             .and_then(|x| self.inject_failure(x))
@@ -276,6 +277,20 @@ impl BatchJob {
 
     #[instrument(target = COMPONENT, name = "batch_builder.commit_batch", skip_all)]
     async fn commit_batch(&self, batch: ProvenBatch) {
+        let transaction_ids = batch
+            .transactions()
+            .as_slice()
+            .iter()
+            .map(|tx_header| tx_header.id())
+            .collect::<Vec<_>>();
+        tracing::info!(
+            target: COMPONENT,
+            batch_id = %batch.id(),
+            transaction_count = transaction_ids.len(),
+            transaction_ids = ?transaction_ids,
+            "Committing batch"
+        );
+
         self.mempool.lock().await.commit_batch(batch);
     }
 

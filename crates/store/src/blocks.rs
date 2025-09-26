@@ -104,7 +104,6 @@ impl BlockStore {
             std::fs::create_dir_all(epoch_path)?;
         }
 
-        let block_size = data.len();
         tracing::info!(
             target: COMPONENT,
             block_num = %block_num,

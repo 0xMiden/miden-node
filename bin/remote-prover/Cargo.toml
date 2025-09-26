@@ -27,7 +27,7 @@ anyhow                = { workspace = true }
 async-trait           = { version = "0.1" }
 axum                  = { version = "0.8" }
 bytes                 = { version = "1.0" }
-clap                  = { features = ["derive", "env"], version = "4.5" }
+clap                  = { features = ["env"], workspace = true }
 http                  = { workspace = true }
 humantime             = { workspace = true }
 miden-block-prover    = { workspace = true }

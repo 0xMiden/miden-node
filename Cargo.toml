@@ -59,6 +59,7 @@ miden-air = { version = "0.17" }
 anyhow             = { version = "1.0" }
 assert_matches     = { version = "1.5" }
 async-trait        = { version = "0.1" }
+clap               = { features = ["derive"], version = "4.5" }
 fs-err             = { version = "3" }
 futures            = { version = "0.3" }
 hex                = { version = "0.4" }

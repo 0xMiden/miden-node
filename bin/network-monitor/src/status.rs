@@ -221,12 +221,17 @@ impl From<RpcStatus> for RpcStatusDetails {
 ///
 /// * `rpc_url` - The URL of the RPC service.
 /// * `status_sender` - The sender for the watch channel.
+/// * `status_check_interval` - The interval at which to check the status of the services.
 ///
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
 #[instrument(target = COMPONENT, name = "rpc-status-task", skip_all)]
-pub async fn run_rpc_status_task(rpc_url: Url, status_sender: watch::Sender<ServiceStatus>) {
+pub async fn run_rpc_status_task(
+    rpc_url: Url,
+    status_sender: watch::Sender<ServiceStatus>,
+    status_check_interval: Duration,
+) {
     let mut rpc = ClientBuilder::new(rpc_url)
         .with_tls()
         .expect("TLS is enabled")
@@ -235,7 +240,7 @@ pub async fn run_rpc_status_task(rpc_url: Url, status_sender: watch::Sender<Serv
         .without_metadata_genesis()
         .connect_lazy::<Rpc>();
 
-    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     loop {
@@ -305,6 +310,7 @@ pub(crate) async fn check_rpc_status(
 /// * `prover_url` - The URL of the remote prover service.
 /// * `name` - The name of the remote prover.
 /// * `status_sender` - The sender for the watch channel.
+/// * `status_check_interval` - The interval at which to check the status of the services.
 ///
 /// # Returns
 ///
@@ -315,6 +321,7 @@ pub async fn run_remote_prover_status_task(
     prover_url: Url,
     name: String,
     status_sender: watch::Sender<ServiceStatus>,
+    status_check_interval: Duration,
 ) {
     let url_str = prover_url.to_string();
     let mut remote_prover = ClientBuilder::new(prover_url)
@@ -325,7 +332,7 @@ pub async fn run_remote_prover_status_task(
         .without_metadata_genesis()
         .connect_lazy::<RemoteProverProxy>();
 
-    let mut interval = tokio::time::interval(Duration::from_secs(3));
+    let mut interval = tokio::time::interval(status_check_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     loop {

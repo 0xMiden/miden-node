@@ -25,6 +25,24 @@
 //!           [env: MIDEN_MONITOR_FAUCET_URL=]
 //!           [default: http://localhost:8080]
 //!
+//!       --remote-prover-test-interval <REMOTE_PROVER_TEST_INTERVAL>
+//!           The interval at which to test the remote provers services
+//!
+//!           [env: MIDEN_MONITOR_REMOTE_PROVER_TEST_INTERVAL=]
+//!           [default: 2m]
+//!
+//!       --faucet-test-interval <FAUCET_TEST_INTERVAL>
+//!           The interval at which to test the faucet services
+//!
+//!           [env: MIDEN_MONITOR_FAUCET_TEST_INTERVAL=]
+//!           [default: 2m]
+//!
+//!       --status-check-interval <STATUS_CHECK_INTERVAL>
+//!           The interval at which to check the status of the services
+//!
+//!           [env: MIDEN_MONITOR_STATUS_CHECK_INTERVAL=]
+//!           [default: 3s]
+//!
 //!   -p, --port <PORT>
 //!           The port of the monitor
 //!
@@ -42,6 +60,8 @@
 //!   -V, --version
 //!           Print version
 //! ```
+
+use std::time::Duration;
 
 use clap::Parser;
 use url::Url;
@@ -89,6 +109,36 @@ pub struct MonitorConfig {
         help = "The URL of the faucet service for testing (optional)"
     )]
     pub faucet_url: Option<Url>,
+
+    /// The interval at which to test the remote provers services.
+    #[arg(
+        long = "remote-prover-test-interval",
+        env = "MIDEN_MONITOR_REMOTE_PROVER_TEST_INTERVAL",
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
+        help = "The interval at which to test the remote provers services"
+    )]
+    pub remote_prover_test_interval: Duration,
+
+    /// The interval at which to test the faucet services.
+    #[arg(
+        long = "faucet-test-interval",
+        env = "MIDEN_MONITOR_FAUCET_TEST_INTERVAL",
+        default_value = "2m",
+        value_parser = humantime::parse_duration,
+        help = "The interval at which to test the faucet services"
+    )]
+    pub faucet_test_interval: Duration,
+
+    /// The interval at which to check the status of the services.
+    #[arg(
+        long = "status-check-interval",
+        env = "MIDEN_MONITOR_STATUS_CHECK_INTERVAL",
+        default_value = "3s",
+        value_parser = humantime::parse_duration,
+        help = "The interval at which to check the status of the services"
+    )]
+    pub status_check_interval: Duration,
 
     /// The port of the monitor.
     #[arg(

@@ -2203,6 +2203,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap 4.5.47",
+ "humantime",
  "miden-node-proto",
  "miden-node-utils",
  "miden-objects",

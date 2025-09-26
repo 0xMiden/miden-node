@@ -7,7 +7,6 @@ use miden_node_utils::logging::OpenTelemetry;
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task::{Id, JoinSet};
-use url::Url;
 
 mod config;
 mod faucet;
@@ -53,14 +52,14 @@ async fn main() -> anyhow::Result<()> {
     let mut tasks = Tasks::new();
 
     // Initialize the RPC Status endpoint checker task.
-    let rpc_rx = tasks.spawn_rpc_checker(config.rpc_url.clone()).await?;
+    let rpc_rx = tasks.spawn_rpc_checker(config.clone()).await?;
 
     // Initialize the prover checkers & tests tasks.
-    let prover_rxs = tasks.spawn_prover_tasks(config.remote_prover_urls.clone()).await?;
+    let prover_rxs = tasks.spawn_prover_tasks(config.clone()).await?;
 
     // Initialize the faucet testing task.
-    let faucet_rx = if let Some(faucet_url) = &config.faucet_url {
-        Some(tasks.spawn_faucet(faucet_url.clone()))
+    let faucet_rx = if config.faucet_url.is_some() {
+        Some(tasks.spawn_faucet(config.clone()))
     } else {
         info!("Faucet URL not configured, skipping faucet testing");
         None
@@ -97,9 +96,12 @@ impl Tasks {
     }
 
     /// Spawn the RPC status checker task.
-    async fn spawn_rpc_checker(&mut self, rpc_url: Url) -> anyhow::Result<Receiver<ServiceStatus>> {
+    async fn spawn_rpc_checker(
+        &mut self,
+        config: MonitorConfig,
+    ) -> anyhow::Result<Receiver<ServiceStatus>> {
         // Create initial status for RPC service
-        let mut rpc = ClientBuilder::new(rpc_url.clone())
+        let mut rpc = ClientBuilder::new(config.rpc_url.clone())
             .with_tls()
             .unwrap()
             .with_timeout(Duration::from_secs(10))
@@ -114,7 +116,10 @@ impl Tasks {
         let (rpc_tx, rpc_rx) = watch::channel(initial_rpc_status);
         let id = self
             .handles
-            .spawn(async move { run_rpc_status_task(rpc_url, rpc_tx).await })
+            .spawn(async move {
+                run_rpc_status_task(config.rpc_url.clone(), rpc_tx, config.status_check_interval)
+                    .await;
+            })
             .id();
         self.names.insert(id, "rpc-checker".to_string());
 
@@ -124,11 +129,11 @@ impl Tasks {
     /// Spawn prover status and test tasks for all configured provers.
     async fn spawn_prover_tasks(
         &mut self,
-        prover_urls: Vec<Url>,
+        config: MonitorConfig,
     ) -> anyhow::Result<Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>> {
         let mut prover_rxs = Vec::new();
 
-        for (i, prover_url) in prover_urls.into_iter().enumerate() {
+        for (i, prover_url) in config.remote_prover_urls.clone().into_iter().enumerate() {
             let name = format!("Prover-{}", i + 1);
 
             let mut remote_prover = ClientBuilder::new(prover_url.clone())
@@ -160,7 +165,12 @@ impl Tasks {
                     let prover_url = prover_url.clone();
                     let name = name.clone();
 
-                    run_remote_prover_status_task(prover_url, name, prover_status_tx)
+                    run_remote_prover_status_task(
+                        prover_url,
+                        name,
+                        prover_status_tx,
+                        config.clone().status_check_interval,
+                    )
                 })
                 .id();
             self.names.insert(id, component_name);
@@ -214,7 +224,7 @@ impl Tasks {
     }
 
     /// Spawn the faucet testing task.
-    fn spawn_faucet(&mut self, faucet_url: Url) -> Receiver<ServiceStatus> {
+    fn spawn_faucet(&mut self, config: MonitorConfig) -> Receiver<ServiceStatus> {
         let current_time = current_unix_timestamp_secs();
 
         // Create initial faucet test status
@@ -236,7 +246,8 @@ impl Tasks {
         let (faucet_tx, faucet_rx) = watch::channel(initial_faucet_status);
         let id = self
             .handles
-            .spawn(async move { run_faucet_test_task(faucet_url, faucet_tx).await })
+            // SAFETY: config.faucet_url is Some
+            .spawn(async move { run_faucet_test_task(config.faucet_url.clone().unwrap(), faucet_tx, config.faucet_test_interval).await })
             .id();
         self.names.insert(id, "faucet-test".to_string());
 

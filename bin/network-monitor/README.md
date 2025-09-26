@@ -30,6 +30,9 @@ miden-network-monitor --faucet-url http://localhost:8080 --enable-otel
 - `--rpc-url`: RPC service URL (default: `http://localhost:50051`)
 - `--remote-prover-urls`: Comma-separated list of remote prover URLs (default: `http://localhost:50052`)
 - `--faucet-url`: Faucet service URL for testing (default: `http://localhost:8080`)
+- `--remote-prover-test-interval`: Interval at which to test the remote provers services (default: `2m`)
+- `--faucet-test-interval`: Interval at which to test the faucet services (default: `2m`)
+- `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
 - `--help, -h`: Show help information
@@ -42,6 +45,9 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_RPC_URL`: RPC service URL
 - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs
 - `MIDEN_MONITOR_FAUCET_URL`: Faucet service URL for testing
+- `MIDEN_MONITOR_REMOTE_PROVER_TEST_INTERVAL`: Interval at which to test the remote provers services
+- `MIDEN_MONITOR_FAUCET_TEST_INTERVAL`: Interval at which to test the faucet services
+- `MIDEN_MONITOR_STATUS_CHECK_INTERVAL`: Interval at which to check the status of the services
 - `MIDEN_MONITOR_PORT`: Web server port
 - `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing
 
@@ -57,6 +63,9 @@ miden-network-monitor --remote-prover-urls http://localhost:50052
 miden-network-monitor \
   --remote-prover-urls http://localhost:50052,http://localhost:50053,http://localhost:50054 \
   --faucet-url http://localhost:8080 \
+  --remote-prover-test-interval 2m \
+  --faucet-test-interval 2m \
+  --status-check-interval 3s \
   --port 8080 \
   --enable-otel
 

@@ -26,8 +26,6 @@ use crate::{COMPONENT, current_unix_timestamp_secs};
 const MAX_CHALLENGE_ATTEMPTS: u64 = 100_000_000;
 /// Amount of tokens to mint.
 const MINT_AMOUNT: u64 = 1_000_000; // 1 token with 6 decimals
-/// Interval between faucet tests.
-const TEST_INTERVAL: Duration = Duration::from_secs(2 * 60);
 
 // FAUCET TEST TYPES
 // ================================================================================================
@@ -71,19 +69,24 @@ struct GetTokensResponse {
 ///
 /// * `faucet_url` - The URL of the faucet service to test.
 /// * `status_sender` - The sender for the watch channel.
+/// * `test_interval` - The interval at which to test the faucet services.
 ///
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
 #[instrument(target = COMPONENT, name = "faucet-test-task", skip_all)]
-pub async fn run_faucet_test_task(faucet_url: Url, status_sender: watch::Sender<ServiceStatus>) {
+pub async fn run_faucet_test_task(
+    faucet_url: Url,
+    status_sender: watch::Sender<ServiceStatus>,
+    test_interval: Duration,
+) {
     let client = Client::new();
     let mut success_count = 0u64;
     let mut failure_count = 0u64;
     let mut last_tx_id = None;
     let mut last_challenge_difficulty = None;
 
-    let mut interval = tokio::time::interval(TEST_INTERVAL);
+    let mut interval = tokio::time::interval(test_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     loop {

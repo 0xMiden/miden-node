@@ -18,6 +18,7 @@ workspace = true
 anyhow           = { workspace = true }
 axum             = { version = "0.8" }
 clap             = { features = ["env"], workspace = true }
+humantime        = { workspace = true }
 miden-node-proto = { workspace = true }
 miden-node-utils = { workspace = true }
 miden-objects    = { features = ["std", "testing"], workspace = true }

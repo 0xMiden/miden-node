@@ -309,7 +309,7 @@ impl DataStore for NtxDataStore {
                 });
             }
 
-            AssetWitness::new(account.vault().asset_tree().open(&vault_key)).map_err(|err| {
+            AssetWitness::new(account.vault().open(vault_key).into()).map_err(|err| {
                 DataStoreError::Other {
                     error_msg: "failed to open vault asset tree".into(),
                     source: Some(Box::new(err)),

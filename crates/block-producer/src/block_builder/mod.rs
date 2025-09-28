@@ -230,21 +230,6 @@ impl BlockBuilder {
             .await
             .map_err(BuildBlockError::StoreApplyBlockFailed)?;
 
-        // Log the block details.
-        let tx_ids = built_block
-            .transactions()
-            .as_slice()
-            .iter()
-            .map(|tx_header| tx_header.id())
-            .collect::<Vec<_>>();
-        tracing::info!(
-            target: COMPONENT,
-            block_num = %built_block.header().block_num(),
-            transaction_count = tx_ids.len(),
-            transaction_ids = ?tx_ids,
-            "Committing batch"
-        );
-
         mempool.lock().await.commit_block(built_block.header().clone());
 
         Ok(())
@@ -293,11 +278,14 @@ impl TelemetryInjectorExt for SelectedBlock {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
         span.set_attribute("block.batches.count", self.batches.len() as u32);
-        let tx_count = self
-            .batches
-            .iter()
-            .fold(0, |acc, batch| acc + batch.transactions().as_slice().len());
+        let (tx_count, tx_ids) =
+            self.batches.iter().fold((0, Vec::new()), |(acc, mut ids), batch| {
+                let tx_count = acc + batch.transactions().as_slice().len();
+                ids.extend(batch.transactions().as_slice().iter().map(|tx_header| tx_header.id()));
+                (tx_count, ids)
+            });
         span.set_attribute("block.transactions.count", tx_count);
+        span.set_attribute("block.transactions.ids", tx_ids);
     }
 }
 

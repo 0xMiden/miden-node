@@ -327,7 +327,7 @@ impl TelemetryInjectorExt for SelectedBatch {
         Span::current().set_attribute("transactions.count", self.transactions.len());
         Span::current().set_attribute(
             "transactions.ids",
-            self.transactions()
+            self.transactions
                 .as_slice()
                 .iter()
                 .map(|tx_header| tx_header.id())

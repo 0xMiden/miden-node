@@ -1,6 +1,4 @@
-#![allow(dead_code, reason = "WIP: mempoool refactor")]
-
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Mul;
 
 use miden_node_proto::domain::mempool::MempoolEvent;
@@ -111,7 +109,7 @@ impl SubscriptionProvider {
         Self::send_event(&mut self.subscription, MempoolEvent::BlockCommitted { header, txs });
     }
 
-    pub(super) fn txs_reverted(&mut self, txs: BTreeSet<TransactionId>) {
+    pub(super) fn txs_reverted(&mut self, txs: HashSet<TransactionId>) {
         for tx in &txs {
             self.inflight_txs.remove(tx);
         }

@@ -41,13 +41,14 @@
 //!   a block (or are part of the currently proposed block).
 //! - Reverting a node reverts all descendents as well.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_objects::batch::{BatchId, ProvenBatch};
-use miden_objects::block::BlockNumber;
+use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::transaction::TransactionId;
 use subscription::SubscriptionProvider;
 use tokio::sync::{Mutex, MutexGuard, mpsc};
 use tracing::{instrument, warn};
@@ -208,6 +209,7 @@ impl Mempool {
         }
 
         // Insert the transaction node.
+        self.subscription.transaction_added(&tx);
         let tx = TransactionNode::new(tx);
         self.state.insert(NodeId::Transaction(tx.id()), &tx);
         self.nodes.txs.insert(tx.id(), tx);
@@ -443,21 +445,24 @@ impl Mempool {
     ///
     /// Panics if there is no block in flight.
     #[instrument(target = COMPONENT, name = "mempool.commit_block", skip_all)]
-    pub fn commit_block(&mut self, to_commit: BlockNumber) {
+    pub fn commit_block(&mut self, to_commit: BlockHeader) {
         let block = self
             .nodes
             .proposed_block
-            .take_if(|(proposed, _)| proposed == &to_commit)
+            .take_if(|(proposed, _)| proposed == &to_commit.block_num())
             .expect("block must be in progress to commit");
+        let txs = block.1.transactions().map(|tx| tx.id()).collect();
 
         self.nodes.committed_blocks.push_back(block);
         self.chain_tip = self.chain_tip.child();
+        self.subscription.block_committed(to_commit, txs);
 
         if self.nodes.committed_blocks.len() > self.config.state_retention.get() {
             let (_number, node) = self.nodes.committed_blocks.pop_front().unwrap();
             self.state.remove(&node);
         }
-        self.revert_expired_nodes();
+        let reverted_txs = self.revert_expired_nodes();
+        self.subscription.txs_reverted(reverted_txs);
         self.inject_telemetry();
     }
 
@@ -504,12 +509,17 @@ impl Mempool {
         // A more refined approach could be to tag the offending transactions and then evict them
         // once a certain failure threshold has been met.
         let reverted = self.revert_subtree(NodeId::Block(block));
+        let mut reverted_txs = HashSet::default();
 
         // Log reverted batches and transactions.
         for (id, node) in reverted {
             match id {
                 NodeId::ProposedBatch(batch_id) | NodeId::ProvenBatch(batch_id) => {
-                    tracing::info!(block.number = %block, batch.id = %batch_id, "Reverted batch as part of block rollback");
+                    tracing::info!(
+                        block.number=%block,
+                        batch.id=%batch_id,
+                        "Reverted batch as part of block rollback"
+                    );
                 },
                 NodeId::Transaction(_) => {},
                 NodeId::Block(block_number) => panic!(
@@ -518,9 +528,15 @@ impl Mempool {
             }
 
             for tx in node.transactions() {
-                tracing::info!(block.number = %block, transaction.id = %tx.id(), "Reverted transaction as part of block rollback");
+                reverted_txs.insert(tx.id());
+                tracing::info!(
+                    block.number=%block,
+                    transaction.id=%tx.id(),
+                    "Reverted transaction as part of block rollback"
+                );
             }
         }
+        self.subscription.txs_reverted(reverted_txs);
 
         self.inject_telemetry();
     }
@@ -553,7 +569,9 @@ impl Mempool {
     }
 
     /// Reverts expired transactions and batches as per the current `chain_tip`.
-    fn revert_expired_nodes(&mut self) {
+    ///
+    /// Returns the list of all transactions that were reverted.
+    fn revert_expired_nodes(&mut self) -> HashSet<TransactionId> {
         let expired_txs = self.nodes.txs.iter().filter_map(|(id, node)| {
             (node.expires_at() <= self.chain_tip).then_some(NodeId::Transaction(*id))
         });
@@ -569,12 +587,17 @@ impl Mempool {
             .chain(expired_proposed_batches)
             .chain(expired_txs)
             .collect::<Vec<_>>();
+        let mut reverted_txs = HashSet::default();
         for expired_id in expired {
             let reverted = self.revert_subtree(expired_id);
             for (id, node) in reverted {
                 match id {
                     NodeId::ProposedBatch(batch_id) | NodeId::ProvenBatch(batch_id) => {
-                        tracing::info!(ancestor = ?expired_id, batch.id = %batch_id, "Reverted batch due to expiration of ancestor");
+                        tracing::info!(
+                            ancestor=?expired_id,
+                            batch.id=%batch_id,
+                            "Reverted batch due to expiration of ancestor"
+                        );
                     },
                     NodeId::Transaction(_) => {},
                     NodeId::Block(block_number) => panic!(
@@ -583,10 +606,17 @@ impl Mempool {
                 }
 
                 for tx in node.transactions() {
-                    tracing::info!(ancestor = ?expired_id, transaction.id = %tx.id(), "Reverted transaction due to expiration of ancestor");
+                    reverted_txs.insert(tx.id());
+                    tracing::info!(
+                        ancestor=?expired_id,
+                        transaction.id=%tx.id(),
+                        "Reverted transaction due to expiration of ancestor"
+                    );
                 }
             }
         }
+
+        reverted_txs
     }
 
     /// Reverts the subtree with the given root and returns the reverted nodes. Does nothing if the

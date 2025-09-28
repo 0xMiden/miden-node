@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::block::BlockHeader;
@@ -22,7 +22,7 @@ pub enum MempoolEvent {
         header: BlockHeader,
         txs: Vec<TransactionId>,
     },
-    TransactionsReverted(BTreeSet<TransactionId>),
+    TransactionsReverted(HashSet<TransactionId>),
 }
 
 impl MempoolEvent {

@@ -1,11 +1,12 @@
 use std::collections::BTreeSet;
 
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
-use miden_objects::account::{Account, AccountId, PartialAccount};
+use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
 use miden_objects::asset::AssetWitness;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::Note;
 use miden_objects::transaction::{
+    AccountInputs,
     ExecutedTransaction,
     InputNote,
     InputNotes,
@@ -260,9 +261,8 @@ impl DataStore for NtxDataStore {
         &self,
         account_id: AccountId,
         ref_blocks: BTreeSet<BlockNumber>,
-    ) -> impl FutureMaybeSend<
-        Result<(PartialAccount, Option<Word>, BlockHeader, PartialBlockchain), DataStoreError>,
-    > {
+    ) -> impl FutureMaybeSend<Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError>>
+    {
         let account = self.account.clone();
         async move {
             if account.id() != account_id {
@@ -276,8 +276,18 @@ impl DataStore for NtxDataStore {
                 None => return Err(DataStoreError::other("no reference block requested")),
             }
 
-            Ok((account.into(), None, self.reference_header.clone(), self.chain_mmr.clone()))
+            let partial_account = PartialAccount::from(&account);
+
+            Ok((partial_account, self.reference_header.clone(), self.chain_mmr.clone()))
         }
+    }
+
+    fn get_foreign_account_inputs(
+        &self,
+        foreign_account_id: AccountId,
+        _ref_block: BlockNumber,
+    ) -> impl FutureMaybeSend<Result<AccountInputs, DataStoreError>> {
+        async move { Err(DataStoreError::AccountNotFound(foreign_account_id)) }
     }
 
     fn get_vault_asset_witness(
@@ -299,12 +309,44 @@ impl DataStore for NtxDataStore {
                 });
             }
 
-            AssetWitness::new(account.vault().asset_tree().open(&vault_key)).map_err(|err| {
+            AssetWitness::new(account.vault().open(vault_key).into()).map_err(|err| {
                 DataStoreError::Other {
                     error_msg: "failed to open vault asset tree".into(),
                     source: Some(Box::new(err)),
                 }
             })
+        }
+    }
+
+    fn get_storage_map_witness(
+        &self,
+        account_id: AccountId,
+        map_root: Word,
+        map_key: Word,
+    ) -> impl FutureMaybeSend<Result<StorageMapWitness, DataStoreError>> {
+        let account = self.account.clone();
+        async move {
+            if account.id() != account_id {
+                return Err(DataStoreError::AccountNotFound(account_id));
+            }
+
+            let mut map_witness = None;
+            for slot in account.storage().slots() {
+                if let StorageSlot::Map(map) = slot {
+                    if map.root() == map_root {
+                        map_witness = Some(map.open(&map_key));
+                    }
+                }
+            }
+
+            if let Some(map_witness) = map_witness {
+                Ok(map_witness)
+            } else {
+                Err(DataStoreError::Other {
+                    error_msg: "account storage does not contain the expected root".into(),
+                    source: None,
+                })
+            }
         }
     }
 }

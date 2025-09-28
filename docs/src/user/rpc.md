@@ -1,10 +1,8 @@
 # gRPC Reference
 
-This is a reference of the Node's public RPC interface. It consists of a gRPC API which may be used to submit
-transactions and query the state of the blockchain.
+This is a reference of the Node's public RPC interface. It consists of a gRPC API which may be used to submit transactions and query the state of the blockchain.
 
-The gRPC service definition can be found in the Miden node's `proto`
-[directory](https://github.com/0xMiden/miden-node/tree/main/proto) in the `rpc.proto` file.
+The gRPC service definition can be found in the Miden node's `proto` [directory](https://github.com/0xMiden/miden-node/tree/main/proto) in the `rpc.proto` file.
 
 <!--toc:start-->
 
@@ -25,59 +23,73 @@ The gRPC service definition can be found in the Miden node's `proto`
 
 <!--toc:end-->
 
-## CheckNullifiers
+## API Endpoints
+
+### CheckNullifiers
 
 Request proofs for a set of nullifiers.
 
-## GetAccountDetails
+### GetAccountDetails
 
 Request the latest state of an account.
 
-## GetAccountProofs
+### GetAccountProofs
 
 Request state proofs for accounts, including specific storage slots.
 
-## GetBlockByNumber
+### GetBlockByNumber
 
 Request the raw data for a specific block.
 
-## GetBlockHeaderByNumber
+### GetBlockHeaderByNumber
 
 Request a specific block header and its inclusion proof.
 
-## GetNotesById
+### GetNotesById
 
 Request a set of notes.
 
-## GetNoteScriptByRoot
+### GetNoteScriptByRoot
 
 Request the script for a note by its root.
 
-## SubmitProvenTransaction
+### SubmitProvenTransaction
 
 Submit a transaction to the network.
 
-## SyncNullifiers
+This endpoint accepts a proven transaction and attempts to add it to the mempool for inclusion in future blocks. The transaction must be properly formatted and include a valid execution proof.
 
-Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows
-clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
+#### Error Codes
 
-Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block
-range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that
-range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
+When transaction submission fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
 
-If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with
-`block_from = block_num + 1` to retrieve subsequent updates.
+| Error Code                             | Value | gRPC Status        | Description                                                   |
+|----------------------------------------|-------|--------------------|---------------------------------------------------------------|
+| `UNSPECIFIED_ERROR`                    | 0     | `INTERNAL`         | Default/unspecified error                                     |
+| `INTERNAL_ERROR`                       | 1     | `INTERNAL`         | Internal server error occurred                                |
+| `DESERIALIZATION_FAILED`               | 2     | `INVALID_ARGUMENT` | Transaction could not be deserialized                         |
+| `INVALID_TRANSACTION_PROOF`            | 3     | `INVALID_ARGUMENT` | Transaction execution proof is invalid                        |
+| `INCORRECT_ACCOUNT_INITIAL_COMMITMENT` | 4     | `INVALID_ARGUMENT` | Account's initial state doesn't match current state           |
+| `INPUT_NOTES_ALREADY_CONSUMED`         | 5     | `INVALID_ARGUMENT` | Input notes have already been consumed by another transaction |
+| `UNAUTHENTICATED_NOTES_NOT_FOUND`      | 6     | `INVALID_ARGUMENT` | Required unauthenticated notes were not found                 |
+| `OUTPUT_NOTES_ALREADY_EXIST`           | 7     | `INVALID_ARGUMENT` | Output note IDs are already in use                            |
+| `TRANSACTION_EXPIRED`                  | 8     | `INVALID_ARGUMENT` | Transaction has exceeded its expiration block height          |
 
-## SyncAccountVault
+### SyncNullifiers
+
+Returns nullifier synchronization data for a set of prefixes within a given block range. This method allows clients to efficiently track nullifier creation by retrieving only the nullifiers produced between two blocks.
+
+Caller specifies the `prefix_len` (currently only 16), the list of prefix values (`nullifiers`), and the block range (`block_from`, optional `block_to`). The response includes all matching nullifiers created within that range, the last block included in the response (`block_num`), and the current chain tip (`chain_tip`).
+
+If the response is chunked (i.e., `block_num < block_to`), continue by issuing another request with `block_from = block_num + 1` to retrieve subsequent updates.
+
+### SyncAccountVault
 
 Returns information that allows clients to sync asset values for specific public accounts within a block range.
 
-For any `[block_from..block_to]` range, the latest known set of assets is returned for the requested account ID.
-The data can be split and a cutoff block may be selected if there are too many assets to sync. The response contains
-the chain tip so that the caller knows when it has been reached.
+For any `[block_from..block_to]` range, the latest known set of assets is returned for the requested account ID. The data can be split and a cutoff block may be selected if there are too many assets to sync. The response contains the chain tip so that the caller knows when it has been reached.
 
-## SyncNotes
+### SyncNotes
 
 Iteratively sync data for a given set of note tags.
 
@@ -87,7 +99,7 @@ The response includes each note's metadata and inclusion proof.
 
 A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of the chain.
 
-## SyncState
+### SyncState
 
 Iteratively sync data for specific notes and accounts.
 
@@ -97,7 +109,7 @@ Each update response also contains info about new notes, accounts etc. created. 
 
 The low part of note tags are redacted to preserve some degree of privacy. Returned data therefore contains additional notes which should be filtered out by the client.
 
-## SyncStorageMaps
+### SyncStorageMaps
 
 Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
 
@@ -105,14 +117,35 @@ Caller specifies the `account_id` of the public account and the block range (`bl
 
 This endpoint enables clients to maintain an updated view of account storage.
 
-## Status
+### Status
 
 Request the status of the node components. The response contains the current version of the RPC component and the connection status of the other components, including their versions and the number of the most recent block in the chain (chain tip).
 
-## SyncStorageMaps
+## Error Handling
 
-Returns storage map synchronization data for a specified public account within a given block range. This method allows clients to efficiently sync the storage map state of an account by retrieving only the changes that occurred between two blocks.
+The Miden node uses standard gRPC error reporting mechanisms. When an RPC call fails, a `Status` object is returned containing:
 
-Caller specifies the `account_id` of the public account and the block range (`block_from`, `block_to`) for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
+- **Status Code**: Standard gRPC status codes (`INVALID_ARGUMENT`, `INTERNAL`, etc.).
+- **Message**: Human-readable error description.
+- **Details**: Additional structured error information (when available).
 
-This endpoint enables clients to maintain an updated view of account storage.
+For critical operations like transaction submission, detailed error codes are provided in the `Status.details` field to help clients understand the specific failure reason and take appropriate action.
+
+### Error Details Format
+
+The `Status.details` field contains the specific error code serialized as raw bytes:
+
+- **Format**: Single byte containing the numeric error code value
+- **Decoding**: Read the first byte to get the error code
+- **Mapping**: Map the numeric value to the corresponding error enum
+
+**Example decoding** (pseudocode):
+```
+if status.details.length > 0:
+    error_code = status.details[0]  // Extract first byte
+    switch error_code:
+        case 1: return "INTERNAL_ERROR"
+        case 2: return "DESERIALIZATION_FAILED"
+        case 5: return "INPUT_NOTES_ALREADY_CONSUMED"
+        // ... etc
+```

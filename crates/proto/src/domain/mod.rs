@@ -2,6 +2,7 @@ pub mod account;
 pub mod batch;
 pub mod block;
 pub mod digest;
+pub mod errors;
 pub mod mempool;
 pub mod merkle;
 pub mod note;

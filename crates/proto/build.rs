@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use fs_err as fs;
 use miden_node_proto_build::{
     block_producer_api_descriptor,
+    errors_api_descriptor,
+    remote_prover_api_descriptor,
     rpc_api_descriptor,
     store_block_producer_api_descriptor,
     store_ntx_builder_api_descriptor,
@@ -44,6 +46,8 @@ fn main() -> miette::Result<()> {
     generate_bindings(store_block_producer_api_descriptor(), &dst_dir)?;
     generate_bindings(store_shared_api_descriptor(), &dst_dir)?;
     generate_bindings(block_producer_api_descriptor(), &dst_dir)?;
+    generate_bindings(remote_prover_api_descriptor(), &dst_dir)?;
+    generate_bindings(errors_api_descriptor(), &dst_dir)?;
 
     generate_mod_rs(&dst_dir).into_diagnostic().wrap_err("generating mod.rs")?;
 

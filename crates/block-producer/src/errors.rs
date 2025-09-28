@@ -1,5 +1,6 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::errors::SubmitProvenTransactionError;
 use miden_node_utils::ErrorReport;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -101,25 +102,59 @@ pub enum AddTransactionError {
     },
 }
 
+// Error codes for gRPC Status::details
+// =================================================================================================
+
+impl AddTransactionError {
+    fn api_error(&self) -> SubmitProvenTransactionError {
+        match self {
+            AddTransactionError::VerificationFailed(tx_verify_error) => match tx_verify_error {
+                VerifyTxError::InputNotesAlreadyConsumed(_) => {
+                    SubmitProvenTransactionError::InputNotesAlreadyConsumed
+                },
+                VerifyTxError::StoreConnectionFailed(_) => {
+                    SubmitProvenTransactionError::InternalError
+                },
+                VerifyTxError::UnauthenticatedNotesNotFound(_) => {
+                    SubmitProvenTransactionError::UnauthenticatedNotesNotFound
+                },
+                VerifyTxError::OutputNotesAlreadyExist(_) => {
+                    SubmitProvenTransactionError::OutputNotesAlreadyExist
+                },
+                VerifyTxError::IncorrectAccountInitialCommitment { .. } => {
+                    SubmitProvenTransactionError::IncorrectAccountInitialCommitment
+                },
+                VerifyTxError::InvalidTransactionProof(_) => {
+                    SubmitProvenTransactionError::InvalidTransactionProof
+                },
+            },
+            AddTransactionError::StaleInputs { .. } => SubmitProvenTransactionError::InternalError,
+            AddTransactionError::Expired { .. } => SubmitProvenTransactionError::TransactionExpired,
+            AddTransactionError::TransactionDeserializationFailed(_) => {
+                SubmitProvenTransactionError::DeserializationFailed
+            },
+        }
+    }
+}
+
 impl From<AddTransactionError> for tonic::Status {
     fn from(value: AddTransactionError) -> Self {
-        match value {
-            AddTransactionError::VerificationFailed(
-                VerifyTxError::InputNotesAlreadyConsumed(_)
-                | VerifyTxError::UnauthenticatedNotesNotFound(_)
-                | VerifyTxError::OutputNotesAlreadyExist(_)
-                | VerifyTxError::IncorrectAccountInitialCommitment { .. }
-                | VerifyTxError::InvalidTransactionProof(_),
-            )
-            | AddTransactionError::Expired { .. }
-            | AddTransactionError::TransactionDeserializationFailed(_) => {
-                Self::invalid_argument(value.as_report())
-            },
+        let api_error = value.api_error();
 
-            // Internal errors which should not be communicated to the user.
-            AddTransactionError::VerificationFailed(VerifyTxError::StoreConnectionFailed(_))
-            | AddTransactionError::StaleInputs { .. } => Self::internal("Internal error"),
-        }
+        let message = if api_error.is_internal() {
+            "Internal error".to_owned()
+        } else {
+            value.as_report()
+        };
+
+        tonic::Status::with_details(
+            api_error.tonic_code(),
+            message,
+            // Details are serialized as a single byte containing the error code value.
+            // Clients can decode this by reading the first byte of the details field.
+            // Example: details[0] will contain the SubmitProvenTransactionError enum value (0-8)
+            vec![api_error.api_code()].into(),
+        )
     }
 }
 

@@ -914,8 +914,10 @@ impl State {
                         for map_key in storage_keys {
                             let proof = storage_map.open(map_key);
 
-                            let slot_map_key =
-                                StorageSlotMapProof { storage_slot: *storage_index, proof };
+                            let slot_map_key = StorageSlotMapProof {
+                                storage_slot: *storage_index,
+                                proof: proof.into(),
+                            };
                             storage_proofs.push(slot_map_key);
                         }
                     } else {

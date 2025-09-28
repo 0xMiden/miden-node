@@ -531,7 +531,8 @@ impl TryInto<Option<Account>> for AccountWithCodeRawJoined {
             let code = AccountCode::read_from_bytes(&code)?;
             let nonce = raw_sql_to_nonce(nonce);
             let nonce = Felt::new(nonce);
-            Some(Account::from_parts(account_id, vault, storage, code, nonce))
+            let account = Account::new_unchecked(account_id, vault, storage, code, nonce, None);
+            Some(account)
         } else {
             // a private account
             None

@@ -18,10 +18,7 @@ pub trait ToValue {
 
 impl<T: ToValue> ToValue for Vec<T> {
     fn to_value(&self) -> Value {
-        let string_values = self
-            .iter()
-            .map(|v| v.to_value().to_string().into())
-            .collect::<Vec<StringValue>>();
+        let string_values = self.iter().map(|v| v.to_value().into()).collect::<Vec<StringValue>>();
         Value::Array(string_values.into())
     }
 }

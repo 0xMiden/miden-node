@@ -309,11 +309,5 @@ impl Nodes {
         span.set_attribute("mempool.transactions.unbatched", self.txs.len());
         span.set_attribute("mempool.batches.proposed", self.proposed_batches.len());
         span.set_attribute("mempool.batches.proven", self.proven_batches.len());
-        // span.set_attribute("mempool.batches.proven", self.batches.num_proven());
-        // span.set_attribute("mempool.batches.total", self.batches.len());
-        // span.set_attribute("mempool.accounts", self.state.num_accounts());
-        // span.set_attribute("mempool.nullifiers", self.state.num_nullifiers());
-        // span.set_attribute("mempool.output_notes", self.state.num_notes_created());
-        // span.set_attribute("mempool.batches.roots", self.batches.num_roots());
     }
 }

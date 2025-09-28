@@ -281,6 +281,11 @@ impl Mempool {
             let node =
                 self.nodes.txs.remove(&tx.id()).expect("selected transaction node must exist");
             self.state.remove(&node);
+            tracing::info!(
+                batch.id = %batch_id,
+                transaction.id = %tx.id(),
+                "Transaction selected for inclusion in batch"
+            );
         }
         self.state.insert(NodeId::ProposedBatch(batch_id), &selected);
         self.nodes.proposed_batches.insert(batch_id, selected);
@@ -313,8 +318,14 @@ impl Mempool {
         for (_, node) in reverted {
             for tx in node.transactions() {
                 let tx = TransactionNode::new(Arc::clone(tx));
-                self.state.insert(NodeId::Transaction(tx.id()), &tx);
-                self.nodes.txs.insert(tx.id(), tx);
+                let tx_id = tx.id();
+                self.state.insert(NodeId::Transaction(tx_id), &tx);
+                self.nodes.txs.insert(tx_id, tx);
+                tracing::info!(
+                    batch.id = %batch,
+                    transaction.id = %tx_id,
+                    "Transaction requeued as part of batch rollback"
+                );
             }
         }
 
@@ -392,11 +403,17 @@ impl Mempool {
             selected.push(candidate.clone());
         }
 
+        let block_number = self.chain_tip.child();
         // Replace the batches with the block in state and nodes.
         for batch in selected.batches() {
             // SAFETY: Selected batches came from nodes, and are unique.
             let batch = self.nodes.proven_batches.remove(&batch.id()).unwrap();
             self.state.remove(&batch);
+            tracing::info!(
+                block.number = %block_number,
+                batch.id = %batch.id(),
+                "Batch selected for inclusion in block",
+            );
         }
 
         let block_number = self.chain_tip.child();
@@ -486,8 +503,24 @@ impl Mempool {
         //
         // A more refined approach could be to tag the offending transactions and then evict them
         // once a certain failure threshold has been met.
-        let _reverted = self.revert_subtree(NodeId::Block(block));
-        // TODO(mirko): Add reverted nodes as events.
+        let reverted = self.revert_subtree(NodeId::Block(block));
+
+        // Log reverted batches and transactions.
+        for (id, node) in reverted {
+            match id {
+                NodeId::ProposedBatch(batch_id) | NodeId::ProvenBatch(batch_id) => {
+                    tracing::info!(block.number = %block, batch.id = %batch_id, "Reverted batch as part of block rollback");
+                },
+                NodeId::Transaction(_) => {},
+                NodeId::Block(block_number) => panic!(
+                    "Found block {block_number} descendent while reverting a block which shouldn't be possible since only one block is in progress"
+                ),
+            }
+
+            for tx in node.transactions() {
+                tracing::info!(block.number = %block, transaction.id = %tx.id(), "Reverted transaction as part of block rollback");
+            }
+        }
 
         self.inject_telemetry();
     }
@@ -536,9 +569,23 @@ impl Mempool {
             .chain(expired_proposed_batches)
             .chain(expired_txs)
             .collect::<Vec<_>>();
-        for node in expired {
-            // TODO(mirko): Log these nicely somehow.
-            let _reverted = self.revert_subtree(node);
+        for expired_id in expired {
+            let reverted = self.revert_subtree(expired_id);
+            for (id, node) in reverted {
+                match id {
+                    NodeId::ProposedBatch(batch_id) | NodeId::ProvenBatch(batch_id) => {
+                        tracing::info!(ancestor = ?expired_id, batch.id = %batch_id, "Reverted batch due to expiration of ancestor");
+                    },
+                    NodeId::Transaction(_) => {},
+                    NodeId::Block(block_number) => panic!(
+                        "Found block {block_number} descendent while reverting a block which shouldn't be possible since only one block is in progress"
+                    ),
+                }
+
+                for tx in node.transactions() {
+                    tracing::info!(ancestor = ?expired_id, transaction.id = %tx.id(), "Reverted transaction due to expiration of ancestor");
+                }
+            }
         }
     }
 

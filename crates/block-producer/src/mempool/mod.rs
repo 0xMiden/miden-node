@@ -512,19 +512,11 @@ impl Mempool {
     ///
     /// Note that these are only visible in the OpenTelemetry context, as conventional tracing
     /// does not track fields added dynamically.
-    #[allow(clippy::unused_self, reason = "wip: mempool refactor")]
     fn inject_telemetry(&self) {
-        let _span = tracing::Span::current();
+        let span = tracing::Span::current();
 
-        // span.set_attribute("mempool.transactions.total", self.transactions.len());
-        // span.set_attribute("mempool.transactions.roots", self.transactions.num_roots());
-        // span.set_attribute("mempool.accounts", self.state.num_accounts());
-        // span.set_attribute("mempool.nullifiers", self.state.num_nullifiers());
-        // span.set_attribute("mempool.output_notes", self.state.num_notes_created());
-        // span.set_attribute("mempool.batches.pending", self.batches.num_pending());
-        // span.set_attribute("mempool.batches.proven", self.batches.num_proven());
-        // span.set_attribute("mempool.batches.total", self.batches.len());
-        // span.set_attribute("mempool.batches.roots", self.batches.num_roots());
+        self.nodes.inject_telemetry(&span);
+        self.state.inject_telemetry(&span);
     }
 
     /// Reverts expired transactions and batches as per the current `chain_tip`.

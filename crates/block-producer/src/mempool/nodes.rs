@@ -14,7 +14,7 @@ use crate::domain::transaction::AuthenticatedTransaction;
 ///
 /// This effectively describes the lifecycle of a transaction in the mempool.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum NodeId {
+pub(super) enum NodeId {
     Transaction(TransactionId),
     // UserBatch(BatchId),
     ProposedBatch(BatchId),
@@ -26,22 +26,22 @@ pub(crate) enum NodeId {
 ///
 /// Once this is selected for inclusion in a batch it will be moved inside a [`ProposedBatchNode`].
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TransactionNode(Arc<AuthenticatedTransaction>);
+pub(super) struct TransactionNode(Arc<AuthenticatedTransaction>);
 
 impl TransactionNode {
-    pub fn new(inner: Arc<AuthenticatedTransaction>) -> Self {
+    pub(super) fn new(inner: Arc<AuthenticatedTransaction>) -> Self {
         Self(inner)
     }
 
-    pub fn id(&self) -> TransactionId {
+    pub(super) fn id(&self) -> TransactionId {
         self.0.id()
     }
 
-    pub fn inner(&self) -> &Arc<AuthenticatedTransaction> {
+    pub(super) fn inner(&self) -> &Arc<AuthenticatedTransaction> {
         &self.0
     }
 
-    pub fn expires_at(&self) -> BlockNumber {
+    pub(super) fn expires_at(&self) -> BlockNumber {
         self.0.expires_at()
     }
 }
@@ -50,22 +50,22 @@ impl TransactionNode {
 ///
 /// Once proven it transitions to a [`ProvenBatchNode`].
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) struct ProposedBatchNode(Vec<Arc<AuthenticatedTransaction>>);
+pub(super) struct ProposedBatchNode(Vec<Arc<AuthenticatedTransaction>>);
 
 impl ProposedBatchNode {
-    pub fn push(&mut self, tx: Arc<AuthenticatedTransaction>) {
+    pub(super) fn push(&mut self, tx: Arc<AuthenticatedTransaction>) {
         self.0.push(tx);
     }
 
-    pub fn contains(&mut self, id: TransactionId) -> bool {
+    pub(super) fn contains(&mut self, id: TransactionId) -> bool {
         self.0.iter().any(|tx| tx.id() == id)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
 
-    pub fn calculate_id(&self) -> BatchId {
+    pub(super) fn calculate_id(&self) -> BatchId {
         BatchId::from_transactions(
             self.0
                 .iter()
@@ -74,19 +74,19 @@ impl ProposedBatchNode {
         )
     }
 
-    pub fn into_proven_batch_node(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
+    pub(super) fn into_proven_batch_node(self, proof: Arc<ProvenBatch>) -> ProvenBatchNode {
         let Self(txs) = self;
         ProvenBatchNode { txs, inner: proof }
     }
 
-    pub fn expires_at(&self) -> BlockNumber {
+    pub(super) fn expires_at(&self) -> BlockNumber {
         self.0.iter().map(|tx| tx.expires_at()).min().unwrap_or_default()
     }
 }
 
 /// Represents a [`ProvenBatch`] which is waiting for inclusion in a block.
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ProvenBatchNode {
+pub(super) struct ProvenBatchNode {
     /// We need to store this in addition to the proven batch because [`ProvenBatch`] erases the
     /// transaction information. We need the original information if we want to rollback the batch
     /// but retain the transactions.
@@ -95,42 +95,42 @@ pub(crate) struct ProvenBatchNode {
 }
 
 impl ProvenBatchNode {
-    pub(crate) fn tx_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
+    pub(super) fn tx_headers(&self) -> impl Iterator<Item = &TransactionHeader> {
         self.inner.transactions().as_slice().iter()
     }
 
-    pub(crate) fn id(&self) -> BatchId {
+    pub(super) fn id(&self) -> BatchId {
         self.inner.id()
     }
 
-    pub fn inner(&self) -> &Arc<ProvenBatch> {
+    pub(super) fn inner(&self) -> &Arc<ProvenBatch> {
         &self.inner
     }
 
-    pub fn expires_at(&self) -> BlockNumber {
+    pub(super) fn expires_at(&self) -> BlockNumber {
         self.inner.batch_expiration_block_num()
     }
 }
 
 /// Represents a block - both committed and in-progress.
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) struct BlockNode {
+pub(super) struct BlockNode {
     txs: Vec<Arc<AuthenticatedTransaction>>,
     batches: Vec<Arc<ProvenBatch>>,
 }
 
 impl BlockNode {
-    pub fn push(&mut self, batch: ProvenBatchNode) {
+    pub(super) fn push(&mut self, batch: ProvenBatchNode) {
         let ProvenBatchNode { txs, inner } = batch;
         self.txs.extend(txs);
         self.batches.push(inner);
     }
 
-    pub fn contains(&self, id: BatchId) -> bool {
+    pub(super) fn contains(&self, id: BatchId) -> bool {
         self.batches.iter().any(|batch| batch.id() == id)
     }
 
-    pub fn batches(&self) -> &[Arc<ProvenBatch>] {
+    pub(super) fn batches(&self) -> &[Arc<ProvenBatch>] {
         &self.batches
     }
 }
@@ -138,7 +138,7 @@ impl BlockNode {
 /// Describes a node's impact on the state.
 ///
 /// This is used to determine what state data is created or consumed by this node.
-pub(crate) trait Node {
+pub(super) trait Node {
     /// All [`Nullifier`]s created by this node, **including** nullifiers for erased notes. This
     /// may not be strictly necessary but it removes having to worry about reverting batches and
     /// blocks with erased notes -- since these would otherwise have different state impact than
@@ -288,18 +288,32 @@ impl Node for BlockNode {
 /// This data _must_ be kept in sync with the [`InflightState's`] [`NodeIds`] since these are
 /// used as the edges of the graph.
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) struct Nodes {
+pub(super) struct Nodes {
     // Nodes in the DAG
-    pub(crate) txs: HashMap<TransactionId, TransactionNode>,
+    pub(super) txs: HashMap<TransactionId, TransactionNode>,
     // user_batches: HashMap<BatchId, ProvenBatchNode>,
-    pub(crate) proposed_batches: HashMap<BatchId, ProposedBatchNode>,
-    pub(crate) proven_batches: HashMap<BatchId, ProvenBatchNode>,
-    pub(crate) proposed_block: Option<(BlockNumber, BlockNode)>,
-    pub(crate) committed_blocks: VecDeque<(BlockNumber, BlockNode)>,
+    pub(super) proposed_batches: HashMap<BatchId, ProposedBatchNode>,
+    pub(super) proven_batches: HashMap<BatchId, ProvenBatchNode>,
+    pub(super) proposed_block: Option<(BlockNumber, BlockNode)>,
+    pub(super) committed_blocks: VecDeque<(BlockNumber, BlockNode)>,
 }
 
 impl Nodes {
-    pub(crate) fn oldest_committed_block(&self) -> Option<BlockNumber> {
+    pub(super) fn oldest_committed_block(&self) -> Option<BlockNumber> {
         self.committed_blocks.front().map(|(number, _)| *number)
+    }
+
+    pub(super) fn inject_telemetry(&self, span: &tracing::Span) {
+        use miden_node_utils::tracing::OpenTelemetrySpanExt;
+
+        span.set_attribute("mempool.transactions.unbatched", self.txs.len());
+        span.set_attribute("mempool.batches.proposed", self.proposed_batches.len());
+        span.set_attribute("mempool.batches.proven", self.proven_batches.len());
+        // span.set_attribute("mempool.batches.proven", self.batches.num_proven());
+        // span.set_attribute("mempool.batches.total", self.batches.len());
+        // span.set_attribute("mempool.accounts", self.state.num_accounts());
+        // span.set_attribute("mempool.nullifiers", self.state.num_nullifiers());
+        // span.set_attribute("mempool.output_notes", self.state.num_notes_created());
+        // span.set_attribute("mempool.batches.roots", self.batches.num_roots());
     }
 }

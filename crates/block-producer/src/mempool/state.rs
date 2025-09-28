@@ -16,7 +16,7 @@ use crate::mempool::nodes::{Node, NodeId};
 /// structure. No attempt is made to verify this internally here as it requires more information
 /// than is available at this level.
 #[derive(Clone, Debug, PartialEq, Default)]
-pub(crate) struct InflightState {
+pub(super) struct InflightState {
     /// All nullifiers created by inflight state.
     ///
     /// This _includes_ nullifiers from erased notes to simpify reverting nodes and requeuing
@@ -49,7 +49,7 @@ pub(crate) struct InflightState {
 
 impl InflightState {
     /// Returns all nullifiers which already exist.
-    pub(crate) fn nullifiers_exist(
+    pub(super) fn nullifiers_exist(
         &self,
         nullifiers: impl Iterator<Item = Nullifier>,
     ) -> Vec<Nullifier> {
@@ -57,12 +57,12 @@ impl InflightState {
     }
 
     /// Returns all output notes which already exist.
-    pub(crate) fn output_notes_exist(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
+    pub(super) fn output_notes_exist(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
         notes.filter(|note| self.output_notes.contains_key(note)).collect()
     }
 
     /// Returns all output notes which don't exist.
-    pub(crate) fn output_notes_missing(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
+    pub(super) fn output_notes_missing(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
         notes.filter(|note| !self.output_notes.contains_key(note)).collect()
     }
 
@@ -70,7 +70,7 @@ impl InflightState {
     ///
     /// A [`None`] value _does not_ mean this account doesn't exist at all, but rather that it
     /// has no inflight nodes.
-    pub(crate) fn account_commitment(&self, account: &AccountId) -> Option<Word> {
+    pub(super) fn account_commitment(&self, account: &AccountId) -> Option<Word> {
         self.accounts.get(account).map(AccountUpdates::latest_commitment)
     }
 
@@ -79,7 +79,7 @@ impl InflightState {
     /// Note that this simply removes the data and does not check that the data was associated with
     /// the [`Node`] at the time of removal. The caller is responsible for ensuring that the given
     /// node was still active in the state.
-    pub(crate) fn remove(&mut self, node: &dyn Node) {
+    pub(super) fn remove(&mut self, node: &dyn Node) {
         for nullifier in node.nullifiers() {
             assert!(
                 self.nullifiers.remove(&nullifier),
@@ -116,7 +116,7 @@ impl InflightState {
 
     /// Inserts the node into the state, associating the data with the node's ID. This powers the
     /// parent and child relationship lookups.
-    pub(crate) fn insert(&mut self, id: NodeId, node: &dyn Node) {
+    pub(super) fn insert(&mut self, id: NodeId, node: &dyn Node) {
         self.nullifiers.extend(node.nullifiers());
         self.output_notes.extend(node.output_notes().map(|note| (note, id)));
         self.unauthenticated_notes
@@ -130,7 +130,7 @@ impl InflightState {
     /// The [`NodeId`]s which the given node directly depends on.
     ///
     /// Note that the result is invalidated by mutating the state.
-    pub(crate) fn parents(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
+    pub(super) fn parents(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
         let note_parents =
             node.unauthenticated_notes().filter_map(|note| self.output_notes.get(&note));
 
@@ -153,7 +153,7 @@ impl InflightState {
     /// The [`NodeId`]s which depend directly on the given node.
     ///
     /// Note that the result is invalidated by mutating the state.
-    pub(crate) fn children(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
+    pub(super) fn children(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
         let note_children =
             node.output_notes().filter_map(|note| self.unauthenticated_notes.get(&note));
 
@@ -171,6 +171,14 @@ impl InflightState {
             // a proposed batch has not erased the internally produced and consumed notes.
             .filter(|child| child != &id)
             .collect()
+    }
+
+    pub(super) fn inject_telemetry(&self, span: &tracing::Span) {
+        use miden_node_utils::tracing::OpenTelemetrySpanExt;
+
+        span.set_attribute("mempool.accounts", self.accounts.len());
+        span.set_attribute("mempool.nullifiers", self.nullifiers.len());
+        span.set_attribute("mempool.output_notes", self.output_notes.len());
     }
 }
 

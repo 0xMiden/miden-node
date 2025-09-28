@@ -277,21 +277,6 @@ impl BatchJob {
 
     #[instrument(target = COMPONENT, name = "batch_builder.commit_batch", skip_all)]
     async fn commit_batch(&self, batch: ProvenBatch) {
-        // Log the batch details.
-        let transaction_ids = batch
-            .transactions()
-            .as_slice()
-            .iter()
-            .map(|tx_header| tx_header.id())
-            .collect::<Vec<_>>();
-        tracing::info!(
-            target: COMPONENT,
-            batch_id = %batch.id(),
-            transaction_count = transaction_ids.len(),
-            transaction_ids = ?transaction_ids,
-            "Committing batch"
-        );
-
         self.mempool.lock().await.commit_batch(batch);
     }
 
@@ -340,6 +325,14 @@ impl TelemetryInjectorExt for SelectedBatch {
     fn inject_telemetry(&self) {
         Span::current().set_attribute("batch.id", self.id);
         Span::current().set_attribute("transactions.count", self.transactions.len());
+        Span::current().set_attribute(
+            "transactions.ids",
+            self.transactions()
+                .as_slice()
+                .iter()
+                .map(|tx_header| tx_header.id())
+                .collect::<Vec<_>>(),
+        );
         Span::current().set_attribute(
             "transactions.input_notes.count",
             self.transactions

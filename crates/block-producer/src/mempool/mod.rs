@@ -66,8 +66,7 @@ mod nodes;
 mod state;
 mod subscription;
 
-// FIXME(Mirko): Re-enable these once mempool refactor is completed.
-#[cfg(all(false, test))]
+#[cfg(test)]
 mod tests;
 
 #[derive(Clone)]

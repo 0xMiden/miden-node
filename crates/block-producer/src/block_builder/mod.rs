@@ -278,6 +278,7 @@ impl TelemetryInjectorExt for SelectedBlock {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
         span.set_attribute("block.batches.count", self.batches.len() as u32);
+        // Accumulate all telemetry based on batches.
         let (tx_count, tx_ids) =
             self.batches.iter().fold((0, Vec::new()), |(acc, mut ids), batch| {
                 let tx_count = acc + batch.transactions().as_slice().len();

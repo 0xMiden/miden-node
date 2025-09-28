@@ -325,35 +325,29 @@ impl TelemetryInjectorExt for SelectedBatch {
     fn inject_telemetry(&self) {
         Span::current().set_attribute("batch.id", self.id);
         Span::current().set_attribute("transactions.count", self.transactions.len());
-        Span::current().set_attribute(
-            "transactions.ids",
-            self.transactions
-                .as_slice()
-                .iter()
-                .map(|tx_header| tx_header.id())
-                .collect::<Vec<_>>(),
-        );
-        Span::current().set_attribute(
-            "transactions.input_notes.count",
-            self.transactions
-                .iter()
-                .map(AuthenticatedTransaction::input_note_count)
-                .sum::<usize>(),
-        );
-        Span::current().set_attribute(
-            "transactions.output_notes.count",
-            self.transactions
-                .iter()
-                .map(AuthenticatedTransaction::output_note_count)
-                .sum::<usize>(),
-        );
-        Span::current().set_attribute(
-            "transactions.unauthenticated_notes.count",
-            self.transactions
-                .iter()
-                .map(|tx| tx.unauthenticated_notes().count())
-                .sum::<usize>(),
-        );
+        // Accumulate all telemetry based on transactions.
+        let (tx_ids, input_notes_count, output_notes_count, unauth_notes_count) =
+            self.transactions.iter().fold(
+                (vec![], 0, 0, 0),
+                |(
+                    mut tx_ids,
+                    mut input_notes_count,
+                    mut output_notes_count,
+                    mut unauth_notes_count,
+                ),
+                 tx| {
+                    tx_ids.push(tx.id());
+                    input_notes_count += tx.input_note_count();
+                    output_notes_count += tx.output_note_count();
+                    unauth_notes_count += tx.unauthenticated_notes().count();
+                    (tx_ids, input_notes_count, output_notes_count, unauth_notes_count)
+                },
+            );
+        Span::current().set_attribute("transactions.ids", tx_ids);
+        Span::current().set_attribute("transactions.input_notes.count", input_notes_count);
+        Span::current().set_attribute("transactions.output_notes.count", output_notes_count);
+        Span::current()
+            .set_attribute("transactions.unauthenticated_notes.count", unauth_notes_count);
     }
 }
 

@@ -378,7 +378,7 @@ impl Mempool {
             for parent in self.state.parents(NodeId::ProvenBatch(candidate.id()), candidate) {
                 match parent {
                     NodeId::Block(_) => {},
-                    NodeId::ProvenBatch(parent) if !selected.contains(parent) => {},
+                    NodeId::ProvenBatch(parent) if selected.contains(parent) => {},
                     _ => continue 'next,
                 }
             }

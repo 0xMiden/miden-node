@@ -103,7 +103,7 @@ impl Tasks {
         // Create initial status for RPC service
         let mut rpc = ClientBuilder::new(config.rpc_url.clone())
             .with_tls()
-            .unwrap()
+            .expect("TLS is enabled")
             .with_timeout(Duration::from_secs(10))
             .without_metadata_version()
             .without_metadata_genesis()

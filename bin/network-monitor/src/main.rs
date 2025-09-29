@@ -18,7 +18,7 @@ use config::MonitorConfig;
 use faucet::run_faucet_test_task;
 use remote_prover::run_remote_prover_test_task;
 use status::{ServiceStatus, run_remote_prover_status_task, run_rpc_status_task};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload};
@@ -61,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
     let faucet_rx = if config.faucet_url.is_some() {
         Some(tasks.spawn_faucet(&config))
     } else {
-        info!("Faucet URL not configured, skipping faucet testing");
+        warn!("Faucet URL not configured, skipping faucet testing");
         None
     };
 

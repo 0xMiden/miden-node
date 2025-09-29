@@ -52,14 +52,14 @@ async fn main() -> anyhow::Result<()> {
     let mut tasks = Tasks::new();
 
     // Initialize the RPC Status endpoint checker task.
-    let rpc_rx = tasks.spawn_rpc_checker(config.clone()).await?;
+    let rpc_rx = tasks.spawn_rpc_checker(&config).await?;
 
     // Initialize the prover checkers & tests tasks.
-    let prover_rxs = tasks.spawn_prover_tasks(config.clone()).await?;
+    let prover_rxs = tasks.spawn_prover_tasks(&config).await?;
 
     // Initialize the faucet testing task.
     let faucet_rx = if config.faucet_url.is_some() {
-        Some(tasks.spawn_faucet(config.clone()))
+        Some(tasks.spawn_faucet(&config))
     } else {
         info!("Faucet URL not configured, skipping faucet testing");
         None
@@ -71,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
         provers: prover_rxs,
         faucet: faucet_rx,
     };
-    tasks.spawn_http_server(server_state, config);
+    tasks.spawn_http_server(server_state, &config);
 
     tasks.handle_failure().await
 }
@@ -98,7 +98,7 @@ impl Tasks {
     /// Spawn the RPC status checker task.
     async fn spawn_rpc_checker(
         &mut self,
-        config: MonitorConfig,
+        config: &MonitorConfig,
     ) -> anyhow::Result<Receiver<ServiceStatus>> {
         // Create initial status for RPC service
         let mut rpc = ClientBuilder::new(config.rpc_url.clone())
@@ -114,11 +114,12 @@ impl Tasks {
 
         // Spawn the RPC checker
         let (rpc_tx, rpc_rx) = watch::channel(initial_rpc_status);
+        let rpc_url = config.rpc_url.clone();
+        let status_check_interval = config.status_check_interval;
         let id = self
             .handles
             .spawn(async move {
-                run_rpc_status_task(config.rpc_url.clone(), rpc_tx, config.status_check_interval)
-                    .await;
+                run_rpc_status_task(rpc_url, rpc_tx, status_check_interval).await;
             })
             .id();
         self.names.insert(id, "rpc-checker".to_string());
@@ -129,11 +130,11 @@ impl Tasks {
     /// Spawn prover status and test tasks for all configured provers.
     async fn spawn_prover_tasks(
         &mut self,
-        config: MonitorConfig,
+        config: &MonitorConfig,
     ) -> anyhow::Result<Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>> {
         let mut prover_rxs = Vec::new();
 
-        for (i, prover_url) in config.remote_prover_urls.clone().into_iter().enumerate() {
+        for (i, prover_url) in config.remote_prover_urls.iter().enumerate() {
             let name = format!("Prover-{}", i + 1);
 
             let mut remote_prover = ClientBuilder::new(prover_url.clone())
@@ -159,18 +160,19 @@ impl Tasks {
 
             // Spawn the remote prover status check task
             let component_name = format!("prover-checker-{}", i + 1);
+            let prover_url_clone = prover_url.clone();
+            let name_clone = name.clone();
+            let status_check_interval = config.status_check_interval;
             let id = self
                 .handles
-                .spawn({
-                    let prover_url = prover_url.clone();
-                    let name = name.clone();
-
+                .spawn(async move {
                     run_remote_prover_status_task(
-                        prover_url,
-                        name,
+                        prover_url_clone,
+                        name_clone,
                         prover_status_tx,
-                        config.clone().status_check_interval,
+                        status_check_interval,
                     )
+                    .await;
                 })
                 .id();
             self.names.insert(id, component_name);
@@ -190,12 +192,14 @@ impl Tasks {
                 let (prover_test_tx, prover_test_rx) =
                     watch::channel(initial_prover_status.clone());
 
+                let prover_url_clone = prover_url.clone();
+                let name_clone = name.clone();
                 let id = self
                     .handles
                     .spawn(async move {
                         Box::pin(run_remote_prover_test_task(
-                            prover_url.clone(),
-                            &name,
+                            prover_url_clone,
+                            &name_clone,
                             proof_type,
                             payload,
                             prover_test_tx,
@@ -224,7 +228,7 @@ impl Tasks {
     }
 
     /// Spawn the faucet testing task.
-    fn spawn_faucet(&mut self, config: MonitorConfig) -> Receiver<ServiceStatus> {
+    fn spawn_faucet(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
         let current_time = current_unix_timestamp_secs();
 
         // Create initial faucet test status
@@ -244,10 +248,14 @@ impl Tasks {
 
         // Spawn the faucet testing task
         let (faucet_tx, faucet_rx) = watch::channel(initial_faucet_status);
+        // SAFETY: config.faucet_url is Some
+        let faucet_url = config.faucet_url.clone().unwrap();
+        let faucet_test_interval = config.faucet_test_interval;
         let id = self
             .handles
-            // SAFETY: config.faucet_url is Some
-            .spawn(async move { run_faucet_test_task(config.faucet_url.clone().unwrap(), faucet_tx, config.faucet_test_interval).await })
+            .spawn(async move {
+                run_faucet_test_task(faucet_url, faucet_tx, faucet_test_interval).await;
+            })
             .id();
         self.names.insert(id, "faucet-test".to_string());
 
@@ -255,7 +263,8 @@ impl Tasks {
     }
 
     /// Spawn the HTTP frontend server.
-    fn spawn_http_server(&mut self, server_state: ServerState, config: MonitorConfig) {
+    fn spawn_http_server(&mut self, server_state: ServerState, config: &MonitorConfig) {
+        let config = config.clone();
         let id = self.handles.spawn(async move { serve(server_state, config).await }).id();
         self.names.insert(id, "frontend".to_string());
     }

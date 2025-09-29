@@ -358,19 +358,26 @@ pub fn select_transactions_records(
 
     // Ensure block consistency: remove the last block if it's incomplete
     // (we may have stopped loading mid-block due to size constraints)
-    let mut filtered_raw = all_transactions;
-
     if total_size >= MAX_PAYLOAD_BYTES {
-        if let Some(last_tx) = filtered_raw.last() {
-            let last_block_num = last_tx.block_num;
-            filtered_raw.retain(|tx| tx.block_num != last_block_num);
-        }
+        // SAFETY: We're guaranteed to have at least one transaction since total_size > 0
+        let last_block_num = last_block_num.expect(
+            "guaranteed to have processed at least one transaction when size limit is reached",
+        );
+        let filtered_transactions = vec_raw_try_into(
+            all_transactions
+                .into_iter()
+                .take_while(|row| row.block_num != last_block_num)
+                .collect::<Vec<_>>(),
+        )?;
+
+        // SAFETY: block_num came from the database and was previously validated
+        let last_included_block = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
+        Ok((last_included_block, filtered_transactions))
+    } else {
+        // SAFETY: last_block_num came from the database and was previously validated
+        let last_included_block = last_block_num.map_or(*block_range.end(), |block_num| {
+            BlockNumber::from_raw_sql(block_num).expect("valid block number from database")
+        });
+        Ok((last_included_block, vec_raw_try_into(all_transactions)?))
     }
-
-    // Convert to transaction records
-    let headers: Vec<crate::db::TransactionRecord> = vec_raw_try_into(filtered_raw)?;
-
-    let last_included_block = headers.last().map_or(*block_range.end(), |tx| tx.block_num);
-
-    Ok((last_included_block, headers))
 }

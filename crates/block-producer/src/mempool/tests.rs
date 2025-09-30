@@ -163,7 +163,7 @@ fn block_commit_reverts_expired_txns() {
     uut.add_transaction(tx_to_revert).unwrap();
 
     // Commit the pending block which should revert the above tx.
-    let arb_header = BlockHeader::mock(0, None, None, &[], Word::empty());
+    let arb_header = BlockHeader::mock(block, None, None, &[], Word::empty());
     uut.commit_block(arb_header.clone());
     reference.commit_block(arb_header);
 
@@ -174,10 +174,10 @@ fn block_commit_reverts_expired_txns() {
 fn empty_block_commitment() {
     let mut uut = Mempool::for_tests();
 
-    let arb_header = BlockHeader::mock(0, None, None, &[], Word::empty());
     for _ in 0..3 {
-        let (_block, _) = uut.select_block();
-        uut.commit_block(arb_header.clone());
+        let (number, _) = uut.select_block();
+        let arb_header = BlockHeader::mock(number, None, None, &[], Word::empty());
+        uut.commit_block(arb_header);
     }
 }
 

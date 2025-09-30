@@ -520,10 +520,7 @@ impl Mempool {
                         "Reverted batch as part of block rollback"
                     );
                 },
-                NodeId::Transaction(_) => {},
-                NodeId::Block(block_number) => panic!(
-                    "Found block {block_number} descendent while reverting a block which shouldn't be possible since only one block is in progress"
-                ),
+                NodeId::Transaction(_) | NodeId::Block(_) => {},
             }
 
             for tx in node.transactions() {
@@ -600,7 +597,7 @@ impl Mempool {
                     },
                     NodeId::Transaction(_) => {},
                     NodeId::Block(block_number) => panic!(
-                        "Found block {block_number} descendent while reverting a block which shouldn't be possible since only one block is in progress"
+                        "Found block {block_number} descendent while reverting expired nodes which shouldn't be possible since only one block is in progress"
                     ),
                 }
 

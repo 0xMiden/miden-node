@@ -1,8 +1,3 @@
-#![allow(
-    clippy::cast_possible_wrap,
-    reason = "We will not approach the item count where i64 and usize cause issues"
-)]
-
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Insertable, Queryable};
@@ -182,6 +177,10 @@ pub struct TransactionSummaryRowInsert {
 }
 
 impl TransactionSummaryRowInsert {
+    #[allow(
+        clippy::cast_possible_wrap,
+        reason = "We will not approach the item count where i64 and usize cause issues"
+    )]
     fn new(
         transaction_header: &miden_objects::transaction::TransactionHeader,
         block_num: BlockNumber,

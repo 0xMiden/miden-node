@@ -513,7 +513,7 @@ impl rpc_server::Rpc for StoreApi {
             .map_err(internal_error)?;
 
         // Convert database TransactionRecord to proto TransactionRecord
-        let mut transaction_records = Vec::new();
+        let mut transaction_records = Vec::with_capacity(transaction_records_db.len());
 
         for tx_header in transaction_records_db {
             // Retrieve full note data for output notes from the database

@@ -112,9 +112,6 @@ impl TransactionRecord {
         self,
         note_records: Vec<NoteRecord>,
     ) -> proto::rpc_store::TransactionRecord {
-        let input_notes: Vec<proto::primitives::Digest> =
-            self.input_notes.iter().map(|nullifier| (*nullifier).into()).collect();
-
         let output_notes: Vec<proto::note::NoteSyncRecord> =
             note_records.into_iter().map(Into::into).collect();
 
@@ -123,7 +120,7 @@ impl TransactionRecord {
                 account_id: Some(self.account_id.into()),
                 initial_state_commitment: Some(self.initial_state_commitment.into()),
                 final_state_commitment: Some(self.final_state_commitment.into()),
-                input_notes,
+                input_notes: self.input_notes.into_iter().map(From::from).collect(),
                 output_notes,
             }),
             block_num: self.block_num.as_u32(),

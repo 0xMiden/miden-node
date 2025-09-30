@@ -373,9 +373,10 @@ impl Db {
         block_number: BlockNumber,
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
+        chain_tip: BlockNumber,
     ) -> Result<StateSyncUpdate, StateSyncError> {
         self.transact::<StateSyncUpdate, StateSyncError, _, _>("state sync", move |conn| {
-            queries::get_state_sync(conn, block_number, account_ids, note_tags)
+            queries::get_state_sync(conn, block_number, account_ids, note_tags, chain_tip)
         })
         .await
     }
@@ -383,11 +384,11 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_note_sync(
         &self,
-        block_num: BlockNumber,
+        block_range: RangeInclusive<BlockNumber>,
         note_tags: Vec<u32>,
-    ) -> Result<NoteSyncUpdate, NoteSyncError> {
+    ) -> Result<(NoteSyncUpdate, BlockNumber), NoteSyncError> {
         self.transact("notes sync task", move |conn| {
-            queries::get_note_sync(conn, block_num, note_tags.as_slice())
+            queries::get_note_sync(conn, note_tags.as_slice(), block_range)
         })
         .await
     }

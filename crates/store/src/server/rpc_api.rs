@@ -196,16 +196,25 @@ impl rpc_server::Rpc for StoreApi {
     ) -> Result<Response<proto::rpc_store::SyncNotesResponse>, Status> {
         let request = request.into_inner();
 
-        let (state, mmr_proof) = self
+        let chain_tip = self.state.latest_block_num().await;
+
+        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+
+        let block_range = block_range.into_inclusive_range(chain_tip);
+
+        let (state, mmr_proof, last_block_included) = self
             .state
-            .sync_notes(request.block_num.into(), request.note_tags)
+            .sync_notes(request.note_tags, block_range)
             .await
             .map_err(internal_error)?;
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
         Ok(Response::new(proto::rpc_store::SyncNotesResponse {
-            chain_tip: self.state.latest_block_num().await.as_u32(),
+            pagination_info: Some(proto::rpc_store::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: last_block_included.as_u32(),
+            }),
             block_header: Some(state.block_header.into()),
             mmr_path: Some(mmr_proof.merkle_path.into()),
             notes,

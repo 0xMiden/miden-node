@@ -92,7 +92,7 @@ For any `[block_from..block_to]` range, the latest known set of assets is return
 
 Iteratively sync data for a given set of note tags.
 
-Client specify the note tags of interest and the block height from which to search. The response returns the next block containing note matching the provided tags.
+Client specifies the `note_tags` they are interested in, and the block range from which to search for matching notes. The request will then return the next block containing any note matching the provided tags within the specified range.
 
 The response includes each note's metadata and inclusion proof.
 

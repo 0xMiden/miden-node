@@ -630,7 +630,10 @@ impl State {
     ) -> Result<(StateSyncUpdate, MmrDelta), StateSyncError> {
         let inner = self.inner.read().await;
 
-        let state_sync = self.db.get_state_sync(block_num, account_ids, note_tags).await?;
+        let chain_tip = self.latest_block_num().await;
+
+        let state_sync =
+            self.db.get_state_sync(block_num, account_ids, note_tags, chain_tip).await?;
 
         let delta = if block_num == state_sync.block_header.block_num() {
             // The client is in sync with the chain tip.
@@ -668,22 +671,23 @@ impl State {
     ///
     /// # Arguments
     ///
-    /// - `block_num`: The last block *known* by the client, updates start from the next block.
     /// - `note_tags`: The tags the client is interested in, resulting notes are restricted to the
     ///   first block containing a matching note.
+    /// - `block_range`: The range of blocks from which to synchronize notes.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_notes(
         &self,
-        block_num: BlockNumber,
         note_tags: Vec<u32>,
-    ) -> Result<(NoteSyncUpdate, MmrProof), NoteSyncError> {
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(NoteSyncUpdate, MmrProof, BlockNumber), NoteSyncError> {
         let inner = self.inner.read().await;
 
-        let note_sync = self.db.get_note_sync(block_num, note_tags).await?;
+        let (note_sync, last_included_block) =
+            self.db.get_note_sync(block_range, note_tags).await?;
 
         let mmr_proof = inner.blockchain.open(note_sync.block_header.block_num())?;
 
-        Ok((note_sync, mmr_proof))
+        Ok((note_sync, mmr_proof, last_included_block))
     }
 
     /// Returns data needed by the block producer to construct and prove the next block.

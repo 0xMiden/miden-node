@@ -1098,21 +1098,25 @@ fn notes() {
     let block_num_1 = 1.into();
     create_block(conn, block_num_1);
 
+    let block_range = BlockNumber::from(0)..=BlockNumber::from(1);
+
     // test empty table
-    let res =
-        queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
+    let (res, last_included_block) =
+        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[], block_range.clone())
             .unwrap();
 
     assert!(res.is_empty());
+    assert_eq!(last_included_block, 1.into());
 
-    let res = queries::select_notes_since_block_by_tag_and_sender(
+    let (res, last_included_block) = queries::select_notes_since_block_by_tag_and_sender(
         conn,
-        BlockNumber::from(0),
         &[],
         &[1, 2, 3],
+        block_range.clone(),
     )
     .unwrap();
     assert!(res.is_empty());
+    assert_eq!(last_included_block, 1.into());
 
     let sender = AccountId::try_from(ACCOUNT_ID_PRIVATE_SENDER).unwrap();
 
@@ -1151,25 +1155,27 @@ fn notes() {
     queries::insert_notes(conn, &[(note.clone(), None)]).unwrap();
 
     // test empty tags
-    let res =
-        queries::select_notes_since_block_by_tag_and_sender(conn, BlockNumber::from(0), &[], &[])
+    let (res, last_included_block) =
+        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[], block_range.clone())
             .unwrap();
     assert!(res.is_empty());
+    assert_eq!(last_included_block, 1.into());
+
+    let block_range_1 = 1.into()..=1.into();
 
     // test no updates
-    let res = queries::select_notes_since_block_by_tag_and_sender(conn, block_num_1, &[], &[tag])
-        .unwrap();
+    let (res, last_included_block) =
+        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[tag], block_range_1)
+            .unwrap();
     assert!(res.is_empty());
+    assert_eq!(last_included_block, 1.into());
 
     // test match
-    let res = queries::select_notes_since_block_by_tag_and_sender(
-        conn,
-        block_num_1.parent().unwrap(),
-        &[],
-        &[tag],
-    )
-    .unwrap();
+    let (res, last_included_block) =
+        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[tag], block_range.clone())
+            .unwrap();
     assert_eq!(res, vec![note.clone().into()]);
+    assert_eq!(last_included_block, 1.into());
 
     let block_num_2 = note.block_num + 1;
     create_block(conn, block_num_2);
@@ -1186,20 +1192,24 @@ fn notes() {
 
     queries::insert_notes(conn, &[(note2.clone(), None)]).unwrap();
 
+    let block_range = 0.into()..=2.into();
+
     // only first note is returned
-    let res = queries::select_notes_since_block_by_tag_and_sender(
-        conn,
-        block_num_1.parent().unwrap(),
-        &[],
-        &[tag],
-    )
-    .unwrap();
+    let (res, last_included_block) =
+        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[tag], block_range)
+            .unwrap();
     assert_eq!(res, vec![note.clone().into()]);
+    assert_eq!(last_included_block, 1.into());
+
+    let block_range = 1.into()..=2.into();
 
     // only the second note is returned
-    let res = queries::select_notes_since_block_by_tag_and_sender(conn, block_num_1, &[], &[tag])
-        .unwrap();
+    let (res, last_included_block) =
+        queries::select_notes_since_block_by_tag_and_sender(conn, &[], &[tag], block_range)
+            .unwrap();
     assert_eq!(res, vec![note2.clone().into()]);
+    assert_eq!(last_included_block, 2.into());
+
     // test query notes by id
     let notes = vec![note.clone(), note2];
 

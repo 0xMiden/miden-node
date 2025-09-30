@@ -309,9 +309,11 @@ message AccountVaultUpdate {
 // Specifies note tags that client is interested in. The server will return the first block which
 // contains a note matching `note_tags` or the chain tip.
 message SyncNotesRequest {
-    // Last block known by the client. The response will contain data starting from the next block,
-    // until the first block which contains a note of matching the requested tag.
-    fixed32 block_num = 1;
+    // Block range from which to start synchronizing.
+    //
+    // If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
+    // otherwise an error will be returned.
+    BlockRange block_range = 1;
 
     // Specifies the tags which the client is interested in.
     repeated fixed32 note_tags = 2;
@@ -319,8 +321,8 @@ message SyncNotesRequest {
 
 // Represents the result of syncing notes request.
 message SyncNotesResponse {
-    // Number of the latest block in the chain.
-    fixed32 chain_tip = 1;
+    // Pagination information.
+    PaginationInfo pagination_info = 1;
 
     // Block header of the block with the first note matching the specified criteria.
     blockchain.BlockHeader block_header = 2;

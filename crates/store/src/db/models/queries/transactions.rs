@@ -256,7 +256,7 @@ impl TransactionSummaryRowInsert {
 /// FROM
 ///     transactions
 /// WHERE
-///     block_num > ?1
+///     block_num >= ?1
 ///     AND block_num <= ?2
 ///     AND account_id IN rarray(?3)
 ///     AND (
@@ -305,7 +305,7 @@ pub fn select_transactions_records(
     loop {
         let mut query =
             SelectDsl::select(schema::transactions::table, TransactionRecordRaw::as_select())
-                .filter(schema::transactions::block_num.gt(block_range.start().to_raw_sql()))
+                .filter(schema::transactions::block_num.ge(block_range.start().to_raw_sql()))
                 .filter(schema::transactions::block_num.le(block_range.end().to_raw_sql()))
                 .filter(schema::transactions::account_id.eq_any(&desired_account_ids))
                 .into_boxed();

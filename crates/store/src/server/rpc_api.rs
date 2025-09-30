@@ -524,7 +524,7 @@ impl rpc_server::Rpc for StoreApi {
                 .map_err(internal_error)?;
 
             // Convert to proto using the helper method
-            let proto_record = tx_header.to_proto_with_note_records(note_records);
+            let proto_record = tx_header.into_proto_with_note_records(note_records);
             transaction_records.push(proto_record);
         }
 

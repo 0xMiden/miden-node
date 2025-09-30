@@ -107,8 +107,7 @@ impl TransactionRecord {
     /// Convert to proto `TransactionRecord`, but requires note sync records for output notes.
     /// For `sync_transactions` RPC, we need to fetch note sync records separately since we only
     /// store note IDs in the database.
-    #[allow(clippy::wrong_self_convention)]
-    pub fn to_proto_with_note_records(
+    pub fn into_proto_with_note_records(
         self,
         note_records: Vec<NoteRecord>,
     ) -> proto::rpc_store::TransactionRecord {

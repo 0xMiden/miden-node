@@ -523,12 +523,8 @@ impl rpc_server::Rpc for StoreApi {
                 .await
                 .map_err(internal_error)?;
 
-            // Convert NoteRecord to NoteSyncRecord
-            let note_sync_records: Vec<crate::db::NoteSyncRecord> =
-                note_records.into_iter().map(std::convert::Into::into).collect();
-
             // Convert to proto using the helper method
-            let proto_record = tx_header.to_proto_with_note_records(note_sync_records);
+            let proto_record = tx_header.to_proto_with_note_records(note_records);
             transaction_records.push(proto_record);
         }
 

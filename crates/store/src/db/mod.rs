@@ -110,7 +110,7 @@ impl TransactionRecord {
     #[allow(clippy::wrong_self_convention)]
     pub fn to_proto_with_note_records(
         self,
-        note_records: Vec<NoteSyncRecord>,
+        note_records: Vec<NoteRecord>,
     ) -> proto::rpc_store::TransactionRecord {
         let input_notes: Vec<proto::primitives::Digest> =
             self.input_notes.iter().map(|nullifier| (*nullifier).into()).collect();
@@ -154,6 +154,22 @@ impl From<NoteRecord> for proto::note::CommittedNote {
             details: note.details.map(|details| details.to_bytes()),
         });
         Self { inclusion_proof, note }
+    }
+}
+
+impl From<NoteRecord> for proto::note::NoteSyncRecord {
+    fn from(value: NoteRecord) -> Self {
+        let note_id = value.note_id.into();
+        let note_index_in_block = value.note_index.leaf_index_value().into();
+        let metadata = value.metadata.into();
+        let inclusion_path = value.inclusion_path.into();
+
+        proto::note::NoteSyncRecord {
+            note_id: Some(note_id),
+            note_index_in_block,
+            metadata: Some(metadata),
+            inclusion_path: Some(inclusion_path),
+        }
     }
 }
 

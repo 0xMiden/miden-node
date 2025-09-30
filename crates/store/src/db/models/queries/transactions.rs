@@ -329,11 +329,6 @@ pub fn select_transactions_records(
             .load::<TransactionRecordRaw>(conn)
             .map_err(DatabaseError::from)?;
 
-        // If no more data, we're done
-        if chunk.is_empty() {
-            break;
-        }
-
         // Add transactions from this chunk one by one until we hit the limit
         let mut added_from_chunk = 0;
         let mut last_added_tx: Option<TransactionRecordRaw> = None;

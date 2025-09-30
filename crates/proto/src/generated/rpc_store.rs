@@ -387,21 +387,11 @@ pub struct TransactionRecord {
     /// Block number in which the transaction was executed.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
-    /// ID of the account against which the transaction was executed.
+    /// A transaction header.
     #[prost(message, optional, tag = "2")]
-    pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// State commitment of the account before the transaction was executed.
-    #[prost(message, optional, tag = "3")]
-    pub initial_state_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// State commitment of the account after the transaction was executed.
-    #[prost(message, optional, tag = "4")]
-    pub final_state_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// Nullifiers of the input notes of the transaction.
-    #[prost(message, repeated, tag = "5")]
-    pub input_notes: ::prost::alloc::vec::Vec<super::primitives::Digest>,
-    /// Output notes of the transaction.
-    #[prost(message, repeated, tag = "6")]
-    pub output_notes: ::prost::alloc::vec::Vec<super::note::NoteSyncRecord>,
+    pub transaction_header: ::core::option::Option<
+        super::transaction::TransactionHeader,
+    >,
 }
 /// Generated client implementations.
 pub mod rpc_client {

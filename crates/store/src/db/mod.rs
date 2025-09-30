@@ -119,12 +119,14 @@ impl TransactionRecord {
             note_records.into_iter().map(Into::into).collect();
 
         proto::rpc_store::TransactionRecord {
+            transaction_header: Some(proto::transaction::TransactionHeader {
+                account_id: Some(self.account_id.into()),
+                initial_state_commitment: Some(self.initial_state_commitment.into()),
+                final_state_commitment: Some(self.final_state_commitment.into()),
+                input_notes,
+                output_notes,
+            }),
             block_num: self.block_num.as_u32(),
-            account_id: Some(self.account_id.into()),
-            initial_state_commitment: Some(self.initial_state_commitment.into()),
-            final_state_commitment: Some(self.final_state_commitment.into()),
-            input_notes,
-            output_notes,
         }
     }
 }

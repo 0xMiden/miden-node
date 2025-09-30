@@ -1,8 +1,9 @@
 syntax = "proto3";
 package transaction;
 
-import "types/primitives.proto";
 import "types/account.proto";
+import "types/note.proto";
+import "types/primitives.proto";
 
 // TRANSACTION
 // ================================================================================================
@@ -36,4 +37,22 @@ message TransactionSummary {
 
     // The ID of the account affected by the transaction.
     account.AccountId account_id = 3;
+}
+
+// Represents a transaction header.
+message TransactionHeader {
+    // ID of the account against which the transaction was executed.
+    account.AccountId account_id = 1;
+
+    // State commitment of the account before the transaction was executed.
+    primitives.Digest initial_state_commitment = 2;
+
+    // State commitment of the account after the transaction was executed.
+    primitives.Digest final_state_commitment = 3;
+
+    // Nullifiers of the input notes of the transaction.
+    repeated primitives.Digest input_notes = 4;
+
+    // Output notes of the transaction.
+    repeated note.NoteSyncRecord output_notes = 5;
 }

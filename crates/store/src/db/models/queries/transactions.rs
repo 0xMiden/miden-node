@@ -188,6 +188,8 @@ impl TransactionSummaryRowInsert {
     ) -> Self {
         use miden_lib::utils::Serializable;
 
+        const HEADER_BASE_SIZE: usize = 4 + 32 + 16 + 64; // block_num + tx_id + account_id + commitments
+
         // Serialize input notes using binary format (store nullifiers)
         let input_notes_binary = transaction_header.input_notes().to_bytes();
 
@@ -205,10 +207,9 @@ impl TransactionSummaryRowInsert {
         //
         // Note: 500 bytes per output note is an over-estimate but ensures we don't
         // exceed memory limits when these transactions are later converted to proto records.
-        let header_base_size = 4 + 32 + 16 + 64; // block_num + tx_id + account_id + commitments
         let input_notes_size = transaction_header.input_notes().len() * 32;
         let output_notes_size = transaction_header.output_notes().len() * 500;
-        let size_in_bytes = (header_base_size + input_notes_size + output_notes_size) as i64;
+        let size_in_bytes = (HEADER_BASE_SIZE + input_notes_size + output_notes_size) as i64;
 
         Self {
             transaction_id: transaction_header.id().to_bytes(),

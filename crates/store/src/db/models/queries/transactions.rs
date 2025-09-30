@@ -337,18 +337,24 @@ pub fn select_transactions_records(
 
         // Add transactions from this chunk one by one until we hit the limit
         let mut added_from_chunk = 0;
+        let mut last_added_tx: Option<TransactionRecordRaw> = None;
+
         for tx in chunk {
             if total_size + tx.size_in_bytes <= MAX_PAYLOAD_BYTES {
                 total_size += tx.size_in_bytes;
-                // Update cursor position for next iteration
-                last_block_num = Some(tx.block_num);
-                last_transaction_id = Some(tx.transaction_id.clone());
-                all_transactions.push(tx);
+                last_added_tx = Some(tx);
                 added_from_chunk += 1;
             } else {
                 // Can't fit this transaction, stop here
                 break;
             }
+        }
+
+        // Update cursor position only for the last transaction that was actually added
+        if let Some(tx) = last_added_tx {
+            last_block_num = Some(tx.block_num);
+            last_transaction_id = Some(tx.transaction_id.clone());
+            all_transactions.push(tx);
         }
 
         // Break if chunk incomplete (size limit hit or data exhausted)

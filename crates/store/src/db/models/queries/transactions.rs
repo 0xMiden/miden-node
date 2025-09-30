@@ -371,10 +371,7 @@ pub fn select_transactions_records(
             "guaranteed to have processed at least one transaction when size limit is reached",
         );
         let filtered_transactions = vec_raw_try_into(
-            all_transactions
-                .into_iter()
-                .take_while(|row| row.block_num != last_block_num)
-                .collect::<Vec<_>>(),
+            all_transactions.into_iter().take_while(|row| row.block_num != last_block_num),
         )?;
 
         // SAFETY: block_num came from the database and was previously validated

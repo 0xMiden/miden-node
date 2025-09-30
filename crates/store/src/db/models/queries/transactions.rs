@@ -378,10 +378,6 @@ pub fn select_transactions_records(
         let last_included_block = BlockNumber::from_raw_sql(last_block_num.saturating_sub(1))?;
         Ok((last_included_block, filtered_transactions))
     } else {
-        // SAFETY: last_block_num came from the database and was previously validated
-        let last_included_block = last_block_num.map_or(*block_range.end(), |block_num| {
-            BlockNumber::from_raw_sql(block_num).expect("valid block number from database")
-        });
-        Ok((last_included_block, vec_raw_try_into(all_transactions)?))
+        Ok((*block_range.end(), vec_raw_try_into(all_transactions)?))
     }
 }

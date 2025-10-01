@@ -348,7 +348,7 @@ impl AccountVaultDetails {
     const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(vault: &AssetVault) -> Self {
-        if vault.asset_tree().num_leaves() > Self::MAX_RETURN_ENTRIES {
+        if vault.assets().skip(Self::MAX_RETURN_ENTRIES).next().is_some() {
             Self {
                 too_many_assets: true,
                 assets: Vec::new(),

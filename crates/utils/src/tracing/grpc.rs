@@ -13,8 +13,8 @@ pub fn grpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
     // A gRPC request's path ends with `../<service>/<method>`.
     let mut path_segments = request.uri().path().rsplit('/');
 
-    let service = path_segments.next().unwrap_or_default();
     let method = path_segments.next().unwrap_or_default();
+    let service = path_segments.next().unwrap_or_default();
 
     // Create a span with a generic, static name. Fields to be recorded after needs to be
     // initialized as empty since otherwise the assignment will have no effect.

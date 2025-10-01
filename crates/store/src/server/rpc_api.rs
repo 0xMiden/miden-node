@@ -196,9 +196,9 @@ impl rpc_server::Rpc for StoreApi {
     ) -> Result<Response<proto::rpc_store::SyncNotesResponse>, Status> {
         let request = request.into_inner();
 
-        let chain_tip = self.state.latest_block_num().await;
-
         let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+
+        let chain_tip = self.state.latest_block_num().await;
 
         let block_range = block_range.into_inclusive_range(chain_tip);
 

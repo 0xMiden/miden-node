@@ -451,18 +451,18 @@ impl Mempool {
             .proposed_block
             .take_if(|(proposed, _)| proposed == &to_commit.block_num())
             .expect("block must be in progress to commit");
-        let txs = block.1.transactions().map(|tx| tx.id()).collect();
+        let tx_ids = block.1.transactions().map(|tx| tx.id()).collect();
 
         self.nodes.committed_blocks.push_back(block);
         self.chain_tip = self.chain_tip.child();
-        self.subscription.block_committed(to_commit, txs);
+        self.subscription.block_committed(to_commit, tx_ids);
 
         if self.nodes.committed_blocks.len() > self.config.state_retention.get() {
             let (_number, node) = self.nodes.committed_blocks.pop_front().unwrap();
             self.state.remove(&node);
         }
-        let reverted_txs = self.revert_expired_nodes();
-        self.subscription.txs_reverted(reverted_txs);
+        let reverted_tx_ids = self.revert_expired_nodes();
+        self.subscription.txs_reverted(reverted_tx_ids);
         self.inject_telemetry();
     }
 

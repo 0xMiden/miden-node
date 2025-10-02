@@ -36,8 +36,8 @@ pub mod account_proof_request {
         pub code_commitment: ::core::option::Option<super::super::primitives::Digest>,
         /// Last known asset vault commitment to the client. The response will include asset vault data
         /// only if its commitment is different from this value or if the value is not present.
-        /// Assets will only be returned for small accounts with less than 100 asset entries,
-        /// otherwise they have to be requested separately.
+        /// If the number of to-be-returned asset entries exceed a threshold, they have to be requested
+        /// separately, which is signaled in the response message.
         #[prost(message, optional, tag = "2")]
         pub asset_vault_commitment: ::core::option::Option<
             super::super::primitives::Digest,

@@ -349,7 +349,7 @@ impl AccountVaultDetails {
     const MAX_RETURN_ENTRIES: usize = 1000;
 
     pub fn new(vault: &AssetVault) -> Self {
-        if vault.assets().skip(Self::MAX_RETURN_ENTRIES).next().is_some() {
+        if vault.assets().nth(Self::MAX_RETURN_ENTRIES).is_some() {
             Self::too_many()
         } else {
             Self {

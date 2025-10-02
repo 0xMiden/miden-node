@@ -938,8 +938,7 @@ impl State {
             // Only include unknown account code blobs, which is equal to a account code digest
             // mismatch. If `None` was requested, don't return any.
             let account_code = code_commitment
-                .map(|code_commitment| code_commitment != details.code().commitment())
-                .unwrap_or(false)
+                .is_some_and(|code_commitment| code_commitment != details.code().commitment())
                 .then(|| details.code().to_bytes());
 
             // storage details

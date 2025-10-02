@@ -33,23 +33,23 @@ opt-level = 2
 
 [workspace.dependencies]
 # Workspace crates.
-miden-node-block-producer  = { path = "crates/block-producer", version = "0.11" }
-miden-node-ntx-builder     = { path = "crates/ntx-builder", version = "0.11" }
-miden-node-proto           = { path = "crates/proto", version = "0.11" }
-miden-node-proto-build     = { path = "proto", version = "0.11" }
-miden-node-rpc             = { path = "crates/rpc", version = "0.11" }
-miden-node-store           = { path = "crates/store", version = "0.11" }
-miden-node-test-macro      = { path = "crates/test-macro" }
-miden-node-utils           = { path = "crates/utils", version = "0.11" }
-miden-remote-prover-client = { path = "crates/remote-prover-client", version = "0.11" }
+miden-node-block-producer  = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-node-ntx-builder     = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-node-proto           = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-node-proto-build     = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-node-rpc             = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-node-store           = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-node-test-macro      = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-node-utils           = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
+miden-remote-prover-client = { branch = "main", git = "https://github.com/0xMiden/miden-node" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { version = "0.11" }
-miden-lib             = { version = "0.11" }
-miden-objects         = { default-features = false, version = "0.11" }
-miden-testing         = { version = "0.11" }
-miden-tx              = { default-features = false, version = "0.11" }
-miden-tx-batch-prover = { version = "0.11" }
+miden-block-prover    = { branch = "main", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "main", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "main", git = "https://github.com/0xMiden/miden-base", default-features = false }
+miden-testing         = { branch = "main", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "main", git = "https://github.com/0xMiden/miden-base", default-features = false }
+miden-tx-batch-prover = { branch = "main", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { version = "0.17" }

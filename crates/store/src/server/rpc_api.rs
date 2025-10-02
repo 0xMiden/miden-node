@@ -11,6 +11,7 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
 use crate::COMPONENT;
+use crate::errors::SyncNullifiersError;
 use crate::server::api::{
     StoreApi,
     internal_error,
@@ -93,7 +94,7 @@ impl rpc_server::Rpc for StoreApi {
         let request = request.into_inner();
 
         if request.prefix_len != 16 {
-            return Err(Status::invalid_argument("Only 16-bit prefixes are supported"));
+            return Err(SyncNullifiersError::InvalidPrefixLength(request.prefix_len).into());
         }
 
         let chain_tip = self.state.latest_block_num().await;
@@ -102,10 +103,21 @@ impl rpc_server::Rpc for StoreApi {
             .ok_or(invalid_argument("block_range is required"))?
             .into_inclusive_range(chain_tip);
 
+        // Validate block range
+        if block_range.start() > block_range.end() {
+            return Err(SyncNullifiersError::InvalidBlockRange {
+                from: *block_range.start(),
+                to: *block_range.end(),
+            }
+            .into());
+        }
+
         let (nullifiers, block_num) = self
             .state
             .sync_nullifiers(request.prefix_len, request.nullifiers, block_range)
-            .await?;
+            .await
+            .map_err(SyncNullifiersError::from)?;
+
         let nullifiers = nullifiers
             .into_iter()
             .map(|nullifier_info| proto::rpc_store::sync_nullifiers_response::NullifierUpdate {

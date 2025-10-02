@@ -1,11 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use miden_node_proto::errors::block_producer::SubmitProvenTransactionGrpcError;
+    use miden_node_proto::errors::store::GrpcError;
     use miden_objects::Word;
     use miden_objects::block::BlockNumber;
     use miden_objects::note::{NoteId, Nullifier};
     use miden_tx::utils::DeserializationError;
 
-    use crate::errors::{AddTransactionError, SubmitProvenTransactionGrpcError, VerifyTxError};
+    use crate::errors::{AddTransactionError, VerifyTxError};
 
     #[rstest::rstest]
     #[test]

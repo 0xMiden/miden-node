@@ -1,5 +1,10 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::errors::block_producer::{
+    SubmitProvenBatchGrpcError,
+    SubmitProvenTransactionGrpcError,
+};
+use miden_node_proto::errors::store::GrpcError;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;
@@ -155,40 +160,6 @@ impl From<AddTransactionError> for tonic::Status {
     }
 }
 
-// Submit proven transaction error codes for gRPC Status::details
-// =================================================================================================
-
-#[derive(Debug, Copy, Clone)]
-#[repr(u8)]
-pub(crate) enum SubmitProvenTransactionGrpcError {
-    Internal = 0,
-    DeserializationFailed = 1,
-    InvalidTransactionProof = 2,
-    IncorrectAccountInitialCommitment = 3,
-    InputNotesAlreadyConsumed = 4,
-    UnauthenticatedNotesNotFound = 5,
-    OutputNotesAlreadyExist = 6,
-    TransactionExpired = 7,
-}
-
-impl SubmitProvenTransactionGrpcError {
-    pub fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    pub fn tonic_code(self) -> tonic::Code {
-        if self.is_internal() {
-            tonic::Code::Internal
-        } else {
-            tonic::Code::InvalidArgument
-        }
-    }
-
-    pub fn is_internal(self) -> bool {
-        matches!(self, SubmitProvenTransactionGrpcError::Internal)
-    }
-}
-
 // Submit proven batch by user errors
 // =================================================================================================
 
@@ -223,35 +194,6 @@ impl From<SubmitProvenBatchError> for tonic::Status {
             message,
             vec![api_error.api_code()].into(),
         )
-    }
-}
-
-// Submit proven batch error codes for gRPC Status::details
-// =================================================================================================
-
-#[derive(Debug, Copy, Clone)]
-#[repr(u8)]
-pub(crate) enum SubmitProvenBatchGrpcError {
-    #[allow(dead_code)]
-    Internal = 0,
-    DeserializationFailed = 1,
-}
-
-impl SubmitProvenBatchGrpcError {
-    pub fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    pub fn tonic_code(self) -> tonic::Code {
-        if self.is_internal() {
-            tonic::Code::Internal
-        } else {
-            tonic::Code::InvalidArgument
-        }
-    }
-
-    pub fn is_internal(self) -> bool {
-        matches!(self, SubmitProvenBatchGrpcError::Internal)
     }
 }
 

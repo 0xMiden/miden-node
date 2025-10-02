@@ -8,6 +8,9 @@ use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;
 
+pub mod block_producer;
+pub mod store;
+
 #[derive(Debug, Error)]
 pub enum ConversionError {
     #[error("asset error")]

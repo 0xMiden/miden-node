@@ -3,6 +3,8 @@ use std::io;
 
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
+use miden_node_proto::errors::store::{GrpcError, SyncNullifiersGrpcError};
+use miden_node_utils::ErrorReport as _;
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -349,6 +351,57 @@ pub enum GetBatchInputsError {
         highest_block_num: BlockNumber,
         latest_block_num: BlockNumber,
     },
+}
+
+// SYNC NULLIFIERS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum SyncNullifiersError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range: block_from ({from}) > block_to ({to})")]
+    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("unsupported prefix length: {0} (only 16-bit prefixes are supported)")]
+    InvalidPrefixLength(u32),
+    #[error("malformed nullifier prefix")]
+    DeserializationFailed(#[from] DeserializationError),
+}
+
+impl SyncNullifiersError {
+    fn api_error(&self) -> SyncNullifiersGrpcError {
+        match self {
+            SyncNullifiersError::DatabaseError(_) => SyncNullifiersGrpcError::Internal,
+            SyncNullifiersError::InvalidBlockRange { .. } => {
+                SyncNullifiersGrpcError::InvalidBlockRange
+            },
+            SyncNullifiersError::InvalidPrefixLength(_) => {
+                SyncNullifiersGrpcError::InvalidPrefixLength
+            },
+            SyncNullifiersError::DeserializationFailed(_) => {
+                SyncNullifiersGrpcError::DeserializationFailed
+            },
+        }
+    }
+}
+
+impl From<SyncNullifiersError> for tonic::Status {
+    fn from(value: SyncNullifiersError) -> Self {
+        let api_error = value.api_error();
+
+        let message = if api_error.is_internal() {
+            "Internal error".to_owned()
+        } else {
+            value.as_report()
+        };
+
+        tonic::Status::with_details(
+            api_error.tonic_code(),
+            message,
+            // Details are serialized as a single byte containing the error code value.
+            vec![api_error.api_code()].into(),
+        )
+    }
 }
 
 // Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear

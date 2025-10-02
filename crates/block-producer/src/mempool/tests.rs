@@ -9,6 +9,8 @@ use super::*;
 use crate::test_utils::MockProvenTxBuilder;
 use crate::test_utils::batch::TransactionBatchConstructor;
 
+mod add_transaction;
+
 impl Mempool {
     /// Returns an empty [`Mempool`] and a perfect clone intended for use as the Unit Under Test and
     /// the reference instance.
@@ -20,7 +22,7 @@ impl Mempool {
         let uut = Self::new(
             BlockNumber::GENESIS,
             MempoolConfig {
-                expiration_slack: 0,
+                expiration_slack: 3,
                 state_retention: NonZeroUsize::new(5).unwrap(),
                 ..Default::default()
             },
@@ -53,31 +55,6 @@ async fn add_transaction_traces_are_correct() {
             .any(|kv| kv.key == "tx".into() && kv.value.to_string().starts_with("0x"))
     );
 }
-
-// #[tokio::test]
-// #[serial(open_telemetry_tracing)]
-// async fn revert_transactions_traces_are_correct() {
-//     let (mut rx_export, _rx_shutdown) = miden_node_utils::logging::setup_test_tracing().unwrap();
-
-//     let mut uut = Mempool::for_tests();
-//     let txs = MockProvenTxBuilder::sequential();
-//     uut.add_transaction(txs[0].clone()).unwrap();
-//     let span_data = rx_export.recv().await.unwrap();
-//     assert_eq!(span_data.name, "mempool.add_transaction");
-
-//     uut.revert_transactions(vec![txs[0].id()]).unwrap();
-//     let span_data = rx_export.recv().await.unwrap();
-//     assert_eq!(span_data.name, "mempool.revert_transactions");
-//     assert!(span_data.attributes.iter().any(|kv| kv.key == "code.namespace".into()
-//         && kv.value == "miden_node_block_producer::mempool".into()));
-
-//     assert!(
-//         span_data
-//             .attributes
-//             .iter()
-//             .any(|kv| kv.key == "transactions.expired.ids".into())
-//     );
-// }
 
 // BATCH FAILED TESTS
 // ================================================================================================

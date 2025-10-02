@@ -155,14 +155,3 @@ impl MockProvenTxBuilder {
         .unwrap()
     }
 }
-
-pub fn mock_proven_tx(
-    account_index: u8,
-    unauthenticated_notes: Vec<Note>,
-    output_notes: Vec<OutputNote>,
-) -> ProvenTransaction {
-    MockProvenTxBuilder::with_account_index(account_index.into())
-        .unauthenticated_notes(unauthenticated_notes)
-        .output_notes(output_notes)
-        .build()
-}

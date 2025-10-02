@@ -133,8 +133,8 @@ impl TryFrom<proto::rpc_store::AccountProofRequest> for AccountProofRequest {
 /// Represents a request for account details alongside specific storage data.
 pub struct AccountDetailRequest {
     pub code_commitment: Option<Word>,
+    pub asset_vault_commitment: Option<Word>,
     pub storage_requests: Vec<StorageMapRequest>,
-    pub include_assets: bool,
 }
 
 impl TryFrom<proto::rpc_store::account_proof_request::AccountDetailRequest>
@@ -147,17 +147,18 @@ impl TryFrom<proto::rpc_store::account_proof_request::AccountDetailRequest>
     ) -> Result<Self, Self::Error> {
         let proto::rpc_store::account_proof_request::AccountDetailRequest {
             code_commitment,
+            asset_vault_commitment,
             storage_maps,
-            include_assets,
         } = value;
 
         let code_commitment = code_commitment.map(TryFrom::try_from).transpose()?;
+        let asset_vault_commitment = asset_vault_commitment.map(TryFrom::try_from).transpose()?;
         let storage_requests = try_convert(storage_maps).collect::<Result<_, _>>()?;
 
         Ok(AccountDetailRequest {
             code_commitment,
+            asset_vault_commitment,
             storage_requests,
-            include_assets,
         })
     }
 }
@@ -349,10 +350,7 @@ impl AccountVaultDetails {
 
     pub fn new(vault: &AssetVault) -> Self {
         if vault.assets().skip(Self::MAX_RETURN_ENTRIES).next().is_some() {
-            Self {
-                too_many_assets: true,
-                assets: Vec::new(),
-            }
+            Self::too_many()
         } else {
             Self {
                 too_many_assets: false,
@@ -360,9 +358,15 @@ impl AccountVaultDetails {
             }
         }
     }
-    pub fn too_many() -> Self {
+    pub fn empty() -> Self {
         Self {
             too_many_assets: false,
+            assets: Vec::new(),
+        }
+    }
+    fn too_many() -> Self {
+        Self {
+            too_many_assets: true,
             assets: Vec::new(),
         }
     }

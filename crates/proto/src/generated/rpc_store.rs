@@ -34,12 +34,14 @@ pub mod account_proof_request {
         /// only if its commitment is different from this value or if the value is not present.
         #[prost(message, optional, tag = "1")]
         pub code_commitment: ::core::option::Option<super::super::primitives::Digest>,
-        /// A flag indicating whether to include asset vault data.
-        ///
+        /// Last known asset vault commitment to the client. The response will include asset vault data
+        /// only if its commitment is different from this value or if the value is not present.
         /// Assets will only be returned for small accounts with less than 100 asset entries,
         /// otherwise they have to be requested separately.
-        #[prost(bool, tag = "2")]
-        pub include_assets: bool,
+        #[prost(message, optional, tag = "2")]
+        pub asset_vault_commitment: ::core::option::Option<
+            super::super::primitives::Digest,
+        >,
         /// Additional request per storage map.
         #[prost(message, repeated, tag = "3")]
         pub storage_maps: ::prost::alloc::vec::Vec<

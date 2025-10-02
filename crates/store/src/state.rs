@@ -902,7 +902,7 @@ impl State {
         let account_id = account_request.account_id;
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,
-            include_assets,
+            asset_vault_commitment,
             storage_requests,
         }) = account_request.details
         {
@@ -948,14 +948,25 @@ impl State {
                 map_details: storage_map_details,
             };
 
-            // Handle vault details based on the proto structure.
-            // If include_assets is true, we fetch the actual assets from the vault.
-            // If the account has too many assets, we set a flag and return an empty list
-            // to avoid overwhelming the response.
-            let vault_details = if include_assets {
-                AccountVaultDetails::new(details.vault())
-            } else {
-                AccountVaultDetails::too_many()
+            // Handle vault details based on the `asset_vault_commitment`.
+            // Similar to `code_commitment`, if the provided commitment matches, we don't return
+            // vault data. If no commitment is provided or it doesn't match, we return
+            // the vault data. If the number of vault contained assets are exceeding a
+            // limit, we signal this back in the reponse and the user must handle that
+            // in follow-up request.
+            let vault_details = match asset_vault_commitment {
+                Some(commitment) if commitment == details.vault().root() => {
+                    // The client already has the correct vault data
+                    AccountVaultDetails::empty()
+                },
+                Some(_) => {
+                    // Either no commitment provided or it doesn't match, so return vault data
+                    AccountVaultDetails::new(details.vault())
+                },
+                None => {
+                    // No commitment provided, so don't return vault data
+                    AccountVaultDetails::empty()
+                },
             };
 
             Some(AccountDetails {

@@ -556,18 +556,18 @@ impl TryFrom<proto::rpc_store::account_proof_response::AccountDetails> for Accou
             ))?
             .try_into()?;
 
+        let storage_details = storage_details
+            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
+                stringify!(storage_details),
+            ))?
+            .try_into()?;
+
         let vault_details = vault_details
             .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
                 stringify!(vault_details),
             ))?
             .try_into()?;
         let account_code = code;
-
-        let storage_details = storage_details
-            .ok_or(proto::rpc_store::account_proof_response::AccountDetails::missing_field(
-                stringify!(storage_details),
-            ))?
-            .try_into()?;
 
         Ok(AccountDetails {
             account_header,
@@ -582,21 +582,21 @@ impl From<AccountDetails> for proto::rpc_store::account_proof_response::AccountD
     fn from(value: AccountDetails) -> Self {
         let AccountDetails {
             account_header,
-            account_code,
             storage_details,
+            account_code,
             vault_details,
         } = value;
 
         let header = Some(proto::account::AccountHeader::from(account_header));
+        let storage_details = Some(storage_details.into());
         let code = account_code;
         let vault_details = Some(vault_details.into());
-        let storage_details = Some(storage_details.into());
 
         Self {
             header,
+            storage_details,
             code,
             vault_details,
-            storage_details,
         }
     }
 }

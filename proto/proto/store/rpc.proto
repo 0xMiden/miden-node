@@ -158,14 +158,14 @@ message AccountProofResponse {
         // Account header.
         account.AccountHeader header = 1;
 
-        // Account code; empty if code commitments matched
-        optional bytes code = 2;
+        // Account storage data
+        AccountStorageDetails storage_details = 2;
+
+        // Account code; empty if code commitments matched or none was requested
+        optional bytes code = 3;
 
         // Account asset vault data; empty if vault commitments matched
-        optional AccountVaultDetails vault_details = 3;
-
-        // Account storage data; empty if storage commitments matched
-        optional AccountStorageDetails storage_details = 4;
+        optional AccountVaultDetails vault_details = 4;
     }
 
     // Account ID, current state commitment, and SMT path

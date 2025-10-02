@@ -908,12 +908,9 @@ impl State {
         {
             let info = self.db.select_account(account_id).await?;
 
-            // if we get a query for a private account, we'll return `None`
+            // if we get a query for a private account _with_ details requested, we'll error out
             let Some(details) = info.details else {
-                return Ok(AccountProofResponse {
-                    witness: inner_state.account_tree.open(account_id),
-                    details: None,
-                });
+                return Err(DatabaseError::AccountNotPublic(account_id));
             };
 
             let slot_headers = Vec::from_iter(
@@ -938,8 +935,11 @@ impl State {
                 storage_map_details.push(details);
             }
 
-            // Only include unknown account code blobs
-            let account_code = (code_commitment != Some(details.code().commitment()))
+            // Only include unknown account code blobs, which is equal to a account code digest
+            // mismatch. If `None` was requested, don't return any.
+            let account_code = code_commitment
+                .map(|code_commitment| code_commitment != details.code().commitment())
+                .unwrap_or(false)
                 .then(|| details.code().to_bytes());
 
             // storage details

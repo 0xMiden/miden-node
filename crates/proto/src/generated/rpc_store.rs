@@ -100,15 +100,15 @@ pub mod account_proof_response {
         /// Account header.
         #[prost(message, optional, tag = "1")]
         pub header: ::core::option::Option<super::super::account::AccountHeader>,
-        /// Account code; empty if code commitments matched
-        #[prost(bytes = "vec", optional, tag = "2")]
+        /// Account storage data
+        #[prost(message, optional, tag = "2")]
+        pub storage_details: ::core::option::Option<super::AccountStorageDetails>,
+        /// Account code; empty if code commitments matched or none was requested
+        #[prost(bytes = "vec", optional, tag = "3")]
         pub code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
         /// Account asset vault data; empty if vault commitments matched
-        #[prost(message, optional, tag = "3")]
-        pub vault_details: ::core::option::Option<super::AccountVaultDetails>,
-        /// Account storage data; empty if storage commitments matched
         #[prost(message, optional, tag = "4")]
-        pub storage_details: ::core::option::Option<super::AccountStorageDetails>,
+        pub vault_details: ::core::option::Option<super::AccountVaultDetails>,
     }
 }
 /// Account vault details for AccountProofResponse

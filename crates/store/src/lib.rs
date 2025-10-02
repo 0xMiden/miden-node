@@ -5,7 +5,6 @@ mod db;
 mod errors;
 pub mod genesis;
 mod server;
-mod smt_overlays;
 pub mod state;
 
 pub use genesis::GenesisState;

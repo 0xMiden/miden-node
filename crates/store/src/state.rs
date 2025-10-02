@@ -630,10 +630,7 @@ impl State {
     ) -> Result<(StateSyncUpdate, MmrDelta), StateSyncError> {
         let inner = self.inner.read().await;
 
-        let chain_tip = self.latest_block_num().await;
-
-        let state_sync =
-            self.db.get_state_sync(block_num, account_ids, note_tags, chain_tip).await?;
+        let state_sync = self.db.get_state_sync(block_num, account_ids, note_tags).await?;
 
         let delta = if block_num == state_sync.block_header.block_num() {
             // The client is in sync with the chain tip.

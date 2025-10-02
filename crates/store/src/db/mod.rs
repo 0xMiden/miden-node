@@ -373,10 +373,9 @@ impl Db {
         block_number: BlockNumber,
         account_ids: Vec<AccountId>,
         note_tags: Vec<u32>,
-        chain_tip: BlockNumber,
     ) -> Result<StateSyncUpdate, StateSyncError> {
         self.transact::<StateSyncUpdate, StateSyncError, _, _>("state sync", move |conn| {
-            queries::get_state_sync(conn, block_number, account_ids, note_tags, chain_tip)
+            queries::get_state_sync(conn, block_number, account_ids, note_tags)
         })
         .await
     }

@@ -952,7 +952,7 @@ impl State {
             // Similar to `code_commitment`, if the provided commitment matches, we don't return
             // vault data. If no commitment is provided or it doesn't match, we return
             // the vault data. If the number of vault contained assets are exceeding a
-            // limit, we signal this back in the reponse and the user must handle that
+            // limit, we signal this back in the response and the user must handle that
             // in follow-up request.
             let vault_details = match asset_vault_commitment {
                 Some(commitment) if commitment == details.vault().root() => {

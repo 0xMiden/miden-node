@@ -251,9 +251,6 @@ pub struct AccountVaultUpdate {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SyncNotesRequest {
     /// Block range from which to start synchronizing.
-    ///
-    /// If the `block_to` is specified, this block must be close to the chain tip (i.e., within 30 blocks),
-    /// otherwise an error will be returned.
     #[prost(message, optional, tag = "1")]
     pub block_range: ::core::option::Option<BlockRange>,
     /// Specifies the tags which the client is interested in.

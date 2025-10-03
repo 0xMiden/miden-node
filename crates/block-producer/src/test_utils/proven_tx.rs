@@ -130,7 +130,7 @@ impl MockProvenTxBuilder {
             .map(|note_index| {
                 let note = Note::mock_noop(Word::from([0, 0, 0, note_index]));
 
-                OutputNote::Header(note.header().clone())
+                OutputNote::Header(*note.header())
             })
             .collect();
 

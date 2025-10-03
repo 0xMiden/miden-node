@@ -693,17 +693,12 @@ impl Mempool {
             });
         }
 
-        let latest_block = self
-            .nodes
-            .proposed_block
-            .as_ref()
-            .map(|(number, _)| *number)
-            .unwrap_or(self.chain_tip);
-        if authentication_height > latest_block {
-            panic!(
-                "Authentication height {authentication_height} exceeded the latest known block {latest_block}"
-            );
-        }
+        let latest_block =
+            self.nodes.proposed_block.as_ref().map_or(self.chain_tip, |(number, _)| *number);
+        assert!(
+            authentication_height <= latest_block,
+            "Authentication height {authentication_height} exceeded the latest known block {latest_block}"
+        );
 
         Ok(())
     }

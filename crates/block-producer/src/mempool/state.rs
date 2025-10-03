@@ -19,7 +19,7 @@ use crate::mempool::nodes::{Node, NodeId};
 pub(super) struct InflightState {
     /// All nullifiers created by inflight state.
     ///
-    /// This _includes_ nullifiers from erased notes to simpify reverting nodes and requeuing
+    /// This _includes_ nullifiers from erased notes to simplify reverting nodes and requeuing
     /// their transactions. If this weren't the case, then its possible that a batch contains an
     /// erased note which can clash with another inflight transaction. If we were to revert this
     /// batch and requeue its transactions, then this would be illegal. This is possible to handle

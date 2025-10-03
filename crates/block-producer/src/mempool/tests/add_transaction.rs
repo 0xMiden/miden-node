@@ -149,7 +149,7 @@ mod authentication_height {
     }
 
     /// We expect a rejection if the tx was authenticated in some gap between the store and local
-    /// state i.e. oldest_local - 2.
+    /// state i.e. `oldest_local - 2`.
     #[test]
     fn stale_inputs_are_rejected() {
         let mut uut = setup();
@@ -163,7 +163,7 @@ mod authentication_height {
         uut.add_transaction(tx).unwrap_err();
     }
 
-    /// Ensures that we guard against authenication height from lying about imaginary blocks beyond
+    /// Ensures that we guard against authentication height from lying about imaginary blocks beyond
     /// the chain tip. Since the authentication height is determined by the store, and this is
     /// considered internal, we panic as this is completely abnormal.
     #[test]

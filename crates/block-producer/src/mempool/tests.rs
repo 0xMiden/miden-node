@@ -125,6 +125,7 @@ fn failed_batch_transactions_are_requeued() {
 #[test]
 fn block_commit_reverts_expired_txns() {
     let (mut uut, _) = Mempool::for_tests();
+    uut.config.expiration_slack = 0;
 
     let tx_to_commit = MockProvenTxBuilder::with_account_index(0).build();
     let tx_to_commit = Arc::new(AuthenticatedTransaction::from_inner(tx_to_commit));

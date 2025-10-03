@@ -7,7 +7,51 @@ use miden_objects::block::BlockHeader;
 use crate::domain::transaction::AuthenticatedTransaction;
 use crate::errors::AddTransactionError;
 use crate::mempool::Mempool;
-use crate::test_utils::MockProvenTxBuilder;
+use crate::test_utils::{MockProvenTxBuilder, mock_account_id};
+
+#[test]
+fn valid_with_state_from_multiple_parents() {
+    let (mut uut, _) = Mempool::for_tests();
+
+    let parent_a = MockProvenTxBuilder::with_account(
+        mock_account_id(1),
+        Word::empty(),
+        Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .private_notes_created_range(0..1)
+    .build();
+
+    let parent_b = MockProvenTxBuilder::with_account(
+        mock_account_id(2),
+        Word::empty(),
+        Word::new([300u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .private_notes_created_range(1..2)
+    .build();
+
+    let parent_c = MockProvenTxBuilder::with_account(
+        mock_account_id(3),
+        Word::empty(),
+        Word::new([4500u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .private_notes_created_range(2..3)
+    .build();
+
+    let child = MockProvenTxBuilder::with_account(
+        parent_a.account_id(),
+        parent_a.account_update().final_state_commitment(),
+        Word::new([4u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .unauthenticated_notes_range(0..3)
+    .build();
+
+    for tx in [parent_a, parent_b, parent_c, child] {
+        let tx = AuthenticatedTransaction::from_inner(tx);
+        let tx = Arc::new(tx);
+
+        uut.add_transaction(tx).unwrap();
+    }
+}
 
 /// Ensures that transactions that expire before or within the expiration slack of the chain tip
 /// are rejected.
@@ -161,11 +205,316 @@ mod authentication_height {
     }
 }
 
-// state
-//   - nullifier
-//   - account state
-//   - new account
-//   - new account with store state
-//   - unauthenticated notes
-//   - duplicate output notes
-//   - state overlap with store
+#[test]
+fn duplicate_nullifiers_are_rejected() {
+    let (mut uut, _) = Mempool::for_tests();
+
+    let tx_a = MockProvenTxBuilder::with_account(
+        mock_account_id(111),
+        Word::empty(),
+        Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .nullifiers_range(1..11)
+    .build();
+    let tx_a = AuthenticatedTransaction::from_inner(tx_a);
+    let tx_a = Arc::new(tx_a);
+
+    let tx_b = MockProvenTxBuilder::with_account(
+        mock_account_id(222),
+        Word::empty(),
+        Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .nullifiers_range(10..20)
+    .build();
+    let tx_b = AuthenticatedTransaction::from_inner(tx_b);
+    let tx_b = Arc::new(tx_b);
+
+    uut.add_transaction(tx_a).unwrap();
+    let result = uut.add_transaction(tx_b);
+
+    // We overlap with one nullifier.
+    assert_matches!(
+        result,
+        Err(AddTransactionError::VerificationFailed(
+            crate::errors::VerifyTxError::InputNotesAlreadyConsumed { .. }
+        ))
+    );
+}
+
+#[test]
+fn duplicate_output_notes_are_rejected() {
+    let (mut uut, _) = Mempool::for_tests();
+
+    let tx_a = MockProvenTxBuilder::with_account(
+        mock_account_id(111),
+        Word::empty(),
+        Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .private_notes_created_range(0..11)
+    .build();
+    let tx_a = AuthenticatedTransaction::from_inner(tx_a);
+    let tx_a = Arc::new(tx_a);
+
+    let tx_b = MockProvenTxBuilder::with_account(
+        mock_account_id(222),
+        Word::empty(),
+        Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .private_notes_created_range(10..20)
+    .build();
+    let tx_b = AuthenticatedTransaction::from_inner(tx_b);
+    let tx_b = Arc::new(tx_b);
+
+    uut.add_transaction(tx_a).unwrap();
+    let result = uut.add_transaction(tx_b);
+
+    assert_matches!(
+        result,
+        Err(AddTransactionError::VerificationFailed(
+            crate::errors::VerifyTxError::OutputNotesAlreadyExist { .. }
+        ))
+    );
+}
+
+#[test]
+fn unknown_unauthenticated_notes_are_rejected() {
+    let (mut uut, _) = Mempool::for_tests();
+
+    let tx_a = MockProvenTxBuilder::with_account(
+        mock_account_id(111),
+        Word::empty(),
+        Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .private_notes_created_range(0..11)
+    .build();
+    let tx_a = AuthenticatedTransaction::from_inner(tx_a);
+    let tx_a = Arc::new(tx_a);
+
+    let tx_b = MockProvenTxBuilder::with_account(
+        mock_account_id(222),
+        Word::empty(),
+        Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+    )
+    .unauthenticated_notes_range(0..12)
+    .build();
+    let tx_b = AuthenticatedTransaction::from_inner(tx_b);
+    let tx_b = Arc::new(tx_b);
+
+    uut.add_transaction(tx_a).unwrap();
+    let result = uut.add_transaction(tx_b);
+
+    assert_matches!(
+        result,
+        Err(AddTransactionError::VerificationFailed(
+            crate::errors::VerifyTxError::UnauthenticatedNotesNotFound { .. }
+        ))
+    );
+}
+
+mod account_state {
+    use super::*;
+
+    #[test]
+    fn matches_mempool_state() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let txs = MockProvenTxBuilder::sequential();
+        for tx in txs {
+            uut.add_transaction(tx).unwrap();
+        }
+    }
+
+    #[test]
+    fn matches_store_state() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let account_id = mock_account_id(123);
+
+        let tx = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::new([0u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+            Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+        )
+        .build();
+        let tx = AuthenticatedTransaction::from_inner(tx);
+        let tx = Arc::new(tx);
+
+        uut.add_transaction(tx).unwrap();
+    }
+
+    /// An inflight account state takes preference over the store's account state as the mempool's
+    /// will also consider inflight transaction effects. This test ensures that this is the case.
+    #[test]
+    fn mempool_commitment_overrides_store() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let account_id = mock_account_id(123);
+
+        let tx_a = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::empty(),
+            Word::new([0u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+        )
+        .build();
+        let tx_b = MockProvenTxBuilder::with_account(
+            account_id,
+            tx_a.account_update().final_state_commitment(),
+            Word::new([10u32.into(), 11u32.into(), 12u32.into(), 13u32.into()]),
+        )
+        .build();
+        let tx_a = AuthenticatedTransaction::from_inner(tx_a);
+        let tx_b = AuthenticatedTransaction::from_inner(tx_b).with_store_state(Word::new([
+            30u32.into(),
+            31u32.into(),
+            32u32.into(),
+            33u32.into(),
+        ]));
+
+        let tx_a = Arc::new(tx_a);
+        let tx_b = Arc::new(tx_b);
+
+        uut.add_transaction(tx_a).unwrap();
+        // We expect this to succeed because the local mempool account state will be correct, even
+        // though the store's account state is a mismatch.
+        uut.add_transaction(tx_b).unwrap();
+    }
+
+    #[test]
+    fn mismatch_with_mempool_is_rejected() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let account_id = mock_account_id(123);
+
+        let tx_a = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::empty(),
+            Word::new([0u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+        )
+        .build();
+        let tx_b = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::new([10u32.into(), 11u32.into(), 12u32.into(), 13u32.into()]),
+            Word::new([20u32.into(), 11u32.into(), 12u32.into(), 13u32.into()]),
+        )
+        .build();
+        let tx_a = AuthenticatedTransaction::from_inner(tx_a);
+        let tx_b = AuthenticatedTransaction::from_inner(tx_b);
+        let tx_a = Arc::new(tx_a);
+        let tx_b = Arc::new(tx_b);
+
+        uut.add_transaction(tx_a).unwrap();
+        let result = uut.add_transaction(tx_b);
+
+        assert_matches!(
+            result,
+            Err(AddTransactionError::VerificationFailed(
+                crate::errors::VerifyTxError::IncorrectAccountInitialCommitment { .. }
+            ))
+        );
+    }
+
+    /// Ensures that store state is checked if there is no local mempool state.
+    #[test]
+    fn mismatch_with_store_is_rejected() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let account_id = mock_account_id(123);
+
+        let tx = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::new([0u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+            Word::new([3u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+        )
+        .build();
+        let tx = AuthenticatedTransaction::from_inner(tx).with_store_state(Word::new([
+            6u32.into(),
+            1u32.into(),
+            2u32.into(),
+            3u32.into(),
+        ]));
+        let tx = Arc::new(tx);
+
+        let result = uut.add_transaction(tx);
+        assert_matches!(
+            result,
+            Err(AddTransactionError::VerificationFailed(
+                crate::errors::VerifyTxError::IncorrectAccountInitialCommitment { .. }
+            ))
+        );
+    }
+}
+
+mod new_account {
+    use super::*;
+
+    #[test]
+    fn is_valid() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let account_id = mock_account_id(123);
+
+        let tx = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::empty(),
+            Word::new([0u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+        )
+        .build();
+        let tx = AuthenticatedTransaction::from_inner(tx);
+        let tx = Arc::new(tx);
+        uut.add_transaction(tx).unwrap();
+    }
+
+    #[test]
+    fn already_exists_in_store() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let account_id = mock_account_id(123);
+
+        let tx = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::empty(),
+            Word::new([0u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+        )
+        .build();
+        let tx = AuthenticatedTransaction::from_inner(tx).with_store_state(Word::new([
+            5u32.into(),
+            1u32.into(),
+            2u32.into(),
+            3u32.into(),
+        ]));
+        let tx = Arc::new(tx);
+        let result = uut.add_transaction(tx);
+        assert_matches!(
+            result,
+            Err(AddTransactionError::VerificationFailed(
+                crate::errors::VerifyTxError::IncorrectAccountInitialCommitment { .. }
+            ))
+        );
+    }
+
+    #[test]
+    fn already_exists_in_mempool() {
+        let (mut uut, _) = Mempool::for_tests();
+
+        let account_id = mock_account_id(123);
+
+        let tx = MockProvenTxBuilder::with_account(
+            account_id,
+            Word::empty(),
+            Word::new([0u32.into(), 1u32.into(), 2u32.into(), 3u32.into()]),
+        )
+        .build();
+        let tx = AuthenticatedTransaction::from_inner(tx);
+        let tx = Arc::new(tx);
+
+        uut.add_transaction(tx.clone()).unwrap();
+
+        let result = uut.add_transaction(tx);
+        assert_matches!(
+            result,
+            Err(AddTransactionError::VerificationFailed(
+                crate::errors::VerifyTxError::IncorrectAccountInitialCommitment { .. }
+            ))
+        );
+    }
+}

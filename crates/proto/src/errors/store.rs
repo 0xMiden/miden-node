@@ -1,24 +1,13 @@
+use crate::errors::GrpcError;
+use crate::grpc_error;
+
 // SYNC ENDPOINTS
 // ================================================================================================
-
-// Common trait for all gRPC error enums
-pub trait GrpcError {
-    fn api_code(self) -> u8;
-    fn is_internal(&self) -> bool;
-
-    fn tonic_code(&self) -> tonic::Code {
-        if self.is_internal() {
-            tonic::Code::Internal
-        } else {
-            tonic::Code::InvalidArgument
-        }
-    }
-}
 
 // SYNC NULLIFIERS
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SyncNullifiersGrpcError {
     // Internal Server Error
@@ -31,20 +20,12 @@ pub enum SyncNullifiersGrpcError {
     InvalidPrefixLength = 3,
 }
 
-impl GrpcError for SyncNullifiersGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, SyncNullifiersGrpcError::Internal)
-    }
-}
+grpc_error!(SyncNullifiersGrpcError);
 
 // SYNC ACCOUNT VAULT
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SyncAccountVaultGrpcError {
     // Internal Server Error
@@ -57,20 +38,12 @@ pub enum SyncAccountVaultGrpcError {
     AccountNotPublic = 3,
 }
 
-impl GrpcError for SyncAccountVaultGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, SyncAccountVaultGrpcError::Internal)
-    }
-}
+grpc_error!(SyncAccountVaultGrpcError);
 
 // SYNC NOTES
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SyncNotesGrpcError {
     // Internal Server Error
@@ -83,20 +56,12 @@ pub enum SyncNotesGrpcError {
     TooManyTags = 3,
 }
 
-impl GrpcError for SyncNotesGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, SyncNotesGrpcError::Internal)
-    }
-}
+grpc_error!(SyncNotesGrpcError);
 
 // SYNC STORAGE MAPS
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SyncStorageMapsGrpcError {
     // Internal Server Error
@@ -111,15 +76,7 @@ pub enum SyncStorageMapsGrpcError {
     AccountNotPublic = 4,
 }
 
-impl GrpcError for SyncStorageMapsGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, SyncStorageMapsGrpcError::Internal)
-    }
-}
+grpc_error!(SyncStorageMapsGrpcError);
 
 // GET ENDPOINTS
 // ================================================================================================
@@ -127,7 +84,7 @@ impl GrpcError for SyncStorageMapsGrpcError {
 // GET BLOCK BY NUMBER
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GetBlockByNumberGrpcError {
     // Internal Server Error
@@ -136,20 +93,12 @@ pub enum GetBlockByNumberGrpcError {
     DeserializationFailed = 1,
 }
 
-impl GrpcError for GetBlockByNumberGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, GetBlockByNumberGrpcError::Internal)
-    }
-}
+grpc_error!(GetBlockByNumberGrpcError);
 
 // GET BLOCK HEADER BY NUMBER
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GetBlockHeaderByNumberGrpcError {
     // Internal Server Error
@@ -158,20 +107,12 @@ pub enum GetBlockHeaderByNumberGrpcError {
     DeserializationFailed = 1,
 }
 
-impl GrpcError for GetBlockHeaderByNumberGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, GetBlockHeaderByNumberGrpcError::Internal)
-    }
-}
+grpc_error!(GetBlockHeaderByNumberGrpcError);
 
 // GET NOTES BY ID
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GetNotesByIdGrpcError {
     // Internal Server Error
@@ -186,20 +127,12 @@ pub enum GetNotesByIdGrpcError {
     NoteNotPublic = 4,
 }
 
-impl GrpcError for GetNotesByIdGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, GetNotesByIdGrpcError::Internal)
-    }
-}
+grpc_error!(GetNotesByIdGrpcError);
 
 // GET NOTE SCRIPT BY ROOT
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum GetNoteScriptByRootGrpcError {
     // Internal Server Error
@@ -210,20 +143,12 @@ pub enum GetNoteScriptByRootGrpcError {
     ScriptNotFound = 2,
 }
 
-impl GrpcError for GetNoteScriptByRootGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, GetNoteScriptByRootGrpcError::Internal)
-    }
-}
+grpc_error!(GetNoteScriptByRootGrpcError);
 
 // CHECK NULLIFIERS
 // ------------------------------------------------------------------------------------------------
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CheckNullifiersGrpcError {
     // Internal Server Error
@@ -234,12 +159,4 @@ pub enum CheckNullifiersGrpcError {
     TooManyNullifiers = 2,
 }
 
-impl GrpcError for CheckNullifiersGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, CheckNullifiersGrpcError::Internal)
-    }
-}
+grpc_error!(CheckNullifiersGrpcError);

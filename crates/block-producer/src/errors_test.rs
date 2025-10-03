@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
+    use miden_node_proto::errors::GrpcError;
     use miden_node_proto::errors::block_producer::SubmitProvenTransactionGrpcError;
-    use miden_node_proto::errors::store::GrpcError;
     use miden_objects::Word;
     use miden_objects::block::BlockNumber;
     use miden_objects::note::{NoteId, Nullifier};

@@ -1,9 +1,10 @@
+use crate::errors::GrpcError;
+use crate::grpc_error;
+
 // Submit proven transaction error codes for gRPC Status::details
 // =================================================================================================
 
-use crate::errors::store::GrpcError;
-
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SubmitProvenTransactionGrpcError {
     Internal = 0,
@@ -16,20 +17,12 @@ pub enum SubmitProvenTransactionGrpcError {
     TransactionExpired = 7,
 }
 
-impl GrpcError for SubmitProvenTransactionGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, SubmitProvenTransactionGrpcError::Internal)
-    }
-}
+grpc_error!(SubmitProvenTransactionGrpcError);
 
 // Submit proven batch error codes for gRPC Status::details
 // =================================================================================================
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SubmitProvenBatchGrpcError {
     #[allow(dead_code)]
@@ -37,12 +30,4 @@ pub enum SubmitProvenBatchGrpcError {
     DeserializationFailed = 1,
 }
 
-impl GrpcError for SubmitProvenBatchGrpcError {
-    fn api_code(self) -> u8 {
-        self as u8
-    }
-
-    fn is_internal(&self) -> bool {
-        matches!(self, SubmitProvenBatchGrpcError::Internal)
-    }
-}
+grpc_error!(SubmitProvenBatchGrpcError);

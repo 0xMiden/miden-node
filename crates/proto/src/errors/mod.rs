@@ -77,3 +77,35 @@ impl From<ConversionError> for tonic::Status {
         tonic::Status::invalid_argument(value.to_string())
     }
 }
+
+// GRPC ERROR TRAIT
+// ================================================================================================
+
+/// Common trait for all gRPC error enums
+pub trait GrpcError {
+    fn api_code(self) -> u8;
+    fn is_internal(&self) -> bool;
+
+    fn tonic_code(&self) -> tonic::Code {
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
+        }
+    }
+}
+
+#[macro_export]
+macro_rules! grpc_error {
+    ($error:ty) => {
+        impl GrpcError for $error {
+            fn api_code(self) -> u8 {
+                self as u8
+            }
+
+            fn is_internal(&self) -> bool {
+                self == &Self::Internal
+            }
+        }
+    };
+}

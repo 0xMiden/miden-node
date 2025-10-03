@@ -3,7 +3,8 @@ use std::io;
 
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
-use miden_node_proto::errors::store::{GrpcError, SyncNullifiersGrpcError};
+use miden_node_proto::errors::GrpcError;
+use miden_node_proto::errors::store::SyncNullifiersGrpcError;
 use miden_node_utils::ErrorReport as _;
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::account::AccountId;

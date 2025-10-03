@@ -1,10 +1,9 @@
 use miden_block_prover::ProvenBlockError;
-use miden_node_proto::errors::ConversionError;
 use miden_node_proto::errors::block_producer::{
     SubmitProvenBatchGrpcError,
     SubmitProvenTransactionGrpcError,
 };
-use miden_node_proto::errors::store::GrpcError;
+use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;

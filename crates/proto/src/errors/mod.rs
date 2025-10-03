@@ -95,6 +95,10 @@ pub trait GrpcError {
     }
 }
 
+// HELPER MACROS
+// ================================================================================================
+
+/// Implement the `GrpcError` trait for a given error type
 #[macro_export]
 macro_rules! grpc_error {
     ($error:ty) => {
@@ -110,6 +114,7 @@ macro_rules! grpc_error {
     };
 }
 
+/// Implement Into<tonic::Status> for a given error type
 #[macro_export]
 macro_rules! into_tonic_status {
     ($error:ty) => {
@@ -132,3 +137,5 @@ macro_rules! into_tonic_status {
         }
     };
 }
+
+//

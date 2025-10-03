@@ -3,7 +3,7 @@ use std::io;
 
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
-use miden_node_proto::errors::GrpcError;
+use miden_node_proto::domain::block::InvalidBlockRange;
 use miden_node_proto::errors::store::{
     CheckNullifiersGrpcError,
     GetBlockByNumberGrpcError,
@@ -14,7 +14,9 @@ use miden_node_proto::errors::store::{
     SyncNotesGrpcError,
     SyncNullifiersGrpcError,
     SyncStorageMapsGrpcError,
+    SyncTransactionsGrpcError,
 };
+use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_proto::into_tonic_status;
 use miden_node_utils::ErrorReport as _;
 use miden_node_utils::limiter::QueryLimitError;
@@ -332,6 +334,12 @@ pub enum NoteSyncError {
     EmptyBlockHeadersTable,
     #[error("error retrieving the merkle proof for the block")]
     MmrError(#[from] MmrError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("too many note tags: received {0}, max {1}")]
+    TooManyNoteTags(usize, usize),
+    #[error("malformed note tags")]
+    DeserializationFailed(#[from] ConversionError),
 }
 
 impl From<diesel::result::Error> for NoteSyncError {
@@ -372,21 +380,19 @@ pub enum GetBatchInputsError {
 pub enum SyncNullifiersError {
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
-    #[error("invalid block range: block_from ({from}) > block_to ({to})")]
-    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
     #[error("unsupported prefix length: {0} (only 16-bit prefixes are supported)")]
     InvalidPrefixLength(u32),
     #[error("malformed nullifier prefix")]
-    DeserializationFailed(#[from] DeserializationError),
+    DeserializationFailed(#[from] ConversionError),
 }
 
 impl SyncNullifiersError {
     fn api_error(&self) -> SyncNullifiersGrpcError {
         match self {
             SyncNullifiersError::DatabaseError(_) => SyncNullifiersGrpcError::Internal,
-            SyncNullifiersError::InvalidBlockRange { .. } => {
-                SyncNullifiersGrpcError::InvalidBlockRange
-            },
+            SyncNullifiersError::InvalidBlockRange(_) => SyncNullifiersGrpcError::InvalidBlockRange,
             SyncNullifiersError::InvalidPrefixLength(_) => {
                 SyncNullifiersGrpcError::InvalidPrefixLength
             },
@@ -406,10 +412,10 @@ into_tonic_status!(SyncNullifiersError);
 pub enum SyncAccountVaultError {
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
-    #[error("invalid block range: block_from ({from}) > block_to ({to})")]
-    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
     #[error("malformed account ID")]
-    DeserializationFailed(#[from] DeserializationError),
+    DeserializationFailed(#[from] ConversionError),
     #[error("account {0} is not public")]
     AccountNotPublic(AccountId),
 }
@@ -439,9 +445,12 @@ into_tonic_status!(SyncAccountVaultError);
 impl NoteSyncError {
     fn api_error(&self) -> SyncNotesGrpcError {
         match self {
+            NoteSyncError::InvalidBlockRange(_) => SyncNotesGrpcError::InvalidBlockRange,
+            NoteSyncError::TooManyNoteTags(..) => SyncNotesGrpcError::TooManyTags,
             NoteSyncError::DatabaseError(_)
             | NoteSyncError::EmptyBlockHeadersTable
             | NoteSyncError::MmrError(_) => SyncNotesGrpcError::Internal,
+            NoteSyncError::DeserializationFailed(_) => SyncNotesGrpcError::DeserializationFailed,
         }
     }
 }
@@ -455,10 +464,10 @@ into_tonic_status!(NoteSyncError);
 pub enum SyncStorageMapsError {
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
-    #[error("invalid block range: block_from ({from}) > block_to ({to})")]
-    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
     #[error("malformed account ID")]
-    DeserializationFailed(#[from] DeserializationError),
+    DeserializationFailed(#[from] ConversionError),
     #[error("account {0} not found")]
     AccountNotFound(AccountId),
     #[error("account {0} is not public")]
@@ -530,11 +539,11 @@ pub enum GetNotesByIdError {
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("malformed note ID")]
-    DeserializationFailed(#[from] DeserializationError),
+    DeserializationFailed(#[from] ConversionError),
     #[error("note {0} not found")]
     NoteNotFound(miden_objects::note::NoteId),
-    #[error("too many note IDs: {0}")]
-    TooManyNoteIds(u32),
+    #[error("too many note IDs: received {0}, max {1}")]
+    TooManyNoteIds(usize, usize),
     #[error("note {0} is not public")]
     NoteNotPublic(miden_objects::note::NoteId),
 }
@@ -547,7 +556,7 @@ impl GetNotesByIdError {
                 GetNotesByIdGrpcError::DeserializationFailed
             },
             GetNotesByIdError::NoteNotFound(_) => GetNotesByIdGrpcError::NoteNotFound,
-            GetNotesByIdError::TooManyNoteIds(_) => GetNotesByIdGrpcError::TooManyNoteIds,
+            GetNotesByIdError::TooManyNoteIds(..) => GetNotesByIdGrpcError::TooManyNoteIds,
             GetNotesByIdError::NoteNotPublic(_) => GetNotesByIdGrpcError::NoteNotPublic,
         }
     }
@@ -563,7 +572,7 @@ pub enum GetNoteScriptByRootError {
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("malformed script root")]
-    DeserializationFailed(#[from] DeserializationError),
+    DeserializationFailed(#[from] ConversionError),
     #[error("script with given root not found")]
     ScriptNotFound,
 }
@@ -592,9 +601,9 @@ pub enum CheckNullifiersError {
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("malformed nullifier")]
-    DeserializationFailed(#[from] DeserializationError),
-    #[error("too many nullifiers: {0}")]
-    TooManyNullifiers(u32),
+    DeserializationFailed(#[from] ConversionError),
+    #[error("too many nullifiers: received {0}, maximum {1}")]
+    TooManyNullifiers(usize, usize),
 }
 
 impl CheckNullifiersError {
@@ -604,7 +613,7 @@ impl CheckNullifiersError {
             CheckNullifiersError::DeserializationFailed(_) => {
                 CheckNullifiersGrpcError::DeserializationFailed
             },
-            CheckNullifiersError::TooManyNullifiers(_) => {
+            CheckNullifiersError::TooManyNullifiers(..) => {
                 CheckNullifiersGrpcError::TooManyNullifiers
             },
         }
@@ -612,6 +621,43 @@ impl CheckNullifiersError {
 }
 
 into_tonic_status!(CheckNullifiersError);
+
+// SYNC TRANSACTIONS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum SyncTransactionsError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("account {0} not found")]
+    AccountNotFound(AccountId),
+    #[error("too many account IDs: received {0}, max {1}")]
+    TooManyAccountIds(usize, usize),
+}
+
+impl SyncTransactionsError {
+    fn api_error(&self) -> SyncTransactionsGrpcError {
+        match self {
+            SyncTransactionsError::DatabaseError(_) => SyncTransactionsGrpcError::Internal,
+            SyncTransactionsError::InvalidBlockRange { .. } => {
+                SyncTransactionsGrpcError::InvalidBlockRange
+            },
+            SyncTransactionsError::DeserializationFailed(_) => {
+                SyncTransactionsGrpcError::DeserializationFailed
+            },
+            SyncTransactionsError::AccountNotFound(_) => SyncTransactionsGrpcError::AccountNotFound,
+            SyncTransactionsError::TooManyAccountIds(..) => {
+                SyncTransactionsGrpcError::TooManyAccountIds
+            },
+        }
+    }
+}
+
+into_tonic_status!(SyncTransactionsError);
 
 // Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear
 // in the compilation of the library or binary, which would prevent getting to compiling the

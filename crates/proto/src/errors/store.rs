@@ -78,6 +78,26 @@ pub enum SyncStorageMapsGrpcError {
 
 grpc_error!(SyncStorageMapsGrpcError);
 
+// SYNC TRANSACTIONS
+// ------------------------------------------------------------------------------------------------
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[repr(u8)]
+pub enum SyncTransactionsGrpcError {
+    // Internal Server Error
+    Internal = 0,
+    // Malformed account ID
+    DeserializationFailed = 1,
+    // Invalid `block_from`/`block_to` parameters
+    InvalidBlockRange = 2,
+    // Account ID does not exist
+    AccountNotFound = 3,
+    // Too many account IDs in request
+    TooManyAccountIds = 4,
+}
+
+grpc_error!(SyncTransactionsGrpcError);
+
 // GET ENDPOINTS
 // ================================================================================================
 

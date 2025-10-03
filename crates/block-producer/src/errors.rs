@@ -4,6 +4,7 @@ use miden_node_proto::errors::block_producer::{
     SubmitProvenTransactionGrpcError,
 };
 use miden_node_proto::errors::{ConversionError, GrpcError};
+use miden_node_proto::into_tonic_status;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;
@@ -138,26 +139,7 @@ impl AddTransactionError {
     }
 }
 
-impl From<AddTransactionError> for tonic::Status {
-    fn from(value: AddTransactionError) -> Self {
-        let api_error = value.api_error();
-
-        let message = if api_error.is_internal() {
-            "Internal error".to_owned()
-        } else {
-            value.as_report()
-        };
-
-        tonic::Status::with_details(
-            api_error.tonic_code(),
-            message,
-            // Details are serialized as a single byte containing the error code value.
-            // Clients can decode this by reading the first byte of the details field.
-            // Example: details[0] will contain the SubmitProvenTransactionError enum value (0-8)
-            vec![api_error.api_code()].into(),
-        )
-    }
-}
+into_tonic_status!(AddTransactionError);
 
 // Submit proven batch by user errors
 // =================================================================================================
@@ -178,23 +160,7 @@ impl SubmitProvenBatchError {
     }
 }
 
-impl From<SubmitProvenBatchError> for tonic::Status {
-    fn from(value: SubmitProvenBatchError) -> Self {
-        let api_error = value.api_error();
-
-        let message = if api_error.is_internal() {
-            "Internal error".to_owned()
-        } else {
-            value.as_report()
-        };
-
-        tonic::Status::with_details(
-            api_error.tonic_code(),
-            message,
-            vec![api_error.api_code()].into(),
-        )
-    }
-}
+into_tonic_status!(SubmitProvenBatchError);
 
 // Batch building errors
 // =================================================================================================

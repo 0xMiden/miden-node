@@ -4,7 +4,18 @@ use std::io;
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_proto::errors::GrpcError;
-use miden_node_proto::errors::store::SyncNullifiersGrpcError;
+use miden_node_proto::errors::store::{
+    CheckNullifiersGrpcError,
+    GetBlockByNumberGrpcError,
+    GetBlockHeaderByNumberGrpcError,
+    GetNoteScriptByRootGrpcError,
+    GetNotesByIdGrpcError,
+    SyncAccountVaultGrpcError,
+    SyncNotesGrpcError,
+    SyncNullifiersGrpcError,
+    SyncStorageMapsGrpcError,
+};
+use miden_node_proto::into_tonic_status;
 use miden_node_utils::ErrorReport as _;
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::account::AccountId;
@@ -386,24 +397,221 @@ impl SyncNullifiersError {
     }
 }
 
-impl From<SyncNullifiersError> for tonic::Status {
-    fn from(value: SyncNullifiersError) -> Self {
-        let api_error = value.api_error();
+into_tonic_status!(SyncNullifiersError);
 
-        let message = if api_error.is_internal() {
-            "Internal error".to_owned()
-        } else {
-            value.as_report()
-        };
+// SYNC ACCOUNT VAULT ERRORS
+// ================================================================================================
 
-        tonic::Status::with_details(
-            api_error.tonic_code(),
-            message,
-            // Details are serialized as a single byte containing the error code value.
-            vec![api_error.api_code()].into(),
-        )
+#[derive(Debug, Error)]
+pub enum SyncAccountVaultError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range: block_from ({from}) > block_to ({to})")]
+    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] DeserializationError),
+    #[error("account {0} is not public")]
+    AccountNotPublic(AccountId),
+}
+
+impl SyncAccountVaultError {
+    fn api_error(&self) -> SyncAccountVaultGrpcError {
+        match self {
+            SyncAccountVaultError::DatabaseError(_) => SyncAccountVaultGrpcError::Internal,
+            SyncAccountVaultError::InvalidBlockRange { .. } => {
+                SyncAccountVaultGrpcError::InvalidBlockRange
+            },
+            SyncAccountVaultError::DeserializationFailed(_) => {
+                SyncAccountVaultGrpcError::DeserializationFailed
+            },
+            SyncAccountVaultError::AccountNotPublic(_) => {
+                SyncAccountVaultGrpcError::AccountNotPublic
+            },
+        }
     }
 }
+
+into_tonic_status!(SyncAccountVaultError);
+
+// SYNC NOTES ERRORS
+// ================================================================================================
+
+impl NoteSyncError {
+    fn api_error(&self) -> SyncNotesGrpcError {
+        match self {
+            NoteSyncError::DatabaseError(_)
+            | NoteSyncError::EmptyBlockHeadersTable
+            | NoteSyncError::MmrError(_) => SyncNotesGrpcError::Internal,
+        }
+    }
+}
+
+into_tonic_status!(NoteSyncError);
+
+// SYNC STORAGE MAPS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum SyncStorageMapsError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range: block_from ({from}) > block_to ({to})")]
+    InvalidBlockRange { from: BlockNumber, to: BlockNumber },
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] DeserializationError),
+    #[error("account {0} not found")]
+    AccountNotFound(AccountId),
+    #[error("account {0} is not public")]
+    AccountNotPublic(AccountId),
+}
+
+impl SyncStorageMapsError {
+    fn api_error(&self) -> SyncStorageMapsGrpcError {
+        match self {
+            SyncStorageMapsError::DatabaseError(_) => SyncStorageMapsGrpcError::Internal,
+            SyncStorageMapsError::InvalidBlockRange { .. } => {
+                SyncStorageMapsGrpcError::InvalidBlockRange
+            },
+            SyncStorageMapsError::DeserializationFailed(_) => {
+                SyncStorageMapsGrpcError::DeserializationFailed
+            },
+            SyncStorageMapsError::AccountNotFound(_) => SyncStorageMapsGrpcError::AccountNotFound,
+            SyncStorageMapsError::AccountNotPublic(_) => SyncStorageMapsGrpcError::AccountNotPublic,
+        }
+    }
+}
+
+into_tonic_status!(SyncStorageMapsError);
+
+// GET BLOCK BY NUMBER ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum GetBlockByNumberError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed block number")]
+    DeserializationFailed(#[from] DeserializationError),
+}
+
+impl GetBlockByNumberError {
+    fn api_error(&self) -> GetBlockByNumberGrpcError {
+        match self {
+            GetBlockByNumberError::DatabaseError(_) => GetBlockByNumberGrpcError::Internal,
+            GetBlockByNumberError::DeserializationFailed(_) => {
+                GetBlockByNumberGrpcError::DeserializationFailed
+            },
+        }
+    }
+}
+
+into_tonic_status!(GetBlockByNumberError);
+
+// GET BLOCK HEADER BY NUMBER ERRORS
+// ================================================================================================
+
+impl GetBlockHeaderError {
+    fn api_error(&self) -> GetBlockHeaderByNumberGrpcError {
+        match self {
+            GetBlockHeaderError::DatabaseError(_) | GetBlockHeaderError::MmrError(_) => {
+                GetBlockHeaderByNumberGrpcError::Internal
+            },
+        }
+    }
+}
+
+into_tonic_status!(GetBlockHeaderError);
+
+// GET NOTES BY ID ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum GetNotesByIdError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed note ID")]
+    DeserializationFailed(#[from] DeserializationError),
+    #[error("note {0} not found")]
+    NoteNotFound(miden_objects::note::NoteId),
+    #[error("too many note IDs: {0}")]
+    TooManyNoteIds(u32),
+    #[error("note {0} is not public")]
+    NoteNotPublic(miden_objects::note::NoteId),
+}
+
+impl GetNotesByIdError {
+    fn api_error(&self) -> GetNotesByIdGrpcError {
+        match self {
+            GetNotesByIdError::DatabaseError(_) => GetNotesByIdGrpcError::Internal,
+            GetNotesByIdError::DeserializationFailed(_) => {
+                GetNotesByIdGrpcError::DeserializationFailed
+            },
+            GetNotesByIdError::NoteNotFound(_) => GetNotesByIdGrpcError::NoteNotFound,
+            GetNotesByIdError::TooManyNoteIds(_) => GetNotesByIdGrpcError::TooManyNoteIds,
+            GetNotesByIdError::NoteNotPublic(_) => GetNotesByIdGrpcError::NoteNotPublic,
+        }
+    }
+}
+
+into_tonic_status!(GetNotesByIdError);
+
+// GET NOTE SCRIPT BY ROOT ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum GetNoteScriptByRootError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed script root")]
+    DeserializationFailed(#[from] DeserializationError),
+    #[error("script with given root not found")]
+    ScriptNotFound,
+}
+
+impl GetNoteScriptByRootError {
+    fn api_error(&self) -> GetNoteScriptByRootGrpcError {
+        match self {
+            GetNoteScriptByRootError::DatabaseError(_) => GetNoteScriptByRootGrpcError::Internal,
+            GetNoteScriptByRootError::DeserializationFailed(_) => {
+                GetNoteScriptByRootGrpcError::DeserializationFailed
+            },
+            GetNoteScriptByRootError::ScriptNotFound => {
+                GetNoteScriptByRootGrpcError::ScriptNotFound
+            },
+        }
+    }
+}
+
+into_tonic_status!(GetNoteScriptByRootError);
+
+// CHECK NULLIFIERS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error)]
+pub enum CheckNullifiersError {
+    #[error("database error")]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed nullifier")]
+    DeserializationFailed(#[from] DeserializationError),
+    #[error("too many nullifiers: {0}")]
+    TooManyNullifiers(u32),
+}
+
+impl CheckNullifiersError {
+    fn api_error(&self) -> CheckNullifiersGrpcError {
+        match self {
+            CheckNullifiersError::DatabaseError(_) => CheckNullifiersGrpcError::Internal,
+            CheckNullifiersError::DeserializationFailed(_) => {
+                CheckNullifiersGrpcError::DeserializationFailed
+            },
+            CheckNullifiersError::TooManyNullifiers(_) => {
+                CheckNullifiersGrpcError::TooManyNullifiers
+            },
+        }
+    }
+}
+
+into_tonic_status!(CheckNullifiersError);
 
 // Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear
 // in the compilation of the library or binary, which would prevent getting to compiling the

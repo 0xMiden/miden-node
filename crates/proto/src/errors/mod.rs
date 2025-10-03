@@ -109,3 +109,26 @@ macro_rules! grpc_error {
         }
     };
 }
+
+#[macro_export]
+macro_rules! into_tonic_status {
+    ($error:ty) => {
+        impl From<$error> for tonic::Status {
+            fn from(value: $error) -> Self {
+                let api_error = value.api_error();
+
+                let message = if api_error.is_internal() {
+                    "Internal error".to_owned()
+                } else {
+                    value.as_report()
+                };
+
+                tonic::Status::with_details(
+                    api_error.tonic_code(),
+                    message,
+                    vec![api_error.api_code()].into(),
+                )
+            }
+        }
+    };
+}

@@ -317,7 +317,7 @@ pub enum StoreError {
     #[error("account Id prefix already exists: {0}")]
     DuplicateAccountIdPrefix(AccountId),
     #[error("gRPC client error")]
-    GrpcClientError(Box<tonic::Status>),
+    GrpcClientError(#[from] Box<tonic::Status>),
     #[error("malformed response from store: {0}")]
     MalformedResponse(String),
     #[error("failed to parse response")]

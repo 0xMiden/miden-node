@@ -237,7 +237,7 @@ impl proto::rpc_store::BlockRange {
             self.block_to.map_or(*fallback, BlockNumber::from),
         );
 
-        if block_range.start() < block_range.end() {
+        if block_range.start() > block_range.end() {
             return Err(InvalidBlockRange::StartGreaterThanEnd {
                 start: *block_range.start(),
                 end: *block_range.end(),

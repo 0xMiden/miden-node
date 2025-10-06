@@ -132,9 +132,10 @@ message AccountProofRequest {
         optional primitives.Digest code_commitment = 1;
 
         // Last known asset vault commitment to the client. The response will include asset vault data
-        // only if its commitment is different from this value or if the value is not present.
+        // only if its commitment is different from this value. If the value is not present in the
+        // request, the response will not contain one either.
         // If the number of to-be-returned asset entries exceed a threshold, they have to be requested
-        // separately, which is signaled in the response message.
+        // separately, which is signaled in the response message with dedicated flag.
         optional primitives.Digest asset_vault_commitment = 2;
 
         // Additional request per storage map.

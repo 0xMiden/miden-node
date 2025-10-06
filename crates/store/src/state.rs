@@ -913,17 +913,10 @@ impl State {
                 return Err(DatabaseError::AccountNotPublic(account_id));
             };
 
-            let slot_headers = Vec::from_iter(
-                details
-                    .storage()
-                    .slots()
-                    .iter()
-                    .map(|storage_slot| (storage_slot.slot_type(), storage_slot.value())),
-            );
+            let storage_header = details.storage().to_header();
 
-            let storage_header = AccountStorageHeader::new(slot_headers);
-
-            let mut storage_map_details = Vec::<AccountStorageMapDetails>::new();
+            let mut storage_map_details =
+                Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
             for StorageMapRequest { slot_index, slot_data } in storage_requests {
                 let Some(StorageSlot::Map(storage_map)) =

@@ -204,9 +204,9 @@ message AccountStorageDetails {
         // slot index of the storage map
         uint32 slot_index = 1;
 
-        // A flag that is set to true if all_entries == true was used in the request for this
-        // storage map and the map contains too many entries. This indicates to the user
-        // that `SyncStorageMaps` endpoint should be used to get all storage map data
+        // A flag that is set to `true` if the number of to-be-returned entries in the
+        // storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
+        // endpoint should be used to get all storage map data.
         bool too_many_entries = 2;
 
         // By default we provide all storage entries.

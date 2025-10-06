@@ -952,7 +952,7 @@ impl State {
                     AccountVaultDetails::empty()
                 },
                 Some(_) => {
-                    // Either no commitment provided or it doesn't match, so return vault data
+                    // The commitment doesn't match, so return vault data
                     AccountVaultDetails::new(details.vault())
                 },
                 None => {

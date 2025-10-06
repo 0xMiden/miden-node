@@ -321,28 +321,28 @@ pub(crate) fn select_all_accounts(
     Ok(account_infos)
 }
 
-/// Select all network accounts from the DB using the given [`SqliteConnection`].
+/// Returns all network account IDs.
 ///
 /// # Returns
 ///
-/// A vector with network accounts, or an error.
-pub(crate) fn select_all_network_accounts(
+/// A vector with network account IDs, or an error.
+pub(crate) fn select_all_network_account_ids(
     conn: &mut SqliteConnection,
-) -> Result<Vec<AccountInfo>, DatabaseError> {
-    let accounts_raw = QueryDsl::select(
-        schema::accounts::table
-            .left_join(
-                schema::account_codes::table.on(schema::accounts::code_commitment
-                    .eq(schema::account_codes::code_commitment.nullable())),
-            )
-            .filter(schema::accounts::network_account_id_prefix.is_not_null()),
-        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+) -> Result<Vec<AccountId>, DatabaseError> {
+    let account_ids_raw: Vec<Vec<u8>> = QueryDsl::select(
+        schema::accounts::table.filter(schema::accounts::network_account_id_prefix.is_not_null()),
+        schema::accounts::account_id,
     )
-    .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
-    let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
-        accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
-    )?;
-    Ok(account_infos)
+    .load::<Vec<u8>>(conn)?;
+
+    let account_ids = account_ids_raw
+        .into_iter()
+        .map(|id_bytes| {
+            AccountId::read_from_bytes(&id_bytes).map_err(DatabaseError::DeserializationError)
+        })
+        .collect::<Result<Vec<AccountId>, DatabaseError>>()?;
+
+    Ok(account_ids)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -23,7 +23,7 @@ use miden_node_proto::domain::account::{
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
-use miden_objects::account::{AccountHeader, AccountId, AccountStorageHeader, StorageSlot};
+use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
 use miden_objects::block::{
     AccountTree,
     AccountWitness,

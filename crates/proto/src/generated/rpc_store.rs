@@ -35,9 +35,10 @@ pub mod account_proof_request {
         #[prost(message, optional, tag = "1")]
         pub code_commitment: ::core::option::Option<super::super::primitives::Digest>,
         /// Last known asset vault commitment to the client. The response will include asset vault data
-        /// only if its commitment is different from this value or if the value is not present.
+        /// only if its commitment is different from this value. If the value is not present in the
+        /// request, the response will not contain one either.
         /// If the number of to-be-returned asset entries exceed a threshold, they have to be requested
-        /// separately, which is signaled in the response message.
+        /// separately, which is signaled in the response message with dedicated flag.
         #[prost(message, optional, tag = "2")]
         pub asset_vault_commitment: ::core::option::Option<
             super::super::primitives::Digest,

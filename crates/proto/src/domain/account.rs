@@ -206,8 +206,18 @@ impl TryFrom<proto::rpc_store::account_storage_details::AccountStorageMapDetails
                 .entries
                 .into_iter()
                 .map(|entry| {
-                    let key = entry.key.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
-                    let value = entry.value.ok_or(ConversionError::NotAValidFelt)?.try_into()?;
+                    let key = entry
+                        .key
+                        .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
+                            stringify!(key),
+                        ))?
+                        .try_into()?;
+                    let value = entry
+                        .value
+                        .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
+                            stringify!(value),
+                        ))?
+                        .try_into()?;
                     Ok((key, value))
                 })
                 .collect::<Result<Vec<_>, ConversionError>>()?,

@@ -314,7 +314,7 @@ fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorag
     AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
-        .with_auth_component(AuthRpoFalcon512::new(public_key))
+        .with_auth_component(AuthRpoFalcon512::new(public_key.into()))
         .with_component(BasicWallet)
         .build()
         .unwrap()
@@ -332,7 +332,7 @@ fn create_faucet() -> Account {
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
-        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key().into()))
         .build()
         .unwrap()
 }
@@ -410,7 +410,7 @@ fn create_consume_note_tx(
         block_ref.commitment(),
         fee_from_block(block_ref).unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
+        ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
     )
     .add_input_notes(vec![input_note])
     .account_update_details(details)
@@ -448,7 +448,7 @@ fn create_emit_note_tx(
         )
         .unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
+        ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
     )
     .add_output_notes(output_notes.into_iter().map(OutputNote::Full).collect::<Vec<OutputNote>>())
     .build()

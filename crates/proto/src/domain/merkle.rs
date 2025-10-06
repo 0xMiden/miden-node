@@ -193,13 +193,14 @@ impl TryFrom<proto::primitives::SmtOpening> for SmtProof {
             .ok_or(proto::primitives::SmtOpening::missing_field(stringify!(leaf)))?
             .try_into()?;
 
-        Ok(SmtProof::new(path, leaf)?)
+        Ok(SmtProof::new(path.try_into()?, leaf)?)
     }
 }
 
 impl From<SmtProof> for proto::primitives::SmtOpening {
     fn from(proof: SmtProof) -> Self {
         let (ref path, leaf) = proof.into_parts();
+        let path: MerklePath = path.clone().into();
         Self {
             path: Some(path.into()),
             leaf: Some(leaf.into()),

@@ -22,6 +22,7 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
     AccountVaultDelta,
+    PublicKeyCommitment,
     StorageSlot,
 };
 use miden_objects::asset::{Asset, FungibleAsset};
@@ -32,7 +33,6 @@ use miden_objects::block::{
     BlockNoteTree,
     BlockNumber,
 };
-use miden_objects::crypto::dsa::rpo_falcon512::PublicKey;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::crypto::rand::RpoRandomCoin;
 use miden_objects::note::{
@@ -52,7 +52,13 @@ use miden_objects::testing::account_id::{
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE,
     ACCOUNT_ID_REGULAR_PUBLIC_ACCOUNT_IMMUTABLE_CODE_2,
 };
-use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader, TransactionId};
+use miden_objects::transaction::{
+    InputNoteCommitment,
+    InputNotes,
+    OrderedTransactionHeaders,
+    TransactionHeader,
+    TransactionId,
+};
 use miden_objects::{EMPTY_WORD, Felt, FieldElement, Word, ZERO};
 use pretty_assertions::assert_eq;
 use rand::Rng;
@@ -1399,6 +1405,24 @@ fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader 
     let input_notes_commitment = Word::try_from([0, 0, num, 0]).unwrap();
     let output_notes_commitment = Word::try_from([0, 0, 0, num]).unwrap();
 
+    let notes = vec![InputNoteCommitment::from(num_to_nullifier(num))];
+    let input_notes = InputNotes::new_unchecked(notes);
+
+    let output_notes = vec![(
+        NoteId::new(
+            Word::try_from([num, num, 0, 0]).unwrap(),
+            Word::try_from([0, 0, num, num]).unwrap(),
+        ),
+        NoteMetadata::new(
+            account_id,
+            NoteType::Public,
+            NoteTag::LocalAny(num as u32),
+            NoteExecutionHint::None,
+            Felt::default(),
+        )
+        .unwrap(),
+    )];
+
     TransactionHeader::new_unchecked(
         TransactionId::new(
             initial_state_commitment,
@@ -1409,11 +1433,8 @@ fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader 
         account_id,
         initial_state_commitment,
         final_account_commitment,
-        vec![num_to_nullifier(num)],
-        vec![NoteId::new(
-            Word::try_from([num, num, 0, 0]).unwrap(),
-            Word::try_from([0, 0, num, num]).unwrap(),
-        )],
+        input_notes,
+        output_notes,
     )
 }
 
@@ -1475,7 +1496,7 @@ fn mock_account_code_and_storage(
         .storage_mode(storage_mode)
         .with_assets(assets)
         .with_component(component)
-        .with_auth_component(AuthRpoFalcon512::new(PublicKey::new(EMPTY_WORD)))
+        .with_auth_component(AuthRpoFalcon512::new(PublicKeyCommitment::from(EMPTY_WORD)))
         .build_existing()
         .unwrap()
 }

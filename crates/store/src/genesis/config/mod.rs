@@ -155,7 +155,7 @@ impl GenesisConfig {
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-            let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
+            let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key().into() };
             let init_seed: [u8; 32] = rng.random();
 
             let account_type = if has_updatable_code {
@@ -341,7 +341,7 @@ impl FungibleFaucetConfig {
         } = self;
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-        let auth = AuthRpoFalcon512::new(secret_key.public_key());
+        let auth = AuthRpoFalcon512::new(secret_key.public_key().into());
         let init_seed: [u8; 32] = rng.random();
 
         let max_supply = Felt::try_from(max_supply)

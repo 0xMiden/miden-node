@@ -206,7 +206,7 @@ impl TransactionSummaryRowInsert {
         //
         // Note: 500 bytes per output note is an over-estimate but ensures we don't
         // exceed memory limits when these transactions are later converted to proto records.
-        let input_notes_size = transaction_header.input_notes().len() * 32;
+        let input_notes_size = (transaction_header.input_notes().num_notes() * 32) as usize;
         let output_notes_size = transaction_header.output_notes().len() * 500;
         let size_in_bytes = (HEADER_BASE_SIZE + input_notes_size + output_notes_size) as i64;
 

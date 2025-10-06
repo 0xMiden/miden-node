@@ -96,11 +96,11 @@ impl AccountActor {
     pub fn new(
         origin: AccountOrigin,
         config: &AccountActorConfig,
-    ) -> (Self, mpsc::UnboundedSender<MempoolEvent>) {
+        event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
+    ) -> Self {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let actor = Self {
+        Self {
             origin,
             store: config.store.clone(),
             state: ActorMode::default(),
@@ -108,8 +108,7 @@ impl AccountActor {
             block_producer,
             prover,
             chain_state: config.chain_state.clone(),
-        };
-        (actor, event_tx)
+        }
     }
 
     /// Runs the account actor, processing events and managing state until a reason to shutdown is

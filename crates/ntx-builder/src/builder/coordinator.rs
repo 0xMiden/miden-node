@@ -43,8 +43,9 @@ impl Coordinator {
     pub async fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
         let account_prefix = origin.prefix();
         // Construct the actor and add it to the registry for subsequent messaging.
-        let (actor, event_tx) = AccountActor::new(origin, config);
-        self.actor_registry.insert(account_prefix, event_tx.clone());
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let actor = AccountActor::new(origin, config, event_rx);
+        self.actor_registry.insert(account_prefix, event_tx);
 
         // Run the actor.
         let semaphore = self.semaphore.clone();

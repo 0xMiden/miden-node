@@ -67,9 +67,9 @@ impl Coordinator {
         });
     }
 
-    /// Tries to get the next result from the actor join set and then handles it depending on the
+    /// Gets the next result from the actor join set and then handles it depending on the
     /// reason the actor shutdown.
-    pub async fn try_next(&mut self) -> anyhow::Result<()> {
+    pub async fn next(&mut self) -> anyhow::Result<()> {
         let actor_result = self.actor_join_set.join_next().await;
         match actor_result {
             Some(Ok(shutdown_reason)) => match shutdown_reason {

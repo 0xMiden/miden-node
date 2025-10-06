@@ -16,6 +16,7 @@ use crate::state::{State, TransactionCandidate};
 use crate::store::StoreClient;
 use crate::transaction::NtxError;
 
+/// The reason an actor has shut down.
 pub enum ActorShutdownReason {
     AccountReverted(NetworkAccountPrefix),
     EventChannelClosed,

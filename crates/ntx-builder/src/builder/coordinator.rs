@@ -42,6 +42,12 @@ impl Coordinator {
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
     pub async fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
         let account_prefix = origin.prefix();
+
+        // If an actor already exists for this account prefix, something has gone wrong.
+        if self.actor_registry.contains_key(&account_prefix) {
+            tracing::error!("account actor already exists for prefix: {}", account_prefix);
+        }
+
         // Construct the actor and add it to the registry for subsequent messaging.
         let (event_tx, event_rx) = mpsc::unbounded_channel();
         let actor = AccountActor::new(origin, config, event_rx);

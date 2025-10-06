@@ -74,9 +74,9 @@ impl AccountOrigin {
 #[derive(Default, Debug)]
 enum ActorMode {
     #[default]
-    AwaitingEvents,
-    ExecutingTransactions,
-    AwaitingCommit(TransactionId),
+    NoViableNotes,
+    NotesAvailable,
+    TransactionInflight(TransactionId),
 }
 
 /// Account actor that manages state and processes transactions for a single network account.
@@ -135,11 +135,11 @@ impl AccountActor {
             // Enable or disable transaction execution based on actor mode.
             let tx_permit_acquisition = match self.state {
                 // Disable transaction execution.
-                ActorMode::AwaitingEvents | ActorMode::AwaitingCommit(_) => {
+                ActorMode::NoViableNotes | ActorMode::TransactionInflight(_) => {
                     std::future::pending().boxed()
                 },
                 // Enable transaction execution.
-                ActorMode::ExecutingTransactions => semaphore.acquire().boxed(),
+                ActorMode::NotesAvailable => semaphore.acquire().boxed(),
             };
             tokio::select! {
                 // Handle mempool events.
@@ -149,14 +149,14 @@ impl AccountActor {
                     };
                     // Re-enable transaction execution if the transaction being waited on has been
                     // added to the mempool.
-                    if let ActorMode::AwaitingCommit(ref awaited_id) = self.state {
+                    if let ActorMode::TransactionInflight(ref awaited_id) = self.state {
                         if let MempoolEvent::TransactionAdded { id, .. } = &event {
                             if id == awaited_id {
-                                self.state = ActorMode::ExecutingTransactions;
+                                self.state = ActorMode::NotesAvailable;
                             }
                         }
                     } else {
-                        self.state = ActorMode::ExecutingTransactions;
+                        self.state = ActorMode::NotesAvailable;
                     }
                     // Update state.
                     if let Some(shutdown_reason) = state.mempool_update(event).await {
@@ -174,7 +174,7 @@ impl AccountActor {
                                 self.execute_transactions(&mut state, tx_candidate).await;
                             } else {
                                 // No transactions to execute, wait for events.
-                                self.state = ActorMode::AwaitingEvents;
+                                self.state = ActorMode::NoViableNotes;
                             }
                         }
                         Err(err) => {
@@ -207,13 +207,13 @@ impl AccountActor {
         match execution_result {
             // Execution completed without failed notes.
             Ok((tx_id, failed)) if failed.is_empty() => {
-                self.state = ActorMode::AwaitingCommit(tx_id);
+                self.state = ActorMode::TransactionInflight(tx_id);
             },
             // Execution completed with some failed notes.
             Ok((tx_id, failed)) => {
                 let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
                 state.notes_failed(notes.as_slice(), block_num);
-                self.state = ActorMode::AwaitingCommit(tx_id);
+                self.state = ActorMode::TransactionInflight(tx_id);
             },
             // Transaction execution failed.
             Err(err) => {
@@ -222,7 +222,7 @@ impl AccountActor {
                     NtxError::AllNotesFailed(failed) => {
                         let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
                         state.notes_failed(notes.as_slice(), block_num);
-                        self.state = ActorMode::AwaitingEvents;
+                        self.state = ActorMode::NoViableNotes;
                     },
                     NtxError::InputNotes(_)
                     | NtxError::NoteFilter(_)
@@ -230,7 +230,7 @@ impl AccountActor {
                     | NtxError::Proving(_)
                     | NtxError::Submission(_)
                     | NtxError::Panic(_) => {
-                        self.state = ActorMode::AwaitingEvents;
+                        self.state = ActorMode::NoViableNotes;
                     },
                 }
             },

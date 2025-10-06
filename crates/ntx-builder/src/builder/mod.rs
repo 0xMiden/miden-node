@@ -189,21 +189,17 @@ impl NetworkTransactionBuilder {
                     if let Some(account) = AccountOrigin::transaction(account) {
                         self.coordinator.spawn_actor(account, account_actor_config).await;
                     }
-                } else {
-                    // Broadcast event.
-                    self.coordinator.broadcast_event(&event);
                 }
             },
             // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, .. } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
-                self.coordinator.broadcast_event(&event);
             },
             // Broadcast to all actors.
-            MempoolEvent::TransactionsReverted(_) => {
-                self.coordinator.broadcast_event(&event);
-            },
+            MempoolEvent::TransactionsReverted(_) => {},
         }
+        // Send event to all actors.
+        self.coordinator.broadcast_event(&event);
     }
 
     /// Updates the chain tip and MMR block count.

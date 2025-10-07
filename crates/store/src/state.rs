@@ -906,21 +906,21 @@ impl State {
             storage_requests,
         }) = account_request.details
         {
-            let info = self.db.select_account(account_id).await?;
+            let account_info = self.db.select_account(account_id).await?;
 
             // if we get a query for a private account _with_ details requested, we'll error out
-            let Some(details) = info.details else {
+            let Some(account) = account_info.details else {
                 return Err(DatabaseError::AccountNotPublic(account_id));
             };
 
-            let storage_header = details.storage().to_header();
+            let storage_header = account.storage().to_header();
 
             let mut storage_map_details =
                 Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
             for StorageMapRequest { slot_index, slot_data } in storage_requests {
                 let Some(StorageSlot::Map(storage_map)) =
-                    details.storage().slots().get(slot_index as usize)
+                    account.storage().slots().get(slot_index as usize)
                 else {
                     return Err(AccountError::StorageSlotNotMap(slot_index).into());
                 };
@@ -931,8 +931,8 @@ impl State {
             // Only include unknown account code blobs, which is equal to a account code digest
             // mismatch. If `None` was requested, don't return any.
             let account_code = code_commitment
-                .is_some_and(|code_commitment| code_commitment != details.code().commitment())
-                .then(|| details.code().to_bytes());
+                .is_some_and(|code_commitment| code_commitment != account.code().commitment())
+                .then(|| account.code().to_bytes());
 
             // storage details
             let storage_details = AccountStorageDetails {
@@ -947,13 +947,13 @@ impl State {
             // limit, we signal this back in the response and the user must handle that
             // in follow-up request.
             let vault_details = match asset_vault_commitment {
-                Some(commitment) if commitment == details.vault().root() => {
+                Some(commitment) if commitment == account.vault().root() => {
                     // The client already has the correct vault data
                     AccountVaultDetails::empty()
                 },
                 Some(_) => {
                     // The commitment doesn't match, so return vault data
-                    AccountVaultDetails::new(details.vault())
+                    AccountVaultDetails::new(account.vault())
                 },
                 None => {
                     // No commitment provided, so don't return vault data
@@ -962,7 +962,7 @@ impl State {
             };
 
             Some(AccountDetails {
-                account_header: AccountHeader::from(details),
+                account_header: AccountHeader::from(account),
                 account_code,
                 vault_details,
                 storage_details,

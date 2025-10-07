@@ -11,7 +11,6 @@ use miden_objects::account::{
 };
 use miden_objects::asset::Asset;
 use miden_objects::block::{AccountWitness, BlockNumber};
-use miden_objects::crypto::merkle::MerklePath;
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;
@@ -472,12 +471,11 @@ impl TryFrom<proto::account::AccountWitness> for AccountWitnessRecord {
 
 impl From<AccountWitnessRecord> for proto::account::AccountWitness {
     fn from(from: AccountWitnessRecord) -> Self {
-        let merkle_path: MerklePath = from.witness.clone().into_proof().into_parts().0.into();
         Self {
             account_id: Some(from.account_id.into()),
             witness_id: Some(from.witness.id().into()),
             commitment: Some(from.witness.state_commitment().into()),
-            path: Some(merkle_path.into()),
+            path: Some(from.witness.path().clone().into()),
         }
     }
 }

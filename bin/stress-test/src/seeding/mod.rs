@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
-use miden_air::HashFunction;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
@@ -51,7 +50,6 @@ use tokio::{fs, task};
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::Channel;
 use url::Url;
-use winterfell::Proof;
 
 mod metrics;
 
@@ -410,7 +408,7 @@ fn create_consume_note_tx(
         block_ref.commitment(),
         fee_from_block(block_ref).unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
+        ExecutionProof::new_dummy(),
     )
     .add_input_notes(vec![input_note])
     .account_update_details(details)
@@ -448,7 +446,7 @@ fn create_emit_note_tx(
         )
         .unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new(Proof::new_dummy(), HashFunction::Blake3_192),
+        ExecutionProof::new_dummy(),
     )
     .add_output_notes(output_notes.into_iter().map(OutputNote::Full).collect::<Vec<OutputNote>>())
     .build()

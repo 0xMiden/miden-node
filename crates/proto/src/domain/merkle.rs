@@ -200,8 +200,8 @@ impl TryFrom<proto::primitives::SmtOpening> for SmtProof {
 
 impl From<SmtProof> for proto::primitives::SmtOpening {
     fn from(proof: SmtProof) -> Self {
-        let (ref path, leaf) = proof.into_parts();
-        let path: SparseMerklePath = path.clone();
+        let (path, leaf) = proof.into_parts();
+
         Self {
             path: Some(path.into()),
             leaf: Some(leaf.into()),

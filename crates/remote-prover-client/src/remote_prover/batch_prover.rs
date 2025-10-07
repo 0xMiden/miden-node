@@ -201,13 +201,13 @@ impl RemoteBatchProver {
 
             // Because we checked the length matches we can zip the iterators up.
             // We expect the note IDs to be in the same order.
-            for (proposed_note_id, (header_note_id, _)) in proposed_header
+            for (proposed_note_id, header_note) in proposed_header
                 .output_notes()
                 .iter()
                 .map(OutputNote::id)
                 .zip(proven_header.output_notes().iter())
             {
-                if proposed_note_id != *header_note_id {
+                if proposed_note_id != header_note.id() {
                     return Err(RemoteProverClientError::other(format!(
                         "transaction header of {} has a different set of input notes than the proposed transaction",
                         proposed_header.id()

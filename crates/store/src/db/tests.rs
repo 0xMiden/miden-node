@@ -39,6 +39,7 @@ use miden_objects::note::{
     Note,
     NoteDetails,
     NoteExecutionHint,
+    NoteHeader,
     NoteId,
     NoteMetadata,
     NoteTag,
@@ -1408,7 +1409,7 @@ fn mock_block_transaction(account_id: AccountId, num: u64) -> TransactionHeader 
     let notes = vec![InputNoteCommitment::from(num_to_nullifier(num))];
     let input_notes = InputNotes::new_unchecked(notes);
 
-    let output_notes = vec![(
+    let output_notes = vec![NoteHeader::new(
         NoteId::new(
             Word::try_from([num, num, 0, 0]).unwrap(),
             Word::try_from([0, 0, num, num]).unwrap(),

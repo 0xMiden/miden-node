@@ -85,5 +85,5 @@ message AccountWitness {
     primitives.Digest commitment = 3;
 
     // The merkle path of the state commitment in the account tree.
-    primitives.MerklePath path = 4;
+    primitives.SparseMerklePath path = 4;
 }

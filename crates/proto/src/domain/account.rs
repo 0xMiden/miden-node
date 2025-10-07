@@ -163,7 +163,6 @@ impl TryFrom<proto::rpc_store::account_proof_request::AccountDetailRequest>
     }
 }
 
-/// Represents a request for an account's storage map values and its proof of existence.
 impl TryFrom<proto::account::AccountStorageHeader> for AccountStorageHeader {
     type Error = ConversionError;
 

@@ -1,0 +1,60 @@
+# Counter program for network monitoring with note authentication
+# Storage slot 0: counter value (u64)
+# Hardcoded authorized account ID: {AUTHORIZED_ACCOUNT_ID_PREFIX}{AUTHORIZED_ACCOUNT_ID_SUFFIX}
+
+use.miden::account
+use.miden::active_note
+
+use.std::sys
+
+# Increment function with note authentication
+# => []
+export.increment
+    exec.active_note::get_sender
+    # => [sender_id_prefix, sender_id_suffix]
+    push.{AUTHORIZED_ACCOUNT_ID_PREFIX}
+    # => [AUTHORIZED_ACCOUNT_ID_PREFIX, sender_id_prefix, sender_id_suffix]
+
+    assert_eq.err="sender prefix not authorized"
+    # => [sender_id_suffix]
+
+    push.{AUTHORIZED_ACCOUNT_ID_SUFFIX}
+    # => [AUTHORIZED_ACCOUNT_ID_SUFFIX, sender_id_suffix]
+
+    assert_eq.err="sender suffix not authorized"
+    # => []
+
+    push.0
+    # => [0]
+
+    exec.account::get_item
+    # => [count]
+
+    push.1
+    # => [1, count]
+    
+    add
+    # => [count+1]
+
+    push.0
+    # [0, count+1]
+
+    exec.account::set_item
+    # => []
+
+    exec.sys::truncate_stack
+    # => []
+end
+
+# Get the counter (no auth required)
+# => [count]
+export.get_count
+    push.0
+    # => [0]
+
+    exec.account::get_item
+    # => [count]
+
+    exec.sys::truncate_stack
+    # => [count]
+end

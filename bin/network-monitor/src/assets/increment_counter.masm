@@ -1,0 +1,5 @@
+use.external_contract::counter_contract
+
+begin
+    call.counter_contract::increment
+end

@@ -20,9 +20,6 @@ const DEFAULT_PORT: u16 = 3000;
 ///
 /// This struct contains the configuration for the monitor.
 #[derive(Debug, Clone, Parser)]
-#[command(name = "miden-network-monitor")]
-#[command(about = "A network monitor for Miden node services")]
-#[command(version)]
 pub struct MonitorConfig {
     /// The URL of the RPC service.
     #[arg(

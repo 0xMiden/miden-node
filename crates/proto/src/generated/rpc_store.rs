@@ -144,9 +144,9 @@ pub mod account_storage_details {
         /// slot index of the storage map
         #[prost(uint32, tag = "1")]
         pub slot_index: u32,
-        /// A flag that is set to true if all_entries == true was used in the request for this
-        /// storage map and the map contains too many entries. This indicates to the user
-        /// that `SyncStorageMaps` endpoint should be used to get all storage map data
+        /// A flag that is set to `true` if the number of to-be-returned entries in the
+        /// storage map would exceed a threshold. This indicates to the user that `SyncStorageMaps`
+        /// endpoint should be used to get all storage map data.
         #[prost(bool, tag = "2")]
         pub too_many_entries: bool,
         /// By default we provide all storage entries.

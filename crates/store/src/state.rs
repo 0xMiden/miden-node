@@ -908,7 +908,7 @@ impl State {
         {
             let account_info = self.db.select_account(account_id).await?;
 
-            // if we get a query for a private account _with_ details requested, we'll error out
+            // if we get a query for a _private_ account _with_ details requested, we'll error out
             let Some(account) = account_info.details else {
                 return Err(DatabaseError::AccountNotPublic(account_id));
             };

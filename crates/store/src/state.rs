@@ -890,6 +890,9 @@ impl State {
 
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
+    ///
+    /// Note: The `block_num` parameter in the request is currently ignored and will always
+    /// return the current state. Historical block support will be implemented in a future update.
     #[allow(clippy::too_many_lines)]
     pub async fn get_account_proof(
         &self,
@@ -901,6 +904,8 @@ impl State {
         let inner_state = self.inner.read().await;
 
         let account_id = account_request.account_id;
+        // TODO: Implement historical block support using account_request.block_num
+        // For now, we always return the current state
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,
             asset_vault_commitment,

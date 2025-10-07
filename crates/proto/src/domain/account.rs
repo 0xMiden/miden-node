@@ -3,15 +3,12 @@ use std::fmt::{Debug, Display, Formatter};
 use miden_node_utils::formatting::format_opt;
 use miden_objects::Word;
 use miden_objects::account::{
-    Account,
-    AccountHeader,
-    AccountId,
-    AccountStorageHeader,
-    StorageMap,
+    Account, AccountHeader, AccountId, AccountStorageHeader, StorageMap, StorageMapWitness,
     StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVault};
 use miden_objects::block::{AccountWitness, BlockNumber};
+use miden_objects::crypto::merkle::SmtProof;
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
@@ -192,42 +189,79 @@ impl TryFrom<proto::rpc_store::account_storage_details::AccountStorageMapDetails
     fn try_from(
         value: proto::rpc_store::account_storage_details::AccountStorageMapDetails,
     ) -> Result<Self, Self::Error> {
+        use proto::rpc_store::account_storage_details::account_storage_map_details::MapEntries;
+
         let proto::rpc_store::account_storage_details::AccountStorageMapDetails {
             slot_index,
             too_many_entries,
-            entries,
+            map_entries,
         } = value;
 
         let slot_index = slot_index.try_into().map_err(ConversionError::TryFromIntError)?;
 
-        // Extract map_entries from the entries field
-        let map_entries = match entries {
-            Some(entries) => entries
-                .entries
-                .into_iter()
-                .map(|entry| {
-                    let key = entry
-                        .key
-                        .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-                            stringify!(key),
-                        ))?
-                        .try_into()?;
-                    let value = entry
-                        .value
-                        .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(
-                            stringify!(value),
-                        ))?
-                        .try_into()?;
-                    Ok((key, value))
-                })
-                .collect::<Result<Vec<_>, ConversionError>>()?,
-            None => Vec::new(),
+        // Extract map_entries from the oneof field
+        let (all_map_entries, map_entries_with_proofs) = match map_entries {
+            Some(MapEntries::All(all_entries)) => {
+                let entries = all_entries
+                    .entries
+                    .into_iter()
+                    .map(|entry| {
+                        let key = entry
+                            .key
+                            .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::all_map_entries::StorageMapEntry::missing_field(
+                                stringify!(key),
+                            ))?
+                            .try_into()?;
+                        let value = entry
+                            .value
+                            .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::all_map_entries::StorageMapEntry::missing_field(
+                                stringify!(value),
+                            ))?
+                            .try_into()?;
+                        Ok((key, value))
+                    })
+                    .collect::<Result<Vec<_>, ConversionError>>()?;
+                (entries, Vec::new())
+            },
+            Some(MapEntries::WithProofs(entries_with_proofs)) => {
+                let entries = entries_with_proofs
+                    .entries
+                    .into_iter()
+                    .map(|entry| {
+                        let key = entry
+                            .key
+                            .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries_with_proofs::StorageMapEntryWithProof::missing_field(
+                                stringify!(key),
+                            ))?
+                            .try_into()?;
+                        let value = entry
+                            .value
+                            .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries_with_proofs::StorageMapEntryWithProof::missing_field(
+                                stringify!(value),
+                            ))?
+                            .try_into()?;
+                        let smt_opening = entry
+                            .proof
+                            .ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries_with_proofs::StorageMapEntryWithProof::missing_field(
+                                stringify!(proof),
+                            ))?;
+                        // Convert SmtOpening to SmtProof, then wrap in StorageMapWitness
+                        let smt_proof = SmtProof::try_from(smt_opening)?;
+                        // Create StorageMapWitness with the key-value pair
+                        let proof = StorageMapWitness::new_unchecked(smt_proof, [(key, value)]);
+                        Ok((key, value, proof))
+                    })
+                    .collect::<Result<Vec<_>, ConversionError>>()?;
+                (Vec::new(), entries)
+            },
+            None => (Vec::new(), Vec::new()),
         };
 
         Ok(Self {
             slot_index,
             too_many_entries,
-            map_entries,
+            all_map_entries,
+            map_entries_with_proofs,
         })
     }
 }
@@ -368,12 +402,14 @@ impl AccountVaultDetails {
             }
         }
     }
+
     pub fn empty() -> Self {
         Self {
             too_many_assets: false,
             assets: Vec::new(),
         }
     }
+
     fn too_many() -> Self {
         Self {
             too_many_assets: true,
@@ -417,43 +453,70 @@ impl From<AccountVaultDetails> for proto::rpc_store::AccountVaultDetails {
 pub struct AccountStorageMapDetails {
     pub slot_index: u8,
     pub too_many_entries: bool,
-    pub map_entries: Vec<(Word, Word)>,
+    pub all_map_entries: Vec<(Word, Word)>,
+    pub map_entries_with_proofs: Vec<(Word, Word, StorageMapWitness)>,
 }
 
 impl AccountStorageMapDetails {
     const MAX_RETURN_ENTRIES: usize = 1000;
+    const RETURN_ALL_THRESHOLD: usize = 256;
 
     pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
-        let exceeds = if let SlotData::MapKeys(keys) = &slot_data {
-            keys.len() > Self::MAX_RETURN_ENTRIES
-        } else {
-            storage_map.entries().nth(Self::MAX_RETURN_ENTRIES).is_some()
-        };
-        if exceeds {
-            Self::too_many_entries(slot_index)
-        } else {
-            Self::from_slot_data(slot_index, slot_data, storage_map)
+        match slot_data {
+            SlotData::All => {
+                // For "All" requests, check if total map size exceeds limit
+                // Fix off-by-one error: use skip() instead of nth() to check for entries >= limit
+                if storage_map.entries().skip(Self::MAX_RETURN_ENTRIES).next().is_some() {
+                    Self::too_many_entries(slot_index)
+                } else {
+                    Self::from_all_entries(slot_index, storage_map)
+                }
+            },
+            SlotData::MapKeys(keys) => {
+                if keys.len() < Self::RETURN_ALL_THRESHOLD {
+                    return Self::from_all_entries(slot_index, storage_map);
+                }
+                // For specific key requests, only check if the number of requested keys exceeds
+                // limit This allows retrieving specific keys even if the total map
+                // is large
+                if keys.len() > Self::MAX_RETURN_ENTRIES {
+                    Self::too_many_entries(slot_index)
+                } else {
+                    Self::from_specific_keys(slot_index, &keys, storage_map)
+                }
+            },
         }
     }
 
-    pub fn from_slot_data(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
-        let map_entries = match slot_data {
-            SlotData::All => Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v))),
-            SlotData::MapKeys(keys) => {
-                Vec::from_iter(keys.iter().map(|key| (*key, storage_map.get(key))))
-            },
-        };
+    fn from_all_entries(slot_index: u8, storage_map: &StorageMap) -> Self {
+        let all_map_entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
         Self {
             slot_index,
             too_many_entries: false,
-            map_entries,
+            all_map_entries,
+            map_entries_with_proofs: Vec::new(),
         }
     }
+
+    fn from_specific_keys(slot_index: u8, keys: &[Word], storage_map: &StorageMap) -> Self {
+        // TODO respond with a compressed version
+        let map_entries_with_proofs = Vec::from_iter(
+            keys.iter().map(|key| (*key, storage_map.get(key), storage_map.open(key))),
+        );
+        Self {
+            slot_index,
+            too_many_entries: false,
+            all_map_entries: Vec::new(),
+            map_entries_with_proofs,
+        }
+    }
+
     pub fn too_many_entries(slot_index: u8) -> Self {
         Self {
             slot_index,
             too_many_entries: true,
-            map_entries: Vec::new(),
+            all_map_entries: Vec::new(),
+            map_entries_with_proofs: Vec::new(),
         }
     }
 }
@@ -616,69 +679,56 @@ impl From<AccountStorageMapDetails>
     for proto::rpc_store::account_storage_details::AccountStorageMapDetails
 {
     fn from(value: AccountStorageMapDetails) -> Self {
+        use proto::rpc_store::account_storage_details::account_storage_map_details;
+
         let AccountStorageMapDetails {
             slot_index,
             too_many_entries,
-            map_entries,
+            all_map_entries,
+            map_entries_with_proofs,
         } = value;
 
-        // Create the entries wrapped in MapEntries message
-        let entries = proto::rpc_store::account_storage_details::account_storage_map_details::MapEntries {
-            entries: map_entries
-                .into_iter()
-                .map(|(key, value)| {
-                    proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry {
-                        key: Some(key.into()),
-                        value: Some(value.into()),
-                    }
-                })
-                .collect(),
+        // Determine which variant to use based on available data
+        let map_entries = if !all_map_entries.is_empty() {
+            // Create AllMapEntries variant
+            let all = account_storage_map_details::AllMapEntries {
+                entries: all_map_entries
+                    .into_iter()
+                    .map(|(key, value)| {
+                        account_storage_map_details::all_map_entries::StorageMapEntry {
+                            key: Some(key.into()),
+                            value: Some(value.into()),
+                        }
+                    })
+                    .collect(),
+            };
+            Some(account_storage_map_details::MapEntries::All(all))
+        } else if !map_entries_with_proofs.is_empty() {
+            // Create EntriesWithProofs variant
+            let entries_with_proofs = account_storage_map_details::MapEntriesWithProofs {
+                entries: map_entries_with_proofs
+                    .into_iter()
+                    .map(|(key, value, proof)| {
+                        // Convert StorageMapWitness to SmtProof, then to SmtOpening
+                        let smt_proof: SmtProof = proof.into();
+                        let smt_opening = proto::primitives::SmtOpening::from(smt_proof);
+                        account_storage_map_details::map_entries_with_proofs::StorageMapEntryWithProof {
+                            key: Some(key.into()),
+                            value: Some(value.into()),
+                            proof: Some(smt_opening),
+                        }
+                    })
+                    .collect(),
+            };
+            Some(account_storage_map_details::MapEntries::WithProofs(entries_with_proofs))
+        } else {
+            None
         };
 
         Self {
             slot_index: u32::from(slot_index),
             too_many_entries,
-            entries: Some(entries),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct StorageMapEntry {
-    pub key: Word,
-    pub value: Word,
-}
-
-impl
-    TryFrom<proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry>
-    for StorageMapEntry
-{
-    type Error = ConversionError;
-
-    fn try_from(
-        value: proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry,
-    ) -> Result<Self, Self::Error> {
-        let proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry {
-            key,
-            value
-        } = value;
-
-        Ok(Self {
-            key: key.ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(stringify!(key)))?.try_into()?,
-            value: value.ok_or(proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry::missing_field(stringify!(value)))?.try_into()?,
-        })
-    }
-}
-
-impl From<StorageMapEntry>
-    for proto::rpc_store::account_storage_details::account_storage_map_details::map_entries::StorageMapEntry
-{
-    fn from(value: StorageMapEntry) -> Self {
-        let StorageMapEntry { key, value } = value;
-
-        Self {
-            key: Some(proto::primitives::Digest::from(key)),
-            value: Some(proto::primitives::Digest::from(value)),
+            map_entries,
         }
     }
 }

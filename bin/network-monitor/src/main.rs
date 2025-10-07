@@ -43,11 +43,11 @@ async fn main() -> anyhow::Result<()> {
     let config = MonitorConfig::parse();
     info!("Loaded configuration: {:?}", config);
 
-    if config.enable_otel {
-        miden_node_utils::logging::setup_tracing(OpenTelemetry::Enabled)?;
+    let _otel_guard = if config.enable_otel {
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Enabled)?
     } else {
-        miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
-    }
+        miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?
+    };
 
     let mut tasks = Tasks::new();
 

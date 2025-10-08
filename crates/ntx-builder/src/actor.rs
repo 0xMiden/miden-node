@@ -8,6 +8,7 @@ use miden_objects::account::Account;
 use miden_objects::transaction::TransactionId;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use crate::block_producer::BlockProducerClient;
@@ -21,6 +22,7 @@ pub enum ActorShutdownReason {
     AccountReverted(NetworkAccountPrefix),
     EventChannelClosed,
     SemaphoreFailed(AcquireError),
+    Cancelled(NetworkAccountPrefix),
 }
 
 /// Configuration that is required by all account actors.
@@ -86,6 +88,7 @@ pub struct AccountActor {
     store: StoreClient,
     state: ActorMode,
     event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
+    cancel_token: CancellationToken,
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
     chain_state: Arc<RwLock<ChainState>>,
@@ -98,6 +101,7 @@ impl AccountActor {
         origin: AccountOrigin,
         config: &AccountActorConfig,
         event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
+        cancel_token: CancellationToken,
     ) -> Self {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());
         let prover = config.tx_prover_url.clone().map(RemoteTransactionProver::new);
@@ -106,6 +110,7 @@ impl AccountActor {
             store: config.store.clone(),
             state: ActorMode::default(),
             event_rx,
+            cancel_token,
             block_producer,
             prover,
             chain_state: config.chain_state.clone(),
@@ -143,6 +148,9 @@ impl AccountActor {
                 ActorMode::NotesAvailable => semaphore.acquire().boxed(),
             };
             tokio::select! {
+                _ = self.cancel_token.cancelled() => {
+                    return ActorShutdownReason::Cancelled(self.origin.prefix());
+                }
                 // Handle mempool events.
                 event = self.event_rx.recv() => {
                     let Some(event) = event else {

@@ -6,8 +6,25 @@ use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 
 use crate::actor::{AccountActor, AccountActorConfig, AccountOrigin, ActorShutdownReason};
+
+// ACTOR HANDLE
+// ================================================================================================
+
+/// Handle to account actors that are spawned by the coordinator.
+#[derive(Clone)]
+struct ActorHandle {
+    event_tx: mpsc::UnboundedSender<MempoolEvent>,
+    cancel_token: CancellationToken,
+}
+
+impl ActorHandle {
+    fn new(event_tx: mpsc::UnboundedSender<MempoolEvent>, cancel_token: CancellationToken) -> Self {
+        Self { event_tx, cancel_token }
+    }
+}
 
 // COORDINATOR
 // ================================================================================================
@@ -17,7 +34,7 @@ pub struct Coordinator {
     /// Mapping of network account prefixes to their respective message channels. When actors are
     /// spawned, this registry is updated. The builder uses this registry to communicate with the
     /// actors.
-    actor_registry: HashMap<NetworkAccountPrefix, mpsc::UnboundedSender<MempoolEvent>>,
+    actor_registry: HashMap<NetworkAccountPrefix, ActorHandle>,
     /// Join set for managing actor tasks. When an actor task completes, the actor's corresponding
     /// data from the registry is removed.
     actor_join_set: JoinSet<ActorShutdownReason>,
@@ -44,14 +61,17 @@ impl Coordinator {
         let account_prefix = origin.prefix();
 
         // If an actor already exists for this account prefix, something has gone wrong.
-        if self.actor_registry.contains_key(&account_prefix) {
+        if let Some(handle) = self.actor_registry.get(&account_prefix) {
             tracing::error!("account actor already exists for prefix: {}", account_prefix);
+            handle.cancel_token.cancel();
         }
 
         // Construct the actor and add it to the registry for subsequent messaging.
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let actor = AccountActor::new(origin, config, event_rx);
-        self.actor_registry.insert(account_prefix, event_tx);
+        let cancel_token = tokio_util::sync::CancellationToken::new();
+        let actor = AccountActor::new(origin, config, event_rx, cancel_token.clone());
+        let handle = ActorHandle::new(event_tx, cancel_token);
+        self.actor_registry.insert(account_prefix, handle);
 
         // Run the actor.
         let semaphore = self.semaphore.clone();
@@ -62,8 +82,8 @@ impl Coordinator {
 
     /// Broadcasts an event to all account actors.
     pub fn broadcast_event(&self, event: &MempoolEvent) {
-        self.actor_registry.iter().for_each(|(account_prefix, event_tx)| {
-            Self::send(event_tx, event, *account_prefix);
+        self.actor_registry.iter().for_each(|(account_prefix, handle)| {
+            Self::send(&handle.event_tx, event, *account_prefix);
         });
     }
 
@@ -73,6 +93,11 @@ impl Coordinator {
         let actor_result = self.actor_join_set.join_next().await;
         match actor_result {
             Some(Ok(shutdown_reason)) => match shutdown_reason {
+                ActorShutdownReason::Cancelled(account_prefix) => {
+                    tracing::info!("account actor cancelled: {}", account_prefix);
+                    self.actor_registry.remove(&account_prefix);
+                    Ok(())
+                },
                 ActorShutdownReason::AccountReverted(account_prefix) => {
                     tracing::info!("account reverted: {}", account_prefix);
                     self.actor_registry.remove(&account_prefix);

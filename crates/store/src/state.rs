@@ -24,6 +24,7 @@ use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
 use miden_objects::block::{
     AccountTree,
+    AccountMutationSet,
     AccountWitness,
     BlockHeader,
     BlockInputs,

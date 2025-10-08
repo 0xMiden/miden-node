@@ -110,3 +110,6 @@ miden-testing         = { path = "../miden-base-bernhard-1227-historical/crates/
 miden-tx              = { path = "../miden-base-bernhard-1227-historical/crates/miden-tx" }
 miden-tx-batch-prover = { path = "../miden-base-bernhard-1227-historical/crates/miden-tx-batch-prover" }
 
+
+[patch.crates-io]
+miden-crypto = { path = "../miden-crypto-bernhard-1227-historical/miden-crypto" }

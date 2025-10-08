@@ -117,7 +117,7 @@ impl NtxContext {
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         async move {
-            async move {
+            Box::pin(async move {
                 let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
@@ -126,7 +126,7 @@ impl NtxContext {
                 let proven = Box::pin(self.prove(executed.into())).await?;
                 self.submit(proven).await?;
                 Ok(failed)
-            }
+            })
             .in_current_span()
             .await
             .inspect_err(|err| tracing::Span::current().set_error(err))
@@ -221,9 +221,9 @@ impl NtxContext {
 
     /// Submits the transaction to the block producer.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
-    async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
+    async fn submit(&self, proven_tx: ProvenTransaction) -> NtxResult<()> {
         self.block_producer
-            .submit_proven_transaction(tx)
+            .submit_proven_transaction(proven_tx)
             .await
             .map_err(NtxError::Submission)
     }

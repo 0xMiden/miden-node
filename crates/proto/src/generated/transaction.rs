@@ -6,6 +6,10 @@ pub struct ProvenTransaction {
     /// \[miden_objects::transaction::proven_tx::ProvenTransaction\].
     #[prost(bytes = "vec", tag = "1")]
     pub transaction: ::prost::alloc::vec::Vec<u8>,
+    /// Transaction inputs encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::transaction::TransactionInputs\].
+    #[prost(bytes = "vec", optional, tag = "2")]
+    pub transaction_inputs: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ProvenTransactionBatch {

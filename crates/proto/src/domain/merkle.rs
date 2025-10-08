@@ -183,9 +183,10 @@ impl TryFrom<proto::primitives::SmtOpening> for SmtProof {
     type Error = ConversionError;
 
     fn try_from(opening: proto::primitives::SmtOpening) -> Result<Self, Self::Error> {
-        let path = opening
+        let path: SparseMerklePath = opening
             .path
-            .ok_or(proto::primitives::SmtOpening::missing_field(stringify!(path)))?;
+            .ok_or(proto::primitives::SmtOpening::missing_field(stringify!(path)))?
+            .try_into()?;
         let leaf: SmtLeaf = opening
             .leaf
             .ok_or(proto::primitives::SmtOpening::missing_field(stringify!(leaf)))?
@@ -199,7 +200,7 @@ impl From<SmtProof> for proto::primitives::SmtOpening {
     fn from(proof: SmtProof) -> Self {
         let (path, leaf) = proof.into_parts();
         Self {
-            path: Some(path),
+            path: Some(path.into()),
             leaf: Some(leaf.into()),
         }
     }

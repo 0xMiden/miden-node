@@ -87,7 +87,7 @@ pub struct AccountActor {
     origin: AccountOrigin,
     store: StoreClient,
     state: ActorMode,
-    event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
+    event_rx: mpsc::Receiver<MempoolEvent>,
     cancel_token: CancellationToken,
     block_producer: BlockProducerClient,
     prover: Option<RemoteTransactionProver>,
@@ -100,7 +100,7 @@ impl AccountActor {
     pub fn new(
         origin: AccountOrigin,
         config: &AccountActorConfig,
-        event_rx: mpsc::UnboundedReceiver<MempoolEvent>,
+        event_rx: mpsc::Receiver<MempoolEvent>,
         cancel_token: CancellationToken,
     ) -> Self {
         let block_producer = BlockProducerClient::new(config.block_producer_url.clone());

@@ -16,12 +16,12 @@ use crate::actor::{AccountActor, AccountActorConfig, AccountOrigin, ActorShutdow
 /// Handle to account actors that are spawned by the coordinator.
 #[derive(Clone)]
 struct ActorHandle {
-    event_tx: mpsc::UnboundedSender<MempoolEvent>,
+    event_tx: mpsc::Sender<MempoolEvent>,
     cancel_token: CancellationToken,
 }
 
 impl ActorHandle {
-    fn new(event_tx: mpsc::UnboundedSender<MempoolEvent>, cancel_token: CancellationToken) -> Self {
+    fn new(event_tx: mpsc::Sender<MempoolEvent>, cancel_token: CancellationToken) -> Self {
         Self { event_tx, cancel_token }
     }
 }
@@ -43,6 +43,9 @@ pub struct Coordinator {
 }
 
 impl Coordinator {
+    /// Maximum number of messages of the message channel for each actor.
+    const ACTOR_CHANNEL_SIZE: usize = 100;
+
     /// Creates a new coordinator with the specified maximum number of inflight transactions.
     pub fn new(max_inflight_transactions: usize) -> Self {
         Self {
@@ -67,7 +70,7 @@ impl Coordinator {
         }
 
         // Construct the actor and add it to the registry for subsequent messaging.
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::channel(Self::ACTOR_CHANNEL_SIZE);
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let actor = AccountActor::new(origin, config, event_rx, cancel_token.clone());
         let handle = ActorHandle::new(event_tx, cancel_token);
@@ -81,10 +84,10 @@ impl Coordinator {
     }
 
     /// Broadcasts an event to all account actors.
-    pub fn broadcast_event(&self, event: &MempoolEvent) {
-        self.actor_registry.iter().for_each(|(account_prefix, handle)| {
-            Self::send(&handle.event_tx, event, *account_prefix);
-        });
+    pub async fn broadcast_event(&self, event: &MempoolEvent) {
+        for (account_prefix, handle) in &self.actor_registry {
+            Self::send(handle, event, *account_prefix).await;
+        }
     }
 
     /// Gets the next result from the actor join set and then handles it depending on the
@@ -124,17 +127,18 @@ impl Coordinator {
     }
 
     /// Helper function to send an event to a single account actor.
-    fn send(
-        event_tx: &mpsc::UnboundedSender<MempoolEvent>,
+    async fn send(
+        handle: &ActorHandle,
         event: &MempoolEvent,
         account_prefix: NetworkAccountPrefix,
     ) {
-        if let Err(error) = event_tx.send(event.clone()) {
+        if let Err(error) = handle.event_tx.send(event.clone()).await {
             tracing::warn!(
                 account = %account_prefix,
                 error = ?error,
                 "actor channel disconnected"
             );
+            handle.cancel_token.cancel();
         }
     }
 }

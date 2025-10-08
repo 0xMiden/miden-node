@@ -190,17 +190,17 @@ impl NetworkTransactionBuilder {
                         self.coordinator.spawn_actor(account, account_actor_config).await;
                     }
                 } else {
-                    self.coordinator.broadcast_event(&event);
+                    self.coordinator.broadcast_event(&event).await;
                 }
             },
             // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, .. } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
-                self.coordinator.broadcast_event(&event);
+                self.coordinator.broadcast_event(&event).await;
             },
             // Broadcast to all actors.
             MempoolEvent::TransactionsReverted(_) => {
-                self.coordinator.broadcast_event(&event);
+                self.coordinator.broadcast_event(&event).await;
             },
         }
     }

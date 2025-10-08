@@ -14,6 +14,7 @@
 - Implemented storage map `DataStore` function ([#1226](https://github.com/0xMiden/miden-node/pull/1226)).
 - [BREAKING] Renamed `RemoteProverProxy` to `RemoteProverClient` ([#1236](https://github.com/0xMiden/miden-node/pull/1236)).
 - Added pagination to `SyncNotes` endpoint ([#1257](https://github.com/0xMiden/miden-node/pull/1257)).
+- [BREAKING] Response type nuances of `GetAccountProof` in the public store API (#[1277](https://github.com/0xMiden/miden-node/pull/1277)).
 
 ## v0.11.2 (2025-09-10)
 

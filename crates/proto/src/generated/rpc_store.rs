@@ -110,7 +110,7 @@ pub mod account_proof_response {
         #[prost(bytes = "vec", optional, tag = "3")]
         pub code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
         /// Account asset vault data; empty if vault commitments matched or the requester
-        /// ommitted it in the request.
+        /// omitted it in the request.
         #[prost(message, optional, tag = "4")]
         pub vault_details: ::core::option::Option<super::AccountVaultDetails>,
     }
@@ -152,46 +152,20 @@ pub mod account_storage_details {
         /// endpoint should be used to get all storage map data.
         #[prost(bool, tag = "2")]
         pub too_many_entries: bool,
-        #[prost(oneof = "account_storage_map_details::MapEntries", tags = "3, 4")]
-        pub map_entries: ::core::option::Option<account_storage_map_details::MapEntries>,
+        /// By default we provide all storage entries.
+        #[prost(message, optional, tag = "3")]
+        pub entries: ::core::option::Option<account_storage_map_details::MapEntries>,
     }
     /// Nested message and enum types in `AccountStorageMapDetails`.
     pub mod account_storage_map_details {
-        /// Wrapper for repeated storage map entries including their proofs
-        #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct MapEntriesWithProofs {
-            #[prost(message, repeated, tag = "1")]
-            pub entries: ::prost::alloc::vec::Vec<
-                map_entries_with_proofs::StorageMapEntryWithProof,
-            >,
-        }
-        /// Nested message and enum types in `MapEntriesWithProofs`.
-        pub mod map_entries_with_proofs {
-            /// Definition of individual storage entries including a proof
-            #[derive(Clone, PartialEq, ::prost::Message)]
-            pub struct StorageMapEntryWithProof {
-                #[prost(message, optional, tag = "1")]
-                pub key: ::core::option::Option<
-                    super::super::super::super::primitives::Digest,
-                >,
-                #[prost(message, optional, tag = "2")]
-                pub value: ::core::option::Option<
-                    super::super::super::super::primitives::Digest,
-                >,
-                #[prost(message, optional, tag = "3")]
-                pub proof: ::core::option::Option<
-                    super::super::super::super::primitives::SmtOpening,
-                >,
-            }
-        }
         /// Wrapper for repeated storage map entries
         #[derive(Clone, PartialEq, ::prost::Message)]
-        pub struct AllMapEntries {
+        pub struct MapEntries {
             #[prost(message, repeated, tag = "1")]
-            pub entries: ::prost::alloc::vec::Vec<all_map_entries::StorageMapEntry>,
+            pub entries: ::prost::alloc::vec::Vec<map_entries::StorageMapEntry>,
         }
-        /// Nested message and enum types in `AllMapEntries`.
-        pub mod all_map_entries {
+        /// Nested message and enum types in `MapEntries`.
+        pub mod map_entries {
             /// Definition of individual storage entries.
             #[derive(Clone, Copy, PartialEq, ::prost::Message)]
             pub struct StorageMapEntry {
@@ -204,16 +178,6 @@ pub mod account_storage_details {
                     super::super::super::super::primitives::Digest,
                 >,
             }
-        }
-        #[derive(Clone, PartialEq, ::prost::Oneof)]
-        pub enum MapEntries {
-            /// By default we provide all storage entries.
-            #[prost(message, tag = "3")]
-            All(AllMapEntries),
-            /// If only a subset is requested, we respond with proofs.
-            /// TODO compress, see <<https://github.com/0xMiden/miden-node/pull/1158>>
-            #[prost(message, tag = "4")]
-            WithProofs(MapEntriesWithProofs),
         }
     }
 }

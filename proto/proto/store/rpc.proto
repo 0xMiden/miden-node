@@ -36,7 +36,7 @@ service Rpc {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
-    // Returns a list of comitted notes matching the provided note IDs.
+    // Returns a list of committed notes matching the provided note IDs.
     rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
 
     // Returns the script for a note by its root.
@@ -194,19 +194,8 @@ message AccountVaultDetails {
 // Account storage details for AccountProofResponse
 message AccountStorageDetails {
     message AccountStorageMapDetails {
-        // Wrapper for repeated storage map entries including their proofs
-        message MapEntriesWithProofs {
-            // Definition of individual storage entries including a proof
-            message StorageMapEntryWithProof {
-                primitives.Digest key = 1;
-                primitives.Digest value = 2;
-                primitives.SmtOpening proof = 3;
-            }
-
-            repeated StorageMapEntryWithProof entries = 1;
-        }
         // Wrapper for repeated storage map entries
-        message AllMapEntries {
+        message MapEntries {
             // Definition of individual storage entries.
             message StorageMapEntry {
                 primitives.Digest key = 1;
@@ -223,14 +212,8 @@ message AccountStorageDetails {
         // endpoint should be used to get all storage map data.
         bool too_many_entries = 2;
 
-        oneof map_entries {
-            // By default we provide all storage entries.
-            AllMapEntries all = 3;
-
-            // If only a subset is requested, we respond with proofs.
-            // TODO compress, see <https://github.com/0xMiden/miden-node/pull/1158>
-            MapEntriesWithProofs with_proofs = 4;
-        }
+        // By default we provide all storage entries.
+        MapEntries entries = 3;
     }
 
     // Account storage header (storage slot info for up to 256 slots)

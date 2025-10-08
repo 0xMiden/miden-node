@@ -1,4 +1,4 @@
-//! Procedural macro for deriving the GrpcError trait on error enums.
+//! Procedural macro for deriving the `GrpcError` trait on error enums.
 //!
 //! This macro simplifies the creation of gRPC-compatible error enums by automatically:
 //! - Generating a companion error enum for gRPC serialization
@@ -30,11 +30,12 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, Ident, parse_macro_input};
 
-/// Derives the GrpcError trait for an error enum.
+/// Derives the `GrpcError` trait for an error enum.
 ///
 /// # Attributes
 ///
-/// - `#[grpc(internal)]` - Marks a variant as an internal error (will map to tonic::Code::Internal)
+/// - `#[grpc(internal)]` - Marks a variant as an internal error (will map to
+///   `tonic::Code::Internal`)
 ///
 /// # Generated Code
 ///
@@ -49,7 +50,7 @@ pub fn derive_grpc_error(input: TokenStream) -> TokenStream {
 
     let name = &input.ident;
     let vis = &input.vis;
-    let grpc_name = Ident::new(&format!("{}GrpcError", name), name.span());
+    let grpc_name = Ident::new(&format!("{name}GrpcError"), name.span());
 
     let variants = match &input.data {
         Data::Enum(data) => &data.variants,

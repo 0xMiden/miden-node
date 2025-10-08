@@ -107,3 +107,5 @@ pub enum MyError {
 }
 ```
 
+## License
+This project is [MIT licensed](../../LICENSE).

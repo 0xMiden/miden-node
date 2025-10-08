@@ -431,7 +431,7 @@ impl AccountStorageMapDetails {
             SlotData::All => {
                 // For "All" requests, check if total map size exceeds limit
                 // Fix off-by-one error: use skip() instead of nth() to check for entries >= limit
-                if storage_map.entries().skip(Self::MAX_RETURN_ENTRIES).next().is_some() {
+                if storage_map.entries().nth(Self::MAX_RETURN_ENTRIES).is_some() {
                     Self::too_many_entries(slot_index)
                 } else {
                     Self::from_all_entries(slot_index, storage_map)

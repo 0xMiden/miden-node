@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
-use miden_air::HashFunction;
+use miden_air::ExecutionProof;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
@@ -40,7 +40,6 @@ use miden_objects::transaction::{
     ProvenTransactionBuilder,
     TransactionHeader,
 };
-use miden_objects::vm::ExecutionProof;
 use miden_objects::{AssetError, Felt, ONE, Word};
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -51,7 +50,6 @@ use tokio::{fs, task};
 use tonic::service::interceptor::InterceptedService;
 use tonic::transport::Channel;
 use url::Url;
-use winterfell::Proof;
 
 mod metrics;
 
@@ -311,14 +309,13 @@ fn create_note(faucet_id: AccountId, target_id: AccountId, rng: &mut RpoRandomCo
 /// the given index.
 fn create_account(public_key: PublicKey, index: u64, storage_mode: AccountStorageMode) -> Account {
     let init_seed: Vec<_> = index.to_be_bytes().into_iter().chain([0u8; 24]).collect();
-    let (new_account, _) = AccountBuilder::new(init_seed.try_into().unwrap())
+    AccountBuilder::new(init_seed.try_into().unwrap())
         .account_type(AccountType::RegularAccountImmutableCode)
         .storage_mode(storage_mode)
-        .with_auth_component(AuthRpoFalcon512::new(public_key))
+        .with_auth_component(AuthRpoFalcon512::new(public_key.into()))
         .with_component(BasicWallet)
         .build()
-        .unwrap();
-    new_account
+        .unwrap()
 }
 
 /// Creates a new faucet account.
@@ -329,14 +326,13 @@ fn create_faucet() -> Account {
     let init_seed = [0_u8; 32];
 
     let token_symbol = TokenSymbol::new("TEST").unwrap();
-    let (new_faucet, _seed) = AccountBuilder::new(init_seed)
+    AccountBuilder::new(init_seed)
         .account_type(AccountType::FungibleFaucet)
         .storage_mode(AccountStorageMode::Private)
         .with_component(BasicFungibleFaucet::new(token_symbol, 2, Felt::new(u64::MAX)).unwrap())
-        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key()))
+        .with_auth_component(AuthRpoFalcon512::new(key_pair.public_key().into()))
         .build()
-        .unwrap();
-    new_faucet
+        .unwrap()
 }
 
 /// Creates a proven batch from a list of transactions and a reference block.
@@ -412,7 +408,7 @@ fn create_consume_note_tx(
         block_ref.commitment(),
         fee_from_block(block_ref).unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
+        ExecutionProof::new_dummy(),
     )
     .add_input_notes(vec![input_note])
     .account_update_details(details)
@@ -450,7 +446,7 @@ fn create_emit_note_tx(
         )
         .unwrap(),
         u32::MAX.into(),
-        ExecutionProof::new(Proof::new_dummy(), HashFunction::default()),
+        ExecutionProof::new_dummy(),
     )
     .add_output_notes(output_notes.into_iter().map(OutputNote::Full).collect::<Vec<OutputNote>>())
     .build()

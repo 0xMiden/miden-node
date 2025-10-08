@@ -27,7 +27,7 @@ use miden_objects::account::{
 use miden_objects::asset::{FungibleAsset, TokenSymbol};
 use miden_objects::block::FeeParameters;
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
-use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, Word, ZERO};
+use miden_objects::{Felt, FieldElement, ONE, TokenSymbolError, ZERO};
 use rand::distr::weighted::Weight;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -119,8 +119,7 @@ impl GenesisConfig {
             .chain(fungible_faucet_configs.into_iter())
         {
             let symbol = fungible_faucet_config.symbol.clone();
-            let (faucet_account, faucet_account_seed, secret_key) =
-                fungible_faucet_config.build_account()?;
+            let (faucet_account, secret_key) = fungible_faucet_config.build_account()?;
 
             if faucet_accounts.insert(symbol.clone(), faucet_account.clone()).is_some() {
                 return Err(GenesisConfigError::DuplicateFaucetDefinition { symbol });
@@ -130,7 +129,6 @@ impl GenesisConfig {
                 format!("faucet_{symbol}.mac", symbol = symbol.to_string().to_lowercase()),
                 faucet_account.id(),
                 secret_key,
-                faucet_account_seed,
             ));
             // Do _not_ collect the account, only after we know all wallet assets
             // we know the remaining supply in the faucets.
@@ -157,7 +155,7 @@ impl GenesisConfig {
 
             let mut rng = ChaCha20Rng::from_seed(rand::random());
             let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-            let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key() };
+            let auth = AuthScheme::RpoFalcon512 { pub_key: secret_key.public_key().into() };
             let init_seed: [u8; 32] = rng.random();
 
             let account_type = if has_updatable_code {
@@ -166,7 +164,7 @@ impl GenesisConfig {
                 AccountType::RegularAccountImmutableCode
             };
             let account_storage_mode = storage_mode.into();
-            let (mut wallet_account, wallet_account_seed) =
+            let mut wallet_account =
                 create_basic_wallet(init_seed, auth, account_type, account_storage_mode)?;
 
             // Add fungible assets and track the faucet adjustments per faucet/asset.
@@ -199,7 +197,6 @@ impl GenesisConfig {
                 format!("wallet_{index:0zero_padding_width$}.mac"),
                 wallet_account.id(),
                 secret_key,
-                wallet_account_seed,
             ));
 
             wallet_accounts.push(wallet_account);
@@ -335,7 +332,7 @@ pub struct FungibleFaucetConfig {
 
 impl FungibleFaucetConfig {
     /// Create a fungible faucet from a config entry
-    fn build_account(self) -> Result<(Account, Word, SecretKey), GenesisConfigError> {
+    fn build_account(self) -> Result<(Account, SecretKey), GenesisConfigError> {
         let FungibleFaucetConfig {
             symbol,
             decimals,
@@ -344,7 +341,7 @@ impl FungibleFaucetConfig {
         } = self;
         let mut rng = ChaCha20Rng::from_seed(rand::random());
         let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));
-        let auth = AuthRpoFalcon512::new(secret_key.public_key());
+        let auth = AuthRpoFalcon512::new(secret_key.public_key().into());
         let init_seed: [u8; 32] = rng.random();
 
         let max_supply = Felt::try_from(max_supply)
@@ -353,7 +350,7 @@ impl FungibleFaucetConfig {
         let component = BasicFungibleFaucet::new(*symbol.as_ref(), decimals, max_supply)?;
 
         // It's similar to `fn create_basic_fungible_faucet`, but we need to cover more cases.
-        let (faucet_account, faucet_account_seed) = AccountBuilder::new(init_seed)
+        let faucet_account = AccountBuilder::new(init_seed)
             .account_type(AccountType::FungibleFaucet)
             .storage_mode(storage_mode.into())
             .with_auth_component(auth)
@@ -362,7 +359,7 @@ impl FungibleFaucetConfig {
 
         debug_assert_eq!(faucet_account.nonce(), Felt::ZERO);
 
-        Ok((faucet_account, faucet_account_seed, secret_key))
+        Ok((faucet_account, secret_key))
     }
 }
 
@@ -429,7 +426,7 @@ pub struct AccountFileWithName {
 #[derive(Debug, Clone)]
 pub struct AccountSecrets {
     // name, account, private key, account seed
-    pub secrets: Vec<(String, AccountId, SecretKey, Word)>,
+    pub secrets: Vec<(String, AccountId, SecretKey)>,
 }
 
 impl AccountSecrets {
@@ -444,13 +441,12 @@ impl AccountSecrets {
         let account_lut = IndexMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );
-        self.secrets.iter().map(move |(name, account_id, secret_key, account_seed)| {
+        self.secrets.iter().map(move |(name, account_id, secret_key)| {
             let account = account_lut
                 .get(account_id)
                 .ok_or(GenesisConfigError::MissingGenesisAccount { account_id: *account_id })?;
             let account_file = AccountFile::new(
                 account.clone(),
-                Some(*account_seed),
                 vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
             );
             let name = name.to_string();

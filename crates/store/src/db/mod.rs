@@ -92,6 +92,41 @@ pub struct TransactionSummary {
     pub transaction_id: TransactionId,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct TransactionRecord {
+    pub block_num: BlockNumber,
+    pub transaction_id: TransactionId,
+    pub account_id: AccountId,
+    pub initial_state_commitment: Word,
+    pub final_state_commitment: Word,
+    pub input_notes: Vec<Nullifier>, // Store nullifiers for input notes
+    pub output_notes: Vec<NoteId>,   // Store note IDs for output notes
+}
+
+impl TransactionRecord {
+    /// Convert to proto `TransactionRecord`, but requires note sync records for output notes.
+    /// For `sync_transactions` RPC, we need to fetch note sync records separately since we only
+    /// store note IDs in the database.
+    pub fn into_proto_with_note_records(
+        self,
+        note_records: Vec<NoteRecord>,
+    ) -> proto::rpc_store::TransactionRecord {
+        let output_notes: Vec<proto::note::NoteSyncRecord> =
+            note_records.into_iter().map(Into::into).collect();
+
+        proto::rpc_store::TransactionRecord {
+            transaction_header: Some(proto::transaction::TransactionHeader {
+                account_id: Some(self.account_id.into()),
+                initial_state_commitment: Some(self.initial_state_commitment.into()),
+                final_state_commitment: Some(self.final_state_commitment.into()),
+                input_notes: self.input_notes.into_iter().map(From::from).collect(),
+                output_notes,
+            }),
+            block_num: self.block_num.as_u32(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NoteRecord {
     pub block_num: BlockNumber,
@@ -115,6 +150,22 @@ impl From<NoteRecord> for proto::note::CommittedNote {
             details: note.details.map(|details| details.to_bytes()),
         });
         Self { inclusion_proof, note }
+    }
+}
+
+impl From<NoteRecord> for proto::note::NoteSyncRecord {
+    fn from(value: NoteRecord) -> Self {
+        let note_id = value.note_id.into();
+        let note_index_in_block = value.note_index.leaf_index_value().into();
+        let metadata = value.metadata.into();
+        let inclusion_path = value.inclusion_path.into();
+
+        proto::note::NoteSyncRecord {
+            note_id: Some(note_id),
+            note_index_in_block,
+            metadata: Some(metadata),
+            inclusion_path: Some(inclusion_path),
+        }
     }
 }
 
@@ -383,11 +434,11 @@ impl Db {
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn get_note_sync(
         &self,
-        block_num: BlockNumber,
+        block_range: RangeInclusive<BlockNumber>,
         note_tags: Vec<u32>,
-    ) -> Result<NoteSyncUpdate, NoteSyncError> {
+    ) -> Result<(NoteSyncUpdate, BlockNumber), NoteSyncError> {
         self.transact("notes sync task", move |conn| {
-            queries::get_note_sync(conn, block_num, note_tags.as_slice())
+            queries::get_note_sync(conn, note_tags.as_slice(), block_range)
         })
         .await
     }
@@ -535,6 +586,23 @@ impl Db {
     pub async fn select_note_script_by_root(&self, root: Word) -> Result<Option<NoteScript>> {
         self.transact("note script by root", move |conn| {
             queries::select_note_script_by_root(conn, root)
+        })
+        .await
+    }
+
+    /// Returns the complete transaction records for the specified accounts within the specified
+    /// block range, including state commitments and note IDs.
+    ///
+    /// Note: This method is size-limited (~5MB) and may not return all matching transactions
+    /// if the limit is exceeded. Transactions from partial blocks are excluded to maintain
+    /// consistency.
+    pub async fn select_transactions_records(
+        &self,
+        account_ids: Vec<AccountId>,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(BlockNumber, Vec<TransactionRecord>)> {
+        self.transact("full transactions records", move |conn| {
+            queries::select_transactions_records(conn, &account_ids, block_range)
         })
         .await
     }

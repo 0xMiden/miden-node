@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "bin/network-monitor",
   "bin/node",
   "bin/remote-prover",
   "bin/stress-test",
@@ -52,12 +53,13 @@ miden-tx              = { branch = "next", default-features = false, git = "http
 miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { version = "0.17" }
+miden-air = { features = ["std", "testing"], version = "0.18" }
 
 # External dependencies
 anyhow             = { version = "1.0" }
 assert_matches     = { version = "1.5" }
 async-trait        = { version = "0.1" }
+clap               = { features = ["derive"], version = "4.5" }
 fs-err             = { version = "3" }
 futures            = { version = "0.3" }
 hex                = { version = "0.4" }

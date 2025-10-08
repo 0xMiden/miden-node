@@ -4,6 +4,7 @@
 )]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::ops::RangeInclusive;
 
 use diesel::prelude::{
     BoolExpressionMethods,
@@ -64,17 +65,18 @@ use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{DatabaseError, NoteRecord, NoteSyncRecord, NoteSyncUpdate, Page, schema};
 use crate::errors::NoteSyncError;
 
-/// Select notes matching the tags and account IDs search criteria.
+/// Select notes matching the tags and account IDs search criteria within a block range.
 ///
 /// # Parameters
 /// * `account_ids`: List of account IDs to filter by
 ///     - Limit: 0 <= size <= 1000
 /// * `note_tags`: List of note tags to filter by
 ///     - Limit: 0 <= count <= 1000
+/// * `block_range`: Range of blocks to search (inclusive)
 ///
 /// # Returns
 ///
-/// All matching notes from the first block greater than `block_num` containing a matching note.
+/// All matching notes from the first block within the range containing a matching note.
 /// A note is considered a match if it has any of the given tags, or if its sender is one of the
 /// given account IDs. If no matching notes are found at all, then an empty vector is returned.
 ///
@@ -108,7 +110,8 @@ use crate::errors::NoteSyncError;
 ///             notes
 ///         WHERE
 ///             (tag IN (?1) OR sender IN (?2)) AND
-///             block_num > ?3
+///             block_num > ?3 AND
+///             block_num <= ?4
 ///         ORDER BY
 ///             block_num ASC
 ///     LIMIT 1) AND
@@ -117,16 +120,17 @@ use crate::errors::NoteSyncError;
 /// ```
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
-    from_start_block: BlockNumber,
     account_ids: &[AccountId],
     note_tags: &[u32],
-) -> Result<Vec<NoteSyncRecord>, DatabaseError> {
+    block_range: RangeInclusive<BlockNumber>,
+) -> Result<(Vec<NoteSyncRecord>, BlockNumber), DatabaseError> {
     QueryParamAccountIdLimit::check(account_ids.len())?;
     QueryParamNoteTagLimit::check(note_tags.len())?;
     let desired_note_tags = Vec::from_iter(note_tags.iter().map(|tag| *tag as i32));
     let desired_senders = serialize_vec(account_ids.iter());
 
-    let start_block_num = from_start_block.to_raw_sql();
+    let start_block_num = block_range.start().to_raw_sql();
+    let end_block_num = block_range.end().to_raw_sql();
 
     // find block_num: select notes since block by tag and sender
     let Some(desired_block_num): Option<i64> =
@@ -137,12 +141,13 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
                     .or(schema::notes::sender.eq_any(&desired_senders[..])),
             )
             .filter(schema::notes::committed_at.gt(start_block_num))
+            .filter(schema::notes::committed_at.le(end_block_num))
             .order_by(schema::notes::committed_at.asc())
             .limit(1)
             .get_result(conn)
             .optional()?
     else {
-        return Ok(Vec::new());
+        return Ok((Vec::new(), *block_range.end()));
     };
 
     let notes = SelectDsl::select(schema::notes::table, NoteSyncRecordRawRow::as_select())
@@ -162,7 +167,7 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
             .get_results::<NoteSyncRecordRawRow>(conn)
             .map_err(DatabaseError::from)?;
 
-    vec_raw_try_into(notes)
+    Ok((vec_raw_try_into(notes)?, BlockNumber::from_raw_sql(desired_block_num)?))
 }
 
 /// Select all notes matching the given set of identifiers
@@ -530,17 +535,18 @@ pub(crate) fn select_unconsumed_network_notes_by_tag(
 /// Loads the data necessary for a note sync.
 pub(crate) fn get_note_sync(
     conn: &mut SqliteConnection,
-    block_num: BlockNumber,
     note_tags: &[u32],
-) -> Result<NoteSyncUpdate, NoteSyncError> {
+    block_range: RangeInclusive<BlockNumber>,
+) -> Result<(NoteSyncUpdate, BlockNumber), NoteSyncError> {
     QueryParamNoteTagLimit::check(note_tags.len()).map_err(DatabaseError::from)?;
 
-    let notes = select_notes_since_block_by_tag_and_sender(conn, block_num, &[], note_tags)?;
+    let (notes, last_included_block) =
+        select_notes_since_block_by_tag_and_sender(conn, &[], note_tags, block_range)?;
 
     let block_header =
         select_block_header_by_block_num(conn, notes.first().map(|note| note.block_num))?
             .ok_or(NoteSyncError::EmptyBlockHeadersTable)?;
-    Ok(NoteSyncUpdate { notes, block_header })
+    Ok((NoteSyncUpdate { notes, block_header }, last_included_block))
 }
 
 #[derive(Debug, Clone, PartialEq, Selectable, Queryable, QueryableByName)]

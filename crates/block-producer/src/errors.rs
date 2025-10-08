@@ -100,25 +100,92 @@ pub enum AddTransactionError {
     },
 }
 
+impl AddTransactionError {
+    fn api_error(&self) -> SubmitProvenTransactionGrpcError {
+        match self {
+            AddTransactionError::VerificationFailed(tx_verify_error) => match tx_verify_error {
+                VerifyTxError::InputNotesAlreadyConsumed(_) => {
+                    SubmitProvenTransactionGrpcError::InputNotesAlreadyConsumed
+                },
+                VerifyTxError::StoreConnectionFailed(_) => {
+                    SubmitProvenTransactionGrpcError::Internal
+                },
+                VerifyTxError::UnauthenticatedNotesNotFound(_) => {
+                    SubmitProvenTransactionGrpcError::UnauthenticatedNotesNotFound
+                },
+                VerifyTxError::OutputNotesAlreadyExist(_) => {
+                    SubmitProvenTransactionGrpcError::OutputNotesAlreadyExist
+                },
+                VerifyTxError::IncorrectAccountInitialCommitment { .. } => {
+                    SubmitProvenTransactionGrpcError::IncorrectAccountInitialCommitment
+                },
+                VerifyTxError::InvalidTransactionProof(_) => {
+                    SubmitProvenTransactionGrpcError::InvalidTransactionProof
+                },
+            },
+            AddTransactionError::StaleInputs { .. } => SubmitProvenTransactionGrpcError::Internal,
+            AddTransactionError::Expired { .. } => {
+                SubmitProvenTransactionGrpcError::TransactionExpired
+            },
+            AddTransactionError::TransactionDeserializationFailed(_) => {
+                SubmitProvenTransactionGrpcError::DeserializationFailed
+            },
+        }
+    }
+}
+
 impl From<AddTransactionError> for tonic::Status {
     fn from(value: AddTransactionError) -> Self {
-        match value {
-            AddTransactionError::VerificationFailed(
-                VerifyTxError::InputNotesAlreadyConsumed(_)
-                | VerifyTxError::UnauthenticatedNotesNotFound(_)
-                | VerifyTxError::OutputNotesAlreadyExist(_)
-                | VerifyTxError::IncorrectAccountInitialCommitment { .. }
-                | VerifyTxError::InvalidTransactionProof(_),
-            )
-            | AddTransactionError::Expired { .. }
-            | AddTransactionError::TransactionDeserializationFailed(_) => {
-                Self::invalid_argument(value.as_report())
-            },
+        let api_error = value.api_error();
 
-            // Internal errors which should not be communicated to the user.
-            AddTransactionError::VerificationFailed(VerifyTxError::StoreConnectionFailed(_))
-            | AddTransactionError::StaleInputs { .. } => Self::internal("Internal error"),
+        let message = if api_error.is_internal() {
+            "Internal error".to_owned()
+        } else {
+            value.as_report()
+        };
+
+        tonic::Status::with_details(
+            api_error.tonic_code(),
+            message,
+            // Details are serialized as a single byte containing the error code value.
+            // Clients can decode this by reading the first byte of the details field.
+            // Example: details[0] will contain the SubmitProvenTransactionError enum value (0-8)
+            vec![api_error.api_code()].into(),
+        )
+    }
+}
+
+// Submit proven transaction error codes for gRPC Status::details
+// =================================================================================================
+
+#[derive(Debug, Copy, Clone)]
+#[repr(u8)]
+pub(crate) enum SubmitProvenTransactionGrpcError {
+    Internal = 0,
+    DeserializationFailed = 1,
+    InvalidTransactionProof = 2,
+    IncorrectAccountInitialCommitment = 3,
+    InputNotesAlreadyConsumed = 4,
+    UnauthenticatedNotesNotFound = 5,
+    OutputNotesAlreadyExist = 6,
+    TransactionExpired = 7,
+}
+
+impl SubmitProvenTransactionGrpcError {
+    pub fn api_code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn tonic_code(self) -> tonic::Code {
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
         }
+    }
+
+    pub fn is_internal(self) -> bool {
+        matches!(self, SubmitProvenTransactionGrpcError::Internal)
     }
 }
 
@@ -131,11 +198,60 @@ pub enum SubmitProvenBatchError {
     Deserialization(#[source] miden_objects::utils::DeserializationError),
 }
 
+impl SubmitProvenBatchError {
+    fn api_error(&self) -> SubmitProvenBatchGrpcError {
+        match self {
+            SubmitProvenBatchError::Deserialization(_) => {
+                SubmitProvenBatchGrpcError::DeserializationFailed
+            },
+        }
+    }
+}
+
 impl From<SubmitProvenBatchError> for tonic::Status {
     fn from(value: SubmitProvenBatchError) -> Self {
-        match value {
-            SubmitProvenBatchError::Deserialization(_) => Self::invalid_argument(value.as_report()),
+        let api_error = value.api_error();
+
+        let message = if api_error.is_internal() {
+            "Internal error".to_owned()
+        } else {
+            value.as_report()
+        };
+
+        tonic::Status::with_details(
+            api_error.tonic_code(),
+            message,
+            vec![api_error.api_code()].into(),
+        )
+    }
+}
+
+// Submit proven batch error codes for gRPC Status::details
+// =================================================================================================
+
+#[derive(Debug, Copy, Clone)]
+#[repr(u8)]
+pub(crate) enum SubmitProvenBatchGrpcError {
+    #[allow(dead_code)]
+    Internal = 0,
+    DeserializationFailed = 1,
+}
+
+impl SubmitProvenBatchGrpcError {
+    pub fn api_code(self) -> u8 {
+        self as u8
+    }
+
+    pub fn tonic_code(self) -> tonic::Code {
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
         }
+    }
+
+    pub fn is_internal(self) -> bool {
+        matches!(self, SubmitProvenBatchGrpcError::Internal)
     }
 }
 
@@ -201,7 +317,7 @@ pub enum StoreError {
     #[error("account Id prefix already exists: {0}")]
     DuplicateAccountIdPrefix(AccountId),
     #[error("gRPC client error")]
-    GrpcClientError(Box<tonic::Status>),
+    GrpcClientError(#[from] Box<tonic::Status>),
     #[error("malformed response from store: {0}")]
     MalformedResponse(String),
     #[error("failed to parse response")]

@@ -196,16 +196,25 @@ impl rpc_server::Rpc for StoreApi {
     ) -> Result<Response<proto::rpc_store::SyncNotesResponse>, Status> {
         let request = request.into_inner();
 
-        let (state, mmr_proof) = self
+        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+
+        let chain_tip = self.state.latest_block_num().await;
+
+        let block_range = block_range.into_inclusive_range(chain_tip);
+
+        let (state, mmr_proof, last_block_included) = self
             .state
-            .sync_notes(request.block_num.into(), request.note_tags)
+            .sync_notes(request.note_tags, block_range)
             .await
             .map_err(internal_error)?;
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
         Ok(Response::new(proto::rpc_store::SyncNotesResponse {
-            chain_tip: self.state.latest_block_num().await.as_u32(),
+            pagination_info: Some(proto::rpc_store::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: last_block_included.as_u32(),
+            }),
             block_header: Some(state.block_header.into()),
             mmr_path: Some(mmr_proof.merkle_path.into()),
             notes,
@@ -307,14 +316,14 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_account_proof(
         &self,
         request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProof>, Status> {
+    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
         debug!(target: COMPONENT, ?request);
         let request = request.into_inner();
-        let account_request = request.try_into()?;
+        let account_proof_request = request.try_into()?;
 
-        let proof = self.state.get_account_proof(account_request).await?;
+        let proof = self.state.get_account_proof(account_proof_request).await?;
 
-        Ok(Response::new(proto::rpc_store::AccountProof::from(proof)))
+        Ok(Response::new(proof.into()))
     }
 
     #[instrument(
@@ -481,6 +490,59 @@ impl rpc_server::Rpc for StoreApi {
 
         Ok(Response::new(proto::rpc_store::MaybeNoteScript {
             script: note_script.map(Into::into),
+        }))
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.rpc_server.sync_transactions",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_transactions(
+        &self,
+        request: Request<proto::rpc_store::SyncTransactionsRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncTransactionsResponse>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        let request = request.into_inner();
+
+        let chain_tip = self.state.latest_block_num().await;
+        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
+        let block_range = block_range.into_inclusive_range(chain_tip);
+
+        let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
+
+        let (last_block_included, transaction_records_db) = self
+            .state
+            .sync_transactions(account_ids, block_range.clone())
+            .await
+            .map_err(internal_error)?;
+
+        // Convert database TransactionRecord to proto TransactionRecord
+        let mut transaction_records = Vec::with_capacity(transaction_records_db.len());
+
+        for tx_header in transaction_records_db {
+            // Retrieve full note data for output notes from the database
+            let note_records = self
+                .state
+                .get_notes_by_id(tx_header.output_notes.clone())
+                .await
+                .map_err(internal_error)?;
+
+            // Convert to proto using the helper method
+            let proto_record = tx_header.into_proto_with_note_records(note_records);
+            transaction_records.push(proto_record);
+        }
+
+        Ok(Response::new(proto::rpc_store::SyncTransactionsResponse {
+            pagination_info: Some(proto::rpc_store::PaginationInfo {
+                chain_tip: chain_tip.as_u32(),
+                block_num: last_block_included.as_u32(),
+            }),
+            transaction_records,
         }))
     }
 }

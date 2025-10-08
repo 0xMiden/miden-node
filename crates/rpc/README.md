@@ -26,6 +26,7 @@ The full gRPC method definitions can be found in the [proto](../proto/README.md)
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
 - [SyncStorageMaps](#syncstoragemaps)
+- [SyncTransactions](#synctransactions)
 
 <!--toc:end-->
 
@@ -76,7 +77,26 @@ Returns the script for a note by its root.
 
 ### SubmitProvenTransaction
 
-Submits proven transaction to the Miden network.
+Submits a proven transaction to the Miden network for inclusion in future blocks. The transaction must be properly formatted and include a valid execution proof.
+
+#### Error Handling
+
+When transaction submission fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                                    | Value | gRPC Status        | Description                                                   |
+|-----------------------------------------------|-------|--------------------|---------------------------------------------------------------|
+| `INTERNAL_ERROR`                              | 0     | `INTERNAL`         | Internal server error occurred                                |
+| `DESERIALIZATION_FAILED`                      | 1     | `INVALID_ARGUMENT` | Transaction could not be deserialized                         |
+| `INVALID_TRANSACTION_PROOF`                   | 2     | `INVALID_ARGUMENT` | Transaction execution proof is invalid                        |
+| `INCORRECT_ACCOUNT_INITIAL_COMMITMENT`        | 3     | `INVALID_ARGUMENT` | Account's initial state doesn't match current state           |
+| `INPUT_NOTES_ALREADY_CONSUMED`                | 4     | `INVALID_ARGUMENT` | Input notes have already been consumed by another transaction |
+| `UNAUTHENTICATED_NOTES_NOT_FOUND`             | 5     | `INVALID_ARGUMENT` | Required unauthenticated notes were not found                 |
+| `OUTPUT_NOTES_ALREADY_EXIST`                  | 6     | `INVALID_ARGUMENT` | Output note IDs are already in use                            |
+| `TRANSACTION_EXPIRED`                         | 7     | `INVALID_ARGUMENT` | Transaction has exceeded its expiration block height          |
+
+**Error Details Serialization**: The `Status.details` field contains a single byte with the numeric error code value. Clients can decode this by reading `details[0]` to get the error code (0-8) and mapping it to the corresponding enum value.
+
+Clients should inspect both the gRPC status code and the detailed error code in the `Status.details` field to determine the appropriate response. For `INTERNAL_ERROR` cases, the detailed error message is replaced with a generic message for security reasons.
 
 ---
 
@@ -108,13 +128,12 @@ the chain tip so that the caller knows when it has been reached.
 
 Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
 
-Client specifies the `note_tags` they are interested in, and the block height from which to search for new for matching
-notes for. The request will then return the next block containing any note matching the provided tags.
+Client specifies the `note_tags` they are interested in, and the block range from which to search for matching notes. The request will then return the next block containing any note matching the provided tags within the specified range.
+
 
 The response includes each note's metadata and inclusion proof.
 
-A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of
-the chain.
+A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of the chain.
 
 ---
 
@@ -142,6 +161,12 @@ Returns storage map synchronization data for a specified public account within a
 Caller specifies the `account_id` of the public account and the block range `block_range` for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
 
 This endpoint enables clients to maintain an updated view of account storage.
+
+---
+
+### SyncTransactions
+
+Returns transaction records for specific accounts within a block range.
 
 ---
 

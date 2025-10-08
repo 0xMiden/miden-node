@@ -2271,11 +2271,11 @@ dependencies = [
 
 [[package]]
 name = "miden-air"
-version = "0.17.2"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2871bc4f392053cd115d4532e4b0fb164791829cc94b35641ed72480547dfd1"
+checksum = "de4f41b69be0ed3fd236525bb731188bb8d902cb99009f5c2ef12c6570a9b1ef"
 dependencies = [
- "miden-core 0.17.2",
+ "miden-core 0.18.1",
  "thiserror 2.0.17",
  "winter-air",
  "winter-prover",
@@ -2335,12 +2335,13 @@ dependencies = [
 
 [[package]]
 name = "miden-core"
-version = "0.17.2"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "395ad0b07592486e02de3ff7f3bff1d7fa81b1a7120f7f0b1027d650d810bbab"
+checksum = "97d53557ea0e5e529675c562c1a90eb5afc242fdac14d1f85b98d770304f9a24"
 dependencies = [
- "miden-crypto 0.15.9",
- "miden-debug-types 0.17.2",
+ "enum_dispatch",
+ "miden-crypto 0.17.0",
+ "miden-debug-types 0.18.1",
  "miden-formatting",
  "num-derive",
  "num-traits",
@@ -2367,22 +2368,30 @@ dependencies = [
 
 [[package]]
 name = "miden-crypto"
-version = "0.15.9"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4329275a11c7d8328b14a7129b21d40183056dcd0d871c3069be6e550d6ca40"
+checksum = "4b8c283ed3017d58d9b648d9b1099f26abff52b185ecbb7b91ff4fb406c286b7"
 dependencies = [
  "blake3",
  "cc",
+ "chacha20poly1305",
+ "flume",
+ "getrandom 0.2.16",
  "glob",
+ "hkdf",
+ "k256",
  "num",
  "num-complex",
  "rand 0.9.2",
+ "rand_chacha 0.9.0",
  "rand_core 0.9.3",
+ "rand_hc",
  "sha3",
  "thiserror 2.0.17",
  "winter-crypto",
  "winter-math",
  "winter-utils",
+ "zeroize",
 ]
 
 [[package]]
@@ -2413,15 +2422,15 @@ dependencies = [
 
 [[package]]
 name = "miden-debug-types"
-version = "0.17.2"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c84e5b15ea6fe0f80688fde2d6e4f5a3b66417d2541388b7a6cf967c6a8a2bc0"
+checksum = "188d28a5d7df27e4735095e717845a4558b2d121f822f66e8cc2ddfddf92d5bc"
 dependencies = [
  "memchr",
- "miden-crypto 0.15.9",
+ "miden-crypto 0.17.0",
  "miden-formatting",
  "miden-miette",
- "miden-utils-sync 0.17.2",
+ "miden-utils-sync 0.18.1",
  "paste",
  "serde",
  "serde_spanned 1.0.2",
@@ -2523,6 +2532,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "miden-network-monitor"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "clap 4.5.48",
+ "humantime",
+ "miden-node-proto",
+ "miden-node-utils",
+ "miden-objects",
+ "miden-testing",
+ "miden-tx",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tonic",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "miden-node"
 version = "0.12.0"
 dependencies = [
@@ -2563,6 +2595,7 @@ dependencies = [
  "pretty_assertions",
  "rand 0.9.2",
  "rand_chacha 0.9.0",
+ "rstest",
  "serial_test",
  "tempfile",
  "thiserror 2.0.17",
@@ -2702,7 +2735,7 @@ dependencies = [
  "clap 4.5.48",
  "fs-err",
  "futures",
- "miden-air 0.17.2",
+ "miden-air 0.18.1",
  "miden-block-prover",
  "miden-lib",
  "miden-node-block-producer",
@@ -2715,7 +2748,6 @@ dependencies = [
  "tokio",
  "tonic",
  "url",
- "winterfell",
 ]
 
 [[package]]
@@ -2826,6 +2858,7 @@ dependencies = [
  "miden-tx",
  "miden-tx-batch-prover",
  "miette",
+ "opentelemetry",
  "pingora",
  "pingora-core",
  "pingora-limits",
@@ -2847,6 +2880,7 @@ dependencies = [
  "tonic-web",
  "tower-http",
  "tracing",
+ "tracing-opentelemetry",
  "uuid",
 ]
 
@@ -2944,9 +2978,9 @@ dependencies = [
 
 [[package]]
 name = "miden-utils-sync"
-version = "0.17.2"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb026e69ae937b2a83bf69ea86577e0ec2450cb22cce163190b9fd42f2972b63"
+checksum = "e1873b21e18ba6ab6c697f155a2adb8f35f5ac386f6bb41ae7c207b2ad683642"
 dependencies = [
  "lock_api",
  "loom",

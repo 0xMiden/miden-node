@@ -8,6 +8,7 @@ pub mod blockchain;
 pub mod note;
 pub mod ntx_builder_store;
 pub mod primitives;
+pub mod remote_prover;
 pub mod rpc;
 pub mod rpc_store;
 pub mod shared;

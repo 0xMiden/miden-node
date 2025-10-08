@@ -9,13 +9,25 @@
 - [BREAKING] Refactored `CheckNullifiersByPrefix` endpoint adding pagination ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
 - [BREAKING] Renamed `CheckNullifiersByPrefix` endpoint to `SyncNullifiers` ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
 - [BREAKING] Added `block_range` and `pagination_info` fields to paginated gRPC endpoints ([#1205](https://github.com/0xMiden/miden-node/pull/1205)).
+- Use `tonic` error codes for gRPC errors ([#1208](https://github.com/0xMiden/miden-node/pull/1208)).
 - [BREAKING] Replace `GetAccountProofs` with `GetAccountProof` in the public store API (#[1211](https://github.com/0xMiden/miden-node/pull/1211)).
+- Implemented storage map `DataStore` function ([#1226](https://github.com/0xMiden/miden-node/pull/1226)).
+- [BREAKING] Renamed `RemoteProverProxy` to `RemoteProverClient` ([#1236](https://github.com/0xMiden/miden-node/pull/1236)).
+- Added pagination to `SyncNotes` endpoint ([#1257](https://github.com/0xMiden/miden-node/pull/1257)).
+
+## v0.11.2 (2025-09-10)
+
+- Added support for keepalive requests against base path `/` of RPC server ([#1212](https://github.com/0xMiden/miden-node/pull/1212)).
+- [BREAKING] Replace `GetAccountProofs` with `GetAccountProof` in the public store API ([#1211](https://github.com/0xMiden/miden-node/pull/1211)).
+- [BREAKING] Optimize `GetAccountProof` for small accounts ([#1185](https://github.com/0xMiden/miden-node/pull/1185)).
 
 ## v0.11.1 (2025-09-08)
 
 - Removed decorators from scripts when submitting transactions and batches, and inserting notes into the DB ([#1194](https://github.com/
 0xMiden/miden-node/pull/1194)).
 - Refresh `miden-base` dependencies.
+- Added `SyncTransactions` gRPC endpoint for retrieving transactions for specific accounts within a block range ([#1224](https://github.com/0xMiden/miden-node/pull/1224)).
+- Added `miden-network-monitor` binary for monitoring the Miden network ([#1217](https://github.com/0xMiden/miden-node/pull/1217)).
 
 ## v0.11.0 (2025-08-28)
 

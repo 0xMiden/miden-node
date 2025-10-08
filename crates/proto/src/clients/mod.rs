@@ -113,6 +113,14 @@ pub type StoreBlockProducerClient =
 pub type StoreRpcClient =
     generated::rpc_store::rpc_client::RpcClient<InterceptedService<Channel, OtelInterceptor>>;
 
+pub type RemoteProverProxyStatusClient =
+    generated::remote_prover::proxy_status_api_client::ProxyStatusApiClient<
+        InterceptedService<Channel, OtelInterceptor>,
+    >;
+
+pub type RemoteProverClient =
+    generated::remote_prover::api_client::ApiClient<InterceptedService<Channel, OtelInterceptor>>;
+
 // GRPC CLIENT BUILDER TRAIT
 // ================================================================================================
 
@@ -152,6 +160,9 @@ pub struct StoreBlockProducer;
 
 #[derive(Copy, Clone, Debug)]
 pub struct StoreRpc;
+
+#[derive(Copy, Clone, Debug)]
+pub struct RemoteProverProxy;
 
 // CLIENT BUILDER IMPLEMENTATIONS
 // ================================================================================================
@@ -207,6 +218,25 @@ impl GrpcClientBuilder for StoreRpc {
 
     fn with_interceptor(channel: Channel, _config: &ClientConfig) -> Self::Service {
         generated::rpc_store::rpc_client::RpcClient::with_interceptor(channel, OtelInterceptor)
+    }
+}
+
+impl GrpcClientBuilder for RemoteProverProxy {
+    type Service = RemoteProverProxyStatusClient;
+
+    fn with_interceptor(channel: Channel, _config: &ClientConfig) -> Self::Service {
+        generated::remote_prover::proxy_status_api_client::ProxyStatusApiClient::with_interceptor(
+            channel,
+            OtelInterceptor,
+        )
+    }
+}
+
+impl GrpcClientBuilder for RemoteProverClient {
+    type Service = RemoteProverClient;
+
+    fn with_interceptor(channel: Channel, _config: &ClientConfig) -> Self::Service {
+        generated::remote_prover::api_client::ApiClient::with_interceptor(channel, OtelInterceptor)
     }
 }
 

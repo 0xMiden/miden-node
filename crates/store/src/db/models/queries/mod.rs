@@ -85,12 +85,19 @@ pub(crate) fn get_state_sync(
     account_ids: Vec<AccountId>,
     note_tags: Vec<u32>,
 ) -> Result<StateSyncUpdate, StateSyncError> {
+    let chain_tip = select_block_header_by_block_num(conn, None)?
+        .expect("Chain tip is not found")
+        .block_num();
+
+    // Sync notes from the starting block to the latest in the chain.
+    let block_range = from_start_block..=chain_tip;
+
     // select notes since block by tag and sender
-    let notes = select_notes_since_block_by_tag_and_sender(
+    let (notes, _) = select_notes_since_block_by_tag_and_sender(
         conn,
-        from_start_block,
         &account_ids[..],
         &note_tags[..],
+        block_range,
     )?;
 
     // select block header by block num

@@ -5,14 +5,22 @@ use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::batch::BatchId;
 use miden_objects::block::BlockNumber;
+use miden_objects::transaction::TransactionId;
 use opentelemetry::trace::Status;
-use opentelemetry::{Key, Value};
+use opentelemetry::{Key, StringValue, Value};
 
 use crate::ErrorReport;
 
 /// Utility functions for converting types into [`opentelemetry::Value`].
 pub trait ToValue {
     fn to_value(&self) -> Value;
+}
+
+impl<T: ToValue> ToValue for Vec<T> {
+    fn to_value(&self) -> Value {
+        let string_values = self.iter().map(|v| v.to_value().into()).collect::<Vec<StringValue>>();
+        Value::Array(string_values.into())
+    }
 }
 
 impl ToValue for Duration {
@@ -40,6 +48,12 @@ impl ToValue for BlockNumber {
 }
 
 impl ToValue for BatchId {
+    fn to_value(&self) -> Value {
+        self.to_hex().into()
+    }
+}
+
+impl ToValue for TransactionId {
     fn to_value(&self) -> Value {
         self.to_hex().into()
     }

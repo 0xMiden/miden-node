@@ -74,6 +74,13 @@ impl BlockStore {
         }
     }
 
+    #[instrument(
+        target = COMPONENT,
+        name = "store.block_store.save_block",
+        skip(self, data),
+        err,
+        fields(block_size = data.len())
+    )]
     pub async fn save_block(
         &self,
         block_num: BlockNumber,

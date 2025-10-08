@@ -158,7 +158,10 @@ pub async fn sync_notes(
         .iter()
         .map(|id| u32::from(NoteTag::from_account_id(*id)))
         .collect::<Vec<_>>();
-    let sync_request = proto::rpc_store::SyncNotesRequest { block_num: 0, note_tags };
+    let sync_request = proto::rpc_store::SyncNotesRequest {
+        block_range: Some(proto::rpc_store::BlockRange { block_from: 0, block_to: None }),
+        note_tags,
+    };
 
     let start = Instant::now();
     api_client.sync_notes(sync_request).await.unwrap();

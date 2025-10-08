@@ -16,9 +16,11 @@ use tracing::info;
 use url::Url;
 
 use crate::COMPONENT;
+use crate::server::health::HealthCheckLayer;
 
 mod accept;
 mod api;
+mod health;
 
 /// The RPC server component.
 ///
@@ -76,6 +78,7 @@ impl Rpc {
             .timeout(self.grpc_timeout)
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
+            .layer(HealthCheckLayer)
             .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(cors_for_grpc_web_layer())
             // Enables gRPC-web support.

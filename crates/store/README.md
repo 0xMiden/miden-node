@@ -28,6 +28,7 @@ The full gRPC API can be found [here](../../proto/proto/store.proto).
 - [SyncNotes](#syncnotes)
 - [SyncState](#syncstate)
 - [SyncStorageMaps](#syncstoragemaps)
+- [SyncTransactions](#synctransactions)
 <!--toc:end-->
 
 ---
@@ -128,13 +129,11 @@ the chain tip so that the caller knows when it has been reached.
 
 Returns info which can be used by the client to sync up to the tip of chain for the notes they are interested in.
 
-Client specifies the `note_tags` they are interested in, and the block height from which to search for new for matching
-notes for. The request will then return the next block containing any note matching the provided tags.
+Client specifies the `note_tags` they are interested in, and the block range from which to search for matching notes. The request will then return the next block containing any note matching the provided tags within the specified range.
 
 The response includes each note's metadata and inclusion proof.
 
-A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of
-the chain.
+A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of the chain.
 
 ---
 
@@ -162,6 +161,12 @@ Returns storage map synchronization data for a specified public account within a
 Caller specifies the `account_id` of the public account and the block range `block_range` for which to retrieve storage updates. The response includes all storage map key-value updates that occurred within that range, along with the last block included in the sync and the current chain tip.
 
 This endpoint enables clients to maintain an updated view of account storage.
+
+---
+
+### SyncTransactions
+
+Returns transaction records for specific accounts within a block range.
 
 ---
 

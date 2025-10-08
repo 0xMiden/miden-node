@@ -508,7 +508,7 @@ impl api_server::Api for RpcService {
     async fn get_account_proof(
         &self,
         request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProof>, Status> {
+    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);
@@ -575,6 +575,23 @@ impl api_server::Api for RpcService {
         debug!(target: COMPONENT, request = ?request);
 
         self.store.clone().get_note_script_by_root(request).await
+    }
+
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "rpc.server.sync_transactions",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn sync_transactions(
+        &self,
+        request: Request<proto::rpc_store::SyncTransactionsRequest>,
+    ) -> Result<Response<proto::rpc_store::SyncTransactionsResponse>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        self.store.clone().sync_transactions(request).await
     }
 }
 

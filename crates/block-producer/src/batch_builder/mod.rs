@@ -172,6 +172,7 @@ impl BatchJob {
             .and_then(|(txs, inputs)| Self::propose_batch(txs, inputs) )
             .inspect_ok(TelemetryInjectorExt::inject_telemetry)
             .and_then(|proposed| self.prove_batch(proposed))
+
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
             // handle errors after it considers the process complete (which makes sense).
             .and_then(|x| self.inject_failure(x))
@@ -324,27 +325,29 @@ impl TelemetryInjectorExt for SelectedBatch {
     fn inject_telemetry(&self) {
         Span::current().set_attribute("batch.id", self.id);
         Span::current().set_attribute("transactions.count", self.transactions.len());
-        Span::current().set_attribute(
-            "transactions.input_notes.count",
-            self.transactions
-                .iter()
-                .map(AuthenticatedTransaction::input_note_count)
-                .sum::<usize>(),
-        );
-        Span::current().set_attribute(
-            "transactions.output_notes.count",
-            self.transactions
-                .iter()
-                .map(AuthenticatedTransaction::output_note_count)
-                .sum::<usize>(),
-        );
-        Span::current().set_attribute(
-            "transactions.unauthenticated_notes.count",
-            self.transactions
-                .iter()
-                .map(|tx| tx.unauthenticated_notes().count())
-                .sum::<usize>(),
-        );
+        // Accumulate all telemetry based on transactions.
+        let (tx_ids, input_notes_count, output_notes_count, unauth_notes_count) =
+            self.transactions.iter().fold(
+                (vec![], 0, 0, 0),
+                |(
+                    mut tx_ids,
+                    mut input_notes_count,
+                    mut output_notes_count,
+                    mut unauth_notes_count,
+                ),
+                 tx| {
+                    tx_ids.push(tx.id());
+                    input_notes_count += tx.input_note_count();
+                    output_notes_count += tx.output_note_count();
+                    unauth_notes_count += tx.unauthenticated_notes().count();
+                    (tx_ids, input_notes_count, output_notes_count, unauth_notes_count)
+                },
+            );
+        Span::current().set_attribute("transactions.ids", tx_ids);
+        Span::current().set_attribute("transactions.input_notes.count", input_notes_count);
+        Span::current().set_attribute("transactions.output_notes.count", output_notes_count);
+        Span::current()
+            .set_attribute("transactions.unauthenticated_notes.count", unauth_notes_count);
     }
 }
 

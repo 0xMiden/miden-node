@@ -27,7 +27,7 @@ service Api {
     rpc GetAccountDetails(account.AccountId) returns (account.AccountDetails) {}
 
     // Returns the latest state proof of the specified account.
-    rpc GetAccountProof(rpc_store.AccountProofRequest) returns (rpc_store.AccountProof) {}
+    rpc GetAccountProof(rpc_store.AccountProofRequest) returns (rpc_store.AccountProofResponse) {}
 
     // Returns raw block data for the specified block number.
     rpc GetBlockByNumber(blockchain.BlockNumber) returns (blockchain.MaybeBlock) {}
@@ -95,6 +95,9 @@ service Api {
 
     // Returns storage map updates for specified account and storage slots within a block range.
     rpc SyncStorageMaps(rpc_store.SyncStorageMapsRequest) returns (rpc_store.SyncStorageMapsResponse) {}
+
+    // Returns transactions records for specific accounts within a block range.
+    rpc SyncTransactions(rpc_store.SyncTransactionsRequest) returns (rpc_store.SyncTransactionsResponse) {}
 }
 
 // RPC STATUS

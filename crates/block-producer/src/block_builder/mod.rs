@@ -8,6 +8,7 @@ use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
 use miden_objects::note::NoteHeader;
+use miden_objects::transaction::TransactionHeader;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
 use rand::Rng;
 use tokio::time::Duration;
@@ -278,10 +279,18 @@ impl TelemetryInjectorExt for SelectedBlock {
         let span = Span::current();
         span.set_attribute("block.number", self.block_number);
         span.set_attribute("block.batches.count", self.batches.len() as u32);
-        let tx_count = self
-            .batches
-            .iter()
-            .fold(0, |acc, batch| acc + batch.transactions().as_slice().len());
+        // Accumulate all telemetry based on batches.
+        let (batch_ids, tx_ids, tx_count) = self.batches.iter().fold(
+            (Vec::new(), Vec::new(), 0),
+            |(mut batch_ids, mut tx_ids, tx_count), batch| {
+                let tx_count = tx_count + batch.transactions().as_slice().len();
+                tx_ids.extend(batch.transactions().as_slice().iter().map(TransactionHeader::id));
+                batch_ids.push(batch.id());
+                (batch_ids, tx_ids, tx_count)
+            },
+        );
+        span.set_attribute("block.batch.ids", batch_ids);
+        span.set_attribute("block.transactions.ids", tx_ids);
         span.set_attribute("block.transactions.count", tx_count);
     }
 }

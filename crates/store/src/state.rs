@@ -8,15 +8,17 @@ use std::ops::RangeInclusive;
 use std::path::Path;
 use std::sync::Arc;
 
-use miden_node_proto::AccountWitnessRecord;
 use miden_node_proto::domain::account::{
-    AccountDetailsResponse,
+    AccountDetailRequest,
+    AccountDetails,
     AccountInfo,
     AccountProofRequest,
     AccountProofResponse,
+    AccountStorageDetails,
+    AccountStorageMapDetails,
+    AccountVaultDetails,
     NetworkAccountPrefix,
-    StorageMapKeysProof,
-    StorageSlotMapProof,
+    StorageMapRequest,
 };
 use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
@@ -669,22 +671,23 @@ impl State {
     ///
     /// # Arguments
     ///
-    /// - `block_num`: The last block *known* by the client, updates start from the next block.
     /// - `note_tags`: The tags the client is interested in, resulting notes are restricted to the
     ///   first block containing a matching note.
+    /// - `block_range`: The range of blocks from which to synchronize notes.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn sync_notes(
         &self,
-        block_num: BlockNumber,
         note_tags: Vec<u32>,
-    ) -> Result<(NoteSyncUpdate, MmrProof), NoteSyncError> {
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(NoteSyncUpdate, MmrProof, BlockNumber), NoteSyncError> {
         let inner = self.inner.read().await;
 
-        let note_sync = self.db.get_note_sync(block_num, note_tags).await?;
+        let (note_sync, last_included_block) =
+            self.db.get_note_sync(block_range, note_tags).await?;
 
         let mmr_proof = inner.blockchain.open(note_sync.block_header.block_num())?;
 
-        Ok((note_sync, mmr_proof))
+        Ok((note_sync, mmr_proof, last_included_block))
     }
 
     /// Returns data needed by the block producer to construct and prove the next block.
@@ -888,6 +891,7 @@ impl State {
 
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
+    #[allow(clippy::too_many_lines)]
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
@@ -898,68 +902,80 @@ impl State {
         let inner_state = self.inner.read().await;
 
         let account_id = account_request.account_id;
-
-        let account_details = if let Some(account_detail_request) = account_request.account_details
+        let account_details = if let Some(AccountDetailRequest {
+            code_commitment,
+            asset_vault_commitment,
+            storage_requests,
+        }) = account_request.details
         {
-            let info = self.db.select_account(account_id).await?;
+            let account_info = self.db.select_account(account_id).await?;
 
-            if let Some(details) = &info.details {
-                let mut storage_proofs = Vec::new();
+            // if we get a query for a _private_ account _with_ details requested, we'll error out
+            let Some(account) = account_info.details else {
+                return Err(DatabaseError::AccountNotPublic(account_id));
+            };
 
-                for StorageMapKeysProof { storage_index, storage_keys } in
-                    &account_detail_request.storage_requests
-                {
-                    if let Some(StorageSlot::Map(storage_map)) =
-                        details.storage().slots().get(*storage_index as usize)
-                    {
-                        for map_key in storage_keys {
-                            let proof = storage_map.open(map_key);
+            let storage_header = account.storage().to_header();
 
-                            let slot_map_key =
-                                StorageSlotMapProof { storage_slot: *storage_index, proof };
-                            storage_proofs.push(slot_map_key);
-                        }
-                    } else {
-                        return Err(AccountError::StorageSlotNotMap(*storage_index).into());
-                    }
-                }
+            let mut storage_map_details =
+                Vec::<AccountStorageMapDetails>::with_capacity(storage_requests.len());
 
-                // Only include unknown account code blobs
-                let account_code = match account_detail_request.code_commitment {
-                    Some(known_code_commitment)
-                        if known_code_commitment == details.code().commitment() =>
-                    {
-                        // the known code matches the expected commitment, which implies
-                        // the user already has that code
-                        None
-                    },
-                    _ => Some(details.code().to_bytes()),
+            for StorageMapRequest { slot_index, slot_data } in storage_requests {
+                let Some(StorageSlot::Map(storage_map)) =
+                    account.storage().slots().get(slot_index as usize)
+                else {
+                    return Err(AccountError::StorageSlotNotMap(slot_index).into());
                 };
-
-                let account_details_response = AccountDetailsResponse {
-                    account_header: AccountHeader::from(details),
-                    storage_header: details.storage().to_header(),
-                    account_code,
-                    storage_proofs,
-                };
-
-                Some(account_details_response)
-            } else {
-                None
+                let details = AccountStorageMapDetails::new(slot_index, slot_data, storage_map);
+                storage_map_details.push(details);
             }
+
+            // Only include unknown account code blobs, which is equal to a account code digest
+            // mismatch. If `None` was requested, don't return any.
+            let account_code = code_commitment
+                .is_some_and(|code_commitment| code_commitment != account.code().commitment())
+                .then(|| account.code().to_bytes());
+
+            // storage details
+            let storage_details = AccountStorageDetails {
+                header: storage_header,
+                map_details: storage_map_details,
+            };
+
+            // Handle vault details based on the `asset_vault_commitment`.
+            // Similar to `code_commitment`, if the provided commitment matches, we don't return
+            // vault data. If no commitment is provided or it doesn't match, we return
+            // the vault data. If the number of vault contained assets are exceeding a
+            // limit, we signal this back in the response and the user must handle that
+            // in follow-up request.
+            let vault_details = match asset_vault_commitment {
+                Some(commitment) if commitment == account.vault().root() => {
+                    // The client already has the correct vault data
+                    AccountVaultDetails::empty()
+                },
+                Some(_) => {
+                    // The commitment doesn't match, so return vault data
+                    AccountVaultDetails::new(account.vault())
+                },
+                None => {
+                    // No commitment provided, so don't return vault data
+                    AccountVaultDetails::empty()
+                },
+            };
+
+            Some(AccountDetails {
+                account_header: AccountHeader::from(account),
+                account_code,
+                vault_details,
+                storage_details,
+            })
         } else {
             None
         };
 
-        let witness = AccountWitnessRecord {
-            account_id, // FIXME TODO see account.proto we need to triple check this is correct
-            witness: inner_state.account_tree.open(account_id),
-        };
-
         let response = AccountProofResponse {
-            block_num: inner_state.latest_block_num(),
-            witness,
-            account_details,
+            witness: inner_state.account_tree.open(account_id),
+            details: account_details,
         };
 
         Ok(response)
@@ -1031,6 +1047,16 @@ impl State {
         root: Word,
     ) -> Result<Option<NoteScript>, DatabaseError> {
         self.db.select_note_script_by_root(root).await
+    }
+
+    /// Returns the complete transaction records for the specified accounts within the specified
+    /// block range, including state commitments and note IDs.
+    pub async fn sync_transactions(
+        &self,
+        account_ids: Vec<AccountId>,
+        block_range: RangeInclusive<BlockNumber>,
+    ) -> Result<(BlockNumber, Vec<crate::db::TransactionRecord>), DatabaseError> {
+        self.db.select_transactions_records(account_ids, block_range).await
     }
 }
 

@@ -36,7 +36,7 @@ service Rpc {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
-    // Returns a list of committed notes matching the provided note IDs.
+    // Returns a list of comitted notes matching the provided note IDs.
     rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
 
     // Returns the script for a note by its root.
@@ -168,7 +168,7 @@ message AccountProofResponse {
         optional bytes code = 3;
 
         // Account asset vault data; empty if vault commitments matched or the requester
-        // ommitted it in the request.
+        // omitted it in the request.
         optional AccountVaultDetails vault_details = 4;
     }
 

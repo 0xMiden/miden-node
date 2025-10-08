@@ -3,13 +3,17 @@ use std::fmt::{Debug, Display, Formatter};
 use miden_node_utils::formatting::format_opt;
 use miden_objects::Word;
 use miden_objects::account::{
-    Account, AccountHeader, AccountId, AccountStorageHeader, StorageMap, StorageMapWitness,
+    Account,
+    AccountHeader,
+    AccountId,
+    AccountStorageHeader,
+    StorageMap,
+    StorageMapWitness,
     StorageSlotType,
 };
 use miden_objects::asset::{Asset, AssetVault};
 use miden_objects::block::{AccountWitness, BlockNumber};
-use miden_objects::crypto::merkle::SmtProof;
-use miden_objects::crypto::merkle::SparseMerklePath;
+use miden_objects::crypto::merkle::{SmtProof, SparseMerklePath};
 use miden_objects::note::{NoteExecutionMode, NoteTag};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use thiserror::Error;

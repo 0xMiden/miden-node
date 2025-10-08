@@ -50,19 +50,3 @@ enum SubmitProvenTransactionGrpcError {
 
 Error codes are embedded as single bytes in `Status.details`
 
-<!--
-
-TODO: show this once the endpoint is public
-
-### SubmitProvenBatch Errors
-
-Batch submission errors are:
-
-```rust
-enum SubmitProvenBatchGrpcError {
-    Internal = 0,
-    DeserializationFailed = 1,
-}
-```
-
--->

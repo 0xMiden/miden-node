@@ -1,6 +1,8 @@
 use std::any::type_name;
 use std::num::TryFromIntError;
 
+// Re-export the GrpcError derive macro for convenience
+pub use miden_node_grpc_error_macro::GrpcError;
 use miden_objects::crypto::merkle::{SmtLeafError, SmtProofError};
 use miden_objects::utils::DeserializationError;
 use miden_objects::{AssetError, FeeError};
@@ -9,7 +11,9 @@ use thiserror::Error;
 use crate::domain::note::NetworkNoteError;
 
 pub mod block_producer;
-pub mod store;
+
+#[cfg(test)]
+mod test_macro;
 
 #[derive(Debug, Error)]
 pub enum ConversionError {
@@ -77,65 +81,3 @@ impl From<ConversionError> for tonic::Status {
         tonic::Status::invalid_argument(value.to_string())
     }
 }
-
-// GRPC ERROR TRAIT
-// ================================================================================================
-
-/// Common trait for all gRPC error enums
-pub trait GrpcError {
-    fn api_code(self) -> u8;
-    fn is_internal(&self) -> bool;
-
-    fn tonic_code(&self) -> tonic::Code {
-        if self.is_internal() {
-            tonic::Code::Internal
-        } else {
-            tonic::Code::InvalidArgument
-        }
-    }
-}
-
-// HELPER MACROS
-// ================================================================================================
-
-/// Implement the `GrpcError` trait for a given error type
-#[macro_export]
-macro_rules! grpc_error {
-    ($error:ty) => {
-        impl GrpcError for $error {
-            fn api_code(self) -> u8 {
-                self as u8
-            }
-
-            fn is_internal(&self) -> bool {
-                self == &Self::Internal
-            }
-        }
-    };
-}
-
-/// Implement Into<tonic::Status> for a given error type
-#[macro_export]
-macro_rules! into_tonic_status {
-    ($error:ty) => {
-        impl From<$error> for tonic::Status {
-            fn from(value: $error) -> Self {
-                let api_error = value.api_error();
-
-                let message = if api_error.is_internal() {
-                    "Internal error".to_owned()
-                } else {
-                    value.as_report()
-                };
-
-                tonic::Status::with_details(
-                    api_error.tonic_code(),
-                    message,
-                    vec![api_error.api_code()].into(),
-                )
-            }
-        }
-    };
-}
-
-//

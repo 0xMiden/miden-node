@@ -1,0 +1,20 @@
+[package]
+categories  = ["no-std"]
+description = "Procedural macro for deriving GrpcError trait (internal implementation detail - use miden-node-proto)"
+keywords    = ["grpc", "miden", "node"]
+name        = "miden-node-grpc-error-macro"
+publish     = false                                                                                                   # Internal implementation detail
+
+edition.workspace      = true
+license.workspace      = true
+readme.workspace       = true
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = "1.0"
+syn   = { features = ["full"], version = "2.0" }

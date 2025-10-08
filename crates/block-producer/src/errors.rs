@@ -1,11 +1,6 @@
 use miden_block_prover::ProvenBlockError;
-use miden_node_proto::errors::block_producer::{
-    SubmitProvenBatchGrpcError,
-    SubmitProvenTransactionGrpcError,
-};
+use miden_node_proto::errors::block_producer::SubmitProvenTransactionGrpcError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
-use miden_node_proto::into_tonic_status;
-use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -139,28 +134,34 @@ impl AddTransactionError {
     }
 }
 
-into_tonic_status!(AddTransactionError);
+impl From<AddTransactionError> for tonic::Status {
+    fn from(value: AddTransactionError) -> Self {
+        use miden_node_utils::ErrorReport as _;
+
+        let api_error = value.api_error();
+        let message = if api_error.is_internal() {
+            "Internal error".to_owned()
+        } else {
+            value.as_report()
+        };
+
+        tonic::Status::with_details(
+            api_error.tonic_code(),
+            message,
+            vec![api_error.api_code()].into(),
+        )
+    }
+}
 
 // Submit proven batch by user errors
 // =================================================================================================
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, GrpcError)]
+#[grpc(internal)]
 pub enum SubmitProvenBatchError {
     #[error("batch deserialization failed")]
     Deserialization(#[source] miden_objects::utils::DeserializationError),
 }
-
-impl SubmitProvenBatchError {
-    fn api_error(&self) -> SubmitProvenBatchGrpcError {
-        match self {
-            SubmitProvenBatchError::Deserialization(_) => {
-                SubmitProvenBatchGrpcError::DeserializationFailed
-            },
-        }
-    }
-}
-
-into_tonic_status!(SubmitProvenBatchError);
 
 // Batch building errors
 // =================================================================================================

@@ -1,6 +1,3 @@
-use crate::errors::GrpcError;
-use crate::grpc_error;
-
 // Submit proven transaction error codes for gRPC Status::details
 // =================================================================================================
 
@@ -17,17 +14,20 @@ pub enum SubmitProvenTransactionGrpcError {
     TransactionExpired = 7,
 }
 
-grpc_error!(SubmitProvenTransactionGrpcError);
+impl SubmitProvenTransactionGrpcError {
+    pub fn api_code(self) -> u8 {
+        self as u8
+    }
 
-// Submit proven batch error codes for gRPC Status::details
-// =================================================================================================
+    pub fn is_internal(&self) -> bool {
+        matches!(self, Self::Internal)
+    }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-#[repr(u8)]
-pub enum SubmitProvenBatchGrpcError {
-    #[allow(dead_code)]
-    Internal = 0,
-    DeserializationFailed = 1,
+    pub fn tonic_code(&self) -> tonic::Code {
+        if self.is_internal() {
+            tonic::Code::Internal
+        } else {
+            tonic::Code::InvalidArgument
+        }
+    }
 }
-
-grpc_error!(SubmitProvenBatchGrpcError);

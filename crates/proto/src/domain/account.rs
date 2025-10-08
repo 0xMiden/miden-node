@@ -428,37 +428,31 @@ impl AccountStorageMapDetails {
 
     pub fn new(slot_index: u8, slot_data: SlotData, storage_map: &StorageMap) -> Self {
         match slot_data {
-            SlotData::All => {
-                // For "All" requests, check if total map size exceeds limit
-                // Fix off-by-one error: use skip() instead of nth() to check for entries >= limit
-                if storage_map.entries().nth(Self::MAX_RETURN_ENTRIES).is_some() {
-                    Self::too_many_entries(slot_index)
-                } else {
-                    Self::from_all_entries(slot_index, storage_map)
-                }
-            },
-            SlotData::MapKeys(keys) => {
-                if keys.len() > Self::MAX_RETURN_ENTRIES {
-                    Self::too_many_entries(slot_index)
-                } else {
-                    Self::from_specific_keys(slot_index, &keys[..], storage_map)
-                }
-            },
+            SlotData::All => Self::from_all_entries(slot_index, storage_map),
+            SlotData::MapKeys(keys) => Self::from_specific_keys(slot_index, &keys[..], storage_map),
         }
     }
 
     fn from_all_entries(slot_index: u8, storage_map: &StorageMap) -> Self {
-        let map_entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
-        Self {
-            slot_index,
-            too_many_entries: false,
-            map_entries,
+        if storage_map.num_entries() > Self::MAX_RETURN_ENTRIES {
+            Self::too_many_entries(slot_index)
+        } else {
+            let map_entries = Vec::from_iter(storage_map.entries().map(|(k, v)| (*k, *v)));
+            Self {
+                slot_index,
+                too_many_entries: false,
+                map_entries,
+            }
         }
     }
 
-    fn from_specific_keys(slot_index: u8, _keys: &[Word], storage_map: &StorageMap) -> Self {
-        // TODO For now, we return all entries instead of specific keys with proofs
-        Self::from_all_entries(slot_index, storage_map)
+    fn from_specific_keys(slot_index: u8, keys: &[Word], storage_map: &StorageMap) -> Self {
+        if keys.len() > Self::MAX_RETURN_ENTRIES {
+            Self::too_many_entries(slot_index)
+        } else {
+            // TODO For now, we return all entries instead of specific keys with proofs
+            Self::from_all_entries(slot_index, storage_map)
+        }
     }
 
     pub fn too_many_entries(slot_index: u8) -> Self {

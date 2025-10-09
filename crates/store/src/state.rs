@@ -140,7 +140,12 @@ impl State {
             .map_err(StateInitializationError::DatabaseLoadError)?;
 
         let chain_mmr = load_mmr(&mut db).await?;
-        let account_tree = load_account_tree(&mut db).await?;
+        let block_headers = db.select_all_block_headers().await?;
+        let latest_block_num = block_headers
+            .last()
+            .map(|h| h.block_num())
+            .unwrap_or(BlockNumber::GENESIS);
+        let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
         let inner = RwLock::new(InnerState {
@@ -1083,9 +1088,9 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_account_tree(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
+async fn load_account_tree(db: &mut Db, block_num: BlockNumber) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
-    AccountTree::with_entries(account_data)
+    AccountTree::with_entries(block_num, account_data)
         .map_err(StateInitializationError::FailedToCreateAccountsTree)
 }

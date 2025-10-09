@@ -78,6 +78,7 @@ impl GenesisState {
             .collect();
 
         let account_smt = AccountTree::with_entries(
+            BlockNumber::GENESIS,
             accounts
                 .iter()
                 .map(|update| (update.account_id(), update.final_state_commitment())),

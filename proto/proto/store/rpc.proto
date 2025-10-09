@@ -146,7 +146,7 @@ message AccountProofRequest {
     account.AccountId account_id = 1;
 
     // Block at which we'd like to get this data. Must be close to the chain tip.
-    fixed32 block_num = 2;
+    blockchain.BlockNumber block_num = 2;
 
     // Request for additional account details; valid only for public accounts.
     optional AccountDetailRequest details = 3;
@@ -162,18 +162,21 @@ message AccountProofResponse {
         // Account storage data
         AccountStorageDetails storage_details = 2;
 
-        // Account code; empty if code commitments matched or none was requested
+        // Account code; empty if code commitments matched or none was requested.
         optional bytes code = 3;
 
-        // Account asset vault data; empty if vault commitments matched
+        // Account asset vault data; empty if vault commitments matched.
         optional AccountVaultDetails vault_details = 4;
     }
 
-    // Account ID, current state commitment, and SMT path
-    account.AccountWitness witness = 1;
+    // The block number at which the witness was observed.
+    blockchain.BlockNumber block_num = 1;
 
-    // Additional details for public accounts
-    optional AccountDetails details = 2;
+    // Account ID, current state commitment, and SMT path.
+    account.AccountWitness witness = 2;
+
+    // Additional details for public accounts.
+    optional AccountDetails details = 3;
 }
 
 // Account vault details for AccountProofResponse

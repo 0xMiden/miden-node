@@ -58,14 +58,20 @@ use crate::errors::DatabaseError;
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
-///     account_id = ?1;
+///     account_id = ?1
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
@@ -78,6 +84,52 @@ pub(crate) fn select_account(
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
+    .optional()?
+    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    let info = AccountWithCodeRawJoined::from(raw).try_into()?;
+    Ok(info)
+}
+
+/// Select the account details for an account id at a given block number from the DB using the given
+/// [`SqliteConnection`].
+///
+/// # Returns
+///
+/// The account details at the given block height, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
+/// FROM
+///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
+/// WHERE
+///     account_id = ?1 AND block_num = ?2
+/// ```
+pub(crate) fn select_historical_account_at(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<proto::domain::account::AccountInfo, DatabaseError> {
+    let raw = SelectDsl::select(
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .filter(schema::accounts::block_num.eq(block_num.to_raw_sql()))
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
@@ -100,14 +152,20 @@ pub(crate) fn select_account(
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
-///     network_account_id_prefix = ?1;
+///     network_account_id_prefix = ?1
 /// ```
 pub(crate) fn select_account_by_id_prefix(
     conn: &mut SqliteConnection,
@@ -137,10 +195,21 @@ pub(crate) fn select_account_by_id_prefix(
 /// # Returns
 ///
 /// The vector with the account id and corresponding commitment, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment
+/// FROM
+///     accounts
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_all_account_commitments(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<(AccountId, Word)>, DatabaseError> {
-    // SELECT account_id, account_commitment FROM accounts ORDER BY block_num ASC
     let raw = SelectDsl::select(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
@@ -174,13 +243,13 @@ pub(crate) fn select_all_account_commitments(
 /// FROM
 ///     account_vault_assets
 /// WHERE
-///     account_id = ?
-///     AND block_num >= ?
-///     AND block_num <= ?
+///     account_id = ?1
+///     AND block_num >= ?2
+///     AND block_num <= ?3
 /// ORDER BY
 ///     block_num ASC
 /// LIMIT
-///     ROW_LIMIT;
+///     ?4
 /// ```
 pub(crate) fn select_account_vault_assets(
     conn: &mut SqliteConnection,
@@ -261,7 +330,7 @@ pub(crate) fn select_account_vault_assets(
 /// WHERE
 ///     block_num > ?1 AND
 ///     block_num <= ?2 AND
-///     account_id IN rarray(?3)
+///     account_id IN (?3)
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -295,14 +364,20 @@ pub fn select_accounts_by_block_range(
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// ORDER BY
-///     block_num ASC;
+///     block_num ASC
 /// ```
 #[cfg(test)]
 pub(crate) fn select_all_accounts(
@@ -377,7 +452,7 @@ impl StorageMapValue {
 /// ORDER BY
 ///     block_num ASC
 /// LIMIT
-///     :row_limit;
+///     ?4
 /// ```
 /// Select account storage map values within a block range (inclusive).
 ///

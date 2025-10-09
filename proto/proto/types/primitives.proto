@@ -44,7 +44,7 @@ message SmtLeaf {
 // The opening of a leaf in an SMT.
 message SmtOpening {
     // The Merkle path to the leaf.
-    MerklePath path = 1;
+    SparseMerklePath path = 1;
 
     // The leaf itself.
     SmtLeaf leaf = 2;

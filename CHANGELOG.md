@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.3 (2025-10-09)
+
+- Tweaked HTTP configurations on the pingora proxy server ([#1281](https://github.com/0xMiden/miden-node/pull/1281)).
+
 ## v0.11.2 (2025-09-10)
 
 - Added support for keepalive requests against base path `/` of RPC server ([#1212](https://github.com/0xMiden/miden-node/pull/1212)).

@@ -2435,7 +2435,6 @@ name = "miden-network-monitor"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "axum",
  "clap 4.5.47",
  "humantime",

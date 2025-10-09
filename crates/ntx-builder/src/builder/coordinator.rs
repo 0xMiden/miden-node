@@ -112,12 +112,8 @@ impl Coordinator {
                 ActorShutdownReason::SemaphoreFailed(err) => Err(err).context("semaphore failed"),
             },
             Some(Err(err)) => {
-                if err.is_panic() {
-                    // TODO: this can be relaxed to be an error log.
-                    Err(err).context("actor join set panicked")
-                } else {
-                    Err(err).context("actor join set failed")
-                }
+                tracing::error!(err = %err, "actor task failed");
+                Ok(())
             },
             None => {
                 // There are no actors to wait for. Wait indefinitely until actors are spawned.

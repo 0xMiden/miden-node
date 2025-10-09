@@ -97,4 +97,22 @@ pub struct MonitorConfig {
         help = "Whether to enable OpenTelemetry"
     )]
     pub enable_otel: bool,
+
+    /// Path for the wallet account file.
+    #[arg(
+        long = "wallet-file",
+        env = "MIDEN_MONITOR_WALLET_FILE",
+        default_value = "wallet_account.bin",
+        help = "Path where the wallet account will be saved"
+    )]
+    pub wallet_file: String,
+
+    /// Path for the counter program account file.
+    #[arg(
+        long = "counter-file",
+        env = "MIDEN_MONITOR_COUNTER_FILE",
+        default_value = "counter_program.bin",
+        help = "Path where the counter program account will be saved"
+    )]
+    pub counter_file: String,
 }

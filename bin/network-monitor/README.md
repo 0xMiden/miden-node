@@ -35,6 +35,8 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
+- `--wallet-file`: Path where the wallet account will be saved (default: `wallet_account.bin`)
+- `--counter-file`: Path where the counter program account will be saved (default: `counter_program.bin`)
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -50,14 +52,16 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_STATUS_CHECK_INTERVAL`: Interval at which to check the status of the services
 - `MIDEN_MONITOR_PORT`: Web server port
 - `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing
+- `MIDEN_MONITOR_WALLET_FILE`: Path where the wallet account will be saved
+- `MIDEN_MONITOR_COUNTER_FILE`: Path where the counter program account will be saved
 
 ## Commands
 
-The monitor application supports two main commands:
+The monitor application supports one main command:
 
-### 1. Start Monitor
+### Start Monitor
 
-Starts the network monitoring service with the web dashboard.
+Starts the network monitoring service with the web dashboard. The monitor automatically creates and deploys Miden accounts if they don't already exist.
 
 ```bash
 # Start with default configuration
@@ -65,47 +69,24 @@ miden-network-monitor start
 
 # Start with custom configuration
 miden-network-monitor start --port 8080 --rpc-url http://localhost:50051
-```
 
-### 2. Deploy Account
-
-Creates and deploys Miden accounts to the network. This command creates two accounts:
-- A wallet account with RpoFalcon512 authentication
-- A counter program account with custom MASM script
-
-```bash
-# Deploy accounts with default file names
-miden-network-monitor deploy-account --rpc-url https://testnet.miden.io:443
-
-# Deploy accounts with custom file names
-miden-network-monitor deploy-account \
-  --rpc-url https://testnet.miden.io:443 \
+# Start with custom account file paths
+miden-network-monitor start \
   --wallet-file my_wallet.bin \
-  --counter-file my_counter.bin
-
-# Deploy accounts using environment variables
-MIDEN_MONITOR_RPC_URL="https://testnet.miden.io:443" \
-MIDEN_MONITOR_WALLET_FILE="my_wallet.bin" \
-MIDEN_MONITOR_COUNTER_FILE="my_counter.bin" \
-miden-network-monitor deploy-account
+  --counter-file my_counter.bin \
+  --rpc-url https://testnet.miden.io:443
 ```
 
-**Deploy Account Options:**
-- `--rpc-url <RPC_URL>`: The URL of the RPC service (required)
-- `--wallet-file <WALLET_FILE>`: Path where the wallet account will be saved (default: `wallet_account.bin`)
-- `--counter-file <COUNTER_FILE>`: Path where the counter program account will be saved (default: `counter_program.bin`)
-
-**Environment Variables for Deploy Account:**
-- `MIDEN_MONITOR_RPC_URL`: RPC service URL (can be used instead of `--rpc-url`)
-- `MIDEN_MONITOR_WALLET_FILE`: Path where the wallet account will be saved (can be used instead of `--wallet-file`)
-- `MIDEN_MONITOR_COUNTER_FILE`: Path where the counter program account will be saved (can be used instead of `--counter-file`)
-
-**What the Deploy Account Command Does:**
-1. Creates a wallet account with RpoFalcon512 authentication
-2. Creates a counter program account with a custom MASM script
+**Automatic Account Management:**
+The monitor automatically handles account creation and deployment:
+1. Checks if wallet and counter account files exist
+2. If files don't exist, creates new accounts:
+   - A wallet account with RpoFalcon512 authentication
+   - A counter program account with custom MASM script
 3. Saves both accounts to the specified files using the Miden AccountFile format
-4. The counter program includes authentication logic that only allows the wallet account to increment the counter
-5. Both accounts are ready for use in Miden transactions
+4. Deploys the accounts to the network via RPC
+5. The counter program includes authentication logic that only allows the wallet account to increment the counter
+6. Both accounts are ready for use in Miden transactions
 
 ## Usage
 
@@ -123,6 +104,8 @@ miden-network-monitor start \
   --faucet-test-interval 2m \
   --status-check-interval 3s \
   --port 8080 \
+  --wallet-file my_wallet.bin \
+  --counter-file my_counter.bin \
   --enable-otel
 
 # Get help
@@ -138,6 +121,8 @@ MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor 
 # Multiple remote provers and faucet testing
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" \
 MIDEN_MONITOR_FAUCET_URL="http://localhost:8080" \
+MIDEN_MONITOR_WALLET_FILE="my_wallet.bin" \
+MIDEN_MONITOR_COUNTER_FILE="my_counter.bin" \
 miden-network-monitor start
 ```
 
@@ -193,26 +178,42 @@ The web dashboard provides a clean, responsive interface with the following feat
 - **Interactive Elements**: Copy-to-clipboard functionality for genesis commitments, transaction IDs, and note IDs
 - **Responsive Design**: Optimized for both desktop and mobile viewing
 
-## Account Deployment
+## Account Management
 
-The `deploy-account` command provides a foundation for Miden account management and testing:
+The monitor automatically manages Miden accounts for testing and monitoring purposes:
 
 ### Created Accounts
 
 **Wallet Account:**
 - Uses RpoFalcon512 authentication scheme
 - Contains authentication keys for transaction signing
+- Automatically created if not present
 
 **Counter Program Account:**
 - Implements a simple counter with increment functionality
 - Includes authentication logic that restricts access to the wallet account
 - Uses custom MASM script with account ID-based authorization
+- Automatically created if not present
+
+### Account File Management
+
+The monitor automatically:
+1. Checks for existing account files on startup
+2. Creates new accounts if files don't exist
+3. Deploys accounts to the network via RPC
+4. Uses the specified file paths (default: `wallet_account.bin` and `counter_program.bin`)
 
 ### Example Usage
 
 ```bash
-# Deploy accounts for testing
-miden-network-monitor deploy-account --rpc-url https://testnet.miden.io:443
+# Start monitor with default account files
+miden-network-monitor start --rpc-url https://testnet.miden.io:443
+
+# Start monitor with custom account file paths
+miden-network-monitor start \
+  --rpc-url https://testnet.miden.io:443 \
+  --wallet-file my_wallet.bin \
+  --counter-file my_counter.bin
 
 # The generated files can be loaded in Miden applications:
 # - wallet_account.bin: Contains the wallet account with authentication keys

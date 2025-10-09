@@ -24,22 +24,13 @@ export.increment
     assert_eq.err="sender suffix not authorized"
     # => []
 
-    push.0
-    # => [0]
-
-    exec.account::get_item
+    push.0 exec.account::get_item
     # => [count]
-
-    push.1
-    # => [1, count]
     
-    add
+    push.1 add
     # => [count+1]
 
-    push.0
-    # [0, count+1]
-
-    exec.account::set_item
+    push.0 exec.account::set_item
     # => []
 
     exec.sys::truncate_stack
@@ -49,10 +40,7 @@ end
 # Get the counter (no auth required)
 # => [count]
 export.get_count
-    push.0
-    # => [0]
-
-    exec.account::get_item
+    push.0 exec.account::get_item
     # => [count]
 
     exec.sys::truncate_stack

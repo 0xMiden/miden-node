@@ -397,9 +397,29 @@ impl BlockProducerRpcServer {
         &self,
         request: proto::transaction::ProvenTransactionBatch,
     ) -> Result<proto::block_producer::SubmitProvenBatchResponse, SubmitProvenBatchError> {
-        let _batch = ProvenBatch::read_from_bytes(&request.encoded)
+        let batch = ProvenBatch::read_from_bytes(&request.encoded)
             .map_err(SubmitProvenBatchError::Deserialization)?;
 
-        todo!();
+        debug!(
+            target: COMPONENT,
+            batch_id = %batch.id().to_hex(),
+            reference_block_num = %batch.reference_block_num(),
+            transactions_count = %batch.transactions().as_slice().len(),
+            "Deserialized proven batch"
+        );
+
+        // Commit the batch to the mempool
+        self.mempool.lock().await.lock().await.commit_batch(batch);
+
+        // Get current block height from store; if unavailable, fall back to 0
+        let block_height = match self.store.latest_header().await {
+            Ok(header) => header.block_num().as_u32(),
+            Err(err) => {
+                error!(target: COMPONENT, %err, "failed to fetch current block height after committing batch; returning 0");
+                0
+            },
+        };
+
+        Ok(proto::block_producer::SubmitProvenBatchResponse { block_height })
     }
 }

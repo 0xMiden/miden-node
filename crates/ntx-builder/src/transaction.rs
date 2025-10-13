@@ -13,6 +13,7 @@ use miden_objects::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionArgs,
+    TransactionInputs,
 };
 use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
@@ -117,9 +118,10 @@ impl NtxContext {
 
         async move {
             async move {
+                let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
+
                 let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
-                let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed)).await?;
@@ -211,9 +213,12 @@ impl NtxContext {
         if let Some(remote) = &self.prover {
             remote.prove(tx.into()).await
         } else {
-            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
-                .await
-                .map_err(NtxError::Panic)?
+            tokio::task::spawn_blocking(move || {
+                let tx_inputs = TransactionInputs::from(tx);
+                LocalTransactionProver::default().prove(tx_inputs)
+            })
+            .await
+            .map_err(NtxError::Panic)?
         }
         .map_err(NtxError::Proving)
     }
@@ -348,6 +353,13 @@ impl DataStore for NtxDataStore {
                 })
             }
         }
+    }
+
+    fn get_note_script(
+        &self,
+        script_root: Word,
+    ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
+        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
     }
 }
 

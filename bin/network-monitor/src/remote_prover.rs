@@ -293,9 +293,9 @@ pub async fn generate_mock_transaction() -> anyhow::Result<ExecutedTransaction> 
         .context("Failed to build transaction")?;
 
     // Execute the transaction
-    let executed_tx =
+    let executed_transaction =
         Box::pin(tx_context.execute()).await.context("Failed to execute transaction")?;
-    Ok(executed_tx)
+    Ok(executed_transaction)
 }
 
 // GENERATE TEST REQUEST PAYLOAD

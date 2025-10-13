@@ -99,7 +99,7 @@ impl ProverRpcApi {
     )]
     pub async fn prove_tx(
         &self,
-        executed_tx: ExecutedTransaction,
+        executed_transaction: ExecutedTransaction,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Transaction(prover) = &self.prover else {
@@ -114,7 +114,7 @@ impl ProverRpcApi {
         #[cfg(test)]
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let proof = locked_prover.prove(executed_tx).map_err(internal_error)?;
+        let proof = locked_prover.prove(executed_transaction).map_err(internal_error)?;
 
         // Record the transaction_id in the current tracing span
         let transaction_id = proof.id();

@@ -3,6 +3,7 @@
 //! This module contains the configuration structures and constants for the network monitor.
 //! Configuration for the monitor.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
@@ -105,7 +106,7 @@ pub struct MonitorConfig {
         default_value = "wallet_account.bin",
         help = "Path where the wallet account will be saved"
     )]
-    pub wallet_file: String,
+    pub wallet_file: PathBuf,
 
     /// Path for the counter program account file.
     #[arg(
@@ -114,5 +115,5 @@ pub struct MonitorConfig {
         default_value = "counter_program.bin",
         help = "Path where the counter program account will be saved"
     )]
-    pub counter_file: String,
+    pub counter_file: PathBuf,
 }

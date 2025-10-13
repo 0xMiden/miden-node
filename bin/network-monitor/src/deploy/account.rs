@@ -44,7 +44,7 @@ use url::Url;
 pub fn save_wallet_account(
     account: &Account,
     secret_key: &SecretKey,
-    file_path: &str,
+    file_path: &Path,
 ) -> Result<()> {
     let auth_secret_key = AuthSecretKey::RpoFalcon512(secret_key.clone());
     let account_file = AccountFile::new(account.clone(), vec![auth_secret_key]);
@@ -53,7 +53,7 @@ pub fn save_wallet_account(
 }
 
 /// Save counter program account to file.
-pub fn save_counter_account(account: &Account, file_path: &str) -> Result<()> {
+pub fn save_counter_account(account: &Account, file_path: &Path) -> Result<()> {
     let account_file = AccountFile::new(account.clone(), vec![]);
     account_file.write(file_path)?;
     Ok(())
@@ -74,12 +74,12 @@ pub fn save_counter_account(account: &Account, file_path: &str) -> Result<()> {
 ///
 /// `Ok(())` if the accounts exist or were successfully created, or an error if creation fails.
 pub async fn ensure_accounts_exist(
-    wallet_file: &str,
-    counter_file: &str,
+    wallet_file: &Path,
+    counter_file: &Path,
     rpc_url: &Url,
 ) -> Result<()> {
-    let wallet_exists = Path::new(wallet_file).exists();
-    let counter_exists = Path::new(counter_file).exists();
+    let wallet_exists = wallet_file.exists();
+    let counter_exists = counter_file.exists();
 
     if wallet_exists && counter_exists {
         tracing::info!("Account files already exist, skipping account creation");

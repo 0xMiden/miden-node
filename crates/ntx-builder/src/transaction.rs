@@ -352,9 +352,9 @@ impl DataStore for NtxDataStore {
 
     fn get_note_script(
         &self,
-        _script_root: Word,
+        script_root: Word,
     ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
-        async move { todo!() }
+        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
     }
 }
 

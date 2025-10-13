@@ -3,7 +3,7 @@ use miden_node_utils::ErrorReport;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProposedBatch;
 use miden_objects::block::ProposedBlock;
-use miden_objects::transaction::ExecutedTransaction;
+use miden_objects::transaction::TransactionInputs;
 use miden_objects::utils::Serializable;
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch_prover::LocalBatchProver;
@@ -99,7 +99,7 @@ impl ProverRpcApi {
     )]
     pub async fn prove_tx(
         &self,
-        executed_transaction: ExecutedTransaction,
+        tx_inputs: TransactionInputs,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Transaction(prover) = &self.prover else {
@@ -114,7 +114,7 @@ impl ProverRpcApi {
         #[cfg(test)]
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let proof = locked_prover.prove(executed_transaction).map_err(internal_error)?;
+        let proof = locked_prover.prove(tx_inputs).map_err(internal_error)?;
 
         // Record the transaction_id in the current tracing span
         let transaction_id = proof.id();
@@ -217,8 +217,8 @@ impl ProverApi for ProverRpcApi {
 
         match proof_type {
             proto::remote_prover::ProofType::Transaction => {
-                let tx_witness = proof_request.try_into().map_err(invalid_argument)?;
-                self.prove_tx(tx_witness, &request_id).await
+                let tx_inputs = proof_request.try_into().map_err(invalid_argument)?;
+                self.prove_tx(tx_inputs, &request_id).await
             },
             proto::remote_prover::ProofType::Batch => {
                 let proposed_batch = proof_request.try_into().map_err(invalid_argument)?;

@@ -3,7 +3,7 @@
 
 use miden_objects::batch::ProposedBatch;
 use miden_objects::block::ProposedBlock;
-use miden_objects::transaction::{ExecutedTransaction, ProvenTransaction};
+use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
 use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
 use crate::api::ProofType;
@@ -23,11 +23,11 @@ impl TryFrom<proto::Proof> for ProvenTransaction {
     }
 }
 
-impl TryFrom<proto::ProofRequest> for ExecutedTransaction {
+impl TryFrom<proto::ProofRequest> for TransactionInputs {
     type Error = DeserializationError;
 
     fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
-        ExecutedTransaction::read_from_bytes(&request.payload)
+        TransactionInputs::read_from_bytes(&request.payload)
     }
 }
 

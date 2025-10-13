@@ -82,7 +82,7 @@ impl RemoteTransactionProver {
 impl RemoteTransactionProver {
     pub fn prove(
         &self,
-        exected_tx: ExecutedTransaction,
+        executed_transaction: ExecutedTransaction,
     ) -> impl FutureMaybeSend<Result<ProvenTransaction, TransactionProverError>> {
         async move {
             use miden_objects::utils::Serializable;
@@ -101,7 +101,7 @@ impl RemoteTransactionProver {
                 .ok_or_else(|| TransactionProverError::other("client should be connected"))?
                 .clone();
 
-            let request = tonic::Request::new(exected_tx.into());
+            let request = tonic::Request::new(executed_transaction.into());
 
             let response = client.prove(request).await.map_err(|err| {
                 TransactionProverError::other_with_source("failed to prove transaction", err)

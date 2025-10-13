@@ -4,7 +4,7 @@ use std::io;
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
 use miden_node_proto::domain::block::InvalidBlockRange;
-use miden_node_proto::errors::{ConversionError, GrpcError as GrpcErrorDerive};
+use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -273,7 +273,7 @@ impl From<ApplyBlockError> for Status {
     }
 }
 
-#[derive(Error, Debug, GrpcErrorDerive)]
+#[derive(Error, Debug, GrpcError)]
 pub enum GetBlockHeaderError {
     #[error("database error")]
     #[grpc(internal)]
@@ -314,7 +314,7 @@ impl From<diesel::result::Error> for StateSyncError {
     }
 }
 
-#[derive(Error, Debug, GrpcErrorDerive)]
+#[derive(Error, Debug, GrpcError)]
 pub enum NoteSyncError {
     #[error("database error")]
     #[grpc(internal)]
@@ -367,7 +367,7 @@ pub enum GetBatchInputsError {
 // SYNC NULLIFIERS ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum SyncNullifiersError {
     #[error("database error")]
     #[grpc(internal)]
@@ -383,7 +383,7 @@ pub enum SyncNullifiersError {
 // SYNC ACCOUNT VAULT ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum SyncAccountVaultError {
     #[error("database error")]
     #[grpc(internal)]
@@ -399,7 +399,7 @@ pub enum SyncAccountVaultError {
 // SYNC STORAGE MAPS ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum SyncStorageMapsError {
     #[error("database error")]
     #[grpc(internal)]
@@ -417,7 +417,7 @@ pub enum SyncStorageMapsError {
 // GET BLOCK BY NUMBER ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum GetBlockByNumberError {
     #[error("database error")]
     #[grpc(internal)]
@@ -429,7 +429,7 @@ pub enum GetBlockByNumberError {
 // GET NOTES BY ID ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum GetNotesByIdError {
     #[error("database error")]
     #[grpc(internal)]
@@ -447,7 +447,7 @@ pub enum GetNotesByIdError {
 // GET NOTE SCRIPT BY ROOT ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum GetNoteScriptByRootError {
     #[error("database error")]
     #[grpc(internal)]
@@ -461,7 +461,7 @@ pub enum GetNoteScriptByRootError {
 // CHECK NULLIFIERS ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum CheckNullifiersError {
     #[error("database error")]
     #[grpc(internal)]
@@ -475,7 +475,7 @@ pub enum CheckNullifiersError {
 // SYNC TRANSACTIONS ERRORS
 // ================================================================================================
 
-#[derive(Debug, Error, GrpcErrorDerive)]
+#[derive(Debug, Error, GrpcError)]
 pub enum SyncTransactionsError {
     #[error("database error")]
     #[grpc(internal)]

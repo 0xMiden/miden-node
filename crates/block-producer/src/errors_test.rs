@@ -12,16 +12,12 @@ mod tests {
     #[rstest::rstest]
     #[test]
     #[case::inputs_already_consumed_error(
-        AddTransactionError::VerificationFailed(
-            VerifyTxError::InputNotesAlreadyConsumed(vec![Nullifier::dummy(1)])
-        ),
+        VerifyTxError::InputNotesAlreadyConsumed(vec![Nullifier::dummy(1)]).into(),
         SubmitProvenTransactionGrpcError::InputNotesAlreadyConsumed,
         "verification failed",
     )]
     #[case::unauthenticated_notes_not_found_error(
-        AddTransactionError::VerificationFailed(
-            VerifyTxError::UnauthenticatedNotesNotFound(vec![NoteId::new(Word::default(), Word::default())])
-        ),
+        VerifyTxError::UnauthenticatedNotesNotFound(vec![NoteId::new(Word::default(), Word::default())]).into(),
         SubmitProvenTransactionGrpcError::UnauthenticatedNotesNotFound,
         "verification failed",
     )]

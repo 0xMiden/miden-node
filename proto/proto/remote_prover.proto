@@ -31,7 +31,7 @@ message ProofRequest {
 
     // Serialized payload requiring proof generation. The encoding format is
     // type-specific:
-    // - TRANSACTION: ExecutedTransaction encoded.
+    // - TRANSACTION: TransactionInputs encoded.
     // - BATCH: ProposedBatch encoded.
     // - BLOCK: ProposedBlock encoded.
     bytes payload = 2;

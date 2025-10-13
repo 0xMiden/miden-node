@@ -3,7 +3,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use core::time::Duration;
 
-use miden_objects::transaction::{ExecutedTransaction, ProvenTransaction};
+use miden_objects::transaction::{ExecutedTransaction, ProvenTransaction, TransactionInputs};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use miden_objects::vm::FutureMaybeSend;
 use miden_tx::TransactionProverError;
@@ -82,7 +82,7 @@ impl RemoteTransactionProver {
 impl RemoteTransactionProver {
     pub fn prove(
         &self,
-        executed_transaction: ExecutedTransaction,
+        tx_inputs: TransactionInputs,
     ) -> impl FutureMaybeSend<Result<ProvenTransaction, TransactionProverError>> {
         async move {
             use miden_objects::utils::Serializable;
@@ -101,7 +101,7 @@ impl RemoteTransactionProver {
                 .ok_or_else(|| TransactionProverError::other("client should be connected"))?
                 .clone();
 
-            let request = tonic::Request::new(executed_transaction.into());
+            let request = tonic::Request::new(tx_inputs.into());
 
             let response = client.prove(request).await.map_err(|err| {
                 TransactionProverError::other_with_source("failed to prove transaction", err)
@@ -131,11 +131,11 @@ impl TryFrom<proto::Proof> for ProvenTransaction {
     }
 }
 
-impl From<ExecutedTransaction> for proto::ProofRequest {
-    fn from(tx: ExecutedTransaction) -> Self {
+impl From<TransactionInputs> for proto::ProofRequest {
+    fn from(tx_inputs: TransactionInputs) -> Self {
         proto::ProofRequest {
             proof_type: proto::ProofType::Transaction.into(),
-            payload: tx.to_bytes(),
+            payload: tx_inputs.to_bytes(),
         }
     }
 }

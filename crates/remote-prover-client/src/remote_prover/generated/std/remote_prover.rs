@@ -7,7 +7,7 @@ pub struct ProofRequest {
     pub proof_type: i32,
     /// Serialized payload requiring proof generation. The encoding format is
     /// type-specific:
-    /// - TRANSACTION: ExecutedTransaction encoded.
+    /// - TRANSACTION: TransactionInputs encoded.
     /// - BATCH: ProposedBatch encoded.
     /// - BLOCK: ProposedBlock encoded.
     #[prost(bytes = "vec", tag = "2")]

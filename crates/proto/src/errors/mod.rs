@@ -10,8 +10,6 @@ use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;
 
-pub mod block_producer;
-
 #[cfg(test)]
 mod test_macro;
 

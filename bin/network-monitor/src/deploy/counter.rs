@@ -13,22 +13,10 @@ use miden_objects::account::{
 };
 
 /// Create a counter program account with custom MASM script.
-///
-/// The counter program includes authentication logic that only allows the specified
-/// wallet account to increment the counter.
-pub fn create_counter_account(wallet_account: &Account) -> Result<Account> {
-    // Get the authorized account ID from the wallet account
-    let authorized_id = wallet_account.id();
-    let authorized_id_prefix = authorized_id.prefix();
-    let authorized_id_suffix = authorized_id.suffix();
-
+pub fn create_counter_account() -> Result<Account> {
     // Load and customize the MASM script
     let script =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
-    let script =
-        script.replace("{AUTHORIZED_ACCOUNT_ID_PREFIX}", &authorized_id_prefix.to_string());
-    let script =
-        script.replace("{AUTHORIZED_ACCOUNT_ID_SUFFIX}", &authorized_id_suffix.to_string());
 
     // Compile the account code
     let account_code = AccountComponent::compile(

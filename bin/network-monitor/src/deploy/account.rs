@@ -40,6 +40,9 @@ use rand_chacha::ChaCha20Rng;
 use tokio::sync::Mutex;
 use url::Url;
 
+use crate::deploy::counter::create_counter_account;
+use crate::deploy::wallet::create_wallet_account;
+
 /// Save wallet account to file with authentication keys.
 pub fn save_wallet_account(
     account: &Account,
@@ -89,10 +92,10 @@ pub async fn ensure_accounts_exist(
     tracing::info!("Account files not found, creating new accounts");
 
     // Create wallet account
-    let (wallet_account, secret_key) = crate::deploy::wallet::create_wallet_account()?;
+    let (wallet_account, secret_key) = create_wallet_account()?;
 
     // Create counter program account
-    let counter_account = crate::deploy::counter::create_counter_account(&wallet_account)?;
+    let counter_account = create_counter_account()?;
 
     // Save accounts to files
     save_wallet_account(&wallet_account, &secret_key, wallet_file)?;
@@ -162,20 +165,17 @@ pub async fn deploy_accounts(
         TransactionExecutor::new(data_store.as_ref());
 
     let script_builder = ScriptBuilder::new(true)
-        .with_dynamically_linked_library(&get_library(
-            wallet_account.id().prefix().to_string().as_str(),
-            wallet_account.id().suffix().to_string().as_str(),
-        )?)
+        .with_dynamically_linked_library(&get_library()?)
         .context("Failed to create script builder with library")?;
 
-    let script = script_builder
-        .compile_tx_script(include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/assets/increment_counter.masm"
-        )))
-        .context("Failed to compile transaction script")?;
-
-    let tx_args = TransactionArgs::default().with_tx_script(script);
+    let tx_args = TransactionArgs::default().with_tx_script(
+        script_builder
+            .compile_tx_script(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/assets/increment_counter.masm"
+            )))
+            .context("Failed to compile transaction script")?,
+    );
 
     let executed_tx = Box::pin(executor.execute_transaction(
         counter_account.id(),
@@ -200,13 +200,11 @@ pub async fn deploy_accounts(
     Ok(())
 }
 
-fn get_library(authorized_id_prefix: &str, authorized_id_suffix: &str) -> Result<Library> {
+fn get_library() -> Result<Library> {
     let assembler = TransactionKernel::assembler().with_debug_mode(true);
     let source_manager = Arc::new(DefaultSourceManager::default());
     let script =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
-    let script = script.replace("{AUTHORIZED_ACCOUNT_ID_PREFIX}", authorized_id_prefix);
-    let script = script.replace("{AUTHORIZED_ACCOUNT_ID_SUFFIX}", authorized_id_suffix);
 
     let library_path = LibraryPath::new("external_contract::counter_contract")
         .context("Failed to create library path")?;

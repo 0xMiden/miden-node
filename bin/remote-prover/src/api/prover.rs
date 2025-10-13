@@ -3,7 +3,7 @@ use miden_node_utils::ErrorReport;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProposedBatch;
 use miden_objects::block::ProposedBlock;
-use miden_objects::transaction::TransactionWitness;
+use miden_objects::transaction::ExecutedTransaction;
 use miden_objects::utils::Serializable;
 use miden_tx::LocalTransactionProver;
 use miden_tx_batch_prover::LocalBatchProver;
@@ -99,7 +99,7 @@ impl ProverRpcApi {
     )]
     pub async fn prove_tx(
         &self,
-        transaction_witness: TransactionWitness,
+        executed_tx: ExecutedTransaction,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Transaction(prover) = &self.prover else {
@@ -114,7 +114,7 @@ impl ProverRpcApi {
         #[cfg(test)]
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-        let proof = locked_prover.prove(transaction_witness).map_err(internal_error)?;
+        let proof = locked_prover.prove(executed_tx).map_err(internal_error)?;
 
         // Record the transaction_id in the current tracing span
         let transaction_id = proof.id();
@@ -257,7 +257,7 @@ mod test {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_SENDER,
     };
-    use miden_objects::transaction::{ProvenTransaction, TransactionWitness};
+    use miden_objects::transaction::ProvenTransaction;
     use miden_testing::{Auth, MockChainBuilder};
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
@@ -324,16 +324,14 @@ mod test {
 
         let executed_transaction = Box::pin(tx_context.execute()).await.unwrap();
 
-        let transaction_witness = TransactionWitness::from(executed_transaction);
-
         let request_1 = Request::new(proto::remote_prover::ProofRequest {
             proof_type: proto::remote_prover::ProofType::Transaction.into(),
-            payload: transaction_witness.to_bytes(),
+            payload: executed_transaction.to_bytes(),
         });
 
         let request_2 = Request::new(proto::remote_prover::ProofRequest {
             proof_type: proto::remote_prover::ProofType::Transaction.into(),
-            payload: transaction_witness.to_bytes(),
+            payload: executed_transaction.to_bytes(),
         });
 
         // Send both requests concurrently

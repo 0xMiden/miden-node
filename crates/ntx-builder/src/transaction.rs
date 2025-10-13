@@ -209,9 +209,9 @@ impl NtxContext {
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
     async fn prove(&self, tx: ExecutedTransaction) -> NtxResult<ProvenTransaction> {
         if let Some(remote) = &self.prover {
-            remote.prove(tx.into()).await
+            remote.prove(tx).await
         } else {
-            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
+            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx))
                 .await
                 .map_err(NtxError::Panic)?
         }
@@ -348,6 +348,13 @@ impl DataStore for NtxDataStore {
                 })
             }
         }
+    }
+
+    fn get_note_script(
+        &self,
+        _script_root: Word,
+    ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
+        async move { todo!() }
     }
 }
 

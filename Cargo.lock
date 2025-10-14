@@ -2507,6 +2507,7 @@ dependencies = [
  "miden-node-rpc",
  "miden-node-store",
  "miden-node-utils",
+ "miden-node-validator",
  "miden-objects",
  "tokio",
  "url",
@@ -2733,6 +2734,14 @@ dependencies = [
  "url",
  "vergen",
  "vergen-gitcl",
+]
+
+[[package]]
+name = "miden-node-validator"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "tracing",
 ]
 
 [[package]]

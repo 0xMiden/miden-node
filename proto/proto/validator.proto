@@ -1,0 +1,14 @@
+// Specification of the user facing gRPC API.
+syntax = "proto3";
+package validator;
+
+import "types/transaction.proto";
+import "google/protobuf/empty.proto";
+
+// VALIDATOR API
+// ================================================================================================
+
+// Validator API for the Validator component.
+service Api {
+   rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
+}

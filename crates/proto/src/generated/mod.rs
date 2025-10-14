@@ -13,3 +13,4 @@ pub mod rpc;
 pub mod rpc_store;
 pub mod shared;
 pub mod transaction;
+pub mod validator;

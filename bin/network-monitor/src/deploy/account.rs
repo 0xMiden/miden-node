@@ -39,8 +39,10 @@ use miden_tx::{
 };
 use rand_chacha::ChaCha20Rng;
 use tokio::sync::Mutex;
+use tracing::instrument;
 use url::Url;
 
+use crate::COMPONENT;
 use crate::deploy::counter::create_counter_account;
 use crate::deploy::wallet::create_wallet_account;
 
@@ -98,19 +100,19 @@ pub async fn ensure_accounts_exist(
     // Create counter program account
     let counter_account = create_counter_account()?;
 
+    Box::pin(deploy_accounts(&wallet_account, &counter_account, rpc_url)).await?;
+    tracing::info!("Successfully created and deployed accounts");
+
     // Save accounts to files
     save_wallet_account(&wallet_account, &secret_key, wallet_file)?;
-    save_counter_account(&counter_account, counter_file)?;
-
-    tracing::info!("Successfully created and saved account files");
-
-    Box::pin(deploy_accounts(&wallet_account, &counter_account, rpc_url)).await
+    save_counter_account(&counter_account, counter_file)
 }
 
 /// Deploy accounts to the network.
 ///
 /// This function creates both a wallet account and a counter program account,
 /// then saves them to the specified files.
+#[instrument(target = COMPONENT, name = "deploy-accounts", skip_all, ret(level = "debug"))]
 pub async fn deploy_accounts(
     wallet_account: &Account,
     counter_account: &Account,
@@ -128,8 +130,8 @@ pub async fn deploy_accounts(
         .context("Failed to connect to RPC server")?;
 
     let mast_store = TransactionMastStore::new();
-    mast_store.insert(wallet_account.code().mast());
-    mast_store.insert(counter_account.code().mast());
+    mast_store.load_account_code(wallet_account.code());
+    mast_store.load_account_code(counter_account.code());
 
     let block_header_request = BlockHeaderByNumberRequest {
         block_num: Some(BlockNumber::GENESIS.as_u32()),
@@ -338,8 +340,8 @@ impl DataStore for MonitorDataStore {
         })
     }
 
-    async fn get_note_script(&self, _script_root: Word) -> Result<NoteScript, DataStoreError> {
-        todo!()
+    async fn get_note_script(&self, script_root: Word) -> Result<NoteScript, DataStoreError> {
+        Err(DataStoreError::NoteScriptNotFound(script_root))
     }
 }
 

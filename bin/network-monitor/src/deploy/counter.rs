@@ -11,8 +11,12 @@ use miden_objects::account::{
     AccountType,
     StorageSlot,
 };
+use tracing::instrument;
+
+use crate::COMPONENT;
 
 /// Create a counter program account with custom MASM script.
+#[instrument(target = COMPONENT, name = "create-counter-account", skip_all, ret(level = "debug"))]
 pub fn create_counter_account() -> Result<Account> {
     // Load and customize the MASM script
     let script =

@@ -121,15 +121,22 @@ impl Tasks {
             self.names.insert(id, component_name);
 
             // Extract proof_type directly from the service status
-            let proof_type = match &initial_prover_status.details {
-                crate::status::ServiceDetails::RemoteProverStatus(details) => {
-                    details.supported_proof_type.clone()
-                },
-                _ => unreachable!("This is for remote provers only"),
+            // If the prover is not available during startup, skip spawning test tasks
+            let proof_type = if let crate::status::ServiceDetails::RemoteProverStatus(details) =
+                &initial_prover_status.details
+            {
+                Some(details.supported_proof_type.clone())
+            } else {
+                // Prover is not available during startup, but we'll still monitor its status
+                tracing::warn!(
+                    "Prover {} is not available during startup, skipping test task initialization",
+                    name
+                );
+                None
             };
 
-            // Only spawn test tasks for transaction provers
-            let prover_test_rx = if matches!(proof_type, ProofType::Transaction) {
+            // Only spawn test tasks for transaction provers if proof_type is available
+            let prover_test_rx = if matches!(proof_type, Some(ProofType::Transaction)) {
                 debug!("Starting transaction proof tests for prover: {}", name);
                 let payload = generate_prover_test_payload().await;
                 let (prover_test_tx, prover_test_rx) =
@@ -137,6 +144,9 @@ impl Tasks {
 
                 let prover_url_clone = prover_url.clone();
                 let name_clone = name.clone();
+                // SAFETY: we matched Some above
+                let proof_type = proof_type.unwrap();
+
                 let id = self
                     .handles
                     .spawn(async move {

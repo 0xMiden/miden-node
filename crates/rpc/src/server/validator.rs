@@ -8,7 +8,6 @@ use miden_objects::transaction::{
     AccountInputs,
     ExecutedTransaction,
     PartialBlockchain,
-    ProvenTransaction,
     TransactionInputs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -16,12 +15,10 @@ use miden_tx::auth::UnreachableAuth;
 use miden_tx::{
     DataStore,
     DataStoreError,
-    LocalTransactionProver,
     MastForestStore,
     TransactionExecutor,
     TransactionExecutorError,
     TransactionMastStore,
-    TransactionProverError,
 };
 
 /// Executes a transaction using the provided transaction inputs.
@@ -38,13 +35,6 @@ pub async fn re_execute_transaction(
     executor
         .execute_transaction(account.id(), block_header.block_num(), input_notes, tx_args)
         .await
-}
-
-/// Proves a transaction using the local transaction prover
-pub fn prove_transaction(
-    executed_tx: ExecutedTransaction,
-) -> Result<ProvenTransaction, TransactionProverError> {
-    LocalTransactionProver::default().prove(executed_tx)
 }
 
 /// A [`DataStore`] implementation that wraps [`TransactionInputs`]

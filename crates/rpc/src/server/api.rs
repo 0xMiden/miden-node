@@ -398,31 +398,20 @@ impl api_server::Api for RpcService {
             ))
         })?;
 
-        // TODO: spawn as a non-blocking task.
         if let Some(tx_inputs_bytes) = &request.transaction_inputs {
             // Deserialize the transaction inputs.
             let tx_inputs = TransactionInputs::read_from_bytes(tx_inputs_bytes).map_err(|err| {
-                Status::invalid_argument(err.as_report_context("invalid transaction"))
+                Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
             })?;
 
             // Re-execute the transaction to validate it.
             match validator::re_execute_transaction(tx_inputs).await {
-                Ok(executed_tx) => {
-                    warn!(
+                Ok(_executed_tx) => {
+                    info!(
                         target = COMPONENT,
                         tx_id = %tx.id().to_hex(),
                         "Transaction re-execution successful"
                     );
-
-                    // Prove the re-executed transaction.
-                    if let Err(e) = validator::prove_transaction(executed_tx) {
-                        warn!(
-                            target = COMPONENT,
-                            tx_id = %tx.id().to_hex(),
-                            error = %e,
-                            "Transaction re-proving failed, but continuing with submission"
-                        );
-                    }
                 },
                 Err(e) => {
                     warn!(

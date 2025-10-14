@@ -144,8 +144,7 @@ impl Tasks {
 
                 let prover_url_clone = prover_url.clone();
                 let name_clone = name.clone();
-                // SAFETY: we matched Some above
-                let proof_type = proof_type.unwrap();
+                let proof_type = proof_type.expect("proof type is Some");
 
                 let id = self
                     .handles

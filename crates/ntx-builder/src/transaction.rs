@@ -221,9 +221,9 @@ impl NtxContext {
 
     /// Submits the transaction to the block producer.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
-    async fn submit(&self, proven_tx: ProvenTransaction) -> NtxResult<()> {
+    async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
         self.block_producer
-            .submit_proven_transaction(proven_tx)
+            .submit_proven_transaction(tx)
             .await
             .map_err(NtxError::Submission)
     }

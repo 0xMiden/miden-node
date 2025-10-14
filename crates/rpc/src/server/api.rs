@@ -398,13 +398,13 @@ impl api_server::Api for RpcService {
             ))
         })?;
 
+        // If transaction inputs are provided, re-execute the transaction to validate it.
         if let Some(tx_inputs_bytes) = &request.transaction_inputs {
             // Deserialize the transaction inputs.
             let tx_inputs = TransactionInputs::read_from_bytes(tx_inputs_bytes).map_err(|err| {
                 Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
             })?;
-
-            // Re-execute the transaction to validate it.
+            // Re-execute the transaction.
             match validator::re_execute_transaction(tx_inputs).await {
                 Ok(_executed_tx) => {
                     info!(

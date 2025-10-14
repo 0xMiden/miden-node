@@ -123,7 +123,7 @@ impl DataStore for TransactionInputsDataStore {
                 return Err(DataStoreError::AccountNotFound(account_id));
             }
 
-            // For PartialStorage, storage map witness is not available
+            // For partial accounts, storage map witness is not available.
             Err(DataStoreError::Other {
                 error_msg: "storage map witness not available with partial account state".into(),
                 source: None,

@@ -48,7 +48,7 @@ pub mod smt_leaf {
 pub struct SmtOpening {
     /// The Merkle path to the leaf.
     #[prost(message, optional, tag = "1")]
-    pub path: ::core::option::Option<MerklePath>,
+    pub path: ::core::option::Option<SparseMerklePath>,
     /// The leaf itself.
     #[prost(message, optional, tag = "2")]
     pub leaf: ::core::option::Option<SmtLeaf>,

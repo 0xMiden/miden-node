@@ -12,6 +12,7 @@ use miden_objects::block::{
 use miden_objects::note::{NoteId, NoteInclusionProof};
 use miden_objects::transaction::PartialBlockchain;
 use miden_objects::utils::{Deserializable, Serializable};
+use thiserror::Error;
 
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::{AccountWitnessRecord, NullifierWitnessRecord, generated as proto};
@@ -218,18 +219,48 @@ impl From<&FeeParameters> for proto::blockchain::FeeParameters {
 // BLOCK RANGE
 // ================================================================================================
 
+#[derive(Debug, Clone, Error, PartialEq, Eq)]
+pub enum InvalidBlockRange {
+    #[error("start ({start}) greater than end ({end})")]
+    StartGreaterThanEnd { start: BlockNumber, end: BlockNumber },
+    #[error("empty range: start ({start})..end ({end})")]
+    EmptyRange { start: BlockNumber, end: BlockNumber },
+}
+
 impl proto::rpc_store::BlockRange {
     /// Converts the block range into an inclusive range, using the fallback block number if the
     /// block to is not specified.
-    pub fn into_inclusive_range(self, fallback: BlockNumber) -> RangeInclusive<BlockNumber> {
-        RangeInclusive::new(
+    pub fn into_inclusive_range<T: From<InvalidBlockRange>>(
+        self,
+        fallback: &BlockNumber,
+    ) -> Result<RangeInclusive<BlockNumber>, T> {
+        let block_range = RangeInclusive::new(
             self.block_from.into(),
-            self.block_to.map_or(fallback, BlockNumber::from),
-        )
-    }
+            self.block_to.map_or(*fallback, BlockNumber::from),
+        );
 
-    /// Converts an inclusive range into a [`proto::rpc_store::BlockRange`].
-    pub fn from_range(range: RangeInclusive<BlockNumber>) -> Self {
+        if block_range.start() > block_range.end() {
+            return Err(InvalidBlockRange::StartGreaterThanEnd {
+                start: *block_range.start(),
+                end: *block_range.end(),
+            }
+            .into());
+        }
+
+        if block_range.is_empty() {
+            return Err(InvalidBlockRange::EmptyRange {
+                start: *block_range.start(),
+                end: *block_range.end(),
+            }
+            .into());
+        }
+
+        Ok(block_range)
+    }
+}
+
+impl From<RangeInclusive<BlockNumber>> for proto::rpc_store::BlockRange {
+    fn from(range: RangeInclusive<BlockNumber>) -> Self {
         Self {
             block_from: range.start().as_u32(),
             block_to: Some(range.end().as_u32()),

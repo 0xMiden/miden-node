@@ -90,5 +90,5 @@ pub struct AccountWitness {
     pub commitment: ::core::option::Option<super::primitives::Digest>,
     /// The merkle path of the state commitment in the account tree.
     #[prost(message, optional, tag = "4")]
-    pub path: ::core::option::Option<super::primitives::MerklePath>,
+    pub path: ::core::option::Option<super::primitives::SparseMerklePath>,
 }

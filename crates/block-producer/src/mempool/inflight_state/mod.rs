@@ -450,9 +450,9 @@ mod tests {
 
         assert_matches!(
             err,
-            AddTransactionError::VerificationFailed(VerifyTxError::InputNotesAlreadyConsumed(
+            AddTransactionError::InputNotesAlreadyConsumed(
                 notes
-            )) if notes == vec![mock_note(note_seed).nullifier()]
+            ) if notes == vec![mock_note(note_seed).nullifier()]
         );
     }
 
@@ -476,9 +476,9 @@ mod tests {
 
         assert_matches!(
             err,
-            AddTransactionError::VerificationFailed(VerifyTxError::OutputNotesAlreadyExist(
+            AddTransactionError::OutputNotesAlreadyExist(
                 notes
-            )) if notes == vec![note.id()]
+            ) if notes == vec![note.id()]
         );
     }
 
@@ -496,10 +496,10 @@ mod tests {
 
         assert_matches!(
             err,
-            AddTransactionError::VerificationFailed(VerifyTxError::IncorrectAccountInitialCommitment {
+            AddTransactionError::IncorrectAccountInitialCommitment {
                 tx_initial_account_commitment: init_state,
                 current_account_commitment: current_state,
-            }) if init_state == states[0] && current_state == states[2].into()
+            } if init_state == states[0] && current_state == states[2].into()
         );
     }
 

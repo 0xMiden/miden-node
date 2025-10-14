@@ -14,10 +14,14 @@
 - Implemented storage map `DataStore` function ([#1226](https://github.com/0xMiden/miden-node/pull/1226)).
 - [BREAKING] Renamed `RemoteProverProxy` to `RemoteProverClient` ([#1236](https://github.com/0xMiden/miden-node/pull/1236)).
 - Added pagination to `SyncNotes` endpoint ([#1257](https://github.com/0xMiden/miden-node/pull/1257)).
+- Added application level error in gRPC endpoints ([#1266](https://github.com/0xMiden/miden-node/pull/1266)).
+- [BREAKING] Response type nuances of `GetAccountProof` in the public store API (#[1277](https://github.com/0xMiden/miden-node/pull/1277)).
 
 ## v0.11.2 (2025-09-10)
 
 - Added support for keepalive requests against base path `/` of RPC server ([#1212](https://github.com/0xMiden/miden-node/pull/1212)).
+- [BREAKING] Replace `GetAccountProofs` with `GetAccountProof` in the public store API ([#1211](https://github.com/0xMiden/miden-node/pull/1211)).
+- [BREAKING] Optimize `GetAccountProof` for small accounts ([#1185](https://github.com/0xMiden/miden-node/pull/1185)).
 
 ## v0.11.1 (2025-09-08)
 

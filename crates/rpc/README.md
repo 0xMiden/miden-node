@@ -36,6 +36,16 @@ The full gRPC method definitions can be found in the [proto](../proto/README.md)
 
 Returns a nullifier proof for each of the requested nullifiers.
 
+#### Error Handling
+
+When nullifier checking fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed nullifier format            |
+| `TOO_MANY_NULLIFIERS`     | 2     | `INVALID_ARGUMENT` | Too many nullifiers in request        |
+
 ---
 
 ### GetAccountDetails
@@ -67,11 +77,33 @@ authenticate the block's inclusion.
 
 Returns a list of notes matching the provided note IDs.
 
+#### Error Handling
+
+When note retrieval fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed note ID format              |
+| `NOTE_NOT_FOUND`          | 2     | `NOT_FOUND`        | One or more note IDs don't exist     |
+| `TOO_MANY_NOTE_IDS`       | 3     | `INVALID_ARGUMENT` | Too many note IDs in request          |
+| `NOTE_NOT_PUBLIC`         | 4     | `PERMISSION_DENIED`| Note details not publicly accessible  |
+
 ---
 
 ### GetNoteScriptByRoot
 
 Returns the script for a note by its root.
+
+#### Error Handling
+
+When script retrieval fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed script root format          |
+| `SCRIPT_NOT_FOUND`        | 2     | `NOT_FOUND`        | Script with given root doesn't exist  |
 
 ---
 
@@ -112,6 +144,16 @@ range, the last block included in the response (`block_num`), and the current ch
 If the response is chunked due to exceeding the maximum returned entries, continue by issuing another request with
 consecutive block number to retrieve subsequent updates.
 
+#### Error Handling
+
+When nullifier synchronization fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed nullifier prefix format     |
+| `INVALID_BLOCK_RANGE`     | 2     | `INVALID_ARGUMENT` | Invalid block range parameters        |
+| `INVALID_PREFIX_LENGTH`   | 3     | `INVALID_ARGUMENT` | Unsupported prefix length (only 16)   |
 ---
 
 ### SyncAccountVault
@@ -122,6 +164,17 @@ For any `block_range`, the latest known set of assets is returned for the reques
 The data can be split and a cutoff block may be selected if there are too many assets to sync. The response contains
 the chain tip so that the caller knows when it has been reached.
 
+#### Error Handling
+
+When account vault synchronization fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed account ID format           |
+| `INVALID_BLOCK_RANGE`     | 2     | `INVALID_ARGUMENT` | Invalid block range parameters        |
+| `ACCOUNT_NOT_PUBLIC`      | 3     | `INVALID_ARGUMENT` | Account is not public (no vault sync) |
+
 ---
 
 ### SyncNotes
@@ -130,10 +183,20 @@ Returns info which can be used by the client to sync up to the tip of chain for 
 
 Client specifies the `note_tags` they are interested in, and the block range from which to search for matching notes. The request will then return the next block containing any note matching the provided tags within the specified range.
 
-
 The response includes each note's metadata and inclusion proof.
 
 A basic note sync can be implemented by repeatedly requesting the previous response's block until reaching the tip of the chain.
+
+#### Error Handling
+
+When note synchronization fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed note tags format            |
+| `INVALID_BLOCK_RANGE`     | 2     | `INVALID_ARGUMENT` | Invalid block range parameters        |
+| `TOO_MANY_TAGS`           | 3     | `INVALID_ARGUMENT` | Too many note tags in request         |
 
 ---
 
@@ -162,11 +225,35 @@ Caller specifies the `account_id` of the public account and the block range `blo
 
 This endpoint enables clients to maintain an updated view of account storage.
 
+#### Error Handling
+
+When storage map synchronization fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed account ID format           |
+| `INVALID_BLOCK_RANGE`     | 2     | `INVALID_ARGUMENT` | Invalid block range parameters        |
+| `ACCOUNT_NOT_FOUND`       | 3     | `NOT_FOUND`        | Account ID does not exist             |
+| `ACCOUNT_NOT_PUBLIC`      | 4     | `INVALID_ARGUMENT` | Account storage not publicly accessible |
+
 ---
 
 ### SyncTransactions
 
 Returns transaction records for specific accounts within a block range.
+
+#### Error Handling
+
+When transaction synchronization fails, detailed error information is provided through gRPC status details. The following error codes may be returned:
+
+| Error Code                | Value | gRPC Status        | Description                           |
+|---------------------------|-------|--------------------|---------------------------------------|
+| `INTERNAL_ERROR`          | 0     | `INTERNAL`         | Internal server error occurred        |
+| `DESERIALIZATION_FAILED`  | 1     | `INVALID_ARGUMENT` | Malformed account ID format           |
+| `INVALID_BLOCK_RANGE`     | 2     | `INVALID_ARGUMENT` | Invalid block range parameters        |
+| `ACCOUNT_NOT_FOUND`       | 3     | `NOT_FOUND`        | Account ID does not exist             |
+| `TOO_MANY_ACCOUNT_IDS`    | 4     | `INVALID_ARGUMENT` | Too many account IDs in request       |
 
 ---
 

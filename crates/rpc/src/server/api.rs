@@ -508,7 +508,7 @@ impl api_server::Api for RpcService {
     async fn get_account_proof(
         &self,
         request: Request<proto::rpc_store::AccountProofRequest>,
-    ) -> Result<Response<proto::rpc_store::AccountProof>, Status> {
+    ) -> Result<Response<proto::rpc_store::AccountProofResponse>, Status> {
         let request = request.into_inner();
 
         debug!(target: COMPONENT, ?request);

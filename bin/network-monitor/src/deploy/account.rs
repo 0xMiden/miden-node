@@ -103,9 +103,7 @@ pub async fn ensure_accounts_exist(
 
     tracing::info!("Successfully created and saved account files");
 
-    Box::pin(deploy_accounts(&wallet_account, &counter_account, rpc_url)).await?;
-
-    Ok(())
+    Box::pin(deploy_accounts(&wallet_account, &counter_account, rpc_url)).await
 }
 
 /// Deploy accounts to the network.

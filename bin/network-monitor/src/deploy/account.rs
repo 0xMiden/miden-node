@@ -24,6 +24,7 @@ use miden_objects::asset::AssetWitness;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
+use miden_objects::note::NoteScript;
 use miden_objects::transaction::{AccountInputs, InputNotes, PartialBlockchain, TransactionArgs};
 use miden_objects::{MastForest, Word};
 use miden_tx::auth::BasicAuthenticator;
@@ -186,7 +187,7 @@ pub async fn deploy_accounts(
 
     let prover = LocalTransactionProver::default();
 
-    let proven_tx = prover.prove(executed_tx.into()).context("Failed to prove transaction")?;
+    let proven_tx = prover.prove(executed_tx).context("Failed to prove transaction")?;
 
     let request = ProvenTransaction { transaction: proven_tx.to_bytes() };
 
@@ -209,12 +210,12 @@ fn get_library() -> Result<Library> {
 
     let module = Module::parser(ModuleKind::Library)
         .parse_str(library_path, script, &source_manager)
-        .map_err(|e| anyhow::anyhow!("Failed to parse module: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Failed to parse module: {e}"))?;
 
     assembler
         .clone()
         .assemble_library([module])
-        .map_err(|e| anyhow::anyhow!("Failed to assemble library: {}", e))
+        .map_err(|e| anyhow::anyhow!("Failed to assemble library: {e}"))
 }
 
 pub struct MonitorDataStore {
@@ -335,6 +336,10 @@ impl DataStore for MonitorDataStore {
                 source: Some(Box::new(err)),
             }
         })
+    }
+
+    async fn get_note_script(&self, _script_root: Word) -> Result<NoteScript, DataStoreError> {
+        todo!()
     }
 }
 

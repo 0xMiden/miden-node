@@ -1,5 +1,5 @@
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 
 use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
@@ -79,10 +79,10 @@ pub struct State {
     ///
     /// This is tracked so we can commit or revert such transaction effects. Transactions _without_
     /// an impact are ignored.
-    inflight_txs: BTreeMap<TransactionId, TransactionImpact>,
+    inflight_txs: HashMap<TransactionId, TransactionImpact>,
 
     /// A mapping of network note's to their account.
-    nullifier_idx: BTreeMap<Nullifier, NetworkAccountPrefix>,
+    nullifier_idx: HashMap<Nullifier, NetworkAccountPrefix>,
 
     /// gRPC client used to retrieve the network account state from the store.
     store: StoreClient,
@@ -110,8 +110,8 @@ impl State {
             accounts: HashMap::default(),
             queue: VecDeque::default(),
             in_progress: HashSet::default(),
-            inflight_txs: BTreeMap::default(),
-            nullifier_idx: BTreeMap::default(),
+            inflight_txs: HashMap::default(),
+            nullifier_idx: HashMap::default(),
         };
 
         let notes = state.store.get_unconsumed_network_notes().await?;
@@ -468,10 +468,10 @@ struct TransactionImpact {
     account_delta: Option<NetworkAccountPrefix>,
 
     /// Network notes this transaction created.
-    notes: BTreeSet<Nullifier>,
+    notes: HashSet<Nullifier>,
 
     /// Network notes this transaction consumed.
-    nullifiers: BTreeSet<Nullifier>,
+    nullifiers: HashSet<Nullifier>,
 }
 
 impl TransactionImpact {

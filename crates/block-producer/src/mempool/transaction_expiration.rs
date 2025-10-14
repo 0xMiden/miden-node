@@ -1,5 +1,5 @@
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use miden_objects::block::BlockNumber;
 use miden_objects::transaction::TransactionId;
@@ -13,7 +13,7 @@ pub struct TransactionExpirations {
     /// Transaction lookup index.
     by_tx: HashMap<TransactionId, BlockNumber>,
     /// Block number lookup index.
-    by_block: HashMap<BlockNumber, BTreeSet<TransactionId>>,
+    by_block: HashMap<BlockNumber, HashSet<TransactionId>>,
 }
 
 impl TransactionExpirations {
@@ -25,7 +25,11 @@ impl TransactionExpirations {
 
     /// Returns all transactions that are expiring at the given block number.
     pub fn get(&mut self, block: BlockNumber) -> BTreeSet<TransactionId> {
-        self.by_block.get(&block).cloned().unwrap_or_default()
+        self
+            .by_block
+            .get(&block)
+            .map(|set| set.iter().copied().collect())
+            .unwrap_or_default()
     }
 
     /// Removes the transactions from the tracker.

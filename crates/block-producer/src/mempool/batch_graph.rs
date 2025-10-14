@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use miden_objects::account::AccountId;
 use miden_objects::batch::{BatchId, ProvenBatch};
@@ -58,13 +58,13 @@ pub struct BatchGraph {
     ///
     /// Incoming batches are defined entirely in terms of transactions, including parent edges.
     /// This let's us transform these parent transactions into the relevant parent batches.
-    transactions: BTreeMap<TransactionId, BatchId>,
+    transactions: HashMap<TransactionId, BatchId>,
 
     /// Maps each batch to its transaction set.
     ///
     /// Required because the dependency graph is defined in terms of batches. This let's us
     /// translate between batches and their transactions when required.
-    batches: BTreeMap<BatchId, Vec<TransactionId>>,
+    batches: HashMap<BatchId, Vec<TransactionId>>,
 }
 
 #[derive(thiserror::Error, Debug, Clone, PartialEq, Eq)]

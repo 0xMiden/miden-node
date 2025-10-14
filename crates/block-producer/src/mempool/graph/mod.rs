@@ -1,5 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::{Debug, Display};
+use std::hash::Hash;
 
 #[cfg(test)]
 mod tests;
@@ -37,20 +38,23 @@ mod tests;
 ///                              └───────────┘
 /// ```
 #[derive(Clone, PartialEq, Eq)]
-pub struct DependencyGraph<K, V> {
+pub struct DependencyGraph<K, V>
+where
+    K: Ord + Eq + Hash,
+{
     /// Node's who's data is still pending.
     pending: BTreeSet<K>,
 
     /// Each node's data.
-    vertices: BTreeMap<K, V>,
+    vertices: HashMap<K, V>,
 
     /// Each node's parents. This is redundant with `children`,
     /// but we require both for efficient lookups.
-    parents: BTreeMap<K, BTreeSet<K>>,
+    parents: HashMap<K, BTreeSet<K>>,
 
     /// Each node's children. This is redundant with `parents`,
     /// but we require both for efficient lookups.
-    children: BTreeMap<K, BTreeSet<K>>,
+    children: HashMap<K, BTreeSet<K>>,
 
     /// Nodes that are available to process next.
     ///
@@ -64,7 +68,7 @@ pub struct DependencyGraph<K, V> {
 
 impl<K, V> Debug for DependencyGraph<K, V>
 where
-    K: Debug,
+    K: Debug + Ord + Eq + Hash,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DependencyGraph")
@@ -103,20 +107,23 @@ pub enum GraphError<K> {
 }
 
 /// This cannot be derived without enforcing `Default` bounds on K and V.
-impl<K, V> Default for DependencyGraph<K, V> {
+impl<K, V> Default for DependencyGraph<K, V>
+where
+    K: Ord + Eq + Hash,
+{
     fn default() -> Self {
         Self {
-            vertices: BTreeMap::default(),
+            vertices: HashMap::default(),
             pending: BTreeSet::default(),
-            parents: BTreeMap::default(),
-            children: BTreeMap::default(),
+            parents: HashMap::default(),
+            children: HashMap::default(),
             roots: BTreeSet::default(),
             processed: BTreeSet::default(),
         }
     }
 }
 
-impl<K: Ord + Copy + Display + Debug, V: Clone> DependencyGraph<K, V> {
+impl<K: Ord + Hash + Eq + Copy + Display + Debug, V: Clone> DependencyGraph<K, V> {
     /// Inserts a new pending node into the graph.
     ///
     /// # Errors

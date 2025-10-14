@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -25,23 +25,23 @@ pub struct InflightState {
     /// Account states from inflight transactions.
     ///
     /// Accounts which are empty are immediately pruned.
-    accounts: BTreeMap<AccountId, InflightAccountState>,
+    accounts: HashMap<AccountId, InflightAccountState>,
 
     /// Nullifiers produced by the input notes of inflight transactions.
-    nullifiers: BTreeSet<Nullifier>,
+    nullifiers: HashSet<Nullifier>,
 
     /// Notes created by inflight transactions.
     ///
     /// Some of these may already be consumed - check the nullifiers.
-    output_notes: BTreeMap<NoteId, OutputNoteState>,
+    output_notes: HashMap<NoteId, OutputNoteState>,
 
     /// Inflight transaction deltas.
     ///
     /// This _excludes_ deltas in committed blocks.
-    transaction_deltas: BTreeMap<TransactionId, Delta>,
+    transaction_deltas: HashMap<TransactionId, Delta>,
 
     /// Committed block deltas.
-    committed_blocks: VecDeque<BTreeMap<TransactionId, Delta>>,
+    committed_blocks: VecDeque<HashMap<TransactionId, Delta>>, 
 
     /// Amount of recently committed blocks we retain in addition to the inflight state.
     ///
@@ -66,9 +66,9 @@ struct Delta {
     /// The account this transaction updated.
     account: AccountId,
     /// The nullifiers produced by this transaction.
-    nullifiers: BTreeSet<Nullifier>,
+    nullifiers: HashSet<Nullifier>,
     /// The output notes created by this transaction.
-    output_notes: BTreeSet<NoteId>,
+    output_notes: HashSet<NoteId>,
 }
 
 impl Delta {
@@ -89,10 +89,10 @@ impl InflightState {
             num_retained_blocks,
             chain_tip,
             expiration_slack,
-            accounts: BTreeMap::default(),
-            nullifiers: BTreeSet::default(),
-            output_notes: BTreeMap::default(),
-            transaction_deltas: BTreeMap::default(),
+            accounts: HashMap::default(),
+            nullifiers: HashSet::default(),
+            output_notes: HashMap::default(),
+            transaction_deltas: HashMap::default(),
             committed_blocks: VecDeque::default(),
         }
     }
@@ -273,7 +273,7 @@ impl InflightState {
     ///
     /// Panics if any transactions is not part of the uncommitted state.
     pub fn commit_block(&mut self, txs: impl IntoIterator<Item = TransactionId>) {
-        let mut block_deltas = BTreeMap::new();
+        let mut block_deltas = HashMap::new();
         for tx in txs {
             let delta = self.transaction_deltas.remove(&tx).expect("Transaction delta must exist");
 
@@ -450,9 +450,9 @@ mod tests {
 
         assert_matches!(
             err,
-            AddTransactionError::InputNotesAlreadyConsumed(
+            AddTransactionError::VerificationFailed(VerifyTxError::InputNotesAlreadyConsumed(
                 notes
-            ) if notes == vec![mock_note(note_seed).nullifier()]
+            )) if notes == vec![mock_note(note_seed).nullifier()]
         );
     }
 
@@ -476,9 +476,9 @@ mod tests {
 
         assert_matches!(
             err,
-            AddTransactionError::OutputNotesAlreadyExist(
+            AddTransactionError::VerificationFailed(VerifyTxError::OutputNotesAlreadyExist(
                 notes
-            ) if notes == vec![note.id()]
+            )) if notes == vec![note.id()]
         );
     }
 
@@ -496,10 +496,10 @@ mod tests {
 
         assert_matches!(
             err,
-            AddTransactionError::IncorrectAccountInitialCommitment {
+            AddTransactionError::VerificationFailed(VerifyTxError::IncorrectAccountInitialCommitment {
                 tx_initial_account_commitment: init_state,
                 current_account_commitment: current_state,
-            } if init_state == states[0] && current_state == states[2].into()
+            }) if init_state == states[0] && current_state == states[2].into()
         );
     }
 

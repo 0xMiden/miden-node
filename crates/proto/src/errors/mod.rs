@@ -1,12 +1,17 @@
 use std::any::type_name;
 use std::num::TryFromIntError;
 
+// Re-export the GrpcError derive macro for convenience
+pub use miden_node_grpc_error_macro::GrpcError;
 use miden_objects::crypto::merkle::{SmtLeafError, SmtProofError};
 use miden_objects::utils::DeserializationError;
 use miden_objects::{AssetError, FeeError};
 use thiserror::Error;
 
 use crate::domain::note::NetworkNoteError;
+
+#[cfg(test)]
+mod test_macro;
 
 #[derive(Debug, Error)]
 pub enum ConversionError {

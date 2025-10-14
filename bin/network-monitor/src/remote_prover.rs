@@ -11,7 +11,7 @@ use miden_node_proto::generated as proto;
 use miden_objects::asset::{Asset, FungibleAsset};
 use miden_objects::note::NoteType;
 use miden_objects::testing::account_id::{ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET, ACCOUNT_ID_SENDER};
-use miden_objects::transaction::TransactionWitness;
+use miden_objects::transaction::TransactionInputs;
 use miden_testing::{Auth, MockChainBuilder};
 use miden_tx::utils::Serializable;
 use serde::{Deserialize, Serialize};
@@ -254,7 +254,7 @@ fn tonic_status_to_json(status: &tonic::Status) -> String {
 /// This function creates a mock transaction using `MockChainBuilder` similar to what's done
 /// in the remote prover tests. The transaction is generated once and can be reused for
 /// multiple proof test calls.
-pub async fn generate_mock_transaction() -> anyhow::Result<TransactionWitness> {
+pub async fn generate_mock_transaction() -> anyhow::Result<TransactionInputs> {
     let mut mock_chain_builder = MockChainBuilder::new();
 
     // Create an account with basic authentication
@@ -295,11 +295,7 @@ pub async fn generate_mock_transaction() -> anyhow::Result<TransactionWitness> {
     // Execute the transaction
     let executed_transaction =
         Box::pin(tx_context.execute()).await.context("Failed to execute transaction")?;
-
-    // Create transaction witness
-    let transaction_witness = TransactionWitness::from(executed_transaction);
-
-    Ok(transaction_witness)
+    Ok(executed_transaction.into())
 }
 
 // GENERATE TEST REQUEST PAYLOAD

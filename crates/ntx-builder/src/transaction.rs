@@ -13,6 +13,7 @@ use miden_objects::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionArgs,
+    TransactionInputs,
 };
 use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
@@ -122,7 +123,7 @@ impl NtxContext {
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
-                let proven = Box::pin(self.prove(executed)).await?;
+                let proven = Box::pin(self.prove(executed.into())).await?;
                 self.submit(proven).await?;
                 Ok(failed)
             }
@@ -207,11 +208,11 @@ impl NtxContext {
     /// Delegates the transaction proof to the remote prover if configured, otherwise performs the
     /// proof locally.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.prove", skip_all, err)]
-    async fn prove(&self, tx: ExecutedTransaction) -> NtxResult<ProvenTransaction> {
+    async fn prove(&self, tx_inputs: TransactionInputs) -> NtxResult<ProvenTransaction> {
         if let Some(remote) = &self.prover {
-            remote.prove(tx.into()).await
+            remote.prove(tx_inputs).await
         } else {
-            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx.into()))
+            tokio::task::spawn_blocking(move || LocalTransactionProver::default().prove(tx_inputs))
                 .await
                 .map_err(NtxError::Panic)?
         }
@@ -348,6 +349,14 @@ impl DataStore for NtxDataStore {
                 })
             }
         }
+    }
+
+    fn get_note_script(
+        &self,
+        script_root: Word,
+    ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
+        // TODO: Add implementation for getting note script from NtxDataStore.
+        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
     }
 }
 

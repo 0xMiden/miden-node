@@ -15,9 +15,6 @@ pub mod errors;
 #[cfg(not(feature = "testing"))]
 mod errors;
 
-#[cfg(test)]
-mod errors_test;
-
 pub mod server;
 pub use server::BlockProducer;
 

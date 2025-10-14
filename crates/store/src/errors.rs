@@ -3,6 +3,8 @@ use std::io;
 
 use deadpool_sync::InteractError;
 use miden_node_proto::domain::account::NetworkAccountError;
+use miden_node_proto::domain::block::InvalidBlockRange;
+use miden_node_proto::errors::{ConversionError, GrpcError};
 use miden_node_utils::limiter::QueryLimitError;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
@@ -271,11 +273,13 @@ impl From<ApplyBlockError> for Status {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, GrpcError)]
 pub enum GetBlockHeaderError {
     #[error("database error")]
+    #[grpc(internal)]
     DatabaseError(#[from] DatabaseError),
     #[error("error retrieving the merkle proof for the block")]
+    #[grpc(internal)]
     MmrError(#[from] MmrError),
 }
 
@@ -310,14 +314,23 @@ impl From<diesel::result::Error> for StateSyncError {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, GrpcError)]
 pub enum NoteSyncError {
     #[error("database error")]
+    #[grpc(internal)]
     DatabaseError(#[from] DatabaseError),
     #[error("block headers table is empty")]
+    #[grpc(internal)]
     EmptyBlockHeadersTable,
     #[error("error retrieving the merkle proof for the block")]
+    #[grpc(internal)]
     MmrError(#[from] MmrError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("too many note tags: received {0}, max {1}")]
+    TooManyNoteTags(usize, usize),
+    #[error("malformed note tags")]
+    DeserializationFailed(#[from] ConversionError),
 }
 
 impl From<diesel::result::Error> for NoteSyncError {
@@ -349,6 +362,132 @@ pub enum GetBatchInputsError {
         highest_block_num: BlockNumber,
         latest_block_num: BlockNumber,
     },
+}
+
+// SYNC NULLIFIERS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum SyncNullifiersError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("unsupported prefix length: {0} (only 16-bit prefixes are supported)")]
+    InvalidPrefixLength(u32),
+    #[error("malformed nullifier prefix")]
+    DeserializationFailed(#[from] ConversionError),
+}
+
+// SYNC ACCOUNT VAULT ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum SyncAccountVaultError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("account {0} is not public")]
+    AccountNotPublic(AccountId),
+}
+
+// SYNC STORAGE MAPS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum SyncStorageMapsError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("account {0} not found")]
+    AccountNotFound(AccountId),
+    #[error("account {0} is not public")]
+    AccountNotPublic(AccountId),
+}
+
+// GET BLOCK BY NUMBER ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetBlockByNumberError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed block number")]
+    DeserializationFailed(#[from] DeserializationError),
+}
+
+// GET NOTES BY ID ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetNotesByIdError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed note ID")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("note {0} not found")]
+    NoteNotFound(miden_objects::note::NoteId),
+    #[error("too many note IDs: received {0}, max {1}")]
+    TooManyNoteIds(usize, usize),
+    #[error("note {0} is not public")]
+    NoteNotPublic(miden_objects::note::NoteId),
+}
+
+// GET NOTE SCRIPT BY ROOT ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum GetNoteScriptByRootError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed script root")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("script with given root not found")]
+    ScriptNotFound,
+}
+
+// CHECK NULLIFIERS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum CheckNullifiersError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("malformed nullifier")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("too many nullifiers: received {0}, maximum {1}")]
+    TooManyNullifiers(usize, usize),
+}
+
+// SYNC TRANSACTIONS ERRORS
+// ================================================================================================
+
+#[derive(Debug, Error, GrpcError)]
+pub enum SyncTransactionsError {
+    #[error("database error")]
+    #[grpc(internal)]
+    DatabaseError(#[from] DatabaseError),
+    #[error("invalid block range")]
+    InvalidBlockRange(#[from] InvalidBlockRange),
+    #[error("malformed account ID")]
+    DeserializationFailed(#[from] ConversionError),
+    #[error("account {0} not found")]
+    AccountNotFound(AccountId),
+    #[error("too many account IDs: received {0}, max {1}")]
+    TooManyAccountIds(usize, usize),
 }
 
 // Do not scope for `cfg(test)` - if it the traitbounds don't suffice the issue will already appear

@@ -14,6 +14,7 @@ use tracing::{debug, info, instrument};
 use crate::COMPONENT;
 use crate::server::api::{
     StoreApi,
+    conversion_error_to_status,
     internal_error,
     read_account_id,
     read_account_ids,
@@ -97,8 +98,9 @@ impl block_producer_server::BlockProducer for StoreApi {
     ) -> Result<Response<proto::block_producer_store::BlockInputs>, Status> {
         let request = request.into_inner();
 
-        let account_ids = read_account_ids(&request.account_ids)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        let account_ids = read_account_ids::<Status>(&request.account_ids)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers)
+            .map_err(|err| conversion_error_to_status(&err))?;
         let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
         let reference_blocks = read_block_numbers(&request.reference_blocks);
         let unauthenticated_notes = unauthenticated_notes.into_iter().collect();
@@ -163,8 +165,9 @@ impl block_producer_server::BlockProducer for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let account_id = read_account_id(request.account_id).map_err(|err| *err)?;
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        let account_id = read_account_id::<Status>(request.account_id)?;
+        let nullifiers = validate_nullifiers(&request.nullifiers)
+            .map_err(|err| conversion_error_to_status(&err))?;
         let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
 
         let tx_inputs = self

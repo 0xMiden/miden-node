@@ -1,9 +1,7 @@
+use miden_node_proto::convert;
 use miden_node_proto::domain::account::AccountInfo;
-use miden_node_proto::errors::ConversionError;
 use miden_node_proto::generated::rpc_store::rpc_server;
 use miden_node_proto::generated::{self as proto};
-use miden_node_proto::{convert, try_convert};
-use miden_node_utils::ErrorReport as _;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::note::NoteId;
@@ -11,14 +9,35 @@ use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
 
 use crate::COMPONENT;
+use crate::errors::{
+    CheckNullifiersError,
+    GetBlockByNumberError,
+    GetNoteScriptByRootError,
+    GetNotesByIdError,
+    NoteSyncError,
+    SyncAccountVaultError,
+    SyncNullifiersError,
+    SyncStorageMapsError,
+    SyncTransactionsError,
+};
 use crate::server::api::{
     StoreApi,
+    convert_digests_to_words,
     internal_error,
-    invalid_argument,
     read_account_id,
     read_account_ids,
+    read_block_range,
+    read_root,
     validate_nullifiers,
 };
+
+// CONSTANTS
+// ================================================================================================
+
+const MAX_ACCOUNT_IDS: usize = 100;
+const MAX_NULLIFIERS: usize = 100;
+const MAX_NOTE_TAGS: usize = 100;
+const MAX_NOTE_IDS: usize = 100;
 
 // CLIENT ENDPOINTS
 // ================================================================================================
@@ -64,7 +83,16 @@ impl rpc_server::Rpc for StoreApi {
         // Validate the nullifiers and convert them to Word values. Stop on first error.
         let request = request.into_inner();
 
-        let nullifiers = validate_nullifiers(&request.nullifiers)?;
+        // Validate nullifiers count
+        if request.nullifiers.len() > MAX_NULLIFIERS {
+            return Err(CheckNullifiersError::TooManyNullifiers(
+                request.nullifiers.len(),
+                MAX_NULLIFIERS,
+            )
+            .into());
+        }
+
+        let nullifiers = validate_nullifiers::<CheckNullifiersError>(&request.nullifiers)?;
 
         // Query the state for the request's nullifiers
         let proofs = self.state.check_nullifiers(&nullifiers).await;
@@ -93,19 +121,20 @@ impl rpc_server::Rpc for StoreApi {
         let request = request.into_inner();
 
         if request.prefix_len != 16 {
-            return Err(Status::invalid_argument("Only 16-bit prefixes are supported"));
+            return Err(SyncNullifiersError::InvalidPrefixLength(request.prefix_len).into());
         }
 
         let chain_tip = self.state.latest_block_num().await;
-        let block_range = request
-            .block_range
-            .ok_or(invalid_argument("block_range is required"))?
-            .into_inclusive_range(chain_tip);
+        let block_range =
+            read_block_range::<SyncNullifiersError>(request.block_range, "SyncNullifiersRequest")?
+                .into_inclusive_range::<SyncNullifiersError>(&chain_tip)?;
 
         let (nullifiers, block_num) = self
             .state
             .sync_nullifiers(request.prefix_len, request.nullifiers, block_range)
-            .await?;
+            .await
+            .map_err(SyncNullifiersError::from)?;
+
         let nullifiers = nullifiers
             .into_iter()
             .map(|nullifier_info| proto::rpc_store::sync_nullifiers_response::NullifierUpdate {
@@ -140,7 +169,7 @@ impl rpc_server::Rpc for StoreApi {
     ) -> Result<Response<proto::rpc_store::SyncStateResponse>, Status> {
         let request = request.into_inner();
 
-        let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
+        let account_ids: Vec<AccountId> = read_account_ids::<Status>(&request.account_ids)?;
 
         let (state, delta) = self
             .state
@@ -196,17 +225,20 @@ impl rpc_server::Rpc for StoreApi {
     ) -> Result<Response<proto::rpc_store::SyncNotesResponse>, Status> {
         let request = request.into_inner();
 
-        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
-
         let chain_tip = self.state.latest_block_num().await;
+        let block_range =
+            read_block_range::<NoteSyncError>(request.block_range, "SyncNotesRequest")?
+                .into_inclusive_range::<NoteSyncError>(&chain_tip)?;
 
-        let block_range = block_range.into_inclusive_range(chain_tip);
+        // Validate note tags count
+        if request.note_tags.len() > MAX_NOTE_TAGS {
+            return Err(
+                NoteSyncError::TooManyNoteTags(request.note_tags.len(), MAX_NOTE_TAGS).into()
+            );
+        }
 
-        let (state, mmr_proof, last_block_included) = self
-            .state
-            .sync_notes(request.note_tags, block_range)
-            .await
-            .map_err(internal_error)?;
+        let (state, mmr_proof, last_block_included) =
+            self.state.sync_notes(request.note_tags, block_range).await?;
 
         let notes = state.notes.into_iter().map(Into::into).collect();
 
@@ -242,16 +274,20 @@ impl rpc_server::Rpc for StoreApi {
 
         let note_ids = request.into_inner().ids;
 
-        let note_ids: Vec<Word> = try_convert(note_ids)
-            .collect::<Result<_, _>>()
-            .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
+        // Validate note IDs count
+        if note_ids.len() > MAX_NOTE_IDS {
+            return Err(GetNotesByIdError::TooManyNoteIds(note_ids.len(), MAX_NOTE_IDS).into());
+        }
+
+        let note_ids: Vec<Word> = convert_digests_to_words::<GetNotesByIdError, _>(note_ids)?;
 
         let note_ids: Vec<NoteId> = note_ids.into_iter().map(From::from).collect();
 
         let notes = self
             .state
             .get_notes_by_id(note_ids)
-            .await?
+            .await
+            .map_err(GetNotesByIdError::from)?
             .into_iter()
             .map(Into::into)
             .collect();
@@ -274,7 +310,7 @@ impl rpc_server::Rpc for StoreApi {
         request: Request<proto::account::AccountId>,
     ) -> Result<Response<proto::account::AccountDetails>, Status> {
         let request = request.into_inner();
-        let account_id = read_account_id(Some(request)).map_err(|err| *err)?;
+        let account_id = read_account_id::<Status>(Some(request))?;
         let account_info: AccountInfo = self.state.get_account_details(account_id).await?;
 
         // TODO: revisit this, previous implementation was just returning only the summary, but it
@@ -299,7 +335,11 @@ impl rpc_server::Rpc for StoreApi {
 
         debug!(target: COMPONENT, ?request);
 
-        let block = self.state.load_block(request.block_num.into()).await?;
+        let block = self
+            .state
+            .load_block(request.block_num.into())
+            .await
+            .map_err(GetBlockByNumberError::from)?;
 
         Ok(Response::new(proto::blockchain::MaybeBlock { block }))
     }
@@ -342,26 +382,23 @@ impl rpc_server::Rpc for StoreApi {
         let request = request.into_inner();
         let chain_tip = self.state.latest_block_num().await;
 
-        let account_id: AccountId = read_account_id(request.account_id).map_err(|e| *e)?;
+        let account_id: AccountId = read_account_id::<SyncAccountVaultError>(request.account_id)?;
+
         if !account_id.is_public() {
-            return Err(Status::invalid_argument(format!(
-                "account with ID {account_id} is not public",
-            )));
+            return Err(SyncAccountVaultError::AccountNotPublic(account_id).into());
         }
 
-        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
-
-        let block_range = block_range.into_inclusive_range(chain_tip);
-
-        if block_range.end() > &chain_tip {
-            return Err(Status::invalid_argument("block_to cannot be higher than the chain tip"));
-        }
+        let block_range = read_block_range::<SyncAccountVaultError>(
+            request.block_range,
+            "SyncAccountVaultRequest",
+        )?
+        .into_inclusive_range::<SyncAccountVaultError>(&chain_tip)?;
 
         let (last_included_block, updates) = self
             .state
             .sync_account_vault(account_id, block_range)
             .await
-            .map_err(internal_error)?;
+            .map_err(SyncAccountVaultError::from)?;
 
         let updates = updates
             .into_iter()
@@ -399,29 +436,24 @@ impl rpc_server::Rpc for StoreApi {
     ) -> Result<Response<proto::rpc_store::SyncStorageMapsResponse>, Status> {
         let request = request.into_inner();
 
-        let account_id = read_account_id(request.account_id).map_err(|e| *e)?;
+        let account_id = read_account_id::<SyncStorageMapsError>(request.account_id)?;
 
         if !account_id.is_public() {
-            return Err(Status::invalid_argument(format!(
-                "account with ID {account_id} is not public"
-            )));
+            Err(SyncStorageMapsError::AccountNotPublic(account_id))?;
         }
 
         let chain_tip = self.state.latest_block_num().await;
-        let block_range = request
-            .block_range
-            .ok_or(invalid_argument("block_range is required"))?
-            .into_inclusive_range(chain_tip);
-
-        if block_range.start() > block_range.end() {
-            return Err(Status::invalid_argument("block_from cannot be greater than block_to"));
-        }
+        let block_range = read_block_range::<SyncStorageMapsError>(
+            request.block_range,
+            "SyncStorageMapsRequest",
+        )?
+        .into_inclusive_range::<SyncStorageMapsError>(&chain_tip)?;
 
         let storage_maps_page = self
             .state
             .get_storage_map_sync_values(account_id, block_range)
             .await
-            .map_err(internal_error)?;
+            .map_err(SyncStorageMapsError::from)?;
 
         let updates = storage_maps_page
             .values
@@ -477,16 +509,13 @@ impl rpc_server::Rpc for StoreApi {
     ) -> Result<Response<proto::rpc_store::MaybeNoteScript>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
-        let root = request
-            .into_inner()
-            .root
-            .ok_or(invalid_argument("missing root"))?
-            .try_into()
-            .map_err(|err: ConversionError| {
-                invalid_argument(err.as_report_context("invalid root"))
-            })?;
+        let root = read_root::<GetNoteScriptByRootError>(request.into_inner().root, "NoteRoot")?;
 
-        let note_script = self.state.get_note_script_by_root(root).await.map_err(internal_error)?;
+        let note_script = self
+            .state
+            .get_note_script_by_root(root)
+            .await
+            .map_err(GetNoteScriptByRootError::from)?;
 
         Ok(Response::new(proto::rpc_store::MaybeNoteScript {
             script: note_script.map(Into::into),
@@ -510,16 +539,29 @@ impl rpc_server::Rpc for StoreApi {
         let request = request.into_inner();
 
         let chain_tip = self.state.latest_block_num().await;
-        let block_range = request.block_range.ok_or(invalid_argument("block_range is required"))?;
-        let block_range = block_range.into_inclusive_range(chain_tip);
+        let block_range = read_block_range::<SyncTransactionsError>(
+            request.block_range,
+            "SyncTransactionsRequest",
+        )?
+        .into_inclusive_range::<SyncTransactionsError>(&chain_tip)?;
 
-        let account_ids: Vec<AccountId> = read_account_ids(&request.account_ids)?;
+        let account_ids: Vec<AccountId> =
+            read_account_ids::<SyncTransactionsError>(&request.account_ids)?;
+
+        // Validate account IDs count
+        if account_ids.len() > MAX_ACCOUNT_IDS {
+            return Err(SyncTransactionsError::TooManyAccountIds(
+                account_ids.len(),
+                MAX_ACCOUNT_IDS,
+            )
+            .into());
+        }
 
         let (last_block_included, transaction_records_db) = self
             .state
             .sync_transactions(account_ids, block_range.clone())
             .await
-            .map_err(internal_error)?;
+            .map_err(SyncTransactionsError::from)?;
 
         // Convert database TransactionRecord to proto TransactionRecord
         let mut transaction_records = Vec::with_capacity(transaction_records_db.len());
@@ -530,7 +572,7 @@ impl rpc_server::Rpc for StoreApi {
                 .state
                 .get_notes_by_id(tx_header.output_notes.clone())
                 .await
-                .map_err(internal_error)?;
+                .map_err(SyncTransactionsError::from)?;
 
             // Convert to proto using the helper method
             let proto_record = tx_header.into_proto_with_note_records(note_records);

@@ -34,8 +34,7 @@ impl StoreApi {
         let (block_header, mmr_proof) = self
             .state
             .get_block_header(block_num, request.include_mmr_proof.unwrap_or(false))
-            .await
-            .map_err(internal_error)?;
+            .await?;
 
         Ok(Response::new(proto::shared::BlockHeaderByNumberResponse {
             block_header: block_header.map(Into::into),
@@ -58,38 +57,98 @@ pub fn invalid_argument<E: core::fmt::Display>(err: E) -> Status {
     Status::invalid_argument(err.to_string())
 }
 
-pub fn read_account_id(id: Option<proto::account::AccountId>) -> Result<AccountId, Box<Status>> {
-    id.ok_or(invalid_argument("missing account ID"))?
-        .try_into()
-        .map_err(|err: ConversionError| {
-            invalid_argument(err.as_report_context("invalid account ID")).into()
-        })
+/// Converts `ConversionError` to Status for nullifier validation
+pub fn conversion_error_to_status(value: &ConversionError) -> Status {
+    invalid_argument(value.as_report_context("Invalid nullifier format"))
 }
 
-#[allow(clippy::result_large_err)]
-#[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn read_account_ids(
-    account_ids: &[proto::account::AccountId],
-) -> Result<Vec<AccountId>, Status> {
+/// Reads a block range from a request, returning a specific error type if the field is missing
+pub fn read_block_range<E>(
+    block_range: Option<proto::rpc_store::BlockRange>,
+    entity: &'static str,
+) -> Result<proto::rpc_store::BlockRange, E>
+where
+    E: From<ConversionError>,
+{
+    block_range.ok_or_else(|| {
+        ConversionError::MissingFieldInProtobufRepresentation { entity, field_name: "block_range" }
+            .into()
+    })
+}
+
+/// Reads and converts a root field from a request to Word, returning a specific error type if
+/// conversion fails
+pub fn read_root<E>(
+    root: Option<proto::primitives::Digest>,
+    entity: &'static str,
+) -> Result<Word, E>
+where
+    E: From<ConversionError>,
+{
+    root.ok_or_else(|| ConversionError::MissingFieldInProtobufRepresentation {
+        entity,
+        field_name: "root",
+    })?
+    .try_into()
+    .map_err(Into::into)
+}
+
+/// Converts a collection of proto primitives to Words, returning a specific error type if
+/// conversion fails
+pub fn convert_digests_to_words<E, I>(digests: I) -> Result<Vec<Word>, E>
+where
+    E: From<ConversionError>,
+    I: IntoIterator,
+    I::Item: TryInto<Word, Error = ConversionError>,
+{
+    digests
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<Vec<_>, ConversionError>>()
+        .map_err(Into::into)
+}
+
+/// Reads account IDs from a request, returning a specific error type if conversion fails
+pub fn read_account_ids<E>(account_ids: &[proto::account::AccountId]) -> Result<Vec<AccountId>, E>
+where
+    E: From<ConversionError>,
+{
     account_ids
         .iter()
         .cloned()
         .map(AccountId::try_from)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Byte array is not a valid AccountId"))
+        .map_err(Into::into)
+}
+
+pub fn read_account_id<E>(id: Option<proto::account::AccountId>) -> Result<AccountId, E>
+where
+    E: From<ConversionError>,
+{
+    id.ok_or_else(|| {
+        ConversionError::deserialization_error(
+            "AccountId",
+            miden_objects::crypto::utils::DeserializationError::InvalidValue(
+                "Missing account ID".to_string(),
+            ),
+        )
+    })?
+    .try_into()
+    .map_err(Into::into)
 }
 
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn validate_nullifiers(
-    nullifiers: &[proto::primitives::Digest],
-) -> Result<Vec<Nullifier>, Status> {
+pub fn validate_nullifiers<E>(nullifiers: &[proto::primitives::Digest]) -> Result<Vec<Nullifier>, E>
+where
+    E: From<ConversionError> + std::fmt::Display,
+{
     nullifiers
         .iter()
         .copied()
         .map(TryInto::try_into)
         .collect::<Result<_, ConversionError>>()
-        .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
+        .map_err(Into::into)
 }
 
 #[allow(clippy::result_large_err)]

@@ -223,10 +223,14 @@ impl BundledCommand {
         let validator_id = join_set
             .spawn({
                 async move {
-                    Validator { address: validator_address, grpc_timeout }
-                        .serve()
-                        .await
-                        .context("failed while serving validator component")
+                    Validator {
+                        address: validator_address,
+                        grpc_timeout,
+                        data_directory,
+                    }
+                    .serve()
+                    .await
+                    .context("failed while serving validator component")
                 }
             })
             .id();

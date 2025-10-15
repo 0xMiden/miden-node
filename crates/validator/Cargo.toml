@@ -27,5 +27,6 @@ tokio-stream               = { features = ["net"], workspace = true }
 tonic                      = { features = ["transport"], workspace = true }
 tonic-reflection           = { workspace = true }
 tower-http                 = { features = ["util"], workspace = true }
+miden-node-store = { workspace = true }
 
 [dev-dependencies]

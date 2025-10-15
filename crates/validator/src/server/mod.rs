@@ -1,4 +1,6 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -21,6 +23,8 @@ pub struct Validator {
     ///
     /// If the handler takes longer than this duration, the server cancels the call.
     pub grpc_timeout: Duration,
+    /// The data directory for the validator component's database files.
+    pub data_directory: PathBuf,
 }
 
 impl Validator {
@@ -54,7 +58,7 @@ impl Validator {
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .timeout(self.grpc_timeout)
-            .add_service(api_server::ApiServer::new(self))
+            .add_service(api_server::ApiServer::new(ValidatorServer::from(self)))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener))
@@ -63,8 +67,18 @@ impl Validator {
     }
 }
 
+struct ValidatorServer {
+    // todo store connection etc
+}
+
+impl From<Validator> for ValidatorServer {
+    fn from(validator: Validator) -> Self {
+        Self {}
+    }
+}
+
 #[tonic::async_trait]
-impl api_server::Api for Validator {
+impl api_server::Api for ValidatorServer {
     /// ...
     async fn status(
         &self,

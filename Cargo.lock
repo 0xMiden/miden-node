@@ -2741,6 +2741,14 @@ name = "miden-node-validator"
 version = "0.12.0"
 dependencies = [
  "anyhow",
+ "miden-node-proto",
+ "miden-node-proto-build",
+ "miden-node-utils",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-reflection",
+ "tower-http",
  "tracing",
 ]
 

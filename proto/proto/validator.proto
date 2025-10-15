@@ -10,5 +10,21 @@ import "google/protobuf/empty.proto";
 
 // Validator API for the Validator component.
 service Api {
+   // Returns the status info of the validator.
+   rpc Status(google.protobuf.Empty) returns (ValidatorStatus) {}
+
+   // Submits a transaction to the validator.
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
+}
+
+// STATUS
+// ================================================================================================
+
+// Represents the status of the validator.
+message ValidatorStatus {
+    // The validator's running version.
+    string version = 1;
+
+    // The validator's status.
+    string status = 2;
 }

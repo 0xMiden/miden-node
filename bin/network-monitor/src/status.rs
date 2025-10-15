@@ -16,6 +16,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, instrument};
 use url::Url;
 
+use crate::counter::CounterIncrementDetails;
 use crate::faucet::FaucetTestDetails;
 use crate::remote_prover::{ProofType, ProverTestDetails};
 use crate::{COMPONENT, current_unix_timestamp_secs};
@@ -74,6 +75,7 @@ pub enum ServiceDetails {
     RemoteProverStatus(RemoteProverStatusDetails),
     RemoteProverTest(ProverTestDetails),
     FaucetTest(FaucetTestDetails),
+    CounterIncrement(CounterIncrementDetails),
     Error,
 }
 

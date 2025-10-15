@@ -23,6 +23,7 @@ pub struct ServerState {
     pub rpc: watch::Receiver<ServiceStatus>,
     pub provers: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
     pub faucet: Option<watch::Receiver<ServiceStatus>>,
+    pub counter: watch::Receiver<ServiceStatus>,
 }
 
 /// Runs the frontend server.
@@ -82,6 +83,9 @@ async fn get_status(
     if let Some(faucet_rx) = &server_state.faucet {
         services.push(faucet_rx.borrow().clone());
     }
+
+    // Collect counter status
+    services.push(server_state.counter.borrow().clone());
 
     let network_status = NetworkStatus { services, last_updated: current_time };
 

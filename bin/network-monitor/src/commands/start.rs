@@ -49,11 +49,15 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         None
     };
 
+    // Initialize the counter increment task.
+    let counter_rx = tasks.spawn_counter_increment(&config);
+
     // Initialize HTTP server.
     let server_state = ServerState {
         rpc: rpc_rx,
         provers: prover_rxs,
         faucet: faucet_rx,
+        counter: counter_rx,
     };
     tasks.spawn_http_server(server_state, &config);
 

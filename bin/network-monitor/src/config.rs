@@ -117,4 +117,14 @@ pub struct MonitorConfig {
         help = "Path where the counter program account will be saved"
     )]
     pub counter_file: PathBuf,
+
+    /// The interval at which to increment the counter.
+    #[arg(
+        long = "counter-increment-interval",
+        env = "MIDEN_MONITOR_COUNTER_INCREMENT_INTERVAL",
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
+        help = "The interval at which to increment the counter"
+    )]
+    pub counter_increment_interval: Duration,
 }

@@ -11,6 +11,7 @@ use tokio::task::{Id, JoinSet};
 use tracing::debug;
 
 use crate::config::MonitorConfig;
+use crate::counter::run_counter_increment_task;
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload, run_remote_prover_test_task};
@@ -212,6 +213,40 @@ impl Tasks {
         self.names.insert(id, "faucet-test".to_string());
 
         faucet_rx
+    }
+
+    /// Spawn the counter increment task.
+    pub fn spawn_counter_increment(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
+        let current_time = current_unix_timestamp_secs();
+
+        // Create initial counter increment status
+        let initial_counter_status = ServiceStatus {
+            name: "Counter Increment".to_string(),
+            status: crate::status::Status::Unknown,
+            last_checked: current_time,
+            error: None,
+            details: crate::status::ServiceDetails::CounterIncrement(
+                crate::counter::CounterIncrementDetails {
+                    success_count: 0,
+                    failure_count: 0,
+                    current_value: None,
+                    last_tx_id: None,
+                },
+            ),
+        };
+
+        // Spawn the counter increment task
+        let (counter_tx, counter_rx) = watch::channel(initial_counter_status);
+        let config = config.clone();
+        let id = self
+            .handles
+            .spawn(async move {
+                Box::pin(run_counter_increment_task(config, counter_tx)).await.unwrap();
+            })
+            .id();
+        self.names.insert(id, "counter-increment".to_string());
+
+        counter_rx
     }
 
     /// Spawn the HTTP frontend server.

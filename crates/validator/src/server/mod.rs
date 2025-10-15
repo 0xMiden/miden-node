@@ -6,10 +6,12 @@ use anyhow::Context;
 use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
+use miden_node_store::Db;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_objects::block::ProvenBlock;
+use miden_objects::block::{BlockNumber, ProvenBlock};
+use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::Deserializable;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -17,6 +19,10 @@ use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::COMPONENT;
+use crate::db::load;
+use crate::server::submit::submit_proven_transaction;
+
+pub mod submit;
 
 pub struct Validator {
     /// The address of the validator component.
@@ -55,27 +61,33 @@ impl Validator {
             .build_v1alpha()
             .context("failed to build reflection service")?;
 
+        // Initialize database connection.
+        let db = load(self.data_directory.join("validator.sqlite3"))
+            .await
+            .context("failed to initialize validator database")?;
+
         // Build the gRPC server with the API service and trace layer.
+        let validator_server = ValidatorServer::new(db);
         tonic::transport::Server::builder()
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
             .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .timeout(self.grpc_timeout)
-            .add_service(api_server::ApiServer::new(ValidatorServer::from(self)))
+            .add_service(api_server::ApiServer::new(validator_server))
             .add_service(reflection_service)
             .add_service(reflection_service_alpha)
             .serve_with_incoming(TcpListenerStream::new(listener))
             .await
-            .context("failed to serve block producer API")
+            .context("failed to serve validator API")
     }
 }
 
 struct ValidatorServer {
-    // todo store connection etc
+    pub db: miden_node_store::Db,
 }
 
-impl From<Validator> for ValidatorServer {
-    fn from(validator: Validator) -> Self {
-        Self {}
+impl ValidatorServer {
+    pub fn new(db: miden_node_store::Db) -> Self {
+        Self { db }
     }
 }
 
@@ -84,17 +96,48 @@ impl api_server::Api for ValidatorServer {
     /// ...
     async fn status(
         &self,
-        request: tonic::Request<()>,
+        _request: tonic::Request<()>,
     ) -> Result<tonic::Response<proto::validator::ValidatorStatus>, tonic::Status> {
         todo!()
     }
 
-    /// ...
+    /// Submit a proven transaction for validation and storage.
     async fn submit_proven_transaction(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransaction>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
-        todo!()
+        let proto_transaction = request.into_inner();
+
+        // Deserialize the proven transaction from protobuf bytes.
+        let proven_tx = ProvenTransaction::read_from_bytes(&proto_transaction.transaction)
+            .map_err(|err| {
+                tonic::Status::invalid_argument(
+                    format!("failed to deserialize transaction: {err}",),
+                )
+            })?;
+
+        // TODO: Determine the appropriate block number for this transaction
+        // This should come from the current block being validated or a specific context
+        let block_num = BlockNumber::from(0); // Placeholder - needs proper implementation
+
+        let result = self
+            .db
+            .transact("submit_transaction", move |conn| {
+                submit_proven_transaction(conn, &proven_tx, block_num)
+            })
+            .await;
+
+        match result {
+            Ok(rows_affected) => {
+                tracing::info!(
+                    target: COMPONENT,
+                    rows_affected = rows_affected,
+                    "Successfully submitted proven transaction"
+                );
+                Ok(tonic::Response::new(()))
+            },
+            Err(err) => Err(err.into()),
+        }
     }
 
     /// ...
@@ -103,7 +146,7 @@ impl api_server::Api for ValidatorServer {
         request: tonic::Request<proto::blockchain::Block>,
     ) -> std::result::Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
         let request = request.into_inner();
-        let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
+        let _block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
             tonic::Status::invalid_argument(err.as_report_context("block deserialization error"))
         })?;
 

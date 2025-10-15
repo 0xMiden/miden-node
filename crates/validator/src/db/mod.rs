@@ -16,33 +16,26 @@ use crate::COMPONENT;
 use crate::db::models::SqlTypeConvert;
 
 /// ...
-pub struct Db {
-    db: miden_node_store::Db,
+pub fn bootstrap(database_filepath: PathBuf) -> anyhow::Result<()> {
+    todo!()
 }
 
-impl Db {
-    /// ...
-    pub fn bootstrap(database_filepath: PathBuf) -> anyhow::Result<()> {
-        todo!()
-    }
+/// Open a connection to the DB and apply any pending migrations.
+#[instrument(target = COMPONENT, skip_all)]
+pub async fn load(database_filepath: PathBuf) -> Result<miden_node_store::Db, DatabaseSetupError> {
+    let manager = ConnectionManager::new(database_filepath.to_str().unwrap());
+    let pool = deadpool_diesel::Pool::builder(manager).max_size(16).build()?;
 
-    /// Open a connection to the DB and apply any pending migrations.
-    #[instrument(target = COMPONENT, skip_all)]
-    pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
-        let manager = ConnectionManager::new(database_filepath.to_str().unwrap());
-        let pool = deadpool_diesel::Pool::builder(manager).max_size(16).build()?;
+    tracing::info!(
+        target: COMPONENT,
+        sqlite= %database_filepath.display(),
+        "Connected to the database"
+    );
 
-        tracing::info!(
-            target: COMPONENT,
-            sqlite= %database_filepath.display(),
-            "Connected to the database"
-        );
-
-        let db = miden_node_store::Db::new(pool);
-        // TODO: migrations
-        // db.query("migrations", apply_migrations).await?;
-        Ok(Self { db })
-    }
+    let db = miden_node_store::Db::new(pool);
+    // TODO: migrations
+    // db.query("migrations", apply_migrations).await?;
+    Ok(db)
 }
 
 pub(crate) fn insert_transactions(

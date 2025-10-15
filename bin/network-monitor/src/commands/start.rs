@@ -25,16 +25,17 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
     }
 
-    // Ensure counter account exist before starting monitoring tasks
-    Box::pin(ensure_counter_exist(&config.counter_file, &config.rpc_url)).await?;
-
     let mut tasks = Tasks::new();
 
     // Initialize the RPC Status endpoint checker task.
     let rpc_rx = tasks.spawn_rpc_checker(&config).await?;
 
-    // Initialize the prover checkers & tests tasks.
-    let prover_rxs = tasks.spawn_prover_tasks(&config).await?;
+    // Initialize the prover checkers & tests tasks, only if URLs were provided.
+    let prover_rxs = if config.remote_prover_urls.is_empty() {
+        Vec::new()
+    } else {
+        tasks.spawn_prover_tasks(&config).await?
+    };
 
     // Initialize the faucet testing task.
     let faucet_rx = if config.faucet_url.is_some() {
@@ -44,8 +45,15 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         None
     };
 
-    // Initialize the counter increment task.
-    let counter_rx = tasks.spawn_counter_increment(&config);
+    // Initialize the counter increment task only if enabled.
+    let counter_rx = if config.enable_counter {
+        // Ensure counter account exist before starting monitoring tasks
+        Box::pin(ensure_counter_exist(&config.counter_file, &config.rpc_url)).await?;
+
+        Some(tasks.spawn_counter_increment(&config))
+    } else {
+        None
+    };
 
     // Initialize HTTP server.
     let server_state = ServerState {

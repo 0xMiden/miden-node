@@ -28,15 +28,15 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 
 **Available Options:**
 - `--rpc-url`: RPC service URL (default: `http://localhost:50051`)
-- `--remote-prover-urls`: Comma-separated list of remote prover URLs (default: `http://localhost:50052`)
-- `--faucet-url`: Faucet service URL for testing (default: `http://localhost:8080`)
+- `--remote-prover-urls`: Comma-separated list of remote prover URLs. If omitted or empty, prover tasks are disabled.
+- `--faucet-url`: Faucet service URL for testing. If omitted, faucet testing is disabled.
+- `--enable-counter`: Enable the counter increment task. If set, the monitor ensures the counter account exist (creating and deploying them if missing).
 - `--remote-prover-test-interval`: Interval at which to test the remote provers services (default: `2m`)
 - `--faucet-test-interval`: Interval at which to test the faucet services (default: `2m`)
 - `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
-- `--wallet-file`: Path where the wallet account will be saved (default: `wallet_account.bin`)
-- `--counter-file`: Path where the counter program account will be saved (default: `counter_program.bin`)
+- `--counter-file`: Path where the counter program account will be saved (default: `counter_program.bin`) — used only when `--enable-counter` is set
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -45,14 +45,14 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 If command-line arguments are not provided, the application falls back to environment variables:
 
 - `MIDEN_MONITOR_RPC_URL`: RPC service URL
-- `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs
-- `MIDEN_MONITOR_FAUCET_URL`: Faucet service URL for testing
+- `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs. If unset or empty, prover tasks are disabled.
+- `MIDEN_MONITOR_FAUCET_URL`: Faucet service URL for testing. If unset, faucet testing is disabled.
+- `MIDEN_MONITOR_ENABLE_COUNTER`: Set to `true` to enable the counter increment task (default: disabled)
 - `MIDEN_MONITOR_REMOTE_PROVER_TEST_INTERVAL`: Interval at which to test the remote provers services
 - `MIDEN_MONITOR_FAUCET_TEST_INTERVAL`: Interval at which to test the faucet services
 - `MIDEN_MONITOR_STATUS_CHECK_INTERVAL`: Interval at which to check the status of the services
 - `MIDEN_MONITOR_PORT`: Web server port
 - `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing
-- `MIDEN_MONITOR_WALLET_FILE`: Path where the wallet account will be saved
 - `MIDEN_MONITOR_COUNTER_FILE`: Path where the counter program account will be saved
 
 ## Commands
@@ -61,32 +61,33 @@ The monitor application supports one main command:
 
 ### Start Monitor
 
-Starts the network monitoring service with the web dashboard. The monitor automatically creates and deploys Miden accounts if they don't already exist.
+Starts the network monitoring service with the web dashboard. RPC status is always enabled. Other tasks are optional and spawn only when configured:
+
+- Prover checks/tests: enabled when `--remote-prover-urls` (or `MIDEN_MONITOR_REMOTE_PROVER_URLS`) is provided
+- Faucet testing: enabled when `--faucet-url` (or `MIDEN_MONITOR_FAUCET_URL`) is provided
+- Counter increment: enabled when `--enable-counter` (or `MIDEN_MONITOR_ENABLE_COUNTER=true`) is set
 
 ```bash
-# Start with default configuration
+# Start with default configuration (RPC only)
 miden-network-monitor start
 
 # Start with custom configuration
 miden-network-monitor start --port 8080 --rpc-url http://localhost:50051
 
-# Start with custom account file paths
+# Enable counter task with custom account file paths
 miden-network-monitor start \
-  --wallet-file my_wallet.bin \
+  --enable-counter \
   --counter-file my_counter.bin \
   --rpc-url https://testnet.miden.io:443
 ```
 
-**Automatic Account Management:**
-The monitor automatically handles account creation and deployment:
-1. Checks if wallet and counter account files exist
-2. If files don't exist, creates new accounts:
-   - A wallet account with RpoFalcon512 authentication
-   - A counter program account with custom MASM script
-3. Saves both accounts to the specified files using the Miden AccountFile format
-4. Deploys the accounts to the network via RPC
-5. The counter program includes authentication logic that only allows the wallet account to increment the counter
-6. Both accounts are ready for use in Miden transactions
+**Optional Counter Account Management (only when counter is enabled):**
+When `--enable-counter` is set, the monitor ensures required counter account exist before starting the task:
+1. If file is missing, creates new counter account:
+   - Counter program account with the increment procedure
+2. Saves counter account to the specified file using the Miden AccountFile format
+3. Deploys accounts to the network via RPC (if not already deployed)
+4. The counter contract authorizes increments only from the counter account
 
 ## Usage
 
@@ -100,11 +101,11 @@ miden-network-monitor start --remote-prover-urls http://localhost:50052
 miden-network-monitor start \
   --remote-prover-urls http://localhost:50052,http://localhost:50053,http://localhost:50054 \
   --faucet-url http://localhost:8080 \
+  --enable-counter \
   --remote-prover-test-interval 2m \
   --faucet-test-interval 2m \
   --status-check-interval 3s \
   --port 8080 \
-  --wallet-file my_wallet.bin \
   --counter-file my_counter.bin \
   --enable-otel
 
@@ -118,10 +119,10 @@ miden-network-monitor --help
 # Single remote prover
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor start
 
-# Multiple remote provers and faucet testing
+# Multiple remote provers, faucet testing, and counter task
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" \
 MIDEN_MONITOR_FAUCET_URL="http://localhost:8080" \
-MIDEN_MONITOR_WALLET_FILE="my_wallet.bin" \
+MIDEN_MONITOR_ENABLE_COUNTER=true \
 MIDEN_MONITOR_COUNTER_FILE="my_counter.bin" \
 miden-network-monitor start
 ```
@@ -164,7 +165,14 @@ The monitor application provides real-time status monitoring for the following M
   - Response time measurement for challenge completion
   - Challenge difficulty monitoring
   - Transaction and note ID tracking from successful mints
-  - Automated testing every 30 seconds to verify faucet functionality
+  - Automated testing on a configurable interval to verify faucet functionality
+
+### Counter Increment
+- **Service Health**: End-to-end transaction submission and on-chain state query
+- **Metrics**:
+  - Current counter value (queried from RPC one block after submission)
+  - Success/Failure counts
+  - Last TX ID with copy-to-clipboard
 
 ## User Interface
 
@@ -180,19 +188,19 @@ The web dashboard provides a clean, responsive interface with the following feat
 
 ## Account Management
 
-The monitor automatically manages Miden accounts for testing and monitoring purposes:
+When the counter task is enabled, the monitor manages the necessary Miden accounts:
 
 ### Created Accounts
+
+**Counter Program Account:**
+- Implements a simple counter with increment functionality
+- Includes authentication logic that restricts access to the counter account
+- Uses custom MASM script with account ID-based authorization
+- Automatically created if not present
 
 **Wallet Account:**
 - Uses RpoFalcon512 authentication scheme
 - Contains authentication keys for transaction signing
-- Automatically created if not present
-
-**Counter Program Account:**
-- Implements a simple counter with increment functionality
-- Includes authentication logic that restricts access to the wallet account
-- Uses custom MASM script with account ID-based authorization
 - Automatically created if not present
 
 ### Account File Management
@@ -201,31 +209,29 @@ The monitor automatically:
 1. Checks for existing account files on startup
 2. Creates new accounts if files don't exist
 3. Deploys accounts to the network via RPC
-4. Uses the specified file paths (default: `wallet_account.bin` and `counter_program.bin`)
+4. Uses the specified file paths (default: `counter_program.bin`)
 
 ### Example Usage
 
 ```bash
-# Start monitor with default account files
-miden-network-monitor start --rpc-url https://testnet.miden.io:443
+# Start monitor with counter task and default account files
+miden-network-monitor start --enable-counter --rpc-url https://testnet.miden.io:443
 
 # Start monitor with custom account file paths
 miden-network-monitor start \
+  --enable-counter \
   --rpc-url https://testnet.miden.io:443 \
-  --wallet-file my_wallet.bin \
   --counter-file my_counter.bin
-
-# The generated files can be loaded in Miden applications:
-# - wallet_account.bin: Contains the wallet account with authentication keys
-# - counter_program.bin: Contains the counter program account
 ```
 
 ## Future Monitor Items
 
-Planned workflow testing features for future releases:
+Planned features:
 
-### Network Transaction Testing
-The monitor system will submit actual transactions to the network to perform end-to-end testing of the complete workflow. This test covers transaction creation, submission, processing, and confirmation, providing comprehensive validation of network functionality.
+- Note synchronization views (by tag) with inclusion proofs
+- Account state proof verification (client-side) and historical state queries
+- Batch prover status and test coverage
+- Configurable alerting/webhooks for unhealthy services
 
 ## License
 This project is [MIT licensed](../../LICENSE).

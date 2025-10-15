@@ -13,8 +13,6 @@ use url::Url;
 // ================================================================================================
 
 const DEFAULT_RPC_URL: &str = "http://localhost:50051";
-const DEFAULT_REMOTE_PROVER_URLS: &str = "http://localhost:50052";
-const DEFAULT_FAUCET_URL: &str = "http://localhost:8080";
 const DEFAULT_PORT: u16 = 3000;
 
 /// Configuration for the monitor.
@@ -35,7 +33,6 @@ pub struct MonitorConfig {
     #[arg(
         long = "remote-prover-urls",
         env = "MIDEN_MONITOR_REMOTE_PROVER_URLS",
-        default_value = DEFAULT_REMOTE_PROVER_URLS,
         value_delimiter = ',',
         help = "The URLs of the remote provers for status checking (comma-separated)"
     )]
@@ -45,7 +42,6 @@ pub struct MonitorConfig {
     #[arg(
         long = "faucet-url",
         env = "MIDEN_MONITOR_FAUCET_URL",
-        default_value = DEFAULT_FAUCET_URL,
         help = "The URL of the faucet service for testing (optional)"
     )]
     pub faucet_url: Option<Url>,
@@ -99,6 +95,16 @@ pub struct MonitorConfig {
         help = "Whether to enable OpenTelemetry"
     )]
     pub enable_otel: bool,
+
+    /// Enable the counter increment task (optional; disabled by default).
+    #[arg(
+        long = "enable-counter",
+        env = "MIDEN_MONITOR_ENABLE_COUNTER",
+        action = clap::ArgAction::SetTrue,
+        default_value_t = false,
+        help = "Whether to enable the counter increment task"
+    )]
+    pub enable_counter: bool,
 
     /// Path for the wallet account file.
     #[arg(

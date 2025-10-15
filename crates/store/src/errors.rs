@@ -115,6 +115,8 @@ pub enum DatabaseError {
     ConnectionManager(#[from] ConnectionManagerError),
     #[error(transparent)]
     SqlValueConversion(#[from] DatabaseTypeConversionError),
+    #[error("query timeout: {0}")]
+    QueryTimeout(String),
 }
 
 impl DatabaseError {

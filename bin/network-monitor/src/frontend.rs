@@ -34,6 +34,7 @@ pub struct ServerState {
 ///
 /// * `server_state` - The server state containing watch receivers for all services.
 /// * `config` - The configuration of the network.
+#[instrument(target = COMPONENT, name = "frontend.serve", skip_all, fields(port = %config.port))]
 pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     // build our application with routes
     let app = Router::new()
@@ -55,6 +56,7 @@ pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     axum::serve(listener, app).await.expect("Failed to start web server");
 }
 
+#[instrument(target = COMPONENT, name = "frontend.get-dashboard", skip_all)]
 async fn get_dashboard() -> Html<&'static str> {
     Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.html")))
 }

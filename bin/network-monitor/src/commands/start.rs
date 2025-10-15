@@ -4,8 +4,9 @@
 
 use anyhow::Result;
 use miden_node_utils::logging::OpenTelemetry;
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
+use crate::COMPONENT;
 use crate::config::MonitorConfig;
 use crate::deploy::ensure_counter_exist;
 use crate::frontend::ServerState;
@@ -15,6 +16,7 @@ use crate::monitor::tasks::Tasks;
 ///
 /// This function initializes all monitoring tasks including RPC status checking,
 /// remote prover testing, faucet testing, and the web frontend.
+#[instrument(target = COMPONENT, name = "start-monitor", skip_all, fields(port = %config.port))]
 pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
     // Load configuration from command-line arguments and environment variables
     info!("Loaded configuration: {:?}", config);

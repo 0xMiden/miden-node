@@ -8,8 +8,9 @@ use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task::{Id, JoinSet};
-use tracing::debug;
+use tracing::{debug, instrument};
 
+use crate::COMPONENT;
 use crate::config::MonitorConfig;
 use crate::counter::run_counter_increment_task;
 use crate::faucet::run_faucet_test_task;
@@ -40,6 +41,7 @@ impl Tasks {
     }
 
     /// Spawn the RPC status checker task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-rpc-checker", skip_all)]
     pub async fn spawn_rpc_checker(
         &mut self,
         config: &MonitorConfig,
@@ -72,6 +74,7 @@ impl Tasks {
     }
 
     /// Spawn prover status and test tasks for all configured provers.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-prover-tasks", skip_all)]
     pub async fn spawn_prover_tasks(
         &mut self,
         config: &MonitorConfig,
@@ -181,6 +184,7 @@ impl Tasks {
     }
 
     /// Spawn the faucet testing task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-faucet", skip_all)]
     pub fn spawn_faucet(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
         let current_time = current_unix_timestamp_secs();
 
@@ -216,6 +220,7 @@ impl Tasks {
     }
 
     /// Spawn the counter increment task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-counter", skip_all)]
     pub fn spawn_counter_increment(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
         let current_time = current_unix_timestamp_secs();
 
@@ -250,6 +255,7 @@ impl Tasks {
     }
 
     /// Spawn the HTTP frontend server.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-frontend", skip_all)]
     pub fn spawn_http_server(&mut self, server_state: ServerState, config: &MonitorConfig) {
         let config = config.clone();
         let id = self.handles.spawn(async move { serve(server_state, config).await }).id();

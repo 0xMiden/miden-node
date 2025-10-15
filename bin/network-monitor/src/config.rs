@@ -13,8 +13,6 @@ use url::Url;
 // ================================================================================================
 
 const DEFAULT_RPC_URL: &str = "http://0.0.0.0:57291";
-const DEFAULT_REMOTE_PROVER_URLS: &str = "http://localhost:50052";
-const DEFAULT_FAUCET_URL: &str = "http://localhost:8080";
 const DEFAULT_PORT: u16 = 3000;
 
 /// Configuration for the monitor.
@@ -35,7 +33,6 @@ pub struct MonitorConfig {
     #[arg(
         long = "remote-prover-urls",
         env = "MIDEN_MONITOR_REMOTE_PROVER_URLS",
-        default_value = DEFAULT_REMOTE_PROVER_URLS,
         value_delimiter = ',',
         help = "The URLs of the remote provers for status checking (comma-separated)"
     )]
@@ -45,7 +42,6 @@ pub struct MonitorConfig {
     #[arg(
         long = "faucet-url",
         env = "MIDEN_MONITOR_FAUCET_URL",
-        default_value = DEFAULT_FAUCET_URL,
         help = "The URL of the faucet service for testing (optional)"
     )]
     pub faucet_url: Option<Url>,
@@ -100,7 +96,6 @@ pub struct MonitorConfig {
     )]
     pub enable_otel: bool,
 
-    /// Path for the wallet account file.
     #[arg(
         long = "wallet-filepath",
         env = "MIDEN_MONITOR_WALLET_FILEPATH",
@@ -108,6 +103,16 @@ pub struct MonitorConfig {
         help = "Path where the wallet account is located"
     )]
     pub wallet_filepath: PathBuf,
+
+    /// Enable the counter increment task (optional; disabled by default).
+    #[arg(
+        long = "enable-counter",
+        env = "MIDEN_MONITOR_ENABLE_COUNTER",
+        action = clap::ArgAction::SetTrue,
+        default_value_t = false,
+        help = "Whether to enable the counter increment task"
+    )]
+    pub enable_counter: bool,
 
     /// Path for the counter program account file.
     #[arg(
@@ -117,4 +122,14 @@ pub struct MonitorConfig {
         help = "Path where the counter account is located"
     )]
     pub counter_filepath: PathBuf,
+
+    /// The interval at which to increment the counter.
+    #[arg(
+        long = "counter-increment-interval",
+        env = "MIDEN_MONITOR_COUNTER_INCREMENT_INTERVAL",
+        default_value = "30s",
+        value_parser = humantime::parse_duration,
+        help = "The interval at which to increment the counter"
+    )]
+    pub counter_increment_interval: Duration,
 }

@@ -8,9 +8,11 @@ use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task::{Id, JoinSet};
-use tracing::debug;
+use tracing::{debug, instrument};
 
+use crate::COMPONENT;
 use crate::config::MonitorConfig;
+use crate::counter::run_counter_increment_task;
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload, run_remote_prover_test_task};
@@ -39,6 +41,7 @@ impl Tasks {
     }
 
     /// Spawn the RPC status checker task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-rpc-checker", skip_all)]
     pub async fn spawn_rpc_checker(
         &mut self,
         config: &MonitorConfig,
@@ -71,6 +74,7 @@ impl Tasks {
     }
 
     /// Spawn prover status and test tasks for all configured provers.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-prover-tasks", skip_all)]
     pub async fn spawn_prover_tasks(
         &mut self,
         config: &MonitorConfig,
@@ -180,6 +184,7 @@ impl Tasks {
     }
 
     /// Spawn the faucet testing task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-faucet", skip_all)]
     pub fn spawn_faucet(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
         let current_time = current_unix_timestamp_secs();
 
@@ -214,7 +219,43 @@ impl Tasks {
         faucet_rx
     }
 
+    /// Spawn the counter increment task.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-counter", skip_all)]
+    pub fn spawn_counter_increment(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
+        let current_time = current_unix_timestamp_secs();
+
+        // Create initial counter increment status
+        let initial_counter_status = ServiceStatus {
+            name: "Counter Increment".to_string(),
+            status: crate::status::Status::Unknown,
+            last_checked: current_time,
+            error: None,
+            details: crate::status::ServiceDetails::CounterIncrement(
+                crate::counter::CounterIncrementDetails {
+                    success_count: 0,
+                    failure_count: 0,
+                    current_value: None,
+                    last_tx_id: None,
+                },
+            ),
+        };
+
+        // Spawn the counter increment task
+        let (counter_tx, counter_rx) = watch::channel(initial_counter_status);
+        let config = config.clone();
+        let id = self
+            .handles
+            .spawn(async move {
+                Box::pin(run_counter_increment_task(config, counter_tx)).await.unwrap();
+            })
+            .id();
+        self.names.insert(id, "counter-increment".to_string());
+
+        counter_rx
+    }
+
     /// Spawn the HTTP frontend server.
+    #[instrument(target = COMPONENT, name = "tasks.spawn-frontend", skip_all)]
     pub fn spawn_http_server(&mut self, server_state: ServerState, config: &MonitorConfig) {
         let config = config.clone();
         let id = self.handles.spawn(async move { serve(server_state, config).await }).id();

@@ -28,6 +28,7 @@
 - Reduced note retries to 1 ([#1308](https://github.com/0xMiden/miden-node/pull/1308)).
 - Address network transaction builder (NTX) invariant breaking for unavailable accounts ([#1312](https://github.com/0xMiden/miden-node/pull/1312)).
 - Tweaked HTTP configurations on the pingora proxy server ([#1281](https://github.com/0xMiden/miden-node/pull/1281)).
+- Added the counter increment task to `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).
 
 ## v0.11.2 (2025-09-10)
 

@@ -23,6 +23,7 @@ pub struct ServerState {
     pub rpc: watch::Receiver<ServiceStatus>,
     pub provers: Vec<(watch::Receiver<ServiceStatus>, watch::Receiver<ServiceStatus>)>,
     pub faucet: Option<watch::Receiver<ServiceStatus>>,
+    pub counter: Option<watch::Receiver<ServiceStatus>>,
 }
 
 /// Runs the frontend server.
@@ -33,6 +34,7 @@ pub struct ServerState {
 ///
 /// * `server_state` - The server state containing watch receivers for all services.
 /// * `config` - The configuration of the network.
+#[instrument(target = COMPONENT, name = "frontend.serve", skip_all, fields(port = %config.port))]
 pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     // build our application with routes
     let app = Router::new()
@@ -54,6 +56,7 @@ pub async fn serve(server_state: ServerState, config: MonitorConfig) {
     axum::serve(listener, app).await.expect("Failed to start web server");
 }
 
+#[instrument(target = COMPONENT, name = "frontend.get-dashboard", skip_all)]
 async fn get_dashboard() -> Html<&'static str> {
     Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/assets/index.html")))
 }
@@ -81,6 +84,11 @@ async fn get_status(
     // Collect faucet status if available
     if let Some(faucet_rx) = &server_state.faucet {
         services.push(faucet_rx.borrow().clone());
+    }
+
+    // Collect counter status if enabled
+    if let Some(counter_rx) = &server_state.counter {
+        services.push(counter_rx.borrow().clone());
     }
 
     let network_status = NetworkStatus { services, last_updated: current_time };

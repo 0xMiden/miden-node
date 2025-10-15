@@ -1,6 +1,5 @@
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -92,6 +91,14 @@ impl api_server::Api for ValidatorServer {
         &self,
         request: tonic::Request<proto::transaction::ProvenTransaction>,
     ) -> Result<tonic::Response<()>, tonic::Status> {
+        todo!()
+    }
+
+    /// ...
+    async fn validate_block(
+        &self,
+        request: tonic::Request<proto::blockchain::Block>,
+    ) -> std::result::Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
         todo!()
     }
 }

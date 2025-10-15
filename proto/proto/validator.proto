@@ -3,6 +3,7 @@ syntax = "proto3";
 package validator;
 
 import "types/transaction.proto";
+import "types/blockchain.proto";
 import "google/protobuf/empty.proto";
 
 // VALIDATOR API
@@ -15,6 +16,15 @@ service Api {
 
    // Submits a transaction to the validator.
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
+
+   // Validates and signs a block.
+   rpc ValidateBlock(blockchain.Block) returns (SignedBlock);
+}
+
+// Block that has been validated and signed by the validator.
+message SignedBlock {
+    blockchain.Block block = 1;
+    bytes signature = 2;
 }
 
 // STATUS

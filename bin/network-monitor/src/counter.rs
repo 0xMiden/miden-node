@@ -60,6 +60,7 @@ use tracing::{error, info, instrument};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
+use crate::deploy::wallet::create_wallet_account;
 use crate::status::{ServiceDetails, ServiceStatus, Status};
 
 /// Counter increment task details.
@@ -162,11 +163,11 @@ async fn setup_counter_increment(
 )> {
     let details = CounterIncrementDetails::default();
     // Load accounts from files
-    let (wallet_account, secret_key) = match load_wallet_account(&config.wallet_file) {
+    let (wallet_account, secret_key) = match create_wallet_account() {
         Ok(account) => account,
         Err(e) => {
-            error!("Failed to load wallet account: {:?}", e);
-            return Err(anyhow::anyhow!("Failed to load wallet account"));
+            error!("Failed to create wallet account: {:?}", e);
+            return Err(anyhow::anyhow!("Failed to create wallet account"));
         },
     };
 
@@ -311,24 +312,6 @@ pub async fn run_counter_increment_task(
         // Wait for the next increment
         sleep(config.counter_increment_interval).await;
     }
-}
-
-/// Load wallet account from file.
-fn load_wallet_account(file_path: &Path) -> Result<(Account, SecretKey)> {
-    let account_file =
-        AccountFile::read(file_path).context("Failed to read wallet account file")?;
-
-    let account = account_file.account.clone();
-    let auth_secret_key = account_file
-        .auth_secret_keys
-        .first()
-        .ok_or_else(|| anyhow::anyhow!("No authentication secret key found"))?;
-
-    let secret_key = match auth_secret_key {
-        AuthSecretKey::RpoFalcon512(key) => key.clone(),
-    };
-
-    Ok((account, secret_key))
 }
 
 /// Load counter account from file.

@@ -11,18 +11,10 @@ use miden_lib::utils::ScriptBuilder;
 use miden_node_proto::clients::{Builder, Rpc, RpcClient};
 use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
-use miden_objects::account::{
-    Account,
-    AccountFile,
-    AccountId,
-    AuthSecretKey,
-    PartialAccount,
-    StorageSlot,
-};
+use miden_objects::account::{Account, AccountFile, AccountId, PartialAccount, StorageSlot};
 use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};
 use miden_objects::asset::AssetWitness;
 use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
 use miden_objects::note::NoteScript;
 use miden_objects::transaction::{AccountInputs, InputNotes, PartialBlockchain, TransactionArgs};
@@ -44,19 +36,6 @@ use url::Url;
 
 use crate::COMPONENT;
 use crate::deploy::counter::create_counter_account;
-use crate::deploy::wallet::create_wallet_account;
-
-/// Save wallet account to file with authentication keys.
-pub fn save_wallet_account(
-    account: &Account,
-    secret_key: &SecretKey,
-    file_path: &Path,
-) -> Result<()> {
-    let auth_secret_key = AuthSecretKey::RpoFalcon512(secret_key.clone());
-    let account_file = AccountFile::new(account.clone(), vec![auth_secret_key]);
-    account_file.write(file_path)?;
-    Ok(())
-}
 
 /// Save counter program account to file.
 pub fn save_counter_account(account: &Account, file_path: &Path) -> Result<()> {
@@ -79,46 +58,33 @@ pub fn save_counter_account(account: &Account, file_path: &Path) -> Result<()> {
 /// # Returns
 ///
 /// `Ok(())` if the accounts exist or were successfully created, or an error if creation fails.
-pub async fn ensure_accounts_exist(
-    wallet_file: &Path,
-    counter_file: &Path,
-    rpc_url: &Url,
-) -> Result<()> {
-    let wallet_exists = wallet_file.exists();
+pub async fn ensure_counter_exist(counter_file: &Path, rpc_url: &Url) -> Result<()> {
     let counter_exists = counter_file.exists();
 
-    if wallet_exists && counter_exists {
-        tracing::info!("Account files already exist, skipping account creation");
+    if counter_exists {
+        tracing::info!("Counter account file already exists, skipping account creation");
         return Ok(());
     }
 
-    tracing::info!("Account files not found, creating new accounts");
-
-    // Create wallet account
-    let (wallet_account, secret_key) = create_wallet_account()?;
+    tracing::info!("Counter account file not found, creating new account");
 
     // Create counter program account
     let counter_account = create_counter_account()?;
 
-    Box::pin(deploy_accounts(&wallet_account, &counter_account, rpc_url)).await?;
-    tracing::info!("Successfully created and deployed accounts");
+    Box::pin(deploy_counter_account(&counter_account, rpc_url)).await?;
+    tracing::info!("Successfully created and deployed counter account");
 
-    // Save accounts to files
-    save_wallet_account(&wallet_account, &secret_key, wallet_file)?;
+    // Save counter account to file
     save_counter_account(&counter_account, counter_file)
 }
 
-/// Deploy accounts to the network.
+/// Deploy counter account to the network.
 ///
-/// This function creates both a wallet account and a counter program account,
-/// then saves them to the specified files.
-#[instrument(target = COMPONENT, name = "deploy-accounts", skip_all, ret(level = "debug"))]
-pub async fn deploy_accounts(
-    wallet_account: &Account,
-    counter_account: &Account,
-    rpc_url: &Url,
-) -> Result<()> {
-    // Deploy accounts to the network
+/// This function creates a counter program account,
+/// then saves it to the specified file.
+#[instrument(target = COMPONENT, name = "deploy-counter-account", skip_all, ret(level = "debug"))]
+pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) -> Result<()> {
+    // Deploy counter account to the network
     let mut rpc_client: RpcClient = Builder::new(rpc_url.clone())
         .with_tls()
         .context("Failed to configure TLS for RPC client")?
@@ -130,7 +96,6 @@ pub async fn deploy_accounts(
         .context("Failed to connect to RPC server")?;
 
     let mast_store = TransactionMastStore::new();
-    mast_store.load_account_code(wallet_account.code());
     mast_store.load_account_code(counter_account.code());
 
     let block_header_request = BlockHeaderByNumberRequest {
@@ -155,9 +120,7 @@ pub async fn deploy_accounts(
             .context("Failed to create empty ChainMmr")?;
 
     let data_store = Arc::new(MonitorDataStore::new(
-        wallet_account.clone(),
         counter_account.clone(),
-        wallet_account.seed(),
         genesis_header,
         genesis_chain_mmr,
     ));
@@ -221,10 +184,7 @@ fn get_library() -> Result<Library> {
 }
 
 pub struct MonitorDataStore {
-    wallet_account: Mutex<Account>,
     counter_account: Mutex<Account>,
-    #[allow(dead_code)]
-    wallet_init_seed: Option<Word>,
     block_header: BlockHeader,
     partial_block_chain: PartialBlockchain,
     mast_store: TransactionMastStore,
@@ -232,21 +192,16 @@ pub struct MonitorDataStore {
 
 impl MonitorDataStore {
     pub fn new(
-        wallet_account: Account,
         counter_account: Account,
-        wallet_init_seed: Option<Word>,
         block_header: BlockHeader,
         partial_block_chain: PartialBlockchain,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
-        mast_store.insert(wallet_account.code().mast());
         mast_store.insert(counter_account.code().mast());
 
         Self {
             mast_store,
-            wallet_account: Mutex::new(wallet_account),
             counter_account: Mutex::new(counter_account),
-            wallet_init_seed,
             block_header,
             partial_block_chain,
         }
@@ -256,33 +211,21 @@ impl MonitorDataStore {
 impl DataStore for MonitorDataStore {
     async fn get_transaction_inputs(
         &self,
-        account_id: AccountId,
+        _account_id: AccountId,
         mut _block_refs: BTreeSet<BlockNumber>,
     ) -> Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError> {
-        let account = self.wallet_account.lock().await;
-
-        let account = if account_id == account.id() {
-            account.to_owned()
-        } else {
-            self.counter_account.lock().await.to_owned()
-        };
+        let account = self.counter_account.lock().await.to_owned();
 
         Ok(((&account).into(), self.block_header.clone(), self.partial_block_chain.clone()))
     }
 
     async fn get_storage_map_witness(
         &self,
-        account_id: AccountId,
+        _account_id: AccountId,
         map_root: Word,
         map_key: Word,
     ) -> Result<miden_objects::account::StorageMapWitness, DataStoreError> {
-        let account = self.wallet_account.lock().await;
-
-        let account = if account_id == account.id() {
-            account.to_owned()
-        } else {
-            self.counter_account.lock().await.to_owned()
-        };
+        let account = self.counter_account.lock().await;
 
         let mut map_witness = None;
         for slot in account.storage().slots() {
@@ -313,17 +256,11 @@ impl DataStore for MonitorDataStore {
 
     async fn get_vault_asset_witness(
         &self,
-        account_id: AccountId,
+        _account_id: AccountId,
         vault_root: Word,
         vault_key: Word,
     ) -> Result<AssetWitness, DataStoreError> {
-        let account = self.wallet_account.lock().await;
-
-        let account = if account_id == account.id() {
-            account.to_owned()
-        } else {
-            self.counter_account.lock().await.to_owned()
-        };
+        let account = self.counter_account.lock().await.to_owned();
 
         if account.vault().root() != vault_root {
             return Err(DataStoreError::Other {

@@ -7,7 +7,7 @@ use miden_node_utils::logging::OpenTelemetry;
 use tracing::{info, warn};
 
 use crate::config::MonitorConfig;
-use crate::deploy::ensure_accounts_exist;
+use crate::deploy::ensure_counter_exist;
 use crate::frontend::ServerState;
 use crate::monitor::tasks::Tasks;
 
@@ -25,13 +25,8 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         miden_node_utils::logging::setup_tracing(OpenTelemetry::Disabled)?;
     }
 
-    // Ensure accounts exist before starting monitoring tasks
-    Box::pin(ensure_accounts_exist(
-        &config.wallet_file,
-        &config.counter_file,
-        &config.rpc_url,
-    ))
-    .await?;
+    // Ensure counter account exist before starting monitoring tasks
+    Box::pin(ensure_counter_exist(&config.counter_file, &config.rpc_url)).await?;
 
     let mut tasks = Tasks::new();
 

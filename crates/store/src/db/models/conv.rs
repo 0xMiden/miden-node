@@ -41,7 +41,7 @@ use miden_objects::note::{NoteExecutionMode, NoteTag};
 
 #[derive(Debug, thiserror::Error)]
 #[error("failed to convert a database value to it's in memory type {0}")]
-pub struct DatabaseTypeConversionError(&'static str);
+pub struct DatabaseTypeConversionError(pub &'static str);
 
 /// Convert from and to it's database representation and back
 ///

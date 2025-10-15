@@ -7,6 +7,13 @@ pub mod genesis;
 mod server;
 pub mod state;
 
+pub use db::{
+    ConnectionManager,
+    DatabaseTypeConversionError,
+    Db,
+    configure_connection_on_creation,
+};
+pub use errors::{DatabaseError, DatabaseSetupError};
 pub use genesis::GenesisState;
 pub use server::{DataDirectory, Store};
 

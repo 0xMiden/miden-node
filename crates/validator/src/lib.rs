@@ -1,3 +1,4 @@
+mod db;
 mod server;
 
 pub use server::Validator;

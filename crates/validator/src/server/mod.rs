@@ -6,8 +6,11 @@ use anyhow::Context;
 use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
+use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
+use miden_objects::block::ProvenBlock;
+use miden_objects::utils::Deserializable;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tower_http::catch_panic::CatchPanicLayer;
@@ -99,6 +102,11 @@ impl api_server::Api for ValidatorServer {
         &self,
         request: tonic::Request<proto::blockchain::Block>,
     ) -> std::result::Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
+        let request = request.into_inner();
+        let block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
+            tonic::Status::invalid_argument(err.as_report_context("block deserialization error"))
+        })?;
+
         todo!()
     }
 }

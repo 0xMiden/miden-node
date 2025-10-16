@@ -6,7 +6,6 @@ use anyhow::Context;
 use miden_node_proto::generated::validator::api_server;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto_build::validator_api_descriptor;
-use miden_node_store::Db;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
@@ -93,15 +92,18 @@ impl ValidatorServer {
 
 #[tonic::async_trait]
 impl api_server::Api for ValidatorServer {
-    /// ...
+    /// Returns the status of the validator.
     async fn status(
         &self,
         _request: tonic::Request<()>,
     ) -> Result<tonic::Response<proto::validator::ValidatorStatus>, tonic::Status> {
-        todo!()
+        Ok(tonic::Response::new(proto::validator::ValidatorStatus {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            status: "OK".to_string(),
+        }))
     }
 
-    /// Submit a proven transaction for validation and storage.
+    /// Receives a proven transaction, then validates and stores it.
     async fn submit_proven_transaction(
         &self,
         request: tonic::Request<proto::transaction::ProvenTransaction>,
@@ -128,19 +130,24 @@ impl api_server::Api for ValidatorServer {
             .await;
 
         match result {
+            // TODO: revisit insertion logic (e.g. on collision = bad request?).
             Ok(rows_affected) => {
-                tracing::info!(
-                    target: COMPONENT,
-                    rows_affected = rows_affected,
-                    "Successfully submitted proven transaction"
-                );
-                Ok(tonic::Response::new(()))
+                if rows_affected == 1 {
+                    Ok(tonic::Response::new(()))
+                } else {
+                    tracing::error!(
+                        target: COMPONENT,
+                        rows_affected = rows_affected,
+                        "failed to insert proven transaction"
+                    );
+                    Err(tonic::Status::internal("failed to insert proven transaction"))
+                }
             },
             Err(err) => Err(err.into()),
         }
     }
 
-    /// ...
+    /// Receives a proven block and validates it.
     async fn validate_block(
         &self,
         request: tonic::Request<proto::blockchain::Block>,

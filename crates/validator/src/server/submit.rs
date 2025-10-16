@@ -2,8 +2,7 @@ use diesel::SqliteConnection;
 use miden_node_store::DatabaseError;
 use miden_objects::block::BlockNumber;
 use miden_objects::transaction::{OrderedTransactionHeaders, ProvenTransaction, TransactionHeader};
-use miden_objects::utils::DeserializationError;
-use tracing::{debug, error, instrument};
+use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::db::insert_transactions;

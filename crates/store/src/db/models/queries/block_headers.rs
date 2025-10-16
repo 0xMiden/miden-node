@@ -28,10 +28,16 @@ use crate::db::schema;
 /// the given block height is returned.
 ///
 /// ```sql
-/// # with argument
-/// SELECT block_header FROM block_headers WHERE block_num = ?1
-/// # without
-/// SELECT block_header FROM block_headers ORDER BY block_num DESC LIMIT 1
+/// -- with argument
+/// SELECT block_num, block_header
+/// FROM block_headers
+/// WHERE block_num = ?1
+///
+/// -- without argument
+/// SELECT block_num, block_header
+/// FROM block_headers
+/// ORDER BY block_num DESC
+/// LIMIT 1
 /// ```
 pub(crate) fn select_block_header_by_block_num(
     conn: &mut SqliteConnection,
@@ -70,7 +76,9 @@ pub(crate) fn select_block_header_by_block_num(
 /// # Raw SQL
 ///
 /// ```sql
-/// SELECT block_header FROM block_headers WHERE block_num IN (?1)
+/// SELECT block_num, block_header
+/// FROM block_headers
+/// WHERE block_num IN (?1)
 /// ```
 pub fn select_block_headers(
     conn: &mut SqliteConnection,
@@ -101,7 +109,9 @@ pub fn select_block_headers(
 /// # Raw SQL
 ///
 /// ```sql
-/// SELECT block_header FROM block_headers ORDER BY block_num ASC
+/// SELECT block_num, block_header
+/// FROM block_headers
+/// ORDER BY block_num ASC
 /// ```
 pub fn select_all_block_headers(
     conn: &mut SqliteConnection,

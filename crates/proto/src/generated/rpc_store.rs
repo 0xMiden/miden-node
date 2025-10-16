@@ -19,8 +19,8 @@ pub struct AccountProofRequest {
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
     /// Block at which we'd like to get this data. Must be close to the chain tip.
-    #[prost(fixed32, tag = "2")]
-    pub block_num: u32,
+    #[prost(message, optional, tag = "2")]
+    pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Request for additional account details; valid only for public accounts.
     #[prost(message, optional, tag = "3")]
     pub details: ::core::option::Option<account_proof_request::AccountDetailRequest>,
@@ -89,11 +89,14 @@ pub mod account_proof_request {
 /// Represents the result of getting account proof.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofResponse {
-    /// Account ID, current state commitment, and SMT path
+    /// The block number at which the witness was observed.
     #[prost(message, optional, tag = "1")]
-    pub witness: ::core::option::Option<super::account::AccountWitness>,
-    /// Additional details for public accounts
+    pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
+    /// Account ID, current state commitment, and SMT path.
     #[prost(message, optional, tag = "2")]
+    pub witness: ::core::option::Option<super::account::AccountWitness>,
+    /// Additional details for public accounts.
+    #[prost(message, optional, tag = "3")]
     pub details: ::core::option::Option<account_proof_response::AccountDetails>,
 }
 /// Nested message and enum types in `AccountProofResponse`.
@@ -106,7 +109,7 @@ pub mod account_proof_response {
         /// Account storage data
         #[prost(message, optional, tag = "2")]
         pub storage_details: ::core::option::Option<super::AccountStorageDetails>,
-        /// Account code; empty if code commitments matched or none was requested
+        /// Account code; empty if code commitments matched or none was requested.
         #[prost(bytes = "vec", optional, tag = "3")]
         pub code: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
         /// Account asset vault data; empty if vault commitments matched or the requester

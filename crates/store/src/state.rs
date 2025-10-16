@@ -140,7 +140,13 @@ impl State {
             .map_err(StateInitializationError::DatabaseLoadError)?;
 
         let chain_mmr = load_mmr(&mut db).await?;
-        let account_tree = load_account_tree(&mut db).await?;
+        let block_headers = db.select_all_block_headers().await?;
+        // TODO do we need assurance that the block_headers in the DB are in sync with the account
+        // tree?
+        let latest_block_num = block_headers
+            .last()
+            .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
+        let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
         let inner = RwLock::new(InnerState {
@@ -903,16 +909,17 @@ impl State {
         // because changing one of them would lead to inconsistent state.
         let inner_state = self.inner.read().await;
 
-        let account_id = account_request.account_id;
-        // TODO: Implement historical block support using account_request.block_num
-        // For now, we always return the current state
+        let AccountProofRequest { block_num, account_id, details } = account_request;
+
+        let witness = inner_state.account_tree.open(account_id);
+
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,
             asset_vault_commitment,
             storage_requests,
-        }) = account_request.details
+        }) = details
         {
-            let account_info = self.db.select_account(account_id).await?;
+            let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
 
             // if we get a query for a _private_ account _with_ details requested, we'll error out
             let Some(account) = account_info.details else {
@@ -978,7 +985,8 @@ impl State {
         };
 
         let response = AccountProofResponse {
-            witness: inner_state.account_tree.open(account_id),
+            block_num,
+            witness,
             details: account_details,
         };
 
@@ -1088,7 +1096,10 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_account_tree(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
+async fn load_account_tree(
+    db: &mut Db,
+    _block_num: BlockNumber,
+) -> Result<AccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     AccountTree::with_entries(account_data)

@@ -4,10 +4,12 @@ mod blocks;
 mod db;
 mod errors;
 pub mod genesis;
+mod historical;
 mod server;
 pub mod state;
 
 pub use genesis::GenesisState;
+pub use historical::AccountTreeWithHistory;
 pub use server::{DataDirectory, Store};
 
 // CONSTANTS

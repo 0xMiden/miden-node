@@ -257,7 +257,7 @@ mod test {
         ACCOUNT_ID_PUBLIC_FUNGIBLE_FAUCET,
         ACCOUNT_ID_SENDER,
     };
-    use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
+    use miden_objects::transaction::ProvenTransaction;
     use miden_testing::{Auth, MockChainBuilder};
     use miden_tx::utils::Serializable;
     use tokio::net::TcpListener;
@@ -323,7 +323,7 @@ mod test {
             .unwrap();
 
         let executed_transaction = Box::pin(tx_context.execute()).await.unwrap();
-        let tx_inputs = TransactionInputs::from(executed_transaction);
+        let tx_inputs = executed_transaction.into_parts().0;
 
         let request_1 = Request::new(proto::remote_prover::ProofRequest {
             proof_type: proto::remote_prover::ProofType::Transaction.into(),

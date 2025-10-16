@@ -123,7 +123,8 @@ impl NtxContext {
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
-                let proven = Box::pin(self.prove(executed.into())).await?;
+                let tx_inputs = executed.into_parts().0;
+                let proven = Box::pin(self.prove(tx_inputs)).await?;
                 self.submit(proven).await?;
                 Ok(failed)
             }
@@ -352,8 +353,11 @@ impl DataStore for NtxDataStore {
         &self,
         script_root: Word,
     ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
-        // TODO: Add implementation for getting note script from NtxDataStore.
-        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
+        async move {
+            // For network transactions, note scripts are not cached in the data store
+            // They should be retrieved from the blockchain/note data itself
+            Err(DataStoreError::NoteScriptNotFound(script_root))
+        }
     }
 }
 

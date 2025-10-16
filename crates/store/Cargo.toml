@@ -28,7 +28,7 @@ miden-lib              = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }
-miden-objects          = { workspace = true }
+miden-objects          = { features = ["std"], workspace = true }
 rand                   = { workspace = true }
 rand_chacha            = { workspace = true }
 serde                  = { features = ["derive"], version = "1" }

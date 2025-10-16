@@ -26,6 +26,27 @@ The gRPC service definition can be found in the Miden node's `proto` [directory]
 
 ## API Endpoints
 
+### List parameter limits
+
+The server enforces maximum sizes for list parameters to prevent abuse and oversized queries. Unless otherwise noted, the following limits apply per request:
+
+- **Nullifier lists**: 100
+- **Nullifier prefixes**: 100
+- **Note tags**: 100
+- **Note IDs**: 100
+- **Account IDs**: 100
+
+These limits affect the following endpoints:
+
+- **CheckNullifiers**: nullifiers ≤ 100
+- **SyncNullifiers**: nullifier prefixes ≤ 100
+- **SyncNotes**: note_tags ≤ 100
+- **SyncState**: account_ids ≤ 100, note_tags ≤ 100
+- **GetNotesById**: ids ≤ 100
+- **SyncTransactions**: account_ids ≤ 100
+
+If a request exceeds a limit, the call returns an out-of-range/invalid-argument error indicating the offending parameter and the limit.
+
 ### CheckNullifiers
 
 Request proofs for a set of nullifiers.

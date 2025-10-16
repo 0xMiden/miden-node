@@ -42,7 +42,7 @@ pub trait QueryParamLimiter {
 pub struct QueryParamAccountIdLimit;
 impl QueryParamLimiter for QueryParamAccountIdLimit {
     const PARAM_NAME: &str = "account_id";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = 100;
 }
 
 /// Used for the following RPC endpoints
@@ -50,7 +50,7 @@ impl QueryParamLimiter for QueryParamAccountIdLimit {
 pub struct QueryParamNullifierPrefixLimit;
 impl QueryParamLimiter for QueryParamNullifierPrefixLimit {
     const PARAM_NAME: &str = "nullifier_prefix";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = 100;
 }
 
 /// Used for the following RPC endpoints
@@ -60,7 +60,7 @@ impl QueryParamLimiter for QueryParamNullifierPrefixLimit {
 pub struct QueryParamNullifierLimit;
 impl QueryParamLimiter for QueryParamNullifierLimit {
     const PARAM_NAME: &str = "nullifier";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = 100;
 }
 
 /// Used for the following RPC endpoints
@@ -68,7 +68,7 @@ impl QueryParamLimiter for QueryParamNullifierLimit {
 pub struct QueryParamNoteTagLimit;
 impl QueryParamLimiter for QueryParamNoteTagLimit {
     const PARAM_NAME: &str = "note_tag";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = 100;
 }
 
 /// Used for the following RPC endpoints
@@ -76,12 +76,12 @@ impl QueryParamLimiter for QueryParamNoteTagLimit {
 pub struct QueryParamNoteIdLimit;
 impl QueryParamLimiter for QueryParamNoteIdLimit {
     const PARAM_NAME: &str = "note_id";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = 100;
 }
 
 /// Only used internally, not exposed via public RPC.
 pub struct QueryParamBlockLimit;
 impl QueryParamLimiter for QueryParamBlockLimit {
     const PARAM_NAME: &str = "block_header";
-    const LIMIT: usize = 1000;
+    const LIMIT: usize = 100;
 }

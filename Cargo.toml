@@ -5,7 +5,6 @@ members = [
   "bin/remote-prover",
   "bin/stress-test",
   "crates/block-producer",
-  "crates/validator",
   "crates/grpc-error-macro",
   "crates/ntx-builder",
   "crates/proto",
@@ -14,6 +13,7 @@ members = [
   "crates/store",
   "crates/test-macro",
   "crates/utils",
+  "crates/validator",
   "proto",
 ]
 
@@ -37,7 +37,6 @@ opt-level = 2
 [workspace.dependencies]
 # Workspace crates.
 miden-node-block-producer   = { path = "crates/block-producer", version = "0.12" }
-miden-node-validator        = { path = "crates/validator", version = "0.12" }
 miden-node-grpc-error-macro = { path = "crates/grpc-error-macro" }
 miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.12" }
 miden-node-proto            = { path = "crates/proto", version = "0.12" }
@@ -46,6 +45,7 @@ miden-node-rpc              = { path = "crates/rpc", version = "0.12" }
 miden-node-store            = { path = "crates/store", version = "0.12" }
 miden-node-test-macro       = { path = "crates/test-macro" }
 miden-node-utils            = { path = "crates/utils", version = "0.12" }
+miden-node-validator        = { path = "crates/validator", version = "0.12" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.12" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.

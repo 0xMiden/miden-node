@@ -25,9 +25,9 @@ humantime                 = { workspace = true }
 miden-node-block-producer = { workspace = true }
 miden-node-ntx-builder    = { workspace = true }
 miden-node-rpc            = { workspace = true }
-miden-node-validator      = { workspace = true }
 miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }
+miden-node-validator      = { workspace = true }
 miden-objects             = { workspace = true }
 tokio                     = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 url                       = { workspace = true }

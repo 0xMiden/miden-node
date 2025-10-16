@@ -3,7 +3,7 @@ authors.workspace      = true
 description            = "Miden node's validator component"
 edition.workspace      = true
 homepage.workspace     = true
-keywords               = ["validator", "miden", "node"]
+keywords               = ["miden", "node", "validator"]
 license.workspace      = true
 name                   = "miden-node-validator"
 readme                 = "README.md"
@@ -17,23 +17,23 @@ workspace = true
 [features]
 
 [dependencies]
-anyhow = {workspace = true}
-tracing = {workspace = true}
-miden-node-proto           = { workspace = true }
-miden-objects           = { workspace = true }
-miden-node-store           = { workspace = true }
-miden-node-utils           = { features = ["testing"], workspace = true }
-miden-node-proto-build     = { features = ["internal"], workspace = true }
-tokio                      = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
-tokio-stream               = { features = ["net"], workspace = true }
-tonic                      = { features = ["transport"], workspace = true }
-tonic-reflection           = { workspace = true }
-tower-http                 = { features = ["util"], workspace = true }
+anyhow                 = { workspace = true }
 deadpool               = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
 deadpool-diesel        = { features = ["sqlite"], version = "0.6" }
 deadpool-sync          = { version = "0.1" }
 diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
 diesel_migrations      = { features = ["sqlite"], version = "2.2" }
-thiserror = { workspace = true }
+miden-node-proto       = { workspace = true }
+miden-node-proto-build = { features = ["internal"], workspace = true }
+miden-node-store       = { workspace = true }
+miden-node-utils       = { features = ["testing"], workspace = true }
+miden-objects          = { workspace = true }
+thiserror              = { workspace = true }
+tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
+tokio-stream           = { features = ["net"], workspace = true }
+tonic                  = { features = ["transport"], workspace = true }
+tonic-reflection       = { workspace = true }
+tower-http             = { features = ["util"], workspace = true }
+tracing                = { workspace = true }
 
 [dev-dependencies]

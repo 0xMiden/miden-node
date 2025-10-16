@@ -47,12 +47,12 @@ miden-node-utils            = { path = "crates/utils", version = "0.12" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.12" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "bernhard-1227-account-tree-with-history", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "bernhard-1227-account-tree-with-history", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "bernhard-1227-account-tree-with-history", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "bernhard-1227-account-tree-with-history", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "bernhard-1227-account-tree-with-history", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "bernhard-1227-account-tree-with-history", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air    = { features = ["std", "testing"], version = "0.18.1" }
@@ -105,11 +105,3 @@ must_use_candidate           = "allow" # This marks many fn's which isn't helpfu
 needless_for_each            = "allow" # Context dependent if that's useful.
 should_panic_without_expect  = "allow" # We don't care about the specific panic message.
 # End of pedantic lints.
-
-[patch.'https://github.com/0xMiden/miden-base']
-miden-block-prover    = { path = "../miden-base-bernhard-1227-account-tree-with-history/crates/miden-block-prover" }
-miden-lib             = { path = "../miden-base-bernhard-1227-account-tree-with-history/crates/miden-lib" }
-miden-objects         = { path = "../miden-base-bernhard-1227-account-tree-with-history/crates/miden-objects" }
-miden-testing         = { path = "../miden-base-bernhard-1227-account-tree-with-history/crates/miden-testing" }
-miden-tx              = { path = "../miden-base-bernhard-1227-account-tree-with-history/crates/miden-tx" }
-miden-tx-batch-prover = { path = "../miden-base-bernhard-1227-account-tree-with-history/crates/miden-tx-batch-prover" }

@@ -1,3 +1,4 @@
+mod migrations;
 mod models;
 mod queries;
 mod schema;
@@ -13,6 +14,7 @@ use miden_objects::utils::Serializable;
 use tracing::instrument;
 
 use crate::COMPONENT;
+use crate::db::migrations::apply_migrations;
 use crate::db::models::SqlTypeConvert;
 
 /// ...
@@ -33,8 +35,7 @@ pub async fn load(database_filepath: PathBuf) -> Result<miden_node_store::Db, Da
     );
 
     let db = miden_node_store::Db::new(pool);
-    // TODO: migrations
-    // db.query("migrations", apply_migrations).await?;
+    db.query("migrations", apply_migrations).await?;
     Ok(db)
 }
 

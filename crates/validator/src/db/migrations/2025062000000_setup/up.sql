@@ -8,7 +8,7 @@ CREATE TABLE transactions (
     output_notes                 BLOB    NOT NULL, -- Serialized vector with the NoteId of the output notes.
     size_in_bytes                INTEGER NOT NULL, -- Estimated size of the row in bytes, considering the size of the input and output notes.
 
-    PRIMARY KEY (transaction_id),
+    PRIMARY KEY (transaction_id)
 ) WITHOUT ROWID;
 
 CREATE INDEX idx_transactions_account_id ON transactions(account_id);

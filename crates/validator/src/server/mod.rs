@@ -23,6 +23,9 @@ use crate::server::submit::submit_proven_transaction;
 
 pub mod submit;
 
+// VALIDATOR
+// ================================================================================
+
 pub struct Validator {
     /// The address of the validator component.
     pub address: SocketAddr,
@@ -79,6 +82,9 @@ impl Validator {
             .context("failed to serve validator API")
     }
 }
+
+// VALIDATOR SERVER
+// ================================================================================
 
 struct ValidatorServer {
     pub db: miden_node_store::Db,

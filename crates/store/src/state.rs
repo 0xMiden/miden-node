@@ -141,8 +141,13 @@ impl State {
 
         let chain_mmr = load_mmr(&mut db).await?;
         let block_headers = db.select_all_block_headers().await?;
-        // TODO do we need assurance that the block_headers in the DB are in sync with the account
-        // tree?
+        // TODO: Currently `load_account_tree` ignores the `block_num` parameter and loads all
+        // account commitments from the DB regardless of block. This could lead to inconsistency
+        // if the DB contains account states from blocks beyond `latest_block_num`.
+        // Consider either:
+        // 1. Filtering account commitments by block_num <= latest_block_num, or
+        // 2. Adding a DB constraint to ensure accounts table only contains latest states
+        // Neither, is critical.
         let latest_block_num = block_headers
             .last()
             .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);

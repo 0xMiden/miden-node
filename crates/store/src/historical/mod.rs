@@ -37,7 +37,7 @@ pub enum HistoricalOffset {
     TooAncient,
 }
 
-/// captures reversion state for historical queries
+/// Captures reversion state for historical queries.
 #[derive(Debug, Clone)]
 struct HistoricalOverlay {
     block_number: BlockNumber,
@@ -73,7 +73,7 @@ impl InnerState {
     }
 }
 
-/// wraps `AccountTree` with historical query support via reversion overlays
+/// Wraps `AccountTree` with historical query support via reversion overlays.
 #[derive(Debug, Clone)]
 pub struct AccountTreeWithHistory {
     inner: Arc<RwLock<InnerState>>,
@@ -85,7 +85,7 @@ impl AccountTreeWithHistory {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// creates new historical tree
+    /// Creates new historical tree.
     pub fn new(account_tree: AccountTree, block_number: BlockNumber) -> Self {
         Self {
             inner: Arc::new(RwLock::new(InnerState {
@@ -105,19 +105,29 @@ impl AccountTreeWithHistory {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// returns latest block number
+    /// Returns latest block number.
     pub fn block_number(&self) -> BlockNumber {
-        self.inner.read().unwrap().block_number
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .block_number
     }
 
-    /// returns latest root
+    /// Returns latest root.
     pub fn root(&self) -> Word {
-        self.inner.read().unwrap().latest.root()
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .latest
+            .root()
     }
 
-    /// returns root at given historical block
+    /// Returns root at given historical block.
     pub fn root_at(&self, block_number: BlockNumber) -> Option<Word> {
-        let guard = self.inner.read().unwrap();
+        let guard = self
+            .inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
 
         match guard.historical_offset(block_number) {
             HistoricalOffset::Latest => Some(guard.latest.root()),
@@ -130,28 +140,48 @@ impl AccountTreeWithHistory {
         }
     }
 
-    /// returns account count
+    /// Returns account count.
     pub fn num_accounts(&self) -> usize {
-        self.inner.read().unwrap().latest.num_accounts()
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .latest
+            .num_accounts()
     }
 
-    /// returns history depth
+    /// Returns history depth.
     pub fn history_len(&self) -> usize {
-        self.inner.read().unwrap().overlays.len()
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .overlays
+            .len()
     }
 
-    /// opens account at latest block
+    /// Opens account at latest block.
     pub fn open(&self, account_id: AccountId) -> AccountWitness {
-        self.inner.read().unwrap().latest.open(account_id)
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .latest
+            .open(account_id)
     }
 
-    /// opens account at historical block
+    /// Opens account at historical block.
+    ///
+    /// This method reconstructs the account witness at the given historical block by:
+    /// 1. Starting with the latest account state
+    /// 2. Applying reversion mutations from the overlays to walk back in time
+    /// 3. Reconstructing the Merkle path with the historical node values
     pub fn open_at(
         &self,
         account_id: AccountId,
         block_number: BlockNumber,
     ) -> Option<AccountWitness> {
-        let guard = self.inner.read().unwrap();
+        let guard = self
+            .inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
 
         match guard.historical_offset(block_number) {
             HistoricalOffset::Latest => Some(guard.latest.open(account_id)),
@@ -160,110 +190,176 @@ impl AccountTreeWithHistory {
                     return None;
                 }
 
-                let latest_witness = guard.latest.open(account_id);
-                let (latest_path, mut leaf) = latest_witness.into_proof().into_parts();
-                let (initial_mask, mut latest_nodes) = latest_path.into_parts();
-
-                // Reverse latest_nodes because they come in high-to-low depth order
-                // but we need to initialize path_nodes in low-to-high depth order
-                latest_nodes.reverse();
-
-                // initialize the path nodes with the latest state, and update repeatedly.
-                let mut path_nodes = [None; SMT_DEPTH as usize];
-                let mut node_idx = 0;
-                for (depth, path_node) in path_nodes.iter_mut().enumerate().take(SMT_DEPTH as usize)
-                {
-                    if (initial_mask & (1u64 << depth)) == 0 && node_idx < latest_nodes.len() {
-                        *path_node = Some(latest_nodes[node_idx]);
-                        node_idx += 1;
-                    }
-                }
-
-                let leaf_index = NodeIndex::from(leaf.index());
-
-                // We now go through all overlays, from newest to oldest to go back in "block-time".
-                //
-                // 1. for each overlay, apply update the relevant path sibling nodes that got
-                //    changed, and lookup all the other nodes in the `latest` state, since they
-                //    didn't change
-                // 2. then reconstruct the `SparseMerklePath`
-                for overlay in guard.overlays.iter().take(idx + 1) {
-                    let rev_muts = overlay.rev_set.as_mutation_set().node_mutations();
-
-                    for sibling in leaf_index.proof_indices() {
-                        let height =
-                            sibling.depth().checked_sub(1).expect("we don't transgress the root")
-                                as usize;
-
-                        // check reversion mutations first
-                        if let Some(mutation) = rev_muts.get(&sibling) {
-                            match mutation {
-                                NodeMutation::Addition(inner_node) => {
-                                    path_nodes[height] = Some(inner_node.hash());
-                                },
-                                NodeMutation::Removal => {
-                                    path_nodes[height] = None;
-                                },
-                            }
-                        }
-                        // if an entry is not present in an overlay, we use the previous
-                        // value from latest, which is already present.
-                    }
-
-                    if let Some((key, value)) = overlay
-                        .rev_set
-                        .as_mutation_set()
-                        .new_pairs()
-                        .iter()
-                        .find(|(k, _)| LeafIndex::from(**k) == leaf.index())
-                    {
-                        leaf = if *value == EMPTY_WORD {
-                            SmtLeaf::new_empty(leaf.index())
-                        } else {
-                            SmtLeaf::new_single(*key, *value)
-                        };
-                    }
-                }
-
-                let max_depth =
-                    path_nodes.iter().rposition(std::option::Option::is_some).map_or(0, |d| d + 1);
-                let mut empty_mask = u64::MAX;
-                let nodes: Vec<Word> = (0..max_depth)
-                    .rev()
-                    .filter_map(|d| {
-                        path_nodes[d].inspect(|_| {
-                            empty_mask &= !(1u64 << d);
-                        })
-                    })
-                    .collect();
-
-                let path = SparseMerklePath::from_parts(empty_mask, nodes).ok()?;
-                let commitment = match leaf {
-                    SmtLeaf::Empty(_) => EMPTY_WORD,
-                    SmtLeaf::Single((_, value)) => value,
-                    SmtLeaf::Multiple(_) => unreachable!("AccountTree uses prefix-free IDs"),
-                };
-
-                AccountWitness::new(account_id, commitment, path).ok()
+                self.reconstruct_historical_witness(&guard, account_id, idx)
             },
             HistoricalOffset::Future | HistoricalOffset::TooAncient => None,
         }
     }
 
-    /// gets account state at latest block
+    /// Reconstructs a historical account witness by applying reversion overlays.
+    fn reconstruct_historical_witness(
+        &self,
+        guard: &InnerState,
+        account_id: AccountId,
+        overlay_idx: usize,
+    ) -> Option<AccountWitness> {
+        let latest_witness = guard.latest.open(account_id);
+        let (latest_path, mut leaf) = latest_witness.into_proof().into_parts();
+        let (initial_mask, mut latest_nodes) = latest_path.into_parts();
+
+        // Initialize path_nodes with the latest state.
+        // Reverse latest_nodes because they come in high-to-low depth order
+        // but we need to initialize path_nodes in low-to-high depth order.
+        latest_nodes.reverse();
+        let mut path_nodes = Self::initialize_path_nodes(initial_mask, latest_nodes);
+
+        let leaf_index = NodeIndex::from(leaf.index());
+
+        // Apply reversion overlays to reconstruct the historical state.
+        leaf = Self::apply_reversion_overlays(
+            &guard.overlays,
+            overlay_idx,
+            &mut path_nodes,
+            leaf_index,
+            leaf,
+        );
+
+        // Reconstruct the SparseMerklePath from the historical path_nodes.
+        let (empty_mask, nodes) = Self::build_sparse_path(&path_nodes);
+        let path = SparseMerklePath::from_parts(empty_mask, nodes).ok()?;
+
+        let commitment = match leaf {
+            SmtLeaf::Empty(_) => EMPTY_WORD,
+            SmtLeaf::Single((_, value)) => value,
+            SmtLeaf::Multiple(_) => unreachable!("AccountTree uses prefix-free IDs"),
+        };
+
+        AccountWitness::new(account_id, commitment, path).ok()
+    }
+
+    /// Initializes the path_nodes array from the latest state.
+    ///
+    /// The `initial_mask` indicates which depths have empty nodes (bit set = empty).
+    /// For non-empty depths, we populate from `latest_nodes`.
+    fn initialize_path_nodes(
+        initial_mask: u64,
+        latest_nodes: Vec<Word>,
+    ) -> [Option<Word>; SMT_DEPTH as usize] {
+        let mut path_nodes = [None; SMT_DEPTH as usize];
+        let mut node_idx = 0;
+
+        for (depth, path_node) in path_nodes.iter_mut().enumerate().take(SMT_DEPTH as usize) {
+            // Check if this depth is non-empty in the initial mask.
+            // If the bit at position `depth` is 0, the node is present; if 1, it's empty.
+            if (initial_mask & (1u64 << depth)) == 0 && node_idx < latest_nodes.len() {
+                *path_node = Some(latest_nodes[node_idx]);
+                node_idx += 1;
+            }
+        }
+
+        path_nodes
+    }
+
+    /// Applies reversion overlays to reconstruct the historical state.
+    ///
+    /// We iterate through overlays from newest to oldest (going back in time),
+    /// updating both the path nodes and the leaf value based on the reversion mutations.
+    fn apply_reversion_overlays(
+        overlays: &VecDeque<Arc<HistoricalOverlay>>,
+        overlay_idx: usize,
+        path_nodes: &mut [Option<Word>; SMT_DEPTH as usize],
+        leaf_index: NodeIndex,
+        mut leaf: SmtLeaf,
+    ) -> SmtLeaf {
+        for overlay in overlays.iter().take(overlay_idx + 1) {
+            let rev_muts = overlay.rev_set.as_mutation_set().node_mutations();
+
+            // Update the path sibling nodes that changed in this overlay.
+            for sibling in leaf_index.proof_indices() {
+                let height = sibling
+                    .depth()
+                    .checked_sub(1)
+                    .expect("proof_indices should not include root")
+                    as usize;
+
+                // Apply reversion mutations for this sibling node.
+                if let Some(mutation) = rev_muts.get(&sibling) {
+                    match mutation {
+                        NodeMutation::Addition(inner_node) => {
+                            path_nodes[height] = Some(inner_node.hash());
+                        },
+                        NodeMutation::Removal => {
+                            path_nodes[height] = None;
+                        },
+                    }
+                }
+                // If no mutation exists, the node remains unchanged (already set from latest).
+            }
+
+            // Update the leaf if it was modified in this overlay.
+            if let Some((key, value)) = overlay
+                .rev_set
+                .as_mutation_set()
+                .new_pairs()
+                .iter()
+                .find(|(k, _)| LeafIndex::from(**k) == leaf.index())
+            {
+                leaf = if *value == EMPTY_WORD {
+                    SmtLeaf::new_empty(leaf.index())
+                } else {
+                    SmtLeaf::new_single(*key, *value)
+                };
+            }
+        }
+
+        leaf
+    }
+
+    /// Builds a SparseMerklePath from the path_nodes array.
+    ///
+    /// The `empty_mask` is constructed by setting a bit for each empty node.
+    /// We iterate from depth 0 to max_depth in reverse order (high to low)
+    /// to build the nodes vector as expected by SparseMerklePath.
+    fn build_sparse_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> (u64, Vec<Word>) {
+        let max_depth =
+            path_nodes.iter().rposition(std::option::Option::is_some).map_or(0, |d| d + 1);
+
+        // Start with all bits set (all empty), then clear bits for non-empty nodes.
+        let mut empty_mask = u64::MAX;
+        let nodes: Vec<Word> = (0..max_depth)
+            .rev()
+            .filter_map(|d| {
+                path_nodes[d].inspect(|_| {
+                    // Clear the bit at position `d` to indicate this node is present.
+                    empty_mask &= !(1u64 << d);
+                })
+            })
+            .collect();
+
+        (empty_mask, nodes)
+    }
+
+    /// Gets account state at latest block.
     pub fn get(&self, account_id: AccountId) -> Word {
-        self.inner.read().unwrap().latest.get(account_id)
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .latest
+            .get(account_id)
     }
 
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// applies mutations and advances to next block
+    /// Applies mutations and advances to next block.
     pub fn apply_mutations(
         &self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
     ) -> Result<(), HistoricalError> {
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self
+            .inner
+            .write()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
 
         let accounts = Vec::from_iter(account_commitments);
 
@@ -278,25 +374,37 @@ impl AccountTreeWithHistory {
         Ok(())
     }
 
-    /// gets account commitments in latest state
+    /// Gets account commitments in latest state.
     pub fn account_commitments(&self) -> Vec<(AccountId, Word)> {
-        self.inner.read().unwrap().latest.account_commitments().collect()
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .latest
+            .account_commitments()
+            .collect()
     }
 
-    /// returns oldest block still in history
+    /// Returns oldest block still in history.
     pub fn oldest_block_num(&self) -> BlockNumber {
-        let inner = self.inner.read().unwrap();
+        let inner = self
+            .inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
         inner
             .block_number
             .checked_sub(inner.overlays.len() as u32)
             .unwrap_or(BlockNumber::GENESIS)
     }
 
-    /// checks if tree contains account prefix
+    /// Checks if tree contains account prefix.
     pub fn contains_account_id_prefix(
         &self,
         prefix: miden_objects::account::AccountIdPrefix,
     ) -> bool {
-        self.inner.read().unwrap().latest.contains_account_id_prefix(prefix)
+        self.inner
+            .read()
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
+            .latest
+            .contains_account_id_prefix(prefix)
     }
 }

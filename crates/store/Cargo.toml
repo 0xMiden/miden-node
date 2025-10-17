@@ -56,5 +56,5 @@ termtree              = { version = "0.5" }
 version = "0.5"
 
 [[bench]]
-name = "account_tree_historical"
 harness = false
+name    = "account_tree_historical"

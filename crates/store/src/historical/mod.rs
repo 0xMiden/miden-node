@@ -190,7 +190,7 @@ impl AccountTreeWithHistory {
                     return None;
                 }
 
-                self.reconstruct_historical_witness(&guard, account_id, idx)
+                Self::reconstruct_historical_witness(&guard, account_id, idx)
             },
             HistoricalOffset::Future | HistoricalOffset::TooAncient => None,
         }
@@ -198,7 +198,6 @@ impl AccountTreeWithHistory {
 
     /// Reconstructs a historical account witness by applying reversion overlays.
     fn reconstruct_historical_witness(
-        &self,
         guard: &InnerState,
         account_id: AccountId,
         overlay_idx: usize,
@@ -211,7 +210,7 @@ impl AccountTreeWithHistory {
         // Reverse latest_nodes because they come in high-to-low depth order
         // but we need to initialize path_nodes in low-to-high depth order.
         latest_nodes.reverse();
-        let mut path_nodes = Self::initialize_path_nodes(initial_mask, latest_nodes);
+        let mut path_nodes = Self::initialize_path_nodes(initial_mask, &latest_nodes);
 
         let leaf_index = NodeIndex::from(leaf.index());
 
@@ -237,13 +236,13 @@ impl AccountTreeWithHistory {
         AccountWitness::new(account_id, commitment, path).ok()
     }
 
-    /// Initializes the path_nodes array from the latest state.
+    /// Initializes the `path_nodes` array from the latest state.
     ///
     /// The `initial_mask` indicates which depths have empty nodes (bit set = empty).
     /// For non-empty depths, we populate from `latest_nodes`.
     fn initialize_path_nodes(
         initial_mask: u64,
-        latest_nodes: Vec<Word>,
+        latest_nodes: &[Word],
     ) -> [Option<Word>; SMT_DEPTH as usize] {
         let mut path_nodes = [None; SMT_DEPTH as usize];
         let mut node_idx = 0;
@@ -276,11 +275,9 @@ impl AccountTreeWithHistory {
 
             // Update the path sibling nodes that changed in this overlay.
             for sibling in leaf_index.proof_indices() {
-                let height = sibling
-                    .depth()
-                    .checked_sub(1)
-                    .expect("proof_indices should not include root")
-                    as usize;
+                let height =
+                    sibling.depth().checked_sub(1).expect("proof_indices should not include root")
+                        as usize;
 
                 // Apply reversion mutations for this sibling node.
                 if let Some(mutation) = rev_muts.get(&sibling) {
@@ -315,11 +312,11 @@ impl AccountTreeWithHistory {
         leaf
     }
 
-    /// Builds a SparseMerklePath from the path_nodes array.
+    /// Builds a `SparseMerklePath` from the `path_nodes` array.
     ///
     /// The `empty_mask` is constructed by setting a bit for each empty node.
-    /// We iterate from depth 0 to max_depth in reverse order (high to low)
-    /// to build the nodes vector as expected by SparseMerklePath.
+    /// We iterate from depth 0 to `max_depth` in reverse order (high to low)
+    /// to build the nodes vector as expected by `SparseMerklePath`.
     fn build_sparse_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> (u64, Vec<Word>) {
         let max_depth =
             path_nodes.iter().rposition(std::option::Option::is_some).map_or(0, |d| d + 1);

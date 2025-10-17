@@ -147,7 +147,6 @@ impl State {
         // Consider either:
         // 1. Filtering account commitments by block_num <= latest_block_num, or
         // 2. Adding a DB constraint to ensure accounts table only contains latest states
-        // Neither, is critical.
         let latest_block_num = block_headers
             .last()
             .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);

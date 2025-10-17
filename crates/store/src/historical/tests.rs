@@ -1,6 +1,10 @@
 //! Tests for `AccountTreeWithHistory`
 
 #[cfg(test)]
+#[allow(clippy::similar_names)]
+#[allow(clippy::needless_range_loop)]
+#[allow(clippy::uninlined_format_args)]
+#[allow(clippy::cast_sign_loss)]
 mod account_tree_with_history_tests {
     use miden_objects::Word;
     use miden_objects::block::{AccountTree, BlockNumber};

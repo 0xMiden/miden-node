@@ -51,3 +51,10 @@ pretty_assertions     = { workspace = true }
 rand                  = { workspace = true }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }
+
+[dev-dependencies.criterion]
+version = "0.5"
+
+[[bench]]
+name = "account_tree_historical"
+harness = false

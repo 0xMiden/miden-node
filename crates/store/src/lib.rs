@@ -4,7 +4,7 @@ mod blocks;
 mod db;
 mod errors;
 pub mod genesis;
-mod historical;
+pub mod historical;
 mod server;
 pub mod state;
 

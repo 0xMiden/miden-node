@@ -89,13 +89,22 @@ impl AcceptHeaderLayer {
     const GRPC: Name<'static> = Name::new_unchecked("grpc");
 
     /// Parses the `Accept` header's contents, searching for any media type compatible with our
-    /// RPC version and genesis commitment.
-    fn negotiate(&self, accept: &str) -> Result<(), AcceptHeaderError> {
+    /// RPC version and genesis commitment, optionally requiring the presence of the `genesis`
+    /// parameter in the media range.
+    fn negotiate_with_requirement(
+        &self,
+        accept: &str,
+        require_genesis: bool,
+    ) -> Result<(), AcceptHeaderError> {
         let mut media_types = mediatype::MediaTypeList::new(accept).peekable();
 
         // Its debatable whether an empty header value is valid. Let's err on the side of being
         // gracious if the client want's to be weird.
         if media_types.peek().is_none() {
+            // If there are no media types provided and genesis is required, reject.
+            if require_genesis {
+                return Err(AcceptHeaderError::NoSupportedMediaRange);
+            }
             return Ok(());
         }
 
@@ -150,13 +159,26 @@ impl AcceptHeaderLayer {
                 continue;
             }
 
-            // Skip if the genesis commitment does not match.
+            // Skip if the genesis commitment does not match, or if it is required but missing.
             let genesis = media_type
                 .get_param(Self::GENESIS)
                 .map(|value| Word::try_from(value.unquoted_str().as_ref()))
                 .transpose()
                 .map_err(AcceptHeaderError::InvalidGenesis)?;
-            if let Some(genesis) = genesis
+
+            if require_genesis {
+                match genesis {
+                    None => {
+                        // For write methods, the genesis parameter must be present.
+                        continue;
+                    },
+                    Some(genesis) if genesis != self.genesis_commitment => {
+                        // Present but mismatched.
+                        continue;
+                    },
+                    _ => {},
+                }
+            } else if let Some(genesis) = genesis
                 && genesis != self.genesis_commitment
             {
                 continue;
@@ -195,14 +217,27 @@ where
     }
 
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
+        // Determine if this RPC method requires the `genesis` parameter.
+        let path = request.uri().path();
+        let requires_genesis =
+            matches!(path, "/rpc.Api/SubmitProvenTransaction" | "/rpc.Api/SubmitProvenBatch");
+
+        // If `genesis` is required but the header is missing entirely, reject early.
         let Some(header) = request.headers().get(ACCEPT) else {
+            if requires_genesis {
+                let response = tonic::Status::invalid_argument(
+                    "Accept header with 'genesis' parameter is required for write RPC methods",
+                )
+                .into_http();
+                return futures::future::ready(Ok(response)).boxed();
+            }
             return self.inner.call(request).boxed();
         };
 
         let result = header
             .to_str()
             .map_err(AcceptHeaderError::InvalidUtf8)
-            .map(|header| self.verifier.negotiate(header))
+            .map(|header| self.verifier.negotiate_with_requirement(header, requires_genesis))
             .flatten_result();
 
         match result {
@@ -342,7 +377,9 @@ mod tests {
     #[case::quoted_network(r#"application/vnd.miden; genesis="0x00000000000000000000000000000000000000000000000000000000deadbeef""#)]
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {
-        AcceptHeaderLayer::for_tests().negotiate(accept).unwrap();
+        AcceptHeaderLayer::for_tests()
+            .negotiate_with_requirement(accept, false)
+            .unwrap();
     }
 
     #[rstest::rstest]
@@ -356,7 +393,37 @@ mod tests {
     #[case::wildcard_subtype("application/*")]
     #[test]
     fn request_should_be_rejected(#[case] accept: &'static str) {
-        AcceptHeaderLayer::for_tests().negotiate(accept).unwrap_err();
+        AcceptHeaderLayer::for_tests()
+            .negotiate_with_requirement(accept, false)
+            .unwrap_err();
+    }
+
+    #[test]
+    fn write_requires_genesis_param_missing_or_empty_or_mismatch() {
+        let layer = AcceptHeaderLayer::for_tests();
+
+        // Missing genesis parameter
+        assert!(layer.negotiate_with_requirement("application/vnd.miden", true).is_err());
+
+        // Empty header value
+        assert!(layer.negotiate_with_requirement("", true).is_err());
+
+        // Present but mismatched genesis parameter
+        let mismatched = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeee";
+        assert!(layer.negotiate_with_requirement(mismatched, true).is_err());
+    }
+
+    #[test]
+    fn write_accepts_matching_genesis_param() {
+        let layer = AcceptHeaderLayer::for_tests();
+
+        // Matching genesis only
+        let accept = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
+        assert!(layer.negotiate_with_requirement(accept, true).is_ok());
+
+        // Matching genesis with version
+        let accept = "application/vnd.miden; version=0.2.3; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
+        assert!(layer.negotiate_with_requirement(accept, true).is_ok());
     }
 
     #[rstest::rstest]

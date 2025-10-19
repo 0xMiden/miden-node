@@ -1,3 +1,5 @@
+/// NOTE: This module contains logic that will eventually be moved to the Validator component
+/// when it is added to this repository.
 use std::collections::BTreeSet;
 
 use miden_objects::Word;
@@ -101,12 +103,12 @@ impl DataStore for TransactionInputsDataStore {
                 Ok(vault_proof) => {
                     AssetWitness::new(vault_proof.into()).map_err(|err| DataStoreError::Other {
                         error_msg: "failed to open vault asset tree".into(),
-                        source: Some(Box::new(err)),
+                        source: Some(err.into()),
                     })
                 },
                 Err(err) => Err(DataStoreError::Other {
                     error_msg: "failed to open vault".into(),
-                    source: Some(Box::new(err)),
+                    source: Some(err.into()),
                 }),
             }
         }

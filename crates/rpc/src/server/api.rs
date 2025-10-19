@@ -407,7 +407,7 @@ impl api_server::Api for RpcService {
             // Re-execute the transaction.
             match validator::re_execute_transaction(tx_inputs).await {
                 Ok(_executed_tx) => {
-                    info!(
+                    debug!(
                         target = COMPONENT,
                         tx_id = %tx.id().to_hex(),
                         "Transaction re-execution successful"

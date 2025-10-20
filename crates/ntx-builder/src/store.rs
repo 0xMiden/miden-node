@@ -204,10 +204,10 @@ impl StoreClient {
 
     #[instrument(target = COMPONENT, name = "store.client.get_network_accounts", skip_all, err)]
     pub async fn get_network_accounts(&self) -> Result<Vec<AccountId>, StoreError> {
-        let response = self.inner.clone().get_network_accounts(()).await?.into_inner();
+        let response = self.inner.clone().get_network_account_ids(()).await?.into_inner();
 
         let accounts: Result<Vec<AccountId>, ConversionError> = response
-            .accounts
+            .account_ids
             .into_iter()
             .map(|account_id| {
                 AccountId::read_from_bytes(&account_id.id)

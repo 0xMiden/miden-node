@@ -32,8 +32,8 @@ service NtxBuilder {
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
 
-    // Returns a list of all network accounts.
-    rpc GetNetworkAccounts(google.protobuf.Empty) returns (NetworkAccounts) {}
+    // Returns a list of all network account ids.
+    rpc GetNetworkAccountIds(google.protobuf.Empty) returns (NetworkAccountIdList) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX
@@ -106,9 +106,9 @@ message UnconsumedNetworkNotes {
 // ================================================================================================
 
 // Represents the result of getting the network account ids.
-message NetworkAccounts {
-  // The list of network accounts.
-  repeated account.AccountId accounts = 1;
+message NetworkAccountIdList {
+  // The list of network account ids.
+  repeated account.AccountId account_ids = 1;
 }
 
 // GET CURRENT BLOCKCHAIN DATA

@@ -197,15 +197,15 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         ret(level = "debug"),
         err
     )]
-    async fn get_network_accounts(
+    async fn get_network_account_ids(
         &self,
         _request: Request<()>,
-    ) -> Result<Response<proto::ntx_builder_store::NetworkAccounts>, Status> {
+    ) -> Result<Response<proto::ntx_builder_store::NetworkAccountIdList>, Status> {
         let account_ids = self.state.get_all_network_accounts().await.map_err(internal_error)?;
 
-        let accounts: Vec<proto::account::AccountId> =
+        let account_ids: Vec<proto::account::AccountId> =
             account_ids.into_iter().map(Into::into).collect();
 
-        Ok(Response::new(proto::ntx_builder_store::NetworkAccounts { accounts }))
+        Ok(Response::new(proto::ntx_builder_store::NetworkAccountIdList { account_ids }))
     }
 }

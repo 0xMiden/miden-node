@@ -26,7 +26,7 @@ pub trait TransactionBatchConstructor {
 
     /// Returns a `TransactionBatch` with `notes_per_tx.len()` transactions, where the i'th
     /// transaction has `notes_per_tx[i]` notes created
-    fn from_notes_created(starting_account_index: u32, notes_per_tx: &[u64]) -> Self;
+    fn from_notes_created(starting_account_index: u32, notes_per_tx: &[u32]) -> Self;
 
     /// Returns a `TransactionBatch` which contains `num_txs_in_batch` transactions
     fn from_txs(starting_account_index: u32, num_txs_in_batch: u64) -> Self;
@@ -74,12 +74,12 @@ impl TransactionBatchConstructor for ProvenBatch {
         .unwrap()
     }
 
-    fn from_notes_created(starting_account_index: u32, notes_per_tx: &[u64]) -> Self {
+    fn from_notes_created(starting_account_index: u32, notes_per_tx: &[u32]) -> Self {
         let txs: Vec<_> = notes_per_tx
             .iter()
             .enumerate()
             .map(|(index, &num_notes)| {
-                let starting_note_index = u64::from(starting_account_index) + index as u64;
+                let starting_note_index = starting_account_index + index as u32;
                 MockProvenTxBuilder::with_account_index(starting_account_index + index as u32)
                     .private_notes_created_range(
                         starting_note_index..(starting_note_index + num_notes),

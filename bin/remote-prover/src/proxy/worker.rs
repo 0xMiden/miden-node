@@ -196,18 +196,10 @@ impl Worker {
 
         self.version = worker_status.version;
 
-        let worker_supported_proof_type =
-            match ProofType::try_from(worker_status.supported_proof_type) {
-                Ok(proof_type) => proof_type,
-                Err(e) => {
-                    error!(
-                        "Failed to convert worker supported proof type ({}): {}",
-                        self.address(),
-                        e
-                    );
-                    return Err(e.to_string());
-                },
-            };
+        let worker_supported_proof_type = ProofType::try_from(worker_status.supported_proof_type)
+            .inspect_err(|err| {
+            error!(%err, address=%self.address(), "Failed to convert worker supported proof type");
+        })?;
 
         if supported_proof_type != worker_supported_proof_type {
             return Err(format!("Unsupported proof type: {supported_proof_type}"));

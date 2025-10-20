@@ -10,7 +10,8 @@
 - [BREAKING] Renamed `CheckNullifiersByPrefix` endpoint to `SyncNullifiers` ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
 - [BREAKING] Added `block_range` and `pagination_info` fields to paginated gRPC endpoints ([#1205](https://github.com/0xMiden/miden-node/pull/1205)).
 - Use `tonic` error codes for gRPC errors ([#1208](https://github.com/0xMiden/miden-node/pull/1208)).
-- [BREAKING] Replace `GetAccountProofs` with `GetAccountProof` in the public store API (#[1211](https://github.com/0xMiden/miden-node/pull/1211)).
+- [BREAKING] Replaced `GetAccountProofs` with `GetAccountProof` in the public store API (#[1211](https://github.com/0xMiden/miden-node/pull/1211)).
+- [BREAKING] Refactored the mempool to use a single DAG across transactions and batches ([#1234](https://github.com/0xMiden/miden-node/pull/1234)).
 - Implemented storage map `DataStore` function ([#1226](https://github.com/0xMiden/miden-node/pull/1226)).
 - [BREAKING] Renamed `RemoteProverProxy` to `RemoteProverClient` ([#1236](https://github.com/0xMiden/miden-node/pull/1236)).
 - Added pagination to `SyncNotes` endpoint ([#1257](https://github.com/0xMiden/miden-node/pull/1257)).

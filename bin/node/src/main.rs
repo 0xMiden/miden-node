@@ -74,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Configure tracing with optional OpenTelemetry exporting support.
-    miden_node_utils::logging::setup_tracing(cli.command.open_telemetry())?;
+    let _otel_guard = miden_node_utils::logging::setup_tracing(cli.command.open_telemetry())?;
 
     cli.command.execute().await
 }

@@ -441,15 +441,12 @@ impl AccountSecrets {
         let account_lut = IndexMap::<AccountId, Account>::from_iter(
             genesis_state.accounts.iter().map(|account| (account.id(), account.clone())),
         );
-        self.secrets.iter().map(move |(name, account_id, secret_key)| {
+        self.secrets.iter().cloned().map(move |(name, account_id, secret_key)| {
             let account = account_lut
-                .get(account_id)
-                .ok_or(GenesisConfigError::MissingGenesisAccount { account_id: *account_id })?;
-            let account_file = AccountFile::new(
-                account.clone(),
-                vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
-            );
-            let name = name.to_string();
+                .get(&account_id)
+                .ok_or(GenesisConfigError::MissingGenesisAccount { account_id })?;
+            let account_file =
+                AccountFile::new(account.clone(), vec![AuthSecretKey::RpoFalcon512(secret_key)]);
             Ok(AccountFileWithName { name, account_file })
         })
     }

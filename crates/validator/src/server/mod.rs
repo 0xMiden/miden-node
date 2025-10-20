@@ -126,11 +126,12 @@ impl api_server::Api for ValidatorServer {
 
         let result = self
             .db
-            .transact("submit_transaction", move |conn| submit_proven_transaction(conn, &proven_tx))
+            .transact("submit_proven_transaction", move |conn| {
+                submit_proven_transaction(conn, &proven_tx)
+            })
             .await;
 
         match result {
-            // TODO: revisit insertion logic (e.g. on collision = bad request?).
             Ok(rows_affected) => {
                 if rows_affected == 1 {
                     Ok(tonic::Response::new(()))
@@ -138,9 +139,9 @@ impl api_server::Api for ValidatorServer {
                     tracing::error!(
                         target: COMPONENT,
                         rows_affected = rows_affected,
-                        "failed to insert proven transaction"
+                        "unexpected number of rows affected by insertion of proven transaction"
                     );
-                    Err(tonic::Status::internal("failed to insert proven transaction"))
+                    Err(tonic::Status::internal("failed to submit proven transaction"))
                 }
             },
             Err(err) => Err(err.into()),

@@ -3,8 +3,9 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, RwLock};
 
-use miden_crypto::EMPTY_WORD;
-use miden_crypto::merkle::{
+use miden_objects::account::AccountId;
+use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
+use miden_objects::crypto::merkle::{
     LeafIndex,
     MerkleError,
     NodeIndex,
@@ -13,9 +14,7 @@ use miden_crypto::merkle::{
     SmtLeaf,
     SparseMerklePath,
 };
-use miden_objects::account::AccountId;
-use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
-use miden_objects::{AccountTreeError, Word};
+use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
 
 #[cfg(test)]
 mod tests;
@@ -85,7 +84,7 @@ impl AccountTreeWithHistory {
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates new historical tree.
+    /// Creates a new historical tree.
     pub fn new(account_tree: AccountTree, block_number: BlockNumber) -> Self {
         Self {
             inner: Arc::new(RwLock::new(InnerState {
@@ -105,7 +104,7 @@ impl AccountTreeWithHistory {
     // PUBLIC ACCESSORS
     // --------------------------------------------------------------------------------------------
 
-    /// Returns latest block number.
+    /// Returns the latest block number.
     pub fn block_number(&self) -> BlockNumber {
         self.inner
             .read()
@@ -113,7 +112,7 @@ impl AccountTreeWithHistory {
             .block_number
     }
 
-    /// Returns latest root.
+    /// Returns the latest root.
     pub fn root(&self) -> Word {
         self.inner
             .read()
@@ -122,7 +121,7 @@ impl AccountTreeWithHistory {
             .root()
     }
 
-    /// Returns root at given historical block.
+    /// Returns the root at the given historical block.
     pub fn root_at(&self, block_number: BlockNumber) -> Option<Word> {
         let guard = self
             .inner
@@ -140,7 +139,7 @@ impl AccountTreeWithHistory {
         }
     }
 
-    /// Returns account count.
+    /// Returns the account count.
     pub fn num_accounts(&self) -> usize {
         self.inner
             .read()
@@ -149,7 +148,7 @@ impl AccountTreeWithHistory {
             .num_accounts()
     }
 
-    /// Returns history depth.
+    /// Returns the history depth.
     pub fn history_len(&self) -> usize {
         self.inner
             .read()
@@ -158,7 +157,7 @@ impl AccountTreeWithHistory {
             .len()
     }
 
-    /// Opens account at latest block.
+    /// Opens an account at the latest block.
     pub fn open(&self, account_id: AccountId) -> AccountWitness {
         self.inner
             .read()
@@ -167,7 +166,7 @@ impl AccountTreeWithHistory {
             .open(account_id)
     }
 
-    /// Opens account at historical block.
+    /// Opens an account at a historical block.
     ///
     /// This method reconstructs the account witness at the given historical block by:
     /// 1. Starting with the latest account state
@@ -336,7 +335,7 @@ impl AccountTreeWithHistory {
         (empty_mask, nodes)
     }
 
-    /// Gets account state at latest block.
+    /// Gets the account state at the latest block.
     pub fn get(&self, account_id: AccountId) -> Word {
         self.inner
             .read()
@@ -348,7 +347,7 @@ impl AccountTreeWithHistory {
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies mutations and advances to next block.
+    /// Applies mutations and advances to the next block.
     pub fn apply_mutations(
         &self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
@@ -371,7 +370,7 @@ impl AccountTreeWithHistory {
         Ok(())
     }
 
-    /// Gets account commitments in latest state.
+    /// Gets account commitments in the latest state.
     pub fn account_commitments(&self) -> Vec<(AccountId, Word)> {
         self.inner
             .read()
@@ -381,7 +380,7 @@ impl AccountTreeWithHistory {
             .collect()
     }
 
-    /// Returns oldest block still in history.
+    /// Returns the oldest block still in history.
     pub fn oldest_block_num(&self) -> BlockNumber {
         let inner = self
             .inner
@@ -393,7 +392,7 @@ impl AccountTreeWithHistory {
             .unwrap_or(BlockNumber::GENESIS)
     }
 
-    /// Checks if tree contains account prefix.
+    /// Checks if the tree contains the account prefix.
     pub fn contains_account_id_prefix(
         &self,
         prefix: miden_objects::account::AccountIdPrefix,

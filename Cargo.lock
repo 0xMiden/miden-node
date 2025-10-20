@@ -1630,8 +1630,6 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.1.5",
- "rayon",
- "serde",
 ]
 
 [[package]]
@@ -2470,7 +2468,6 @@ dependencies = [
  "flume",
  "getrandom 0.2.16",
  "glob",
- "hashbrown 0.15.5",
  "hkdf",
  "k256",
  "num",
@@ -2479,7 +2476,6 @@ dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.3",
  "rand_hc",
- "rayon",
  "sha3",
  "thiserror 2.0.17",
  "winter-crypto",
@@ -2771,7 +2767,6 @@ dependencies = [
  "diesel_migrations",
  "hex",
  "indexmap 2.11.4",
- "miden-crypto",
  "miden-lib",
  "miden-node-proto",
  "miden-node-proto-build",

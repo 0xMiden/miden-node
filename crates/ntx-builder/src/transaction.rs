@@ -123,8 +123,7 @@ impl NtxContext {
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
-                let tx_inputs = executed.into_parts().0;
-                let proven = Box::pin(self.prove(tx_inputs)).await?;
+                let proven = Box::pin(self.prove(executed.into())).await?;
                 self.submit(proven).await?;
                 Ok(failed)
             }

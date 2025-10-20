@@ -95,7 +95,16 @@ pub struct AccountState {
 }
 
 impl AccountState {
+    /// Creates a new account state from the supplied account and notes.
+    ///
+    /// # SAFETY
+    ///
+    /// This function will panic if any of the supplied notes are not single target network notes or
+    /// their account prefix does not match that of the supplied account.
     pub fn new(account: Account, notes: Vec<NetworkNote>) -> Self {
+        let account_prefix = NetworkAccountPrefix::try_from(account.id())
+            .expect("only network accounts are used for account state");
+
         let mut state = Self {
             committed: Some(account),
             inflight: VecDeque::default(),
@@ -106,7 +115,15 @@ impl AccountState {
         for note in notes {
             // Currently only support single target network notes in NTB.
             if let NetworkNote::SingleTarget(note) = note {
+                assert!(
+                    note.account_prefix() == account_prefix,
+                    "Notes supplied into account state must match expected account prefix"
+                );
                 state.add_note(note);
+            } else {
+                panic!(
+                    "Unsupported network note type {note:?}. Only single target notes are supported."
+                )
             }
         }
 

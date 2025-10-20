@@ -18,9 +18,6 @@ service NtxBuilder {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
-    // Returns a paginated list of unconsumed network notes.
-    rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
-
     // Returns a paginated list of a network account's unconsumed notes up to a specified block number.
     rpc GetUnconsumedNetworkNotesForAccount(UnconsumedNetworkNotesForAccountRequest) returns (UnconsumedNetworkNotes) {}
 
@@ -53,18 +50,6 @@ message MaybeAccountDetails {
 
 // GET UNCONSUMED NETWORK NOTES
 // ================================================================================================
-
-// Returns a list of unconsumed network notes using pagination.
-message UnconsumedNetworkNotesRequest {
-    // An opaque token used to paginate through the notes.
-    //
-    // This should be null on the first call, and set to the response  token until the response token
-    // is null, at which point all data has been fetched.
-    optional uint64 page_token = 1;
-
-    // Number of notes to retrieve per page.
-    uint64 page_size = 2;
-}
 
 // Returns a paginated list of unconsumed network notes for an account.
 //

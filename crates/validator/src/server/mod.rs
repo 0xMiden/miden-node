@@ -9,7 +9,7 @@ use miden_node_proto_build::validator_api_descriptor;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
-use miden_objects::block::{BlockNumber, ProvenBlock};
+use miden_objects::block::ProvenBlock;
 use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::Deserializable;
 use tokio::net::TcpListener;
@@ -124,15 +124,9 @@ impl api_server::Api for ValidatorServer {
                 )
             })?;
 
-        // TODO: Determine the appropriate block number for this transaction
-        // This should come from the current block being validated or a specific context
-        let block_num = BlockNumber::from(0); // Placeholder - needs proper implementation
-
         let result = self
             .db
-            .transact("submit_transaction", move |conn| {
-                submit_proven_transaction(conn, &proven_tx, block_num)
-            })
+            .transact("submit_transaction", move |conn| submit_proven_transaction(conn, &proven_tx))
             .await;
 
         match result {

@@ -1,6 +1,5 @@
 use diesel::SqliteConnection;
 use miden_node_store::DatabaseError;
-use miden_objects::block::BlockNumber;
 use miden_objects::transaction::{OrderedTransactionHeaders, ProvenTransaction, TransactionHeader};
 use tracing::{debug, instrument};
 
@@ -11,12 +10,10 @@ use crate::db::insert_transactions;
         target = COMPONENT,
         name = "validator.submit_proven_transaction",
         skip(conn, proven_tx),
-        fields(block_num = %block_num)
     )]
 pub fn submit_proven_transaction(
     conn: &mut SqliteConnection,
     proven_tx: &ProvenTransaction,
-    block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     debug!(target: COMPONENT, "Starting proven transaction submission");
 
@@ -39,7 +36,8 @@ pub fn submit_proven_transaction(
     let ordered_transactions = OrderedTransactionHeaders::new_unchecked(vec![transaction_header]);
 
     // Insert the transaction into the database
-    let rows_affected = insert_transactions(conn, block_num, &ordered_transactions)?;
+    let rows_affected =
+        insert_transactions(conn, proven_tx.ref_block_num(), &ordered_transactions)?;
 
     debug!(
         target = COMPONENT,

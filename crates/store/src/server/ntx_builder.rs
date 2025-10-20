@@ -189,6 +189,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         }))
     }
 
+    // TODO: add pagination.
     #[instrument(
         parent = None,
         target = COMPONENT,

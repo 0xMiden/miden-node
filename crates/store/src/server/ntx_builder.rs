@@ -109,9 +109,9 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         skip_all,
         err
     )]
-    async fn get_unconsumed_network_notes_for_account(
+    async fn get_unconsumed_network_notes(
         &self,
-        request: Request<proto::ntx_builder_store::UnconsumedNetworkNotesForAccountRequest>,
+        request: Request<proto::ntx_builder_store::UnconsumedNetworkNotesRequest>,
     ) -> Result<Response<proto::ntx_builder_store::UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
         let block_num = BlockNumber::from(request.block_num);

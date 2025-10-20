@@ -19,7 +19,7 @@ service NtxBuilder {
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
     // Returns a paginated list of a network account's unconsumed notes up to a specified block number.
-    rpc GetUnconsumedNetworkNotesForAccount(UnconsumedNetworkNotesForAccountRequest) returns (UnconsumedNetworkNotes) {}
+    rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
 
     // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
     // header for executing network transactions. If the block number is not provided, the latest
@@ -54,7 +54,7 @@ message MaybeAccountDetails {
 // Returns a paginated list of unconsumed network notes for an account.
 //
 // Notes created or consumed after the specified block are excluded from the result.
-message UnconsumedNetworkNotesForAccountRequest {
+message UnconsumedNetworkNotesRequest {
     // This should be null on the first call, and set to the response token until the response token
     // is null, at which point all data has been fetched.
     //

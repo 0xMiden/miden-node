@@ -134,8 +134,8 @@ impl StoreClient {
 
     /// Returns the list of unconsumed network notes for a specific network account up to a
     /// specified block.
-    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes_for_account", skip_all, err)]
-    pub async fn get_unconsumed_network_notes_for_account(
+    #[instrument(target = COMPONENT, name = "store.client.get_unconsumed_network_notes", skip_all, err)]
+    pub async fn get_unconsumed_network_notes(
         &self,
         network_account_prefix: NetworkAccountPrefix,
         block_num: u32,
@@ -145,14 +145,13 @@ impl StoreClient {
 
         let mut store_client = self.inner.clone();
         loop {
-            let req = proto::ntx_builder_store::UnconsumedNetworkNotesForAccountRequest {
+            let req = proto::ntx_builder_store::UnconsumedNetworkNotesRequest {
                 page_token,
                 page_size: 128,
                 network_account_id_prefix: network_account_prefix.inner(),
                 block_num,
             };
-            let resp =
-                store_client.get_unconsumed_network_notes_for_account(req).await?.into_inner();
+            let resp = store_client.get_unconsumed_network_notes(req).await?.into_inner();
 
             let page: Vec<NetworkNote> = resp
                 .notes

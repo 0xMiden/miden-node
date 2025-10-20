@@ -72,9 +72,7 @@ impl State {
         store: &StoreClient,
         block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
-        let notes = store
-            .get_unconsumed_network_notes_for_account(account_prefix, block_num.as_u32())
-            .await?;
+        let notes = store.get_unconsumed_network_notes(account_prefix, block_num.as_u32()).await?;
         let account = AccountState::new(account, notes);
 
         let state = Self {

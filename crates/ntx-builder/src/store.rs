@@ -171,7 +171,7 @@ impl StoreClient {
     }
 
     // TODO: add pagination.
-    #[instrument(target = COMPONENT, name = "store.client.get_network_accounts", skip_all, err)]
+    #[instrument(target = COMPONENT, name = "store.client.get_network_account_ids", skip_all, err)]
     pub async fn get_network_account_ids(&self) -> Result<Vec<AccountId>, StoreError> {
         let response = self.inner.clone().get_network_account_ids(()).await?.into_inner();
 

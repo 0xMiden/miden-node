@@ -153,7 +153,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.ntx_builder_server.get_network_accounts",
+        name = "store.ntx_builder_server.get_network_account_ids",
         skip_all,
         ret(level = "debug"),
         err

@@ -89,8 +89,8 @@ impl NtxContext {
     ///
     /// # Returns
     ///
-    /// On success, returns the list of [`FailedNote`]s representing notes that were
-    /// filtered out before execution.
+    /// On success, returns the [`TransactionId`] of the executed transaction and a list of
+    /// [`FailedNote`]s representing notes that were filtered out before execution.
     ///
     /// # Errors
     ///

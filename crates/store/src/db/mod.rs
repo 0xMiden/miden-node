@@ -217,7 +217,7 @@ impl From<NoteRecord> for NoteSyncRecord {
 }
 
 impl Db {
-    /// ...
+    /// Creates a new database instance with the provided connection pool.
     pub fn new(pool: deadpool_diesel::Pool<ConnectionManager>) -> Self {
         Self { pool }
     }

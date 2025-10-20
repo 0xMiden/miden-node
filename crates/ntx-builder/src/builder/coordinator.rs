@@ -30,15 +30,56 @@ impl ActorHandle {
 // ================================================================================================
 
 /// Coordinator for managing [`AccountActor`] instances, tasks, and associated communication.
+///
+/// The `Coordinator` is the central orchestrator of the network transaction builder system.
+/// It manages the lifecycle of account actors. Each actor is responsible for handling transactions
+/// for a specific network account prefix. The coordinator provides the following core
+/// functionality:
+///
+/// ## Actor Management
+/// - Spawns new [`AccountActor`] instances for network accounts as needed.
+/// - Maintains a registry of active actors with their communication channels.
+/// - Gracefully handles actor shutdown and cleanup when actors complete or fail.
+/// - Monitors actor tasks through a join set to detect completion or errors.
+///
+/// ## Event Broadcasting
+/// - Distributes mempool events to all relevant account actors.
+/// - Handles communication failures by canceling disconnected actors.
+/// - Maintains reliable message delivery through dedicated channels per actor.
+///
+/// ## Resource Management
+/// - Controls transaction concurrency across all network accounts using a semaphore.
+/// - Prevents resource exhaustion by limiting simultaneous transaction processing.
+///
+/// The coordinator operates in an event-driven manner:
+/// 1. Network accounts are registered and actors spawned as needed.
+/// 2. Mempool events are broadcast to all active actors.
+/// 3. Actor completion/failure events are monitored and handled.
+/// 4. Failed or completed actors are cleaned up from the registry.
 pub struct Coordinator {
-    /// Mapping of network account prefixes to their respective message channels. When actors are
-    /// spawned, this registry is updated. The builder uses this registry to communicate with the
-    /// actors.
+    /// Mapping of network account prefixes to their respective message channels and cancellation
+    /// tokens.
+    ///
+    /// This registry serves as the primary directory for communicating with active account actors.
+    /// When actors are spawned, they register their communication channel here. When events need
+    /// to be broadcast, this registry is used to locate the appropriate actors. The registry is
+    /// automatically cleaned up when actors complete their execution.
     actor_registry: HashMap<NetworkAccountPrefix, ActorHandle>,
-    /// Join set for managing actor tasks. When an actor task completes, the actor's corresponding
-    /// data from the registry is removed.
+
+    /// Join set for managing actor tasks and monitoring their completion status.
+    ///
+    /// This join set allows the coordinator to wait for actor task completion and handle
+    /// different shutdown scenarios. When an actor task completes (either successfully or
+    /// due to an error), the corresponding entry is removed from the actor registry.
     actor_join_set: JoinSet<ActorShutdownReason>,
-    /// Semaphore for limiting the number of concurrent transactions across all network accounts.
+
+    /// Semaphore for controlling the maximum number of concurrent transactions across all network
+    /// accounts.
+    ///
+    /// This shared semaphore prevents the system from becoming overwhelmed by limiting the total
+    /// number of transactions that can be processed simultaneously across all account actors.
+    /// Each actor must acquire a permit from this semaphore before processing a transaction,
+    /// ensuring fair resource allocation and system stability under load.
     semaphore: Arc<Semaphore>,
 }
 
@@ -57,8 +98,9 @@ impl Coordinator {
 
     /// Spawns a new actor to manage the state of the provided network account.
     ///
-    /// If the account is not a network account, the function returns Ok(()) without spawning an
-    /// actor.
+    /// This method creates a new [`AccountActor`] instance for the specified account origin
+    /// and adds it to the coordinator's management system. The actor will be responsible for
+    /// processing transactions and managing state for accounts matching the network prefix.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
     pub async fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
         let account_prefix = origin.prefix();
@@ -83,15 +125,25 @@ impl Coordinator {
         tracing::info!("created actor for account prefix: {}", account_prefix);
     }
 
-    /// Broadcasts an event to all account actors.
+    /// Broadcasts a mempool event to all active account actors.
+    ///
+    /// This method distributes the provided event to every actor currently registered
+    /// with the coordinator. Each actor will receive the event through its dedicated
+    /// message channel and can process it accordingly.
     pub async fn broadcast_event(&self, event: &MempoolEvent) {
         for (account_prefix, handle) in &self.actor_registry {
             Self::send(handle, event, *account_prefix).await;
         }
     }
 
-    /// Gets the next result from the actor join set and then handles it depending on the
-    /// reason the actor shutdown.
+    /// Waits for the next actor to complete and processes the shutdown reason.
+    ///
+    /// This method monitors the join set for actor task completion and handles
+    /// different shutdown scenarios appropriately. It's designed to be called
+    /// in a loop to continuously monitor and manage actor lifecycles.
+    ///
+    /// If no actors are currently running, this method will wait indefinitely until
+    /// new actors are spawned. This prevents busy-waiting when the coordinator is idle.
     pub async fn next(&mut self) -> anyhow::Result<()> {
         let actor_result = self.actor_join_set.join_next().await;
         match actor_result {

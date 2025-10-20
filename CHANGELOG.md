@@ -17,6 +17,7 @@
 - Added pagination to `SyncNotes` endpoint ([#1257](https://github.com/0xMiden/miden-node/pull/1257)).
 - Added application level error in gRPC endpoints ([#1266](https://github.com/0xMiden/miden-node/pull/1266)).
 - [BREAKING] Response type nuances of `GetAccountProof` in the public store API (#[1277](https://github.com/0xMiden/miden-node/pull/1277)).
+- Add `validator` crate with initial protobuf and SQL schemas, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
 
 ## v0.11.2 (2025-09-10)
 

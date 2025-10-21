@@ -43,6 +43,7 @@ tracing                = { workspace = true }
 [dev-dependencies]
 assert_matches        = { workspace = true }
 criterion             = { version = "0.5" }
+miden-crypto          = { features = ["rocksdb", "concurrent"], workspace = true }
 miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["testing", "tracing-forest"], workspace = true }

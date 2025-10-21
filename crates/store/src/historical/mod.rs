@@ -50,7 +50,7 @@ pub trait AccountTreeBackend {
 
 impl<S> AccountTreeBackend for AccountTree<LargeSmt<S>>
 where
-    S: SmtStorage + Default,
+    S: SmtStorage,
 {
     fn root(&self) -> Word {
         self.root()

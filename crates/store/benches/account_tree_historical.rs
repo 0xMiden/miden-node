@@ -1,16 +1,35 @@
 use std::hint::black_box;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use miden_crypto::merkle::{RocksDbConfig, RocksDbStorage};
 use miden_node_store::historical::AccountTreeWithHistory;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::{AccountTree, BlockNumber, account_id_to_smt_key};
 use miden_objects::crypto::hash::rpo::Rpo256;
-use miden_objects::crypto::merkle::{LargeSmt, MemoryStorage};
+use miden_objects::crypto::merkle::LargeSmt;
 use miden_objects::testing::account_id::AccountIdBuilder;
+
+// Counter for unique benchmark database directories
+static DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 // HELPER FUNCTIONS
 // ================================================================================================
+
+/// Creates a RocksDB storage instance in target/bench_* directory for benchmarking.
+fn setup_rocksdb_storage() -> RocksDbStorage {
+    let counter = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let db_path = PathBuf::from(format!("target/bench_rocksdb_{}", counter));
+
+    // Clean up the directory if it exists
+    if db_path.exists() {
+        std::fs::remove_dir_all(&db_path).ok();
+    }
+
+    RocksDbStorage::open(RocksDbConfig::new(db_path)).expect("Failed to open RocksDbStorage")
+}
 
 /// Generates a deterministic word from a seed.
 fn generate_word(seed: &mut [u8; 32]) -> Word {
@@ -37,10 +56,10 @@ fn generate_account_id(seed: &mut [u8; 32]) -> AccountId {
 // SETUP FUNCTIONS
 // ================================================================================================
 
-/// Sets up a vanilla `AccountTree` with specified number of accounts.
+/// Sets up a vanilla `AccountTree` with specified number of accounts using RocksDB backend.
 fn setup_vanilla_account_tree(
     num_accounts: usize,
-) -> (AccountTree<LargeSmt<MemoryStorage>>, Vec<AccountId>) {
+) -> (AccountTree<LargeSmt<RocksDbStorage>>, Vec<AccountId>) {
     let mut seed = [0u8; 32];
     let mut account_ids = Vec::new();
     let mut entries = Vec::new();
@@ -52,19 +71,22 @@ fn setup_vanilla_account_tree(
         entries.push((account_id_to_smt_key(account_id), commitment));
     }
 
-    let smt = LargeSmt::with_entries(MemoryStorage::default(), entries)
-        .expect("Failed to create LargeSmt from entries");
+    let storage = setup_rocksdb_storage();
+    let smt =
+        LargeSmt::with_entries(storage, entries).expect("Failed to create LargeSmt from entries");
     let tree = AccountTree::new(smt);
     (tree, account_ids)
 }
 
-/// Sets up `AccountTreeWithHistory` with specified number of accounts and blocks.
+/// Sets up `AccountTreeWithHistory` with specified number of accounts and blocks using RocksDB
+/// backend.
 fn setup_account_tree_with_history(
     num_accounts: usize,
     num_blocks: usize,
-) -> (AccountTreeWithHistory<AccountTree<LargeSmt<MemoryStorage>>>, Vec<AccountId>) {
+) -> (AccountTreeWithHistory<AccountTree<LargeSmt<RocksDbStorage>>>, Vec<AccountId>) {
     let mut seed = [0u8; 32];
-    let smt = LargeSmt::with_entries(MemoryStorage::default(), std::iter::empty())
+    let storage = setup_rocksdb_storage();
+    let smt = LargeSmt::with_entries(storage, std::iter::empty())
         .expect("Failed to create empty LargeSmt");
     let account_tree = AccountTree::new(smt);
     let account_tree_hist = AccountTreeWithHistory::new(account_tree, BlockNumber::GENESIS);
@@ -123,7 +145,8 @@ fn bench_vanilla_insertion(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("vanilla", num_accounts), |b| {
             b.iter(|| {
                 let mut seed = [0u8; 32];
-                let smt = LargeSmt::with_entries(MemoryStorage::default(), std::iter::empty())
+                let storage = setup_rocksdb_storage();
+                let smt = LargeSmt::with_entries(storage, std::iter::empty())
                     .expect("Failed to create empty LargeSmt");
                 let mut tree = AccountTree::new(smt);
                 let entries: Vec<_> = (0..num_accounts)
@@ -155,7 +178,7 @@ fn bench_historical_access(c: &mut Criterion) {
     for &num_accounts in &account_counts {
         for &block_depth in &block_depths {
             if block_depth
-                > AccountTreeWithHistory::<AccountTree<LargeSmt<MemoryStorage>>>::MAX_HISTORY
+                > AccountTreeWithHistory::<AccountTree<LargeSmt<RocksDbStorage>>>::MAX_HISTORY
             {
                 continue;
             }
@@ -196,7 +219,8 @@ fn bench_insertion_with_history(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("with_history", num_accounts), |b| {
             b.iter(|| {
                 let mut seed = [0u8; 32];
-                let smt = LargeSmt::with_entries(MemoryStorage::default(), std::iter::empty())
+                let storage = setup_rocksdb_storage();
+                let smt = LargeSmt::with_entries(storage, std::iter::empty())
                     .expect("Failed to create empty LargeSmt");
                 let account_tree = AccountTree::new(smt);
                 let tree = AccountTreeWithHistory::new(account_tree, BlockNumber::GENESIS);

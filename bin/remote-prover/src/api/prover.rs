@@ -323,7 +323,7 @@ mod test {
             .unwrap();
 
         let executed_transaction = Box::pin(tx_context.execute()).await.unwrap();
-        let tx_inputs = executed_transaction.into_parts().0;
+        let tx_inputs = executed_transaction.into();
 
         let request_1 = Request::new(proto::remote_prover::ProofRequest {
             proof_type: proto::remote_prover::ProofType::Transaction.into(),

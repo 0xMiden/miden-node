@@ -6,12 +6,15 @@ use std::sync::{Arc, RwLock};
 use miden_objects::account::AccountId;
 use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
 use miden_objects::crypto::merkle::{
+    LargeSmt,
     LeafIndex,
+    MemoryStorage,
     MerkleError,
     NodeIndex,
     NodeMutation,
     SMT_DEPTH,
     SmtLeaf,
+    SmtStorage,
     SparseMerklePath,
 };
 use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
@@ -50,13 +53,19 @@ impl HistoricalOverlay {
 }
 
 #[derive(Debug)]
-struct InnerState {
+struct InnerState<S = MemoryStorage>
+where
+    S: SmtStorage + Default,
+{
     block_number: BlockNumber,
-    latest: AccountTree,
+    latest: AccountTree<LargeSmt<S>>,
     overlays: VecDeque<Arc<HistoricalOverlay>>,
 }
 
-impl InnerState {
+impl<S> InnerState<S>
+where
+    S: SmtStorage + Default,
+{
     pub fn historical_offset(&self, desired_block_number: BlockNumber) -> HistoricalOffset {
         let Some(past_offset) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
             return HistoricalOffset::Future;
@@ -64,7 +73,7 @@ impl InnerState {
         let past_offset = past_offset.as_usize();
         match past_offset {
             0 => HistoricalOffset::Latest,
-            1..=AccountTreeWithHistory::MAX_HISTORY => {
+            1..=AccountTreeWithHistory::<S>::MAX_HISTORY => {
                 HistoricalOffset::ReversionsIdx(past_offset - 1)
             },
             _ => HistoricalOffset::TooAncient,
@@ -74,18 +83,24 @@ impl InnerState {
 
 /// Wraps `AccountTree` with historical query support via reversion overlays.
 #[derive(Debug, Clone)]
-pub struct AccountTreeWithHistory {
-    inner: Arc<RwLock<InnerState>>,
+pub struct AccountTreeWithHistory<S = MemoryStorage>
+where
+    S: SmtStorage + Default,
+{
+    inner: Arc<RwLock<InnerState<S>>>,
 }
 
-impl AccountTreeWithHistory {
+impl<S> AccountTreeWithHistory<S>
+where
+    S: SmtStorage + Default,
+{
     pub const MAX_HISTORY: usize = 33;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new historical tree.
-    pub fn new(account_tree: AccountTree, block_number: BlockNumber) -> Self {
+    pub fn new(account_tree: AccountTree<LargeSmt<S>>, block_number: BlockNumber) -> Self {
         Self {
             inner: Arc::new(RwLock::new(InnerState {
                 block_number,
@@ -197,7 +212,7 @@ impl AccountTreeWithHistory {
 
     /// Reconstructs a historical account witness by applying reversion overlays.
     fn reconstruct_historical_witness(
-        guard: &InnerState,
+        guard: &InnerState<S>,
         account_id: AccountId,
         overlay_idx: usize,
     ) -> Option<AccountWitness> {
@@ -368,16 +383,6 @@ impl AccountTreeWithHistory {
         Self::cleanup(&mut inner.overlays);
 
         Ok(())
-    }
-
-    /// Gets account commitments in the latest state.
-    pub fn account_commitments(&self) -> Vec<(AccountId, Word)> {
-        self.inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .latest
-            .account_commitments()
-            .collect()
     }
 
     /// Returns the oldest block still in history.

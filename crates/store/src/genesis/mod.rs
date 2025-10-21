@@ -10,8 +10,9 @@ use miden_objects::block::{
     BlockNumber,
     FeeParameters,
     ProvenBlock,
+    account_id_to_smt_key,
 };
-use miden_objects::crypto::merkle::{Forest, MmrPeaks, Smt};
+use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::OrderedTransactionHeaders;
 use miden_objects::utils::serde::{ByteReader, Deserializable, DeserializationError};
@@ -77,12 +78,16 @@ impl GenesisState {
             })
             .collect();
 
-        let account_smt = AccountTree::with_entries(
-            accounts
-                .iter()
-                .map(|update| (update.account_id(), update.final_state_commitment())),
-        )
-        .map_err(GenesisError::AccountTree)?;
+        // Convert account updates to SMT entries using account_id_to_smt_key
+        let smt_entries = accounts.iter().map(|update| {
+            (account_id_to_smt_key(update.account_id()), update.final_state_commitment())
+        });
+
+        // Create LargeSmt with MemoryStorage
+        let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
+            .expect("Failed to create LargeSmt for genesis accounts");
+
+        let account_smt = AccountTree::new(smt);
 
         let empty_nullifiers: Vec<Nullifier> = Vec::new();
         let empty_nullifier_tree = Smt::new();

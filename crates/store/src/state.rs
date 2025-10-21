@@ -34,15 +34,19 @@ use miden_objects::block::{
     NullifierTree,
     NullifierWitness,
     ProvenBlock,
+    account_id_to_smt_key,
 };
 use miden_objects::crypto::merkle::{
     Forest,
+    LargeSmt,
+    MemoryStorage,
     Mmr,
     MmrDelta,
     MmrPeaks,
     MmrProof,
     PartialMmr,
     SmtProof,
+    SmtStorage,
 };
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
@@ -88,13 +92,19 @@ pub struct TransactionInputs {
 }
 
 /// Container for state that needs to be updated atomically.
-struct InnerState {
+struct InnerState<S = MemoryStorage>
+where
+    S: SmtStorage + Default,
+{
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: AccountTree,
+    account_tree: AccountTree<LargeSmt<S>>,
 }
 
-impl InnerState {
+impl<S> InnerState<S>
+where
+    S: SmtStorage + Default,
+{
     /// Returns the latest block number.
     fn latest_block_num(&self) -> BlockNumber {
         self.blockchain
@@ -1104,9 +1114,19 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 async fn load_account_tree(
     db: &mut Db,
     _block_num: BlockNumber,
-) -> Result<AccountTree, StateInitializationError> {
+) -> Result<AccountTree<LargeSmt<MemoryStorage>>, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
-    AccountTree::with_entries(account_data)
-        .map_err(StateInitializationError::FailedToCreateAccountsTree)
+    // Convert account_data to use account_id_to_smt_key
+    let smt_entries = account_data
+        .into_iter()
+        .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
+
+    // Create LargeSmt with MemoryStorage
+    // SAFETY: This should not fail for valid account data from the database.
+    // If it fails, it indicates data corruption.
+    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
+        .expect("Failed to create LargeSmt from database account data");
+
+    Ok(AccountTree::new(smt))
 }

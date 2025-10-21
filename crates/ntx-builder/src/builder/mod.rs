@@ -121,7 +121,7 @@ impl NetworkTransactionBuilder {
         // Unlock the block-producer's block production. The block-producer is prevented from
         // producing blocks until we have subscribed to mempool events.
         //
-        // This is a temporary work-around until the ntb can resync on the fly.
+        // This is a temporary work-around until the ntx-builder can resync on the fly.
         self.bp_checkpoint.wait().await;
 
         let mut interval = tokio::time::interval(self.ticker_interval);

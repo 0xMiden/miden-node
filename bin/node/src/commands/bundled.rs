@@ -62,7 +62,7 @@ pub enum BundledCommand {
         block_producer: BlockProducerConfig,
 
         #[command(flatten)]
-        ntx_builder: NtxBuilderConfig,
+        ntx_builder_config: NtxBuilderConfig,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
@@ -106,12 +106,18 @@ impl BundledCommand {
                 rpc_url,
                 data_directory,
                 block_producer,
-                ntx_builder,
+                ntx_builder_config,
                 enable_otel: _,
                 grpc_timeout,
             } => {
-                Self::start(rpc_url, data_directory, ntx_builder, block_producer, grpc_timeout)
-                    .await
+                Self::start(
+                    rpc_url,
+                    data_directory,
+                    ntx_builder_config,
+                    block_producer,
+                    grpc_timeout,
+                )
+                .await
             },
         }
     }
@@ -120,7 +126,7 @@ impl BundledCommand {
     async fn start(
         rpc_url: Url,
         data_directory: PathBuf,
-        ntx_config: NtxBuilderConfig,
+        ntx_builder_config: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
         grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
@@ -178,9 +184,9 @@ impl BundledCommand {
             })
             .id();
 
-        // A sync point between the ntb and block-producer components.
-        let should_start_ntb = !ntx_config.disabled;
-        let checkpoint = if should_start_ntb {
+        // A sync point between the ntx-builder and block-producer components.
+        let should_start_ntx_builder = !ntx_builder_config.disabled;
+        let checkpoint = if should_start_ntx_builder {
             Barrier::new(2)
         } else {
             Barrier::new(1)
@@ -243,7 +249,7 @@ impl BundledCommand {
         let store_ntx_builder_url = Url::parse(&format!("http://{store_ntx_builder_address}"))
             .context("Failed to parse URL")?;
 
-        if should_start_ntb {
+        if should_start_ntx_builder {
             let id = join_set
                 .spawn(async move {
                     let block_producer_url =
@@ -252,8 +258,8 @@ impl BundledCommand {
                     NetworkTransactionBuilder::new(
                         store_ntx_builder_url,
                         block_producer_url,
-                        ntx_config.tx_prover_url,
-                        ntx_config.ticker_interval,
+                        ntx_builder_config.tx_prover_url,
+                        ntx_builder_config.ticker_interval,
                         checkpoint,
                     )
                     .run()

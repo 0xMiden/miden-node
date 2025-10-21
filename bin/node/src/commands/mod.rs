@@ -36,7 +36,7 @@ fn duration_to_human_readable_string(duration: Duration) -> String {
 #[derive(clap::Args)]
 pub struct NtxBuilderConfig {
     /// Disable spawning the network transaction builder.
-    #[arg(long = "no-ntb", default_value_t = false)]
+    #[arg(long = "no-ntx-builder", default_value_t = false)]
     pub disabled: bool,
 
     /// The remote transaction prover's gRPC url, used for the ntx builder. If unset,
@@ -46,7 +46,7 @@ pub struct NtxBuilderConfig {
 
     /// Interval at which to run the network transaction builder's ticker.
     #[arg(
-        long = "ntb.interval",
+        long = "ntx-builder.interval",
         default_value = &duration_to_human_readable_string(DEFAULT_NTX_TICKER_INTERVAL),
         value_parser = humantime::parse_duration,
         value_name = "DURATION"

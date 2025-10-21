@@ -1,8 +1,8 @@
 use diesel::prelude::*;
+use miden_node_store::SqlTypeConvert;
 use miden_objects::block::BlockNumber;
 use miden_objects::utils::Serializable;
 
-use crate::db::conv::SqlTypeConvert;
 use crate::db::schema;
 
 #[derive(Debug, Clone, PartialEq, Insertable)]

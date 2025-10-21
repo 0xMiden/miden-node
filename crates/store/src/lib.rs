@@ -11,6 +11,7 @@ pub use db::{
     ConnectionManager,
     DatabaseTypeConversionError,
     Db,
+    SqlTypeConvert,
     configure_connection_on_creation,
 };
 pub use errors::{DatabaseError, DatabaseSetupError};

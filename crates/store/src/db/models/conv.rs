@@ -46,7 +46,7 @@ pub struct DatabaseTypeConversionError(pub &'static str);
 /// Convert from and to it's database representation and back
 ///
 /// We do not assume sanity of DB types.
-pub(crate) trait SqlTypeConvert: Sized {
+pub trait SqlTypeConvert: Sized {
     type Raw: Sized;
     type Error: std::error::Error + Send + Sync + 'static;
     fn to_raw_sql(self) -> Self::Raw;

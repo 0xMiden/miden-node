@@ -1,4 +1,3 @@
-mod conv;
 mod migrations;
 mod models;
 mod schema;

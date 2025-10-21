@@ -17,7 +17,7 @@ use std::num::NonZeroUsize;
 
 use crate::errors::DatabaseError;
 
-pub(crate) mod conv;
+pub mod conv;
 
 pub mod queries;
 pub(crate) mod utils;

@@ -86,7 +86,7 @@ mod account_tree_with_history_tests {
             hist.apply_mutations([(id, Word::from([i as u32, 0, 0, 0]))]).unwrap();
         }
 
-        let current = hist.block_number();
+        let current = hist.block_number_latest();
         assert!(hist.open_at(id, current).is_some());
         assert!(hist.open_at(id, BlockNumber::GENESIS).is_none());
         assert!(hist.open_at(id, current.child()).is_none());
@@ -110,7 +110,7 @@ mod account_tree_with_history_tests {
         hist.apply_mutations([(id1, v1)]).unwrap();
         hist.apply_mutations([(id0, Word::default())]).unwrap();
 
-        assert_eq!(hist.block_number(), BlockNumber::from(2));
+        assert_eq!(hist.block_number_latest(), BlockNumber::from(2));
 
         assert_eq!(hist.open_at(id0, BlockNumber::GENESIS).unwrap(), tree0.open(id0));
         assert_eq!(hist.open_at(id0, BlockNumber::from(1)).unwrap(), tree1.open(id0));
@@ -162,7 +162,7 @@ mod account_tree_with_history_tests {
         }
 
         // Verify we can query historical states
-        assert_eq!(hist.block_number(), BlockNumber::from(num_blocks as u32));
+        assert_eq!(hist.block_number_latest(), BlockNumber::from(num_blocks as u32));
 
         // Check genesis state for a few accounts
         for i in 0..5 {

@@ -409,6 +409,10 @@ impl Db {
     /// Loads public account details from the DB at a given block height.
     ///
     /// Note: Only tracks a limited history of 20~ish blocks.
+    #[allow(
+        dead_code,
+        reason = "Relevant, but requires an additional primary key schema change"
+    )]
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_historical_account_at(
         &self,

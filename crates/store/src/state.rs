@@ -155,9 +155,7 @@ impl State {
         // Currently `load_account_tree` loads all account commitments from the DB. This could
         // potentially lead to inconsistency if the DB contains account states from blocks beyond
         // `latest_block_num`, though in practice the DB writes are transactional and this
-        // should not occur. In the future, we may want to:
-        // 1. Add `is_latest` field to accounts table for efficient filtering, or
-        // 2. Add explicit block_num filtering when loading accounts
+        // should not occur.
         let latest_block_num = block_headers
             .last()
             .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
@@ -934,7 +932,11 @@ impl State {
             storage_requests,
         }) = details
         {
-            let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
+            // TODO for historical account selection use:
+            // let account_info = self.db.select_historical_account_at(account_id,
+            // block_num).await?;
+            let _ = block_num;
+            let account_info = self.db.select_account(account_id).await?;
 
             // if we get a query for a _private_ account _with_ details requested, we'll error out
             let Some(account) = account_info.details else {

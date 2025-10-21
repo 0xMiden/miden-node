@@ -178,7 +178,8 @@ where
         }
     }
 
-    fn cleanup(overlays: &mut VecDeque<Arc<HistoricalOverlay>>) {
+    /// Remove any items that exceed the maximum number of historical overlays.
+    fn drain_excess(overlays: &mut VecDeque<Arc<HistoricalOverlay>>) {
         while overlays.len() > Self::MAX_HISTORY {
             overlays.pop_back();
         }
@@ -188,7 +189,7 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Returns the latest block number.
-    pub fn block_number(&self) -> BlockNumber {
+    pub fn block_number_latest(&self) -> BlockNumber {
         self.inner
             .read()
             .expect("RwLock poisoned: concurrent thread panicked while holding lock")
@@ -196,7 +197,7 @@ where
     }
 
     /// Returns the latest root.
-    pub fn root(&self) -> Word {
+    pub fn root_latest(&self) -> Word {
         self.inner
             .read()
             .expect("RwLock poisoned: concurrent thread panicked while holding lock")
@@ -223,7 +224,7 @@ where
     }
 
     /// Returns the account count.
-    pub fn num_accounts(&self) -> usize {
+    pub fn num_accounts_latest(&self) -> usize {
         self.inner
             .read()
             .expect("RwLock poisoned: concurrent thread panicked while holding lock")
@@ -241,7 +242,7 @@ where
     }
 
     /// Opens an account at the latest block.
-    pub fn open(&self, account_id: AccountId) -> AccountWitness {
+    pub fn open_latest(&self, account_id: AccountId) -> AccountWitness {
         self.inner
             .read()
             .expect("RwLock poisoned: concurrent thread panicked while holding lock")
@@ -448,7 +449,7 @@ where
 
         inner.overlays.push_front(Arc::new(overlay));
         inner.block_number = inner.block_number.child();
-        Self::cleanup(&mut inner.overlays);
+        Self::drain_excess(&mut inner.overlays);
 
         Ok(())
     }

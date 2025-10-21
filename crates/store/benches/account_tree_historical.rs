@@ -162,7 +162,7 @@ fn bench_historical_access(c: &mut Criterion) {
 
             let (tree_hist, account_ids) =
                 setup_account_tree_with_history(num_accounts, block_depth + 1);
-            let current_block = tree_hist.block_number();
+            let current_block = tree_hist.block_number_latest();
             let target_block = current_block
                 .checked_sub(u32::try_from(block_depth).unwrap())
                 .unwrap_or(BlockNumber::GENESIS);

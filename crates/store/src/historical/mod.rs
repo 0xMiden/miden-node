@@ -8,7 +8,6 @@ use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, Bloc
 use miden_objects::crypto::merkle::{
     LargeSmt,
     LeafIndex,
-    MemoryStorage,
     MerkleError,
     NodeIndex,
     NodeMutation,
@@ -18,6 +17,75 @@ use miden_objects::crypto::merkle::{
     SparseMerklePath,
 };
 use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
+
+/// Trait abstracting operations over different account tree backends.
+pub trait AccountTreeBackend {
+    /// Returns the root hash of the tree.
+    fn root(&self) -> Word;
+
+    /// Returns the number of accounts in the tree.
+    fn num_accounts(&self) -> usize;
+
+    /// Opens an account and returns its witness.
+    fn open(&self, account_id: AccountId) -> AccountWitness;
+
+    /// Gets the account state commitment.
+    fn get(&self, account_id: AccountId) -> Word;
+
+    /// Computes mutations for applying account updates.
+    fn compute_mutations(
+        &self,
+        accounts: impl IntoIterator<Item = (AccountId, Word)>,
+    ) -> Result<AccountMutationSet, AccountTreeError>;
+
+    /// Applies mutations with reversion data.
+    fn apply_mutations_with_reversion(
+        &mut self,
+        mutations: AccountMutationSet,
+    ) -> Result<AccountMutationSet, AccountTreeError>;
+
+    /// Checks if the tree contains an account with the given prefix.
+    fn contains_account_id_prefix(&self, prefix: miden_objects::account::AccountIdPrefix) -> bool;
+}
+
+impl<S> AccountTreeBackend for AccountTree<LargeSmt<S>>
+where
+    S: SmtStorage + Default,
+{
+    fn root(&self) -> Word {
+        self.root()
+    }
+
+    fn num_accounts(&self) -> usize {
+        self.num_accounts()
+    }
+
+    fn open(&self, account_id: AccountId) -> AccountWitness {
+        self.open(account_id)
+    }
+
+    fn get(&self, account_id: AccountId) -> Word {
+        self.get(account_id)
+    }
+
+    fn compute_mutations(
+        &self,
+        accounts: impl IntoIterator<Item = (AccountId, Word)>,
+    ) -> Result<AccountMutationSet, AccountTreeError> {
+        self.compute_mutations(accounts)
+    }
+
+    fn apply_mutations_with_reversion(
+        &mut self,
+        mutations: AccountMutationSet,
+    ) -> Result<AccountMutationSet, AccountTreeError> {
+        self.apply_mutations_with_reversion(mutations)
+    }
+
+    fn contains_account_id_prefix(&self, prefix: miden_objects::account::AccountIdPrefix) -> bool {
+        self.contains_account_id_prefix(prefix)
+    }
+}
 
 #[cfg(test)]
 mod tests;
@@ -53,18 +121,18 @@ impl HistoricalOverlay {
 }
 
 #[derive(Debug)]
-struct InnerState<S = MemoryStorage>
+struct InnerState<S>
 where
-    S: SmtStorage + Default,
+    S: AccountTreeBackend,
 {
     block_number: BlockNumber,
-    latest: AccountTree<LargeSmt<S>>,
+    latest: S,
     overlays: VecDeque<Arc<HistoricalOverlay>>,
 }
 
 impl<S> InnerState<S>
 where
-    S: SmtStorage + Default,
+    S: AccountTreeBackend,
 {
     pub fn historical_offset(&self, desired_block_number: BlockNumber) -> HistoricalOffset {
         let Some(past_offset) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
@@ -83,16 +151,16 @@ where
 
 /// Wraps `AccountTree` with historical query support via reversion overlays.
 #[derive(Debug, Clone)]
-pub struct AccountTreeWithHistory<S = MemoryStorage>
+pub struct AccountTreeWithHistory<S>
 where
-    S: SmtStorage + Default,
+    S: AccountTreeBackend,
 {
     inner: Arc<RwLock<InnerState<S>>>,
 }
 
 impl<S> AccountTreeWithHistory<S>
 where
-    S: SmtStorage + Default,
+    S: AccountTreeBackend,
 {
     pub const MAX_HISTORY: usize = 33;
 
@@ -100,7 +168,7 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new historical tree.
-    pub fn new(account_tree: AccountTree<LargeSmt<S>>, block_number: BlockNumber) -> Self {
+    pub fn new(account_tree: S, block_number: BlockNumber) -> Self {
         Self {
             inner: Arc::new(RwLock::new(InnerState {
                 block_number,

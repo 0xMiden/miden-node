@@ -14,7 +14,7 @@ mod account_tree_with_history_tests {
 
     use super::super::*;
 
-    /// Helper function to create an AccountTree from entries using the new API
+    /// Helper function to create an `AccountTree` from entries using the new API
     fn create_account_tree(
         entries: impl IntoIterator<Item = (AccountId, Word)>,
     ) -> AccountTree<LargeSmt<MemoryStorage>> {
@@ -80,7 +80,9 @@ mod account_tree_with_history_tests {
         let tree = create_account_tree([(id, Word::from([1u32, 0, 0, 0]))]);
         let hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
 
-        for i in 1..=(AccountTreeWithHistory::<MemoryStorage>::MAX_HISTORY + 5) {
+        for i in
+            1..=(AccountTreeWithHistory::<AccountTree<LargeSmt<MemoryStorage>>>::MAX_HISTORY + 5)
+        {
             hist.apply_mutations([(id, Word::from([i as u32, 0, 0, 0]))]).unwrap();
         }
 

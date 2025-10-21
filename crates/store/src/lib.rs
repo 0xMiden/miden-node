@@ -9,7 +9,7 @@ mod server;
 pub mod state;
 
 pub use genesis::GenesisState;
-pub use historical::AccountTreeWithHistory;
+pub use historical::{AccountTreeBackend, AccountTreeWithHistory};
 pub use server::{DataDirectory, Store};
 
 // CONSTANTS

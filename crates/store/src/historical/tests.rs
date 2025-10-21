@@ -7,10 +7,24 @@
 #[allow(clippy::cast_sign_loss)]
 mod account_tree_with_history_tests {
     use miden_objects::Word;
-    use miden_objects::block::{AccountTree, BlockNumber};
+    use miden_objects::account::AccountId;
+    use miden_objects::block::{AccountTree, BlockNumber, account_id_to_smt_key};
+    use miden_objects::crypto::merkle::{LargeSmt, MemoryStorage};
     use miden_objects::testing::account_id::AccountIdBuilder;
 
     use super::super::*;
+
+    /// Helper function to create an AccountTree from entries using the new API
+    fn create_account_tree(
+        entries: impl IntoIterator<Item = (AccountId, Word)>,
+    ) -> AccountTree<LargeSmt<MemoryStorage>> {
+        let smt_entries = entries
+            .into_iter()
+            .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
+        let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
+            .expect("Failed to create LargeSmt from entries");
+        AccountTree::new(smt)
+    }
 
     #[test]
     fn test_historical_queries() {
@@ -38,10 +52,11 @@ mod account_tree_with_history_tests {
             ],
         ];
 
-        let trees: Vec<_> =
-            states.iter().map(|s| AccountTree::with_entries(s.clone()).unwrap()).collect();
+        let trees: Vec<_> = states.iter().map(|s| create_account_tree(s.clone())).collect();
 
-        let hist = AccountTreeWithHistory::new(trees[0].clone(), BlockNumber::GENESIS);
+        // Create a separate tree for history tracking
+        let hist_tree = create_account_tree(states[0].clone());
+        let hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
         hist.apply_mutations([(ids[0], states[1][0].1), (ids[2], states[1][2].1)])
             .unwrap();
         hist.apply_mutations([(ids[1], states[2][1].1)]).unwrap();
@@ -62,10 +77,10 @@ mod account_tree_with_history_tests {
     #[test]
     fn test_history_limits() {
         let id = AccountIdBuilder::new().build_with_seed([30; 32]);
-        let tree = AccountTree::with_entries([(id, Word::from([1u32, 0, 0, 0]))]).unwrap();
+        let tree = create_account_tree([(id, Word::from([1u32, 0, 0, 0]))]);
         let hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
 
-        for i in 1..=(AccountTreeWithHistory::MAX_HISTORY + 5) {
+        for i in 1..=(AccountTreeWithHistory::<MemoryStorage>::MAX_HISTORY + 5) {
             hist.apply_mutations([(id, Word::from([i as u32, 0, 0, 0]))]).unwrap();
         }
 
@@ -82,25 +97,14 @@ mod account_tree_with_history_tests {
         let v0 = Word::from([0u32; 4]);
         let v1 = Word::from([1u32; 4]);
 
-        let start = &[(id0, v0)];
-        let delta1 = &[(id1, v1)];
-        let delta2 = &[(id0, Word::default())];
+        // Create separate trees for expected states at each block
+        let tree0 = create_account_tree(vec![(id0, v0)]);
+        let tree1 = create_account_tree(vec![(id0, v0), (id1, v1)]);
+        let tree2 = create_account_tree(vec![(id0, Word::default()), (id1, v1)]);
 
-        let tree0 = AccountTree::with_entries(start.to_vec()).unwrap();
-        let tree1 = {
-            let mut tree1 = tree0.clone();
-            let mutations = tree1.compute_mutations(delta1.to_vec()).unwrap();
-            tree1.apply_mutations(mutations).unwrap();
-            tree1
-        };
-        let tree2 = {
-            let mut tree2 = tree1.clone();
-            let mutations = tree2.compute_mutations(delta2.to_vec()).unwrap();
-            tree2.apply_mutations(mutations).unwrap();
-            tree2
-        };
-
-        let hist = AccountTreeWithHistory::new(tree0.clone(), BlockNumber::GENESIS);
+        // Create separate tree for history tracking
+        let hist_tree = create_account_tree(vec![(id0, v0)]);
+        let hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
         hist.apply_mutations([(id1, v1)]).unwrap();
         hist.apply_mutations([(id0, Word::default())]).unwrap();
 
@@ -139,8 +143,8 @@ mod account_tree_with_history_tests {
             .map(|(i, &id)| (id, Word::from([i as u32, 0, 0, 0])))
             .collect();
 
-        let initial_tree = AccountTree::with_entries(initial_state.clone()).unwrap();
-        let hist = AccountTreeWithHistory::new(initial_tree.clone(), BlockNumber::GENESIS);
+        let initial_tree = create_account_tree(initial_state.clone());
+        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Apply 10 blocks of updates, each updating 5 accounts
         let num_blocks = 10;
@@ -236,8 +240,8 @@ mod account_tree_with_history_tests {
             .map(|(i, &id)| (id, Word::from([i as u32, 0, 0, 0])))
             .collect();
 
-        let initial_tree = AccountTree::with_entries(initial_state.clone()).unwrap();
-        let hist = AccountTreeWithHistory::new(initial_tree.clone(), BlockNumber::GENESIS);
+        let initial_tree = create_account_tree(initial_state.clone());
+        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Apply updates to all accounts in each block
         let num_blocks = 5;
@@ -295,8 +299,8 @@ mod account_tree_with_history_tests {
             .map(|(i, &id)| (id, Word::from([i as u32, 0, 0, 0])))
             .collect();
 
-        let initial_tree = AccountTree::with_entries(initial_state.clone()).unwrap();
-        let hist = AccountTreeWithHistory::new(initial_tree.clone(), BlockNumber::GENESIS);
+        let initial_tree = create_account_tree(initial_state.clone());
+        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Block 1: Add 50 more accounts
         let updates1: Vec<_> = ids
@@ -370,8 +374,8 @@ mod account_tree_with_history_tests {
             .map(|(i, &id)| (id, Word::from([i as u32 + 1, 0, 0, 0])))
             .collect();
 
-        let initial_tree = AccountTree::with_entries(initial_state.clone()).unwrap();
-        let hist = AccountTreeWithHistory::new(initial_tree.clone(), BlockNumber::GENESIS);
+        let initial_tree = create_account_tree(initial_state.clone());
+        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Block 1: Delete half the accounts (set to empty word)
         let deletes: Vec<_> = ids.iter().take(10).map(|&id| (id, Word::default())).collect();

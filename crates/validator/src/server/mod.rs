@@ -26,6 +26,9 @@ pub mod submit;
 // VALIDATOR
 // ================================================================================
 
+/// The handle into running the gRPC validator server.
+///
+/// Facilitates the running of the gRPC server which implements the validator API.
 pub struct Validator {
     /// The address of the validator component.
     pub address: SocketAddr,
@@ -86,6 +89,9 @@ impl Validator {
 // VALIDATOR SERVER
 // ================================================================================
 
+/// The underlying implementation of the gRPC validator server.
+///
+/// Implements the gRPC API for the validator.
 struct ValidatorServer {
     pub db: miden_node_store::Db,
 }

@@ -27,9 +27,15 @@ use crate::transaction::NtxError;
 
 /// The reason an actor has shut down.
 pub enum ActorShutdownReason {
+    /// Occurs when an account actor processes a transaction that reverts it's account creation.
     AccountReverted(NetworkAccountPrefix),
+    /// Occurs when an account actor detects failure in the messaging channel used by the
+    /// coordinator.
     EventChannelClosed,
+    /// Occurs when an account actor detects failure in acquiring the rate-limiting semaphore.
     SemaphoreFailed(AcquireError),
+    /// Occurs when an account actor detects its corresponding cancellation token has been triggered
+    /// by the coordinator.
     Cancelled(NetworkAccountPrefix),
 }
 

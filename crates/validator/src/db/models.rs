@@ -1,6 +1,7 @@
 use diesel::prelude::*;
 use miden_node_store::SqlTypeConvert;
 use miden_objects::block::BlockNumber;
+use miden_objects::transaction::TransactionHeader;
 use miden_objects::utils::Serializable;
 
 use crate::db::schema;
@@ -24,10 +25,7 @@ impl TransactionSummaryRowInsert {
         clippy::cast_possible_wrap,
         reason = "We will not approach the item count where i64 and usize cause issues"
     )]
-    pub fn new(
-        transaction_header: &miden_objects::transaction::TransactionHeader,
-        block_num: BlockNumber,
-    ) -> Self {
+    pub fn new(transaction_header: &TransactionHeader, block_num: BlockNumber) -> Self {
         const HEADER_BASE_SIZE: usize = 4 + 32 + 16 + 64; // block_num + tx_id + account_id + commitments
 
         // Serialize input notes using binary format (store nullifiers)
@@ -62,4 +60,18 @@ impl TransactionSummaryRowInsert {
             size_in_bytes,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Queryable, Selectable)]
+#[diesel(table_name = schema::transactions)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
+pub struct TransactionSummaryRowSelect {
+    pub transaction_id: Vec<u8>,
+    pub account_id: Vec<u8>,
+    pub block_num: i64,
+    pub initial_state_commitment: Vec<u8>,
+    pub final_state_commitment: Vec<u8>,
+    pub input_notes: Vec<u8>,
+    pub output_notes: Vec<u8>,
+    pub size_in_bytes: i64,
 }

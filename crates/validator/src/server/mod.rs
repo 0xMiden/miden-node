@@ -10,6 +10,7 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_objects::block::ProvenBlock;
+use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
 use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::Deserializable;
 use tokio::net::TcpListener;
@@ -18,12 +19,10 @@ use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::COMPONENT;
-use crate::db::load;
+use crate::db::{load, select_transactions};
 use crate::server::submit::submit_proven_transaction;
-use crate::server::validate::{PrivateKey, validate_block};
 
 mod submit;
-mod validate;
 
 // VALIDATOR
 // ================================================================================
@@ -160,13 +159,52 @@ impl api_server::Api for ValidatorServer {
     async fn validate_block(
         &self,
         request: tonic::Request<proto::blockchain::Block>,
-    ) -> std::result::Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
+    ) -> Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
         let request = request.into_inner();
         let proven_block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
             tonic::Status::invalid_argument(err.as_report_context("block deserialization error"))
         })?;
 
-        let signed_block = validate_block(proven_block, PrivateKey {}).unwrap();
-        Ok(tonic::Response::new(()))
+        let result = self
+            .db
+            .transact("submit_proven_transaction", move |conn| {
+                select_transactions(
+                    conn,
+                    proven_block
+                        .transactions()
+                        .as_slice()
+                        .iter()
+                        .map(|tx| tx.id())
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                )
+            })
+            .await;
+        match result {
+            Ok(transactions) => {
+                if transactions.len() != proven_block.transactions().as_slice().len() {
+                    tracing::error!(
+                        target: COMPONENT,
+                        transactions_len = transactions.len(),
+                        proven_transactions_len = proven_block.transactions().as_slice().len(),
+                        "unexpected number of transactions returned by database"
+                    );
+                    Err(tonic::Status::internal("failed to submit proven transaction"))
+                } else {
+                    // TODO: Validate transactions received from RPC against transactions in the
+                    // block.
+
+                    // Sign the block and return it.
+                    let secret_key = SecretKey::new(); // TODO: secret key handling
+                    let signed_block = proven_block.sign(secret_key);
+                    let response = proto::validator::SignedBlock {
+                        block: signed_block.into(),
+                        signature: signed_block.signature().to_vec(),
+                    };
+                    Ok(tonic::Response::new(response))
+                }
+            },
+            Err(err) => Err(err.into()),
+        }
     }
 }

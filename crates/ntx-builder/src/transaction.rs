@@ -352,11 +352,8 @@ impl DataStore for NtxDataStore {
         &self,
         script_root: Word,
     ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
-        async move {
-            // For network transactions, note scripts are not cached in the data store
-            // They should be retrieved from the blockchain/note data itself
-            Err(DataStoreError::NoteScriptNotFound(script_root))
-        }
+        // TODO: Add implementation for getting note script from NtxDataStore.
+        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
     }
 }
 

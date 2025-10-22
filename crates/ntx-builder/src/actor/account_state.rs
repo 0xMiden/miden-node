@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroUsize;
 
-use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::{NetworkNote, SingleTargetNetworkNote};
@@ -13,12 +12,15 @@ use miden_objects::note::{Note, Nullifier};
 use miden_objects::transaction::{PartialBlockchain, TransactionId};
 use tracing::instrument;
 
+use super::ActorShutdownReason;
+use super::note_state::{NetworkAccountNoteState, NetworkAccountUpdate};
 use crate::COMPONENT;
-use crate::actor::ActorShutdownReason;
+use crate::actor::inflight_note::InflightNetworkNote;
 use crate::builder::ChainState;
 use crate::store::{StoreClient, StoreError};
 
-mod account;
+// TRANSACTION CANDIDATE
+// ================================================================================================
 
 /// A candidate network transaction.
 ///
@@ -41,14 +43,18 @@ pub struct TransactionCandidate {
     pub chain_mmr: PartialBlockchain,
 }
 
+// NETWORK ACCOUNT STATE
+// ================================================================================================
+
+/// The current state of a network account.
 #[derive(Clone)]
-pub struct State {
+pub struct NetworkAccountState {
     /// The network account prefix corresponding to the network account this state represents.
     account_prefix: NetworkAccountPrefix,
 
     /// Component of this state which Contains the committed and inflight account updates as well
     /// as available and nullified notes.
-    account: AccountState,
+    account: NetworkAccountNoteState,
 
     /// Uncommitted transactions which have some impact on the network state.
     ///
@@ -60,7 +66,7 @@ pub struct State {
     nullifier_idx: HashSet<Nullifier>,
 }
 
-impl State {
+impl NetworkAccountState {
     /// Maximum number of attempts to execute a network note.
     const MAX_NOTE_ATTEMPTS: usize = 30;
 
@@ -73,7 +79,7 @@ impl State {
         block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
         let notes = store.get_unconsumed_network_notes(account_prefix, block_num.as_u32()).await?;
-        let account = AccountState::new(account, notes);
+        let account = NetworkAccountNoteState::new(account, notes);
 
         let state = Self {
             account,

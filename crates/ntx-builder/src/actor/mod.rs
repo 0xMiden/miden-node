@@ -1,10 +1,16 @@
+pub mod account_state;
+mod inflight_note;
+mod note_state;
+
 use std::sync::Arc;
 
+use account_state::{NetworkAccountState, TransactionCandidate};
 use futures::FutureExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
 use miden_objects::account::Account;
+use miden_objects::block::BlockNumber;
 use miden_objects::transaction::TransactionId;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
 use tokio::sync::{AcquireError, RwLock, Semaphore, mpsc};
@@ -13,9 +19,11 @@ use url::Url;
 
 use crate::block_producer::BlockProducerClient;
 use crate::builder::ChainState;
-use crate::state::{State, TransactionCandidate};
 use crate::store::StoreClient;
 use crate::transaction::NtxError;
+
+// ACTOR SHUTDOWN REASON
+// ================================================================================================
 
 /// The reason an actor has shut down.
 pub enum ActorShutdownReason {
@@ -24,6 +32,9 @@ pub enum ActorShutdownReason {
     SemaphoreFailed(AcquireError),
     Cancelled(NetworkAccountPrefix),
 }
+
+// ACCOUNT ACTOR CONFIG
+// ================================================================================================
 
 /// Configuration that is required by all account actors.
 #[derive(Debug, Clone)]
@@ -38,6 +49,9 @@ pub struct AccountActorConfig {
     /// The latest chain state that account actors can rely on.
     pub chain_state: Arc<RwLock<ChainState>>,
 }
+
+// ACCOUNT ORIGIN
+// ================================================================================================
 
 /// The origin of the account which the actor will use to initialize the account state.
 #[derive(Debug)]
@@ -73,6 +87,9 @@ impl AccountOrigin {
     }
 }
 
+// ACTOR MODE
+// ================================================================================================
+
 /// The mode of operation that the account actor is currently performing.
 #[derive(Default, Debug)]
 enum ActorMode {
@@ -82,11 +99,14 @@ enum ActorMode {
     TransactionInflight(TransactionId),
 }
 
-/// Account actor that manages state and processes transactions for a single network account.
+// ACCOUNT ACTOR
+// ================================================================================================
+
+/// Independant actor that manages state and processes transactions for a single network account.
 pub struct AccountActor {
     origin: AccountOrigin,
     store: StoreClient,
-    state: ActorMode,
+    mode: ActorMode,
     event_rx: mpsc::Receiver<MempoolEvent>,
     cancel_token: CancellationToken,
     block_producer: BlockProducerClient,
@@ -108,7 +128,7 @@ impl AccountActor {
         Self {
             origin,
             store: config.store.clone(),
-            state: ActorMode::default(),
+            mode: ActorMode::default(),
             event_rx,
             cancel_token,
             block_producer,
@@ -133,13 +153,14 @@ impl AccountActor {
             }
         };
         let block_num = self.chain_state.read().await.chain_tip_header.block_num();
-        let mut state = State::load(account, self.origin.prefix(), &self.store, block_num)
-            .await
-            .expect("actor should be able to load account state");
+        let mut state =
+            NetworkAccountState::load(account, self.origin.prefix(), &self.store, block_num)
+                .await
+                .expect("actor should be able to load account state");
 
         loop {
             // Enable or disable transaction execution based on actor mode.
-            let tx_permit_acquisition = match self.state {
+            let tx_permit_acquisition = match self.mode {
                 // Disable transaction execution.
                 ActorMode::NoViableNotes | ActorMode::TransactionInflight(_) => {
                     std::future::pending().boxed()
@@ -158,14 +179,14 @@ impl AccountActor {
                     };
                     // Re-enable transaction execution if the transaction being waited on has been
                     // added to the mempool.
-                    if let ActorMode::TransactionInflight(ref awaited_id) = self.state {
+                    if let ActorMode::TransactionInflight(ref awaited_id) = self.mode {
                         if let MempoolEvent::TransactionAdded { id, .. } = &event {
                             if id == awaited_id {
-                                self.state = ActorMode::NotesAvailable;
+                                self.mode = ActorMode::NotesAvailable;
                             }
                         }
                     } else {
-                        self.state = ActorMode::NotesAvailable;
+                        self.mode = ActorMode::NotesAvailable;
                     }
                     // Update state.
                     if let Some(shutdown_reason) = state.mempool_update(event).await {
@@ -183,7 +204,7 @@ impl AccountActor {
                                 self.execute_transactions(&mut state, tx_candidate).await;
                             } else {
                                 // No transactions to execute, wait for events.
-                                self.state = ActorMode::NoViableNotes;
+                                self.mode = ActorMode::NoViableNotes;
                             }
                         }
                         Err(err) => {
@@ -201,7 +222,7 @@ impl AccountActor {
     #[tracing::instrument(name = "ntx.actor.execute_transactions", skip(self, state, tx_candidate))]
     async fn execute_transactions(
         &mut self,
-        state: &mut State,
+        state: &mut NetworkAccountState,
         tx_candidate: TransactionCandidate,
     ) {
         let block_num = tx_candidate.chain_tip_header.block_num();
@@ -216,13 +237,13 @@ impl AccountActor {
         match execution_result {
             // Execution completed without failed notes.
             Ok((tx_id, failed)) if failed.is_empty() => {
-                self.state = ActorMode::TransactionInflight(tx_id);
+                self.mode = ActorMode::TransactionInflight(tx_id);
             },
             // Execution completed with some failed notes.
             Ok((tx_id, failed)) => {
                 let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
                 state.notes_failed(notes.as_slice(), block_num);
-                self.state = ActorMode::TransactionInflight(tx_id);
+                self.mode = ActorMode::TransactionInflight(tx_id);
             },
             // Transaction execution failed.
             Err(err) => {
@@ -231,7 +252,7 @@ impl AccountActor {
                     NtxError::AllNotesFailed(failed) => {
                         let notes = failed.into_iter().map(|note| note.note).collect::<Vec<_>>();
                         state.notes_failed(notes.as_slice(), block_num);
-                        self.state = ActorMode::NoViableNotes;
+                        self.mode = ActorMode::NoViableNotes;
                     },
                     NtxError::InputNotes(_)
                     | NtxError::NoteFilter(_)
@@ -239,10 +260,45 @@ impl AccountActor {
                     | NtxError::Proving(_)
                     | NtxError::Submission(_)
                     | NtxError::Panic(_) => {
-                        self.state = ActorMode::NoViableNotes;
+                        self.mode = ActorMode::NoViableNotes;
                     },
                 }
             },
         }
     }
+}
+
+// HELPERS
+// ================================================================================================
+
+/// Checks if the backoff block period has passed.
+///
+/// The number of blocks passed since the last attempt must be greater than or equal to
+/// e^(0.25 * `attempt_count`) rounded to the nearest integer.
+///
+/// This evaluates to the following:
+/// - After 1 attempt, the backoff period is 1 block.
+/// - After 3 attempts, the backoff period is 2 blocks.
+/// - After 10 attempts, the backoff period is 12 blocks.
+/// - After 20 attempts, the backoff period is 148 blocks.
+/// - etc...
+#[allow(clippy::cast_precision_loss, clippy::cast_sign_loss)]
+fn has_backoff_passed(
+    chain_tip: BlockNumber,
+    last_attempt: Option<BlockNumber>,
+    attempts: usize,
+) -> bool {
+    if attempts == 0 {
+        return true;
+    }
+    // Compute the number of blocks passed since the last attempt.
+    let blocks_passed = last_attempt
+        .and_then(|last| chain_tip.checked_sub(last.as_u32()))
+        .unwrap_or_default();
+
+    // Compute the exponential backoff threshold: Δ = e^(0.25 * n).
+    let backoff_threshold = (0.25 * attempts as f64).exp().round() as usize;
+
+    // Check if the backoff period has passed.
+    blocks_passed.as_usize() > backoff_threshold
 }

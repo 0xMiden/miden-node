@@ -108,7 +108,35 @@ enum ActorMode {
 // ACCOUNT ACTOR
 // ================================================================================================
 
-/// Independant actor that manages state and processes transactions for a single network account.
+/// A long-running asynchronous task that handles the complete lifecycle of network transaction
+/// processing. Each actor operates independently and is managed by a single coordinator that
+/// spawns, monitors, and messages all actors.
+///
+/// ## Core Responsibilities
+///
+/// - **State Management**: Loads and maintains the current state of network accounts, including
+///   available notes, pending transactions, and account commitments.
+/// - **Transaction Selection**: Selects viable notes and constructs a [`TransactionCandidate`]
+///   based on current chain state.
+/// - **Transaction Execution**: Executes selected transactions using either local or remote
+///   proving.
+/// - **Mempool Integration**: Listens for mempool events to stay synchronized with the network
+///   state and adjust behavior based on transaction confirmations.
+///
+/// ## Lifecycle
+///
+/// 1. **Initialization**: Loads account state from the store or uses provided account data.
+/// 2. **Event Loop**: Continuously processes mempool events and executes transactions.
+/// 3. **Transaction Processing**: Selects, executes, and proves transactions, and submits them to
+///    block producer.
+/// 4. **State Updates**: Updates internal state based on mempool events and execution results.
+/// 5. **Shutdown**: Terminates gracefully when cancelled or encounters unrecoverable errors.
+///
+/// ## Concurrency
+///
+/// Each actor runs in its own async task and communicates with other system components through
+/// channels and shared state. The actor uses a cancellation token for graceful shutdown
+/// coordination.
 pub struct AccountActor {
     origin: AccountOrigin,
     store: StoreClient,

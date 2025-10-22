@@ -61,7 +61,7 @@ pub enum NtxError {
 
 type NtxResult<T> = Result<T, NtxError>;
 
-// Context and execution of network transactions
+// NETWORK TRANSACTION CONTEXT
 // ================================================================================================
 
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
@@ -231,7 +231,7 @@ impl NtxContext {
     }
 }
 
-// Data store implementation for the transaction execution
+// NETWORK TRANSACTION DATA STORE
 // ================================================================================================
 
 /// A [`DataStore`] implementation which provides transaction inputs for a single account and

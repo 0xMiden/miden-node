@@ -1,10 +1,12 @@
 pub mod account_state;
+mod execute;
 mod inflight_note;
 mod note_state;
 
 use std::sync::Arc;
 
 use account_state::{NetworkAccountState, TransactionCandidate};
+use execute::NtxError;
 use futures::FutureExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
@@ -20,7 +22,6 @@ use url::Url;
 use crate::block_producer::BlockProducerClient;
 use crate::builder::ChainState;
 use crate::store::StoreClient;
-use crate::transaction::NtxError;
 
 // ACTOR SHUTDOWN REASON
 // ================================================================================================
@@ -262,7 +263,7 @@ impl AccountActor {
         let block_num = tx_candidate.chain_tip_header.block_num();
 
         // Execute the selected transaction.
-        let context = crate::transaction::NtxContext {
+        let context = execute::NtxContext {
             block_producer: self.block_producer.clone(),
             prover: self.prover.clone(),
         };

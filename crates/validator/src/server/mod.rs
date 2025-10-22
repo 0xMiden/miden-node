@@ -20,8 +20,10 @@ use tower_http::trace::TraceLayer;
 use crate::COMPONENT;
 use crate::db::load;
 use crate::server::submit::submit_proven_transaction;
+use crate::server::validate::{PrivateKey, validate_block};
 
-pub mod submit;
+mod submit;
+mod validate;
 
 // VALIDATOR
 // ================================================================================
@@ -160,10 +162,11 @@ impl api_server::Api for ValidatorServer {
         request: tonic::Request<proto::blockchain::Block>,
     ) -> std::result::Result<tonic::Response<proto::validator::SignedBlock>, tonic::Status> {
         let request = request.into_inner();
-        let _block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
+        let proven_block = ProvenBlock::read_from_bytes(&request.block).map_err(|err| {
             tonic::Status::invalid_argument(err.as_report_context("block deserialization error"))
         })?;
 
-        todo!()
+        let signed_block = validate_block(proven_block, PrivateKey {}).unwrap();
+        Ok(tonic::Response::new(()))
     }
 }

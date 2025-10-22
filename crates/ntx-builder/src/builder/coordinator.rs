@@ -102,7 +102,7 @@ impl Coordinator {
     /// and adds it to the coordinator's management system. The actor will be responsible for
     /// processing transactions and managing state for accounts matching the network prefix.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
-    pub async fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
+    pub fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
         let account_prefix = origin.prefix();
 
         // If an actor already exists for this account prefix, something has gone wrong.

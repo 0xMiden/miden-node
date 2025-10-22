@@ -141,9 +141,7 @@ impl NetworkTransactionBuilder {
         let account_ids = store.get_network_account_ids().await?;
         for account_id in account_ids {
             if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
-                self.coordinator
-                    .spawn_actor(AccountOrigin::store(account_prefix), &config)
-                    .await;
+                self.coordinator.spawn_actor(AccountOrigin::store(account_prefix), &config);
             }
         }
 
@@ -187,7 +185,7 @@ impl NetworkTransactionBuilder {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
                     // Spawn new actors for account creation transactions.
                     if let Some(account) = AccountOrigin::transaction(account) {
-                        self.coordinator.spawn_actor(account, account_actor_config).await;
+                        self.coordinator.spawn_actor(account, account_actor_config);
                     }
                 } else {
                     self.coordinator.broadcast_event(&event).await;

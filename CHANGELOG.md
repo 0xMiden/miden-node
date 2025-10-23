@@ -18,7 +18,6 @@
 - Added application level error in gRPC endpoints ([#1266](https://github.com/0xMiden/miden-node/pull/1266)).
 - [BREAKING] Response type nuances of `GetAccountProof` in the public store API (#[1277](https://github.com/0xMiden/miden-node/pull/1277)).
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
-- Update NTB to submit proven transactions via RPC for validation (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
 
 ## v0.11.2 (2025-09-10)
 

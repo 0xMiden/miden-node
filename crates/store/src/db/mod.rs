@@ -454,7 +454,9 @@ impl Db {
 
             // XXX FIXME TODO free floating mutex MUST NOT exist
             // it doesn't bind it properly to the data locked!
-            let _ = allow_acquire.send(());
+            if let Err(_) = allow_acquire.send(()) {
+                tracing::warn!(target: COMPONENT, "failed to send notification for successful block application, potential deadlock");
+            }
 
             acquire_done.blocking_recv()?;
 

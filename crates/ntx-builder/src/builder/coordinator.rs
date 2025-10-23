@@ -4,6 +4,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
+use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -106,7 +107,7 @@ impl Coordinator {
         let account_prefix = origin.prefix();
 
         // If an actor already exists for this account prefix, something has gone wrong.
-        if let Some(handle) = self.actor_registry.get(&account_prefix) {
+        if let Some(handle) = self.actor_registry.remove(&account_prefix) {
             tracing::error!("account actor already exists for prefix: {}", account_prefix);
             handle.cancel_token.cancel();
         }
@@ -130,9 +131,28 @@ impl Coordinator {
     /// This method distributes the provided event to every actor currently registered
     /// with the coordinator. Each actor will receive the event through its dedicated
     /// message channel and can process it accordingly.
-    pub async fn broadcast_event(&self, event: &MempoolEvent) {
+    ///
+    /// If an actor fails to receive the event, it will be canceled.
+    pub async fn broadcast_event(&mut self, event: &MempoolEvent) {
+        tracing::debug!(
+            actor_count = self.actor_registry.len(),
+            "broadcasting event to all actors"
+        );
+
+        let mut failed_actors = Vec::new();
+
+        // Send event to all actors.
         for (account_prefix, handle) in &self.actor_registry {
-            Self::send(handle, event, *account_prefix).await;
+            if let Err(err) = Self::send(handle, event).await {
+                tracing::error!("failed to send event to actor {}: {}", account_prefix, err);
+                failed_actors.push(*account_prefix);
+            }
+        }
+        // Remove failed actors from registry and cancel them.
+        for prefix in failed_actors {
+            let handle =
+                self.actor_registry.remove(&prefix).expect("actor found in send loop above");
+            handle.cancel_token.cancel();
         }
     }
 
@@ -149,8 +169,9 @@ impl Coordinator {
         match actor_result {
             Some(Ok(shutdown_reason)) => match shutdown_reason {
                 ActorShutdownReason::Cancelled(account_prefix) => {
+                    // Do not remove the actor from the registry, as it may be re-spawned.
+                    // The coordinator should always remove actors immediately after cancellation.
                     tracing::info!("account actor cancelled: {}", account_prefix);
-                    self.actor_registry.remove(&account_prefix);
                     Ok(())
                 },
                 ActorShutdownReason::AccountReverted(account_prefix) => {
@@ -178,15 +199,7 @@ impl Coordinator {
     async fn send(
         handle: &ActorHandle,
         event: &MempoolEvent,
-        account_prefix: NetworkAccountPrefix,
-    ) {
-        if let Err(error) = handle.event_tx.send(event.clone()).await {
-            tracing::warn!(
-                account = %account_prefix,
-                error = ?error,
-                "actor channel disconnected"
-            );
-            handle.cancel_token.cancel();
-        }
+    ) -> Result<(), SendError<MempoolEvent>> {
+        handle.event_tx.send(event.clone()).await
     }
 }

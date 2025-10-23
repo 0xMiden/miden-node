@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.11.3
+
+- Reduced note retries to 1 ([#1308](https://github.com/0xMiden/miden-node/pull/1308)).
+
 ## v0.11.2 (2025-09-10)
 
 - Added support for keepalive requests against base path `/` of RPC server ([#1212](https://github.com/0xMiden/miden-node/pull/1212)).

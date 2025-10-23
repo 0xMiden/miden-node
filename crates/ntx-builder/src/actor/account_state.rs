@@ -79,6 +79,16 @@ impl NetworkAccountState {
         block_num: BlockNumber,
     ) -> Result<Self, StoreError> {
         let notes = store.get_unconsumed_network_notes(account_prefix, block_num.as_u32()).await?;
+        let notes = notes
+            .into_iter()
+            .filter_map(|note| {
+                if let NetworkNote::SingleTarget(note) = note {
+                    Some(note)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
         let account = NetworkAccountNoteState::new(account, notes);
 
         let state = Self {

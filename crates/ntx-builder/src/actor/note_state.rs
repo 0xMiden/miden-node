@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use miden_node_proto::domain::account::NetworkAccountPrefix;
-use miden_node_proto::domain::note::{NetworkNote, SingleTargetNetworkNote};
+use miden_node_proto::domain::note::SingleTargetNetworkNote;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{Account, AccountDelta, AccountId};
 use miden_objects::block::BlockNumber;
@@ -32,12 +32,7 @@ pub struct NetworkAccountNoteState {
 
 impl NetworkAccountNoteState {
     /// Creates a new account state from the supplied account and notes.
-    ///
-    /// # SAFETY
-    ///
-    /// This function will panic if any of the supplied notes are not single target network notes or
-    /// their account prefix does not match that of the supplied account.
-    pub fn new(account: Account, notes: Vec<NetworkNote>) -> Self {
+    pub fn new(account: Account, notes: Vec<SingleTargetNetworkNote>) -> Self {
         let account_prefix = NetworkAccountPrefix::try_from(account.id())
             .expect("only network accounts are used for account state");
 
@@ -50,17 +45,11 @@ impl NetworkAccountNoteState {
 
         for note in notes {
             // Currently only support single target network notes in NTB.
-            if let NetworkNote::SingleTarget(note) = note {
-                assert!(
-                    note.account_prefix() == account_prefix,
-                    "Notes supplied into account state must match expected account prefix"
-                );
-                state.add_note(note);
-            } else {
-                panic!(
-                    "Unsupported network note type {note:?}. Only single target notes are supported."
-                )
-            }
+            assert!(
+                note.account_prefix() == account_prefix,
+                "Notes supplied into account state must match expected account prefix"
+            );
+            state.add_note(note);
         }
 
         state

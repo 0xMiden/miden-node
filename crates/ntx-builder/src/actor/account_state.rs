@@ -219,11 +219,14 @@ impl NetworkAccountState {
             }
         }
         for note in network_notes {
-            if note.account_prefix() == self.account_prefix {
-                tx_impact.notes.insert(note.nullifier());
-                self.nullifier_idx.insert(note.nullifier());
-                self.account.add_note(note);
-            }
+            assert_eq!(
+                note.account_prefix(),
+                self.account_prefix,
+                "transaction note prefix does not match network account actor's prefix"
+            );
+            tx_impact.notes.insert(note.nullifier());
+            self.nullifier_idx.insert(note.nullifier());
+            self.account.add_note(note);
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.

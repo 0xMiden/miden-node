@@ -62,7 +62,7 @@ pub enum BundledCommand {
         block_producer: BlockProducerConfig,
 
         #[command(flatten)]
-        ntx_builder_config: NtxBuilderConfig,
+        ntx_builder: NtxBuilderConfig,
 
         /// Enables the exporting of traces for OpenTelemetry.
         ///
@@ -106,18 +106,12 @@ impl BundledCommand {
                 rpc_url,
                 data_directory,
                 block_producer,
-                ntx_builder_config,
+                ntx_builder,
                 enable_otel: _,
                 grpc_timeout,
             } => {
-                Self::start(
-                    rpc_url,
-                    data_directory,
-                    ntx_builder_config,
-                    block_producer,
-                    grpc_timeout,
-                )
-                .await
+                Self::start(rpc_url, data_directory, ntx_builder, block_producer, grpc_timeout)
+                    .await
             },
         }
     }
@@ -126,7 +120,7 @@ impl BundledCommand {
     async fn start(
         rpc_url: Url,
         data_directory: PathBuf,
-        ntx_builder_config: NtxBuilderConfig,
+        ntx_builder: NtxBuilderConfig,
         block_producer: BlockProducerConfig,
         grpc_timeout: Duration,
     ) -> anyhow::Result<()> {
@@ -185,7 +179,7 @@ impl BundledCommand {
             .id();
 
         // A sync point between the ntx-builder and block-producer components.
-        let should_start_ntx_builder = !ntx_builder_config.disabled;
+        let should_start_ntx_builder = !ntx_builder.disabled;
         let checkpoint = if should_start_ntx_builder {
             Barrier::new(2)
         } else {
@@ -258,8 +252,8 @@ impl BundledCommand {
                     NetworkTransactionBuilder::new(
                         store_ntx_builder_url,
                         block_producer_url,
-                        ntx_builder_config.tx_prover_url,
-                        ntx_builder_config.ticker_interval,
+                        ntx_builder.tx_prover_url,
+                        ntx_builder.ticker_interval,
                         checkpoint,
                     )
                     .run()

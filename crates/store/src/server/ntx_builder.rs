@@ -105,7 +105,7 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
     #[instrument(
         parent = None,
         target = COMPONENT,
-        name = "store.ntx_builder_server.get_unconsumed_network_notes_for_account",
+        name = "store.ntx_builder_server.get_unconsumed_network_notes",
         skip_all,
         err
     )]

@@ -6,7 +6,7 @@ use miden_node_proto::generated::rpc::api_server;
 use miden_node_proto_build::rpc_api_descriptor;
 use miden_node_utils::cors::cors_for_grpc_web_layer;
 use miden_node_utils::panic::{CatchPanicLayer, catch_panic_layer_fn};
-use miden_node_utils::tracing::grpc::{TracedComponent, traced_span_fn};
+use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_reflection::server;
@@ -77,7 +77,7 @@ impl Rpc {
             .accept_http1(true)
             .timeout(self.grpc_timeout)
             .layer(CatchPanicLayer::custom(catch_panic_layer_fn))
-            .layer(TraceLayer::new_for_grpc().make_span_with(traced_span_fn(TracedComponent::Rpc)))
+            .layer(TraceLayer::new_for_grpc().make_span_with(grpc_trace_fn))
             .layer(cors_for_grpc_web_layer())
             .layer(AcceptHeaderLayer::new(&rpc_version, genesis.commitment()))
             .layer(HealthCheckLayer)

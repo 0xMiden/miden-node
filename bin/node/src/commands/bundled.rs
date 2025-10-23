@@ -252,7 +252,6 @@ impl BundledCommand {
                     NetworkTransactionBuilder {
                         store_url: store_ntx_builder_url,
                         block_producer_url,
-                        rpc_url,
                         tx_prover_url: ntx_builder.tx_prover_url,
                         ticker_interval: ntx_builder.ticker_interval,
                         bp_checkpoint: checkpoint,

@@ -37,7 +37,7 @@ use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
-use crate::rpc::RpcClient;
+use crate::block_producer::BlockProducerClient;
 use crate::state::TransactionCandidate;
 
 #[derive(Debug, thiserror::Error)]
@@ -66,7 +66,7 @@ type NtxResult<T> = Result<T, NtxError>;
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
 #[derive(Clone)]
 pub struct NtxContext {
-    pub rpc_client: RpcClient,
+    pub block_producer: BlockProducerClient,
 
     /// The prover to delegate proofs to.
     ///
@@ -117,17 +117,16 @@ impl NtxContext {
             .set_attribute("reference_block.number", chain_tip_header.block_num());
 
         async move {
-            Box::pin(async move {
+            async move {
                 let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
-                let tx_inputs = executed.tx_inputs().clone();
                 let proven = Box::pin(self.prove(executed.into())).await?;
-                self.submit(proven, tx_inputs).await?;
+                self.submit(proven).await?;
                 Ok(failed)
-            })
+            }
             .in_current_span()
             .await
             .inspect_err(|err| tracing::Span::current().set_error(err))
@@ -220,15 +219,11 @@ impl NtxContext {
         .map_err(NtxError::Proving)
     }
 
-    /// Submits the transaction to the RPC.
-    ///
-    /// The RPC will forward transactions to the validator as part of the network's "gaurdrails".
-    /// Once the guardrails are removed, this function can instead forward the transaction directly
-    /// to the block-producer instead of the RPC.
+    /// Submits the transaction to the block producer.
     #[instrument(target = COMPONENT, name = "ntx.execute_transaction.submit", skip_all, err)]
-    async fn submit(&self, tx: ProvenTransaction, tx_inputs: TransactionInputs) -> NtxResult<()> {
-        self.rpc_client
-            .submit_proven_transaction(tx, tx_inputs)
+    async fn submit(&self, tx: ProvenTransaction) -> NtxResult<()> {
+        self.block_producer
+            .submit_proven_transaction(tx)
             .await
             .map_err(NtxError::Submission)
     }

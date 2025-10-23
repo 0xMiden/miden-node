@@ -10,8 +10,6 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::generated::{self as proto};
 use miden_node_utils::FlattenResult;
 use miden_objects::block::BlockNumber;
-use miden_objects::transaction::ProvenTransaction;
-use miden_tx::utils::Serializable;
 use tokio_stream::StreamExt;
 use tonic::Status;
 use tracing::{info, instrument};
@@ -22,16 +20,18 @@ use crate::COMPONENT;
 // CLIENT
 // ================================================================================================
 
-/// Interface to the block producer's gRPC API.
+/// Interface to the block producer's gRPC API for mempool subscription only.
 ///
-/// Essentially just a thin wrapper around the generated gRPC client which improves type safety.
+/// This client is used exclusively for subscribing to mempool events to receive real-time
+/// updates about transaction status changes. All transaction submission operations are
+/// handled by the RPC client to allow for the validator to handle network transactions.
 #[derive(Clone, Debug)]
 pub struct BlockProducerClient {
     client: InnerBlockProducerClient,
 }
 
 impl BlockProducerClient {
-    /// Creates a new block producer client with a lazy connection.
+    /// Creates a new block producer client with a lazy connection for mempool subscription.
     pub fn new(block_producer_url: Url) -> Self {
         info!(target: COMPONENT, block_producer_endpoint = %block_producer_url, "Initializing block producer client with lazy connection");
 
@@ -43,20 +43,6 @@ impl BlockProducerClient {
             .connect_lazy::<BlockProducer>();
 
         Self { client: block_producer }
-    }
-    #[instrument(target = COMPONENT, name = "block_producer.client.submit_proven_transaction", skip_all, err)]
-    pub async fn submit_proven_transaction(
-        &self,
-        proven_tx: ProvenTransaction,
-    ) -> Result<(), Status> {
-        let request = proto::transaction::ProvenTransaction {
-            transaction: proven_tx.to_bytes(),
-            transaction_inputs: None,
-        };
-
-        self.client.clone().submit_proven_transaction(request).await?;
-
-        Ok(())
     }
 
     #[instrument(target = COMPONENT, name = "block_producer.client.subscribe_to_mempool", skip_all, err)]

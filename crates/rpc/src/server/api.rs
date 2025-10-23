@@ -365,15 +365,6 @@ impl api_server::Api for RpcService {
         let mut request = request;
         request.transaction = rebuilt_tx.to_bytes();
 
-        // Only allow deployment transactions for new network accounts
-        if tx.account_id().is_network()
-            && !tx.account_update().initial_state_commitment().is_empty()
-        {
-            return Err(Status::invalid_argument(
-                "Network transactions may not be submitted by users yet",
-            ));
-        }
-
         // Compare the account delta commitment of the ProvenTransaction with the actual delta
         let delta_commitment = tx.account_update().account_delta_commitment();
 
@@ -472,15 +463,6 @@ impl api_server::Api for RpcService {
         .map_err(|e| Status::invalid_argument(e.to_string()))?;
 
         request.encoded = rebuilt_batch.to_bytes();
-
-        // Only allow deployment transactions for new network accounts
-        for tx in batch.transactions().as_slice() {
-            if tx.account_id().is_network() && !tx.initial_state_commitment().is_empty() {
-                return Err(Status::invalid_argument(
-                    "Network transactions may not be submitted by users yet",
-                ));
-            }
-        }
 
         block_producer.clone().submit_proven_batch(request).await
     }

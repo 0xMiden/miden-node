@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 
 mod block_producer;
 mod builder;
+mod rpc;
 mod state;
 mod store;
 mod transaction;

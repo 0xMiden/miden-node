@@ -13,6 +13,7 @@ use url::Url;
 
 use crate::MAX_IN_PROGRESS_TXS;
 use crate::block_producer::BlockProducerClient;
+use crate::rpc::RpcClient;
 use crate::store::StoreClient;
 use crate::transaction::NtxError;
 
@@ -28,8 +29,10 @@ use crate::transaction::NtxError;
 pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
     pub store_url: Url,
-    /// Address of the block producer gRPC server.
+    /// Address of the block producer gRPC server (for mempool events).
     pub block_producer_url: Url,
+    /// Address of the RPC gRPC server (for transaction submission).
+    pub rpc_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
@@ -46,6 +49,7 @@ impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url);
         let block_producer = BlockProducerClient::new(self.block_producer_url);
+        let rpc_client = RpcClient::new(self.rpc_url);
 
         let mut state = crate::state::State::load(store.clone())
             .await
@@ -74,10 +78,7 @@ impl NetworkTransactionBuilder {
         let mut inflight = JoinSet::new();
         let mut inflight_idx = HashMap::new();
 
-        let context = crate::transaction::NtxContext {
-            block_producer: block_producer.clone(),
-            prover,
-        };
+        let context = crate::transaction::NtxContext { rpc_client: rpc_client.clone(), prover };
 
         loop {
             tokio::select! {

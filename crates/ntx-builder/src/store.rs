@@ -153,13 +153,10 @@ impl StoreClient {
             };
             let resp = store_client.get_unconsumed_network_notes(req).await?.into_inner();
 
-            let page: Vec<NetworkNote> = resp
-                .notes
-                .into_iter()
-                .map(NetworkNote::try_from)
-                .collect::<Result<Vec<_>, _>>()?;
-
-            all_notes.extend(page);
+            all_notes.reserve(resp.notes.len());
+            for note in resp.notes {
+                all_notes.push(NetworkNote::try_from(note)?);
+            }
 
             match resp.next_token {
                 Some(token) => page_token = Some(token),

@@ -47,6 +47,15 @@ use crate::db::models::{serialize_vec, vec_raw_try_into};
 use crate::db::{AccountVaultValue, schema};
 use crate::errors::DatabaseError;
 
+// CONSTANTS
+// ================================================================================================
+
+/// Maximum number of historical entries to retain per account for vault assets and storage map
+/// values. This ensures we don't accumulate unbounded historical data in the database.
+/// The latest entry (marked with is_latest_update=true) is always retained regardless of this
+/// limit.
+pub const MAX_HISTORICAL_ENTRIES_PER_ACCOUNT: usize = 50;
+
 /// Select the latest account details by account id from the DB using the given
 /// [`SqliteConnection`].
 ///
@@ -914,4 +923,170 @@ pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
     pub(crate) is_latest_update: bool,
+}
+
+// CLEANUP FUNCTIONS
+// ================================================================================================
+
+/// Clean up old vault asset entries for a specific account, keeping only the latest entry
+/// (is_latest_update=true) and up to MAX_HISTORICAL_ENTRIES_PER_ACCOUNT older entries per
+/// (account_id, vault_key) combination.
+///
+/// # Parameters
+/// * `conn`: Database connection
+/// * `account_id`: The account to clean up
+///
+/// # Returns
+/// The number of rows deleted
+///
+/// # Notes
+/// This function ensures we don't accumulate unbounded historical data while preserving:
+/// - The latest state for each vault key (is_latest_update=true)
+/// - Up to MAX_HISTORICAL_ENTRIES_PER_ACCOUNT historical entries per vault key
+pub(crate) fn cleanup_old_account_vault_assets(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+) -> Result<usize, DatabaseError> {
+    // Strategy: For each vault_key, keep the latest entry (is_latest_update=true) and the
+    // most recent MAX_HISTORICAL_ENTRIES_PER_ACCOUNT historical entries, deleting the rest.
+    //
+    // Unfortunately, Diesel doesn't support window functions (ROW_NUMBER OVER) in its type-safe
+    // API, so we must use raw SQL for this complex deletion pattern. This is necessary because:
+    // 1. We need to partition by vault_key and order by block_num
+    // 2. We need to delete based on row ranking within each partition
+    // 3. The table is created WITHOUT ROWID, so we use the primary key (account_id, block_num,
+    //    vault_key)
+
+    let account_id_bytes = account_id.to_bytes();
+    let limit = i64::try_from(MAX_HISTORICAL_ENTRIES_PER_ACCOUNT)
+        .expect("MAX_HISTORICAL_ENTRIES_PER_ACCOUNT should fit in i64");
+
+    // This query:
+    // 1. For each vault_key, ranks only non-latest entries by block_num descending (newest first)
+    // 2. Keeps entries where rank <= MAX_HISTORICAL_ENTRIES_PER_ACCOUNT
+    // 3. Deletes everything else using the primary key (account_id, block_num, vault_key)
+    // Note: The latest entry (is_latest_update=true) is never ranked and never deleted
+
+    diesel::sql_query(
+        r#"
+        DELETE FROM account_vault_assets
+        WHERE (account_id, block_num, vault_key) IN (
+            SELECT account_id, block_num, vault_key FROM (
+                SELECT
+                    account_id,
+                    block_num,
+                    vault_key,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY vault_key
+                        ORDER BY block_num DESC
+                    ) as row_num
+                FROM account_vault_assets
+                WHERE account_id = ?1 AND is_latest_update = 0
+            )
+            WHERE row_num > ?2
+        )
+        "#,
+    )
+    .bind::<diesel::sql_types::Binary, _>(&account_id_bytes)
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .execute(conn)
+    .map_err(DatabaseError::Diesel)
+}
+
+/// Clean up old storage map value entries for a specific account, keeping only the latest entry
+/// (is_latest_update=true) and up to MAX_HISTORICAL_ENTRIES_PER_ACCOUNT older entries per
+/// (account_id, slot, key) combination.
+///
+/// # Parameters
+/// * `conn`: Database connection
+/// * `account_id`: The account to clean up
+///
+/// # Returns
+/// The number of rows deleted
+///
+/// # Notes
+/// This function ensures we don't accumulate unbounded historical data while preserving:
+/// - The latest state for each (slot, key) pair (is_latest_update=true)
+/// - Up to MAX_HISTORICAL_ENTRIES_PER_ACCOUNT historical entries per (slot, key) pair
+pub(crate) fn cleanup_old_account_storage_map_values(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+) -> Result<usize, DatabaseError> {
+    // Strategy: Similar to vault assets cleanup, but partition by (slot, key) pairs
+    //
+    // Unfortunately, Diesel doesn't support window functions (ROW_NUMBER OVER) in its type-safe
+    // API, so we must use raw SQL for this complex deletion pattern. This is necessary because:
+    // 1. We need to partition by (slot, key) and order by block_num
+    // 2. We need to delete based on row ranking within each partition
+    // 3. The table is created WITHOUT ROWID, so we use the primary key (account_id, block_num,
+    //    slot, key)
+
+    let account_id_bytes = account_id.to_bytes();
+    let limit = i64::try_from(MAX_HISTORICAL_ENTRIES_PER_ACCOUNT)
+        .expect("MAX_HISTORICAL_ENTRIES_PER_ACCOUNT should fit in i64");
+
+    // This query:
+    // 1. For each (slot, key) combination, ranks only non-latest entries by block_num descending
+    //    (newest first)
+    // 2. Keeps entries where rank <= MAX_HISTORICAL_ENTRIES_PER_ACCOUNT
+    // 3. Deletes everything else using the primary key (account_id, block_num, slot, key)
+    // Note: The latest entry (is_latest_update=true) is never ranked and never deleted
+
+    diesel::sql_query(
+        r#"
+        DELETE FROM account_storage_map_values
+        WHERE (account_id, block_num, slot, key) IN (
+            SELECT account_id, block_num, slot, key FROM (
+                SELECT
+                    account_id,
+                    block_num,
+                    slot,
+                    key,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY slot, key
+                        ORDER BY block_num DESC
+                    ) as row_num
+                FROM account_storage_map_values
+                WHERE account_id = ?1 AND is_latest_update = 0
+            )
+            WHERE row_num > ?2
+        )
+        "#,
+    )
+    .bind::<diesel::sql_types::Binary, _>(&account_id_bytes)
+    .bind::<diesel::sql_types::BigInt, _>(limit)
+    .execute(conn)
+    .map_err(DatabaseError::Diesel)
+}
+
+/// Clean up old entries for all accounts in the database.
+///
+/// This is a maintenance function that should be called periodically to prevent
+/// unbounded growth of historical data.
+///
+/// # Parameters
+/// * `conn`: Database connection
+///
+/// # Returns
+/// A tuple of (vault_assets_deleted, storage_map_values_deleted)
+pub(crate) fn cleanup_all_accounts(
+    conn: &mut SqliteConnection,
+) -> Result<(usize, usize), DatabaseError> {
+    use schema::accounts;
+
+    // Get all distinct account IDs using Diesel's query builder API
+    let account_ids: Vec<Vec<u8>> =
+        QueryDsl::distinct(SelectDsl::select(accounts::table, accounts::account_id)).load(conn)?;
+
+    let mut total_vault_deleted = 0;
+    let mut total_storage_deleted = 0;
+
+    for account_id_bytes in account_ids {
+        let account_id = AccountId::read_from_bytes(&account_id_bytes)?;
+
+        total_vault_deleted += cleanup_old_account_vault_assets(conn, account_id)?;
+        total_storage_deleted += cleanup_old_account_storage_map_values(conn, account_id)?;
+    }
+
+    Ok((total_vault_deleted, total_storage_deleted))
 }

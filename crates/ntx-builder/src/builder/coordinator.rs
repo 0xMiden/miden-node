@@ -17,7 +17,7 @@ use crate::actor::{AccountActor, AccountActorConfig, AccountOrigin, ActorShutdow
 /// Handle to account actors that are spawned by the coordinator.
 #[derive(Clone)]
 struct ActorHandle {
-    event_tx: mpsc::Sender<MempoolEvent>,
+    event_tx: mpsc::Sender<MempoolEvent>, // TODO: consider Arc<MempoolEvent>.
     cancel_token: CancellationToken,
 }
 

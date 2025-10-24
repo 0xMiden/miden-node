@@ -358,7 +358,8 @@ impl State {
             };
             tx_impact.nullifiers.insert(nullifier);
             // We don't use the entry wrapper here because the account must already exist.
-            self.accounts
+            let _res = self
+                .accounts
                 .get_mut(account)
                 .expect("nullifier account must exist")
                 .add_nullifier(nullifier);

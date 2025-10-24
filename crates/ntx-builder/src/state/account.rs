@@ -180,13 +180,14 @@ impl AccountState {
     /// # Panics
     ///
     /// Panics if the note does not exist or was already nullified.
-    pub fn add_nullifier(&mut self, nullifier: Nullifier) {
-        let note = self
-            .available_notes
-            .remove(&nullifier)
-            .expect("note must be available to nullify");
-
-        self.nullified_notes.insert(nullifier, note);
+    pub fn add_nullifier(&mut self, nullifier: Nullifier) -> Result<(), ()> {
+        if let Some(note) = self.available_notes.remove(&nullifier) {
+            self.nullified_notes.insert(nullifier, note);
+            Ok(())
+        } else {
+            tracing::warn!(%nullifier, "note must be available to nullify");
+            Err(())
+        }
     }
 
     /// Marks a nullifier as being committed, removing the associated note data entirely.
@@ -195,9 +196,7 @@ impl AccountState {
     ///
     /// Panics if the associated note is not marked as nullified.
     pub fn commit_nullifier(&mut self, nullifier: Nullifier) {
-        self.nullified_notes
-            .remove(&nullifier)
-            .expect("committed nullified note should be in the nullified set");
+        let _ = self.nullified_notes.remove(&nullifier); // we might not have this if we didn't add it with `add_nullifier` in case it's transaction wasn't available in the first place
     }
 
     /// Reverts a nullifier, marking the associated note as available again.

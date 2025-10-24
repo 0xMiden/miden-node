@@ -457,7 +457,7 @@ pub struct SyncTransactionsResponse {
 /// Represents a transaction record.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TransactionRecord {
-    /// Block number in which the transaction was executed.
+    /// Block number in which the transaction was included.
     #[prost(fixed32, tag = "1")]
     pub block_num: u32,
     /// A transaction header.

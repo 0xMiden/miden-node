@@ -122,6 +122,7 @@ impl State {
                 // Ignore notes which don't target an existing account.
                 if let Some(account) = state.fetch_account(prefix).await? {
                     account.add_note(note);
+                } else {
                 }
             }
         }
@@ -342,14 +343,24 @@ impl State {
             self.in_progress.remove(&prefix);
             tx_impact.account_delta = Some(prefix);
         }
+        // failed to fetch account, so ignore the nullifier
         for note in network_notes {
-            tx_impact.notes.insert(note.nullifier());
             let prefix = note.account_prefix();
-            self.nullifier_idx.insert(note.nullifier(), prefix);
             // Skip notes which target a non-existent network account.
             if let Some(account) = self.fetch_account(prefix).await? {
-                account.add_note(note);
+                tx_impact.notes.insert(note.nullifier());
+
+                account.add_note(note.clone());
+                tracing::warn!(
+                    "nullifier {} for fetched network note {}",
+                    note.nullifier(),
+                    note.id()
+                );
+            } else {
+                tracing::warn!("could not fetch account from network: {:?}", prefix);
+                continue;
             }
+            self.nullifier_idx.insert(note.nullifier(), prefix);
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.

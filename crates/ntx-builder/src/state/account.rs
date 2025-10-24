@@ -196,7 +196,11 @@ impl AccountState {
     ///
     /// Panics if the associated note is not marked as nullified.
     pub fn commit_nullifier(&mut self, nullifier: Nullifier) {
-        let _ = self.nullified_notes.remove(&nullifier); // we might not have this if we didn't add it with `add_nullifier` in case it's transaction wasn't available in the first place
+        // we might not have this if we didn't add it with `add_nullifier`
+        // in case it's transaction wasn't available in the first place.
+        // It shouldn't happen practically, since we skip them if the
+        // relevant account cannot be retrieved via `fetch`.
+        let _ = self.nullified_notes.remove(&nullifier);
     }
 
     /// Reverts a nullifier, marking the associated note as available again.

@@ -351,11 +351,6 @@ impl State {
                 tx_impact.notes.insert(note.nullifier());
 
                 account.add_note(note.clone());
-                tracing::warn!(
-                    "nullifier {} for fetched network note {}",
-                    note.nullifier(),
-                    note.id()
-                );
             } else {
                 tracing::warn!("could not fetch account from network: {:?}", prefix);
                 continue;

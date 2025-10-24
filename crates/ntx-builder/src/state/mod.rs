@@ -122,7 +122,6 @@ impl State {
                 // Ignore notes which don't target an existing account.
                 if let Some(account) = state.fetch_account(prefix).await? {
                     account.add_note(note);
-                } else {
                 }
             }
         }

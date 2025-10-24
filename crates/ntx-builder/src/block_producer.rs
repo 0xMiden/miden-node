@@ -49,7 +49,10 @@ impl BlockProducerClient {
         &self,
         proven_tx: ProvenTransaction,
     ) -> Result<(), Status> {
-        let request = proto::transaction::ProvenTransaction { transaction: proven_tx.to_bytes() };
+        let request = proto::transaction::ProvenTransaction {
+            transaction: proven_tx.to_bytes(),
+            transaction_inputs: None,
+        };
 
         self.client.clone().submit_proven_transaction(request).await?;
 

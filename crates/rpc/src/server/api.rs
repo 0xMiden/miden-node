@@ -26,15 +26,21 @@ use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteRecipient, NoteScript};
-use miden_objects::transaction::{OutputNote, ProvenTransaction, ProvenTransactionBuilder};
+use miden_objects::transaction::{
+    OutputNote,
+    ProvenTransaction,
+    ProvenTransactionBuilder,
+    TransactionInputs,
+};
 use miden_objects::utils::serde::{Deserializable, Serializable};
 use miden_objects::{MIN_PROOF_SECURITY_LEVEL, Word};
 use miden_tx::TransactionVerifier;
 use tonic::{IntoRequest, Request, Response, Status};
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, warn};
 use url::Url;
 
 use crate::COMPONENT;
+use crate::server::validator;
 
 // RPC SERVICE
 // ================================================================================================
@@ -391,6 +397,32 @@ impl api_server::Api for RpcService {
                 err.as_report()
             ))
         })?;
+
+        // If transaction inputs are provided, re-execute the transaction to validate it.
+        if let Some(tx_inputs_bytes) = &request.transaction_inputs {
+            // Deserialize the transaction inputs.
+            let tx_inputs = TransactionInputs::read_from_bytes(tx_inputs_bytes).map_err(|err| {
+                Status::invalid_argument(err.as_report_context("Invalid transaction inputs"))
+            })?;
+            // Re-execute the transaction.
+            match validator::re_execute_transaction(tx_inputs).await {
+                Ok(_executed_tx) => {
+                    debug!(
+                        target = COMPONENT,
+                        tx_id = %tx.id().to_hex(),
+                        "Transaction re-execution successful"
+                    );
+                },
+                Err(e) => {
+                    warn!(
+                        target = COMPONENT,
+                        tx_id = %tx.id().to_hex(),
+                        error = %e,
+                        "Transaction re-execution failed, but continuing with submission"
+                    );
+                },
+            }
+        }
 
         block_producer.clone().submit_proven_transaction(request).await
     }

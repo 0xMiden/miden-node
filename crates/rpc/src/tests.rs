@@ -239,7 +239,10 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     ))
     .build()
     .unwrap();
-    let request = proto::transaction::ProvenTransaction { transaction: tx.to_bytes() };
+    let request = proto::transaction::ProvenTransaction {
+        transaction: tx.to_bytes(),
+        transaction_inputs: None,
+    };
 
     let response = rpc_client.submit_proven_transaction(request).await;
 

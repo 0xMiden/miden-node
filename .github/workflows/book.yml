@@ -11,10 +11,10 @@ name: book
 on:
   workflow_dispatch:
   pull_request:
-    path: ['docs/**']
+    path: ["docs/internal/**"]
   push:
     branches: [next]
-    path: ['docs/**']
+    path: ["docs/internal/**"]
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
@@ -45,7 +45,7 @@ jobs:
           tool: mdbook, mdbook-linkcheck, mdbook-alerts, mdbook-katex
 
       - name: Build book
-        run: mdbook build docs/
+        run: mdbook build docs/internal/
 
       # Only Upload documentation if we want to deploy (i.e. push to next).
       - name: Setup Pages
@@ -58,7 +58,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           # We specify multiple [output] sections in our book.toml which causes mdbook to create separate folders for each. This moves the generated `html` into its own `html` subdirectory.
-          path: ./docs/book/html
+          path: ./docs/internal/book/html
 
   # Deployment job only runs on push to next.
   deploy:

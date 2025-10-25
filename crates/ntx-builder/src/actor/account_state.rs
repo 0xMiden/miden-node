@@ -153,7 +153,7 @@ impl NetworkAccountState {
 
     /// Updates state with the mempool event.
     #[instrument(target = COMPONENT, name = "ntx.state.mempool_update", skip_all)]
-    pub async fn mempool_update(&mut self, update: MempoolEvent) -> Option<ActorShutdownReason> {
+    pub fn mempool_update(&mut self, update: MempoolEvent) -> Option<ActorShutdownReason> {
         let span = tracing::Span::current();
         span.set_attribute("mempool_event.kind", update.kind());
 

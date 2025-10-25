@@ -224,7 +224,7 @@ impl AccountActor {
                         self.mode = ActorMode::NotesAvailable;
                     }
                     // Update state.
-                    if let Some(shutdown_reason) = state.mempool_update(event).await {
+                    if let Some(shutdown_reason) = state.mempool_update(event) {
                         return shutdown_reason;
                     }
                 },

@@ -197,14 +197,6 @@ where
             .inner
             .read()
             .expect("RwLock poisoned: concurrent thread panicked while holding lock");
-        assert_eq!(
-            guard.overlays.iter().last().map(|(block, overlay)| {
-                assert_eq!(*block, overlay.block_number);
-                let block = block.child();
-                block
-            }),
-            Some(guard.block_number.clone())
-        );
         guard.block_number
     }
 

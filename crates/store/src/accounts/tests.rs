@@ -84,9 +84,7 @@ mod account_tree_with_history_tests {
         let tree = create_account_tree([(id, Word::from([1u32, 0, 0, 0]))]);
         let hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
 
-        const MAX_HIST: u32 = AccountTreeWithHistory::<AccountTree<LargeSmt<MemoryStorage>>>::MAX_HISTORY as u32;
-        for i in
-            1..=(MAX_HIST + 5)        {
+        for i in 1..=(MAX_HIST + 5) {
             hist.apply_mutations([(id, Word::from([dbg!(i) as u32, 0, 0, 0]))]).unwrap();
             assert_eq!(hist.block_number_latest(), BlockNumber::from(i));
         }

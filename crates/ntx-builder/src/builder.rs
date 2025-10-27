@@ -70,7 +70,7 @@ pub struct NetworkTransactionBuilder {
     /// Address of the block producer gRPC server.
     block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
-    /// undesirable due to the perofmrance impact.
+    /// undesirable due to the performance impact.
     tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
     ticker_interval: Duration,
@@ -181,9 +181,9 @@ impl NetworkTransactionBuilder {
         match &event {
             MempoolEvent::TransactionAdded { account_delta, .. } => {
                 if let Some(AccountUpdateDetails::New(account)) = account_delta {
-                    // Spawn new actors for account creation transactions.
-                    if let Some(account) = AccountOrigin::transaction(account) {
-                        self.coordinator.spawn_actor(account, account_actor_config);
+                    // Spawn new actors if a transaction creates a new network account
+                    if let Some(network_account) = AccountOrigin::transaction(account) {
+                        self.coordinator.spawn_actor(network_account, account_actor_config);
                     }
                 } else {
                     self.coordinator.broadcast_event(&event).await;

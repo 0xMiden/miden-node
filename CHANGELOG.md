@@ -3,6 +3,7 @@
 ## v0.11.4 (TBD)
 
 - Reduced note retries to 1 ([#1308](https://github.com/0xMiden/miden-node/pull/1308)).
+- Address network transaction builder (NTX) invariant breaking for unavailable accounts ([#1312](https://github.com/0xMiden/miden-node/pull/1312)).
 
 ## v0.11.3 (2025-10-09)
 

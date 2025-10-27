@@ -16,10 +16,8 @@ use url::Url;
 use crate::MAX_IN_PROGRESS_TXS;
 use crate::actor::{AccountActorConfig, AccountOrigin};
 use crate::block_producer::BlockProducerClient;
-use crate::builder::coordinator::Coordinator;
+use crate::coordinator::Coordinator;
 use crate::store::StoreClient;
-
-mod coordinator;
 
 // CONSTANTS
 // =================================================================================================

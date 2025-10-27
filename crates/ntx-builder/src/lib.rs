@@ -3,6 +3,7 @@ use std::num::NonZeroUsize;
 mod actor;
 mod block_producer;
 mod builder;
+mod coordinator;
 mod store;
 
 pub use builder::NetworkTransactionBuilder;

@@ -131,14 +131,14 @@ where
 {
     block_number: BlockNumber,
     latest: S,
-    overlays: std::collections::BTreeMap<BlockNumber, Arc<HistoricalOverlay>>,
+    overlays: BTreeMap<BlockNumber, HistoricalOverlay>,
 }
 
 impl<S> InnerState<S>
 where
     S: AccountTreeStorage,
 {
-    pub fn historical_offset(&self, desired_block_number: BlockNumber) -> HistoricalState {
+    pub fn historical_state(&self, desired_block_number: BlockNumber) -> HistoricalState {
         if desired_block_number == self.block_number {
             return HistoricalState::Latest;
         }
@@ -176,7 +176,7 @@ where
             inner: Arc::new(RwLock::new(InnerState {
                 block_number,
                 latest: account_tree,
-                overlays: std::collections::BTreeMap::new(),
+                overlays: BTreeMap::new(),
             })),
         }
     }
@@ -216,7 +216,7 @@ where
             .read()
             .expect("RwLock poisoned: concurrent thread panicked while holding lock");
 
-        match guard.historical_offset(block_number) {
+        match guard.historical_state(block_number) {
             HistoricalState::Latest => Some(guard.latest.root()),
             HistoricalState::Target(block_number) => {
                 let overlay_at = guard.overlays.get(&block_number)?;
@@ -270,7 +270,7 @@ where
             .read()
             .expect("RwLock poisoned: concurrent thread panicked while holding lock");
 
-        match guard.historical_offset(block_number) {
+        match guard.historical_state(block_number) {
             HistoricalState::Latest => Some(guard.latest.open(account_id)),
             HistoricalState::Target(block_number) => {
                 guard.overlays.get(&block_number)?;

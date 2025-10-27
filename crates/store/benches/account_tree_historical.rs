@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use miden_crypto::merkle::{RocksDbConfig, RocksDbStorage};
-use miden_node_store::historical::AccountTreeWithHistory;
+use miden_node_store::AccountTreeWithHistory;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::{AccountTree, BlockNumber, account_id_to_smt_key};

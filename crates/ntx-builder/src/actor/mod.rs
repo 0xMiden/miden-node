@@ -101,9 +101,8 @@ impl AccountOrigin {
 // ================================================================================================
 
 /// The mode of operation that the account actor is currently performing.
-#[derive(Default, Debug)]
+#[derive(Debug)]
 enum ActorMode {
-    #[default]
     NoViableNotes,
     NotesAvailable,
     TransactionInflight(TransactionId),
@@ -166,7 +165,7 @@ impl AccountActor {
         Self {
             origin,
             store: config.store.clone(),
-            mode: ActorMode::default(),
+            mode: ActorMode::NoViableNotes,
             event_rx,
             cancel_token,
             block_producer,

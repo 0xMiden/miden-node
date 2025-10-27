@@ -430,7 +430,3 @@ where
         Ok(())
     }
 }
-
-// - use hashmaps
-// - split up -- compute mutations from apply_mutations
-// - try to use emptysubtree

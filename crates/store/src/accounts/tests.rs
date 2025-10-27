@@ -116,6 +116,19 @@ mod account_tree_with_history_tests {
 
         assert_eq!(hist.block_number_latest(), BlockNumber::from(2));
 
+        fn ensure_verify(root: Word, witness: AccountWitness) -> bool {
+            let proof = witness.into_proof();
+            let (path, leaf) = proof.into_parts();
+            path.verify(leaf.index().value(), leaf.hash(), &root).unwrap();
+            false
+        }
+        assert!(ensure_verify(tree2.root(), tree2.open(id0)));
+        assert!(ensure_verify(tree2.root(), hist.open_at(id0, BlockNumber::from(2)).unwrap()));
+        assert!(ensure_verify(tree1.root(), tree1.open(id0)));
+        assert!(ensure_verify(tree1.root(), hist.open_at(id0, BlockNumber::from(1)).unwrap()));
+        assert!(ensure_verify(tree0.root(), tree0.open(id0)));
+        assert!(ensure_verify(tree0.root(), hist.open_at(id0, BlockNumber::GENESIS).unwrap()));
+
         assert_eq!(hist.open_at(id0, BlockNumber::GENESIS).unwrap(), tree0.open(id0));
         assert_eq!(hist.open_at(id0, BlockNumber::from(1)).unwrap(), tree1.open(id0));
         assert_eq!(hist.open_at(id0, BlockNumber::from(2)).unwrap(), tree2.open(id0));
@@ -443,5 +456,66 @@ mod account_tree_with_history_tests {
             assert_eq!(witness_b1.state_commitment(), Word::from([i as u32 + 1, 0, 0, 0]));
             assert_eq!(witness_b2.state_commitment(), Word::from([i as u32 + 1, 0, 0, 0]));
         }
+    }
+
+    #[test]
+    fn test_account_tree_with_history_minimal_verify() {
+        // Create a single account
+        let account_id = AccountIdBuilder::new().build_with_seed([42; 32]);
+        let genesis_commitment = Word::from([100u32, 200, 300, 400]);
+        let updated_commitment = Word::from([999u32, 888, 777, 666]);
+
+        // Create initial tree with the account
+        let tree = create_account_tree(vec![(account_id, genesis_commitment)]);
+        let mut hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
+
+        // Apply a mutation to update the account (moves to block 1)
+        hist.compute_and_apply_mutations(vec![(account_id, updated_commitment)])
+            .expect("Mutation should succeed");
+
+        // Verify we're now at block 1
+        assert_eq!(hist.block_number_latest(), BlockNumber::from(1));
+
+        // Get witness for the account at genesis (tests historical reconstruction)
+        let witness = hist
+            .open_at(account_id, BlockNumber::GENESIS)
+            .expect("Account should exist at genesis");
+
+        // Verify the state commitment matches the genesis value (not the updated value)
+        assert_eq!(witness.state_commitment(), genesis_commitment);
+
+        // Get the proof and verify it against the genesis root
+        let root = hist.root_at(BlockNumber::GENESIS).expect("Root should exist at genesis");
+        let proof = witness.into_proof();
+        let (path, leaf) = proof.into_parts();
+
+        // Verify the Merkle proof - this tests the historical reconstruction code path
+        path.verify(leaf.index().value(), leaf.hash(), &root)
+            .expect("Proof verification should succeed");
+    }
+
+    #[test]
+    fn test_account_tree_minimal_verify() {
+        // Create a single account
+        let account_id = AccountIdBuilder::new().build_with_seed([42; 32]);
+        let state_commitment = Word::from([100u32, 200, 300, 400]);
+
+        // Create tree with the account
+        let tree = create_account_tree(vec![(account_id, state_commitment)]);
+
+        // Get witness for the account
+        let witness = tree.open(account_id);
+
+        // Verify the state commitment matches
+        assert_eq!(witness.state_commitment(), state_commitment);
+
+        // Get the proof and verify it
+        let root = tree.root();
+        let proof = witness.into_proof();
+        let (path, leaf) = proof.into_parts();
+
+        // Verify the Merkle proof
+        path.verify(leaf.index().value(), leaf.hash(), &root)
+            .expect("Proof verification should succeed");
     }
 }

@@ -28,6 +28,7 @@ miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }
 miden-objects          = { features = ["std"], workspace = true }
+miden-crypto          = { features = ["concurrent", "rocksdb", "hashmaps"], workspace = true } # we ensure we have `rocksdb` + `hashmaps` enabled
 rand                   = { workspace = true }
 rand_chacha            = { workspace = true }
 serde                  = { features = ["derive"], version = "1" }
@@ -43,7 +44,6 @@ tracing                = { workspace = true }
 [dev-dependencies]
 assert_matches        = { workspace = true }
 criterion             = { version = "0.5" }
-miden-crypto          = { features = ["concurrent", "rocksdb"], workspace = true }
 miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["testing", "tracing-forest"], workspace = true }

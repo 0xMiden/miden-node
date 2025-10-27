@@ -57,9 +57,9 @@ mod account_tree_with_history_tests {
         // Create a separate tree for history tracking
         let hist_tree = create_account_tree(states[0].clone());
         let mut hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
-        hist.apply_mutations([(ids[0], states[1][0].1), (ids[2], states[1][2].1)])
+        hist.compute_and_apply_mutations([(ids[0], states[1][0].1), (ids[2], states[1][2].1)])
             .unwrap();
-        hist.apply_mutations([(ids[1], states[2][1].1)]).unwrap();
+        hist.compute_and_apply_mutations([(ids[1], states[2][1].1)]).unwrap();
 
         for (block, tree) in trees.iter().enumerate() {
             let hist_root = hist.root_at(BlockNumber::from(block as u32)).unwrap();
@@ -85,7 +85,8 @@ mod account_tree_with_history_tests {
         let mut hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
 
         for i in 1..=(MAX_HIST + 5) {
-            hist.apply_mutations([(id, Word::from([dbg!(i) as u32, 0, 0, 0]))]).unwrap();
+            hist.compute_and_apply_mutations([(id, Word::from([dbg!(i) as u32, 0, 0, 0]))])
+                .unwrap();
             assert_eq!(hist.block_number_latest(), BlockNumber::from(i));
         }
 
@@ -110,8 +111,8 @@ mod account_tree_with_history_tests {
         // Create separate tree for history tracking
         let hist_tree = create_account_tree(vec![(id0, v0)]);
         let mut hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
-        hist.apply_mutations([(id1, v1)]).unwrap();
-        hist.apply_mutations([(id0, Word::default())]).unwrap();
+        hist.compute_and_apply_mutations([(id1, v1)]).unwrap();
+        hist.compute_and_apply_mutations([(id0, Word::default())]).unwrap();
 
         assert_eq!(hist.block_number_latest(), BlockNumber::from(2));
 
@@ -161,7 +162,7 @@ mod account_tree_with_history_tests {
                     (ids[idx], new_value)
                 })
                 .collect();
-            hist.apply_mutations(updates).unwrap();
+            hist.compute_and_apply_mutations(updates).unwrap();
         }
 
         // Verify we can query historical states
@@ -259,7 +260,7 @@ mod account_tree_with_history_tests {
                     (id, new_value)
                 })
                 .collect();
-            hist.apply_mutations(updates).unwrap();
+            hist.compute_and_apply_mutations(updates).unwrap();
         }
 
         // Verify all accounts at all blocks
@@ -315,7 +316,7 @@ mod account_tree_with_history_tests {
             .enumerate()
             .map(|(i, &id)| (id, Word::from([(i + 50) as u32, 1, 0, 0])))
             .collect();
-        hist.apply_mutations(updates1).unwrap();
+        hist.compute_and_apply_mutations(updates1).unwrap();
 
         // Block 2: Update every 10th account
         let updates2: Vec<_> = ids
@@ -325,7 +326,7 @@ mod account_tree_with_history_tests {
             .take(10)
             .map(|(i, &id)| (id, Word::from([i as u32, 2, 0, 0])))
             .collect();
-        hist.apply_mutations(updates2).unwrap();
+        hist.compute_and_apply_mutations(updates2).unwrap();
 
         // Block 3: Add remaining accounts
         let updates3: Vec<_> = ids
@@ -334,7 +335,7 @@ mod account_tree_with_history_tests {
             .enumerate()
             .map(|(i, &id)| (id, Word::from([(i + 100) as u32, 3, 0, 0])))
             .collect();
-        hist.apply_mutations(updates3).unwrap();
+        hist.compute_and_apply_mutations(updates3).unwrap();
 
         // Verify states at different blocks
         // Check genesis - first 50 accounts exist, others don't
@@ -384,12 +385,12 @@ mod account_tree_with_history_tests {
 
         // Block 1: Delete half the accounts (set to empty word)
         let deletes: Vec<_> = ids.iter().take(10).map(|&id| (id, Word::default())).collect();
-        hist.apply_mutations(deletes).unwrap();
+        hist.compute_and_apply_mutations(deletes).unwrap();
 
         // Block 2: Recreate some deleted accounts with new values
         let recreates: Vec<_> =
             ids.iter().take(5).map(|&id| (id, Word::from([999u32, 0, 0, 0]))).collect();
-        hist.apply_mutations(recreates).unwrap();
+        hist.compute_and_apply_mutations(recreates).unwrap();
 
         // Verify genesis state
         for (i, &id) in ids.iter().enumerate().take(20) {

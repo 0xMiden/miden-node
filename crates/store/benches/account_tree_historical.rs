@@ -104,7 +104,7 @@ fn setup_account_tree_with_history(
             })
             .collect();
 
-        account_tree_hist.apply_mutations(mutations).unwrap();
+        account_tree_hist.compute_and_apply_mutations(mutations).unwrap();
     }
 
     (account_tree_hist, account_ids)
@@ -231,7 +231,7 @@ fn bench_insertion_with_history(c: &mut Criterion) {
                         (account_id, commitment)
                     })
                     .collect();
-                tree.apply_mutations(black_box(mutations)).unwrap();
+                tree.compute_and_apply_mutations(black_box(mutations)).unwrap();
             });
         });
     }

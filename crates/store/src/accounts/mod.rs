@@ -394,17 +394,30 @@ where
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Applies mutations and advances to the next block.
-    pub fn apply_mutations(
+    /// Combine [`compute_mutations`] and [`apply_mutations`].
+    ///
+    /// Primarily targeting testing.
+    pub fn compute_and_apply_mutations(
         &mut self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
     ) -> Result<(), HistoricalError> {
-        let accounts = Vec::from_iter(account_commitments);
+        let mutations = self.compute_mutations(account_commitments)?;
+        self.apply_mutations(mutations)
+    }
 
-        // - use hashmaps
-        // - split up -- compute mutations from apply_mutations
-        // - drop Inner
-        let mutations = self.latest.compute_mutations(accounts)?;
+    /// Compute mutations relativ to the latest state.
+    pub fn compute_mutations(
+        &mut self,
+        account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
+    ) -> Result<AccountMutationSet, HistoricalError> {
+        Ok(self.latest.compute_mutations(account_commitments)?)
+    }
+
+    /// Applies mutations and advances to the next block.
+    pub fn apply_mutations(
+        &mut self,
+        mutations: AccountMutationSet,
+    ) -> Result<(), HistoricalError> {
         let rev = self.latest.apply_mutations_with_reversion(mutations)?;
 
         let block_num = self.block_number;
@@ -417,3 +430,7 @@ where
         Ok(())
     }
 }
+
+// - use hashmaps
+// - split up -- compute mutations from apply_mutations
+// - try to use emptysubtree

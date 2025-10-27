@@ -1,7 +1,6 @@
 //! Historical tracking for `AccountTree` via mutation overlays
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, RwLock};
 
 use miden_objects::account::AccountId;
 use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
@@ -124,41 +123,15 @@ impl HistoricalOverlay {
     }
 }
 
-#[derive(Debug)]
-struct InnerState<S>
-where
-    S: AccountTreeStorage,
-{
-    block_number: BlockNumber,
-    latest: S,
-    overlays: BTreeMap<BlockNumber, HistoricalOverlay>,
-}
-
-impl<S> InnerState<S>
-where
-    S: AccountTreeStorage,
-{
-    pub fn historical_state(&self, desired_block_number: BlockNumber) -> HistoricalState {
-        if desired_block_number == self.block_number {
-            return HistoricalState::Latest;
-        }
-        let Some(_) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
-            return HistoricalState::Future;
-        };
-        let Some(_) = self.overlays.get(&desired_block_number) else {
-            return HistoricalState::TooAncient;
-        };
-        HistoricalState::Target(desired_block_number)
-    }
-}
-
 /// Wraps `AccountTree` with historical query support via reversion overlays.
 #[derive(Debug, Clone)]
 pub struct AccountTreeWithHistory<S>
 where
     S: AccountTreeStorage,
 {
-    inner: Arc<RwLock<InnerState<S>>>,
+    block_number: BlockNumber,
+    latest: S,
+    overlays: BTreeMap<BlockNumber, HistoricalOverlay>,
 }
 
 impl<S> AccountTreeWithHistory<S>
@@ -173,11 +146,9 @@ where
     /// Creates a new historical tree.
     pub fn new(account_tree: S, block_number: BlockNumber) -> Self {
         Self {
-            inner: Arc::new(RwLock::new(InnerState {
-                block_number,
-                latest: account_tree,
-                overlays: BTreeMap::new(),
-            })),
+            block_number,
+            latest: account_tree,
+            overlays: BTreeMap::new(),
         }
     }
 
@@ -193,33 +164,20 @@ where
 
     /// Returns the latest block number.
     pub fn block_number_latest(&self) -> BlockNumber {
-        let guard = self
-            .inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
-        guard.block_number
+        self.block_number
     }
 
     /// Returns the latest root.
     pub fn root_latest(&self) -> Word {
-        self.inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .latest
-            .root()
+        self.latest.root()
     }
 
     /// Returns the root at the given historical block.
     pub fn root_at(&self, block_number: BlockNumber) -> Option<Word> {
-        let guard = self
-            .inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
-
-        match guard.historical_state(block_number) {
-            HistoricalState::Latest => Some(guard.latest.root()),
+        match self.historical_state(block_number) {
+            HistoricalState::Latest => Some(self.latest.root()),
             HistoricalState::Target(block_number) => {
-                let overlay_at = guard.overlays.get(&block_number)?;
+                let overlay_at = self.overlays.get(&block_number)?;
                 assert_eq!(overlay_at.block_number, block_number);
                 Some(overlay_at.rev_set.as_mutation_set().root())
             },
@@ -229,29 +187,17 @@ where
 
     /// Returns the account count.
     pub fn num_accounts_latest(&self) -> usize {
-        self.inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .latest
-            .num_accounts()
+        self.latest.num_accounts()
     }
 
     /// Returns the history depth.
     pub fn history_len(&self) -> usize {
-        self.inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .overlays
-            .len()
+        self.overlays.len()
     }
 
     /// Opens an account at the latest block.
     pub fn open_latest(&self, account_id: AccountId) -> AccountWitness {
-        self.inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .latest
-            .open(account_id)
+        self.latest.open(account_id)
     }
 
     /// Opens an account at a historical block.
@@ -265,29 +211,48 @@ where
         account_id: AccountId,
         block_number: BlockNumber,
     ) -> Option<AccountWitness> {
-        let guard = self
-            .inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
-
-        match guard.historical_state(block_number) {
-            HistoricalState::Latest => Some(guard.latest.open(account_id)),
+        match self.historical_state(block_number) {
+            HistoricalState::Latest => Some(self.latest.open(account_id)),
             HistoricalState::Target(block_number) => {
-                guard.overlays.get(&block_number)?;
+                self.overlays.get(&block_number)?;
 
-                Self::reconstruct_historical_witness(&guard, account_id, block_number)
+                Self::reconstruct_historical_witness(&self, account_id, block_number)
             },
             HistoricalState::Future | HistoricalState::TooAncient => None,
         }
     }
 
+    /// Checks if the tree contains the account prefix.
+    pub fn contains_account_id_prefix(
+        &self,
+        prefix: miden_objects::account::AccountIdPrefix,
+    ) -> bool {
+        self.latest.contains_account_id_prefix(prefix)
+    }
+
+    pub fn historical_state(&self, desired_block_number: BlockNumber) -> HistoricalState {
+        if desired_block_number == self.block_number {
+            return HistoricalState::Latest;
+        }
+        let Some(_) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
+            return HistoricalState::Future;
+        };
+        let Some(_) = self.overlays.get(&desired_block_number) else {
+            return HistoricalState::TooAncient;
+        };
+        HistoricalState::Target(desired_block_number)
+    }
+
+    // UTILTIES
+    // --------------------------------------------------------------------------------------------
+
     /// Reconstructs a historical account witness by applying reversion overlays.
     fn reconstruct_historical_witness(
-        guard: &InnerState<S>,
+        &self,
         account_id: AccountId,
         block_target: BlockNumber,
     ) -> Option<AccountWitness> {
-        let latest_witness = guard.latest.open(account_id);
+        let latest_witness = self.latest.open(account_id);
         let (latest_path, leaf) = latest_witness.into_proof().into_parts();
         let (initial_mask, mut latest_nodes) = latest_path.into_parts();
 
@@ -301,7 +266,7 @@ where
 
         // Apply reversion overlays to reconstruct the historical state.
         let (path, leaf) = Self::apply_reversion_overlays(
-            &guard.overlays,
+            &self.overlays,
             block_target,
             path_nodes,
             leaf_index,
@@ -423,11 +388,7 @@ where
 
     /// Gets the account state at the latest block.
     pub fn get(&self, account_id: AccountId) -> Word {
-        self.inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .latest
-            .get(account_id)
+        self.latest.get(account_id)
     }
 
     // PUBLIC MUTATORS
@@ -435,41 +396,24 @@ where
 
     /// Applies mutations and advances to the next block.
     pub fn apply_mutations(
-        &self,
+        &mut self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
     ) -> Result<(), HistoricalError> {
-        let mut inner = self
-            .inner
-            .write()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
-
         let accounts = Vec::from_iter(account_commitments);
 
         // - use hashmaps
         // - split up -- compute mutations from apply_mutations
         // - drop Inner
-        let mutations = inner.latest.compute_mutations(accounts)?;
-        let rev = inner.latest.apply_mutations_with_reversion(mutations)?;
+        let mutations = self.latest.compute_mutations(accounts)?;
+        let rev = self.latest.apply_mutations_with_reversion(mutations)?;
 
-        let block_num = inner.block_number;
+        let block_num = self.block_number;
         let overlay = HistoricalOverlay::new(block_num, rev);
-        inner.overlays.insert(block_num, overlay);
-        inner.block_number = block_num.child();
+        self.overlays.insert(block_num, overlay);
+        self.block_number = block_num.child();
 
-        Self::drain_excess(&mut inner.overlays);
+        Self::drain_excess(&mut self.overlays);
 
         Ok(())
-    }
-
-    /// Checks if the tree contains the account prefix.
-    pub fn contains_account_id_prefix(
-        &self,
-        prefix: miden_objects::account::AccountIdPrefix,
-    ) -> bool {
-        self.inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .latest
-            .contains_account_id_prefix(prefix)
     }
 }

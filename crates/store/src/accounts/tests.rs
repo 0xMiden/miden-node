@@ -56,7 +56,7 @@ mod account_tree_with_history_tests {
 
         // Create a separate tree for history tracking
         let hist_tree = create_account_tree(states[0].clone());
-        let hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
+        let mut hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
         hist.apply_mutations([(ids[0], states[1][0].1), (ids[2], states[1][2].1)])
             .unwrap();
         hist.apply_mutations([(ids[1], states[2][1].1)]).unwrap();
@@ -82,7 +82,7 @@ mod account_tree_with_history_tests {
 
         let id = AccountIdBuilder::new().build_with_seed([30; 32]);
         let tree = create_account_tree([(id, Word::from([1u32, 0, 0, 0]))]);
-        let hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
+        let mut hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
 
         for i in 1..=(MAX_HIST + 5) {
             hist.apply_mutations([(id, Word::from([dbg!(i) as u32, 0, 0, 0]))]).unwrap();
@@ -109,7 +109,7 @@ mod account_tree_with_history_tests {
 
         // Create separate tree for history tracking
         let hist_tree = create_account_tree(vec![(id0, v0)]);
-        let hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
+        let mut hist = AccountTreeWithHistory::new(hist_tree, BlockNumber::GENESIS);
         hist.apply_mutations([(id1, v1)]).unwrap();
         hist.apply_mutations([(id0, Word::default())]).unwrap();
 
@@ -149,7 +149,7 @@ mod account_tree_with_history_tests {
             .collect();
 
         let initial_tree = create_account_tree(initial_state.clone());
-        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
+        let mut hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Apply 10 blocks of updates, each updating 5 accounts
         let num_blocks = 5;
@@ -246,7 +246,7 @@ mod account_tree_with_history_tests {
             .collect();
 
         let initial_tree = create_account_tree(initial_state.clone());
-        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
+        let mut hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Apply updates to all accounts in each block
         let num_blocks = 5;
@@ -305,7 +305,7 @@ mod account_tree_with_history_tests {
             .collect();
 
         let initial_tree = create_account_tree(initial_state.clone());
-        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
+        let mut hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Block 1: Add 50 more accounts
         let updates1: Vec<_> = ids
@@ -380,7 +380,7 @@ mod account_tree_with_history_tests {
             .collect();
 
         let initial_tree = create_account_tree(initial_state.clone());
-        let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
+        let mut hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Block 1: Delete half the accounts (set to empty word)
         let deletes: Vec<_> = ids.iter().take(10).map(|&id| (id, Word::default())).collect();

@@ -28,7 +28,7 @@ use crate::store::StoreClient;
 
 /// The reason an actor has shut down.
 pub enum ActorShutdownReason {
-    /// Occurs when an account actor processes a transaction that reverts it's account creation.
+    /// Occurs when the transaction that created the actor is reverted.
     AccountReverted(NetworkAccountPrefix),
     /// Occurs when an account actor detects failure in the messaging channel used by the
     /// coordinator.
@@ -36,7 +36,8 @@ pub enum ActorShutdownReason {
     /// Occurs when an account actor detects failure in acquiring the rate-limiting semaphore.
     SemaphoreFailed(AcquireError),
     /// Occurs when an account actor detects its corresponding cancellation token has been triggered
-    /// by the coordinator.
+    /// by the coordinator. Cancellation tokens are triggered by the coordinator to initiate
+    /// graceful shutdown of actors.
     Cancelled(NetworkAccountPrefix),
 }
 
@@ -53,7 +54,8 @@ pub struct AccountActorConfig {
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     // undesirable due to the performance impact.
     pub tx_prover_url: Option<Url>,
-    /// The latest chain state that account actors can rely on.
+    /// The latest chain state that account all actors can rely on. A single chain state is shared
+    /// among all actors.
     pub chain_state: Arc<RwLock<ChainState>>,
 }
 
@@ -63,7 +65,8 @@ pub struct AccountActorConfig {
 /// The origin of the account which the actor will use to initialize the account state.
 #[derive(Debug)]
 pub enum AccountOrigin {
-    /// Accounts that have been created by a transaction.
+    /// Accounts that have just been created by a transaction but have not been committed to the
+    /// store yet.
     Transaction(Box<Account>),
     /// Accounts that already exist in the store.
     Store(NetworkAccountPrefix),

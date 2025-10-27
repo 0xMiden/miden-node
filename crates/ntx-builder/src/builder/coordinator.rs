@@ -44,7 +44,7 @@ impl ActorHandle {
 /// - Monitors actor tasks through a join set to detect completion or errors.
 ///
 /// ## Event Broadcasting
-/// - Distributes mempool events to all relevant account actors.
+/// - Distributes mempool events to all account actors.
 /// - Handles communication failures by canceling disconnected actors.
 /// - Maintains reliable message delivery through dedicated channels per actor.
 ///

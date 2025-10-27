@@ -18,10 +18,10 @@ static DB_COUNTER: AtomicUsize = AtomicUsize::new(0);
 // HELPER FUNCTIONS
 // ================================================================================================
 
-/// Creates a RocksDB storage instance in target/bench_* directory for benchmarking.
+/// Creates a `RocksDB` storage instance in target/bench_* directory for benchmarking.
 fn setup_rocksdb_storage() -> RocksDbStorage {
     let counter = DB_COUNTER.fetch_add(1, Ordering::SeqCst);
-    let db_path = PathBuf::from(format!("target/bench_rocksdb_{}", counter));
+    let db_path = PathBuf::from(format!("target/bench_rocksdb_{counter}"));
 
     // Clean up the directory if it exists
     if db_path.exists() {
@@ -56,7 +56,7 @@ fn generate_account_id(seed: &mut [u8; 32]) -> AccountId {
 // SETUP FUNCTIONS
 // ================================================================================================
 
-/// Sets up a vanilla `AccountTree` with specified number of accounts using RocksDB backend.
+/// Sets up a vanilla `AccountTree` with specified number of accounts using `RocksDB` backend.
 fn setup_vanilla_account_tree(
     num_accounts: usize,
 ) -> (AccountTree<LargeSmt<RocksDbStorage>>, Vec<AccountId>) {
@@ -78,7 +78,7 @@ fn setup_vanilla_account_tree(
     (tree, account_ids)
 }
 
-/// Sets up `AccountTreeWithHistory` with specified number of accounts and blocks using RocksDB
+/// Sets up `AccountTreeWithHistory` with specified number of accounts and blocks using `RocksDB`
 /// backend.
 fn setup_account_tree_with_history(
     num_accounts: usize,

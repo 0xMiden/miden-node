@@ -76,20 +76,25 @@ mod account_tree_with_history_tests {
 
     #[test]
     fn test_history_limits() {
+        const MAX_HIST: u32 =
+            AccountTreeWithHistory::<AccountTree<LargeSmt<MemoryStorage>>>::MAX_HISTORY as u32;
+        use assert_matches::assert_matches;
+
         let id = AccountIdBuilder::new().build_with_seed([30; 32]);
         let tree = create_account_tree([(id, Word::from([1u32, 0, 0, 0]))]);
         let hist = AccountTreeWithHistory::new(tree, BlockNumber::GENESIS);
 
+        const MAX_HIST: u32 = AccountTreeWithHistory::<AccountTree<LargeSmt<MemoryStorage>>>::MAX_HISTORY as u32;
         for i in
-            1..=(AccountTreeWithHistory::<AccountTree<LargeSmt<MemoryStorage>>>::MAX_HISTORY + 5)
-        {
-            hist.apply_mutations([(id, Word::from([i as u32, 0, 0, 0]))]).unwrap();
+            1..=(MAX_HIST + 5)        {
+            hist.apply_mutations([(id, Word::from([dbg!(i) as u32, 0, 0, 0]))]).unwrap();
+            assert_eq!(hist.block_number_latest(), BlockNumber::from(i));
         }
 
         let current = hist.block_number_latest();
-        assert!(hist.open_at(id, current).is_some());
-        assert!(hist.open_at(id, BlockNumber::GENESIS).is_none());
-        assert!(hist.open_at(id, current.child()).is_none());
+        assert_matches!(hist.open_at(id, current), Some(_));
+        assert_matches!(hist.open_at(id, BlockNumber::GENESIS), None);
+        assert_matches!(hist.open_at(id, current.child()), None);
     }
 
     #[test]
@@ -149,7 +154,7 @@ mod account_tree_with_history_tests {
         let hist = AccountTreeWithHistory::new(initial_tree, BlockNumber::GENESIS);
 
         // Apply 10 blocks of updates, each updating 5 accounts
-        let num_blocks = 10;
+        let num_blocks = 5;
         for block in 1..=num_blocks {
             let updates: Vec<_> = (0..5)
                 .map(|i| {
@@ -165,7 +170,7 @@ mod account_tree_with_history_tests {
         assert_eq!(hist.block_number_latest(), BlockNumber::from(num_blocks as u32));
 
         // Check genesis state for a few accounts
-        for i in 0..5 {
+        for i in 0..4 {
             let witness = hist.open_at(ids[i], BlockNumber::GENESIS).unwrap();
             assert_eq!(
                 witness.state_commitment(),

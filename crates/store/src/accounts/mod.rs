@@ -1,6 +1,6 @@
 //! Historical tracking for `AccountTree` via mutation overlays
 
-use std::collections::VecDeque;
+use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 
 use miden_objects::account::AccountId;
@@ -104,9 +104,9 @@ pub enum HistoricalError {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HistoricalOffset {
+pub enum HistoricalState {
     Future,
-    ReversionsIdx(usize),
+    Target(BlockNumber),
     Latest,
     TooAncient,
 }
@@ -131,25 +131,24 @@ where
 {
     block_number: BlockNumber,
     latest: S,
-    overlays: VecDeque<Arc<HistoricalOverlay>>,
+    overlays: std::collections::BTreeMap<BlockNumber, Arc<HistoricalOverlay>>,
 }
 
 impl<S> InnerState<S>
 where
     S: AccountTreeStorage,
 {
-    pub fn historical_offset(&self, desired_block_number: BlockNumber) -> HistoricalOffset {
-        let Some(past_offset) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
-            return HistoricalOffset::Future;
-        };
-        let past_offset = past_offset.as_usize();
-        match past_offset {
-            0 => HistoricalOffset::Latest,
-            1..=AccountTreeWithHistory::<S>::MAX_HISTORY => {
-                HistoricalOffset::ReversionsIdx(past_offset - 1)
-            },
-            _ => HistoricalOffset::TooAncient,
+    pub fn historical_offset(&self, desired_block_number: BlockNumber) -> HistoricalState {
+        if desired_block_number == self.block_number {
+            return HistoricalState::Latest;
         }
+        let Some(_) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
+            return HistoricalState::Future;
+        };
+        let Some(_) = self.overlays.get(&desired_block_number) else {
+            return HistoricalState::TooAncient;
+        };
+        HistoricalState::Target(desired_block_number)
     }
 }
 
@@ -177,15 +176,15 @@ where
             inner: Arc::new(RwLock::new(InnerState {
                 block_number,
                 latest: account_tree,
-                overlays: VecDeque::new(),
+                overlays: std::collections::BTreeMap::new(),
             })),
         }
     }
 
     /// Remove any items that exceed the maximum number of historical overlays.
-    fn drain_excess(overlays: &mut VecDeque<Arc<HistoricalOverlay>>) {
+    fn drain_excess(overlays: &mut BTreeMap<BlockNumber, HistoricalOverlay>) {
         while overlays.len() > Self::MAX_HISTORY {
-            overlays.pop_back();
+            overlays.pop_first();
         }
     }
 
@@ -194,10 +193,19 @@ where
 
     /// Returns the latest block number.
     pub fn block_number_latest(&self) -> BlockNumber {
-        self.inner
+        let guard = self
+            .inner
             .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock")
-            .block_number
+            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
+        assert_eq!(
+            guard.overlays.iter().last().map(|(block, overlay)| {
+                assert_eq!(*block, overlay.block_number);
+                let block = block.child();
+                block
+            }),
+            Some(guard.block_number.clone())
+        );
+        guard.block_number
     }
 
     /// Returns the latest root.
@@ -217,13 +225,13 @@ where
             .expect("RwLock poisoned: concurrent thread panicked while holding lock");
 
         match guard.historical_offset(block_number) {
-            HistoricalOffset::Latest => Some(guard.latest.root()),
-            HistoricalOffset::ReversionsIdx(idx) => {
-                let overlay_at = guard.overlays.get(idx)?;
+            HistoricalState::Latest => Some(guard.latest.root()),
+            HistoricalState::Target(block_number) => {
+                let overlay_at = guard.overlays.get(&block_number)?;
                 assert_eq!(overlay_at.block_number, block_number);
                 Some(overlay_at.rev_set.as_mutation_set().root())
             },
-            HistoricalOffset::Future | HistoricalOffset::TooAncient => None,
+            HistoricalState::Future | HistoricalState::TooAncient => None,
         }
     }
 
@@ -271,15 +279,13 @@ where
             .expect("RwLock poisoned: concurrent thread panicked while holding lock");
 
         match guard.historical_offset(block_number) {
-            HistoricalOffset::Latest => Some(guard.latest.open(account_id)),
-            HistoricalOffset::ReversionsIdx(idx) => {
-                if idx >= guard.overlays.len() {
-                    return None;
-                }
+            HistoricalState::Latest => Some(guard.latest.open(account_id)),
+            HistoricalState::Target(block_number) => {
+                guard.overlays.get(&block_number)?;
 
-                Self::reconstruct_historical_witness(&guard, account_id, idx)
+                Self::reconstruct_historical_witness(&guard, account_id, block_number)
             },
-            HistoricalOffset::Future | HistoricalOffset::TooAncient => None,
+            HistoricalState::Future | HistoricalState::TooAncient => None,
         }
     }
 
@@ -287,7 +293,7 @@ where
     fn reconstruct_historical_witness(
         guard: &InnerState<S>,
         account_id: AccountId,
-        overlay_idx: usize,
+        block_target: BlockNumber,
     ) -> Option<AccountWitness> {
         let latest_witness = guard.latest.open(account_id);
         let (latest_path, leaf) = latest_witness.into_proof().into_parts();
@@ -304,8 +310,8 @@ where
         // Apply reversion overlays to reconstruct the historical state.
         let (path, leaf) = Self::apply_reversion_overlays(
             &guard.overlays,
-            overlay_idx,
-            &mut path_nodes,
+            block_target,
+            path_nodes,
             leaf_index,
             leaf,
         )?;
@@ -347,13 +353,15 @@ where
     /// We iterate through overlays from newest to oldest (going back in time),
     /// updating both the path nodes and the leaf value based on the reversion mutations.
     fn apply_reversion_overlays(
-        overlays: &VecDeque<Arc<HistoricalOverlay>>,
-        overlay_idx: usize,
-        path_nodes: &mut [Option<Word>; SMT_DEPTH as usize],
+        overlays: &BTreeMap<BlockNumber, HistoricalOverlay>,
+        block_target: BlockNumber,
+        mut path_nodes: [Option<Word>; SMT_DEPTH as usize],
         leaf_index: NodeIndex,
         mut leaf: SmtLeaf,
-    ) -> SmtLeaf {
-        for overlay in overlays.iter().take(overlay_idx + 1) {
+    ) -> Option<(SparseMerklePath, SmtLeaf)> {
+        for (_, overlay) in
+            overlays.iter().rev().take_while(|(block_num, _)| block_target <= **block_num)
+        {
             let rev_muts = overlay.rev_set.as_mutation_set().node_mutations();
 
             // Update the path sibling nodes that changed in this overlay.
@@ -450,10 +458,12 @@ where
         // - drop Inner
         let mutations = inner.latest.compute_mutations(accounts)?;
         let rev = inner.latest.apply_mutations_with_reversion(mutations)?;
-        let overlay = HistoricalOverlay::new(inner.block_number, rev);
 
-        inner.overlays.push_front(Arc::new(overlay));
-        inner.block_number = inner.block_number.child();
+        let block_num = inner.block_number;
+        let overlay = HistoricalOverlay::new(block_num, rev);
+        inner.overlays.insert(block_num, overlay);
+        inner.block_number = block_num.child();
+
         Self::drain_excess(&mut inner.overlays);
 
         Ok(())

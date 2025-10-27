@@ -140,6 +140,9 @@ impl StoreClient {
         network_account_prefix: NetworkAccountPrefix,
         block_num: u32,
     ) -> Result<Vec<NetworkNote>, StoreError> {
+        // Upper bound of each note is ~10KB. Limit page size to ~10MB.
+        const PAGE_SIZE: u64 = 1024;
+
         let mut all_notes = Vec::new();
         let mut page_token: Option<u64> = None;
 
@@ -147,7 +150,7 @@ impl StoreClient {
         loop {
             let req = proto::ntx_builder_store::UnconsumedNetworkNotesRequest {
                 page_token,
-                page_size: 128,
+                page_size: PAGE_SIZE,
                 network_account_id_prefix: network_account_prefix.inner(),
                 block_num,
             };

@@ -78,7 +78,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::{COMPONENT, DataDirectory};
+use crate::{COMPONENT, DataDirectory, InMemoryAccountTree};
 
 // STRUCTURES
 // ================================================================================================
@@ -1116,7 +1116,7 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 async fn load_account_tree(
     db: &mut Db,
     _block_num: BlockNumber,
-) -> Result<AccountTree<LargeSmt<MemoryStorage>>, StateInitializationError> {
+) -> Result<InMemoryAccountTree, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     // Convert account_data to use account_id_to_smt_key

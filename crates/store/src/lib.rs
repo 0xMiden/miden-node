@@ -1,15 +1,15 @@
 use std::time::Duration;
 
+mod accounts;
 mod blocks;
 mod db;
 mod errors;
 pub mod genesis;
-pub mod historical;
 mod server;
 pub mod state;
 
+pub use accounts::{AccountTreeStorage, AccountTreeWithHistory, InMemoryAccountTree};
 pub use genesis::GenesisState;
-pub use historical::{AccountTreeBackend, AccountTreeWithHistory};
 pub use server::{DataDirectory, Store};
 
 // CONSTANTS

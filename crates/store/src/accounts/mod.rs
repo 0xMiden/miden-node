@@ -8,6 +8,7 @@ use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, Bloc
 use miden_objects::crypto::merkle::{
     LargeSmt,
     LeafIndex,
+    MemoryStorage,
     MerkleError,
     NodeIndex,
     NodeMutation,
@@ -18,8 +19,11 @@ use miden_objects::crypto::merkle::{
 };
 use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
 
+/// Convenience for an in-memory-only account tree.
+pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
+
 /// Trait abstracting operations over different account tree backends.
-pub trait AccountTreeBackend {
+pub trait AccountTreeStorage {
     /// Returns the root hash of the tree.
     fn root(&self) -> Word;
 
@@ -48,7 +52,7 @@ pub trait AccountTreeBackend {
     fn contains_account_id_prefix(&self, prefix: miden_objects::account::AccountIdPrefix) -> bool;
 }
 
-impl<S> AccountTreeBackend for AccountTree<LargeSmt<S>>
+impl<S> AccountTreeStorage for AccountTree<LargeSmt<S>>
 where
     S: SmtStorage,
 {
@@ -123,7 +127,7 @@ impl HistoricalOverlay {
 #[derive(Debug)]
 struct InnerState<S>
 where
-    S: AccountTreeBackend,
+    S: AccountTreeStorage,
 {
     block_number: BlockNumber,
     latest: S,
@@ -132,7 +136,7 @@ where
 
 impl<S> InnerState<S>
 where
-    S: AccountTreeBackend,
+    S: AccountTreeStorage,
 {
     pub fn historical_offset(&self, desired_block_number: BlockNumber) -> HistoricalOffset {
         let Some(past_offset) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
@@ -153,14 +157,14 @@ where
 #[derive(Debug, Clone)]
 pub struct AccountTreeWithHistory<S>
 where
-    S: AccountTreeBackend,
+    S: AccountTreeStorage,
 {
     inner: Arc<RwLock<InnerState<S>>>,
 }
 
 impl<S> AccountTreeWithHistory<S>
 where
-    S: AccountTreeBackend,
+    S: AccountTreeStorage,
 {
     pub const MAX_HISTORY: usize = 33;
 
@@ -286,29 +290,25 @@ where
         overlay_idx: usize,
     ) -> Option<AccountWitness> {
         let latest_witness = guard.latest.open(account_id);
-        let (latest_path, mut leaf) = latest_witness.into_proof().into_parts();
+        let (latest_path, leaf) = latest_witness.into_proof().into_parts();
         let (initial_mask, mut latest_nodes) = latest_path.into_parts();
 
         // Initialize path_nodes with the latest state.
         // Reverse latest_nodes because they come in high-to-low depth order
         // but we need to initialize path_nodes in low-to-high depth order.
         latest_nodes.reverse();
-        let mut path_nodes = Self::initialize_path_nodes(initial_mask, &latest_nodes);
+        let path_nodes = Self::initialize_path_nodes(initial_mask, &latest_nodes);
 
         let leaf_index = NodeIndex::from(leaf.index());
 
         // Apply reversion overlays to reconstruct the historical state.
-        leaf = Self::apply_reversion_overlays(
+        let (path, leaf) = Self::apply_reversion_overlays(
             &guard.overlays,
             overlay_idx,
             &mut path_nodes,
             leaf_index,
             leaf,
-        );
-
-        // Reconstruct the SparseMerklePath from the historical path_nodes.
-        let (empty_mask, nodes) = Self::build_sparse_path(&path_nodes);
-        let path = SparseMerklePath::from_parts(empty_mask, nodes).ok()?;
+        )?;
 
         let commitment = match leaf {
             SmtLeaf::Empty(_) => EMPTY_WORD,
@@ -392,7 +392,9 @@ where
             }
         }
 
-        leaf
+        let (empty_nodes_mask, nodes) = Self::build_sparse_path(&path_nodes);
+        let path = SparseMerklePath::from_parts(empty_nodes_mask, nodes).ok()?;
+        Some((path, leaf))
     }
 
     /// Builds a `SparseMerklePath` from the `path_nodes` array.
@@ -443,6 +445,9 @@ where
 
         let accounts = Vec::from_iter(account_commitments);
 
+        // - use hashmaps
+        // - split up -- compute mutations from apply_mutations
+        // - drop Inner
         let mutations = inner.latest.compute_mutations(accounts)?;
         let rev = inner.latest.apply_mutations_with_reversion(mutations)?;
         let overlay = HistoricalOverlay::new(inner.block_number, rev);
@@ -452,18 +457,6 @@ where
         Self::drain_excess(&mut inner.overlays);
 
         Ok(())
-    }
-
-    /// Returns the oldest block still in history.
-    pub fn oldest_block_num(&self) -> BlockNumber {
-        let inner = self
-            .inner
-            .read()
-            .expect("RwLock poisoned: concurrent thread panicked while holding lock");
-        inner
-            .block_number
-            .checked_sub(inner.overlays.len() as u32)
-            .unwrap_or(BlockNumber::GENESIS)
     }
 
     /// Checks if the tree contains the account prefix.

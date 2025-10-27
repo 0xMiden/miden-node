@@ -177,9 +177,7 @@ impl AccountState {
     ///
     /// The note data is retained until the nullifier is committed.
     ///
-    /// # Panics
-    ///
-    /// Panics if the note does not exist or was already nullified.
+    /// Returns `Err(())` if the note does not exist or was already nullified.
     pub fn add_nullifier(&mut self, nullifier: Nullifier) -> Result<(), ()> {
         if let Some(note) = self.available_notes.remove(&nullifier) {
             self.nullified_notes.insert(nullifier, note);
@@ -192,9 +190,8 @@ impl AccountState {
 
     /// Marks a nullifier as being committed, removing the associated note data entirely.
     ///
-    /// # Panics
-    ///
-    /// Panics if the associated note is not marked as nullified.
+    /// Silently ignores the request if the nullifier is not present, which can happen
+    /// if the note's transaction wasn't available when the nullifier was added.
     pub fn commit_nullifier(&mut self, nullifier: Nullifier) {
         // we might not have this if we didn't add it with `add_nullifier`
         // in case it's transaction wasn't available in the first place.

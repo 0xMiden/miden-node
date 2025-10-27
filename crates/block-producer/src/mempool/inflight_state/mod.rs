@@ -107,7 +107,7 @@ impl InflightState {
         // Separate verification and state mutation so that a rejected transaction
         // does not impact the state (atomicity).
         self.verify_transaction(tx).inspect_err(|e| {
-            tracing::warn!("Error on auth'd tx submission: {e:?}");
+            tracing::warn!("Failed to verify transaction", error = ?e);
         })?;
 
         let parents = self.insert_transaction(tx);

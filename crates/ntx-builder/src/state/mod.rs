@@ -342,18 +342,17 @@ impl State {
             self.in_progress.remove(&prefix);
             tx_impact.account_delta = Some(prefix);
         }
-        // failed to fetch account, so ignore the nullifier
         for note in network_notes {
             let prefix = note.account_prefix();
-            // Skip notes which target a non-existent network account.
-            if let Some(account) = self.fetch_account(prefix).await? {
-                tx_impact.notes.insert(note.nullifier());
 
-                account.add_note(note.clone());
-            } else {
+            // Skip and ignore nullifier if note targets a non-existent network account
+            let Some(account) = self.fetch_account(prefix).await? else {
                 tracing::warn!("could not fetch account from network: {:?}", prefix);
                 continue;
-            }
+            };
+
+            tx_impact.notes.insert(note.nullifier());
+            account.add_note(note.clone());
             self.nullifier_idx.insert(note.nullifier(), prefix);
         }
         for nullifier in nullifiers {

@@ -106,8 +106,8 @@ impl InflightState {
     ) -> Result<BTreeSet<TransactionId>, AddTransactionError> {
         // Separate verification and state mutation so that a rejected transaction
         // does not impact the state (atomicity).
-        self.verify_transaction(tx).inspect_err(|e| {
-            tracing::warn!("Failed to verify transaction", error = ?e);
+        self.verify_transaction(tx).inspect_err(|error| {
+            tracing::warn!(?error, "Failed to verify transaction");
         })?;
 
         let parents = self.insert_transaction(tx);

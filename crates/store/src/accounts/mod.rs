@@ -3,24 +3,21 @@
 use std::collections::BTreeMap;
 
 use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath};
-use miden_objects::account::AccountId;
-use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
-use miden_objects::crypto::merkle::{
-    LargeSmt,
-    LeafIndex,
-    MemoryStorage,
-    MerkleError,
-    NodeIndex,
-    NodeMutation,
-    SMT_DEPTH,
-    SmtLeaf,
-    SmtStorage,
-    SparseMerklePath,
+use miden_objects::{
+    account::AccountId,
+    block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber},
+    crypto::merkle::{
+        LargeSmt, LeafIndex, MemoryStorage, MerkleError, NodeIndex, NodeMutation, SmtLeaf,
+        SmtStorage, SparseMerklePath, SMT_DEPTH,
+    },
+    AccountTreeError, EMPTY_WORD, Word,
 };
-use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
 
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
+
+// ACCOUNT TREE STORAGE TRAIT
+// ================================================================================================
 
 /// Trait abstracting operations over different account tree backends.
 pub trait AccountTreeStorage {
@@ -94,6 +91,9 @@ where
 #[cfg(test)]
 mod tests;
 
+// ERROR TYPES
+// ================================================================================================
+
 #[allow(missing_docs)]
 #[derive(thiserror::Error, Debug)]
 pub enum HistoricalError {
@@ -103,15 +103,25 @@ pub enum HistoricalError {
     AccountTreeError(#[from] AccountTreeError),
 }
 
+// HISTORICAL STATE ENUM
+// ================================================================================================
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HistoricalState {
+    /// The requested block is in the future (later than current block).
     Future,
+    /// The requested block is available in history.
     Target(BlockNumber),
+    /// The requested block is the current/latest block.
     Latest,
+    /// The requested block is too old and has been pruned from history.
     TooAncient,
 }
 
-/// Captures reversion state for historical queries.
+// HISTORICAL OVERLAY
+// ================================================================================================
+
+/// Captures reversion state for historical queries at a specific block.
 #[derive(Debug, Clone)]
 struct HistoricalOverlay {
     block_number: BlockNumber,
@@ -124,14 +134,24 @@ impl HistoricalOverlay {
     }
 }
 
+// ACCOUNT TREE WITH HISTORY
+// ================================================================================================
+
 /// Wraps `AccountTree` with historical query support via reversion overlays.
+///
+/// This structure maintains a sliding window of historical account states by storing
+/// reversion data (mutations that undo changes). Historical witnesses are reconstructed
+/// by starting from the latest state and applying reversion overlays backwards in time.
 #[derive(Debug, Clone)]
 pub struct AccountTreeWithHistory<S>
 where
     S: AccountTreeStorage,
 {
+    /// The current block number (latest state).
     block_number: BlockNumber,
+    /// The latest account tree state.
     latest: S,
+    /// Historical overlays indexed by block number, storing reversion data.
     overlays: BTreeMap<BlockNumber, HistoricalOverlay>,
 }
 
@@ -139,12 +159,13 @@ impl<S> AccountTreeWithHistory<S>
 where
     S: AccountTreeStorage,
 {
+    /// Maximum number of historical blocks to maintain.
     pub const MAX_HISTORY: usize = 33;
 
     // CONSTRUCTORS
     // --------------------------------------------------------------------------------------------
 
-    /// Creates a new historical tree.
+    /// Creates a new historical tree starting at the given block number.
     pub fn new(account_tree: S, block_number: BlockNumber) -> Self {
         Self {
             block_number,
@@ -153,7 +174,7 @@ where
         }
     }
 
-    /// Remove any items that exceed the maximum number of historical overlays.
+    /// Removes oldest overlays when exceeding the maximum history depth.
     fn drain_excess(overlays: &mut BTreeMap<BlockNumber, HistoricalOverlay>) {
         while overlays.len() > Self::MAX_HISTORY {
             overlays.pop_first();
@@ -168,45 +189,49 @@ where
         self.block_number
     }
 
-    /// Returns the latest root.
+    /// Returns the root hash of the latest state.
     pub fn root_latest(&self) -> Word {
         self.latest.root()
     }
 
-    /// Returns the root at the given historical block.
+    /// Returns the root hash at a specific historical block.
+    ///
+    /// Returns `None` if the block is in the future or too old (pruned).
     pub fn root_at(&self, block_number: BlockNumber) -> Option<Word> {
         match self.historical_state(block_number) {
             HistoricalState::Latest => Some(self.latest.root()),
             HistoricalState::Target(block_number) => {
-                let overlay_at = self.overlays.get(&block_number)?;
-                assert_eq!(overlay_at.block_number, block_number);
-                Some(overlay_at.rev_set.as_mutation_set().root())
+                let overlay = self.overlays.get(&block_number)?;
+                debug_assert_eq!(overlay.block_number, block_number);
+                Some(overlay.rev_set.as_mutation_set().root())
             },
             HistoricalState::Future | HistoricalState::TooAncient => None,
         }
     }
 
-    /// Returns the account count.
+    /// Returns the number of accounts in the latest state.
     pub fn num_accounts_latest(&self) -> usize {
         self.latest.num_accounts()
     }
 
-    /// Returns the history depth.
+    /// Returns the number of historical blocks currently stored.
     pub fn history_len(&self) -> usize {
         self.overlays.len()
     }
 
-    /// Opens an account at the latest block.
+    /// Opens an account at the latest block, returning its witness.
     pub fn open_latest(&self, account_id: AccountId) -> AccountWitness {
         self.latest.open(account_id)
     }
 
-    /// Opens an account at a historical block.
+    /// Opens an account at a historical block, returning its witness.
     ///
     /// This method reconstructs the account witness at the given historical block by:
     /// 1. Starting with the latest account state
     /// 2. Applying reversion mutations from the overlays to walk back in time
     /// 3. Reconstructing the Merkle path with the historical node values
+    ///
+    /// Returns `None` if the block is in the future or too old (pruned).
     pub fn open_at(
         &self,
         account_id: AccountId,
@@ -215,15 +240,20 @@ where
         match self.historical_state(block_number) {
             HistoricalState::Latest => Some(self.latest.open(account_id)),
             HistoricalState::Target(block_number) => {
+                // Ensure overlay exists before reconstruction
                 self.overlays.get(&block_number)?;
-
-                Self::reconstruct_historical_witness(&self, account_id, block_number)
+                Self::reconstruct_historical_witness(self, account_id, block_number)
             },
             HistoricalState::Future | HistoricalState::TooAncient => None,
         }
     }
 
-    /// Checks if the tree contains the account prefix.
+    /// Gets the account state commitment at the latest block.
+    pub fn get(&self, account_id: AccountId) -> Word {
+        self.latest.get(account_id)
+    }
+
+    /// Checks if the tree contains an account with the given prefix.
     pub fn contains_account_id_prefix(
         &self,
         prefix: miden_objects::account::AccountIdPrefix,
@@ -231,20 +261,26 @@ where
         self.latest.contains_account_id_prefix(prefix)
     }
 
+    /// Determines the historical state of a requested block number.
     pub fn historical_state(&self, desired_block_number: BlockNumber) -> HistoricalState {
         if desired_block_number == self.block_number {
             return HistoricalState::Latest;
         }
-        let Some(_) = self.block_number.checked_sub(desired_block_number.as_u32()) else {
+
+        // Check if block is in the future
+        if self.block_number.checked_sub(desired_block_number.as_u32()).is_none() {
             return HistoricalState::Future;
-        };
-        let Some(_) = self.overlays.get(&desired_block_number) else {
+        }
+
+        // Check if block exists in overlays
+        if self.overlays.get(&desired_block_number).is_none() {
             return HistoricalState::TooAncient;
-        };
+        }
+
         HistoricalState::Target(desired_block_number)
     }
 
-    // UTILTIES
+    // PRIVATE HELPERS - HISTORICAL RECONSTRUCTION
     // --------------------------------------------------------------------------------------------
 
     /// Reconstructs a historical account witness by applying reversion overlays.
@@ -253,19 +289,19 @@ where
         account_id: AccountId,
         block_target: BlockNumber,
     ) -> Option<AccountWitness> {
+        // Start with the latest witness
         let latest_witness = self.latest.open(account_id);
         let (latest_path, leaf) = latest_witness.into_proof().into_parts();
         let (initial_mask, mut latest_nodes) = latest_path.into_parts();
 
-        // Initialize path_nodes with the latest state.
-        // Reverse latest_nodes because they come in high-to-low depth order
-        // but we need to initialize path_nodes in low-to-high depth order.
+        // Reverse nodes: SparseMerklePath stores them from root to leaf (high to low depth),
+        // but we need leaf to root (low to high depth) for indexing by depth.
         latest_nodes.reverse();
         let path_nodes = Self::initialize_path_nodes(initial_mask, &latest_nodes);
 
         let leaf_index = NodeIndex::from(leaf.index());
 
-        // Apply reversion overlays to reconstruct the historical state.
+        // Apply reversion overlays to reconstruct historical state
         let (path, leaf) = Self::apply_reversion_overlays(
             &self.overlays,
             block_target,
@@ -274,6 +310,7 @@ where
             leaf,
         )?;
 
+        // Extract commitment from leaf
         let commitment = match leaf {
             SmtLeaf::Empty(_) => EMPTY_WORD,
             SmtLeaf::Single((_, value)) => value,
@@ -283,7 +320,7 @@ where
         AccountWitness::new(account_id, commitment, path).ok()
     }
 
-    /// Initializes the `path_nodes` array from the latest state.
+    /// Initializes the path nodes array from the latest state.
     ///
     /// The `initial_mask` indicates which depths have empty nodes (bit set = empty).
     /// For non-empty depths, we populate from `latest_nodes`.
@@ -295,9 +332,9 @@ where
         let mut node_idx = 0;
 
         for (depth, path_node) in path_nodes.iter_mut().enumerate().take(SMT_DEPTH as usize) {
-            // Check if this depth is non-empty in the initial mask.
-            // If the bit at position `depth` is 0, the node is present; if 1, it's empty.
-            if (initial_mask & (1u64 << depth)) == 0 && node_idx < latest_nodes.len() {
+            // Bit at position `depth` being 0 means node is present; 1 means empty
+            let is_present = (initial_mask & (1u64 << depth)) == 0;
+            if is_present && node_idx < latest_nodes.len() {
                 *path_node = Some(latest_nodes[node_idx]);
                 node_idx += 1;
             }
@@ -308,8 +345,8 @@ where
 
     /// Applies reversion overlays to reconstruct the historical state.
     ///
-    /// We iterate through overlays from newest to oldest (going back in time),
-    /// updating both the path nodes and the leaf value based on the reversion mutations.
+    /// Iterates through overlays from newest to oldest (walking backwards in time),
+    /// updating both the path nodes and the leaf value based on reversion mutations.
     fn apply_reversion_overlays(
         overlays: &BTreeMap<BlockNumber, HistoricalOverlay>,
         block_target: BlockNumber,
@@ -317,18 +354,22 @@ where
         leaf_index: NodeIndex,
         mut leaf: SmtLeaf,
     ) -> Option<(SparseMerklePath, SmtLeaf)> {
+        // Iterate through overlays in reverse (newest to oldest)
         for (_, overlay) in
             overlays.iter().rev().take_while(|(block_num, _)| block_target <= **block_num)
         {
             let rev_muts = overlay.rev_set.as_mutation_set().node_mutations();
 
-            // Update the path sibling nodes that changed in this overlay.
+            // Update path sibling nodes that changed in this overlay
             for sibling in leaf_index.proof_indices() {
-                let height =
-                    sibling.depth().checked_sub(1).expect("proof_indices should not include root")
-                        as usize;
+                // Convert depth to height: depth 0 is root, we need height from leaf
+                // depth() returns values from 1 (leaf) to 64 (root), so subtract 1 for 0-indexed
+                let height = sibling
+                    .depth()
+                    .checked_sub(1) // -1: Convert from 1-indexed to 0-indexed
+                    .expect("proof_indices should not include root") as usize;
 
-                // Apply reversion mutations for this sibling node.
+                // Apply reversion mutation if this node was modified
                 if let Some(mutation) = rev_muts.get(&sibling) {
                     match mutation {
                         NodeMutation::Addition(inner_node) => {
@@ -339,10 +380,9 @@ where
                         },
                     }
                 }
-                // If no mutation exists, the node remains unchanged (already set from latest).
             }
 
-            // Update the leaf if it was modified in this overlay.
+            // Update leaf if it was modified in this overlay
             if let Some((key, value)) = overlay
                 .rev_set
                 .as_mutation_set()
@@ -358,43 +398,36 @@ where
             }
         }
 
+        // Build the Merkle path from reconstructed nodes
         let path = Self::build_dense_path(&path_nodes)?;
         let path = SparseMerklePath::try_from(path).ok()?;
         Some((path, leaf))
     }
 
-    /// Builds a `SparseMerklePath` from the `path_nodes` array.
+    /// Builds a dense Merkle path from the path nodes array.
     ///
-    /// The `empty_mask` is constructed by setting a bit for each empty node.
-    /// We iterate from depth 0 to `max_depth` in reverse order (high to low)
-    /// to build the nodes vector as expected by `SparseMerklePath`.
+    /// Empty nodes are filled with their corresponding empty subtree roots.
+    /// The path is built from root to leaf (high to low depth).
     fn build_dense_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> Option<MerklePath> {
-        // Start with all bits set (all empty), then clear bits for non-empty nodes.
         let dense: Vec<Word> = (0..SMT_DEPTH)
-            .rev()
+            .rev() // Iterate from depth 63 down to 0 (root to leaf)
             .map(|d| {
-                path_nodes[d as usize]
-                    .as_ref()
-                    .unwrap_or_else(|| EmptySubtreeRoots::entry(SMT_DEPTH, d + 1))
-                    .clone()
+                path_nodes[d as usize].as_ref().cloned().unwrap_or_else(|| {
+                    // d+1: EmptySubtreeRoots expects depth from leaf (depth 0 at leaf)
+                    EmptySubtreeRoots::entry(SMT_DEPTH, d + 1).clone()
+                })
             })
             .collect();
 
-        let dense = MerklePath::new(dense);
-        Some(dense)
-    }
-
-    /// Gets the account state at the latest block.
-    pub fn get(&self, account_id: AccountId) -> Word {
-        self.latest.get(account_id)
+        Some(MerklePath::new(dense))
     }
 
     // PUBLIC MUTATORS
     // --------------------------------------------------------------------------------------------
 
-    /// Combine [`compute_mutations`] and [`apply_mutations`].
+    /// Computes and applies mutations in one operation.
     ///
-    /// Primarily targeting testing.
+    /// This is a convenience method primarily for testing.
     pub fn compute_and_apply_mutations(
         &mut self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
@@ -403,7 +436,7 @@ where
         self.apply_mutations(mutations)
     }
 
-    /// Compute mutations relativ to the latest state.
+    /// Computes mutations relative to the latest state.
     pub fn compute_mutations(
         &mut self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
@@ -412,17 +445,28 @@ where
     }
 
     /// Applies mutations and advances to the next block.
+    ///
+    /// This method:
+    /// 1. Applies the mutations to the latest tree, getting back reversion data
+    /// 2. Stores the reversion data as a historical overlay
+    /// 3. Advances the block number
+    /// 4. Prunes old overlays if exceeding MAX_HISTORY
     pub fn apply_mutations(
         &mut self,
         mutations: AccountMutationSet,
     ) -> Result<(), HistoricalError> {
+        // Apply mutations and get reversion data
         let rev = self.latest.apply_mutations_with_reversion(mutations)?;
 
+        // Store reversion data for current block before advancing
         let block_num = self.block_number;
         let overlay = HistoricalOverlay::new(block_num, rev);
         self.overlays.insert(block_num, overlay);
+
+        // Advance to next block
         self.block_number = block_num.child();
 
+        // Prune old history if needed
         Self::drain_excess(&mut self.overlays);
 
         Ok(())

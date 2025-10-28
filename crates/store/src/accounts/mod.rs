@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath};
 use miden_objects::account::AccountId;
 use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
 use miden_objects::crypto::merkle::{
@@ -357,7 +358,8 @@ where
             }
         }
 
-        let path = Self::build_sparse_path(&path_nodes)?;
+        let path = Self::build_dense_path(&path_nodes)?;
+        let path = SparseMerklePath::try_from(path).ok()?;
         Some((path, leaf))
     }
 
@@ -366,25 +368,20 @@ where
     /// The `empty_mask` is constructed by setting a bit for each empty node.
     /// We iterate from depth 0 to `max_depth` in reverse order (high to low)
     /// to build the nodes vector as expected by `SparseMerklePath`.
-    fn build_sparse_path(
-        path_nodes: &[Option<Word>; SMT_DEPTH as usize],
-    ) -> Option<SparseMerklePath> {
-        let max_depth =
-            path_nodes.iter().rposition(std::option::Option::is_some).map_or(0, |d| d + 1);
-
+    fn build_dense_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> Option<MerklePath> {
         // Start with all bits set (all empty), then clear bits for non-empty nodes.
-        let mut empty_mask = u64::MAX;
-        let nodes: Vec<Word> = (0..max_depth)
+        let dense: Vec<Word> = (0..SMT_DEPTH)
             .rev()
-            .filter_map(|d| {
-                path_nodes[d].inspect(|_| {
-                    // Clear the bit at position `d` to indicate this node is present.
-                    empty_mask &= !(1u64 << d);
-                })
+            .map(|d| {
+                path_nodes[d as usize]
+                    .as_ref()
+                    .unwrap_or_else(|| EmptySubtreeRoots::entry(SMT_DEPTH, d + 1))
+                    .clone()
             })
             .collect();
 
-        SparseMerklePath::from_parts(empty_mask, nodes).ok()
+        let dense = MerklePath::new(dense);
+        Some(dense)
     }
 
     /// Gets the account state at the latest block.

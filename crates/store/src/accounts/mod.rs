@@ -3,15 +3,21 @@
 use std::collections::BTreeMap;
 
 use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath};
-use miden_objects::{
-    account::AccountId,
-    block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber},
-    crypto::merkle::{
-        LargeSmt, LeafIndex, MemoryStorage, MerkleError, NodeIndex, NodeMutation, SmtLeaf,
-        SmtStorage, SparseMerklePath, SMT_DEPTH,
-    },
-    AccountTreeError, EMPTY_WORD, Word,
+use miden_objects::account::AccountId;
+use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
+use miden_objects::crypto::merkle::{
+    LargeSmt,
+    LeafIndex,
+    MemoryStorage,
+    MerkleError,
+    NodeIndex,
+    NodeMutation,
+    SMT_DEPTH,
+    SmtLeaf,
+    SmtStorage,
+    SparseMerklePath,
 };
+use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
 
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
@@ -273,7 +279,7 @@ where
         }
 
         // Check if block exists in overlays
-        if self.overlays.get(&desired_block_number).is_none() {
+        if !self.overlays.contains_key(&desired_block_number) {
             return HistoricalState::TooAncient;
         }
 
@@ -367,7 +373,8 @@ where
                 let height = sibling
                     .depth()
                     .checked_sub(1) // -1: Convert from 1-indexed to 0-indexed
-                    .expect("proof_indices should not include root") as usize;
+                    .expect("proof_indices should not include root")
+                    as usize;
 
                 // Apply reversion mutation if this node was modified
                 if let Some(mutation) = rev_muts.get(&sibling) {
@@ -399,7 +406,7 @@ where
         }
 
         // Build the Merkle path from reconstructed nodes
-        let path = Self::build_dense_path(&path_nodes)?;
+        let path = Self::build_dense_path(&path_nodes);
         let path = SparseMerklePath::try_from(path).ok()?;
         Some((path, leaf))
     }
@@ -408,18 +415,18 @@ where
     ///
     /// Empty nodes are filled with their corresponding empty subtree roots.
     /// The path is built from root to leaf (high to low depth).
-    fn build_dense_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> Option<MerklePath> {
+    fn build_dense_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> MerklePath {
         let dense: Vec<Word> = (0..SMT_DEPTH)
             .rev() // Iterate from depth 63 down to 0 (root to leaf)
             .map(|d| {
-                path_nodes[d as usize].as_ref().cloned().unwrap_or_else(|| {
+                path_nodes[d as usize].unwrap_or_else(|| {
                     // d+1: EmptySubtreeRoots expects depth from leaf (depth 0 at leaf)
-                    EmptySubtreeRoots::entry(SMT_DEPTH, d + 1).clone()
+                    *EmptySubtreeRoots::entry(SMT_DEPTH, d + 1)
                 })
             })
             .collect();
 
-        Some(MerklePath::new(dense))
+        MerklePath::new(dense)
     }
 
     // PUBLIC MUTATORS
@@ -450,7 +457,7 @@ where
     /// 1. Applies the mutations to the latest tree, getting back reversion data
     /// 2. Stores the reversion data as a historical overlay
     /// 3. Advances the block number
-    /// 4. Prunes old overlays if exceeding MAX_HISTORY
+    /// 4. Prunes old overlays if exceeding `MAX_HISTORY`
     pub fn apply_mutations(
         &mut self,
         mutations: AccountMutationSet,

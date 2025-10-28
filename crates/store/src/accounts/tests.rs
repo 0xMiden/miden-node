@@ -26,6 +26,13 @@ mod account_tree_with_history_tests {
         AccountTree::new(smt)
     }
 
+    /// Helper function to verify a Merkle proof
+    fn assert_verify(root: Word, witness: AccountWitness) {
+        let proof = witness.into_proof();
+        let (path, leaf) = proof.into_parts();
+        path.verify(leaf.index().value(), leaf.hash(), &root).unwrap();
+    }
+
     #[test]
     fn test_historical_queries() {
         let ids = [
@@ -116,11 +123,6 @@ mod account_tree_with_history_tests {
 
         assert_eq!(hist.block_number_latest(), BlockNumber::from(2));
 
-        fn assert_verify(root: Word, witness: AccountWitness) {
-            let proof = witness.into_proof();
-            let (path, leaf) = proof.into_parts();
-            path.verify(leaf.index().value(), leaf.hash(), &root).unwrap();
-        }
         assert_verify(tree2.root(), tree2.open(id0));
         assert_verify(tree2.root(), hist.open_at(id0, BlockNumber::from(2)).unwrap());
         assert_verify(tree1.root(), tree1.open(id0));

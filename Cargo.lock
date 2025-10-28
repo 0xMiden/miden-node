@@ -2852,6 +2852,7 @@ dependencies = [
  "deadpool-sync",
  "diesel",
  "diesel_migrations",
+ "fs-err",
  "hex",
  "indexmap 2.11.4",
  "miden-crypto",

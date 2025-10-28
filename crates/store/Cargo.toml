@@ -15,36 +15,41 @@ version.workspace      = true
 workspace = true
 
 [dependencies]
-anyhow                 = { workspace = true }
-deadpool               = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
-deadpool-diesel        = { features = ["sqlite"], version = "0.6" }
-deadpool-sync          = { version = "0.1" }
-diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
-diesel_migrations      = { features = ["sqlite"], version = "2.2" }
-hex                    = { version = "0.4" }
-indexmap               = { workspace = true }
-miden-lib              = { workspace = true }
-miden-node-proto       = { workspace = true }
+anyhow = { workspace = true }
+deadpool = { default-features = false, features = ["managed", "rt_tokio_1"], version = "0.12" }
+deadpool-diesel = { features = ["sqlite"], version = "0.6" }
+deadpool-sync = { version = "0.1" }
+diesel = { features = ["numeric", "sqlite"], version = "2.2" }
+diesel_migrations = { features = ["sqlite"], version = "2.2" }
+hex = { version = "0.4" }
+indexmap = { workspace = true }
+miden-crypto = { features = [
+  "concurrent",
+  "hashmaps",
+  "rocksdb",
+], workspace = true } # we ensure we have `rocksdb` + `hashmaps` enabled
+miden-lib = { workspace = true }
+miden-node-proto = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
-miden-node-utils       = { workspace = true }
-miden-objects          = { features = ["std"], workspace = true }
-miden-crypto          = { features = ["concurrent", "rocksdb", "hashmaps"], workspace = true } # we ensure we have `rocksdb` + `hashmaps` enabled
-rand                   = { workspace = true }
-rand_chacha            = { workspace = true }
-serde                  = { features = ["derive"], version = "1" }
-thiserror              = { workspace = true }
-tokio                  = { features = ["fs", "rt-multi-thread"], workspace = true }
-tokio-stream           = { features = ["net"], workspace = true }
-toml                   = { version = "0.8" }
-tonic                  = { workspace = true }
-tonic-reflection       = { workspace = true }
-tower-http             = { features = ["util"], workspace = true }
-tracing                = { workspace = true }
-pretty_assertions     = { workspace = true }
+miden-node-utils = { workspace = true }
+miden-objects = { features = ["std"], workspace = true }
+pretty_assertions = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+serde = { features = ["derive"], version = "1" }
+thiserror = { workspace = true }
+tokio = { features = ["fs", "rt-multi-thread"], workspace = true }
+tokio-stream = { features = ["net"], workspace = true }
+toml = { version = "0.8" }
+tonic = { workspace = true }
+tonic-reflection = { workspace = true }
+tower-http = { features = ["util"], workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 assert_matches        = { workspace = true }
 criterion             = { version = "0.5" }
+fs-err                = { workspace = true }
 miden-lib             = { features = ["testing"], workspace = true }
 miden-node-test-macro = { workspace = true }
 miden-node-utils      = { features = ["testing", "tracing-forest"], workspace = true }

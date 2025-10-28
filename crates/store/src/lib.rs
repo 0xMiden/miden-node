@@ -8,12 +8,7 @@ pub mod genesis;
 mod server;
 pub mod state;
 
-pub use accounts::{
-    AccountTreeStorage,
-    AccountTreeWithHistory,
-    InMemoryAccountTree,
-    PersistentAccountTree,
-};
+pub use accounts::{AccountTreeStorage, AccountTreeWithHistory, InMemoryAccountTree};
 pub use genesis::GenesisState;
 pub use server::{DataDirectory, Store};
 

@@ -419,8 +419,8 @@ where
 
     /// Builds a dense Merkle path from the path nodes array.
     ///
-    /// Nodes stored as `EMPTY_WORD` sentinel are replaced with their corresponding empty subtree roots.
-    /// The path is built from root to leaf (high to low depth).
+    /// Nodes stored as `EMPTY_WORD` sentinel are replaced with their corresponding empty subtree
+    /// roots. The path is built from root to leaf (high to low depth).
     fn build_dense_path(path_nodes: &[Word; SMT_DEPTH as usize]) -> MerklePath {
         let dense: Vec<Word> = (0..SMT_DEPTH)
             .rev() // Iterate from depth 63 down to 0 (root to leaf)

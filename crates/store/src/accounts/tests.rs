@@ -8,8 +8,8 @@
 mod account_tree_with_history_tests {
     use miden_objects::Word;
     use miden_objects::account::AccountId;
-    use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
     use miden_objects::block::BlockNumber;
+    use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
     use miden_objects::crypto::merkle::{LargeSmt, MemoryStorage};
     use miden_objects::testing::account_id::AccountIdBuilder;
 

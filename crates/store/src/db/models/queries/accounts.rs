@@ -76,7 +76,7 @@ use crate::errors::DatabaseError;
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-) -> Result<proto::domain::account::AccountInfo, DatabaseError> {
+) -> Result<AccountInfo, DatabaseError> {
     let raw = SelectDsl::select(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
@@ -121,7 +121,7 @@ pub(crate) fn select_historical_account_at(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-) -> Result<proto::domain::account::AccountInfo, DatabaseError> {
+) -> Result<AccountInfo, DatabaseError> {
     let raw = SelectDsl::select(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),

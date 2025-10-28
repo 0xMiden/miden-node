@@ -10,6 +10,12 @@ use miden_objects::{Word, WordError};
 use semver::{Comparator, Version, VersionReq};
 use tower::{Layer, Service};
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum NegotiationGenesis {
+    Optional,
+    Mandatory,
+}
+
 /// Performs content negotiation by rejecting requests which don't match our RPC version or network.
 /// Clients can specify these as parameters in our `application/vnd.miden` accept media range.
 ///
@@ -89,12 +95,11 @@ impl AcceptHeaderLayer {
     const GRPC: Name<'static> = Name::new_unchecked("grpc");
 
     /// Parses the `Accept` header's contents, searching for any media type compatible with our
-    /// RPC version and genesis commitment, optionally requiring the presence of the `genesis`
-    /// parameter in the media range.
-    fn negotiate_with_requirement(
+    /// RPC version and genesis commitment, controlling whether `genesis` is optional or mandatory.
+    fn negotiate(
         &self,
         accept: &str,
-        require_genesis: bool,
+        genesis_mode: NegotiationGenesis,
     ) -> Result<(), AcceptHeaderError> {
         let mut media_types = mediatype::MediaTypeList::new(accept).peekable();
 
@@ -102,7 +107,7 @@ impl AcceptHeaderLayer {
         // gracious if the client want's to be weird.
         if media_types.peek().is_none() {
             // If there are no media types provided and genesis is required, reject.
-            if require_genesis {
+            if matches!(genesis_mode, NegotiationGenesis::Mandatory) {
                 return Err(AcceptHeaderError::NoSupportedMediaRange);
             }
             return Ok(());
@@ -166,22 +171,27 @@ impl AcceptHeaderLayer {
                 .transpose()
                 .map_err(AcceptHeaderError::InvalidGenesis)?;
 
-            if require_genesis {
-                match genesis {
-                    None => {
-                        // For write methods, the genesis parameter must be present.
+            match genesis_mode {
+                NegotiationGenesis::Mandatory => {
+                    match genesis {
+                        None => {
+                            // For write methods, the genesis parameter must be present.
+                            continue;
+                        },
+                        Some(genesis) if genesis != self.genesis_commitment => {
+                            // Present but mismatched.
+                            continue;
+                        },
+                        _ => {},
+                    }
+                },
+                NegotiationGenesis::Optional => {
+                    if let Some(genesis) = genesis
+                        && genesis != self.genesis_commitment
+                    {
                         continue;
-                    },
-                    Some(genesis) if genesis != self.genesis_commitment => {
-                        // Present but mismatched.
-                        continue;
-                    },
-                    _ => {},
-                }
-            } else if let Some(genesis) = genesis
-                && genesis != self.genesis_commitment
-            {
-                continue;
+                    }
+                },
             }
 
             // All preconditions met, this is a valid media type that we can serve.
@@ -237,7 +247,14 @@ where
         let result = header
             .to_str()
             .map_err(AcceptHeaderError::InvalidUtf8)
-            .map(|header| self.verifier.negotiate_with_requirement(header, requires_genesis))
+            .map(|header| {
+                let mode = if requires_genesis {
+                    NegotiationGenesis::Mandatory
+                } else {
+                    NegotiationGenesis::Optional
+                };
+                self.verifier.negotiate(header, mode)
+            })
             .flatten_result();
 
         match result {
@@ -378,7 +395,7 @@ mod tests {
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests()
-            .negotiate_with_requirement(accept, false)
+            .negotiate(accept, super::NegotiationGenesis::Optional)
             .unwrap();
     }
 
@@ -394,7 +411,7 @@ mod tests {
     #[test]
     fn request_should_be_rejected(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests()
-            .negotiate_with_requirement(accept, false)
+            .negotiate(accept, super::NegotiationGenesis::Optional)
             .unwrap_err();
     }
 
@@ -403,14 +420,18 @@ mod tests {
         let layer = AcceptHeaderLayer::for_tests();
 
         // Missing genesis parameter
-        assert!(layer.negotiate_with_requirement("application/vnd.miden", true).is_err());
+        assert!(
+            layer
+                .negotiate("application/vnd.miden", super::NegotiationGenesis::Mandatory)
+                .is_err()
+        );
 
         // Empty header value
-        assert!(layer.negotiate_with_requirement("", true).is_err());
+        assert!(layer.negotiate("", super::NegotiationGenesis::Mandatory).is_err());
 
         // Present but mismatched genesis parameter
         let mismatched = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeee";
-        assert!(layer.negotiate_with_requirement(mismatched, true).is_err());
+        assert!(layer.negotiate(mismatched, super::NegotiationGenesis::Mandatory).is_err());
     }
 
     #[test]
@@ -419,11 +440,11 @@ mod tests {
 
         // Matching genesis only
         let accept = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
-        assert!(layer.negotiate_with_requirement(accept, true).is_ok());
+        assert!(layer.negotiate(accept, super::NegotiationGenesis::Mandatory).is_ok());
 
         // Matching genesis with version
         let accept = "application/vnd.miden; version=0.2.3; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
-        assert!(layer.negotiate_with_requirement(accept, true).is_ok());
+        assert!(layer.negotiate(accept, super::NegotiationGenesis::Mandatory).is_ok());
     }
 
     #[rstest::rstest]

@@ -1,6 +1,6 @@
 //! Historical tracking for `AccountTree` via mutation overlays
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath, RocksDbStorage};
 use miden_objects::account::AccountId;
@@ -134,12 +134,32 @@ pub enum HistoricalState {
 #[derive(Debug, Clone)]
 struct HistoricalOverlay {
     block_number: BlockNumber,
-    rev_set: AccountMutationSet,
+    root: Word,
+    node_mutations: HashMap<NodeIndex, Word>,
+    account_updates: HashMap<Word, Word>,
 }
 
 impl HistoricalOverlay {
     fn new(block_number: BlockNumber, rev_set: AccountMutationSet) -> Self {
-        Self { block_number, rev_set }
+        let root = rev_set.as_mutation_set().root();
+        let mut_set = rev_set.into_mutation_set();
+
+        let node_mutations =
+            HashMap::from_iter(mut_set.node_mutations().iter().map(|(node_index, mutation)| {
+                match mutation {
+                    NodeMutation::Addition(inner_node) => (*node_index, inner_node.hash()),
+                    NodeMutation::Removal => (*node_index, EMPTY_WORD),
+                }
+            }));
+
+        let account_updates = HashMap::from_iter(mut_set.new_pairs().iter().map(|(&k, &v)| (k, v)));
+
+        Self {
+            block_number,
+            root,
+            node_mutations,
+            account_updates,
+        }
     }
 }
 
@@ -212,7 +232,7 @@ where
             HistoricalState::Target(block_number) => {
                 let overlay = self.overlays.get(&block_number)?;
                 debug_assert_eq!(overlay.block_number, block_number);
-                Some(overlay.rev_set.as_mutation_set().root())
+                Some(overlay.root)
             },
             HistoricalState::Future | HistoricalState::TooAncient => None,
         }
@@ -367,12 +387,8 @@ where
         for (_, overlay) in
             overlays.iter().rev().take_while(|(block_num, _)| block_target <= **block_num)
         {
-            let rev_muts = overlay.rev_set.as_mutation_set().node_mutations();
-
             // Update path sibling nodes that changed in this overlay
             for sibling in leaf_index.proof_indices() {
-                // Convert depth to height: depth 0 is root, we need height from leaf
-                // depth() returns values from 1 (leaf) to 64 (root), so subtract 1 for 0-indexed
                 let height = sibling
                     .depth()
                     .checked_sub(1) // -1: Convert from 1-indexed to 0-indexed
@@ -380,23 +396,18 @@ where
                     as usize;
 
                 // Apply reversion mutation if this node was modified
-                if let Some(mutation) = rev_muts.get(&sibling) {
-                    match mutation {
-                        NodeMutation::Addition(inner_node) => {
-                            path_nodes[height] = Some(inner_node.hash());
-                        },
-                        NodeMutation::Removal => {
-                            path_nodes[height] = None;
-                        },
+                if let Some(hash) = overlay.node_mutations.get(&sibling) {
+                    if *hash == EMPTY_WORD {
+                        path_nodes[height] = None;
+                    } else {
+                        path_nodes[height] = Some(*hash);
                     }
                 }
             }
 
             // Update leaf if it was modified in this overlay
             if let Some((key, value)) = overlay
-                .rev_set
-                .as_mutation_set()
-                .new_pairs()
+                .account_updates
                 .iter()
                 .find(|(k, _)| LeafIndex::from(**k) == leaf.index())
             {
@@ -423,7 +434,6 @@ where
             .rev() // Iterate from depth 63 down to 0 (root to leaf)
             .map(|d| {
                 path_nodes[d as usize].unwrap_or_else(|| {
-                    // d+1: EmptySubtreeRoots expects depth from leaf (depth 0 at leaf)
                     *EmptySubtreeRoots::entry(SMT_DEPTH, d + 1)
                 })
             })

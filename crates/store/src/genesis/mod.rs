@@ -2,15 +2,14 @@ use miden_lib::transaction::TransactionKernel;
 use miden_objects::Word;
 use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::{
-    AccountTree,
     BlockAccountUpdate,
     BlockHeader,
     BlockNoteTree,
     BlockNumber,
     FeeParameters,
     ProvenBlock,
-    account_id_to_smt_key,
 };
 use miden_objects::crypto::merkle::{Forest, LargeSmt, MemoryStorage, MmrPeaks, Smt};
 use miden_objects::note::Nullifier;
@@ -87,7 +86,7 @@ impl GenesisState {
         let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
             .expect("Failed to create LargeSmt for genesis accounts");
 
-        let account_smt = AccountTree::new(smt);
+        let account_smt = AccountTree::new(smt).expect("Failed to create AccountTree for genesis");
 
         let empty_nullifiers: Vec<Nullifier> = Vec::new();
         let empty_nullifier_tree = Smt::new();

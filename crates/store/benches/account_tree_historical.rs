@@ -5,7 +5,8 @@ use miden_crypto::merkle::MemoryStorage;
 use miden_node_store::{AccountTreeWithHistory, InMemoryAccountTree};
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::block::{AccountTree, BlockNumber, account_id_to_smt_key};
+use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
+use miden_objects::block::BlockNumber;
 use miden_objects::crypto::hash::rpo::Rpo256;
 use miden_objects::crypto::merkle::LargeSmt;
 use miden_objects::testing::account_id::AccountIdBuilder;
@@ -62,7 +63,7 @@ fn setup_vanilla_account_tree(
     let storage = setup_storage();
     let smt =
         LargeSmt::with_entries(storage, entries).expect("Failed to create LargeSmt from entries");
-    let tree = AccountTree::new(smt);
+    let tree = AccountTree::new(smt).expect("Failed to create AccountTree");
     (tree, account_ids)
 }
 
@@ -76,7 +77,7 @@ fn setup_account_tree_with_history(
     let storage = setup_storage();
     let smt = LargeSmt::with_entries(storage, std::iter::empty())
         .expect("Failed to create empty LargeSmt");
-    let account_tree = AccountTree::new(smt);
+    let account_tree = AccountTree::new(smt).expect("Failed to create AccountTree");
     let mut account_tree_hist = AccountTreeWithHistory::new(account_tree, BlockNumber::GENESIS);
     let mut account_ids = Vec::new();
 
@@ -136,7 +137,7 @@ fn bench_vanilla_insertion(c: &mut Criterion) {
                 let storage = setup_storage();
                 let smt = LargeSmt::with_entries(storage, std::iter::empty())
                     .expect("Failed to create empty LargeSmt");
-                let mut tree = AccountTree::new(smt);
+                let mut tree = AccountTree::new(smt).expect("Failed to create AccountTree");
                 let entries: Vec<_> = (0..num_accounts)
                     .map(|_| {
                         let account_id = generate_account_id(&mut seed);
@@ -208,7 +209,7 @@ fn bench_insertion_with_history(c: &mut Criterion) {
                 let storage = setup_storage();
                 let smt = LargeSmt::with_entries(storage, std::iter::empty())
                     .expect("Failed to create empty LargeSmt");
-                let account_tree = AccountTree::new(smt);
+                let account_tree = AccountTree::new(smt).expect("Failed to create AccountTree");
                 let mut tree = AccountTreeWithHistory::new(account_tree, BlockNumber::GENESIS);
                 let mutations: Vec<_> = (0..num_accounts)
                     .map(|_| {

@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath};
 use miden_objects::account::AccountId;
-use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
+use miden_objects::block::account_tree::{AccountMutationSet, AccountTree};
+use miden_objects::block::{AccountWitness, BlockNumber};
 use miden_objects::crypto::merkle::{
     LargeSmt,
     LeafIndex,

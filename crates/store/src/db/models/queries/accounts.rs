@@ -32,7 +32,7 @@ use miden_objects::account::{
     NonFungibleDeltaAction,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset};
+use miden_objects::asset::{Asset, AssetVault, FungibleAsset, VaultKey};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
@@ -652,10 +652,11 @@ pub(crate) fn insert_account_vault_asset(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    vault_key: Word,
+    vault_key: VaultKey,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
-    let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
+    let vault_key_word: Word = vault_key.into();
+    let record = AccountAssetRowInsert::new(&account_id, &vault_key_word, block_num, asset, true);
 
     diesel::Connection::transaction(conn, |conn| {
         // First, update any existing rows with the same (account_id, vault_key) to set
@@ -664,7 +665,7 @@ pub(crate) fn insert_account_vault_asset(
             .filter(
                 schema::account_vault_assets::account_id
                     .eq(&account_id.to_bytes())
-                    .and(schema::account_vault_assets::vault_key.eq(&vault_key.to_bytes()))
+                    .and(schema::account_vault_assets::vault_key.eq(&vault_key_word.to_bytes()))
                     .and(schema::account_vault_assets::is_latest_update.eq(true)),
             )
             .set(schema::account_vault_assets::is_latest_update.eq(false))

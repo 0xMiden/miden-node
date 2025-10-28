@@ -24,8 +24,8 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
+use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::{
-    AccountTree,
     AccountWitness,
     BlockHeader,
     BlockInputs,
@@ -34,7 +34,6 @@ use miden_objects::block::{
     NullifierTree,
     NullifierWitness,
     ProvenBlock,
-    account_id_to_smt_key,
 };
 use miden_objects::crypto::merkle::{
     Forest,
@@ -1127,5 +1126,5 @@ async fn load_account_tree(
     let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
         .expect("Failed to create LargeSmt from database account data");
 
-    Ok(AccountTree::new(smt))
+    Ok(AccountTree::new(smt).expect("Failed to create AccountTree"))
 }

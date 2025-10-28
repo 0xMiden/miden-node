@@ -23,7 +23,7 @@ mod account_tree_with_history_tests {
             .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
         let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
             .expect("Failed to create LargeSmt from entries");
-        AccountTree::new(smt)
+        AccountTree::new(smt).expect("Failed to create AccountTree")
     }
 
     /// Helper function to verify a Merkle proof

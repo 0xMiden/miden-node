@@ -1124,9 +1124,6 @@ async fn load_account_tree(
         .into_iter()
         .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
 
-    // Create LargeSmt with MemoryStorage
-    // SAFETY: This should not fail for valid account data from the database.
-    // If it fails, it indicates data corruption.
     let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
         .expect("Failed to create LargeSmt from database account data");
 

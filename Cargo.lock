@@ -2516,7 +2516,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-account-tree-generic-over-smt-impl#1729c8c0b098decb7a2560b2f72156c66d33d53e"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2600,7 +2600,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-account-tree-generic-over-smt-impl#1729c8c0b098decb7a2560b2f72156c66d33d53e"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "Inflector",
  "fs-err",
@@ -2940,7 +2940,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-account-tree-generic-over-smt-impl#1729c8c0b098decb7a2560b2f72156c66d33d53e"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -3077,7 +3077,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-account-tree-generic-over-smt-impl#1729c8c0b098decb7a2560b2f72156c66d33d53e"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3096,7 +3096,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-account-tree-generic-over-smt-impl#1729c8c0b098decb7a2560b2f72156c66d33d53e"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -3111,7 +3111,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-account-tree-generic-over-smt-impl#1729c8c0b098decb7a2560b2f72156c66d33d53e"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "miden-objects",
  "miden-tx",

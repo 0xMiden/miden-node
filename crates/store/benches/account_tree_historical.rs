@@ -1,6 +1,4 @@
 use std::hint::black_box;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use miden_crypto::merkle::MemoryStorage;

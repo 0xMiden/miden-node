@@ -19,6 +19,9 @@ use miden_objects::crypto::merkle::{
 };
 use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
 
+#[cfg(test)]
+mod tests;
+
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
 
@@ -98,9 +101,6 @@ where
         self.contains_account_id_prefix(prefix)
     }
 }
-
-#[cfg(test)]
-mod tests;
 
 // ERROR TYPES
 // ================================================================================================
@@ -323,12 +323,7 @@ where
         // Start with the latest witness
         let latest_witness = self.latest.open(account_id);
         let (latest_path, leaf) = latest_witness.into_proof().into_parts();
-        let (initial_mask, mut latest_nodes) = latest_path.into_parts();
-
-        // Reverse nodes: SparseMerklePath stores them from root to leaf (high to low depth),
-        // but we need leaf to root (low to high depth) for indexing by depth.
-        latest_nodes.reverse();
-        let path_nodes = Self::initialize_path_nodes(initial_mask, &latest_nodes);
+        let path_nodes = Self::initialize_path_nodes(&latest_path);
 
         let leaf_index = NodeIndex::from(leaf.index());
 
@@ -355,21 +350,17 @@ where
     ///
     /// The `initial_mask` indicates which depths have empty nodes (bit set = empty).
     /// For non-empty depths, we populate from `latest_nodes`.
-    fn initialize_path_nodes(
-        initial_mask: u64,
-        latest_nodes: &[Word],
-    ) -> [Option<Word>; SMT_DEPTH as usize] {
+    fn initialize_path_nodes(path: &SparseMerklePath) -> [Option<Word>; SMT_DEPTH as usize] {
         let mut path_nodes = [None; SMT_DEPTH as usize];
-        let mut node_idx = 0;
 
-        for (depth, path_node) in path_nodes.iter_mut().enumerate().take(SMT_DEPTH as usize) {
-            // Bit at position `depth` being 0 means node is present; 1 means empty
-            let is_present = (initial_mask & (1u64 << depth)) == 0;
-            if is_present && node_idx < latest_nodes.len() {
-                *path_node = Some(latest_nodes[node_idx]);
-                node_idx += 1;
+        let path = Vec::from_iter(path.iter());
+
+        path.iter().rev().enumerate().for_each(|(depth, &node)| {
+            let empty_root = *EmptySubtreeRoots::entry(SMT_DEPTH, (depth + 1) as u8);
+            if node != empty_root {
+                path_nodes[depth] = Some(node);
             }
-        }
+        });
 
         path_nodes
     }

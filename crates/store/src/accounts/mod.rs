@@ -349,17 +349,17 @@ where
 
     /// Initializes the path nodes array from the latest state.
     ///
-    /// The `initial_mask` indicates which depths have empty nodes (bit set = empty).
-    /// For non-empty depths, we populate from `latest_nodes`.
-    fn initialize_path_nodes(path: &SparseMerklePath) -> [Option<Word>; SMT_DEPTH as usize] {
-        let mut path_nodes = [None; SMT_DEPTH as usize];
+    /// Nodes that match their depth's empty subtree root are stored as `EMPTY_WORD` sentinel.
+    /// For non-empty depths, we store the actual node value.
+    fn initialize_path_nodes(path: &SparseMerklePath) -> [Word; SMT_DEPTH as usize] {
+        let mut path_nodes = [EMPTY_WORD; SMT_DEPTH as usize];
 
         let path = Vec::from_iter(path.iter());
 
         path.iter().rev().enumerate().for_each(|(depth, &node)| {
-            let empty_root = *EmptySubtreeRoots::entry(SMT_DEPTH, (depth + 1) as u8);
+            let empty_root = *EmptySubtreeRoots::entry(SMT_DEPTH, (depth + 1) as u8); // +1: depth from leaf
             if node != empty_root {
-                path_nodes[depth] = Some(node);
+                path_nodes[depth] = node;
             }
         });
 
@@ -370,10 +370,11 @@ where
     ///
     /// Iterates through overlays from newest to oldest (walking backwards in time),
     /// updating both the path nodes and the leaf value based on reversion mutations.
+    /// Uses `EMPTY_WORD` as a sentinel to indicate "use empty subtree root for this depth".
     fn apply_reversion_overlays(
         overlays: &BTreeMap<BlockNumber, HistoricalOverlay>,
         block_target: BlockNumber,
-        mut path_nodes: [Option<Word>; SMT_DEPTH as usize],
+        mut path_nodes: [Word; SMT_DEPTH as usize],
         leaf_index: NodeIndex,
         mut leaf: SmtLeaf,
     ) -> Option<(SparseMerklePath, SmtLeaf)> {
@@ -390,12 +391,9 @@ where
                     as usize;
 
                 // Apply reversion mutation if this node was modified
+                // EMPTY_WORD sentinel means "use empty subtree root for this depth"
                 if let Some(hash) = overlay.node_mutations.get(&sibling) {
-                    if *hash == EMPTY_WORD {
-                        path_nodes[height] = None;
-                    } else {
-                        path_nodes[height] = Some(*hash);
-                    }
+                    path_nodes[height] = *hash;
                 }
             }
 
@@ -421,15 +419,19 @@ where
 
     /// Builds a dense Merkle path from the path nodes array.
     ///
-    /// Empty nodes are filled with their corresponding empty subtree roots.
+    /// Nodes stored as `EMPTY_WORD` sentinel are replaced with their corresponding empty subtree roots.
     /// The path is built from root to leaf (high to low depth).
-    fn build_dense_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> MerklePath {
+    fn build_dense_path(path_nodes: &[Word; SMT_DEPTH as usize]) -> MerklePath {
         let dense: Vec<Word> = (0..SMT_DEPTH)
             .rev() // Iterate from depth 63 down to 0 (root to leaf)
             .map(|d| {
-                path_nodes[d as usize].unwrap_or_else(|| {
-                    *EmptySubtreeRoots::entry(SMT_DEPTH, d + 1)
-                })
+                let node = path_nodes[d as usize];
+                if node == EMPTY_WORD {
+                    // EMPTY_WORD sentinel: use empty subtree root for this depth
+                    *EmptySubtreeRoots::entry(SMT_DEPTH, d + 1) // +1: depth from leaf
+                } else {
+                    node
+                }
             })
             .collect();
 

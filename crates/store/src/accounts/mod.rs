@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath};
+use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath, RocksDbStorage};
 use miden_objects::account::AccountId;
 use miden_objects::block::{AccountMutationSet, AccountTree, AccountWitness, BlockNumber};
 use miden_objects::crypto::merkle::{
@@ -21,6 +21,9 @@ use miden_objects::{AccountTreeError, EMPTY_WORD, Word};
 
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
+
+/// Convenience for an on-disk, persistent account tree.
+pub type PersistentAccountTree = AccountTree<LargeSmt<RocksDbStorage>>;
 
 // ACCOUNT TREE STORAGE TRAIT
 // ================================================================================================

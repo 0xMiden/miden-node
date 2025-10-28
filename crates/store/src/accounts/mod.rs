@@ -357,8 +357,7 @@ where
             }
         }
 
-        let (empty_nodes_mask, nodes) = Self::build_sparse_path(&path_nodes);
-        let path = SparseMerklePath::from_parts(empty_nodes_mask, nodes).ok()?;
+        let path = Self::build_sparse_path(&path_nodes)?;
         Some((path, leaf))
     }
 
@@ -367,7 +366,9 @@ where
     /// The `empty_mask` is constructed by setting a bit for each empty node.
     /// We iterate from depth 0 to `max_depth` in reverse order (high to low)
     /// to build the nodes vector as expected by `SparseMerklePath`.
-    fn build_sparse_path(path_nodes: &[Option<Word>; SMT_DEPTH as usize]) -> (u64, Vec<Word>) {
+    fn build_sparse_path(
+        path_nodes: &[Option<Word>; SMT_DEPTH as usize],
+    ) -> Option<SparseMerklePath> {
         let max_depth =
             path_nodes.iter().rposition(std::option::Option::is_some).map_or(0, |d| d + 1);
 
@@ -383,7 +384,7 @@ where
             })
             .collect();
 
-        (empty_mask, nodes)
+        SparseMerklePath::from_parts(empty_mask, nodes).ok()
     }
 
     /// Gets the account state at the latest block.

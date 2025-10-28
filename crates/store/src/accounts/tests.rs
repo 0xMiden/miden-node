@@ -116,18 +116,17 @@ mod account_tree_with_history_tests {
 
         assert_eq!(hist.block_number_latest(), BlockNumber::from(2));
 
-        fn ensure_verify(root: Word, witness: AccountWitness) -> bool {
+        fn assert_verify(root: Word, witness: AccountWitness) {
             let proof = witness.into_proof();
             let (path, leaf) = proof.into_parts();
             path.verify(leaf.index().value(), leaf.hash(), &root).unwrap();
-            false
         }
-        assert!(ensure_verify(tree2.root(), tree2.open(id0)));
-        assert!(ensure_verify(tree2.root(), hist.open_at(id0, BlockNumber::from(2)).unwrap()));
-        assert!(ensure_verify(tree1.root(), tree1.open(id0)));
-        assert!(ensure_verify(tree1.root(), hist.open_at(id0, BlockNumber::from(1)).unwrap()));
-        assert!(ensure_verify(tree0.root(), tree0.open(id0)));
-        assert!(ensure_verify(tree0.root(), hist.open_at(id0, BlockNumber::GENESIS).unwrap()));
+        assert_verify(tree2.root(), tree2.open(id0));
+        assert_verify(tree2.root(), hist.open_at(id0, BlockNumber::from(2)).unwrap());
+        assert_verify(tree1.root(), tree1.open(id0));
+        assert_verify(tree1.root(), hist.open_at(id0, BlockNumber::from(1)).unwrap());
+        assert_verify(tree0.root(), tree0.open(id0));
+        assert_verify(tree0.root(), hist.open_at(id0, BlockNumber::GENESIS).unwrap());
 
         assert_eq!(hist.open_at(id0, BlockNumber::GENESIS).unwrap(), tree0.open(id0));
         assert_eq!(hist.open_at(id0, BlockNumber::from(1)).unwrap(), tree1.open(id0));

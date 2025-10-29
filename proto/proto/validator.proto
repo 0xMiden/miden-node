@@ -17,10 +17,12 @@ service Api {
    // Submits a transaction to the validator.
    rpc SubmitProvenTransaction(transaction.ProvenTransaction) returns (google.protobuf.Empty) {}
 
+   // TODO(serge): specify this properly.
    // Validates and signs a block.
    rpc ValidateBlock(blockchain.Block) returns (SignedBlock);
 }
 
+// TODO(serge): do this type properly.
 // Block that has been validated and signed by the validator.
 message SignedBlock {
     blockchain.Block block = 1;

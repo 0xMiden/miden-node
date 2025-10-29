@@ -12,11 +12,7 @@ use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteExecutionHint, NoteHeader, NoteMetadata, NoteTag, NoteType};
 use miden_objects::transaction::{
-    InputNotes,
-    OrderedTransactionHeaders,
-    OutputNote,
-    OutputNotes,
-    TransactionHeader,
+    InputNotes, OrderedTransactionHeaders, OutputNote, OutputNotes, TransactionHeader,
     TransactionId,
 };
 use miden_objects::utils::{Deserializable, Serializable};
@@ -69,7 +65,7 @@ pub(crate) fn select_transactions(
     }
 
     // Convert TransactionIds to bytes for query
-    let tx_id_bytes: Vec<Vec<u8>> = tx_ids.iter().map(|id| id.to_bytes()).collect();
+    let tx_id_bytes: Vec<Vec<u8>> = tx_ids.iter().map(TransactionId::to_bytes).collect();
 
     // Query the database for matching transactions
     let raw_transactions = schema::transactions::table
@@ -134,8 +130,8 @@ pub(crate) fn select_transactions(
             output_note_headers,
         );
 
-        let block_num = BlockNumber::try_from(raw_tx.block_num as u32)
-            .map_err(|_| DatabaseError::DataCorrupted("Invalid block number".to_string()))?;
+        #[allow(clippy::cast_sign_loss)]
+        let block_num = BlockNumber::from(raw_tx.block_num as u32);
 
         transactions_by_block.entry(block_num).or_default().push(tx_header);
     }

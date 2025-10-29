@@ -10,8 +10,7 @@ use miden_node_utils::ErrorReport;
 use miden_node_utils::panic::catch_panic_layer_fn;
 use miden_node_utils::tracing::grpc::grpc_trace_fn;
 use miden_objects::block::ProvenBlock;
-use miden_objects::crypto::dsa::ecdsa_k256_keccak::SecretKey;
-use miden_objects::transaction::ProvenTransaction;
+use miden_objects::transaction::{ProvenTransaction, TransactionHeader};
 use miden_objects::utils::Deserializable;
 use tokio::net::TcpListener;
 use tokio_stream::wrappers::TcpListenerStream;
@@ -165,7 +164,8 @@ impl api_server::Api for ValidatorServer {
             tonic::Status::invalid_argument(err.as_report_context("block deserialization error"))
         })?;
 
-        let result = self
+        // TODO(serge): Implement this properly.
+        let _result = self
             .db
             .transact("submit_proven_transaction", move |conn| {
                 select_transactions(
@@ -174,37 +174,12 @@ impl api_server::Api for ValidatorServer {
                         .transactions()
                         .as_slice()
                         .iter()
-                        .map(|tx| tx.id())
+                        .map(TransactionHeader::id)
                         .collect::<Vec<_>>()
                         .as_slice(),
                 )
             })
             .await;
-        match result {
-            Ok(transactions) => {
-                if transactions.len() != proven_block.transactions().as_slice().len() {
-                    tracing::error!(
-                        target: COMPONENT,
-                        transactions_len = transactions.len(),
-                        proven_transactions_len = proven_block.transactions().as_slice().len(),
-                        "unexpected number of transactions returned by database"
-                    );
-                    Err(tonic::Status::internal("failed to submit proven transaction"))
-                } else {
-                    // TODO: Validate transactions received from RPC against transactions in the
-                    // block.
-
-                    // Sign the block and return it.
-                    let secret_key = SecretKey::new(); // TODO: secret key handling
-                    let signed_block = proven_block.sign(secret_key);
-                    let response = proto::validator::SignedBlock {
-                        block: signed_block.into(),
-                        signature: signed_block.signature().to_vec(),
-                    };
-                    Ok(tonic::Response::new(response))
-                }
-            },
-            Err(err) => Err(err.into()),
-        }
+        todo!()
     }
 }

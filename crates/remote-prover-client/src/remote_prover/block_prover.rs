@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 use core::time::Duration;
 
 use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{ProposedBlock, ProvenBlock, SignedBlock};
+use miden_objects::block::{ProposedBlock, ProvenBlock};
 use miden_objects::transaction::{OrderedTransactionHeaders, TransactionHeader};
 use miden_objects::utils::{Deserializable, DeserializationError, Serializable};
 use tokio::sync::Mutex;
@@ -82,7 +82,7 @@ impl RemoteBlockProver {
 impl RemoteBlockProver {
     pub async fn prove(
         &self,
-        signed_block: SignedBlock,
+        proposed_block: ProposedBlock,
     ) -> Result<ProvenBlock, RemoteProverClientError> {
         use miden_objects::utils::Serializable;
         self.connect().await?;
@@ -98,9 +98,9 @@ impl RemoteBlockProver {
             .clone();
 
         // Get the set of expected transaction headers.
-        let proposed_txs = signed_block.batches().to_transactions();
+        let proposed_txs = proposed_block.batches().to_transactions();
 
-        let request = tonic::Request::new(signed_block.into());
+        let request = tonic::Request::new(proposed_block.into());
 
         let response = client.prove(request).await.map_err(|err| {
             RemoteProverClientError::other_with_source("failed to prove block", err)
@@ -164,11 +164,11 @@ impl TryFrom<proto::Proof> for ProvenBlock {
     }
 }
 
-impl From<SignedBlock> for proto::ProofRequest {
-    fn from(signed_block: SignedBlock) -> Self {
+impl From<ProposedBlock> for proto::ProofRequest {
+    fn from(proposed_block: ProposedBlock) -> Self {
         proto::ProofRequest {
             proof_type: proto::ProofType::Block.into(),
-            payload: signed_block.to_bytes(),
+            payload: proposed_block.to_bytes(),
         }
     }
 }

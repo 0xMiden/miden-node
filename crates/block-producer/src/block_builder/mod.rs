@@ -7,7 +7,7 @@ use miden_block_prover::LocalBlockProver;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProvenBatch;
-use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock, SignedBlock};
+use miden_objects::block::{BlockInputs, BlockNumber, ProposedBlock, ProvenBlock};
 use miden_objects::note::NoteHeader;
 use miden_objects::transaction::TransactionHeader;
 use miden_remote_prover_client::remote_prover::block_prover::RemoteBlockProver;
@@ -113,8 +113,6 @@ impl BlockBuilder {
             .inspect_ok(BlockBatchesAndInputs::inject_telemetry)
             .and_then(|inputs| self.propose_block(inputs))
             .inspect_ok(ProposedBlock::inject_telemetry)
-            .and_then(|inputs| self.sign_block(inputs))
-            //.inspect_ok(SignedBlock::inject_telemetry) // todo
             .and_then(|inputs| self.prove_block(inputs))
             .inspect_ok(ProvenBlock::inject_telemetry)
             // Failure must be injected before the final pipeline stage i.e. before commit is called. The system cannot
@@ -209,17 +207,12 @@ impl BlockBuilder {
         Ok(proposed_block)
     }
 
-    #[instrument(target = COMPONENT, name = "block_builder.sign_block", skip_all, err)]
-    async fn sign_block(
+    #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
+    async fn prove_block(
         &self,
         proposed_block: ProposedBlock,
-    ) -> Result<SignedBlock, BuildBlockError> {
-        todo!()
-    }
-
-    #[instrument(target = COMPONENT, name = "block_builder.prove_block", skip_all, err)]
-    async fn prove_block(&self, signed_block: SignedBlock) -> Result<ProvenBlock, BuildBlockError> {
-        let proven_block = self.block_prover.prove(signed_block).await?;
+    ) -> Result<ProvenBlock, BuildBlockError> {
+        let proven_block = self.block_prover.prove(proposed_block).await?;
 
         if proven_block.proof_security_level() < MIN_PROOF_SECURITY_LEVEL {
             return Err(BuildBlockError::SecurityLevelTooLow(
@@ -366,6 +359,7 @@ impl TelemetryInjectorExt for ProvenBlock {
 
         span.set_attribute("block.protocol.version", i64::from(header.version()));
 
+        span.set_attribute("block.commitments.kernel", header.tx_kernel_commitment());
         span.set_attribute("block.commitments.nullifier", header.nullifier_root());
         span.set_attribute("block.commitments.account", header.account_root());
         span.set_attribute("block.commitments.chain", header.chain_commitment());
@@ -394,13 +388,13 @@ impl BlockProver {
     }
 
     #[instrument(target = COMPONENT, skip_all, err)]
-    async fn prove(&self, signed_block: SignedBlock) -> Result<ProvenBlock, BuildBlockError> {
+    async fn prove(&self, proposed_block: ProposedBlock) -> Result<ProvenBlock, BuildBlockError> {
         match self {
             Self::Local(prover) => {
-                prover.prove(signed_block).map_err(BuildBlockError::ProveBlockFailed)
+                prover.prove(proposed_block).map_err(BuildBlockError::ProveBlockFailed)
             },
             Self::Remote(prover) => prover
-                .prove(signed_block)
+                .prove(proposed_block)
                 .await
                 .map_err(BuildBlockError::RemoteProverClientError),
         }

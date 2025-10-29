@@ -49,18 +49,12 @@ miden-node-validator        = { path = "crates/validator", version = "0.12" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.12" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { path = "/Users/sergeradinovich/Source/miden-base/crates/miden-block-prover" }
-miden-lib             = { path = "/Users/sergeradinovich/Source/miden-base/crates/miden-lib" }
-miden-objects         = { path = "/Users/sergeradinovich/Source/miden-base/crates/miden-objects" }
-miden-testing         = { path = "/Users/sergeradinovich/Source/miden-base/crates/miden-testing" }
-miden-tx              = { path = "/Users/sergeradinovich/Source/miden-base/crates/miden-tx" }
-miden-tx-batch-prover = { path = "/Users/sergeradinovich/Source/miden-base/crates/miden-tx-batch-prover" }
-#miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-#miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-#miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-#miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-#miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-#miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
+miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { features = ["std", "testing"], version = "0.18" }

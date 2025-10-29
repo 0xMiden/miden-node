@@ -31,8 +31,9 @@ impl From<&BlockHeader> for proto::blockchain::BlockHeader {
             nullifier_root: Some(header.nullifier_root().into()),
             note_root: Some(header.note_root().into()),
             tx_commitment: Some(header.tx_commitment().into()),
+            tx_kernel_commitment: Some(header.tx_kernel_commitment().into()),
+            proof_commitment: Some(header.proof_commitment().into()),
             timestamp: header.timestamp(),
-            signature: Some(header.signature().into()),
             fee_parameters: Some(header.fee_parameters().into()),
         }
     }
@@ -86,8 +87,14 @@ impl TryFrom<proto::blockchain::BlockHeader> for BlockHeader {
                 .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(tx_commitment)))?
                 .try_into()?,
             value
-                .signature
-                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(tx_commitment)))?
+                .tx_kernel_commitment
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(
+                    tx_kernel_commitment
+                )))?
+                .try_into()?,
+            value
+                .proof_commitment
+                .ok_or(proto::blockchain::BlockHeader::missing_field(stringify!(proof_commitment)))?
                 .try_into()?,
             FeeParameters::try_from(value.fee_parameters.ok_or(
                 proto::blockchain::FeeParameters::missing_field(stringify!(fee_parameters)),

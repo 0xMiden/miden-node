@@ -16,7 +16,7 @@ ALL_FEATURES=--features="tracing-forest,concurrent,tracing-forest,tx-prover,batc
 .PHONY: clippy
 clippy: ## Runs Clippy with configs
 	cargo clippy --locked --all-targets ${ALL_FEATURES} --workspace -- -D warnings
-	cargo clippy --locked --all-targets ${ALL_FEATUERS} -p miden-remote-prover -- -D warnings
+	cargo clippy --locked --all-targets ${ALL_FEATURES} -p miden-remote-prover -- -D warnings
 
 
 .PHONY: fix

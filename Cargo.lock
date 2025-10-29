@@ -2749,7 +2749,6 @@ dependencies = [
  "miden-node-store",
  "miden-node-utils",
  "miden-objects",
- "thiserror 2.0.17",
  "tokio",
  "tokio-stream",
  "tonic",

@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath};
-use miden_objects::account::AccountId;
+use miden_objects::account::{AccountId, AccountIdPrefix};
 use miden_objects::block::account_tree::{AccountMutationSet, AccountTree};
 use miden_objects::block::{AccountWitness, BlockNumber};
 use miden_objects::crypto::merkle::{
@@ -61,7 +61,7 @@ pub trait AccountTreeStorage {
     ) -> Result<AccountMutationSet, AccountTreeError>;
 
     /// Checks if the tree contains an account with the given prefix.
-    fn contains_account_id_prefix(&self, prefix: miden_objects::account::AccountIdPrefix) -> bool;
+    fn contains_account_id_prefix(&self, prefix: AccountIdPrefix) -> bool;
 }
 
 impl<S> AccountTreeStorage for AccountTree<LargeSmt<S>>
@@ -294,7 +294,7 @@ where
     }
 
     /// Determines the historical state of a requested block number.
-    pub fn historical_state(&self, desired_block_number: BlockNumber) -> HistoricalState {
+    fn historical_state(&self, desired_block_number: BlockNumber) -> HistoricalState {
         if desired_block_number == self.block_number {
             return HistoricalState::Latest;
         }

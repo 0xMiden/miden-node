@@ -26,12 +26,12 @@ miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-store       = { workspace = true }
 miden-node-utils       = { features = ["testing"], workspace = true }
 miden-objects          = { workspace = true }
+thiserror              = { workspace = true }
 tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
 tonic                  = { features = ["transport"], workspace = true }
 tonic-reflection       = { workspace = true }
 tower-http             = { features = ["util"], workspace = true }
 tracing                = { workspace = true }
-thiserror                = { workspace = true }
 
 [dev-dependencies]

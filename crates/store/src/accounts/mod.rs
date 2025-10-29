@@ -151,7 +151,13 @@ impl HistoricalOverlay {
             HashMap::from_iter(mut_set.node_mutations().iter().map(|(node_index, mutation)| {
                 match mutation {
                     NodeMutation::Addition(inner_node) => (*node_index, inner_node.hash()),
-                    NodeMutation::Removal => (*node_index, EMPTY_WORD),
+                    NodeMutation::Removal => {
+                        // Store the actual empty subtree root for this depth
+                        // depth() is 1-indexed from leaf, so we use it directly for
+                        // EmptySubtreeRoots
+                        let empty_root = *EmptySubtreeRoots::entry(SMT_DEPTH, node_index.depth());
+                        (*node_index, empty_root)
+                    },
                 }
             }));
 
@@ -349,20 +355,13 @@ where
 
     /// Initializes the path nodes array from the latest state.
     ///
-    /// Nodes that match their depth's empty subtree root are stored as `EMPTY_WORD` sentinel.
-    /// For non-empty depths, we store the actual node value.
+    /// Converts the sparse path to a dense path and reverses it for indexing by depth from leaf.
     fn initialize_path_nodes(path: &SparseMerklePath) -> [Word; SMT_DEPTH as usize] {
-        let mut path_nodes = [EMPTY_WORD; SMT_DEPTH as usize];
-
-        let path = Vec::from_iter(path.iter());
-
-        path.iter().rev().enumerate().for_each(|(depth, &node)| {
-            let empty_root = *EmptySubtreeRoots::entry(SMT_DEPTH, (depth + 1) as u8); // +1: depth from leaf
-            if node != empty_root {
-                path_nodes[depth] = node;
-            }
-        });
-
+        let mut path_nodes: [Word; SMT_DEPTH as usize] = MerklePath::from(path.clone())
+            .to_vec()
+            .try_into()
+            .expect("MerklePath should have exactly SMT_DEPTH nodes");
+        path_nodes.reverse();
         path_nodes
     }
 
@@ -370,7 +369,6 @@ where
     ///
     /// Iterates through overlays from newest to oldest (walking backwards in time),
     /// updating both the path nodes and the leaf value based on reversion mutations.
-    /// Uses `EMPTY_WORD` as a sentinel to indicate "use empty subtree root for this depth".
     fn apply_reversion_overlays(
         overlays: &BTreeMap<BlockNumber, HistoricalOverlay>,
         block_target: BlockNumber,
@@ -391,7 +389,6 @@ where
                     as usize;
 
                 // Apply reversion mutation if this node was modified
-                // EMPTY_WORD sentinel means "use empty subtree root for this depth"
                 if let Some(hash) = overlay.node_mutations.get(&sibling) {
                     path_nodes[height] = *hash;
                 }
@@ -411,31 +408,12 @@ where
             }
         }
 
-        // Build the Merkle path from reconstructed nodes
-        let path = Self::build_dense_path(&path_nodes);
+        // Build the Merkle path directly from the reconstructed nodes
+        // No need for build_dense_path since all nodes have actual values (not sentinels)
+        let dense: Vec<Word> = path_nodes.iter().rev().copied().collect();
+        let path = MerklePath::new(dense);
         let path = SparseMerklePath::try_from(path).ok()?;
         Some((path, leaf))
-    }
-
-    /// Builds a dense Merkle path from the path nodes array.
-    ///
-    /// Nodes stored as `EMPTY_WORD` sentinel are replaced with their corresponding empty subtree
-    /// roots. The path is built from root to leaf (high to low depth).
-    fn build_dense_path(path_nodes: &[Word; SMT_DEPTH as usize]) -> MerklePath {
-        let dense: Vec<Word> = (0..SMT_DEPTH)
-            .rev() // Iterate from depth 63 down to 0 (root to leaf)
-            .map(|d| {
-                let node = path_nodes[d as usize];
-                if node == EMPTY_WORD {
-                    // EMPTY_WORD sentinel: use empty subtree root for this depth
-                    *EmptySubtreeRoots::entry(SMT_DEPTH, d + 1) // +1: depth from leaf
-                } else {
-                    node
-                }
-            })
-            .collect();
-
-        MerklePath::new(dense)
     }
 
     // PUBLIC MUTATORS

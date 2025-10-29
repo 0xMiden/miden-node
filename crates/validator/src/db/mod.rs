@@ -12,7 +12,11 @@ use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteExecutionHint, NoteHeader, NoteMetadata, NoteTag, NoteType};
 use miden_objects::transaction::{
-    InputNotes, OrderedTransactionHeaders, OutputNote, OutputNotes, TransactionHeader,
+    InputNotes,
+    OrderedTransactionHeaders,
+    OutputNote,
+    OutputNotes,
+    TransactionHeader,
     TransactionId,
 };
 use miden_objects::utils::{Deserializable, Serializable};

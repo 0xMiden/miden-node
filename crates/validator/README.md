@@ -22,6 +22,7 @@ sequenceDiagram
     participant Validator
     participant BlockProducer as Block Producer
     participant Store
+    participant RemoteProver as Remote Prover
 
     Note over Client, Validator: Transaction Submission
     Client->>RPC: SubmitProvenTransaction()
@@ -38,16 +39,19 @@ sequenceDiagram
 
     Note over BlockProducer, RPC: Block Building
     RPC->>BlockProducer: Forward valid transaction
-    BlockProducer->>BlockProducer: Build block
+    BlockProducer->>BlockProducer: Build proposed block
 
     Note over BlockProducer, Validator: Block Validation
-    BlockProducer->>Validator: Send block for validation
+    BlockProducer->>Validator: Proposed block
     Validator->>Validator: Check block validity using stored tx info
-    Validator->>Validator: Sign block
-    Validator->>BlockProducer: Return block signature
+    Validator->>BlockProducer: Signed block header
+    BlockProducer->>BlockProducer: Signed Block
+    BlockProducer->>Store: Signed block
 
-    BlockProducer->>BlockProducer: Include signature with block
-    BlockProducer->>Store: Send signed block
+    Note over Store, RemoteProver: Block Proving
+    Store->>RemoteProver: Signed block
+    RemoteProver->>Store: Block proof
+    Store->>Store: Proven block
 ```
 
 ## Current Status

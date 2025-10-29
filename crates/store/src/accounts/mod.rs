@@ -139,7 +139,7 @@ struct HistoricalOverlay {
     block_number: BlockNumber,
     root: Word,
     node_mutations: HashMap<NodeIndex, Word>,
-    account_updates: HashMap<Word, Word>,
+    account_updates: HashMap<LeafIndex<SMT_DEPTH>, (Word, Word)>,
 }
 
 impl HistoricalOverlay {
@@ -161,7 +161,9 @@ impl HistoricalOverlay {
                 }
             }));
 
-        let account_updates = HashMap::from_iter(mut_set.new_pairs().iter().map(|(&k, &v)| (k, v)));
+        let account_updates = HashMap::from_iter(
+            mut_set.new_pairs().iter().map(|(&k, &v)| (LeafIndex::from(k), (k, v))),
+        );
 
         Self {
             block_number,
@@ -336,8 +338,7 @@ where
 
         // Apply reversion overlays to reconstruct historical state
         let (path, leaf) = Self::apply_reversion_overlays(
-            &self.overlays,
-            block_target,
+            self.overlays.range(block_target..).rev().map(|(_, overlay)| overlay),
             path_nodes,
             leaf_index,
             leaf,
@@ -369,17 +370,14 @@ where
     ///
     /// Iterates through overlays from newest to oldest (walking backwards in time),
     /// updating both the path nodes and the leaf value based on reversion mutations.
-    fn apply_reversion_overlays(
-        overlays: &BTreeMap<BlockNumber, HistoricalOverlay>,
-        block_target: BlockNumber,
+    fn apply_reversion_overlays<'a>(
+        overlays: impl IntoIterator<Item = &'a HistoricalOverlay>,
         mut path_nodes: [Word; SMT_DEPTH as usize],
         leaf_index: NodeIndex,
         mut leaf: SmtLeaf,
     ) -> Option<(SparseMerklePath, SmtLeaf)> {
-        // Iterate through overlays in reverse (newest to oldest)
-        for (_, overlay) in
-            overlays.iter().rev().take_while(|(block_num, _)| block_target <= **block_num)
-        {
+        // Iterate through overlays
+        for overlay in overlays {
             // Update path sibling nodes that changed in this overlay
             for sibling in leaf_index.proof_indices() {
                 let height = sibling
@@ -395,15 +393,11 @@ where
             }
 
             // Update leaf if it was modified in this overlay
-            if let Some((key, value)) = overlay
-                .account_updates
-                .iter()
-                .find(|(k, _)| LeafIndex::from(**k) == leaf.index())
-            {
-                leaf = if *value == EMPTY_WORD {
+            if let Some(&(key, value)) = overlay.account_updates.get(&leaf.index()) {
+                leaf = if value == EMPTY_WORD {
                     SmtLeaf::new_empty(leaf.index())
                 } else {
-                    SmtLeaf::new_single(*key, *value)
+                    SmtLeaf::new_single(key, value)
                 };
             }
         }

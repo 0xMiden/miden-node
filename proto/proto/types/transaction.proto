@@ -13,6 +13,9 @@ message ProvenTransaction {
     // Transaction encoded using [winter_utils::Serializable] implementation for
     // [miden_objects::transaction::proven_tx::ProvenTransaction].
     bytes transaction = 1;
+    // Transaction inputs encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::transaction::TransactionInputs].
+    optional bytes transaction_inputs = 2;
 }
 
 message ProvenTransactionBatch {

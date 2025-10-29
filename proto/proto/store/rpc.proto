@@ -506,7 +506,7 @@ message SyncTransactionsResponse {
 
 // Represents a transaction record.
 message TransactionRecord {
-    // Block number in which the transaction was executed.
+    // Block number in which the transaction was included.
     fixed32 block_num = 1;
 
     // A transaction header.

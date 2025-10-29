@@ -26,6 +26,8 @@ your one-stop-shop for all things Miden.
 For node operators living on the development edge, we also host the latest unreleased documentation
 [here](https://0xMiden.github.io/miden-node/index.html).
 
+The documentation in the `docs/external` folder is built using Docusaurus and is automatically absorbed into the main [miden-docs](https://github.com/0xMiden/miden-docs) repository for the main documentation website. Changes to the `next` branch trigger an automated deployment workflow. The docs folder requires npm packages to be installed before building.
+
 ## Contributing
 
 Developer documentation and onboarding guide is available

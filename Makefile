@@ -67,7 +67,11 @@ doc: ## Generates & checks documentation
 
 .PHONY: book
 book: ## Builds the book & serves documentation site
-	mdbook serve --open docs
+	mdbook serve --open docs/internal
+
+.PHONY: serve-docs
+serve-docs: ## Serves the docs
+	cd docs/external && npm run start:dev
 
 # --- testing -------------------------------------------------------------------------------------
 
@@ -137,6 +141,7 @@ check-tools: ## Checks if development tools are installed
 	@command -v cargo nextest >/dev/null 2>&1 && echo "[OK] cargo-nextest is installed" || echo "[MISSING] cargo-nextest(make install-tools)"
 	@command -v taplo         >/dev/null 2>&1 && echo "[OK] taplo is installed"         || echo "[MISSING] taplo        (make install-tools)"
 	@command -v cargo-machete >/dev/null 2>&1 && echo "[OK] cargo-machete is installed" || echo "[MISSING] cargo-machete (make install-tools)"
+	@command -v npm >/dev/null 2>&1 && echo "[OK] npm is installed" || echo "[MISSING] npm is not installed (run: make install-tools)"
 
 .PHONY: install-tools
 install-tools: ## Installs tools required by the Makefile
@@ -147,4 +152,11 @@ install-tools: ## Installs tools required by the Makefile
 	cargo install cargo-nextest --locked
 	cargo install taplo-cli --locked
 	cargo install cargo-machete --locked
+	@if ! command -v node >/dev/null 2>&1; then \
+		echo "Node.js not found. Please install Node.js from https://nodejs.org/ or using your package manager"; \
+		echo "On macOS: brew install node"; \
+		echo "On Ubuntu/Debian: sudo apt install nodejs npm"; \
+		echo "On Windows: Download from https://nodejs.org/"; \
+		exit 1; \
+	fi
 	@echo "Development tools installation complete!"

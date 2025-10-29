@@ -2,7 +2,7 @@
 // ================================================================================================
 
 use miden_objects::batch::ProposedBatch;
-use miden_objects::block::ProposedBlock;
+use miden_objects::block::SignedBlock;
 use miden_objects::transaction::{ProvenTransaction, TransactionInputs};
 use miden_tx::utils::{Deserializable, DeserializationError, Serializable};
 
@@ -39,11 +39,11 @@ impl TryFrom<proto::ProofRequest> for ProposedBatch {
     }
 }
 
-impl TryFrom<proto::ProofRequest> for ProposedBlock {
+impl TryFrom<proto::ProofRequest> for SignedBlock {
     type Error = DeserializationError;
 
     fn try_from(request: proto::ProofRequest) -> Result<Self, Self::Error> {
-        ProposedBlock::read_from_bytes(&request.payload)
+        SignedBlock::read_from_bytes(&request.payload)
     }
 }
 

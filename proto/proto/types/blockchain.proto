@@ -14,6 +14,20 @@ message Block {
     bytes block = 1;
 }
 
+// Represents a proposed block.
+message ProposedBlock {
+    // Block data encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::ProposedBlock].
+    bytes proposed_block = 1;
+}
+
+// Represents a signed block.
+message SignedBlock {
+    // Block data encoded using [winter_utils::Serializable] implementation for
+    // [miden_objects::block::SignedBlock].
+    bytes signed_block = 1;
+}
+
 // Represents a block or nothing.
 message MaybeBlock {
     // The requested block data encoded using [winter_utils::Serializable] implementation for
@@ -59,17 +73,14 @@ message BlockHeader {
     // A commitment to a set of IDs of transactions which affected accounts in this block.
     primitives.Digest tx_commitment = 8;
 
-    // A commitment to a STARK proof attesting to the correct state transition.
-    primitives.Digest proof_commitment = 9;
-
-    // A commitment to all transaction kernels supported by this block.
-    primitives.Digest tx_kernel_commitment = 10;
+    // ...
+    primitives.Digest signature = 9;
 
     // Fee parameters for block processing.
-    FeeParameters fee_parameters = 11;
+    FeeParameters fee_parameters = 10;
 
     // The time when the block was created.
-    fixed32 timestamp = 12;
+    fixed32 timestamp = 11;
 }
 
 // FEE PARAMETERS

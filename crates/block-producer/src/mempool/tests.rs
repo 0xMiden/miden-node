@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use miden_objects::Word;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use pretty_assertions::assert_eq;
 use serial_test::serial;
@@ -148,7 +147,7 @@ fn block_commit_reverts_expired_txns() {
     uut.add_transaction(tx_to_revert).unwrap();
 
     // Commit the pending block which should revert the above tx.
-    let arb_header = BlockHeader::mock(block, None, None, &[], Word::empty());
+    let arb_header = BlockHeader::mock(block, None, None, &[]);
     uut.commit_block(arb_header.clone());
     reference.commit_block(arb_header);
 
@@ -161,7 +160,7 @@ fn empty_block_commitment() {
 
     for _ in 0..3 {
         let (number, _) = uut.select_block();
-        let arb_header = BlockHeader::mock(number, None, None, &[], Word::empty());
+        let arb_header = BlockHeader::mock(number, None, None, &[]);
         uut.commit_block(arb_header);
     }
 }
@@ -169,7 +168,7 @@ fn empty_block_commitment() {
 #[test]
 #[should_panic]
 fn block_commitment_is_rejected_if_no_block_is_in_flight() {
-    let arb_header = BlockHeader::mock(0, None, None, &[], Word::empty());
+    let arb_header = BlockHeader::mock(0, None, None, &[]);
     Mempool::for_tests().0.commit_block(arb_header);
 }
 

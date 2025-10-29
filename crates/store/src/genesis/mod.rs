@@ -1,4 +1,3 @@
-use miden_lib::transaction::TransactionKernel;
 use miden_objects::Word;
 use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
@@ -101,7 +100,6 @@ impl GenesisState {
             empty_nullifier_tree.root(),
             empty_block_note_tree.root(),
             Word::empty(),
-            TransactionKernel.to_commitment(),
             Word::empty(),
             self.fee_parameters,
             self.timestamp,
@@ -110,12 +108,14 @@ impl GenesisState {
         // SAFETY: Header and accounts should be valid by construction.
         // No notes or nullifiers are created at genesis, which is consistent with the above empty
         // block note tree root and empty nullifier tree root.
+        let proof_commitment = Word::empty();
         Ok(GenesisBlock(ProvenBlock::new_unchecked(
             header,
             accounts,
             empty_output_notes,
             empty_nullifiers,
             empty_transactions,
+            proof_commitment,
         )))
     }
 }

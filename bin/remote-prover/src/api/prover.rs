@@ -2,7 +2,7 @@ use miden_block_prover::LocalBlockProver;
 use miden_node_utils::ErrorReport;
 use miden_objects::MIN_PROOF_SECURITY_LEVEL;
 use miden_objects::batch::ProposedBatch;
-use miden_objects::block::ProposedBlock;
+use miden_objects::block::SignedBlock;
 use miden_objects::transaction::TransactionInputs;
 use miden_objects::utils::Serializable;
 use miden_tx::LocalTransactionProver;
@@ -165,7 +165,7 @@ impl ProverRpcApi {
     )]
     pub fn prove_block(
         &self,
-        proposed_block: ProposedBlock,
+        signed_block: SignedBlock,
         request_id: &str,
     ) -> Result<Response<proto::remote_prover::Proof>, tonic::Status> {
         let Prover::Block(prover) = &self.prover else {
@@ -175,7 +175,7 @@ impl ProverRpcApi {
         let proven_block = prover
             .try_lock()
             .map_err(|_| Status::resource_exhausted("Server is busy handling another request"))?
-            .prove(proposed_block)
+            .prove(signed_block)
             .map_err(internal_error)?;
 
         // Record the commitment of the block in the current tracing span

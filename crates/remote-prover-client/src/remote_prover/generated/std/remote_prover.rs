@@ -9,7 +9,7 @@ pub struct ProofRequest {
     /// type-specific:
     /// - TRANSACTION: TransactionInputs encoded.
     /// - BATCH: ProposedBatch encoded.
-    /// - BLOCK: ProposedBlock encoded.
+    /// - BLOCK: SignedBlock encoded.
     #[prost(bytes = "vec", tag = "2")]
     pub payload: ::prost::alloc::vec::Vec<u8>,
 }

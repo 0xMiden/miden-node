@@ -7,6 +7,22 @@ pub struct Block {
     #[prost(bytes = "vec", tag = "1")]
     pub block: ::prost::alloc::vec::Vec<u8>,
 }
+/// Represents a proposed block.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ProposedBlock {
+    /// Block data encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::block::ProposedBlock\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub proposed_block: ::prost::alloc::vec::Vec<u8>,
+}
+/// Represents a signed block.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SignedBlock {
+    /// Block data encoded using \[winter_utils::Serializable\] implementation for
+    /// \[miden_objects::block::SignedBlock\].
+    #[prost(bytes = "vec", tag = "1")]
+    pub signed_block: ::prost::alloc::vec::Vec<u8>,
+}
 /// Represents a block or nothing.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MaybeBlock {
@@ -56,17 +72,14 @@ pub struct BlockHeader {
     /// A commitment to a set of IDs of transactions which affected accounts in this block.
     #[prost(message, optional, tag = "8")]
     pub tx_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// A commitment to a STARK proof attesting to the correct state transition.
+    /// ...
     #[prost(message, optional, tag = "9")]
-    pub proof_commitment: ::core::option::Option<super::primitives::Digest>,
-    /// A commitment to all transaction kernels supported by this block.
-    #[prost(message, optional, tag = "10")]
-    pub tx_kernel_commitment: ::core::option::Option<super::primitives::Digest>,
+    pub signature: ::core::option::Option<super::primitives::Digest>,
     /// Fee parameters for block processing.
-    #[prost(message, optional, tag = "11")]
+    #[prost(message, optional, tag = "10")]
     pub fee_parameters: ::core::option::Option<FeeParameters>,
     /// The time when the block was created.
-    #[prost(fixed32, tag = "12")]
+    #[prost(fixed32, tag = "11")]
     pub timestamp: u32,
 }
 /// Definition of the fee parameters.

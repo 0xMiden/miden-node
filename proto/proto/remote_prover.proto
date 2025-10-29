@@ -33,7 +33,7 @@ message ProofRequest {
     // type-specific:
     // - TRANSACTION: TransactionInputs encoded.
     // - BATCH: ProposedBatch encoded.
-    // - BLOCK: ProposedBlock encoded.
+    // - BLOCK: SignedBlock encoded.
     bytes payload = 2;
 }
 

@@ -10,7 +10,12 @@ pub mod state;
 
 #[cfg(feature = "rocksdb")]
 pub use accounts::PersistentAccountTree;
-pub use accounts::{AccountTreeStorage, AccountTreeWithHistory, InMemoryAccountTree};
+pub use accounts::{
+    AccountTreeStorage,
+    AccountTreeWithHistory,
+    HistoricalError,
+    InMemoryAccountTree,
+};
 pub use genesis::GenesisState;
 pub use server::{DataDirectory, Store};
 

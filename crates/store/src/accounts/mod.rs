@@ -454,7 +454,7 @@ where
 
     /// Computes mutations relative to the latest state.
     pub fn compute_mutations(
-        &mut self,
+        &self,
         account_commitments: impl IntoIterator<Item = (AccountId, Word)>,
     ) -> Result<AccountMutationSet, HistoricalError> {
         Ok(self.latest.compute_mutations(account_commitments)?)

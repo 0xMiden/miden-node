@@ -77,7 +77,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::{COMPONENT, DataDirectory, InMemoryAccountTree};
+use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
 
 // STRUCTURES
 // ================================================================================================
@@ -93,16 +93,16 @@ pub struct TransactionInputs {
 /// Container for state that needs to be updated atomically.
 struct InnerState<S = MemoryStorage>
 where
-    S: SmtStorage + Default,
+    S: SmtStorage,
 {
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: AccountTree<LargeSmt<S>>,
+    account_tree: AccountTreeWithHistory<AccountTree<LargeSmt<S>>>,
 }
 
 impl<S> InnerState<S>
 where
-    S: SmtStorage + Default,
+    S: SmtStorage,
 {
     /// Returns the latest block number.
     fn latest_block_num(&self) -> BlockNumber {
@@ -301,7 +301,14 @@ impl State {
                         .iter()
                         .map(|update| (update.account_id(), update.final_state_commitment())),
                 )
-                .map_err(InvalidBlockError::NewBlockDuplicateAccountIdPrefix)?;
+                .map_err(|e| match e {
+                    crate::HistoricalError::AccountTreeError(err) => {
+                        InvalidBlockError::NewBlockDuplicateAccountIdPrefix(err)
+                    },
+                    crate::HistoricalError::MerkleError(_) => {
+                        panic!("Unexpected MerkleError during account tree mutation computation")
+                    },
+                })?;
 
             if account_tree_update.as_mutation_set().root() != header.account_root() {
                 return Err(InvalidBlockError::NewBlockInvalidAccountRoot.into());
@@ -310,7 +317,7 @@ impl State {
             (
                 inner.nullifier_tree.root(),
                 nullifier_tree_update,
-                inner.account_tree.root(),
+                inner.account_tree.root_latest(),
                 account_tree_update,
             )
         };
@@ -384,7 +391,7 @@ impl State {
             // did change, we do not proceed with in-memory and database updates, since it may
             // lead to an inconsistent state.
             if inner.nullifier_tree.root() != nullifier_tree_old_root
-                || inner.account_tree.root() != account_tree_old_root
+                || inner.account_tree.root_latest() != account_tree_old_root
             {
                 return Err(ApplyBlockError::ConcurrentWrite);
             }
@@ -832,7 +839,7 @@ impl State {
         let account_witnesses = account_ids
             .iter()
             .copied()
-            .map(|account_id| (account_id, inner.account_tree.open(account_id)))
+            .map(|account_id| (account_id, inner.account_tree.open_latest(account_id)))
             .collect::<BTreeMap<AccountId, AccountWitness>>();
 
         // Fetch witnesses for all nullifiers. We don't check whether the nullifiers are spent or
@@ -923,7 +930,7 @@ impl State {
 
         let AccountProofRequest { block_num, account_id, details } = account_request;
 
-        let witness = inner_state.account_tree.open(account_id);
+        let witness = inner_state.account_tree.open_latest(account_id);
 
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,
@@ -1114,8 +1121,9 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 #[instrument(level = "info", target = COMPONENT, skip_all)]
 async fn load_account_tree(
     db: &mut Db,
-    _block_num: BlockNumber,
-) -> Result<InMemoryAccountTree, StateInitializationError> {
+    block_number: BlockNumber,
+) -> Result<AccountTreeWithHistory<AccountTree<LargeSmt<MemoryStorage>>>, StateInitializationError>
+{
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     // Convert account_data to use account_id_to_smt_key
@@ -1126,5 +1134,6 @@ async fn load_account_tree(
     let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
         .expect("Failed to create LargeSmt from database account data");
 
-    Ok(AccountTree::new(smt).expect("Failed to create AccountTree"))
+    let account_tree = AccountTree::new(smt).expect("Failed to create AccountTree");
+    Ok(AccountTreeWithHistory::new(account_tree, block_number))
 }

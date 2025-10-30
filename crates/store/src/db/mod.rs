@@ -25,9 +25,9 @@ use tokio::sync::oneshot;
 use tracing::{info, info_span, instrument};
 
 use crate::COMPONENT;
-pub use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
+use crate::db::manager::{ConnectionManager, configure_connection_on_creation};
 use crate::db::migrations::apply_migrations;
-pub use crate::db::models::conv::{DatabaseTypeConversionError, SqlTypeConvert};
+use crate::db::models::conv::SqlTypeConvert;
 use crate::db::models::queries::StorageMapValuesPage;
 use crate::db::models::{Page, queries};
 use crate::errors::{DatabaseError, DatabaseSetupError, NoteSyncError, StateSyncError};
@@ -216,11 +216,6 @@ impl From<NoteRecord> for NoteSyncRecord {
 }
 
 impl Db {
-    /// Creates a new database instance with the provided connection pool.
-    pub fn new(pool: deadpool_diesel::Pool<ConnectionManager>) -> Self {
-        Self { pool }
-    }
-
     /// Creates a new database and inserts the genesis block.
     #[instrument(
         target = COMPONENT,
@@ -262,7 +257,7 @@ impl Db {
     }
 
     /// Create and commit a transaction with the queries added in the provided closure
-    pub async fn transact<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
+    pub(crate) async fn transact<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
         Q: Send
             + for<'a, 't> FnOnce(&'a mut SqliteConnection) -> std::result::Result<R, E>
@@ -285,7 +280,7 @@ impl Db {
     }
 
     /// Run the query _without_ a transaction
-    pub async fn query<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
+    pub(crate) async fn query<R, E, Q, M>(&self, msg: M, query: Q) -> std::result::Result<R, E>
     where
         Q: Send + FnOnce(&mut SqliteConnection) -> std::result::Result<R, E> + 'static,
         R: Send + 'static,
@@ -309,7 +304,7 @@ impl Db {
 
     /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
-    pub(crate) async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
+    pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
         let manager = ConnectionManager::new(database_filepath.to_str().unwrap());
         let pool = deadpool_diesel::Pool::builder(manager).max_size(16).build()?;
 

@@ -2741,14 +2741,9 @@ name = "miden-node-validator"
 version = "0.12.0"
 dependencies = [
  "anyhow",
- "deadpool-diesel",
- "diesel",
- "diesel_migrations",
  "miden-node-proto",
  "miden-node-proto-build",
- "miden-node-store",
  "miden-node-utils",
- "miden-objects",
  "tokio",
  "tokio-stream",
  "tonic",

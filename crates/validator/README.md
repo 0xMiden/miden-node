@@ -89,3 +89,7 @@ The validator requires:
 - **Address**: Network address for the gRPC server.
 - **gRPC Timeout**: Request timeout duration.
 - **Data Directory**: Path for SQLite database files.
+
+## License
+
+This project is [MIT licensed](./LICENSE).

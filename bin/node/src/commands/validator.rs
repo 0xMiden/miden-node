@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -8,7 +7,6 @@ use url::Url;
 
 use crate::commands::{
     DEFAULT_TIMEOUT,
-    ENV_DATA_DIRECTORY,
     ENV_ENABLE_OTEL,
     ENV_VALIDATOR_URL,
     duration_to_human_readable_string,
@@ -37,21 +35,17 @@ pub enum ValidatorCommand {
             value_name = "DURATION"
         )]
         grpc_timeout: Duration,
-
-        /// Directory in which to store the database and raw block data.
-        #[arg(long, env = ENV_DATA_DIRECTORY, value_name = "DIR")]
-        data_directory: PathBuf,
     },
 }
 
 impl ValidatorCommand {
     pub async fn handle(self) -> anyhow::Result<()> {
-        let Self::Start { url, grpc_timeout, data_directory, .. } = self;
+        let Self::Start { url, grpc_timeout, .. } = self;
 
         let address =
             url.to_socket().context("Failed to extract socket address from validator URL")?;
 
-        Validator { address, grpc_timeout, data_directory }
+        Validator { address, grpc_timeout }
             .serve()
             .await
             .context("failed while serving validator component")

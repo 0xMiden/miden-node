@@ -63,12 +63,11 @@ sequenceDiagram
 
 - ✅ Protobuf schema and gRPC server scaffolding.
 - ✅ Transaction submission handler.
-- ✅ Placeholder SQL schema and SQLite database integration.
 
 ### In Development
 
 - 🚧 Transaction re-execution logic.
-- 🚧 Finalized database schema.
+- 🚧 Database schema and impl.
 - 🚧 Block validation logic.
 - 🚧 Block signing logic.
 - 🚧 Integration with RPC.

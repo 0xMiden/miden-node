@@ -30,6 +30,7 @@ use miden_objects::account::{
     AccountId,
     AccountStorage,
     NonFungibleDeltaAction,
+    StorageSlot,
 };
 use miden_objects::asset::{Asset, AssetVault, FungibleAsset, VaultKey};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
@@ -700,63 +701,97 @@ pub(crate) fn upsert_accounts(
         let full_account: Option<Cow<Account>> = match update.details() {
             AccountUpdateDetails::Private => None,
             AccountUpdateDetails::Delta(delta) => {
-                let mut rows = select_details_stmt(conn, account_id)?.into_iter();
-                let Some(account) = rows.next() else {
-                    return Err(DatabaseError::AccountNotFoundInDb(account_id));
-                };
+                if delta.is_full_state() {
+                    let account = Account::try_from(delta)?;
+                    debug_assert_eq!(account_id, account.id());
 
-                // --- process storage map updates ----------------------------
+                    if account.commitment() != update.final_state_commitment() {
+                        return Err(DatabaseError::AccountCommitmentsMismatch {
+                            calculated: account.commitment(),
+                            expected: update.final_state_commitment(),
+                        });
+                    }
 
-                for (&slot, map_delta) in delta.storage().maps() {
-                    for (key, value) in map_delta.entries() {
-                        insert_account_storage_map_value(
+                    for (slot_idx, slot) in account.storage().slots().iter().enumerate() {
+                        match slot {
+                            StorageSlot::Value(_) => {},
+                            StorageSlot::Map(storage_map) => {
+                                for (key, value) in storage_map.entries() {
+                                    // SAFETY: We can safely unwrap the conversion to u8 because
+                                    // accounts have a limit of 255 storage elements
+                                    insert_account_storage_map_value(
+                                        conn,
+                                        account_id,
+                                        block_num,
+                                        u8::try_from(slot_idx).unwrap(),
+                                        *key,
+                                        *value,
+                                    )?;
+                                }
+                            },
+                        }
+                    }
+
+                    Some(Cow::Owned(account))
+                } else {
+                    let mut rows = select_details_stmt(conn, account_id)?.into_iter();
+                    let Some(account) = rows.next() else {
+                        return Err(DatabaseError::AccountNotFoundInDb(account_id));
+                    };
+
+                    // --- process storage map updates ----------------------------
+
+                    for (&slot, map_delta) in delta.storage().maps() {
+                        for (key, value) in map_delta.entries() {
+                            insert_account_storage_map_value(
+                                conn,
+                                account_id,
+                                block_num,
+                                slot,
+                                (*key).into(),
+                                *value,
+                            )?;
+                        }
+                    }
+
+                    // apply delta to the account; we need to do this before we process asset
+                    // updates because we currently need to get the
+                    // current value of fungible assets from the account
+                    let account = apply_delta(account, delta, &update.final_state_commitment())?;
+
+                    // --- process asset updates ----------------------------------
+
+                    for (faucet_id, _) in delta.vault().fungible().iter() {
+                        let current_amount = account.vault().get_balance(*faucet_id).unwrap();
+                        let asset: Asset = FungibleAsset::new(*faucet_id, current_amount)?.into();
+                        let asset_update_or_removal =
+                            if current_amount == 0 { None } else { Some(asset) };
+
+                        insert_account_vault_asset(
                             conn,
-                            account_id,
+                            account.id(),
                             block_num,
-                            slot,
-                            (*key).into(),
-                            *value,
+                            asset.vault_key(),
+                            asset_update_or_removal,
                         )?;
                     }
+
+                    for (asset, delta_action) in delta.vault().non_fungible().iter() {
+                        let asset_update = match delta_action {
+                            NonFungibleDeltaAction::Add => Some(Asset::NonFungible(*asset)),
+                            NonFungibleDeltaAction::Remove => None,
+                        };
+                        insert_account_vault_asset(
+                            conn,
+                            account.id(),
+                            block_num,
+                            asset.vault_key(),
+                            asset_update,
+                        )?;
+                    }
+
+                    Some(Cow::Owned(account))
                 }
-
-                // apply delta to the account; we need to do this before we process asset updates
-                // because we currently need to get the current value of fungible assets from the
-                // account
-                let account = apply_delta(account, delta, &update.final_state_commitment())?;
-
-                // --- process asset updates ----------------------------------
-
-                for (faucet_id, _) in delta.vault().fungible().iter() {
-                    let current_amount = account.vault().get_balance(*faucet_id).unwrap();
-                    let asset: Asset = FungibleAsset::new(*faucet_id, current_amount)?.into();
-                    let asset_update_or_removal =
-                        if current_amount == 0 { None } else { Some(asset) };
-
-                    insert_account_vault_asset(
-                        conn,
-                        account.id(),
-                        block_num,
-                        asset.vault_key(),
-                        asset_update_or_removal,
-                    )?;
-                }
-
-                for (asset, delta_action) in delta.vault().non_fungible().iter() {
-                    let asset_update = match delta_action {
-                        NonFungibleDeltaAction::Add => Some(Asset::NonFungible(*asset)),
-                        NonFungibleDeltaAction::Remove => None,
-                    };
-                    insert_account_vault_asset(
-                        conn,
-                        account.id(),
-                        block_num,
-                        asset.vault_key(),
-                        asset_update,
-                    )?;
-                }
-
-                Some(Cow::Owned(account))
             },
         };
 

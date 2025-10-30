@@ -104,6 +104,16 @@ impl AccountState {
         }
     }
 
+    /// Creates a new account state where the creating transaction is still inflight.
+    pub fn from_uncommitted_account(account: Account) -> Self {
+        Self {
+            inflight: VecDeque::from([account]),
+            committed: None,
+            available_notes: HashMap::default(),
+            nullified_notes: HashMap::default(),
+        }
+    }
+
     /// Returns an iterator over inflight notes that are not currently within their respective
     /// backoff periods based on block number.
     pub fn available_notes(

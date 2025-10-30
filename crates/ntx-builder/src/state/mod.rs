@@ -322,14 +322,19 @@ impl State {
         let mut tx_impact = TransactionImpact::default();
         if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
             let prefix = update.prefix();
-            match update {
-                NetworkAccountUpdate::Delta(account_delta) => {
-                    self.fetch_account(prefix)
-                        .await
-                        .context("failed to load account")?
-                        .context("account with delta not found")?
-                        .add_delta(&account_delta);
-                },
+
+            let NetworkAccountUpdate::Delta(account_delta) = update;
+            if account_delta.is_full_state() {
+                let account = Account::try_from(&account_delta)?;
+                let account_state = AccountState::from_uncommitted_account(account);
+                self.accounts.insert(prefix, account_state);
+                self.queue.push_back(prefix);
+            } else {
+                self.fetch_account(prefix)
+                    .await
+                    .context("failed to load account")?
+                    .context("account with delta not found")?
+                    .add_delta(&account_delta);
             }
 
             // If this account was in-progress, then it should no longer be as this update is the

@@ -35,8 +35,7 @@ pub fn grpc_trace_fn<T>(request: &http::Request<T>) -> tracing::Span {
             request.headers().clone(),
         )))
     });
-    tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&span, otel_ctx)
-        .expect("rpc span should set the otel parent context");
+    let _ = tracing_opentelemetry::OpenTelemetrySpanExt::set_parent(&span, otel_ctx);
 
     // Adds various network attributes to the span, including remote address and port.
     //

@@ -323,11 +323,6 @@ impl State {
         if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
             let prefix = update.prefix();
             match update {
-                NetworkAccountUpdate::New(account) => {
-                    let account_state = AccountState::from_uncommitted_account(account);
-                    self.accounts.insert(prefix, account_state);
-                    self.queue.push_back(prefix);
-                },
                 NetworkAccountUpdate::Delta(account_delta) => {
                     self.fetch_account(prefix)
                         .await

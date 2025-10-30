@@ -9,7 +9,7 @@ use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAcco
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::asset::Asset;
+use miden_objects::asset::{Asset, VaultKey};
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
@@ -57,7 +57,7 @@ pub struct Db {
 #[derive(Debug, Clone)]
 pub struct AccountVaultValue {
     pub block_num: BlockNumber,
-    pub vault_key: Word,
+    pub vault_key: VaultKey,
     /// None if the asset was removed
     pub asset: Option<Asset>,
 }
@@ -65,9 +65,10 @@ pub struct AccountVaultValue {
 impl AccountVaultValue {
     pub fn from_raw_row(row: (i64, Vec<u8>, Option<Vec<u8>>)) -> Result<Self, DatabaseError> {
         let (block_num, vault_key, asset) = row;
+        let vault_key = Word::read_from_bytes(&vault_key)?;
         Ok(Self {
             block_num: BlockNumber::from_raw_sql(block_num)?,
-            vault_key: Word::read_from_bytes(&vault_key)?,
+            vault_key: VaultKey::new_unchecked(vault_key),
             asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
         })
     }

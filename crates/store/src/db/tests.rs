@@ -25,7 +25,7 @@ use miden_objects::account::{
     PublicKeyCommitment,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, FungibleAsset};
+use miden_objects::asset::{Asset, FungibleAsset, VaultKey};
 use miden_objects::block::{
     BlockAccountUpdate,
     BlockHeader,
@@ -426,7 +426,7 @@ fn make_account_and_note(
             &[BlockAccountUpdate::new(
                 account_id,
                 account.commitment(),
-                AccountUpdateDetails::New(account),
+                AccountUpdateDetails::Delta(AccountDelta::try_from(account).unwrap()),
             )],
             block_num,
         )
@@ -722,8 +722,8 @@ fn sync_account_vault_basic_validation() {
         .unwrap();
 
     // Create some test vault assets
-    let vault_key_1 = num_to_word(100);
-    let vault_key_2 = num_to_word(200);
+    let vault_key_1 = VaultKey::new_unchecked(num_to_word(100));
+    let vault_key_2 = VaultKey::new_unchecked(num_to_word(200));
     let fungible_asset_1 = Asset::Fungible(FungibleAsset::new(public_account_id, 1000).unwrap());
     let fungible_asset_2 = Asset::Fungible(FungibleAsset::new(public_account_id, 2000).unwrap());
 

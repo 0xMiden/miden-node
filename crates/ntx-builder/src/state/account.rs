@@ -104,16 +104,6 @@ impl AccountState {
         }
     }
 
-    /// Creates a new account state where the creating transaction is still inflight.
-    pub fn from_uncommitted_account(account: Account) -> Self {
-        Self {
-            inflight: VecDeque::from([account]),
-            committed: None,
-            available_notes: HashMap::default(),
-            nullified_notes: HashMap::default(),
-        }
-    }
-
     /// Returns an iterator over inflight notes that are not currently within their respective
     /// backoff periods based on block number.
     pub fn available_notes(
@@ -251,7 +241,6 @@ impl AccountState {
 
 #[derive(Clone)]
 pub enum NetworkAccountUpdate {
-    New(Account),
     Delta(AccountDelta),
 }
 
@@ -259,7 +248,6 @@ impl NetworkAccountUpdate {
     pub fn from_protocol(update: AccountUpdateDetails) -> Option<Self> {
         let update = match update {
             AccountUpdateDetails::Private => return None,
-            AccountUpdateDetails::New(update) => Self::New(update),
             AccountUpdateDetails::Delta(update) => Self::Delta(update),
         };
 
@@ -273,7 +261,6 @@ impl NetworkAccountUpdate {
 
     fn account_id(&self) -> AccountId {
         match self {
-            NetworkAccountUpdate::New(account) => account.id(),
             NetworkAccountUpdate::Delta(account_delta) => account_delta.id(),
         }
     }

@@ -17,7 +17,14 @@ use miden_node_proto::generated::rpc_store::rpc_client::RpcClient;
 use miden_node_store::{DataDirectory, GenesisState, Store};
 use miden_node_utils::tracing::grpc::OtelInterceptor;
 use miden_objects::account::delta::AccountUpdateDetails;
-use miden_objects::account::{Account, AccountBuilder, AccountId, AccountStorageMode, AccountType};
+use miden_objects::account::{
+    Account,
+    AccountBuilder,
+    AccountDelta,
+    AccountId,
+    AccountStorageMode,
+    AccountType,
+};
 use miden_objects::asset::{Asset, FungibleAsset, TokenSymbol};
 use miden_objects::batch::{BatchAccountUpdate, BatchId, ProvenBatch};
 use miden_objects::block::{
@@ -394,7 +401,7 @@ fn create_consume_note_tx(
     account.increment_nonce(ONE).unwrap();
 
     let details = if account.is_public() {
-        AccountUpdateDetails::New(account.clone())
+        AccountUpdateDetails::Delta(AccountDelta::try_from(account.clone()).unwrap())
     } else {
         AccountUpdateDetails::Private
     };

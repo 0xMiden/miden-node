@@ -402,10 +402,13 @@ impl rpc_server::Rpc for StoreApi {
 
         let updates = updates
             .into_iter()
-            .map(|update| proto::rpc_store::AccountVaultUpdate {
-                vault_key: Some(update.vault_key.into()),
-                asset: update.asset.map(Into::into),
-                block_num: update.block_num.as_u32(),
+            .map(|update| {
+                let vault_key: Word = update.vault_key.into();
+                proto::rpc_store::AccountVaultUpdate {
+                    vault_key: Some(vault_key.into()),
+                    asset: update.asset.map(Into::into),
+                    block_num: update.block_num.as_u32(),
+                }
             })
             .collect();
 

@@ -865,10 +865,10 @@ impl State {
 
         let inner = self.inner.read().await;
 
-        let account_commitment = inner.account_tree.get(account_id);
+        let account_commitment = inner.account_tree.get_latest_commitment(account_id);
 
         let new_account_id_prefix_is_unique = if account_commitment.is_empty() {
-            Some(!inner.account_tree.contains_account_id_prefix(account_id.prefix()))
+            Some(!inner.account_tree.contains_account_id_prefix_in_latest(account_id.prefix()))
         } else {
             None
         };

@@ -98,7 +98,7 @@ where
         self.apply_mutations_with_reversion(mutations)
     }
 
-    fn contains_account_id_prefix(&self, prefix: miden_objects::account::AccountIdPrefix) -> bool {
+    fn contains_account_id_prefix(&self, prefix: AccountIdPrefix) -> bool {
         self.contains_account_id_prefix(prefix)
     }
 }
@@ -115,15 +115,15 @@ pub enum HistoricalError {
     AccountTreeError(#[from] AccountTreeError),
 }
 
-// HISTORICAL STATE ENUM
+// HISTORICAL SELECTOR ENUM
 // ================================================================================================
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HistoricalState {
+enum HistoricalSelector {
     /// The requested block is in the future (later than current block).
     Future,
     /// The requested block is available in history.
-    Target(BlockNumber),
+    At(BlockNumber),
     /// The requested block is the current/latest block.
     Latest,
     /// The requested block is too old and has been pruned from history.
@@ -238,14 +238,14 @@ where
     ///
     /// Returns `None` if the block is in the future or too old (pruned).
     pub fn root_at(&self, block_number: BlockNumber) -> Option<Word> {
-        match self.historical_state(block_number) {
-            HistoricalState::Latest => Some(self.latest.root()),
-            HistoricalState::Target(block_number) => {
+        match self.historical_selector(block_number) {
+            HistoricalSelector::Latest => Some(self.latest.root()),
+            HistoricalSelector::At(block_number) => {
                 let overlay = self.overlays.get(&block_number)?;
                 debug_assert_eq!(overlay.block_number, block_number);
                 Some(overlay.root)
             },
-            HistoricalState::Future | HistoricalState::TooAncient => None,
+            HistoricalSelector::Future | HistoricalSelector::TooAncient => None,
         }
     }
 
@@ -277,51 +277,48 @@ where
         account_id: AccountId,
         block_number: BlockNumber,
     ) -> Option<AccountWitness> {
-        match self.historical_state(block_number) {
-            HistoricalState::Latest => Some(self.latest.open(account_id)),
-            HistoricalState::Target(block_number) => {
+        match self.historical_selector(block_number) {
+            HistoricalSelector::Latest => Some(self.latest.open(account_id)),
+            HistoricalSelector::At(block_number) => {
                 // Ensure overlay exists before reconstruction
                 self.overlays.get(&block_number)?;
                 Self::reconstruct_historical_witness(self, account_id, block_number)
             },
-            HistoricalState::Future | HistoricalState::TooAncient => None,
+            HistoricalSelector::Future | HistoricalSelector::TooAncient => None,
         }
     }
 
     /// Gets the account state commitment at the latest block.
-    pub fn get(&self, account_id: AccountId) -> Word {
+    pub fn get_latest_commitment(&self, account_id: AccountId) -> Word {
         self.latest.get(account_id)
     }
 
     /// Checks if the tree contains an account with the given prefix.
-    pub fn contains_account_id_prefix(
-        &self,
-        prefix: miden_objects::account::AccountIdPrefix,
-    ) -> bool {
+    pub fn contains_account_id_prefix_in_latest(&self, prefix: AccountIdPrefix) -> bool {
         self.latest.contains_account_id_prefix(prefix)
-    }
-
-    /// Determines the historical state of a requested block number.
-    fn historical_state(&self, desired_block_number: BlockNumber) -> HistoricalState {
-        if desired_block_number == self.block_number {
-            return HistoricalState::Latest;
-        }
-
-        // Check if block is in the future
-        if self.block_number.checked_sub(desired_block_number.as_u32()).is_none() {
-            return HistoricalState::Future;
-        }
-
-        // Check if block exists in overlays
-        if !self.overlays.contains_key(&desired_block_number) {
-            return HistoricalState::TooAncient;
-        }
-
-        HistoricalState::Target(desired_block_number)
     }
 
     // PRIVATE HELPERS - HISTORICAL RECONSTRUCTION
     // --------------------------------------------------------------------------------------------
+
+    /// Determines the historical state selector of a requested block number.
+    fn historical_selector(&self, desired_block_number: BlockNumber) -> HistoricalSelector {
+        if desired_block_number == self.block_number {
+            return HistoricalSelector::Latest;
+        }
+
+        // Check if block is in the future
+        if self.block_number.checked_sub(desired_block_number.as_u32()).is_none() {
+            return HistoricalSelector::Future;
+        }
+
+        // Check if block exists in overlays
+        if !self.overlays.contains_key(&desired_block_number) {
+            return HistoricalSelector::TooAncient;
+        }
+
+        HistoricalSelector::At(desired_block_number)
+    }
 
     /// Reconstructs a historical account witness by applying reversion overlays.
     fn reconstruct_historical_witness(
@@ -336,7 +333,9 @@ where
 
         let leaf_index = NodeIndex::from(leaf.index());
 
-        // Apply reversion overlays to reconstruct historical state
+        // Apply reversion overlays to reconstruct historical state.
+        // We reverse the overlay iteration (newest to oldest) to walk backwards in time
+        // from the latest state to the target block.
         let (path, leaf) = Self::apply_reversion_overlays(
             self.overlays.range(block_target..).rev().map(|(_, overlay)| overlay),
             path_nodes,

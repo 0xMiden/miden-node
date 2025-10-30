@@ -3,7 +3,7 @@
 /// path and current forest which validate the block's inclusion in the chain.
 ///
 /// The Merkle path is an MMR proof for the block's leaf, based on the current chain length.
-#[derive(Clone, Copy, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockHeaderByNumberRequest {
     /// The target block height, defaults to latest if not provided.
     #[prost(uint32, optional, tag = "1")]

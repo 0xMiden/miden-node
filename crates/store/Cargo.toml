@@ -34,7 +34,7 @@ serde                  = { features = ["derive"], version = "1" }
 thiserror              = { workspace = true }
 tokio                  = { features = ["fs", "rt-multi-thread"], workspace = true }
 tokio-stream           = { features = ["net"], workspace = true }
-toml                   = { version = "0.8" }
+toml                   = { version = "0.9" }
 tonic                  = { workspace = true }
 tonic-reflection       = { workspace = true }
 tower-http             = { features = ["util"], workspace = true }

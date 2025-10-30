@@ -386,8 +386,9 @@ where
                     as usize;
 
                 // Apply reversion mutation if this node was modified.
-                // It's sound since `proof_indices()`` returns siblings on the path from leaf to root,
-                // hence the height is always less than `SMT_DEPTH`, the leaf and root are not included.
+                // It's sound since `proof_indices()`` returns siblings on the path from leaf to
+                // root, hence the height is always less than `SMT_DEPTH`, the leaf
+                // and root are not included.
                 if let Some(hash) = overlay.node_mutations.get(&sibling) {
                     path_nodes[height] = *hash;
                 }

@@ -13,6 +13,7 @@ members = [
   "crates/store",
   "crates/test-macro",
   "crates/utils",
+  "crates/validator",
   "proto",
 ]
 
@@ -44,6 +45,7 @@ miden-node-rpc              = { path = "crates/rpc", version = "0.12" }
 miden-node-store            = { path = "crates/store", version = "0.12" }
 miden-node-test-macro       = { path = "crates/test-macro" }
 miden-node-utils            = { path = "crates/utils", version = "0.12" }
+miden-node-validator        = { path = "crates/validator", version = "0.12" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.12" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.

@@ -1,0 +1,31 @@
+[package]
+authors.workspace      = true
+description            = "Miden node's validator component"
+edition.workspace      = true
+homepage.workspace     = true
+keywords               = ["miden", "node", "validator"]
+license.workspace      = true
+name                   = "miden-node-validator"
+readme                 = "README.md"
+repository.workspace   = true
+rust-version.workspace = true
+version.workspace      = true
+
+[lints]
+workspace = true
+
+[features]
+
+[dependencies]
+anyhow                 = { workspace = true }
+miden-node-proto       = { workspace = true }
+miden-node-proto-build = { features = ["internal"], workspace = true }
+miden-node-utils       = { features = ["testing"], workspace = true }
+tokio                  = { features = ["macros", "net", "rt-multi-thread"], workspace = true }
+tokio-stream           = { features = ["net"], workspace = true }
+tonic                  = { features = ["transport"], workspace = true }
+tonic-reflection       = { workspace = true }
+tower-http             = { features = ["util"], workspace = true }
+tracing                = { workspace = true }
+
+[dev-dependencies]

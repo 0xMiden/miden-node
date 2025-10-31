@@ -329,6 +329,7 @@ impl api_server::Api for RpcService {
 
         let request = request.into_inner();
 
+        // TODO: JM
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
             Status::invalid_argument(err.as_report_context("invalid transaction"))
         })?;
@@ -372,20 +373,6 @@ impl api_server::Api for RpcService {
             return Err(Status::invalid_argument(
                 "Network transactions may not be submitted by users yet",
             ));
-        }
-
-        // Compare the account delta commitment of the ProvenTransaction with the actual delta
-        let delta_commitment = tx.account_update().account_delta_commitment();
-
-        // Verify that the delta commitment matches the actual delta
-        if let AccountUpdateDetails::Delta(delta) = tx.account_update().details() {
-            let computed_commitment = delta.to_commitment();
-
-            if computed_commitment != delta_commitment {
-                return Err(Status::invalid_argument(
-                    "Account delta commitment does not match the actual account delta",
-                ));
-            }
         }
 
         let tx_verifier = TransactionVerifier::new(MIN_PROOF_SECURITY_LEVEL);

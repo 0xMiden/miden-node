@@ -51,10 +51,12 @@ use crate::db::{NullifierInfo, schema};
 ///     nullifiers
 /// WHERE
 ///     nullifier_prefix IN (?1) AND
-///     block_num >= ?2
+///     block_num >= ?2 AND
 ///     block_num <= ?3
 /// ORDER BY
 ///     block_num ASC
+/// LIMIT
+///     ?4
 /// ```
 pub(crate) fn select_nullifiers_by_prefix(
     conn: &mut SqliteConnection,
@@ -114,10 +116,21 @@ pub(crate) fn select_nullifiers_by_prefix(
 /// # Returns
 ///
 /// A vector with nullifiers and the block height at which they were created, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     nullifier,
+///     block_num
+/// FROM
+///     nullifiers
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_all_nullifiers(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<NullifierInfo>, DatabaseError> {
-    // SELECT nullifier, block_num FROM nullifiers ORDER BY block_num ASC
     let nullifiers_raw =
         SelectDsl::select(schema::nullifiers::table, NullifierWithoutPrefixRawRow::as_select())
             .load::<NullifierWithoutPrefixRawRow>(conn)?;
@@ -139,14 +152,23 @@ pub(crate) fn select_all_nullifiers(
 ///
 /// The [`SqliteConnection`] object is not consumed. It's up to the caller to commit or rollback the
 /// transaction.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// UPDATE notes
+/// SET consumed_at = ?1
+/// WHERE nullifier IN (?2);
+///
+/// INSERT INTO nullifiers (nullifier, nullifier_prefix, block_num)
+/// VALUES (?1, ?2, ?3)
+/// ```
 pub(crate) fn insert_nullifiers_for_block(
     conn: &mut SqliteConnection,
     nullifiers: &[Nullifier],
     block_num: BlockNumber,
 ) -> Result<usize, DatabaseError> {
     QueryParamNullifierLimit::check(nullifiers.len())?;
-
-    // UPDATE notes SET consumed = TRUE WHERE nullifier IN rarray(?1)
     let serialized_nullifiers =
         Vec::<Vec<u8>>::from_iter(nullifiers.iter().map(Nullifier::to_bytes));
 

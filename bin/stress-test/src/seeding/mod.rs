@@ -400,17 +400,19 @@ fn create_consume_note_tx(
 
     account.increment_nonce(ONE).unwrap();
 
-    let details = if account.is_public() {
-        AccountUpdateDetails::Delta(AccountDelta::try_from(account.clone()).unwrap())
+    let (details, account_delta_commitment) = if account.is_public() {
+        let account_delta = AccountDelta::try_from(account.clone()).unwrap();
+        let commitment = account_delta.clone().to_commitment();
+        (AccountUpdateDetails::Delta(account_delta), commitment)
     } else {
-        AccountUpdateDetails::Private
+        (AccountUpdateDetails::Private, Word::empty())
     };
 
     ProvenTransactionBuilder::new(
         account.id(),
         init_hash,
         account.commitment(),
-        Word::empty(),
+        account_delta_commitment,
         block_ref.block_num(),
         block_ref.commitment(),
         fee_from_block(block_ref).unwrap(),

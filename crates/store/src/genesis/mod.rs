@@ -2,8 +2,8 @@ use miden_lib::transaction::TransactionKernel;
 use miden_objects::Word;
 use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::block::account_tree::AccountTree;
 use miden_objects::block::{
-    AccountTree,
     BlockAccountUpdate,
     BlockHeader,
     BlockNoteTree,

@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 
 use miden_objects::Word;
 use miden_objects::account::{AccountId, PartialAccount, StorageMapWitness};
-use miden_objects::asset::AssetWitness;
+use miden_objects::asset::{AssetWitness, VaultKey};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::transaction::{
     AccountInputs,
@@ -85,7 +85,7 @@ impl DataStore for TransactionInputsDataStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: Word,
+        vault_key: VaultKey,
     ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
         async move {
             if self.tx_inputs.account().id() != account_id {

@@ -1538,6 +1538,8 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.1.5",
+ "rayon",
+ "serde",
 ]
 
 [[package]]
@@ -2304,7 +2306,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#f23bf31ffff5973969375cd5c379cb9815aa27ab"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2313,9 +2315,9 @@ dependencies = [
 
 [[package]]
 name = "miden-core"
-version = "0.18.2"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "996f8d8e2a4dd4eef54225f6f116c73b14f03256bc23ea5d4260fe803dd103e2"
+checksum = "da3298dd3c75b119f9031631d0087d8d7de66ae5ac4da80ba7f243d2035b2a1f"
 dependencies = [
  "enum_dispatch",
  "miden-crypto",
@@ -2340,6 +2342,7 @@ dependencies = [
  "flume",
  "getrandom 0.2.16",
  "glob",
+ "hashbrown 0.15.5",
  "hkdf",
  "k256",
  "num",
@@ -2348,6 +2351,7 @@ dependencies = [
  "rand_chacha 0.9.0",
  "rand_core 0.9.3",
  "rand_hc",
+ "rayon",
  "sha3",
  "thiserror 2.0.17",
  "winter-crypto",
@@ -2385,7 +2389,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#f23bf31ffff5973969375cd5c379cb9815aa27ab"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "Inflector",
  "fs-err",
@@ -2737,7 +2741,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#f23bf31ffff5973969375cd5c379cb9815aa27ab"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -2872,7 +2876,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#f23bf31ffff5973969375cd5c379cb9815aa27ab"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2891,7 +2895,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#f23bf31ffff5973969375cd5c379cb9815aa27ab"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2906,7 +2910,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#f23bf31ffff5973969375cd5c379cb9815aa27ab"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#f14d0eb719c6e124e4101eb8a75c279edc00c29c"
 dependencies = [
  "miden-objects",
  "miden-tx",

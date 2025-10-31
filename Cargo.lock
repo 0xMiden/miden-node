@@ -2322,7 +2322,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=jmunoz-expose-account-delta-conversion#a7f536335482dc4be0175041c5cf28f4fae53b27"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#8230f7001c1b37c6164637de8160ae479c8448a7"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2405,7 +2405,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=jmunoz-expose-account-delta-conversion#a7f536335482dc4be0175041c5cf28f4fae53b27"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#8230f7001c1b37c6164637de8160ae479c8448a7"
 dependencies = [
  "Inflector",
  "fs-err",
@@ -2760,7 +2760,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=jmunoz-expose-account-delta-conversion#a7f536335482dc4be0175041c5cf28f4fae53b27"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#8230f7001c1b37c6164637de8160ae479c8448a7"
 dependencies = [
  "bech32",
  "getrandom 0.3.3",
@@ -2897,7 +2897,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=jmunoz-expose-account-delta-conversion#a7f536335482dc4be0175041c5cf28f4fae53b27"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#8230f7001c1b37c6164637de8160ae479c8448a7"
 dependencies = [
  "anyhow",
  "itertools",
@@ -2916,7 +2916,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=jmunoz-expose-account-delta-conversion#a7f536335482dc4be0175041c5cf28f4fae53b27"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#8230f7001c1b37c6164637de8160ae479c8448a7"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2931,7 +2931,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=jmunoz-expose-account-delta-conversion#a7f536335482dc4be0175041c5cf28f4fae53b27"
+source = "git+https://github.com/0xMiden/miden-base?branch=next#8230f7001c1b37c6164637de8160ae479c8448a7"
 dependencies = [
  "miden-objects",
  "miden-tx",

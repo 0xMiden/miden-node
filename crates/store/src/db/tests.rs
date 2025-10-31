@@ -779,8 +779,9 @@ fn sync_account_vault_basic_validation() {
     assert!(last_block >= block_from, "response block num should be higher than request");
 
     // Verify that we get the updated asset for vault_key_1
-    let vault_key_1_asset =
-        values.iter().find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
+    let vault_key_1_asset = values
+        .iter()
+        .find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
     assert!(vault_key_1_asset.is_some(), "should find updated vault asset");
     assert_eq!(vault_key_1_asset.unwrap().asset, Some(updated_fungible_asset_1));
 }

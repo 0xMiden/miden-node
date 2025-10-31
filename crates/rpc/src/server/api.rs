@@ -22,7 +22,6 @@ use miden_node_utils::limiter::{
     QueryParamNullifierLimit,
 };
 use miden_objects::account::AccountId;
-use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::batch::ProvenBatch;
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::note::{Note, NoteRecipient, NoteScript};

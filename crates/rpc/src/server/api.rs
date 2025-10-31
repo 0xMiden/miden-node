@@ -328,7 +328,6 @@ impl api_server::Api for RpcService {
 
         let request = request.into_inner();
 
-        // TODO: JM
         let tx = ProvenTransaction::read_from_bytes(&request.transaction).map_err(|err| {
             Status::invalid_argument(err.as_report_context("invalid transaction"))
         })?;

@@ -305,7 +305,17 @@ impl Db {
     /// Open a connection to the DB and apply any pending migrations.
     #[instrument(target = COMPONENT, skip_all)]
     pub async fn load(database_filepath: PathBuf) -> Result<Self, DatabaseSetupError> {
-        let manager = ConnectionManager::new(database_filepath.to_str().unwrap());
+        let database_path = database_filepath
+            .to_str()
+            .ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "database filepath is invalid",
+                )
+            })
+            .map_err(DatabaseSetupError::Io)?;
+
+        let manager = ConnectionManager::new(database_path);
         let pool = deadpool_diesel::Pool::builder(manager).max_size(16).build()?;
 
         info!(

@@ -205,7 +205,7 @@ impl Worker {
                         self.address(),
                         e
                     );
-                    return Err(e.to_string());
+                    return Err(e.clone());
                 },
             };
 

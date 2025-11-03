@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_objects::transaction::TransactionId;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::{Semaphore, mpsc};
 use tokio::task::JoinSet;
@@ -82,6 +83,12 @@ pub struct Coordinator {
     /// Each actor must acquire a permit from this semaphore before processing a transaction,
     /// ensuring fair resource allocation and system stability under load.
     semaphore: Arc<Semaphore>,
+
+    /// Cache of events received from the mempool that predate corresponding network accounts.
+    predating_events: HashMap<TransactionId, MempoolEvent>,
+
+    /// Set of account prefixes that have been predated by transactions.
+    predated_account_prefixes: HashSet<NetworkAccountPrefix>,
 }
 
 impl Coordinator {
@@ -94,6 +101,8 @@ impl Coordinator {
             actor_registry: HashMap::new(),
             actor_join_set: JoinSet::new(),
             semaphore: Arc::new(Semaphore::new(max_inflight_transactions)),
+            predating_events: HashMap::new(),
+            predated_account_prefixes: HashSet::new(),
         }
     }
 
@@ -103,7 +112,11 @@ impl Coordinator {
     /// and adds it to the coordinator's management system. The actor will be responsible for
     /// processing transactions and managing state for accounts matching the network prefix.
     #[tracing::instrument(name = "ntx.builder.spawn_actor", skip(self, origin, config))]
-    pub fn spawn_actor(&mut self, origin: AccountOrigin, config: &AccountActorConfig) {
+    pub async fn spawn_actor(
+        &mut self,
+        origin: AccountOrigin,
+        config: &AccountActorConfig,
+    ) -> Result<(), SendError<MempoolEvent>> {
         let account_prefix = origin.prefix();
 
         // If an actor already exists for this account prefix, something has gone wrong.
@@ -117,13 +130,22 @@ impl Coordinator {
         let cancel_token = tokio_util::sync::CancellationToken::new();
         let actor = AccountActor::new(origin, config, event_rx, cancel_token.clone());
         let handle = ActorHandle::new(event_tx, cancel_token);
-        self.actor_registry.insert(account_prefix, handle);
 
         // Run the actor.
         let semaphore = self.semaphore.clone();
         self.actor_join_set.spawn(Box::pin(actor.run(semaphore)));
 
+        // Send the new actor any events that contain notes that predate account creation.
+        if self.predated_account_prefixes.contains(&account_prefix) {
+            for event in self.predating_events.values() {
+                Self::send(&handle, event).await?;
+            }
+            self.predated_account_prefixes.remove(&account_prefix);
+        }
+
+        self.actor_registry.insert(account_prefix, handle);
         tracing::info!("created actor for account prefix: {}", account_prefix);
+        Ok(())
     }
 
     /// Broadcasts a mempool event to all active account actors.
@@ -193,6 +215,28 @@ impl Coordinator {
                 std::future::pending().await
             },
         }
+    }
+
+    /// Caches any mempool events containing notes that don't have a corresponding actor.
+    // If an actor does not exist for the account, it is assumed that the account has not been
+    // created yet.
+    //
+    // Cached events will be fed to the corresponding actor upon account creation.
+    pub fn cache_predating_events(
+        &mut self,
+        prefix: NetworkAccountPrefix,
+        event: &MempoolEvent,
+        tx_id: &TransactionId,
+    ) {
+        if !self.actor_registry.contains_key(&prefix) {
+            self.predating_events.insert(*tx_id, event.clone());
+        }
+        self.predated_account_prefixes.insert(prefix);
+    }
+
+    /// Removes any cached network notes for a given transaction ID.
+    pub fn drain_cache(&mut self, tx_id: &TransactionId) {
+        self.predating_events.remove(tx_id);
     }
 
     /// Helper function to send an event to a single account actor.

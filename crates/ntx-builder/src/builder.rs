@@ -139,7 +139,9 @@ impl NetworkTransactionBuilder {
         let account_ids = store.get_network_account_ids().await?;
         for account_id in account_ids {
             if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
-                self.coordinator.spawn_actor(AccountOrigin::store(account_prefix), &config);
+                self.coordinator
+                    .spawn_actor(AccountOrigin::store(account_prefix), &config)
+                    .await?;
             }
         }
 
@@ -160,7 +162,7 @@ impl NetworkTransactionBuilder {
                         event,
                         &config,
                         chain_state.clone(),
-                    ).await;
+                    ).await?;
                 },
             }
         }
@@ -177,26 +179,46 @@ impl NetworkTransactionBuilder {
         event: MempoolEvent,
         account_actor_config: &AccountActorConfig,
         chain_state: Arc<RwLock<ChainState>>,
-    ) {
+    ) -> Result<(), anyhow::Error> {
         match &event {
-            MempoolEvent::TransactionAdded { account_delta, .. } => {
-                if let Some(AccountUpdateDetails::New(account)) = account_delta {
-                    // Spawn new actors if a transaction creates a new network account
-                    if let Some(network_account) = AccountOrigin::transaction(account) {
-                        self.coordinator.spawn_actor(network_account, account_actor_config);
-                    }
-                } else {
-                    self.coordinator.broadcast_event(&event).await;
+            MempoolEvent::TransactionAdded { id, account_delta, .. } => {
+                match account_delta {
+                    Some(AccountUpdateDetails::New(account)) => {
+                        // Create new actor for account creation transactions.
+                        if let Some(network_account) = AccountOrigin::transaction(account) {
+                            self.coordinator
+                                .spawn_actor(network_account, account_actor_config)
+                                .await?;
+                        }
+                        Ok(())
+                    },
+                    Some(AccountUpdateDetails::Delta(account_delta)) => {
+                        // Cache notes that predate corresponding accounts if there are any.
+                        if let Ok(prefix) = NetworkAccountPrefix::try_from(account_delta.id()) {
+                            self.coordinator.cache_predating_events(prefix, &event, id);
+                        }
+                        self.coordinator.broadcast_event(&event).await;
+                        Ok(())
+                    },
+                    _ => {
+                        self.coordinator.broadcast_event(&event).await;
+                        Ok(())
+                    },
                 }
             },
             // Update chain state and broadcast.
-            MempoolEvent::BlockCommitted { header, .. } => {
+            MempoolEvent::BlockCommitted { header, txs } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
                 self.coordinator.broadcast_event(&event).await;
+                for tx_id in txs {
+                    self.coordinator.drain_cache(tx_id);
+                }
+                Ok(())
             },
             // Broadcast to all actors.
             MempoolEvent::TransactionsReverted(_) => {
                 self.coordinator.broadcast_event(&event).await;
+                Ok(())
             },
         }
     }

@@ -453,7 +453,7 @@ impl AccountSecrets {
                 Some(*account_seed),
                 vec![AuthSecretKey::RpoFalcon512(secret_key.clone())],
             );
-            let name = name.to_string();
+            let name = name.clone();
             Ok(AccountFileWithName { name, account_file })
         })
     }

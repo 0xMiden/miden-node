@@ -888,6 +888,11 @@ impl State {
         self.db.select_network_account_by_prefix(id_prefix).await
     }
 
+    /// Returns account IDs for all public (on-chain) network accounts.
+    pub async fn get_all_network_accounts(&self) -> Result<Vec<AccountId>, DatabaseError> {
+        self.db.select_all_network_account_ids().await
+    }
+
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
@@ -1024,14 +1029,6 @@ impl State {
         self.db.get_account_vault_sync(account_id, block_range).await
     }
 
-    /// Returns the unprocessed network notes, along with the next pagination token.
-    pub async fn get_unconsumed_network_notes(
-        &self,
-        page: Page,
-    ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
-        self.db.select_unconsumed_network_notes(page).await
-    }
-
     /// Returns the network notes for an account that are unconsumed by a specified block number,
     /// along with the next pagination token.
     pub async fn get_unconsumed_network_notes_for_account(
@@ -1041,7 +1038,7 @@ impl State {
         page: Page,
     ) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
         self.db
-            .select_unconsumed_network_notes_for_account(network_account_id_prefix, block_num, page)
+            .select_unconsumed_network_notes(network_account_id_prefix, block_num, page)
             .await
     }
 

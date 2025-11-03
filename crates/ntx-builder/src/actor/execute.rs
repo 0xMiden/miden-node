@@ -13,6 +13,7 @@ use miden_objects::transaction::{
     PartialBlockchain,
     ProvenTransaction,
     TransactionArgs,
+    TransactionId,
     TransactionInputs,
 };
 use miden_objects::vm::FutureMaybeSend;
@@ -37,8 +38,8 @@ use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
 use crate::COMPONENT;
+use crate::actor::account_state::TransactionCandidate;
 use crate::block_producer::BlockProducerClient;
-use crate::state::TransactionCandidate;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {
@@ -60,7 +61,7 @@ pub enum NtxError {
 
 type NtxResult<T> = Result<T, NtxError>;
 
-// Context and execution of network transactions
+// NETWORK TRANSACTION CONTEXT
 // ================================================================================================
 
 /// Provides the context for execution [network transaction candidates](TransactionCandidate).
@@ -88,8 +89,8 @@ impl NtxContext {
     ///
     /// # Returns
     ///
-    /// On success, returns the list of [`FailedNote`]s representing notes that were
-    /// filtered out before execution.
+    /// On success, returns the [`TransactionId`] of the executed transaction and a list of
+    /// [`FailedNote`]s representing notes that were filtered out before execution.
     ///
     /// # Errors
     ///
@@ -102,7 +103,7 @@ impl NtxContext {
     pub fn execute_transaction(
         self,
         tx: TransactionCandidate,
-    ) -> impl FutureMaybeSend<NtxResult<Vec<FailedNote>>> {
+    ) -> impl FutureMaybeSend<NtxResult<(TransactionId, Vec<FailedNote>)>> {
         let TransactionCandidate {
             account,
             notes,
@@ -124,8 +125,9 @@ impl NtxContext {
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
                 let executed = Box::pin(self.execute(&data_store, successful)).await?;
                 let proven = Box::pin(self.prove(executed.into())).await?;
+                let tx_id = proven.id();
                 self.submit(proven).await?;
-                Ok(failed)
+                Ok((tx_id, failed))
             }
             .in_current_span()
             .await
@@ -229,7 +231,7 @@ impl NtxContext {
     }
 }
 
-// Data store implementation for the transaction execution
+// NETWORK TRANSACTION DATA STORE
 // ================================================================================================
 
 /// A [`DataStore`] implementation which provides transaction inputs for a single account and

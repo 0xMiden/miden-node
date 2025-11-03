@@ -114,46 +114,6 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
         request: Request<proto::ntx_builder_store::UnconsumedNetworkNotesRequest>,
     ) -> Result<Response<proto::ntx_builder_store::UnconsumedNetworkNotes>, Status> {
         let request = request.into_inner();
-
-        let state = self.state.clone();
-
-        let size =
-            NonZero::try_from(request.page_size as usize).map_err(|err: TryFromIntError| {
-                invalid_argument(err.as_report_context("invalid page_size"))
-            })?;
-        let page = Page { token: request.page_token, size };
-        // TODO: no need to get the whole NoteRecord here, a NetworkNote wrapper should be created
-        // instead
-        let (notes, next_page) =
-            state.get_unconsumed_network_notes(page).await.map_err(internal_error)?;
-
-        let mut network_notes = Vec::with_capacity(notes.len());
-        for note in notes {
-            // SAFETY: Network notes are filtered in the database, so they should have details;
-            // otherwise the state would be corrupted
-            let (assets, recipient) = note.details.unwrap().into_parts();
-            let note = Note::new(assets, note.metadata, recipient);
-            network_notes.push(note.into());
-        }
-
-        Ok(Response::new(proto::ntx_builder_store::UnconsumedNetworkNotes {
-            notes: network_notes,
-            next_token: next_page.token,
-        }))
-    }
-
-    #[instrument(
-        parent = None,
-        target = COMPONENT,
-        name = "store.ntx_builder_server.get_unconsumed_network_notes_for_account",
-        skip_all,
-        err
-    )]
-    async fn get_unconsumed_network_notes_for_account(
-        &self,
-        request: Request<proto::ntx_builder_store::UnconsumedNetworkNotesForAccountRequest>,
-    ) -> Result<Response<proto::ntx_builder_store::UnconsumedNetworkNotes>, Status> {
-        let request = request.into_inner();
         let block_num = BlockNumber::from(request.block_num);
         let network_account_id_prefix =
             NetworkAccountPrefix::try_from(request.network_account_id_prefix).map_err(|err| {
@@ -187,5 +147,26 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             notes: network_notes,
             next_token: next_page.token,
         }))
+    }
+
+    // TODO: add pagination.
+    #[instrument(
+        parent = None,
+        target = COMPONENT,
+        name = "store.ntx_builder_server.get_network_account_ids",
+        skip_all,
+        ret(level = "debug"),
+        err
+    )]
+    async fn get_network_account_ids(
+        &self,
+        _request: Request<()>,
+    ) -> Result<Response<proto::ntx_builder_store::NetworkAccountIdList>, Status> {
+        let account_ids = self.state.get_all_network_accounts().await.map_err(internal_error)?;
+
+        let account_ids: Vec<proto::account::AccountId> =
+            account_ids.into_iter().map(Into::into).collect();
+
+        Ok(Response::new(proto::ntx_builder_store::NetworkAccountIdList { account_ids }))
     }
 }

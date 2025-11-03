@@ -7,6 +7,7 @@ import "types/blockchain.proto";
 import "types/note.proto";
 import "types/primitives.proto";
 import "store/shared.proto";
+import "google/protobuf/empty.proto";
 
 // NTX BUILDER STORE API
 // ================================================================================================
@@ -17,11 +18,8 @@ service NtxBuilder {
     // and current chain length to authenticate the block's inclusion.
     rpc GetBlockHeaderByNumber(shared.BlockHeaderByNumberRequest) returns (shared.BlockHeaderByNumberResponse) {}
 
-    // Returns a paginated list of unconsumed network notes.
-    rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
-
     // Returns a paginated list of a network account's unconsumed notes up to a specified block number.
-    rpc GetUnconsumedNetworkNotesForAccount(UnconsumedNetworkNotesForAccountRequest) returns (UnconsumedNetworkNotes) {}
+    rpc GetUnconsumedNetworkNotes(UnconsumedNetworkNotesRequest) returns (UnconsumedNetworkNotes) {}
 
     // Returns the block header at the chain tip, as well as the MMR peaks corresponding to this
     // header for executing network transactions. If the block number is not provided, the latest
@@ -30,6 +28,9 @@ service NtxBuilder {
 
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
+
+    // Returns a list of all network account ids.
+    rpc GetNetworkAccountIds(google.protobuf.Empty) returns (NetworkAccountIdList) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX
@@ -50,22 +51,10 @@ message MaybeAccountDetails {
 // GET UNCONSUMED NETWORK NOTES
 // ================================================================================================
 
-// Returns a list of unconsumed network notes using pagination.
-message UnconsumedNetworkNotesRequest {
-    // An opaque token used to paginate through the notes.
-    //
-    // This should be null on the first call, and set to the response  token until the response token
-    // is null, at which point all data has been fetched.
-    optional uint64 page_token = 1;
-
-    // Number of notes to retrieve per page.
-    uint64 page_size = 2;
-}
-
 // Returns a paginated list of unconsumed network notes for an account.
 //
 // Notes created or consumed after the specified block are excluded from the result.
-message UnconsumedNetworkNotesForAccountRequest {
+message UnconsumedNetworkNotesRequest {
     // This should be null on the first call, and set to the response token until the response token
     // is null, at which point all data has been fetched.
     //
@@ -96,6 +85,15 @@ message UnconsumedNetworkNotes {
 
     // The list of unconsumed network notes.
     repeated note.NetworkNote notes = 2;
+}
+
+// GET NETWORK ACCOUNTS
+// ================================================================================================
+
+// Represents the result of getting the network account ids.
+message NetworkAccountIdList {
+  // The list of network account ids.
+  repeated account.AccountId account_ids = 1;
 }
 
 // GET CURRENT BLOCKCHAIN DATA

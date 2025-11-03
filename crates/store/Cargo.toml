@@ -24,6 +24,7 @@ diesel_migrations      = { features = ["sqlite"], version = "2.2" }
 hex                    = { version = "0.4" }
 indexmap               = { workspace = true }
 miden-lib              = { workspace = true }
+miden-crypto           = { version = "0.18", features = ["hashmaps", "concurrent"] }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }

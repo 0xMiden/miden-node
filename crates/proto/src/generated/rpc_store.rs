@@ -89,7 +89,8 @@ pub mod account_proof_request {
 /// Represents the result of getting account proof.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofResponse {
-    /// The block number at which the account witness and details were observed.
+    /// The block number at which the account witness was created and, if requested,
+    /// at which the account details were observed.
     #[prost(message, optional, tag = "1")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Account ID, current state commitment, and SMT path.

@@ -107,7 +107,8 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
 /// Represents a request for an account proof.
 pub struct AccountProofRequest {
     pub account_id: AccountId,
-    pub block_num: BlockNumber,
+    // If not present, the latest account proof references the latest available
+    pub block_num: Option<BlockNumber>,
     pub details: Option<AccountDetailRequest>,
 }
 
@@ -120,9 +121,7 @@ impl TryFrom<proto::rpc_store::AccountProofRequest> for AccountProofRequest {
         let account_id = account_id
             .ok_or(proto::rpc_store::AccountProofRequest::missing_field(stringify!(account_id)))?
             .try_into()?;
-        let block_num = block_num
-            .ok_or(proto::rpc_store::AccountProofRequest::missing_field(stringify!(block_num)))?
-            .into();
+        let block_num = block_num.map(Into::into);
 
         let details = details.map(TryFrom::try_from).transpose()?;
 

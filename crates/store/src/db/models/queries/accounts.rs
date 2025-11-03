@@ -91,53 +91,6 @@ pub(crate) fn select_account(
     Ok(info)
 }
 
-/// Select the account details for an account id at a given block number from the DB using the given
-/// [`SqliteConnection`].
-///
-/// # Returns
-///
-/// The account details at the given block height, or an error.
-///
-/// # Raw SQL
-///
-/// ```sql
-/// SELECT
-///     accounts.account_id,
-///     accounts.account_commitment,
-///     accounts.block_num,
-///     accounts.storage,
-///     accounts.vault,
-///     accounts.nonce,
-///     accounts.code_commitment,
-///     account_codes.code
-/// FROM
-///     accounts
-/// LEFT JOIN
-///     account_codes ON accounts.code_commitment = account_codes.code_commitment
-/// WHERE
-///     account_id = ?1 AND block_num = ?2
-/// ```
-pub(crate) fn select_historical_account_at(
-    conn: &mut SqliteConnection,
-    account_id: AccountId,
-    block_num: BlockNumber,
-) -> Result<AccountInfo, DatabaseError> {
-    let raw = SelectDsl::select(
-        schema::accounts::table.left_join(schema::account_codes::table.on(
-            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
-        )),
-        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
-    )
-    .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-    .filter(schema::accounts::block_num.eq(block_num.to_raw_sql()))
-    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
-    .optional()?
-    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
-    let info = AccountWithCodeRawJoined::from(raw).try_into()?;
-    Ok(info)
-}
-
-// TODO: Handle account prefix collision in a more robust way
 /// Select the latest account details by account ID prefix from the DB using the given
 /// [`SqliteConnection`] This method is meant to be used by the network transaction builder. Because
 /// network notes get matched through accounts through the account's 30-bit prefix, it is possible

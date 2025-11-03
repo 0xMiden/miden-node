@@ -406,25 +406,6 @@ impl Db {
             .await
     }
 
-    /// Loads public account details from the DB at a given block height.
-    ///
-    /// Note: Only tracks a limited history of 20~ish blocks.
-    #[allow(
-        dead_code,
-        reason = "Relevant, but requires an additional primary key schema change"
-    )]
-    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_historical_account_at(
-        &self,
-        id: AccountId,
-        block_num: BlockNumber,
-    ) -> Result<AccountInfo> {
-        self.transact("Get account details at block height", move |conn| {
-            queries::select_historical_account_at(conn, id, block_num)
-        })
-        .await
-    }
-
     /// Loads public account details from the DB based on the account ID's prefix.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_network_account_by_prefix(

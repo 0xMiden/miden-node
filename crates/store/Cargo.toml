@@ -23,7 +23,6 @@ diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
 diesel_migrations      = { features = ["sqlite"], version = "2.2" }
 hex                    = { version = "0.4" }
 indexmap               = { workspace = true }
-miden-crypto           = { features = ["concurrent", "hashmaps"], workspace = true }                          # we ensure we have `hashmaps` is enabled
 miden-lib              = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
@@ -53,10 +52,6 @@ miden-objects         = { default-features = true, features = ["testing"], works
 rand                  = { workspace = true }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }
-
-[features]
-default = []                       # rocksdb has just too many requirements on CI for now
-rocksdb = ["miden-crypto/rocksdb"]
 
 [[bench]]
 harness = false

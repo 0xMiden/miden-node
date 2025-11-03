@@ -172,8 +172,9 @@ message AccountProofResponse {
         optional AccountVaultDetails vault_details = 4;
     }
 
-    // The block number at which the account witness and details were observed.
-    blockchain.BlockNumber block_num = 1;
+    // The block number at which the account witness was created and, if requested,
+    // at which the account details were observed.
+    optional blockchain.BlockNumber block_num = 1;
 
     // Account ID, current state commitment, and SMT path.
     account.AccountWitness witness = 2;

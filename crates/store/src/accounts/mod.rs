@@ -2,15 +2,16 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use miden_crypto::merkle::{EmptySubtreeRoots, MerklePath};
 use miden_objects::account::{AccountId, AccountIdPrefix};
 use miden_objects::block::account_tree::{AccountMutationSet, AccountTree};
 use miden_objects::block::{AccountWitness, BlockNumber};
 use miden_objects::crypto::merkle::{
+    EmptySubtreeRoots,
     LargeSmt,
     LeafIndex,
     MemoryStorage,
     MerkleError,
+    MerklePath,
     NodeIndex,
     NodeMutation,
     SMT_DEPTH,
@@ -25,11 +26,6 @@ mod tests;
 
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
-
-#[cfg(feature = "rocksdb")]
-/// Convenience for a persistent account tree.
-pub type PersistentAccountTree =
-    AccountTree<LargeSmt<miden_objects::crypto::merkle::RocksDbStorage>>;
 
 // ACCOUNT TREE STORAGE TRAIT
 // ================================================================================================
@@ -103,7 +99,7 @@ where
     }
 }
 
-// ERROR TYPES
+// HISTORICAL ERROR TYPES
 // ================================================================================================
 
 #[allow(missing_docs)]

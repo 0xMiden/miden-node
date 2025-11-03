@@ -119,6 +119,9 @@ pub enum DatabaseError {
     ConnectionManager(#[from] ConnectionManagerError),
     #[error(transparent)]
     SqlValueConversion(#[from] DatabaseTypeConversionError),
+
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
 
 impl DatabaseError {

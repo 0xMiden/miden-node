@@ -77,7 +77,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
+use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory, InMemoryAccountTree};
 
 // STRUCTURES
 // ================================================================================================
@@ -923,13 +923,19 @@ impl State {
         &self,
         account_request: AccountProofRequest,
     ) -> Result<AccountProofResponse, DatabaseError> {
+        let AccountProofRequest { block_num, account_id, details } = account_request;
+        let _ = block_num.ok_or_else(|| {
+            DatabaseError::NotImplemented(
+                "Handling of historical/past block numbers is not implemented yet".to_owned(),
+            )
+        });
+
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
         let inner_state = self.inner.read().await;
 
-        let AccountProofRequest { block_num, account_id, details } = account_request;
-
+        let block_num = inner_state.account_tree.block_number_latest();
         let witness = inner_state.account_tree.open_latest(account_id);
 
         let account_details = if let Some(AccountDetailRequest {
@@ -938,10 +944,6 @@ impl State {
             storage_requests,
         }) = details
         {
-            // TODO for historical account selection use:
-            // let account_info = self.db.select_historical_account_at(account_id,
-            // block_num).await?;
-            let _ = block_num;
             let account_info = self.db.select_account(account_id).await?;
 
             // if we get a query for a _private_ account _with_ details requested, we'll error out
@@ -1122,8 +1124,7 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 async fn load_account_tree(
     db: &mut Db,
     block_number: BlockNumber,
-) -> Result<AccountTreeWithHistory<AccountTree<LargeSmt<MemoryStorage>>>, StateInitializationError>
-{
+) -> Result<AccountTreeWithHistory<InMemoryAccountTree>, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     // Convert account_data to use account_id_to_smt_key

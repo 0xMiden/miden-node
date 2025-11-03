@@ -114,9 +114,10 @@ use crate::errors::NoteSyncError;
 ///             block_num <= ?4
 ///         ORDER BY
 ///             block_num ASC
-///     LIMIT 1) AND
-///     -- filter the block's notes and return only the ones matching the requested tags or
-/// senders     (tag IN (?1) OR sender IN (?2))
+///         LIMIT 1
+///     ) AND
+///     -- filter the block's notes and return only the ones matching the requested tags or senders
+///     (tag IN (?1) OR sender IN (?2))
 /// ```
 pub(crate) fn select_notes_since_block_by_tag_and_sender(
     conn: &mut SqliteConnection,
@@ -175,10 +176,24 @@ pub(crate) fn select_notes_since_block_by_tag_and_sender(
 /// # Raw SQL
 ///
 /// ```sql
-/// SELECT {}
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-/// WHERE note_id IN rarray(?1),
+/// WHERE note_id IN (?1)
 /// ```
 pub(crate) fn select_notes_by_id(
     conn: &mut SqliteConnection,
@@ -211,11 +226,25 @@ pub(crate) fn select_notes_by_id(
 ///
 /// # Raw SQL
 ///
-/// ```
-/// SELECT {cols}
+/// ```sql
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
-/// ORDER BY block_num ASC
+/// ORDER BY committed_at ASC
 /// ```
 #[cfg(test)]
 pub(crate) fn select_all_notes(
@@ -252,7 +281,7 @@ pub(crate) fn select_all_notes(
 ///
 /// ```sql
 /// SELECT
-///     block_num,
+///     committed_at,
 ///     note_id,
 ///     batch_index,
 ///     note_index,
@@ -262,7 +291,7 @@ pub(crate) fn select_all_notes(
 /// WHERE
 ///     note_id IN (?1)
 /// ORDER BY
-///     block_num ASC
+///     committed_at ASC
 /// ```
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
@@ -305,12 +334,12 @@ pub(crate) fn select_note_inclusion_proofs(
 ///
 /// ```sql
 /// SELECT
-///     root,
+///     script_root,
 ///     script
 /// FROM
 ///     note_scripts
 /// WHERE
-///     root = ?1;
+///     script_root = ?1
 /// ```
 pub(crate) fn select_note_script_by_root(
     conn: &mut SqliteConnection,
@@ -325,6 +354,115 @@ pub(crate) fn select_note_script_by_root(
         .map(|bytes| NoteScript::from_bytes(bytes))
         .transpose()
         .map_err(Into::into)
+}
+
+/// Returns a paginated batch of network notes that have not yet been consumed.
+///
+/// # Returns
+///
+/// A set of unconsumed network notes with maximum length of `size` and the page to get
+/// the next set.
+///
+/// Attention: uses the _implicit_ column `rowid`, which requires to use a few raw SQL nugget
+/// statements
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script,
+///     notes.rowid
+/// FROM notes
+/// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
+/// WHERE
+///     execution_mode = 0 AND consumed_at IS NULL AND notes.rowid >= ?1
+/// ORDER BY notes.rowid ASC
+/// LIMIT ?2
+/// ```
+#[allow(
+    clippy::cast_sign_loss,
+    reason = "We need custom SQL statements which has given types that we need to convert"
+)]
+pub(crate) fn unconsumed_network_notes(
+    conn: &mut SqliteConnection,
+    mut page: Page,
+) -> Result<(Vec<NoteRecord>, Page), DatabaseError> {
+    assert_eq!(
+        NoteExecutionMode::Network as u8,
+        0,
+        "Hardcoded execution value must match query"
+    );
+
+    let rowid_sel = diesel::dsl::sql::<diesel::sql_types::BigInt>("notes.rowid");
+    let rowid_sel_ge =
+        diesel::dsl::sql::<diesel::sql_types::Bool>("notes.rowid >= ")
+            .bind::<diesel::sql_types::BigInt, i64>(page.token.unwrap_or_default() as i64);
+
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    type RawLoadedTuple = (
+        NoteRecordRawRow,
+        Option<Vec<u8>>, // script
+        i64,             // rowid (from sql::<BigInt>("notes.rowid"))
+    );
+
+    #[allow(
+        clippy::items_after_statements,
+        reason = "It's only relevant for a single call function"
+    )]
+    fn split_into_raw_note_record_and_implicit_row_id(
+        tuple: RawLoadedTuple,
+    ) -> (NoteRecordWithScriptRawJoined, i64) {
+        let (note, script, row) = tuple;
+        let combined = NoteRecordWithScriptRawJoined::from((note, script));
+        (combined, row)
+    }
+
+    let raw = SelectDsl::select(
+        schema::notes::table.left_join(
+            schema::note_scripts::table
+                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+        ),
+        (
+            NoteRecordRawRow::as_select(),
+            schema::note_scripts::script.nullable(),
+            rowid_sel.clone(),
+        ),
+    )
+    .filter(schema::notes::execution_mode.eq(NoteExecutionMode::Network.to_raw_sql()))
+    .filter(schema::notes::consumed_at.is_null())
+    .filter(rowid_sel_ge)
+    .order(rowid_sel.asc())
+    .limit(page.size.get() as i64 + 1)
+    .load::<RawLoadedTuple>(conn)?;
+
+    let mut notes = Vec::with_capacity(page.size.into());
+    for raw_item in raw {
+        let (raw_item, row_id) = split_into_raw_note_record_and_implicit_row_id(raw_item);
+        page.token = None;
+        if notes.len() == page.size.get() {
+            page.token = Some(row_id as u64);
+            break;
+        }
+        notes.push(TryInto::<NoteRecord>::try_into(raw_item)?);
+    }
+
+    Ok((notes, page))
 }
 
 /// Returns a paginated batch of network notes for an account that are unconsumed by a specified
@@ -343,15 +481,30 @@ pub(crate) fn select_note_script_by_root(
 /// statements.
 ///
 /// ```sql
-/// SELECT *, rowid
+/// SELECT
+///     notes.committed_at,
+///     notes.batch_index,
+///     notes.note_index,
+///     notes.note_id,
+///     notes.note_type,
+///     notes.sender,
+///     notes.tag,
+///     notes.aux,
+///     notes.execution_hint,
+///     notes.assets,
+///     notes.inputs,
+///     notes.serial_num,
+///     notes.inclusion_path,
+///     note_scripts.script,
+///     notes.rowid
 /// FROM notes
 /// LEFT JOIN note_scripts ON notes.script_root = note_scripts.script_root
 /// WHERE
-///  execution_mode = 0 AND tag = ?1 AND
-///  block_num <= ?2 AND
-///  (consumed_block_num IS NULL OR consumed_block_num > ?2) AND rowid >= ?3
-/// ORDER BY rowid
-/// LIMIT ?
+///     execution_mode = 0 AND tag = ?1 AND
+///     committed_at <= ?2 AND
+///     (consumed_at IS NULL OR consumed_at > ?2) AND notes.rowid >= ?3
+/// ORDER BY notes.rowid ASC
+/// LIMIT ?4
 /// ```
 #[allow(
     clippy::cast_sign_loss,

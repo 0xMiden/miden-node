@@ -7,8 +7,10 @@ pub mod block_producer;
 pub mod bundled;
 pub mod rpc;
 pub mod store;
+pub mod validator;
 
 const ENV_BLOCK_PRODUCER_URL: &str = "MIDEN_NODE_BLOCK_PRODUCER_URL";
+const ENV_VALIDATOR_URL: &str = "MIDEN_NODE_VALIDATOR_URL";
 const ENV_BATCH_PROVER_URL: &str = "MIDEN_NODE_BATCH_PROVER_URL";
 const ENV_BLOCK_PROVER_URL: &str = "MIDEN_NODE_BLOCK_PROVER_URL";
 const ENV_NTX_PROVER_URL: &str = "MIDEN_NODE_NTX_PROVER_URL";

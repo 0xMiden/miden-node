@@ -32,7 +32,7 @@ use miden_objects::account::{
     NonFungibleDeltaAction,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset};
+use miden_objects::asset::{Asset, AssetVault, FungibleAsset, VaultKey};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
@@ -58,19 +58,25 @@ use crate::errors::DatabaseError;
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
-///     account_id = ?1;
+///     account_id = ?1
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
     account_id: AccountId,
-) -> Result<proto::domain::account::AccountInfo, DatabaseError> {
+) -> Result<AccountInfo, DatabaseError> {
     let raw = SelectDsl::select(
         schema::accounts::table.left_join(schema::account_codes::table.on(
             schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
@@ -100,14 +106,20 @@ pub(crate) fn select_account(
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
-///     network_account_id_prefix = ?1;
+///     network_account_id_prefix = ?1
 /// ```
 pub(crate) fn select_account_by_id_prefix(
     conn: &mut SqliteConnection,
@@ -137,10 +149,21 @@ pub(crate) fn select_account_by_id_prefix(
 /// # Returns
 ///
 /// The vector with the account id and corresponding commitment, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     account_id,
+///     account_commitment
+/// FROM
+///     accounts
+/// ORDER BY
+///     block_num ASC
+/// ```
 pub(crate) fn select_all_account_commitments(
     conn: &mut SqliteConnection,
 ) -> Result<Vec<(AccountId, Word)>, DatabaseError> {
-    // SELECT account_id, account_commitment FROM accounts ORDER BY block_num ASC
     let raw = SelectDsl::select(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
@@ -174,13 +197,13 @@ pub(crate) fn select_all_account_commitments(
 /// FROM
 ///     account_vault_assets
 /// WHERE
-///     account_id = ?
-///     AND block_num >= ?
-///     AND block_num <= ?
+///     account_id = ?1
+///     AND block_num >= ?2
+///     AND block_num <= ?3
 /// ORDER BY
 ///     block_num ASC
 /// LIMIT
-///     ROW_LIMIT;
+///     ?4
 /// ```
 pub(crate) fn select_account_vault_assets(
     conn: &mut SqliteConnection,
@@ -261,7 +284,7 @@ pub(crate) fn select_account_vault_assets(
 /// WHERE
 ///     block_num > ?1 AND
 ///     block_num <= ?2 AND
-///     account_id IN rarray(?3)
+///     account_id IN (?3)
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -295,14 +318,20 @@ pub fn select_accounts_by_block_range(
 ///
 /// ```sql
 /// SELECT
-///     account_id,
-///     account_commitment,
-///     block_num,
-///     details
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
 /// FROM
 ///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// ORDER BY
-///     block_num ASC;
+///     block_num ASC
 /// ```
 #[cfg(test)]
 pub(crate) fn select_all_accounts(
@@ -401,7 +430,7 @@ impl StorageMapValue {
 /// ORDER BY
 ///     block_num ASC
 /// LIMIT
-///     :row_limit;
+///     ?4
 /// ```
 /// Select account storage map values within a block range (inclusive).
 ///
@@ -601,10 +630,11 @@ pub(crate) fn insert_account_vault_asset(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    vault_key: Word,
+    vault_key: VaultKey,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
-    let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
+    let vault_key_word: Word = vault_key.into();
+    let record = AccountAssetRowInsert::new(&account_id, &vault_key_word, block_num, asset, true);
 
     diesel::Connection::transaction(conn, |conn| {
         // First, update any existing rows with the same (account_id, vault_key) to set
@@ -613,7 +643,7 @@ pub(crate) fn insert_account_vault_asset(
             .filter(
                 schema::account_vault_assets::account_id
                     .eq(&account_id.to_bytes())
-                    .and(schema::account_vault_assets::vault_key.eq(&vault_key.to_bytes()))
+                    .and(schema::account_vault_assets::vault_key.eq(&vault_key_word.to_bytes()))
                     .and(schema::account_vault_assets::is_latest_update.eq(true)),
             )
             .set(schema::account_vault_assets::is_latest_update.eq(false))

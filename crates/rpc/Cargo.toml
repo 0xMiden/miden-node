@@ -19,7 +19,6 @@ anyhow                 = { workspace = true }
 futures                = { version = "0.3" }
 http                   = { workspace = true }
 mediatype              = { version = "0.20" }
-miden-lib              = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { workspace = true }
 miden-node-utils       = { workspace = true }
@@ -38,6 +37,7 @@ tracing                = { workspace = true }
 url                    = { workspace = true }
 
 [dev-dependencies]
+miden-lib        = { workspace = true }
 miden-node-store = { workspace = true }
 miden-node-utils = { features = ["tracing-forest"], workspace = true }
 miden-objects    = { default-features = true, features = ["testing"], workspace = true }

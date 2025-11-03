@@ -233,10 +233,7 @@ pub async fn run_counter_increment_task(
     let mut rng = ChaCha20Rng::from_os_rng();
 
     loop {
-        let mut last_error: Option<String> = None;
-
-        // Create and submit network note
-        match create_and_submit_network_note(
+        let last_error = match create_and_submit_network_note(
             &wallet_account,
             &counter_account,
             &secret_key,
@@ -249,64 +246,107 @@ pub async fn run_counter_increment_task(
         .await
         {
             Ok((tx_id, final_account, block_height)) => {
-                wallet_account = Account::new(
-                    wallet_account.id(),
-                    wallet_account.vault().clone(),
-                    wallet_account.storage().clone(),
-                    wallet_account.code().clone(),
-                    final_account.nonce(),
-                    None,
-                )?;
-
-                data_store.update_account(wallet_account.clone());
-
-                details.success_count += 1;
-                details.last_tx_id = Some(tx_id);
-
-                if let Err(e) = wait_for_block_after(&mut rpc_client, block_height).await {
-                    error!("Failed waiting for next block: {e:?}");
-                    last_error = Some(format!("wait for next block failed: {e}"));
-                } else {
-                    match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
-                        Ok(Some(nonce)) => details.current_value = Some(nonce),
-                        Ok(None) => {},
-                        Err(e) => {
-                            error!("Failed to fetch counter value: {e:?}");
-                            last_error = Some(format!("fetch counter value failed: {e}"));
-                        },
-                    }
-                }
+                handle_success(
+                    &mut wallet_account,
+                    &mut data_store,
+                    &mut details,
+                    &mut rpc_client,
+                    counter_account.id(),
+                    final_account,
+                    tx_id,
+                    block_height,
+                )
+                .await?
             },
-            Err(e) => {
-                error!("Failed to create and submit network note: {:?}", e);
-                details.failure_count += 1;
-                last_error = Some(format!("create/submit note failed: {e}"));
-            },
-        }
-
-        // Update status with results
-        let status = ServiceStatus {
-            name: "Counter Increment".to_string(),
-            status: if details.failure_count == 0 {
-                Status::Healthy
-            } else if details.success_count == 0 {
-                Status::Unhealthy
-            } else {
-                Status::Healthy
-            },
-            last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
-            error: last_error,
-            details: ServiceDetails::CounterIncrement(details.clone()),
+            Err(e) => Some(handle_failure(&mut details, &e)),
         };
 
-        if tx.send(status).is_err() {
-            error!("Failed to send counter increment status update");
-            anyhow::bail!("Failed to send counter increment status update")
-        }
+        let status = build_status(&details, last_error);
+        send_status(&tx, status)?;
 
-        // Wait for the next increment
         sleep(config.counter_increment_interval).await;
     }
+}
+
+/// Handle the success path after a network note is submitted and proven.
+///
+/// Updates the wallet account and data store with the final account and increments the success
+/// count.
+#[allow(clippy::too_many_arguments)]
+async fn handle_success(
+    wallet_account: &mut Account,
+    data_store: &mut MonitorDataStore,
+    details: &mut CounterIncrementDetails,
+    rpc_client: &mut RpcClient,
+    counter_account_id: AccountId,
+    final_account: AccountHeader,
+    tx_id: String,
+    block_height: BlockNumber,
+) -> Result<Option<String>> {
+    let updated_wallet = Account::new(
+        wallet_account.id(),
+        wallet_account.vault().clone(),
+        wallet_account.storage().clone(),
+        wallet_account.code().clone(),
+        final_account.nonce(),
+        None,
+    )?;
+    *wallet_account = updated_wallet;
+    data_store.update_account(wallet_account.clone());
+
+    details.success_count += 1;
+    details.last_tx_id = Some(tx_id);
+
+    if let Err(e) = wait_for_block_after(rpc_client, block_height).await {
+        error!("Failed waiting for next block: {e:?}");
+        return Ok(Some(format!("wait for next block failed: {e}")));
+    }
+
+    match fetch_counter_value(rpc_client, counter_account_id).await {
+        Ok(Some(nonce)) => details.current_value = Some(nonce),
+        Ok(None) => {},
+        Err(e) => {
+            error!("Failed to fetch counter value: {e:?}");
+            return Ok(Some(format!("fetch counter value failed: {e}")));
+        },
+    }
+
+    Ok(None)
+}
+
+/// Handle the failure path when creating/submitting the network note fails.
+fn handle_failure(details: &mut CounterIncrementDetails, error: &anyhow::Error) -> String {
+    error!("Failed to create and submit network note: {:?}", error);
+    details.failure_count += 1;
+    format!("create/submit note failed: {error}")
+}
+
+/// Build a `ServiceStatus` snapshot from the current details and last error.
+fn build_status(details: &CounterIncrementDetails, last_error: Option<String>) -> ServiceStatus {
+    let status = if details.failure_count == 0 {
+        Status::Healthy
+    } else if details.success_count == 0 {
+        Status::Unhealthy
+    } else {
+        Status::Healthy
+    };
+
+    ServiceStatus {
+        name: "Counter Increment".to_string(),
+        status,
+        last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
+        error: last_error,
+        details: ServiceDetails::CounterIncrement(details.clone()),
+    }
+}
+
+/// Send the status update, bailing on error.
+fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Result<()> {
+    if tx.send(status).is_err() {
+        error!("Failed to send counter increment status update");
+        anyhow::bail!("Failed to send counter increment status update")
+    }
+    Ok(())
 }
 
 /// Load counter account from file.

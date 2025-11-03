@@ -21,6 +21,7 @@ use crate::server::health::HealthCheckLayer;
 mod accept;
 mod api;
 mod health;
+mod validator;
 
 /// The RPC server component.
 ///

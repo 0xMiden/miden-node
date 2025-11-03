@@ -20,7 +20,7 @@ use miden_objects::account::{
     StorageSlot,
 };
 use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};
-use miden_objects::asset::AssetWitness;
+use miden_objects::asset::{AssetWitness, VaultKey};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
@@ -191,7 +191,10 @@ pub async fn deploy_accounts(
 
     let proven_tx = prover.prove(executed_tx).context("Failed to prove transaction")?;
 
-    let request = ProvenTransaction { transaction: proven_tx.to_bytes() };
+    let request = ProvenTransaction {
+        transaction: proven_tx.to_bytes(),
+        transaction_inputs: None,
+    };
 
     rpc_client
         .submit_proven_transaction(request)
@@ -315,7 +318,7 @@ impl DataStore for MonitorDataStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: Word,
+        vault_key: VaultKey,
     ) -> Result<AssetWitness, DataStoreError> {
         let account = self.wallet_account.lock().await;
 

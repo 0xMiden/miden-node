@@ -25,7 +25,7 @@ use miden_objects::account::{
     PublicKeyCommitment,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, FungibleAsset};
+use miden_objects::asset::{Asset, FungibleAsset, VaultKey};
 use miden_objects::block::{
     BlockAccountUpdate,
     BlockHeader,
@@ -451,7 +451,7 @@ fn sql_unconsumed_network_notes() {
     // An arbitrary public account (network note tag requires public account).
     create_block(conn, block_num);
 
-    let account_notes = vec![
+    let account_notes = [
         make_account_and_note(conn, block_num, [0u8; 32], AccountStorageMode::Public),
         make_account_and_note(conn, block_num, [1u8; 32], AccountStorageMode::Network),
     ];
@@ -722,8 +722,8 @@ fn sync_account_vault_basic_validation() {
         .unwrap();
 
     // Create some test vault assets
-    let vault_key_1 = num_to_word(100);
-    let vault_key_2 = num_to_word(200);
+    let vault_key_1 = VaultKey::new_unchecked(num_to_word(100));
+    let vault_key_2 = VaultKey::new_unchecked(num_to_word(200));
     let fungible_asset_1 = Asset::Fungible(FungibleAsset::new(public_account_id, 1000).unwrap());
     let fungible_asset_2 = Asset::Fungible(FungibleAsset::new(public_account_id, 2000).unwrap());
 
@@ -779,8 +779,10 @@ fn sync_account_vault_basic_validation() {
     assert!(last_block >= block_from, "response block num should be higher than request");
 
     // Verify that we get the updated asset for vault_key_1
-    let vault_key_1_asset =
-        values.iter().find(|v| v.vault_key == vault_key_1 && v.block_num == block_to);
+    let vault_key_1_word: Word = vault_key_1.into();
+    let vault_key_1_asset = values
+        .iter()
+        .find(|v| v.vault_key == vault_key_1_word && v.block_num == block_to);
     assert!(vault_key_1_asset.is_some(), "should find updated vault asset");
     assert_eq!(vault_key_1_asset.unwrap().asset, Some(updated_fungible_asset_1));
 }

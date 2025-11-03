@@ -46,7 +46,7 @@ use crate::db::{TransactionSummary, schema};
 /// WHERE
 ///     block_num > ?1 AND
 ///     block_num <= ?2 AND
-///     account_id IN rarray(?3)
+///     account_id IN (?3)
 /// ORDER BY
 ///     transaction_id ASC
 /// ```
@@ -257,10 +257,10 @@ impl TransactionSummaryRowInsert {
 /// WHERE
 ///     block_num >= ?1
 ///     AND block_num <= ?2
-///     AND account_id IN rarray(?3)
+///     AND account_id IN (?3)
 ///     AND (
 ///         block_num > ?4 OR (block_num = ?4 AND transaction_id > ?5)
-///     )  -- cursor-based pagination
+///     )
 /// ORDER BY
 ///     block_num ASC,
 ///     transaction_id ASC

@@ -1,6 +1,5 @@
 use miden_block_prover::ProvenBlockError;
 use miden_node_proto::errors::{ConversionError, GrpcError};
-use miden_node_utils::formatting::format_opt;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::{NoteId, Nullifier};
@@ -53,10 +52,12 @@ pub enum VerifyTxError {
     OutputNotesAlreadyExist(Vec<NoteId>),
 
     /// The account's initial commitment did not match the current account's commitment
-    #[error("transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {}", format_opt(.current_account_commitment.as_ref()))]
+    #[error(
+        "transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {current_account_commitment}"
+    )]
     IncorrectAccountInitialCommitment {
         tx_initial_account_commitment: Word,
-        current_account_commitment: Option<Word>,
+        current_account_commitment: Word,
     },
 
     /// Failed to retrieve transaction inputs from the store
@@ -89,10 +90,12 @@ pub enum AddTransactionError {
     #[error("output note IDs already used: {0:?}")]
     OutputNotesAlreadyExist(Vec<NoteId>),
 
-    #[error("transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {}", format_opt(.current_account_commitment.as_ref()))]
+    #[error(
+        "transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {current_account_commitment}"
+    )]
     IncorrectAccountInitialCommitment {
         tx_initial_account_commitment: Word,
-        current_account_commitment: Option<Word>,
+        current_account_commitment: Word,
     },
 
     #[error("failed to retrieve transaction inputs from the store")]

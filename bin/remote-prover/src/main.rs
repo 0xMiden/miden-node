@@ -11,7 +11,7 @@ pub(crate) mod utils;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    setup_tracing(OpenTelemetry::Enabled)?;
+    let _otel_guard = setup_tracing(OpenTelemetry::Enabled)?;
     info!(target: COMPONENT, "Tracing initialized");
 
     // read command-line args

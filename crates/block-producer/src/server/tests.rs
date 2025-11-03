@@ -2,8 +2,7 @@ use std::time::Duration;
 
 use miden_air::{ExecutionProof, HashFunction};
 use miden_node_proto::generated::{
-    self as proto,
-    block_producer::api_client as block_producer_client,
+    self as proto, block_producer::api_client as block_producer_client,
 };
 use miden_node_store::{GenesisState, Store};
 use miden_objects::{
@@ -149,7 +148,8 @@ async fn block_producer_startup_is_robust_to_network_failures() {
 async fn send_request(
     mut client: block_producer_client::ApiClient<Channel>,
     i: u8,
-) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, tonic::Status> {
+) -> Result<tonic::Response<proto::block_producer::SubmitProvenTransactionResponse>, tonic::Status>
+{
     let tx = ProvenTransactionBuilder::new(
         AccountId::dummy(
             [0; 15],
@@ -167,6 +167,9 @@ async fn send_request(
     )
     .build()
     .unwrap();
-    let request = proto::transaction::ProvenTransaction { transaction: tx.to_bytes() };
+    let request = proto::transaction::ProvenTransaction {
+        transaction: tx.to_bytes(),
+        transaction_replay: None,
+    };
     client.submit_proven_transaction(request).await
 }

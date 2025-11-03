@@ -1,3 +1,5 @@
+#![allow(dead_code, reason = "WIP: mempoool refactor")]
+
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -45,7 +47,7 @@ impl AuthenticatedTransaction {
     /// # Errors
     ///
     /// Returns an error if any of the transaction's nullifiers are marked as spent by the inputs.
-    pub fn new(
+    pub fn new_unchecked(
         tx: ProvenTransaction,
         inputs: TransactionInputs,
     ) -> Result<AuthenticatedTransaction, VerifyTxError> {
@@ -123,7 +125,6 @@ impl AuthenticatedTransaction {
         Arc::clone(&self.inner)
     }
 
-    #[cfg(test)]
     pub fn raw_proven_transaction(&self) -> &ProvenTransaction {
         &self.inner
     }
@@ -154,7 +155,7 @@ impl AuthenticatedTransaction {
             current_block_height: 0.into(),
         };
         // SAFETY: nullifiers were set to None aka are definitely unspent.
-        Self::new(inner, inputs).unwrap()
+        Self::new_unchecked(inner, inputs).unwrap()
     }
 
     /// Overrides the authentication height with the given value.

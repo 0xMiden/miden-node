@@ -90,7 +90,7 @@ pub struct State {
 
 impl State {
     /// Maximum number of attempts to execute a network note.
-    const MAX_NOTE_ATTEMPTS: usize = 30;
+    const MAX_NOTE_ATTEMPTS: usize = 1;
 
     /// Load's all available network notes from the store, along with the required account states.
     #[instrument(target = COMPONENT, name = "ntx.state.load", skip_all)]

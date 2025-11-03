@@ -32,6 +32,10 @@ pub enum Command {
     #[command(subcommand)]
     BlockProducer(commands::block_producer::BlockProducerCommand),
 
+    // Commands related to the node's validator component.
+    #[command(subcommand)]
+    Validator(commands::validator::ValidatorCommand),
+
     /// Commands relevant to running all components in the same process.
     ///
     /// This is the recommended way to run the node at the moment.
@@ -48,6 +52,7 @@ impl Command {
             Command::Store(subcommand) => subcommand.is_open_telemetry_enabled(),
             Command::Rpc(subcommand) => subcommand.is_open_telemetry_enabled(),
             Command::BlockProducer(subcommand) => subcommand.is_open_telemetry_enabled(),
+            Command::Validator(subcommand) => subcommand.is_open_telemetry_enabled(),
             Command::Bundled(subcommand) => subcommand.is_open_telemetry_enabled(),
         } {
             OpenTelemetry::Enabled
@@ -61,6 +66,7 @@ impl Command {
             Command::Rpc(rpc_command) => rpc_command.handle().await,
             Command::Store(store_command) => store_command.handle().await,
             Command::BlockProducer(block_producer_command) => block_producer_command.handle().await,
+            Command::Validator(validator) => validator.handle().await,
             Command::Bundled(node) => node.handle().await,
         }
     }
@@ -74,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     // Configure tracing with optional OpenTelemetry exporting support.
-    miden_node_utils::logging::setup_tracing(cli.command.open_telemetry())?;
+    let _otel_guard = miden_node_utils::logging::setup_tracing(cli.command.open_telemetry())?;
 
     cli.command.execute().await
 }

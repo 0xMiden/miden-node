@@ -20,6 +20,7 @@
 - Add `validator` crate with initial protobuf, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
 - [BREAKING] Added `AccountTreeWithHistory` and integrate historical queries into `GetAccountProof` ([#1292](https://github.com/0xMiden/miden-node/pull/1292)).
+- [BREAKING] Added `rocksdb` feature to enable rocksdb as `LargeSmt` as `SmtStore` ([#1326](https://github.com/0xMiden/miden-node/pull/1326)).
 
 ## v0.11.2 (2025-09-10)
 

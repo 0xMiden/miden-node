@@ -4,7 +4,7 @@
 //! of the network account deployed at startup by creating and submitting network notes.
 
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use miden_lib::AuthScheme;
@@ -46,6 +46,9 @@ use crate::config::MonitorConfig;
 use crate::deploy::wallet::create_wallet_account;
 use crate::deploy::{MonitorDataStore, get_counter_library};
 use crate::status::{ServiceDetails, ServiceStatus, Status};
+
+/// The number of seconds to wait before warning that the block header is not available.
+const WAIT_BLOCK_WARN_AFTER_SECS: u64 = 30;
 
 /// Counter increment task details.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
@@ -98,6 +101,8 @@ async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHea
 /// Wait until at least one block after `after` is available.
 async fn wait_for_block_after(rpc_client: &mut RpcClient, after: BlockNumber) -> Result<()> {
     let target = after.as_u32().saturating_add(1);
+    let start = Instant::now();
+    let mut warned = false;
     loop {
         let req = BlockHeaderByNumberRequest {
             block_num: Some(target),
@@ -106,6 +111,14 @@ async fn wait_for_block_after(rpc_client: &mut RpcClient, after: BlockNumber) ->
         let resp = rpc_client.get_block_header_by_number(req).await?.into_inner();
         if resp.block_header.is_some() {
             return Ok(());
+        }
+        if !warned && start.elapsed() >= Duration::from_secs(WAIT_BLOCK_WARN_AFTER_SECS) {
+            tracing::warn!(
+                "Still waiting for block header {} after {}s; continuing to wait",
+                target,
+                WAIT_BLOCK_WARN_AFTER_SECS
+            );
+            warned = true;
         }
         sleep(Duration::from_millis(500)).await;
     }

@@ -23,8 +23,8 @@ diesel                 = { features = ["numeric", "sqlite"], version = "2.2" }
 diesel_migrations      = { features = ["sqlite"], version = "2.2" }
 hex                    = { version = "0.4" }
 indexmap               = { workspace = true }
+miden-crypto           = { features = ["concurrent", "hashmaps"], version = "0.17" }
 miden-lib              = { workspace = true }
-miden-crypto           = { version = "0.17", features = ["hashmaps", "concurrent"] }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miden-node-utils       = { workspace = true }
@@ -61,3 +61,7 @@ rocksdb = ["miden-crypto/rocksdb"]
 [[bench]]
 harness = false
 name    = "account_tree_historical"
+
+[package.metadata.cargo-machete]
+# we only need it for dependency feature unification for `rocksdb`
+ignored = ["miden-crypto"]

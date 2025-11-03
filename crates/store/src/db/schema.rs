@@ -22,7 +22,7 @@ diesel::table! {
 }
 
 diesel::table! {
-    accounts (account_id) {
+    accounts (account_id, block_num) {
         account_id -> Binary,
         network_account_id_prefix -> Nullable<BigInt>,
         account_commitment -> Binary,
@@ -100,11 +100,12 @@ diesel::table! {
 
 diesel::joinable!(accounts -> account_codes (code_commitment));
 diesel::joinable!(accounts -> block_headers (block_num));
-diesel::joinable!(notes -> accounts (sender));
+// Note: Cannot use diesel::joinable! with accounts table due to composite primary key
+// diesel::joinable!(notes -> accounts (sender));
+// diesel::joinable!(transactions -> accounts (account_id));
 diesel::joinable!(notes -> block_headers (committed_at));
 diesel::joinable!(notes -> note_scripts (script_root));
 diesel::joinable!(nullifiers -> block_headers (block_num));
-diesel::joinable!(transactions -> accounts (account_id));
 diesel::joinable!(transactions -> block_headers (block_num));
 
 diesel::allow_tables_to_appear_in_same_query!(

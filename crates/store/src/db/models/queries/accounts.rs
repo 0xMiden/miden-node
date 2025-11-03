@@ -72,6 +72,9 @@ use crate::errors::DatabaseError;
 ///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
 ///     account_id = ?1
+/// ORDER BY
+///     block_num DESC
+/// LIMIT 1
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
@@ -84,6 +87,58 @@ pub(crate) fn select_account(
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
+    .order_by(schema::accounts::block_num.desc())
+    .limit(1)
+    .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
+    .optional()?
+    .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
+    let info = AccountWithCodeRawJoined::from(raw).try_into()?;
+    Ok(info)
+}
+
+/// Select account details at a specific block number from the DB using the given
+/// [`SqliteConnection`].
+///
+/// # Returns
+///
+/// The account details at the specified block, or an error.
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     accounts.account_id,
+///     accounts.account_commitment,
+///     accounts.block_num,
+///     accounts.storage,
+///     accounts.vault,
+///     accounts.nonce,
+///     accounts.code_commitment,
+///     account_codes.code
+/// FROM
+///     accounts
+/// LEFT JOIN
+///     account_codes ON accounts.code_commitment = account_codes.code_commitment
+/// WHERE
+///     account_id = ?1
+///     AND block_num = ?2
+/// ```
+pub(crate) fn select_historical_account_at(
+    conn: &mut SqliteConnection,
+    account_id: AccountId,
+    block_num: BlockNumber,
+) -> Result<AccountInfo, DatabaseError> {
+    let raw = SelectDsl::select(
+        schema::accounts::table.left_join(schema::account_codes::table.on(
+            schema::accounts::code_commitment.eq(schema::account_codes::code_commitment.nullable()),
+        )),
+        (AccountRaw::as_select(), schema::account_codes::code.nullable()),
+    )
+    .filter(
+        schema::accounts::account_id
+            .eq(account_id.to_bytes())
+            .and(schema::accounts::block_num.eq(block_num.to_raw_sql())),
+    )
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;
@@ -848,12 +903,7 @@ pub(crate) fn upsert_accounts(
         };
 
         let v = account_value.clone();
-        let inserted = diesel::insert_into(schema::accounts::table)
-            .values(&v)
-            .on_conflict(schema::accounts::account_id)
-            .do_update()
-            .set(account_value)
-            .execute(conn)?;
+        let inserted = diesel::insert_into(schema::accounts::table).values(&v).execute(conn)?;
 
         debug_assert_eq!(inserted, 1);
 

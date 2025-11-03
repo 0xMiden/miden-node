@@ -22,7 +22,7 @@ CREATE TABLE accounts (
     vault                                   BLOB,
     nonce                                   INTEGER,
 
-    PRIMARY KEY (account_id),
+    PRIMARY KEY (account_id, block_num),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
     FOREIGN KEY (code_commitment) REFERENCES account_codes(code_commitment),
     CONSTRAINT all_null_or_none_null CHECK
@@ -34,6 +34,7 @@ CREATE TABLE accounts (
 ) WITHOUT ROWID;
 
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
+CREATE INDEX idx_accounts_id_block ON accounts(account_id, block_num DESC);
 
 CREATE TABLE notes (
     committed_at             INTEGER NOT NULL, -- Block number when the note was committed

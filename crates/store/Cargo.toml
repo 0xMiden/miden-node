@@ -53,6 +53,10 @@ rand                  = { workspace = true }
 regex                 = { version = "1.11" }
 termtree              = { version = "0.5" }
 
+[features]
+default = []                       # rocksdb has just too many requirements on CI for now
+rocksdb = ["miden-crypto/rocksdb"]
+
 [[bench]]
 harness = false
 name    = "account_tree_historical"

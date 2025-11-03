@@ -916,27 +916,38 @@ impl State {
     /// Returns the respective account proof with optional details, such as asset and storage
     /// entries.
     ///
-    /// Note: The `block_num` parameter in the request is currently ignored and will always
-    /// return the current state. Historical block support will be implemented in a future update.
+    /// When `block_num` is provided, this method will return the account state at that specific
+    /// block using both the historical account tree witness and historical database state.
     #[allow(clippy::too_many_lines)]
     pub async fn get_account_proof(
         &self,
         account_request: AccountProofRequest,
     ) -> Result<AccountProofResponse, DatabaseError> {
         let AccountProofRequest { block_num, account_id, details } = account_request;
-        let _ = block_num.ok_or_else(|| {
-            DatabaseError::NotImplemented(
-                "Handling of historical/past block numbers is not implemented yet".to_owned(),
-            )
-        });
 
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
         let inner_state = self.inner.read().await;
 
-        let block_num = inner_state.account_tree.block_number_latest();
-        let witness = inner_state.account_tree.open_latest(account_id);
+        // Determine which block to query
+        let (block_num, witness) = if let Some(requested_block) = block_num {
+            // Historical query: use the account tree with history
+            let witness = inner_state
+                .account_tree
+                .open_at(account_id, requested_block)
+                .ok_or_else(|| DatabaseError::HistoricalBlockNotAvailable {
+                    block_num: requested_block,
+                    reason: "Block is either in the future or has been pruned from history"
+                        .to_string(),
+                })?;
+            (requested_block, witness)
+        } else {
+            // Latest query: use the latest state
+            let block_num = inner_state.account_tree.block_number_latest();
+            let witness = inner_state.account_tree.open_latest(account_id);
+            (block_num, witness)
+        };
 
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,
@@ -944,7 +955,7 @@ impl State {
             storage_requests,
         }) = details
         {
-            let account_info = self.db.select_account(account_id).await?;
+            let account_info = self.db.select_historical_account_at(account_id, block_num).await?;
 
             // if we get a query for a _private_ account _with_ details requested, we'll error out
             let Some(account) = account_info.details else {

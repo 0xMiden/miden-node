@@ -344,6 +344,7 @@ impl State {
         }
         for note in network_notes {
             let prefix = note.account_prefix();
+            tx_impact.notes.insert(note.nullifier());
 
             // Skip and ignore nullifier if note targets a non-existent network account
             let Some(account) = self.fetch_account(prefix).await? else {
@@ -351,7 +352,6 @@ impl State {
                 continue;
             };
 
-            tx_impact.notes.insert(note.nullifier());
             account.add_note(note.clone());
             self.nullifier_idx.insert(note.nullifier(), prefix);
         }

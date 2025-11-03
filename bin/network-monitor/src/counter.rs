@@ -67,7 +67,7 @@ async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
     Builder::new(config.rpc_url.clone())
         .with_tls()
         .context("Failed to configure TLS for RPC client")
-        .unwrap()
+        .expect("TLS is enabled")
         .with_timeout(Duration::from_secs(30))
         .without_metadata_version()
         .without_metadata_genesis()
@@ -164,7 +164,7 @@ async fn setup_counter_increment(
         Ok(account) => account,
         Err(e) => {
             error!("Failed to create wallet account: {:?}", e);
-            return Err(anyhow::anyhow!("Failed to create wallet account"));
+            anyhow::bail!("Failed to create wallet account: {e}")
         },
     };
 
@@ -172,7 +172,7 @@ async fn setup_counter_increment(
         Ok(account) => account,
         Err(e) => {
             error!("Failed to load counter account: {:?}", e);
-            return Err(anyhow::anyhow!("Failed to load counter account"));
+            anyhow::bail!("Failed to load counter account: {e}")
         },
     };
 
@@ -301,7 +301,7 @@ pub async fn run_counter_increment_task(
 
         if tx.send(status).is_err() {
             error!("Failed to send counter increment status update");
-            return Err(anyhow::anyhow!("Failed to send counter increment status update"));
+            anyhow::bail!("Failed to send counter increment status update")
         }
 
         // Wait for the next increment

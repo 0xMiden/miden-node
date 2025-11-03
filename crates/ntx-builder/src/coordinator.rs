@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -85,10 +85,8 @@ pub struct Coordinator {
     semaphore: Arc<Semaphore>,
 
     /// Cache of events received from the mempool that predate corresponding network accounts.
-    predating_events: HashMap<TransactionId, MempoolEvent>,
-
-    /// Set of account prefixes that have been predated by transactions.
-    predated_account_prefixes: HashSet<NetworkAccountPrefix>,
+    /// Grouped by account prefix to allow targeted event delivery to actors upon creation.
+    predating_events: HashMap<NetworkAccountPrefix, HashMap<TransactionId, MempoolEvent>>,
 }
 
 impl Coordinator {
@@ -102,7 +100,6 @@ impl Coordinator {
             actor_join_set: JoinSet::new(),
             semaphore: Arc::new(Semaphore::new(max_inflight_transactions)),
             predating_events: HashMap::new(),
-            predated_account_prefixes: HashSet::new(),
         }
     }
 
@@ -136,11 +133,10 @@ impl Coordinator {
         self.actor_join_set.spawn(Box::pin(actor.run(semaphore)));
 
         // Send the new actor any events that contain notes that predate account creation.
-        if self.predated_account_prefixes.contains(&account_prefix) {
-            for event in self.predating_events.values() {
+        if let Some(prefix_events) = self.predating_events.remove(&account_prefix) {
+            for event in prefix_events.values() {
                 Self::send(&handle, event).await?;
             }
-            self.predated_account_prefixes.remove(&account_prefix);
         }
 
         self.actor_registry.insert(account_prefix, handle);
@@ -228,15 +224,20 @@ impl Coordinator {
         event: &MempoolEvent,
         tx_id: &TransactionId,
     ) {
+        // Only cache if no actor exists for this prefix.
         if !self.actor_registry.contains_key(&prefix) {
-            self.predating_events.insert(*tx_id, event.clone());
+            self.predating_events.entry(prefix).or_default().insert(*tx_id, event.clone());
         }
-        self.predated_account_prefixes.insert(prefix);
     }
 
-    /// Removes any cached network notes for a given transaction ID.
+    /// Removes any cached events for a given transaction ID from all account prefix caches.
     pub fn drain_cache(&mut self, tx_id: &TransactionId) {
-        self.predating_events.remove(tx_id);
+        // Remove the transaction from all prefix caches.
+        self.predating_events.retain(|_, prefix_event| {
+            prefix_event.remove(tx_id);
+            // Remove entries for account prefixes with no more cached events.
+            !prefix_event.is_empty()
+        });
     }
 
     /// Helper function to send an event to a single account actor.

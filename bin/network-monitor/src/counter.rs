@@ -72,25 +72,25 @@ async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
         .await
 }
 
+/// Get the genesis block header.
 async fn get_genesis_block_header(rpc_client: &mut RpcClient) -> Result<BlockHeader> {
-    // Get the latest block header
     let block_header_request = BlockHeaderByNumberRequest {
-        block_num: Some(BlockNumber::GENESIS.as_u32()), // Get latest block
+        block_num: Some(BlockNumber::GENESIS.as_u32()),
         include_mmr_proof: None,
     };
 
     let response = rpc_client
         .get_block_header_by_number(block_header_request)
         .await
-        .context("Failed to get latest block header from RPC")?
+        .context("Failed to get genesis block header from RPC")?
         .into_inner();
 
-    let latest_block_header = response
+    let genesis_block_header = response
         .block_header
         .ok_or_else(|| anyhow::anyhow!("No block header in response"))?;
 
     let block_header: BlockHeader =
-        latest_block_header.try_into().context("Failed to convert block header")?;
+        genesis_block_header.try_into().context("Failed to convert block header")?;
 
     Ok(block_header)
 }

@@ -246,7 +246,9 @@ impl Tasks {
         let id = self
             .handles
             .spawn(async move {
-                Box::pin(run_counter_increment_task(config, counter_tx)).await.expect("Counter increment runs indefinitely");
+                Box::pin(run_counter_increment_task(config, counter_tx))
+                    .await
+                    .expect("Counter increment runs indefinitely");
             })
             .id();
         self.names.insert(id, "counter-increment".to_string());

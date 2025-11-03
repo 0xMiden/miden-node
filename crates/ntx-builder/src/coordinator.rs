@@ -231,7 +231,7 @@ impl Coordinator {
     }
 
     /// Removes any cached events for a given transaction ID from all account prefix caches.
-    pub fn drain_cache(&mut self, tx_id: &TransactionId) {
+    pub fn drain_predating_events(&mut self, tx_id: &TransactionId) {
         // Remove the transaction from all prefix caches.
         self.predating_events.retain(|_, prefix_event| {
             prefix_event.remove(tx_id);

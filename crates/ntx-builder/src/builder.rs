@@ -211,7 +211,7 @@ impl NetworkTransactionBuilder {
                 self.update_chain_tip(header.clone(), chain_state).await;
                 self.coordinator.broadcast_event(&event).await;
                 for tx_id in txs {
-                    self.coordinator.drain_cache(tx_id);
+                    self.coordinator.drain_predating_events(tx_id);
                 }
                 Ok(())
             },

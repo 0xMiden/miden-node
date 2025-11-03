@@ -211,6 +211,14 @@ impl MonitorDataStore {
     pub fn insert_library(&mut self, library: &Library) {
         self.mast_store.insert(library.mast_forest().clone());
     }
+
+    /// Returns a reference to the account or a standardized "unknown account" error.
+    fn get_account(&self, account_id: AccountId) -> Result<&Account, DataStoreError> {
+        self.accounts.get(&account_id).ok_or_else(|| DataStoreError::Other {
+            error_msg: "unknown account".into(),
+            source: None,
+        })
+    }
 }
 
 impl DataStore for MonitorDataStore {
@@ -219,12 +227,7 @@ impl DataStore for MonitorDataStore {
         account_id: AccountId,
         mut _block_refs: BTreeSet<BlockNumber>,
     ) -> Result<(PartialAccount, BlockHeader, PartialBlockchain), DataStoreError> {
-        let account =
-            self.accounts.get(&account_id).cloned().ok_or_else(|| DataStoreError::Other {
-                error_msg: "unknown account".into(),
-                source: None,
-            })?;
-
+        let account = self.get_account(account_id)?.clone();
         let partial_storage = PartialStorage::new_full(account.storage().clone());
         let assert_vault = PartialVault::new_full(account.vault().clone());
         let partial_account = PartialAccount::new(
@@ -263,11 +266,7 @@ impl DataStore for MonitorDataStore {
         vault_root: Word,
         vault_key: AssetVaultKey,
     ) -> Result<AssetWitness, DataStoreError> {
-        let account =
-            self.accounts.get(&account_id).cloned().ok_or_else(|| DataStoreError::Other {
-                error_msg: "unknown account".into(),
-                source: None,
-            })?;
+        let account = self.get_account(account_id)?;
 
         if account.vault().root() != vault_root {
             return Err(DataStoreError::Other {

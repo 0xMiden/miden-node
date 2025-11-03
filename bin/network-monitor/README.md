@@ -87,7 +87,7 @@ miden-network-monitor start \
 ```
 
 **Optional Counter Account Management (only when counter is enabled):**
-When `--enable-counter` is set, the monitor ensures required counter account exist before starting the task:
+When `--enable-counter` is set, the monitor ensures required counter account exists before starting the task:
 1. If file is missing, creates new counter account:
    - Counter program account with the increment procedure
 2. Saves counter account to the specified file using the Miden AccountFile format

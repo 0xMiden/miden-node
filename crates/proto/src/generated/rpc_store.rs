@@ -18,7 +18,7 @@ pub struct AccountProofRequest {
     /// ID of the account for which we want to get data
     #[prost(message, optional, tag = "1")]
     pub account_id: ::core::option::Option<super::account::AccountId>,
-    /// Block at which we'd like to get this data. Must be close to the chain tip.
+    /// Block at which we'd like to get this data. If present, must be close to the chain tip.
     #[prost(message, optional, tag = "2")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Request for additional account details; valid only for public accounts.
@@ -89,8 +89,7 @@ pub mod account_proof_request {
 /// Represents the result of getting account proof.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AccountProofResponse {
-    /// The block number at which the account witness was created and, if requested,
-    /// at which the account details were observed.
+    /// The block number at which the account witness was created and the account details were observed.
     #[prost(message, optional, tag = "1")]
     pub block_num: ::core::option::Option<super::blockchain::BlockNumber>,
     /// Account ID, current state commitment, and SMT path.

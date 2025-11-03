@@ -147,8 +147,8 @@ message AccountProofRequest {
     // ID of the account for which we want to get data
     account.AccountId account_id = 1;
 
-    // Block at which we'd like to get this data. Must be close to the chain tip.
-    blockchain.BlockNumber block_num = 2;
+    // Block at which we'd like to get this data. If present, must be close to the chain tip.
+    optional blockchain.BlockNumber block_num = 2;
 
     // Request for additional account details; valid only for public accounts.
     optional AccountDetailRequest details = 3;
@@ -172,9 +172,8 @@ message AccountProofResponse {
         optional AccountVaultDetails vault_details = 4;
     }
 
-    // The block number at which the account witness was created and, if requested,
-    // at which the account details were observed.
-    optional blockchain.BlockNumber block_num = 1;
+    // The block number at which the account witness was created and the account details were observed.
+    blockchain.BlockNumber block_num = 1;
 
     // Account ID, current state commitment, and SMT path.
     account.AccountWitness witness = 2;

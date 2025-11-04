@@ -29,6 +29,6 @@ serde            = { features = ["derive"], version = "1.0" }
 serde_json       = { version = "1.0" }
 sha2             = { version = "0.10" }
 tokio            = { features = ["full"], workspace = true }
-tonic            = { features = ["codegen", "prost", "tls-native-roots", "transport"], workspace = true }
+tonic            = { features = ["codegen", "tls-native-roots", "transport"], workspace = true }
 tracing          = { workspace = true }
 url              = { features = ["serde"], workspace = true }

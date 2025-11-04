@@ -3,9 +3,8 @@ use std::sync::Arc;
 
 use miden_node_utils::ErrorReport;
 use miden_remote_prover::COMPONENT;
-use pingora::apps::{HttpServerApp, HttpServerOptions};
+use pingora::apps::{HttpServerApp, HttpServerOptions, ReusedHttpStream};
 use pingora::http::ResponseHeader;
-use pingora::protocols::Stream;
 use pingora::protocols::http::ServerSession;
 use pingora::server::ShutdownWatch;
 use tonic::async_trait;
@@ -64,7 +63,7 @@ impl HttpServerApp for LoadBalancerUpdateService {
         self: &Arc<Self>,
         mut http: ServerSession,
         _shutdown: &ShutdownWatch,
-    ) -> Option<Stream> {
+    ) -> Option<ReusedHttpStream> {
         match http.read_request().await {
             Ok(res) => {
                 if !res {

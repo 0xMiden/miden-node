@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use lru::LruCache;
-use miden_node_proto::generated::note::NoteRoot;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
 use miden_objects::asset::{AssetWitness, VaultKey};
@@ -257,7 +256,7 @@ struct NtxDataStore {
     /// Store client for retrieving note scripts.
     store: StoreClient,
     /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
-    script_cache: Arc<Mutex<LruCache<Word, miden_objects::note::NoteScript>>>,
+    script_cache: Arc<Mutex<LruCache<Word, NoteScript>>>,
 }
 
 impl NtxDataStore {
@@ -403,44 +402,41 @@ impl DataStore for NtxDataStore {
                 return Ok(cached_script);
             }
 
-            // Retrieve the script from the RPC.
-            let note_root = NoteRoot { root: Some(script_root.into()) };
-            match store.get_note_script_by_root(note_root).await {
-                Ok(maybe_script_bytes) => {
+            // Retrieve the script from the store.
+            let maybe_script_bytes =
+                store.get_note_script_by_root(script_root).await.map_err(|err| {
+                    DataStoreError::Other {
+                        error_msg: "failed to retrieve note script from store".to_string().into(),
+                        source: Some(err.into()),
+                    }
+                })?;
+            // Handle response.
+            match maybe_script_bytes {
+                Some(script_bytes) => {
                     // Decode the script from the response.
-                    if let Some(script_bytes) = maybe_script_bytes {
-                        match NoteScript::read_from_bytes(&script_bytes) {
-                            Ok(script) => {
-                                // Cache the retrieved script.
-                                {
-                                    let mut cache_guard = cache.lock().unwrap();
-                                    cache_guard.put(script_root, script.clone());
-                                }
-                                // Return script.
-                                Ok(script)
-                            },
-                            // Failed to decode the script.
-                            Err(err) => {
-                                tracing::error!(
-                                    target: COMPONENT,
-                                    ?err,
-                                    "failed to deserialize note script from bytes"
+                    match NoteScript::read_from_bytes(&script_bytes) {
+                        Ok(script) => {
+                            // Cache the retrieved script.
+                            {
+                                let mut cache_guard = cache.lock().expect(
+                                    "cache mutex cannot already be held in the current thread",
                                 );
-                                Err(DataStoreError::NoteScriptNotFound(script_root))
-                            },
-                        }
-                    } else {
-                        // Response did not contain the note script.
-                        Err(DataStoreError::NoteScriptNotFound(script_root))
+                                cache_guard.put(script_root, script.clone());
+                            }
+                            // Return script.
+                            Ok(script)
+                        },
+                        // Failed to decode the script.
+                        Err(err) => Err(DataStoreError::Other {
+                            error_msg: "failed to deserialize note script from bytes"
+                                .to_string()
+                                .into(),
+                            source: Some(err.into()),
+                        }),
                     }
                 },
-                // RPC call failed.
-                Err(err) => {
-                    tracing::error!(
-                        target: COMPONENT,
-                        ?err,
-                        "failed to retrieve note script from RPC"
-                    );
+                None => {
+                    // Response did not contain the note script.
                     Err(DataStoreError::NoteScriptNotFound(script_root))
                 },
             }

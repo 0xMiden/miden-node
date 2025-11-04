@@ -71,6 +71,7 @@ http               = { version = "1.3" }
 humantime          = { version = "2.2" }
 indexmap           = { version = "2.12" }
 itertools          = { version = "0.14" }
+lru                = { default-features = false, version = "0.16" }
 pretty_assertions  = { version = "1.4" }
 prost              = { version = "0.14" }
 protox             = { version = "0.9" }

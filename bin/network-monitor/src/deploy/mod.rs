@@ -88,12 +88,12 @@ pub fn save_counter_account(account: &Account, file_path: &Path) -> Result<()> {
 ///
 /// `Ok(())` if the accounts exist or were successfully created, or an error if creation fails.
 pub async fn ensure_accounts_exist(
-    wallet_file: &Path,
-    counter_file: &Path,
+    wallet_filepath: &Path,
+    counter_filepath: &Path,
     rpc_url: &Url,
 ) -> Result<()> {
-    let wallet_exists = wallet_file.exists();
-    let counter_exists = counter_file.exists();
+    let wallet_exists = wallet_filepath.exists();
+    let counter_exists = counter_filepath.exists();
 
     if wallet_exists && counter_exists {
         tracing::info!("Account files already exist, skipping account creation");
@@ -112,8 +112,8 @@ pub async fn ensure_accounts_exist(
     tracing::info!("Successfully created and deployed accounts");
 
     // Save accounts to files
-    save_wallet_account(&wallet_account, &secret_key, wallet_file)?;
-    save_counter_account(&counter_account, counter_file)
+    save_wallet_account(&wallet_account, &secret_key, wallet_filepath)?;
+    save_counter_account(&counter_account, counter_filepath)
 }
 
 /// Deploy accounts to the network.

@@ -35,8 +35,8 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
-- `--wallet-file`: Path where the wallet account will be saved (default: `wallet_account.bin`)
-- `--counter-file`: Path where the counter program account will be saved (default: `counter_program.bin`)
+- `--wallet-filepath`: Path where the wallet account will be saved (default: `wallet_account.bin`)
+- `--counter-filepath`: Path where the counter program account will be saved (default: `counter_program.bin`)
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -52,8 +52,8 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_STATUS_CHECK_INTERVAL`: Interval at which to check the status of the services
 - `MIDEN_MONITOR_PORT`: Web server port
 - `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing
-- `MIDEN_MONITOR_WALLET_FILE`: Path where the wallet account will be saved
-- `MIDEN_MONITOR_COUNTER_FILE`: Path where the counter program account will be saved
+- `MIDEN_MONITOR_WALLET_FILEPATH`: Path where the wallet account will be saved
+- `MIDEN_MONITOR_COUNTER_FILEPATH`: Path where the counter program account will be saved
 
 ## Commands
 
@@ -72,8 +72,8 @@ miden-network-monitor start --port 8080 --rpc-url http://localhost:50051
 
 # Start with custom account file paths
 miden-network-monitor start \
-  --wallet-file my_wallet.bin \
-  --counter-file my_counter.bin \
+  --wallet-filepath my_wallet.bin \
+  --counter-filepath my_counter.bin \
   --rpc-url https://testnet.miden.io:443
 ```
 
@@ -104,8 +104,8 @@ miden-network-monitor start \
   --faucet-test-interval 2m \
   --status-check-interval 3s \
   --port 8080 \
-  --wallet-file my_wallet.bin \
-  --counter-file my_counter.bin \
+  --wallet-filepath my_wallet.bin \
+  --counter-filepath my_counter.bin \
   --enable-otel
 
 # Get help
@@ -121,8 +121,8 @@ MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor 
 # Multiple remote provers and faucet testing
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" \
 MIDEN_MONITOR_FAUCET_URL="http://localhost:8080" \
-MIDEN_MONITOR_WALLET_FILE="my_wallet.bin" \
-MIDEN_MONITOR_COUNTER_FILE="my_counter.bin" \
+MIDEN_MONITOR_WALLET_FILEPATH="my_wallet.bin" \
+MIDEN_MONITOR_COUNTER_FILEPATH="my_counter.bin" \
 miden-network-monitor start
 ```
 
@@ -212,8 +212,8 @@ miden-network-monitor start --rpc-url https://testnet.miden.io:443
 # Start monitor with custom account file paths
 miden-network-monitor start \
   --rpc-url https://testnet.miden.io:443 \
-  --wallet-file my_wallet.bin \
-  --counter-file my_counter.bin
+  --wallet-filepath my_wallet.bin \
+  --counter-filepath my_counter.bin
 
 # The generated files can be loaded in Miden applications:
 # - wallet_account.bin: Contains the wallet account with authentication keys

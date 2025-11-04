@@ -102,19 +102,19 @@ pub struct MonitorConfig {
 
     /// Path for the wallet account file.
     #[arg(
-        long = "wallet-file",
-        env = "MIDEN_MONITOR_WALLET_FILE",
+        long = "wallet-filepath",
+        env = "MIDEN_MONITOR_WALLET_FILEPATH",
         default_value = "wallet_account.bin",
         help = "Path where the wallet account will be saved"
     )]
-    pub wallet_file: PathBuf,
+    pub wallet_filepath: PathBuf,
 
     /// Path for the counter program account file.
     #[arg(
-        long = "counter-file",
-        env = "MIDEN_MONITOR_COUNTER_FILE",
+        long = "counter-filepath",
+        env = "MIDEN_MONITOR_COUNTER_FILEPATH",
         default_value = "counter_program.bin",
         help = "Path where the counter program account will be saved"
     )]
-    pub counter_file: PathBuf,
+    pub counter_filepath: PathBuf,
 }

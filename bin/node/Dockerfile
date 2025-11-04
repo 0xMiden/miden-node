@@ -1,4 +1,4 @@
-FROM rust:1.89-slim-bullseye AS builder
+FROM rust:1.90-slim-bullseye AS builder
 
 RUN apt-get update && \
     apt-get -y upgrade && \

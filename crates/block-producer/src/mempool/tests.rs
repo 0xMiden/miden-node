@@ -46,7 +46,7 @@ async fn add_transaction_traces_are_correct() {
 
     let span_data = rx_export.recv().await.unwrap();
     assert_eq!(span_data.name, "mempool.add_transaction");
-    assert!(span_data.attributes.iter().any(|kv| kv.key == "code.namespace".into()
+    assert!(span_data.attributes.iter().any(|kv| kv.key == "code.module.name".into()
         && kv.value == "miden_node_block_producer::mempool".into()));
     assert!(
         span_data

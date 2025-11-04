@@ -143,7 +143,7 @@ impl MockProvenTxBuilder {
             self.initial_account_commitment,
             self.final_account_commitment,
             Word::empty(),
-            BlockNumber::from(0),
+            BlockNumber::GENESIS,
             Word::empty(),
             self.fee,
             self.expiration_block_num,

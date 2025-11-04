@@ -1,6 +1,6 @@
 use miden_node_proto_build::remote_prover_api_descriptor;
 use miette::IntoDiagnostic;
-use tonic_build::FileDescriptorSet;
+use tonic_prost_build::FileDescriptorSet;
 
 /// Defines whether the build script should generate files in `/src`.
 ///
@@ -31,10 +31,10 @@ fn main() -> miette::Result<()> {
 
 /// Builds tonic code from a `FileDescriptorSet`
 fn build_tonic_from_descriptor(descriptor: FileDescriptorSet) -> miette::Result<()> {
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .out_dir(GENERATED_OUT_DIR)
         .build_server(true)
         .build_transport(true)
-        .compile_fds_with_config(prost_build::Config::new(), descriptor)
+        .compile_fds_with_config(descriptor, tonic_prost_build::Config::new())
         .into_diagnostic()
 }

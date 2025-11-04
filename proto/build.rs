@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use fs_err as fs;
 use miette::{Context, IntoDiagnostic};
-use prost::Message;
+use protox::prost::Message;
 
 const RPC_PROTO: &str = "rpc.proto";
 const STORE_RPC_PROTO: &str = "store/rpc.proto";

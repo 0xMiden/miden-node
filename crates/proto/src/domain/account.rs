@@ -107,7 +107,8 @@ impl From<&AccountInfo> for proto::account::AccountDetails {
 /// Represents a request for an account proof.
 pub struct AccountProofRequest {
     pub account_id: AccountId,
-    pub block_num: BlockNumber,
+    // If not present, the latest account proof references the latest available
+    pub block_num: Option<BlockNumber>,
     pub details: Option<AccountDetailRequest>,
 }
 
@@ -120,14 +121,11 @@ impl TryFrom<proto::rpc_store::AccountProofRequest> for AccountProofRequest {
         let account_id = account_id
             .ok_or(proto::rpc_store::AccountProofRequest::missing_field(stringify!(account_id)))?
             .try_into()?;
+        let block_num = block_num.map(Into::into);
 
         let details = details.map(TryFrom::try_from).transpose()?;
 
-        Ok(AccountProofRequest {
-            account_id,
-            block_num: block_num.into(),
-            details,
-        })
+        Ok(AccountProofRequest { account_id, block_num, details })
     }
 }
 
@@ -522,6 +520,7 @@ pub struct AccountDetails {
 
 /// Represents the response to an account proof request.
 pub struct AccountProofResponse {
+    pub block_num: BlockNumber,
     pub witness: AccountWitness,
     pub details: Option<AccountDetails>,
 }
@@ -530,7 +529,11 @@ impl TryFrom<proto::rpc_store::AccountProofResponse> for AccountProofResponse {
     type Error = ConversionError;
 
     fn try_from(value: proto::rpc_store::AccountProofResponse) -> Result<Self, Self::Error> {
-        let proto::rpc_store::AccountProofResponse { witness, details } = value;
+        let proto::rpc_store::AccountProofResponse { block_num, witness, details } = value;
+
+        let block_num = block_num
+            .ok_or(proto::rpc_store::AccountProofResponse::missing_field(stringify!(block_num)))?
+            .into();
 
         let witness = witness
             .ok_or(proto::rpc_store::AccountProofResponse::missing_field(stringify!(witness)))?
@@ -538,17 +541,18 @@ impl TryFrom<proto::rpc_store::AccountProofResponse> for AccountProofResponse {
 
         let details = details.map(TryFrom::try_from).transpose()?;
 
-        Ok(AccountProofResponse { witness, details })
+        Ok(AccountProofResponse { block_num, witness, details })
     }
 }
 
 impl From<AccountProofResponse> for proto::rpc_store::AccountProofResponse {
     fn from(value: AccountProofResponse) -> Self {
-        let AccountProofResponse { witness, details } = value;
+        let AccountProofResponse { block_num, witness, details } = value;
 
         Self {
             witness: Some(witness.into()),
             details: details.map(Into::into),
+            block_num: Some(block_num.into()),
         }
     }
 }

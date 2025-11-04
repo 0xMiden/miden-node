@@ -17,6 +17,21 @@ use thiserror::Error;
 use crate::errors::{ConversionError, MissingFieldHelper};
 use crate::{AccountWitnessRecord, NullifierWitnessRecord, generated as proto};
 
+// BLOCK NUMBER
+// ================================================================================================
+
+impl From<BlockNumber> for proto::blockchain::BlockNumber {
+    fn from(value: BlockNumber) -> Self {
+        proto::blockchain::BlockNumber { block_num: value.as_u32() }
+    }
+}
+
+impl From<proto::blockchain::BlockNumber> for BlockNumber {
+    fn from(value: proto::blockchain::BlockNumber) -> Self {
+        BlockNumber::from(value.block_num)
+    }
+}
+
 // BLOCK HEADER
 // ================================================================================================
 

@@ -24,7 +24,7 @@ use miden_node_proto::domain::batch::BatchInputs;
 use miden_node_utils::ErrorReport;
 use miden_node_utils::formatting::format_array;
 use miden_objects::account::{AccountHeader, AccountId, StorageSlot};
-use miden_objects::block::account_tree::AccountTree;
+use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::{
     AccountWitness,
     BlockHeader,
@@ -37,12 +37,15 @@ use miden_objects::block::{
 };
 use miden_objects::crypto::merkle::{
     Forest,
+    LargeSmt,
+    MemoryStorage,
     Mmr,
     MmrDelta,
     MmrPeaks,
     MmrProof,
     PartialMmr,
     SmtProof,
+    SmtStorage,
 };
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
@@ -74,7 +77,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::{COMPONENT, DataDirectory};
+use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory, InMemoryAccountTree};
 
 // STRUCTURES
 // ================================================================================================
@@ -88,13 +91,19 @@ pub struct TransactionInputs {
 }
 
 /// Container for state that needs to be updated atomically.
-struct InnerState {
+struct InnerState<S = MemoryStorage>
+where
+    S: SmtStorage,
+{
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: AccountTree,
+    account_tree: AccountTreeWithHistory<AccountTree<LargeSmt<S>>>,
 }
 
-impl InnerState {
+impl<S> InnerState<S>
+where
+    S: SmtStorage,
+{
     /// Returns the latest block number.
     fn latest_block_num(&self) -> BlockNumber {
         self.blockchain
@@ -140,7 +149,16 @@ impl State {
             .map_err(StateInitializationError::DatabaseLoadError)?;
 
         let chain_mmr = load_mmr(&mut db).await?;
-        let account_tree = load_account_tree(&mut db).await?;
+        let block_headers = db.select_all_block_headers().await?;
+        // TODO: Account tree loading synchronization
+        // Currently `load_account_tree` loads all account commitments from the DB. This could
+        // potentially lead to inconsistency if the DB contains account states from blocks beyond
+        // `latest_block_num`, though in practice the DB writes are transactional and this
+        // should not occur.
+        let latest_block_num = block_headers
+            .last()
+            .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
+        let account_tree = load_account_tree(&mut db, latest_block_num).await?;
         let nullifier_tree = load_nullifier_tree(&mut db).await?;
 
         let inner = RwLock::new(InnerState {
@@ -283,7 +301,14 @@ impl State {
                         .iter()
                         .map(|update| (update.account_id(), update.final_state_commitment())),
                 )
-                .map_err(InvalidBlockError::NewBlockDuplicateAccountIdPrefix)?;
+                .map_err(|e| match e {
+                    crate::HistoricalError::AccountTreeError(err) => {
+                        InvalidBlockError::NewBlockDuplicateAccountIdPrefix(err)
+                    },
+                    crate::HistoricalError::MerkleError(_) => {
+                        panic!("Unexpected MerkleError during account tree mutation computation")
+                    },
+                })?;
 
             if account_tree_update.as_mutation_set().root() != header.account_root() {
                 return Err(InvalidBlockError::NewBlockInvalidAccountRoot.into());
@@ -292,7 +317,7 @@ impl State {
             (
                 inner.nullifier_tree.root(),
                 nullifier_tree_update,
-                inner.account_tree.root(),
+                inner.account_tree.root_latest(),
                 account_tree_update,
             )
         };
@@ -366,7 +391,7 @@ impl State {
             // did change, we do not proceed with in-memory and database updates, since it may
             // lead to an inconsistent state.
             if inner.nullifier_tree.root() != nullifier_tree_old_root
-                || inner.account_tree.root() != account_tree_old_root
+                || inner.account_tree.root_latest() != account_tree_old_root
             {
                 return Err(ApplyBlockError::ConcurrentWrite);
             }
@@ -814,7 +839,7 @@ impl State {
         let account_witnesses = account_ids
             .iter()
             .copied()
-            .map(|account_id| (account_id, inner.account_tree.open(account_id)))
+            .map(|account_id| (account_id, inner.account_tree.open_latest(account_id)))
             .collect::<BTreeMap<AccountId, AccountWitness>>();
 
         // Fetch witnesses for all nullifiers. We don't check whether the nullifiers are spent or
@@ -840,10 +865,10 @@ impl State {
 
         let inner = self.inner.read().await;
 
-        let account_commitment = inner.account_tree.get(account_id);
+        let account_commitment = inner.account_tree.get_latest_commitment(account_id);
 
         let new_account_id_prefix_is_unique = if account_commitment.is_empty() {
-            Some(!inner.account_tree.contains_account_id_prefix(account_id.prefix()))
+            Some(!inner.account_tree.contains_account_id_prefix_in_latest(account_id.prefix()))
         } else {
             None
         };
@@ -898,19 +923,26 @@ impl State {
         &self,
         account_request: AccountProofRequest,
     ) -> Result<AccountProofResponse, DatabaseError> {
+        let AccountProofRequest { block_num, account_id, details } = account_request;
+        let _ = block_num.ok_or_else(|| {
+            DatabaseError::NotImplemented(
+                "Handling of historical/past block numbers is not implemented yet".to_owned(),
+            )
+        });
+
         // Lock inner state for the whole operation. We need to hold this lock to prevent the
         // database, account tree and latest block number from changing during the operation,
         // because changing one of them would lead to inconsistent state.
         let inner_state = self.inner.read().await;
 
-        let account_id = account_request.account_id;
-        // TODO: Implement historical block support using account_request.block_num
-        // For now, we always return the current state
+        let block_num = inner_state.account_tree.block_number_latest();
+        let witness = inner_state.account_tree.open_latest(account_id);
+
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,
             asset_vault_commitment,
             storage_requests,
-        }) = account_request.details
+        }) = details
         {
             let account_info = self.db.select_account(account_id).await?;
 
@@ -978,7 +1010,8 @@ impl State {
         };
 
         let response = AccountProofResponse {
-            witness: inner_state.account_tree.open(account_id),
+            block_num,
+            witness,
             details: account_details,
         };
 
@@ -1088,9 +1121,20 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_account_tree(db: &mut Db) -> Result<AccountTree, StateInitializationError> {
+async fn load_account_tree(
+    db: &mut Db,
+    block_number: BlockNumber,
+) -> Result<AccountTreeWithHistory<InMemoryAccountTree>, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
-    AccountTree::with_entries(account_data)
-        .map_err(StateInitializationError::FailedToCreateAccountsTree)
+    // Convert account_data to use account_id_to_smt_key
+    let smt_entries = account_data
+        .into_iter()
+        .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
+
+    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
+        .expect("Failed to create LargeSmt from database account data");
+
+    let account_tree = AccountTree::new(smt).expect("Failed to create AccountTree");
+    Ok(AccountTreeWithHistory::new(account_tree, block_number))
 }

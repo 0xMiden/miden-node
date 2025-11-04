@@ -1,10 +1,12 @@
 use std::collections::BTreeSet;
 
+use miden_node_proto::clients::RpcClient;
+use miden_node_proto::generated::note::NoteRoot;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
 use miden_objects::asset::{AssetWitness, VaultKey};
 use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::note::Note;
+use miden_objects::note::{Note, NoteScript};
 use miden_objects::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -15,6 +17,7 @@ use miden_objects::transaction::{
     TransactionArgs,
     TransactionInputs,
 };
+use miden_objects::utils::Deserializable;
 use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
@@ -73,6 +76,9 @@ pub struct NtxContext {
     /// Defaults to local proving if unset. This should be avoided in production as this is
     /// computationally intensive.
     pub prover: Option<RemoteTransactionProver>,
+
+    /// The RPC client for retrieving note scripts.
+    pub rpc_client: RpcClient,
 }
 
 impl NtxContext {
@@ -118,7 +124,12 @@ impl NtxContext {
 
         async move {
             async move {
-                let data_store = NtxDataStore::new(account, chain_tip_header, chain_mmr);
+                let data_store = NtxDataStore::new(
+                    account,
+                    chain_tip_header,
+                    chain_mmr,
+                    self.rpc_client.clone(),
+                );
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
@@ -241,10 +252,17 @@ struct NtxDataStore {
     reference_header: BlockHeader,
     chain_mmr: PartialBlockchain,
     mast_store: TransactionMastStore,
+    /// RPC client for retrieving note scripts from the RPC server.
+    rpc_client: RpcClient,
 }
 
 impl NtxDataStore {
-    fn new(account: Account, reference_header: BlockHeader, chain_mmr: PartialBlockchain) -> Self {
+    fn new(
+        account: Account,
+        reference_header: BlockHeader,
+        chain_mmr: PartialBlockchain,
+        rpc_client: RpcClient,
+    ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
 
@@ -253,6 +271,7 @@ impl NtxDataStore {
             reference_header,
             chain_mmr,
             mast_store,
+            rpc_client,
         }
     }
 }
@@ -348,12 +367,53 @@ impl DataStore for NtxDataStore {
         }
     }
 
+    /// Retrieves a note script by its root hash.
+    ///
+    /// This implementation uses the configured RPC client to call the `GetNoteScriptByRoot`
+    /// endpoint on the RPC server.
     fn get_note_script(
         &self,
         script_root: Word,
     ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
-        // TODO: Add implementation for getting note script from NtxDataStore.
-        async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
+        let mut rpc_client = self.rpc_client.clone();
+        async move {
+            // Get note script by root.
+            let note_root = NoteRoot { root: Some(script_root.into()) };
+            match rpc_client.get_note_script_by_root(note_root).await {
+                // RPC call succeeded.
+                Ok(response) => {
+                    // Decode the script from the response.
+                    let maybe_script = response.into_inner();
+                    if let Some(script_proto) = maybe_script.script {
+                        match NoteScript::read_from_bytes(&script_proto.mast) {
+                            // Return script.
+                            Ok(script) => Ok(script),
+                            // Failed to decode script.
+                            Err(err) => {
+                                tracing::error!(
+                                    target: COMPONENT,
+                                    ?err,
+                                    "Failed to deserialize note script from bytes"
+                                );
+                                Err(DataStoreError::NoteScriptNotFound(script_root))
+                            },
+                        }
+                    } else {
+                        // Response did not contain a script.
+                        Err(DataStoreError::NoteScriptNotFound(script_root))
+                    }
+                },
+                // RPC call failed.
+                Err(err) => {
+                    tracing::error!(
+                        target: COMPONENT,
+                        ?err,
+                        "Failed to retrieve note script from RPC"
+                    );
+                    Err(DataStoreError::NoteScriptNotFound(script_root))
+                },
+            }
+        }
     }
 }
 

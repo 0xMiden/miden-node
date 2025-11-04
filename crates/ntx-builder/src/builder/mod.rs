@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
+use miden_node_proto::clients::{Builder as ClientBuilder, Rpc};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
@@ -30,6 +31,8 @@ pub struct NetworkTransactionBuilder {
     pub store_url: Url,
     /// Address of the block producer gRPC server.
     pub block_producer_url: Url,
+    /// Address of the RPC gRPC server for retrieving note scripts.
+    pub rpc_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the perofmrance impact.
     pub tx_prover_url: Option<Url>,
@@ -43,9 +46,38 @@ pub struct NetworkTransactionBuilder {
 }
 
 impl NetworkTransactionBuilder {
+    /// Creates a new instance of the network transaction builder.
+    pub fn new(
+        store_url: Url,
+        block_producer_url: Url,
+        rpc_url: Url,
+        tx_prover_url: Option<Url>,
+        ticker_interval: Duration,
+        bp_checkpoint: Arc<Barrier>,
+    ) -> Self {
+        Self {
+            store_url,
+            block_producer_url,
+            rpc_url,
+            tx_prover_url,
+            ticker_interval,
+            bp_checkpoint,
+        }
+    }
+
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url);
         let block_producer = BlockProducerClient::new(self.block_producer_url);
+
+        let rpc_client = ClientBuilder::new(self.rpc_url)
+            .with_tls()
+            .context("Failed to configure TLS")?
+            .with_timeout(Duration::from_secs(10))
+            .without_metadata_version()
+            .without_metadata_genesis()
+            .connect::<Rpc>()
+            .await
+            .context("Failed to connect to RPC server")?;
 
         let mut state = crate::state::State::load(store.clone())
             .await
@@ -77,6 +109,7 @@ impl NetworkTransactionBuilder {
         let context = crate::transaction::NtxContext {
             block_producer: block_producer.clone(),
             prover,
+            rpc_client,
         };
 
         loop {

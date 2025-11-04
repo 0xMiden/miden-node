@@ -96,6 +96,8 @@ pub enum DatabaseError {
     AccountCommitmentsMismatch { expected: Word, calculated: Word },
     #[error("account {0} not found")]
     AccountNotFoundInDb(AccountId),
+    #[error("account {0} state at block height {1} not found")]
+    AccountAtBlockHeightNotFoundInDb(AccountId, BlockNumber),
     #[error("accounts {0:?} not found")]
     AccountsNotFoundInDb(Vec<AccountId>),
     #[error("account {0} is not on the chain")]
@@ -117,6 +119,8 @@ pub enum DatabaseError {
     ConnectionManager(#[from] ConnectionManagerError),
     #[error(transparent)]
     SqlValueConversion(#[from] DatabaseTypeConversionError),
+    #[error("Not implemented: {0}")]
+    NotImplemented(String),
 }
 
 impl DatabaseError {

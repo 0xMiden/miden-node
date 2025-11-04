@@ -20,6 +20,7 @@
 - Add `validator` crate with initial protobuf, gRPC server, and sub-command (#[1293](https://github.com/0xMiden/miden-node/pull/1293)).
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
 - Implement `DataStore::get_note_script()` for `NtxDataStore` (#[1332](https://github.com/0xMiden/miden-node/pull/1332)).
+- [BREAKING] Added `AccountTreeWithHistory` and integrate historical queries into `GetAccountProof` ([#1292](https://github.com/0xMiden/miden-node/pull/1292)).
 
 ## v0.11.2 (2025-09-10)
 

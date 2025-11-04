@@ -91,7 +91,6 @@ pub(crate) fn select_account(
     Ok(info)
 }
 
-// TODO: Handle account prefix collision in a more robust way
 /// Select the latest account details by account ID prefix from the DB using the given
 /// [`SqliteConnection`] This method is meant to be used by the network transaction builder. Because
 /// network notes get matched through accounts through the account's 30-bit prefix, it is possible

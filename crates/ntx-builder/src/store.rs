@@ -10,6 +10,7 @@ use miden_objects::Word;
 use miden_objects::account::Account;
 use miden_objects::block::BlockHeader;
 use miden_objects::crypto::merkle::{Forest, MmrPeaks, PartialMmr};
+use miden_objects::note::NoteScript;
 use miden_tx::utils::Deserializable;
 use thiserror::Error;
 use tracing::{info, instrument};
@@ -163,13 +164,29 @@ impl StoreClient {
         Ok(account)
     }
 
-    pub async fn get_note_script_by_root(&self, root: Word) -> Result<Option<Vec<u8>>, StoreError> {
+    #[instrument(target = COMPONENT, name = "store.client.get_note_script_by_root", skip_all, err)]
+    pub async fn get_note_script_by_root(
+        &self,
+        root: Word,
+    ) -> Result<Option<NoteScript>, StoreError> {
         let request = proto::note::NoteRoot { root: Some(root.into()) };
 
-        let store_response =
-            self.inner.clone().get_note_script_by_root(request).await?.into_inner().script;
+        // Make the request to the store.
+        let script = self.inner.clone().get_note_script_by_root(request).await?.into_inner().script;
 
-        Ok(store_response.map(|script| script.mast))
+        // Handle result.
+        if let Some(script) = script {
+            // Deserialize the script.
+            let script = NoteScript::read_from_bytes(&script.mast).map_err(|err| {
+                StoreError::DeserializationError(ConversionError::deserialization_error(
+                    "note script",
+                    err,
+                ))
+            })?;
+            Ok(Some(script))
+        } else {
+            Ok(None)
+        }
     }
 }
 

@@ -17,7 +17,6 @@ use miden_objects::transaction::{
     TransactionArgs,
     TransactionInputs,
 };
-use miden_objects::utils::Deserializable;
 use miden_objects::vm::FutureMaybeSend;
 use miden_objects::{TransactionInputError, Word};
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
@@ -403,37 +402,24 @@ impl DataStore for NtxDataStore {
             }
 
             // Retrieve the script from the store.
-            let maybe_script_bytes =
-                store.get_note_script_by_root(script_root).await.map_err(|err| {
-                    DataStoreError::Other {
-                        error_msg: "failed to retrieve note script from store".to_string().into(),
-                        source: Some(err.into()),
-                    }
-                })?;
+            let maybe_script = store.get_note_script_by_root(script_root).await.map_err(|err| {
+                DataStoreError::Other {
+                    error_msg: "failed to retrieve note script from store".to_string().into(),
+                    source: Some(err.into()),
+                }
+            })?;
             // Handle response.
-            match maybe_script_bytes {
-                Some(script_bytes) => {
-                    // Decode the script from the response.
-                    match NoteScript::read_from_bytes(&script_bytes) {
-                        Ok(script) => {
-                            // Cache the retrieved script.
-                            {
-                                let mut cache_guard = cache.lock().expect(
-                                    "cache mutex cannot already be held in the current thread",
-                                );
-                                cache_guard.put(script_root, script.clone());
-                            }
-                            // Return script.
-                            Ok(script)
-                        },
-                        // Failed to decode the script.
-                        Err(err) => Err(DataStoreError::Other {
-                            error_msg: "failed to deserialize note script from bytes"
-                                .to_string()
-                                .into(),
-                            source: Some(err.into()),
-                        }),
+            match maybe_script {
+                Some(script) => {
+                    // Cache the retrieved script.
+                    {
+                        let mut cache_guard = cache
+                            .lock()
+                            .expect("cache mutex cannot already be held in the current thread");
+                        cache_guard.put(script_root, script.clone());
                     }
+                    // Return script.
+                    Ok(script)
                 },
                 None => {
                     // Response did not contain the note script.

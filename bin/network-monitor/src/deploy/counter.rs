@@ -1,5 +1,7 @@
 //! Counter program account creation functionality.
 
+use std::path::Path;
+
 use anyhow::Result;
 use miden_lib::account::auth::NoAuth;
 use miden_lib::transaction::TransactionKernel;
@@ -7,6 +9,7 @@ use miden_objects::account::{
     Account,
     AccountBuilder,
     AccountComponent,
+    AccountFile,
     AccountStorageMode,
     AccountType,
     StorageSlot,
@@ -40,4 +43,11 @@ pub fn create_counter_account() -> Result<Account> {
         .build()?;
 
     Ok(counter_program)
+}
+
+/// Save counter program account to disk without extra auth material.
+pub fn save_counter_account(account: &Account, file_path: &Path) -> Result<()> {
+    let account_file = AccountFile::new(account.clone(), vec![]);
+    account_file.write(file_path)?;
+    Ok(())
 }

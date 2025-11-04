@@ -13,18 +13,10 @@ use miden_lib::utils::ScriptBuilder;
 use miden_node_proto::clients::{Builder, Rpc, RpcClient};
 use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
-use miden_objects::account::{
-    Account,
-    AccountFile,
-    AccountId,
-    AuthSecretKey,
-    PartialAccount,
-    StorageSlot,
-};
+use miden_objects::account::{Account, AccountId, PartialAccount, StorageSlot};
 use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};
 use miden_objects::asset::{AssetWitness, VaultKey};
 use miden_objects::block::{BlockHeader, BlockNumber};
-use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
 use miden_objects::note::NoteScript;
 use miden_objects::transaction::{AccountInputs, InputNotes, PartialBlockchain, TransactionArgs};
@@ -45,33 +37,11 @@ use tracing::instrument;
 use url::Url;
 
 use crate::COMPONENT;
-use crate::deploy::counter::create_counter_account;
-use crate::deploy::wallet::create_wallet_account;
+use crate::deploy::counter::{create_counter_account, save_counter_account};
+use crate::deploy::wallet::{create_wallet_account, save_wallet_account};
 
 pub mod counter;
 pub mod wallet;
-
-// ACCOUNTS CREATION & DEPLOYMENT
-// ================================================================================================
-
-/// Save wallet account to file with authentication keys.
-pub fn save_wallet_account(
-    account: &Account,
-    secret_key: &SecretKey,
-    file_path: &Path,
-) -> Result<()> {
-    let auth_secret_key = AuthSecretKey::RpoFalcon512(secret_key.clone());
-    let account_file = AccountFile::new(account.clone(), vec![auth_secret_key]);
-    account_file.write(file_path)?;
-    Ok(())
-}
-
-/// Save counter program account to file.
-pub fn save_counter_account(account: &Account, file_path: &Path) -> Result<()> {
-    let account_file = AccountFile::new(account.clone(), vec![]);
-    account_file.write(file_path)?;
-    Ok(())
-}
 
 /// Ensure accounts exist, creating them if they don't.
 ///

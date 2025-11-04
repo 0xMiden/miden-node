@@ -4,7 +4,7 @@
 
 ### Changes
 
-- [BREAKING] Updated MSRV to 1.89.
+- [BREAKING] Updated MSRV to 1.90.
 - Added `GetNoteScriptByRoot` gRPC endpoint for retrieving a note script by its root ([#1196](https://github.com/0xMiden/miden-node/pull/1196)).
 - [BREAKING] Refactored `CheckNullifiersByPrefix` endpoint adding pagination ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).
 - [BREAKING] Renamed `CheckNullifiersByPrefix` endpoint to `SyncNullifiers` ([#1191](https://github.com/0xMiden/miden-node/pull/1191)).

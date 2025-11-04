@@ -2857,6 +2857,7 @@ dependencies = [
  "clap 4.5.51",
  "fs-err",
  "futures",
+ "miden-air",
  "miden-block-prover",
  "miden-lib",
  "miden-node-block-producer",

@@ -8,24 +8,27 @@ use.std::sys
 # Increment function with note authentication
 # => []
 export.increment
+    # TODO: update to active_account::get_item when miden-base gets updated.
     push.0 exec.account::get_item
-    # => [count]
+    # => [count, 0, 0, 0]
     
     push.1 add
     # => [count+1]
 
+    # TODO: update to native_account::set_item when miden-base gets updated.
     push.0 exec.account::set_item
-    # => []
+    # => [count, 0, 0, 0]
 
-    exec.sys::truncate_stack
+    dropw
     # => []
 end
 
 # Get the counter (no auth required)
 # => [count]
 export.get_count
+    # TODO: update to active_account::get_item when miden-base gets updated.
     push.0 exec.account::get_item
-    # => [count]
+    # => [count, 0, 0, 0]
 
     exec.sys::truncate_stack
     # => [count]

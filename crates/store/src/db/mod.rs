@@ -406,6 +406,19 @@ impl Db {
             .await
     }
 
+    /// Loads account details at a specific block number from the DB.
+    #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
+    pub async fn select_historical_account_at(
+        &self,
+        id: AccountId,
+        block_num: BlockNumber,
+    ) -> Result<AccountInfo> {
+        self.transact("Get historical account details", move |conn| {
+            queries::select_historical_account_at(conn, id, block_num)
+        })
+        .await
+    }
+
     /// Loads public account details from the DB based on the account ID's prefix.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_network_account_by_prefix(

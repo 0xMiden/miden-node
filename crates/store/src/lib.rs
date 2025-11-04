@@ -8,6 +8,8 @@ pub mod genesis;
 mod server;
 pub mod state;
 
+#[cfg(feature = "rocksdb")]
+pub use accounts::PersistentAccountTree;
 pub use accounts::{
     AccountTreeStorage,
     AccountTreeWithHistory,

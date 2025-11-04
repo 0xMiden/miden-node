@@ -27,6 +27,11 @@ mod tests;
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
 
+#[cfg(feature = "rocksdb")]
+/// Convenience for a persistent account tree.
+pub type PersistentAccountTree =
+    AccountTree<LargeSmt<miden_objects::crypto::merkle::RocksDbStorage>>;
+
 // ACCOUNT TREE STORAGE TRAIT
 // ================================================================================================
 

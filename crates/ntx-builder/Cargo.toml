@@ -16,7 +16,7 @@ workspace = true
 [dependencies]
 anyhow                     = { workspace = true }
 futures                    = { workspace = true }
-lru                        = { version = "0.16", default-features = false }
+lru                        = { default-features = false, version = "0.16" }
 miden-node-proto           = { workspace = true }
 miden-node-utils           = { workspace = true }
 miden-objects              = { default-features = true, workspace = true }

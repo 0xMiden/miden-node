@@ -398,7 +398,7 @@ impl DataStore for NtxDataStore {
         let cache = self.script_cache.clone();
 
         async move {
-            // Attempt to retrieve the script from the cach.
+            // Attempt to retrieve the script from the cache.
             if let Some(cached_script) = {
                 let mut cache_guard =
                     cache.lock().expect("cache mutex cannot already be held in the current thread");

@@ -61,6 +61,7 @@ rocksdb = ["miden-crypto/rocksdb"]
 [[bench]]
 harness = false
 name    = "account_tree_historical"
+required-features = ["rocksdb"]
 
 [package.metadata.cargo-machete]
 # we only need it for dependency feature unification for `rocksdb`

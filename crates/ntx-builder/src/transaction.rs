@@ -1,5 +1,5 @@
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use lru::LruCache;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
@@ -35,6 +35,7 @@ use miden_tx::{
     TransactionMastStore,
     TransactionProverError,
 };
+use tokio::sync::Mutex;
 use tokio::task::JoinError;
 use tracing::{Instrument, instrument};
 
@@ -394,8 +395,7 @@ impl DataStore for NtxDataStore {
         async move {
             // Attempt to retrieve the script from the cache.
             if let Some(cached_script) = {
-                let mut cache_guard =
-                    cache.lock().expect("cache mutex cannot already be held in the current thread");
+                let mut cache_guard = cache.lock().await;
                 cache_guard.get(&script_root).cloned()
             } {
                 return Ok(cached_script);
@@ -413,9 +413,7 @@ impl DataStore for NtxDataStore {
                 Some(script) => {
                     // Cache the retrieved script.
                     {
-                        let mut cache_guard = cache
-                            .lock()
-                            .expect("cache mutex cannot already be held in the current thread");
+                        let mut cache_guard = cache.lock().await;
                         cache_guard.put(script_root, script.clone());
                     }
                     // Return script.

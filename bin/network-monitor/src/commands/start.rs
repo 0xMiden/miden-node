@@ -26,12 +26,7 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
     }
 
     // Ensure accounts exist before starting monitoring tasks
-    Box::pin(ensure_accounts_exist(
-        &config.wallet_file,
-        &config.counter_file,
-        &config.rpc_url,
-    ))
-    .await?;
+    ensure_accounts_exist(&config.wallet_file, &config.counter_file, &config.rpc_url).await?;
 
     let mut tasks = Tasks::new();
 

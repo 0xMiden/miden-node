@@ -100,7 +100,7 @@ pub async fn ensure_accounts_exist(
     // Create counter program account
     let counter_account = create_counter_account()?;
 
-    Box::pin(deploy_accounts(&wallet_account, &counter_account, rpc_url)).await?;
+    deploy_accounts(&wallet_account, &counter_account, rpc_url).await?;
     tracing::info!("Successfully created and deployed accounts");
 
     // Save accounts to files
@@ -178,14 +178,15 @@ pub async fn deploy_accounts(
             .context("Failed to compile transaction script")?,
     );
 
-    let executed_tx = Box::pin(executor.execute_transaction(
-        counter_account.id(),
-        BlockNumber::GENESIS,
-        InputNotes::default(),
-        tx_args,
-    ))
-    .await
-    .context("Failed to execute transaction")?;
+    let executed_tx = executor
+        .execute_transaction(
+            counter_account.id(),
+            BlockNumber::GENESIS,
+            InputNotes::default(),
+            tx_args,
+        )
+        .await
+        .context("Failed to execute transaction")?;
 
     let prover = LocalTransactionProver::default();
 

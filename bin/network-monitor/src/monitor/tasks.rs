@@ -149,13 +149,13 @@ impl Tasks {
                 let id = self
                     .handles
                     .spawn(async move {
-                        Box::pin(run_remote_prover_test_task(
+                        run_remote_prover_test_task(
                             prover_url_clone,
                             &name_clone,
                             proof_type,
                             payload,
                             prover_test_tx,
-                        ))
+                        )
                         .await;
                     })
                     .id();

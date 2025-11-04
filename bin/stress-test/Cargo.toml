@@ -25,7 +25,7 @@ miden-node-block-producer = { workspace = true }
 miden-node-proto          = { workspace = true }
 miden-node-store          = { workspace = true }
 miden-node-utils          = { workspace = true }
-miden-objects             = { workspace = true }
+miden-objects             = { features = ["testing"], workspace = true }
 rand                      = { workspace = true }
 rayon                     = { version = "1.10" }
 tokio                     = { workspace = true }

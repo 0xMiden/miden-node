@@ -212,6 +212,8 @@ pub(crate) fn select_account_by_id_prefix(
 ///     account_commitment
 /// FROM
 ///     accounts
+/// WHERE
+///     is_latest = 1
 /// ORDER BY
 ///     block_num ASC
 /// ```
@@ -222,6 +224,7 @@ pub(crate) fn select_all_account_commitments(
         schema::accounts::table,
         (schema::accounts::account_id, schema::accounts::account_commitment),
     )
+    .filter(schema::accounts::is_latest.eq(true))
     .order_by(schema::accounts::block_num.asc())
     .load::<(Vec<u8>, Vec<u8>)>(conn)?;
 
@@ -900,7 +903,18 @@ pub(crate) fn upsert_accounts(
             code_commitment: full_account
                 .as_ref()
                 .map(|account| account.code().commitment().to_bytes()),
+            is_latest: true,
         };
+
+        // Update any existing rows for this account_id to set is_latest = false
+        diesel::update(schema::accounts::table)
+            .filter(
+                schema::accounts::account_id
+                    .eq(&account_id.to_bytes())
+                    .and(schema::accounts::is_latest.eq(true)),
+            )
+            .set(schema::accounts::is_latest.eq(false))
+            .execute(conn)?;
 
         let v = account_value.clone();
         let inserted = diesel::insert_into(schema::accounts::table).values(&v).execute(conn)?;
@@ -950,6 +964,7 @@ pub(crate) struct AccountRowInsert {
     pub(crate) storage: Option<Vec<u8>>,
     pub(crate) vault: Option<Vec<u8>>,
     pub(crate) nonce: Option<i64>,
+    pub(crate) is_latest: bool,
 }
 
 #[derive(Insertable, AsChangeset, Debug, Clone)]

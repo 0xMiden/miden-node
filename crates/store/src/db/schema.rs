@@ -31,6 +31,7 @@ diesel::table! {
         vault -> Nullable<Binary>,
         nonce -> Nullable<BigInt>,
         block_num -> BigInt,
+        is_latest -> Bool,
     }
 }
 

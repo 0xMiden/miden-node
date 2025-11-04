@@ -21,6 +21,7 @@ CREATE TABLE accounts (
     storage                                 BLOB,
     vault                                   BLOB,
     nonce                                   INTEGER,
+    is_latest                               BOOLEAN NOT NULL DEFAULT 0, -- Indicates if this is the latest state for this account_id
 
     PRIMARY KEY (account_id, block_num),
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num),
@@ -35,6 +36,7 @@ CREATE TABLE accounts (
 
 CREATE INDEX idx_accounts_network_prefix ON accounts(network_account_id_prefix) WHERE network_account_id_prefix IS NOT NULL;
 CREATE INDEX idx_accounts_id_block ON accounts(account_id, block_num DESC);
+CREATE INDEX idx_accounts_latest ON accounts(account_id, is_latest) WHERE is_latest = 1;
 
 CREATE TABLE notes (
     committed_at             INTEGER NOT NULL, -- Block number when the note was committed

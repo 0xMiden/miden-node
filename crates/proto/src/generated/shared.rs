@@ -25,3 +25,10 @@ pub struct BlockHeaderByNumberResponse {
     #[prost(fixed32, optional, tag = "3")]
     pub chain_length: ::core::option::Option<u32>,
 }
+/// Represents a note script or nothing.
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct MaybeNoteScript {
+    /// The script for a note by its root.
+    #[prost(message, optional, tag = "1")]
+    pub script: ::core::option::Option<super::note::NoteScript>,
+}

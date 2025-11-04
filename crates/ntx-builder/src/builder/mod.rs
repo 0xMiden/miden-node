@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use anyhow::Context;
 use futures::TryStreamExt;
-use miden_node_proto::clients::{Builder as ClientBuilder, Rpc};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_utils::ErrorReport;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
@@ -28,21 +27,19 @@ use crate::transaction::NtxError;
 /// transactions that consume them (reaching out to the store to retrieve state as necessary).
 pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
-    pub store_url: Url,
+    store_url: Url,
     /// Address of the block producer gRPC server.
-    pub block_producer_url: Url,
-    /// Address of the RPC gRPC server for retrieving note scripts.
-    pub rpc_url: Url,
+    block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the perofmrance impact.
-    pub tx_prover_url: Option<Url>,
+    tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
-    pub ticker_interval: Duration,
+    ticker_interval: Duration,
     /// A checkpoint used to sync start-up process with the block-producer.
     ///
     /// This informs the block-producer when we have subscribed to mempool events and that it is
     /// safe to begin block-production.
-    pub bp_checkpoint: Arc<Barrier>,
+    bp_checkpoint: Arc<Barrier>,
 }
 
 impl NetworkTransactionBuilder {
@@ -50,7 +47,6 @@ impl NetworkTransactionBuilder {
     pub fn new(
         store_url: Url,
         block_producer_url: Url,
-        rpc_url: Url,
         tx_prover_url: Option<Url>,
         ticker_interval: Duration,
         bp_checkpoint: Arc<Barrier>,
@@ -58,7 +54,6 @@ impl NetworkTransactionBuilder {
         Self {
             store_url,
             block_producer_url,
-            rpc_url,
             tx_prover_url,
             ticker_interval,
             bp_checkpoint,
@@ -68,16 +63,6 @@ impl NetworkTransactionBuilder {
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url);
         let block_producer = BlockProducerClient::new(self.block_producer_url);
-
-        let rpc_client = ClientBuilder::new(self.rpc_url)
-            .with_tls()
-            .context("Failed to configure TLS")?
-            .with_timeout(Duration::from_secs(10))
-            .without_metadata_version()
-            .without_metadata_genesis()
-            .connect::<Rpc>()
-            .await
-            .context("Failed to connect to RPC server")?;
 
         let mut state = crate::state::State::load(store.clone())
             .await
@@ -109,7 +94,7 @@ impl NetworkTransactionBuilder {
         let context = crate::transaction::NtxContext {
             block_producer: block_producer.clone(),
             prover,
-            rpc_client,
+            store,
         };
 
         loop {

@@ -2,7 +2,6 @@ use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
 use lru::LruCache;
-use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::note::NoteRoot;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageMapWitness, StorageSlot};
@@ -44,6 +43,7 @@ use tracing::{Instrument, instrument};
 use crate::COMPONENT;
 use crate::block_producer::BlockProducerClient;
 use crate::state::TransactionCandidate;
+use crate::store::StoreClient;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NtxError {
@@ -79,8 +79,8 @@ pub struct NtxContext {
     /// computationally intensive.
     pub prover: Option<RemoteTransactionProver>,
 
-    /// The RPC client for retrieving note scripts.
-    pub rpc_client: RpcClient,
+    /// The store client for retrieving note scripts.
+    pub store: StoreClient,
 }
 
 impl NtxContext {
@@ -126,12 +126,8 @@ impl NtxContext {
 
         async move {
             async move {
-                let data_store = NtxDataStore::new(
-                    account,
-                    chain_tip_header,
-                    chain_mmr,
-                    self.rpc_client.clone(),
-                );
+                let data_store =
+                    NtxDataStore::new(account, chain_tip_header, chain_mmr, self.store.clone());
 
                 let notes = notes.into_iter().map(Note::from).collect::<Vec<_>>();
                 let (successful, failed) = self.filter_notes(&data_store, notes).await?;
@@ -258,9 +254,9 @@ struct NtxDataStore {
     reference_header: BlockHeader,
     chain_mmr: PartialBlockchain,
     mast_store: TransactionMastStore,
-    /// RPC client for retrieving note scripts from the RPC server.
-    rpc_client: RpcClient,
-    /// LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
+    /// Store client for retrieving note scripts.
+    store: StoreClient,
+    /// LRU cache for storing retrieved note scripts to avoid repeated store calls.
     script_cache: Arc<Mutex<LruCache<Word, miden_objects::note::NoteScript>>>,
 }
 
@@ -276,7 +272,7 @@ impl NtxDataStore {
         account: Account,
         reference_header: BlockHeader,
         chain_mmr: PartialBlockchain,
-        rpc_client: RpcClient,
+        store: StoreClient,
     ) -> Self {
         let mast_store = TransactionMastStore::new();
         mast_store.load_account_code(account.code());
@@ -286,7 +282,7 @@ impl NtxDataStore {
             reference_header,
             chain_mmr,
             mast_store,
-            rpc_client,
+            store,
             script_cache: Arc::new(Mutex::new(LruCache::new(
                 std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
                     .expect("default script cache size is non-zero"),
@@ -394,7 +390,7 @@ impl DataStore for NtxDataStore {
         &self,
         script_root: Word,
     ) -> impl FutureMaybeSend<Result<NoteScript, DataStoreError>> {
-        let mut rpc_client = self.rpc_client.clone();
+        let store = self.store.clone();
         let cache = self.script_cache.clone();
 
         async move {
@@ -409,12 +405,11 @@ impl DataStore for NtxDataStore {
 
             // Retrieve the script from the RPC.
             let note_root = NoteRoot { root: Some(script_root.into()) };
-            match rpc_client.get_note_script_by_root(note_root).await {
-                Ok(response) => {
+            match store.get_note_script_by_root(note_root).await {
+                Ok(maybe_script_bytes) => {
                     // Decode the script from the response.
-                    let maybe_script = response.into_inner();
-                    if let Some(script_proto) = maybe_script.script {
-                        match miden_objects::note::NoteScript::read_from_bytes(&script_proto.mast) {
+                    if let Some(script_bytes) = maybe_script_bytes {
+                        match NoteScript::read_from_bytes(&script_bytes) {
                             Ok(script) => {
                                 // Cache the retrieved script.
                                 {

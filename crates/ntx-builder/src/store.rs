@@ -4,6 +4,7 @@ use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient}
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
+use miden_node_proto::generated::note::NoteRoot;
 use miden_node_proto::generated::{self as proto};
 use miden_node_proto::try_convert;
 use miden_objects::account::Account;
@@ -161,6 +162,18 @@ impl StoreClient {
 
         Ok(account)
     }
+
+    pub async fn get_note_script_by_root(
+        &self,
+        root: NoteRoot,
+    ) -> Result<Option<Vec<u8>>, StoreError> {
+        let request = proto::note::NoteRoot { root: root.root };
+
+        let store_response =
+            self.inner.clone().get_note_script_by_root(request).await?.into_inner().script;
+
+        Ok(store_response.map(|script| script.mast))
+    }
 }
 
 // Store errors
@@ -174,4 +187,6 @@ pub enum StoreError {
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
+    #[error("hex parsing error")]
+    HexError(#[from] hex::FromHexError),
 }

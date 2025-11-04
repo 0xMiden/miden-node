@@ -603,7 +603,7 @@ impl api_server::Api for RpcService {
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,
-    ) -> Result<Response<proto::rpc_store::MaybeNoteScript>, Status> {
+    ) -> Result<Response<proto::shared::MaybeNoteScript>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         self.store.clone().get_note_script_by_root(request).await

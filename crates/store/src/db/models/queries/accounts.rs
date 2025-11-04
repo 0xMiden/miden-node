@@ -32,7 +32,7 @@ use miden_objects::account::{
     NonFungibleDeltaAction,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset, VaultKey};
+use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
@@ -494,7 +494,7 @@ impl TryFrom<AccountVaultUpdateRaw> for AccountVaultValue {
     type Error = DatabaseError;
 
     fn try_from(raw: AccountVaultUpdateRaw) -> Result<Self, Self::Error> {
-        let vault_key = VaultKey::new_unchecked(Word::read_from_bytes(&raw.vault_key)?);
+        let vault_key = AssetVaultKey::new_unchecked(Word::read_from_bytes(&raw.vault_key)?);
         let asset = raw.asset.map(|bytes| Asset::read_from_bytes(&bytes)).transpose()?;
         let block_num = BlockNumber::from_raw_sql(raw.block_num)?;
 
@@ -605,7 +605,7 @@ pub(crate) fn insert_account_vault_asset(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    vault_key: VaultKey,
+    vault_key: AssetVaultKey,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
     let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
@@ -916,7 +916,7 @@ pub(crate) struct AccountAssetRowInsert {
 impl AccountAssetRowInsert {
     pub(crate) fn new(
         account_id: &AccountId,
-        vault_key: &VaultKey,
+        vault_key: &AssetVaultKey,
         block_num: BlockNumber,
         asset: Option<Asset>,
         is_latest_update: bool,

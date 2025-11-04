@@ -4,7 +4,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use metrics::SeedingMetrics;
-use miden_air::ExecutionProof;
 use miden_block_prover::LocalBlockProver;
 use miden_lib::account::auth::AuthRpoFalcon512;
 use miden_lib::account::faucets::BasicFungibleFaucet;
@@ -47,6 +46,7 @@ use miden_objects::transaction::{
     ProvenTransactionBuilder,
     TransactionHeader,
 };
+use miden_objects::vm::ExecutionProof;
 use miden_objects::{AssetError, Felt, ONE, Word};
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};

@@ -44,7 +44,7 @@ fn generate_account_id(seed: &mut [u8; 32]) -> AccountId {
 // SETUP FUNCTIONS
 // ================================================================================================
 
-/// Sets up a vanilla `AccountTree` with specified number of accounts using `RocksDB` backend.
+/// Sets up a vanilla `AccountTree` with specified number of accounts.
 fn setup_vanilla_account_tree(
     num_accounts: usize,
 ) -> (AccountTree<LargeSmt<MemoryStorage>>, Vec<AccountId>) {
@@ -66,8 +66,7 @@ fn setup_vanilla_account_tree(
     (tree, account_ids)
 }
 
-/// Sets up `AccountTreeWithHistory` with specified number of accounts and blocks using `RocksDB`
-/// backend.
+/// Sets up `AccountTreeWithHistory` with specified number of accounts and blocks.
 fn setup_account_tree_with_history(
     num_accounts: usize,
     num_blocks: usize,

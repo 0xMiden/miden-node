@@ -46,7 +46,7 @@ use miden_objects::transaction::{
     ProvenTransactionBuilder,
     TransactionHeader,
 };
-use miden_objects::vm::ExecutionProof;
+use miden_air::ExecutionProof;
 use miden_objects::{AssetError, Felt, ONE, Word};
 use rand::Rng;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};

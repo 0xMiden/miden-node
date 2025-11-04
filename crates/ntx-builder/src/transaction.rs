@@ -1,5 +1,7 @@
 use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
 
+use lru::LruCache;
 use miden_node_proto::clients::RpcClient;
 use miden_node_proto::generated::note::NoteRoot;
 use miden_node_utils::tracing::OpenTelemetrySpanExt;
@@ -244,7 +246,11 @@ impl NtxContext {
 // ================================================================================================
 
 /// A [`DataStore`] implementation which provides transaction inputs for a single account and
-/// reference block.
+/// reference block with LRU caching for note scripts.
+///
+/// This implementation includes an LRU (Least Recently Used) cache for note scripts to improve
+/// performance by avoiding repeated RPC calls for the same script roots. The cache automatically
+/// manages memory usage by evicting least recently used entries when the cache reaches capacity.
 ///
 /// This is sufficient for executing a network transaction.
 struct NtxDataStore {
@@ -254,9 +260,18 @@ struct NtxDataStore {
     mast_store: TransactionMastStore,
     /// RPC client for retrieving note scripts from the RPC server.
     rpc_client: RpcClient,
+    /// LRU cache for storing retrieved note scripts to avoid repeated RPC calls.
+    script_cache: Arc<Mutex<LruCache<Word, miden_objects::note::NoteScript>>>,
 }
 
 impl NtxDataStore {
+    /// Default cache size for note scripts.
+    ///
+    /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
+    /// depends on the complexity of the scripts being cached.
+    const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
+
+    /// Creates a new `NtxDataStore` with default cache size.
     fn new(
         account: Account,
         reference_header: BlockHeader,
@@ -272,6 +287,10 @@ impl NtxDataStore {
             chain_mmr,
             mast_store,
             rpc_client,
+            script_cache: Arc::new(Mutex::new(LruCache::new(
+                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
+                    .expect("default script cache size is non-zero"),
+            ))),
         }
     }
 }
@@ -374,32 +393,49 @@ impl DataStore for NtxDataStore {
     fn get_note_script(
         &self,
         script_root: Word,
-    ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
+    ) -> impl FutureMaybeSend<Result<NoteScript, DataStoreError>> {
         let mut rpc_client = self.rpc_client.clone();
+        let cache = self.script_cache.clone();
+
         async move {
-            // Get note script by root.
+            // Attempt to retrieve the script from the cach.
+            if let Some(cached_script) = {
+                let mut cache_guard =
+                    cache.lock().expect("cache mutex cannot already be held in the current thread");
+                cache_guard.get(&script_root).cloned()
+            } {
+                return Ok(cached_script);
+            }
+
+            // Retrieve the script from the RPC.
             let note_root = NoteRoot { root: Some(script_root.into()) };
             match rpc_client.get_note_script_by_root(note_root).await {
-                // RPC call succeeded.
                 Ok(response) => {
                     // Decode the script from the response.
                     let maybe_script = response.into_inner();
                     if let Some(script_proto) = maybe_script.script {
-                        match NoteScript::read_from_bytes(&script_proto.mast) {
-                            // Return script.
-                            Ok(script) => Ok(script),
-                            // Failed to decode script.
+                        match miden_objects::note::NoteScript::read_from_bytes(&script_proto.mast) {
+                            Ok(script) => {
+                                // Cache the retrieved script.
+                                {
+                                    let mut cache_guard = cache.lock().unwrap();
+                                    cache_guard.put(script_root, script.clone());
+                                }
+                                // Return script.
+                                Ok(script)
+                            },
+                            // Failed to decode the script.
                             Err(err) => {
                                 tracing::error!(
                                     target: COMPONENT,
                                     ?err,
-                                    "Failed to deserialize note script from bytes"
+                                    "failed to deserialize note script from bytes"
                                 );
                                 Err(DataStoreError::NoteScriptNotFound(script_root))
                             },
                         }
                     } else {
-                        // Response did not contain a script.
+                        // Response did not contain the note script.
                         Err(DataStoreError::NoteScriptNotFound(script_root))
                     }
                 },
@@ -408,7 +444,7 @@ impl DataStore for NtxDataStore {
                     tracing::error!(
                         target: COMPONENT,
                         ?err,
-                        "Failed to retrieve note script from RPC"
+                        "failed to retrieve note script from RPC"
                     );
                     Err(DataStoreError::NoteScriptNotFound(script_root))
                 },

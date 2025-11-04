@@ -184,6 +184,4 @@ pub enum StoreError {
     MalformedResponse(String),
     #[error("failed to parse response")]
     DeserializationError(#[from] ConversionError),
-    #[error("hex parsing error")]
-    HexError(#[from] hex::FromHexError),
 }

@@ -57,7 +57,7 @@ CREATE TABLE notes (
 
     PRIMARY KEY (committed_at, batch_index, note_index),
     FOREIGN KEY (committed_at) REFERENCES block_headers(block_num),
-    FOREIGN KEY (sender) REFERENCES accounts(account_id),
+    -- FOREIGN KEY (sender) REFERENCES accounts(account_id), -- Removed: sender may not exist in accounts table
     FOREIGN KEY (script_root) REFERENCES note_scripts(script_root),
     CONSTRAINT notes_type_in_enum CHECK (note_type BETWEEN 1 AND 3),
     CONSTRAINT notes_execution_mode_in_enum CHECK (execution_mode BETWEEN 0 AND 1),
@@ -130,7 +130,7 @@ CREATE TABLE transactions (
     size_in_bytes                INTEGER NOT NULL, -- Estimated size of the row in bytes, considering the size of the input and output notes.
 
     PRIMARY KEY (transaction_id),
-    FOREIGN KEY (account_id) REFERENCES accounts(account_id),
+    -- FOREIGN KEY (account_id) REFERENCES accounts(account_id), -- Removed: account may not exist in accounts table yet
     FOREIGN KEY (block_num) REFERENCES block_headers(block_num)
 ) WITHOUT ROWID;
 

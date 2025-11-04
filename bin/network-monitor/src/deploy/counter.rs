@@ -2,36 +2,55 @@
 
 use std::path::Path;
 
-use anyhow::Result;
-use miden_lib::account::auth::NoAuth;
+use anyhow::{Context, Result};
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::account::{
     Account,
     AccountBuilder,
     AccountComponent,
     AccountFile,
+    AccountId,
     AccountStorageMode,
     AccountType,
     StorageSlot,
 };
+use miden_objects::{Felt, Word};
 use tracing::instrument;
 
 use crate::COMPONENT;
 
 /// Create a counter program account with custom MASM script.
 #[instrument(target = COMPONENT, name = "create-counter-account", skip_all, ret(level = "debug"))]
-pub fn create_counter_account() -> Result<Account> {
+pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
     // Load and customize the MASM script
     let script =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
 
     // Compile the account code
+    let owner_felts: [Felt; 2] = owner_account_id.into();
+    let owner_word = Word::from([owner_felts[0], owner_felts[1], Felt::new(0), Felt::new(0)]);
+
     let account_code = AccountComponent::compile(
         script,
         TransactionKernel::assembler(),
-        vec![StorageSlot::empty_value()],
+        vec![StorageSlot::empty_value(), StorageSlot::Value(owner_word)],
     )?
     .with_supports_all_types();
+
+    const INCR_NONCE_AUTH_CODE: &str = r"
+        use.miden::account
+        use.std::sys
+
+        export.auth__basic
+            exec.account::incr_nonce
+            drop
+        end
+    ";
+
+    let incr_nonce_auth =
+        AccountComponent::compile(INCR_NONCE_AUTH_CODE, TransactionKernel::assembler(), vec![])
+            .context("failed to compile increment nonce auth component")?
+            .with_supports_all_types();
 
     // Create the counter program account
     let init_seed: [u8; 32] = rand::random();
@@ -39,7 +58,7 @@ pub fn create_counter_account() -> Result<Account> {
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Network)
         .with_component(account_code)
-        .with_auth_component(NoAuth)
+        .with_auth_component(incr_nonce_auth)
         .build()?;
 
     Ok(counter_program)

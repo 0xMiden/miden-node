@@ -76,7 +76,7 @@ pub async fn ensure_accounts_exist(
     let (wallet_account, secret_key) = create_wallet_account()?;
 
     // Create counter program account
-    let counter_account = create_counter_account()?;
+    let counter_account = create_counter_account(wallet_account.id())?;
 
     deploy_accounts(&wallet_account, &counter_account, rpc_url).await?;
     tracing::info!("Successfully created and deployed accounts");
@@ -151,7 +151,7 @@ pub async fn deploy_accounts(
         script_builder
             .compile_tx_script(include_str!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
-                "/src/assets/increment_counter.masm"
+                "/src/assets/deploy_counter.masm"
             )))
             .context("Failed to compile transaction script")?,
     );

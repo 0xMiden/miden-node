@@ -391,6 +391,8 @@ fn create_consume_note_tx(
         account.vault_mut().add_asset(*asset).unwrap();
     });
 
+    account.increment_nonce(ONE).unwrap();
+
     let details = if account.is_public() {
         AccountUpdateDetails::New(account.clone())
     } else {

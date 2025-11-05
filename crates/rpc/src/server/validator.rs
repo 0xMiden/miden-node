@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 
 use miden_objects::Word;
 use miden_objects::account::{AccountId, PartialAccount, StorageMapWitness};
-use miden_objects::asset::{AssetWitness, VaultKey};
+use miden_objects::asset::{AssetVaultKey, AssetWitness};
 use miden_objects::block::{BlockHeader, BlockNumber};
+use miden_objects::note::NoteScript;
 use miden_objects::transaction::{
     AccountInputs,
     ExecutedTransaction,
@@ -85,7 +86,7 @@ impl DataStore for TransactionInputsDataStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: VaultKey,
+        vault_key: AssetVaultKey,
     ) -> impl FutureMaybeSend<Result<AssetWitness, DataStoreError>> {
         async move {
             if self.tx_inputs.account().id() != account_id {
@@ -136,7 +137,7 @@ impl DataStore for TransactionInputsDataStore {
     fn get_note_script(
         &self,
         script_root: Word,
-    ) -> impl FutureMaybeSend<Result<miden_objects::note::NoteScript, DataStoreError>> {
+    ) -> impl FutureMaybeSend<Result<NoteScript, DataStoreError>> {
         async move { Err(DataStoreError::NoteScriptNotFound(script_root)) }
     }
 }

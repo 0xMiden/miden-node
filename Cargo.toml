@@ -27,7 +27,7 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/miden-node"
-rust-version = "1.89"
+rust-version = "1.90"
 version      = "0.12.0"
 
 # Optimize the cryptography for faster tests involving account creation.
@@ -49,15 +49,15 @@ miden-node-validator        = { path = "crates/validator", version = "0.12" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.12" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { version = "0.12" }
+miden-lib             = { version = "0.12" }
+miden-objects         = { default-features = false, version = "0.12" }
+miden-testing         = { version = "0.12" }
+miden-tx              = { default-features = false, version = "0.12" }
+miden-tx-batch-prover = { version = "0.12" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { features = ["std", "testing"], version = "0.18" }
+miden-air = { features = ["std", "testing"], version = "0.19" }
 
 # External dependencies
 anyhow             = { version = "1.0" }
@@ -69,20 +69,24 @@ futures            = { version = "0.3" }
 hex                = { version = "0.4" }
 http               = { version = "1.3" }
 humantime          = { version = "2.2" }
-indexmap           = { version = "2.7" }
+indexmap           = { version = "2.12" }
 itertools          = { version = "0.14" }
+lru                = { default-features = false, version = "0.16" }
 pretty_assertions  = { version = "1.4" }
-prost              = { version = "0.13" }
+prost              = { version = "0.14" }
+protox             = { version = "0.9" }
 rand               = { version = "0.9" }
 rand_chacha        = { version = "0.9" }
-rstest             = { version = "0.25" }
+rstest             = { version = "0.26" }
 serde              = { features = ["derive"], version = "1" }
 thiserror          = { default-features = false, version = "2.0" }
 tokio              = { features = ["rt-multi-thread"], version = "1.46" }
 tokio-stream       = { version = "0.1" }
-toml               = { version = "0.8" }
-tonic              = { version = "0.13" }
-tonic-reflection   = { version = "0.13" }
+toml               = { version = "0.9" }
+tonic              = { version = "0.14" }
+tonic-prost        = { version = "0.14" }
+tonic-prost-build  = { version = "0.14" }
+tonic-reflection   = { version = "0.14" }
 tower              = { version = "0.5" }
 tower-http         = { features = ["cors", "trace"], version = "0.6" }
 tracing            = { version = "0.1" }

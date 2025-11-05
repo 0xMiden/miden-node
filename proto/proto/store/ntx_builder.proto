@@ -30,6 +30,9 @@ service NtxBuilder {
 
     // Returns the latest state of a network account with the specified account prefix.
     rpc GetNetworkAccountDetailsByPrefix(AccountIdPrefix) returns (MaybeAccountDetails) {}
+
+    // Returns the script for a note by its root.
+    rpc GetNoteScriptByRoot(note.NoteRoot) returns (shared.MaybeNoteScript) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX

@@ -2,7 +2,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 
-use account::{AccountState, InflightNetworkNote, NetworkAccountUpdate};
+use account::{AccountState, InflightNetworkNote, NetworkAccountEffect};
 use anyhow::Context;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
@@ -320,15 +320,16 @@ impl State {
         }
 
         let mut tx_impact = TransactionImpact::default();
-        if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
+        if let Some(update) = account_delta.and_then(NetworkAccountEffect::from_protocol) {
             let prefix = update.prefix();
+
             match update {
-                NetworkAccountUpdate::New(account) => {
+                NetworkAccountEffect::Created(account) => {
                     let account_state = AccountState::from_uncommitted_account(account);
                     self.accounts.insert(prefix, account_state);
                     self.queue.push_back(prefix);
                 },
-                NetworkAccountUpdate::Delta(account_delta) => {
+                NetworkAccountEffect::Updated(account_delta) => {
                     self.fetch_account(prefix)
                         .await
                         .context("failed to load account")?

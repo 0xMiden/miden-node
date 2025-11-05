@@ -171,6 +171,8 @@ impl From<DatabaseError> for Status {
 
 #[derive(Error, Debug)]
 pub enum StateInitializationError {
+    #[error("account tree IO error: {0}")]
+    FailedToAccountTreeWrite(String),
     #[error("database error")]
     DatabaseError(#[from] DatabaseError),
     #[error("failed to create nullifier tree")]

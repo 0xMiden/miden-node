@@ -1191,11 +1191,10 @@ async fn load_account_tree(
             miden_objects::crypto::merkle::LargeSmtError::Merkle(merkle_error) => {
                 StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
             },
-            other => {
-                // For other error types, we convert to MerkleError using a generic variant
-                StateInitializationError::DatabaseError(DatabaseError::MerkleError(
-                    miden_objects::crypto::merkle::MerkleError::InvalidPath,
-                ))
+            miden_objects::crypto::merkle::LargeSmtError::Storage(err) => {
+                // large_smt::StorageError is not `Sync` and hence `context` cannot be called
+                // which we want to and do
+                StateInitializationError::FailedToAccountTreeWrite(err.to_string())
             },
         }
     })?;

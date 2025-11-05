@@ -29,7 +29,7 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     // Compile the account code
     let owner_felts: [Felt; 2] = owner_account_id.into();
-    let owner_word = Word::from([Felt::new(0), Felt::new(0), owner_felts[1], owner_felts[0]]);
+    let owner_word = Word::from([Felt::new(0), Felt::new(0), owner_felts[0], owner_felts[1]]);
 
     let account_code = AccountComponent::compile(
         script,

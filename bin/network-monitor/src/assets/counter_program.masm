@@ -14,15 +14,17 @@ use.std::sys
 # => []
 export.increment
     # Ensure the note sender matches the authorized wallet stored in slot 1.
-    push.0 exec.input_note::get_sender
-    # => [sender_prefix, sender_suffix]
     push.1 exec.account::get_item
+    # => [owner_prefix, owner_suffix, 0, 0]
+
+    exec.active_note::get_sender
     # => [sender_prefix, sender_suffix, owner_prefix, owner_suffix, 0, 0]
-    movup.3 drop
-    movup.2 drop
-    # => [sender_prefix, sender_suffix, owner_prefix, owner_suffix]
+
     exec.account_id::is_equal
-    assert
+    # => [are_equal, 0, 0]
+
+    assert drop drop
+    # => []
 
     # TODO: update to active_account::get_item when miden-base gets updated.
     push.0 exec.account::get_item

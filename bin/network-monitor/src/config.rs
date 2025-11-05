@@ -12,7 +12,7 @@ use url::Url;
 // MONITOR CONFIGURATION CONSTANTS
 // ================================================================================================
 
-const DEFAULT_RPC_URL: &str = "http://localhost:50051";
+const DEFAULT_RPC_URL: &str = "http://0.0.0.0:57291";
 const DEFAULT_REMOTE_PROVER_URLS: &str = "http://localhost:50052";
 const DEFAULT_FAUCET_URL: &str = "http://localhost:8080";
 const DEFAULT_PORT: u16 = 3000;

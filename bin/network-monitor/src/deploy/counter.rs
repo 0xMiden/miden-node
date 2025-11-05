@@ -2,7 +2,8 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use miden_lib::testing::account_component::IncrNonceAuthComponent;
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::account::{
     Account,
@@ -28,7 +29,7 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     // Compile the account code
     let owner_felts: [Felt; 2] = owner_account_id.into();
-    let owner_word = Word::from([owner_felts[0], owner_felts[1], Felt::new(0), Felt::new(0)]);
+    let owner_word = Word::from([Felt::new(0), Felt::new(0), owner_felts[1], owner_felts[0]]);
 
     let account_code = AccountComponent::compile(
         script,
@@ -37,20 +38,7 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
     )?
     .with_supports_all_types();
 
-    const INCR_NONCE_AUTH_CODE: &str = r"
-        use.miden::account
-        use.std::sys
-
-        export.auth__basic
-            exec.account::incr_nonce
-            drop
-        end
-    ";
-
-    let incr_nonce_auth =
-        AccountComponent::compile(INCR_NONCE_AUTH_CODE, TransactionKernel::assembler(), vec![])
-            .context("failed to compile increment nonce auth component")?
-            .with_supports_all_types();
+    let incr_nonce_auth: AccountComponent = IncrNonceAuthComponent.into();
 
     // Create the counter program account
     let init_seed: [u8; 32] = rand::random();

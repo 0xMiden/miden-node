@@ -439,7 +439,7 @@ impl StorageMapValue {
 ///
 /// # Returns
 ///
-/// A vector of tuples containing `(slot, key, value, is_latest_update)` for the given account.
+/// A vector of tuples containing `(slot, key, value, is_latest)` for the given account.
 /// Each row contains one of:
 ///
 /// - the historical value for a slot and key specifically on block `block_to`
@@ -653,8 +653,8 @@ impl TryInto<AccountSummary> for AccountSummaryRaw {
 
 /// Insert an account vault asset row into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest_update=true` for the new row and update any existing
-/// row with the same `(account_id, vault_key)` tuple to `is_latest_update=false`.
+/// This function will set `is_latest=true` for the new row and update any existing
+/// row with the same `(account_id, vault_key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -671,15 +671,15 @@ pub(crate) fn insert_account_vault_asset(
 
     diesel::Connection::transaction(conn, |conn| {
         // First, update any existing rows with the same (account_id, vault_key) to set
-        // is_latest_update=false
+        // is_latest=false
         let update_count = diesel::update(schema::account_vault_assets::table)
             .filter(
                 schema::account_vault_assets::account_id
                     .eq(&account_id.to_bytes())
                     .and(schema::account_vault_assets::vault_key.eq(&vault_key_word.to_bytes()))
-                    .and(schema::account_vault_assets::is_latest_update.eq(true)),
+                    .and(schema::account_vault_assets::is_latest.eq(true)),
             )
-            .set(schema::account_vault_assets::is_latest_update.eq(false))
+            .set(schema::account_vault_assets::is_latest.eq(false))
             .execute(conn)?;
 
         // Insert the new latest row
@@ -693,8 +693,8 @@ pub(crate) fn insert_account_vault_asset(
 
 /// Insert an account storage map value into the DB using the given [`SqliteConnection`].
 ///
-/// This function will set `is_latest_update=true` for the new row and update any existing
-/// row with the same `(account_id, slot, key)` tuple to `is_latest_update=false`.
+/// This function will set `is_latest=true` for the new row and update any existing
+/// row with the same `(account_id, slot, key)` tuple to `is_latest=false`.
 ///
 /// # Returns
 ///
@@ -719,9 +719,9 @@ pub(crate) fn insert_account_storage_map_value(
                 .eq(&account_id)
                 .and(schema::account_storage_map_values::slot.eq(slot))
                 .and(schema::account_storage_map_values::key.eq(&key))
-                .and(schema::account_storage_map_values::is_latest_update.eq(true)),
+                .and(schema::account_storage_map_values::is_latest.eq(true)),
         )
-        .set(schema::account_storage_map_values::is_latest_update.eq(false))
+        .set(schema::account_storage_map_values::is_latest.eq(false))
         .execute(conn)?;
 
     let record = AccountStorageMapRowInsert {
@@ -730,7 +730,7 @@ pub(crate) fn insert_account_storage_map_value(
         value,
         slot,
         block_num,
-        is_latest_update: true,
+        is_latest: true,
     };
     let insert_count = diesel::insert_into(schema::account_storage_map_values::table)
         .values(record)
@@ -974,7 +974,7 @@ pub(crate) struct AccountAssetRowInsert {
     pub(crate) block_num: i64,
     pub(crate) vault_key: Vec<u8>,
     pub(crate) asset: Option<Vec<u8>>,
-    pub(crate) is_latest_update: bool,
+    pub(crate) is_latest: bool,
 }
 
 impl AccountAssetRowInsert {
@@ -983,7 +983,7 @@ impl AccountAssetRowInsert {
         vault_key: &Word,
         block_num: BlockNumber,
         asset: Option<Asset>,
-        is_latest_update: bool,
+        is_latest: bool,
     ) -> Self {
         let account_id = account_id.to_bytes();
         let vault_key = vault_key.to_bytes();
@@ -994,7 +994,7 @@ impl AccountAssetRowInsert {
             block_num,
             vault_key,
             asset,
-            is_latest_update,
+            is_latest,
         }
     }
 }
@@ -1007,5 +1007,5 @@ pub(crate) struct AccountStorageMapRowInsert {
     pub(crate) slot: i32,
     pub(crate) key: Vec<u8>,
     pub(crate) value: Vec<u8>,
-    pub(crate) is_latest_update: bool,
+    pub(crate) is_latest: bool,
 }

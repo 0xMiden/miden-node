@@ -7,7 +7,7 @@ diesel::table! {
         slot -> Integer,
         key -> Binary,
         value -> Binary,
-        is_latest_update -> Bool,
+        is_latest -> Bool,
     }
 }
 
@@ -17,7 +17,7 @@ diesel::table! {
         block_num -> BigInt,
         vault_key -> Binary,
         asset -> Nullable<Binary>,
-        is_latest_update -> Bool,
+        is_latest -> Bool,
     }
 }
 

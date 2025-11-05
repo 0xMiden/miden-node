@@ -87,7 +87,7 @@ CREATE TABLE account_storage_map_values (
     slot                INTEGER NOT NULL,
     key                 BLOB    NOT NULL,
     value               BLOB    NOT NULL,
-    is_latest_update    BOOLEAN NOT NULL,
+    is_latest           BOOLEAN NOT NULL,
 
     PRIMARY KEY (account_id, block_num, slot, key),
     CONSTRAINT slot_is_u8 CHECK (slot BETWEEN 0 AND 0xFF)
@@ -100,7 +100,7 @@ CREATE TABLE account_vault_assets (
     block_num           INTEGER NOT NULL,
     vault_key           BLOB    NOT NULL,
     asset               BLOB,
-    is_latest_update    BOOLEAN NOT NULL,
+    is_latest           BOOLEAN NOT NULL,
 
     PRIMARY KEY (account_id, block_num, vault_key)
 ) WITHOUT ROWID;

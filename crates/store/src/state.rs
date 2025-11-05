@@ -50,7 +50,7 @@ use miden_objects::crypto::merkle::{
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
-use miden_objects::{AccountError, Word};
+use miden_objects::{AccountError, AccountTreeError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 
@@ -1138,14 +1138,70 @@ async fn load_account_tree(
 ) -> Result<AccountTreeWithHistory<InMemoryAccountTree>, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
+    // Diagnostic: Check for duplicate SMT keys before creating the tree
+    let mut smt_key_map = std::collections::HashMap::new();
+    let mut duplicate_detected = false;
+
+    for (id, commitment) in &account_data {
+        let smt_key = account_id_to_smt_key(*id);
+        if let Some((prev_id, prev_commitment)) = smt_key_map.insert(smt_key, (*id, *commitment)) {
+            if prev_commitment != *commitment {
+                tracing::error!(
+                    target: COMPONENT,
+                    smt_key = %smt_key,
+                    account1_id = %prev_id,
+                    account1_commitment = %format_array(prev_commitment),
+                    account2_id = %id,
+                    account2_commitment = %format_array(*commitment),
+                    "DUPLICATE SMT KEY DETECTED: Two different accounts map to the same SMT key with different commitments"
+                );
+                duplicate_detected = true;
+            } else {
+                tracing::warn!(
+                    target: COMPONENT,
+                    smt_key = %smt_key,
+                    account_id = %id,
+                    "Duplicate account ID with same commitment found (this might be a database issue)"
+                );
+            }
+        }
+    }
+
+    if duplicate_detected {
+        tracing::error!(
+            target: COMPONENT,
+            total_accounts = account_data.len(),
+            unique_smt_keys = smt_key_map.len(),
+            "Failed to create account tree due to SMT key collisions"
+        );
+    }
+
     // Convert account_data to use account_id_to_smt_key
     let smt_entries = account_data
         .into_iter()
         .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
 
-    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
-        .expect("Failed to create LargeSmt from database account data");
+    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries).map_err(|e| {
+        tracing::error!(
+            target: COMPONENT,
+            error = ?e,
+            "Failed to create LargeSmt from database account data"
+        );
+        match e {
+            miden_objects::crypto::merkle::LargeSmtError::Merkle(merkle_error) => {
+                StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
+            },
+            other => {
+                // For other error types, we convert to MerkleError using a generic variant
+                StateInitializationError::DatabaseError(DatabaseError::MerkleError(
+                    miden_objects::crypto::merkle::MerkleError::InvalidPath,
+                ))
+            },
+        }
+    })?;
 
-    let account_tree = AccountTree::new(smt).expect("Failed to create AccountTree");
+    let account_tree =
+        AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;
+
     Ok(AccountTreeWithHistory::new(account_tree, block_number))
 }

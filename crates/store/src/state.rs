@@ -50,7 +50,7 @@ use miden_objects::crypto::merkle::{
 use miden_objects::note::{NoteDetails, NoteId, NoteScript, Nullifier};
 use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
-use miden_objects::{AccountError, AccountTreeError, Word};
+use miden_objects::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
 use tracing::{info, info_span, instrument};
 

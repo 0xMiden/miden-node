@@ -106,12 +106,6 @@ install-remote-prover: ## Install remote prover's CLI
 install-stress-test: ## Installs stress-test binary
 	cargo install --path bin/stress-test --locked
 
-.PHONY: stressotron
-stressotron: install-stress-test ## Installs stress-test binary
-	rm -rf stress-test-store-state; mkdir stress-test-store-state;
-	miden-node-stress-test seed-store --data-directory stress-test-store-state --num-accounts 10 --public-accounts-percentage 50
-	miden-node-stress-test benchmark-store --data-directory stress-test-store-state --iterations 10 --concurrency 1 sync-state	
-
 .PHONY: install-network-monitor
 install-network-monitor: ## Installs network monitor binary
 	cargo install --path bin/network-monitor --locked

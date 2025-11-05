@@ -150,11 +150,6 @@ impl State {
 
         let chain_mmr = load_mmr(&mut db).await?;
         let block_headers = db.select_all_block_headers().await?;
-        // TODO: Account tree loading synchronization
-        // Currently `load_account_tree` loads all account commitments from the DB. This could
-        // potentially lead to inconsistency if the DB contains account states from blocks beyond
-        // `latest_block_num`, though in practice the DB writes are transactional and this
-        // should not occur.
         let latest_block_num = block_headers
             .last()
             .map_or(BlockNumber::GENESIS, miden_objects::block::BlockHeader::block_num);
@@ -1136,47 +1131,8 @@ async fn load_account_tree(
     db: &mut Db,
     block_number: BlockNumber,
 ) -> Result<AccountTreeWithHistory<InMemoryAccountTree>, StateInitializationError> {
-    let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
+    let account_data = db.select_all_account_commitments().await?;
 
-    // Diagnostic: Check for duplicate SMT keys before creating the tree
-    let mut smt_key_map = std::collections::HashMap::new();
-    let mut duplicate_detected = false;
-
-    for (id, commitment) in &account_data {
-        let smt_key = account_id_to_smt_key(*id);
-        if let Some((prev_id, prev_commitment)) = smt_key_map.insert(smt_key, (*id, *commitment)) {
-            if prev_commitment == *commitment {
-                tracing::warn!(
-                    target: COMPONENT,
-                    smt_key = %smt_key,
-                    account_id = %id,
-                    "Duplicate account ID with same commitment found (this might be a database issue)"
-                );
-            } else {
-                tracing::error!(
-                    target: COMPONENT,
-                    smt_key = %smt_key,
-                    account1_id = %prev_id,
-                    account1_commitment = %format_array(prev_commitment),
-                    account2_id = %id,
-                    account2_commitment = %format_array(*commitment),
-                    "DUPLICATE SMT KEY DETECTED: Two different accounts map to the same SMT key with different commitments"
-                );
-                duplicate_detected = true;
-            }
-        }
-    }
-
-    if duplicate_detected {
-        tracing::error!(
-            target: COMPONENT,
-            total_accounts = account_data.len(),
-            unique_smt_keys = smt_key_map.len(),
-            "Failed to create account tree due to SMT key collisions"
-        );
-    }
-
-    // Convert account_data to use account_id_to_smt_key
     let smt_entries = account_data
         .into_iter()
         .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));

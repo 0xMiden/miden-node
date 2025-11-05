@@ -267,8 +267,8 @@ impl NetworkAccountUpdate {
         self.account_id().try_into().unwrap()
     }
 
-    pub fn account_delta(&self) -> AccountDelta {
-        self.0.clone()
+    pub fn account_delta(&self) -> &AccountDelta {
+        &self.0
     }
 
     fn account_id(&self) -> AccountId {

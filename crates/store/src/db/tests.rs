@@ -10,6 +10,7 @@ use miden_lib::note::create_p2id_note;
 use miden_lib::transaction::TransactionKernel;
 use miden_node_proto::domain::account::AccountSummary;
 use miden_node_utils::fee::test_fee_params;
+use miden_objects::account::auth::PublicKeyCommitment;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
     Account,
@@ -22,7 +23,6 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
     AccountVaultDelta,
-    PublicKeyCommitment,
     StorageSlot,
 };
 use miden_objects::asset::{Asset, AssetVaultKey, FungibleAsset};

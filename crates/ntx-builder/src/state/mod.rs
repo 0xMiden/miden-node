@@ -325,7 +325,7 @@ impl State {
 
             let account_delta = update.account_delta();
             if account_delta.is_full_state() {
-                let account = Account::try_from(&account_delta)?;
+                let account = Account::try_from(account_delta)?;
                 let account_state = AccountState::from_uncommitted_account(account);
                 self.accounts.insert(prefix, account_state);
                 self.queue.push_back(prefix);
@@ -334,7 +334,7 @@ impl State {
                     .await
                     .context("failed to load account")?
                     .context("account with delta not found")?
-                    .add_delta(&account_delta);
+                    .add_delta(account_delta);
             }
 
             // If this account was in-progress, then it should no longer be as this update is the

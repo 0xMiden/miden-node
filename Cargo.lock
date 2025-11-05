@@ -2091,9 +2091,9 @@ checksum = "469fb0b9cefa57e3ef31275ee7cacb78f2fdca44e4765491884a2b119d4eb130"
 
 [[package]]
 name = "iri-string"
-version = "0.7.8"
+version = "0.7.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbc5ebe9c3a1a7a5127f920a418f7585e9e758e911d0466ed004f393b0e380b2"
+checksum = "4f867b9d1d896b67beb18518eda36fdb77a32ea590de864f1325b294a6d14397"
 dependencies = [
  "memchr",
  "serde",
@@ -2476,7 +2476,8 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#68401e16ae199cfcaaea12de124ab7be55ef1a9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "612236e5d8df5d9bd5bdc32b35e92140ad2cf2c0e99ad07b467eebfd0cb5e823"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2503,9 +2504,9 @@ dependencies = [
 
 [[package]]
 name = "miden-crypto"
-version = "0.18.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ffedb6b42cbc44634c3f9c58ee912b0d585fabdf3a19af56d8f185eb50125ef"
+checksum = "ffd4233803234f287596d9a60c67c4e5762f792eb0dd20969a41c8db093d6126"
 dependencies = [
  "blake3",
  "cc",
@@ -2535,9 +2536,9 @@ dependencies = [
 
 [[package]]
 name = "miden-crypto-derive"
-version = "0.18.0"
+version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d3b266500c6fe3584dacc773285a6e8c70b367b7ec0316fb17632a47f98b397"
+checksum = "2f70dccd82a2b2787b9bfc64687cd224dfe0adc0d21ae9b241b0c6edc4a23335"
 dependencies = [
  "quote",
  "syn 2.0.108",
@@ -2573,7 +2574,8 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#68401e16ae199cfcaaea12de124ab7be55ef1a9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "42e16595f7c2c37689b9fd0fffaedb978c1b9e9aa795751ad82108365530dae8"
 dependencies = [
  "Inflector",
  "fs-err",
@@ -2928,7 +2930,8 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#68401e16ae199cfcaaea12de124ab7be55ef1a9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb47d96f891e22114d27748353db7dfd93247d777e1679bac44ee544ea9b204d"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -3066,7 +3069,8 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#68401e16ae199cfcaaea12de124ab7be55ef1a9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d2e5612893747091011d535b3a8a9904feab931415dd015d74d939f345d5b7dc"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3085,7 +3089,8 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#68401e16ae199cfcaaea12de124ab7be55ef1a9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0ca3864d4a5ed445aeb1b8580e76e347d34691c642b67a79278aeb7b429f073"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -3100,7 +3105,8 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.12.0"
-source = "git+https://github.com/0xMiden/miden-base?branch=next#68401e16ae199cfcaaea12de124ab7be55ef1a9b"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44275e75905d0f3f0c92c00f4da98acb60eaa1fbe84fdc8ad822df6db611780e"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -4649,9 +4655,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.34"
+version = "0.23.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a9586e9ee2b4f8fab52a0048ca7334d7024eef48e2cb9407e3497bb7cab7fa7"
+checksum = "533f54bc6a7d4f647e46ad909549eda97bf5afc1585190ef692b4286b198bd8f"
 dependencies = [
  "log",
  "once_cell",
@@ -5522,9 +5528,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.16"
+version = "0.7.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14307c986784f72ef81c89db7d9e28d6ac26d16213b109ea501696195e6e3ce5"
+checksum = "2efa149fe76073d6e8fd97ef4f4eca7b67f599660115591483572e406e165594"
 dependencies = [
  "bytes",
  "futures-core",

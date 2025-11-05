@@ -226,7 +226,7 @@ impl Tasks {
 
         // Create initial counter increment status
         let initial_counter_status = ServiceStatus {
-            name: "Counter Increment".to_string(),
+            name: "Network Transactions".to_string(),
             status: crate::status::Status::Unknown,
             last_checked: current_time,
             error: None,

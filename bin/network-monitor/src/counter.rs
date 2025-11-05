@@ -332,7 +332,7 @@ fn build_status(details: &CounterIncrementDetails, last_error: Option<String>) -
     };
 
     ServiceStatus {
-        name: "Counter Increment".to_string(),
+        name: "Network Transactions".to_string(),
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,

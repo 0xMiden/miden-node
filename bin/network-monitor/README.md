@@ -35,8 +35,8 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
-- `--wallet-filepath`: Path where the wallet account are located (default: `wallet_account.bin`)
-- `--counter-filepath`: Path where the counter program account are located (default: `counter_program.bin`)
+- `--wallet-filepath`: Path where the wallet account are located (default: `wallet_account.mac`)
+- `--counter-filepath`: Path where the counter program account are located (default: `counter_program.mac`)
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -72,8 +72,8 @@ miden-network-monitor start --port 8080 --rpc-url http://localhost:50051
 
 # Start with custom account file paths
 miden-network-monitor start \
-  --wallet-filepath my_wallet.bin \
-  --counter-filepath my_counter.bin \
+  --wallet-filepath my_wallet.mac \
+  --counter-filepath my_counter.mac \
   --rpc-url https://testnet.miden.io:443
 ```
 
@@ -104,8 +104,8 @@ miden-network-monitor start \
   --faucet-test-interval 2m \
   --status-check-interval 3s \
   --port 8080 \
-  --wallet-filepath my_wallet.bin \
-  --counter-filepath my_counter.bin \
+  --wallet-filepath my_wallet.mac \
+  --counter-filepath my_counter.mac \
   --enable-otel
 
 # Get help
@@ -121,8 +121,8 @@ MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor 
 # Multiple remote provers and faucet testing
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" \
 MIDEN_MONITOR_FAUCET_URL="http://localhost:8080" \
-MIDEN_MONITOR_WALLET_FILEPATH="my_wallet.bin" \
-MIDEN_MONITOR_COUNTER_FILEPATH="my_counter.bin" \
+MIDEN_MONITOR_WALLET_FILEPATH="my_wallet.mac" \
+MIDEN_MONITOR_COUNTER_FILEPATH="my_counter.mac" \
 miden-network-monitor start
 ```
 
@@ -201,7 +201,7 @@ The monitor automatically:
 1. Checks for existing account files on startup
 2. Creates new accounts if files don't exist
 3. Deploys accounts to the network via RPC
-4. Uses the specified file paths (default: `wallet_account.bin` and `counter_program.bin`)
+4. Saves the wallet and counter contract account in the specified file paths (default: `wallet_account.mac` and `counter_program.mac`)
 
 ### Example Usage
 
@@ -212,12 +212,12 @@ miden-network-monitor start --rpc-url https://testnet.miden.io:443
 # Start monitor with custom account file paths
 miden-network-monitor start \
   --rpc-url https://testnet.miden.io:443 \
-  --wallet-filepath my_wallet.bin \
-  --counter-filepath my_counter.bin
+  --wallet-filepath my_wallet.mac \
+  --counter-filepath my_counter.mac
 
 # The generated files can be loaded in Miden applications:
-# - wallet_account.bin: Contains the wallet account with authentication keys
-# - counter_program.bin: Contains the counter program account
+# - wallet_account.mac: Contains the wallet account with authentication keys
+# - counter_program.mac: Contains the counter program account
 ```
 
 ## Future Monitor Items

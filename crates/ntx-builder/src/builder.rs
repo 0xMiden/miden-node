@@ -159,7 +159,7 @@ impl NetworkTransactionBuilder {
                         .context("mempool event stream failed")?;
 
                     self.handle_mempool_event(
-                        event,
+                        event.into(),
                         &config,
                         chain_state.clone(),
                     ).await?;
@@ -176,40 +176,29 @@ impl NetworkTransactionBuilder {
     )]
     async fn handle_mempool_event(
         &mut self,
-        event: MempoolEvent,
+        event: Arc<MempoolEvent>,
         account_actor_config: &AccountActorConfig,
         chain_state: Arc<RwLock<ChainState>>,
     ) -> Result<(), anyhow::Error> {
-        match &event {
-            MempoolEvent::TransactionAdded { id, account_delta, .. } => {
-                match account_delta {
-                    Some(AccountUpdateDetails::New(account)) => {
-                        // Create new actor for account creation transactions.
-                        if let Some(network_account) = AccountOrigin::transaction(account) {
-                            self.coordinator
-                                .spawn_actor(network_account, account_actor_config)
-                                .await?;
-                        }
-                        Ok(())
-                    },
-                    Some(AccountUpdateDetails::Delta(account_delta)) => {
-                        // Cache notes that predate corresponding accounts if there are any.
-                        if let Ok(prefix) = NetworkAccountPrefix::try_from(account_delta.id()) {
-                            self.coordinator.cache_predating_events(prefix, &event, id);
-                        }
-                        self.coordinator.broadcast_event(&event).await;
-                        Ok(())
-                    },
-                    _ => {
-                        self.coordinator.broadcast_event(&event).await;
-                        Ok(())
-                    },
+        match event.as_ref() {
+            MempoolEvent::TransactionAdded { account_delta, .. } => {
+                if let Some(AccountUpdateDetails::New(account)) = account_delta {
+                    // Create new actor for account creation transactions.
+                    if let Some(network_account) = AccountOrigin::transaction(account) {
+                        self.coordinator.spawn_actor(network_account, account_actor_config).await?;
+                    }
+                    Ok(())
+                } else {
+                    // Cache notes that predate corresponding accounts if there are any.
+                    self.coordinator.cache_predating_events(&event);
+                    self.coordinator.broadcast_event(event.clone()).await;
+                    Ok(())
                 }
             },
             // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, txs } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
-                self.coordinator.broadcast_event(&event).await;
+                self.coordinator.broadcast_event(event.clone()).await;
                 for tx_id in txs {
                     self.coordinator.drain_predating_events(tx_id);
                 }
@@ -217,7 +206,8 @@ impl NetworkTransactionBuilder {
             },
             // Broadcast to all actors.
             MempoolEvent::TransactionsReverted(_) => {
-                self.coordinator.broadcast_event(&event).await;
+                // TODO (current pr): Do we need to cache these?
+                self.coordinator.broadcast_event(event).await;
                 Ok(())
             },
         }

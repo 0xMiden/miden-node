@@ -20,13 +20,13 @@ export.increment
     push.1 exec.active_account::get_item
     # => [owner_prefix, owner_suffix, 0, 0]
 
-    exec.active_note::get_sender
+    push.0 exec.input_note::get_sender
     # => [sender_prefix, sender_suffix, owner_prefix, owner_suffix, 0, 0]
 
     exec.account_id::is_equal
     # => [are_equal, 0, 0]
 
-    assert drop drop
+    assert.err="Note sender not authorized" drop drop
     # => []
 
     push.0 exec.active_account::get_item

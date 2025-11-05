@@ -28,8 +28,11 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
 
     // Compile the account code
-    let owner_felts: [Felt; 2] = owner_account_id.into();
-    let owner_word = Word::from([Felt::new(0), Felt::new(0), owner_felts[0], owner_felts[1]]);
+    let owner_account_id_prefix = owner_account_id.prefix().as_felt();
+    let owner_account_id_suffix = owner_account_id.suffix();
+
+    let owner_word =
+        Word::from([Felt::new(0), Felt::new(0), owner_account_id_suffix, owner_account_id_prefix]);
 
     let account_code = AccountComponent::compile(
         script,

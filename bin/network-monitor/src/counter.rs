@@ -43,7 +43,6 @@ use tracing::{error, info, instrument};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::deploy::wallet::create_wallet_account;
 use crate::deploy::{MonitorDataStore, get_counter_library};
 use crate::status::{ServiceDetails, ServiceStatus, Status};
 
@@ -160,13 +159,14 @@ async fn setup_counter_increment(
 )> {
     let details = CounterIncrementDetails::default();
     // Load accounts from files
-    let (wallet_account, secret_key) = match create_wallet_account() {
-        Ok(account) => account,
-        Err(e) => {
-            error!("Failed to create wallet account: {:?}", e);
-            anyhow::bail!("Failed to create wallet account: {e}")
-        },
-    };
+    let wallet_account_file =
+        AccountFile::read(config.wallet_filepath).context("Failed to read wallet account file")?;
+    let wallet_account = wallet_account_file.account.clone();
+    let AuthSecretKey::RpoFalcon512(secret_key) = wallet_account_file
+        .auth_secret_keys
+        .first()
+        .expect("wallet account file should have one auth secret key")
+        .clone();
 
     let counter_account = match load_counter_account(&config.counter_filepath) {
         Ok(account) => account,

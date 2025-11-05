@@ -250,13 +250,22 @@ impl AccountState {
 // ================================================================================================
 
 #[derive(Clone)]
-pub struct NetworkAccountUpdate(AccountDelta);
+pub enum NetworkAccountEffect {
+    Created(Account),
+    Updated(AccountDelta),
+}
 
-impl NetworkAccountUpdate {
+impl NetworkAccountEffect {
     pub fn from_protocol(update: AccountUpdateDetails) -> Option<Self> {
         let update = match update {
             AccountUpdateDetails::Private => return None,
-            AccountUpdateDetails::Delta(update) => Self(update),
+            AccountUpdateDetails::Delta(update) if update.is_full_state() => {
+                NetworkAccountEffect::Created(
+                    Account::try_from(&update)
+                        .expect("Account should be derivable by full state AccountDelta"),
+                )
+            },
+            AccountUpdateDetails::Delta(update) => NetworkAccountEffect::Updated(update),
         };
 
         update.account_id().is_network().then_some(update)
@@ -267,12 +276,11 @@ impl NetworkAccountUpdate {
         self.account_id().try_into().unwrap()
     }
 
-    pub fn account_delta(&self) -> &AccountDelta {
-        &self.0
-    }
-
     fn account_id(&self) -> AccountId {
-        self.0.id()
+        match self {
+            NetworkAccountEffect::Created(acc) => acc.id(),
+            NetworkAccountEffect::Updated(delta) => delta.id(),
+        }
     }
 }
 

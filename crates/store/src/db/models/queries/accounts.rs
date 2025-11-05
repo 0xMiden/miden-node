@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Queryable, QueryableByName};
@@ -726,7 +725,7 @@ pub(crate) fn upsert_accounts(
             None
         };
 
-        let full_account: Option<Cow<Account>> = match update.details() {
+        let full_account: Option<Account> = match update.details() {
             AccountUpdateDetails::Private => None,
             AccountUpdateDetails::Delta(delta) if delta.is_full_state() => {
                 let account = Account::try_from(delta)?;
@@ -759,7 +758,7 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                Some(Cow::Owned(account))
+                Some(account)
             },
             AccountUpdateDetails::Delta(delta) => {
                 let mut rows = select_details_stmt(conn, account_id)?.into_iter();
@@ -782,9 +781,9 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                // apply delta to the account; we need to do this before we process asset
-                // updates because we currently need to get the
-                // current value of fungible assets from the account
+                // apply delta to the account; we need to do this before we process asset updates
+                // because we currently need to get the current value of fungible assets from the
+                // account
                 let account = apply_delta(account, delta, &update.final_state_commitment())?;
 
                 // --- process asset updates ----------------------------------
@@ -818,11 +817,11 @@ pub(crate) fn upsert_accounts(
                     )?;
                 }
 
-                Some(Cow::Owned(account))
+                Some(account)
             },
         };
 
-        if let Some(code) = full_account.as_ref().map(|account| account.code()) {
+        if let Some(code) = full_account.as_ref().map(Account::code) {
             let code_value = AccountCodeRowInsert {
                 code_commitment: code.commitment().to_bytes(),
                 code: code.to_bytes(),

@@ -57,7 +57,7 @@ miden-tx              = { default-features = false, version = "0.12" }
 miden-tx-batch-prover = { version = "0.12" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { features = ["std", "testing"], version = "0.19.0" }
+miden-air = { features = ["std", "testing"], version = "0.19" }
 
 # External dependencies
 anyhow             = { version = "1.0" }

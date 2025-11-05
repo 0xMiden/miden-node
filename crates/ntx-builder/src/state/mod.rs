@@ -323,7 +323,7 @@ impl State {
         if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
             let prefix = update.prefix();
 
-            let NetworkAccountUpdate::Delta(account_delta) = update;
+            let account_delta = update.account_delta();
             if account_delta.is_full_state() {
                 let account = Account::try_from(&account_delta)?;
                 let account_state = AccountState::from_uncommitted_account(account);

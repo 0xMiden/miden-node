@@ -250,15 +250,13 @@ impl AccountState {
 // ================================================================================================
 
 #[derive(Clone)]
-pub enum NetworkAccountUpdate {
-    Delta(AccountDelta),
-}
+pub struct NetworkAccountUpdate(AccountDelta);
 
 impl NetworkAccountUpdate {
     pub fn from_protocol(update: AccountUpdateDetails) -> Option<Self> {
         let update = match update {
             AccountUpdateDetails::Private => return None,
-            AccountUpdateDetails::Delta(update) => Self::Delta(update),
+            AccountUpdateDetails::Delta(update) => Self(update),
         };
 
         update.account_id().is_network().then_some(update)
@@ -269,10 +267,12 @@ impl NetworkAccountUpdate {
         self.account_id().try_into().unwrap()
     }
 
+    pub fn account_delta(&self) -> AccountDelta {
+        self.0.clone()
+    }
+
     fn account_id(&self) -> AccountId {
-        match self {
-            NetworkAccountUpdate::Delta(account_delta) => account_delta.id(),
-        }
+        self.0.id()
     }
 }
 

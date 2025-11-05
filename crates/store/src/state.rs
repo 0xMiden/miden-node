@@ -1145,7 +1145,14 @@ async fn load_account_tree(
     for (id, commitment) in &account_data {
         let smt_key = account_id_to_smt_key(*id);
         if let Some((prev_id, prev_commitment)) = smt_key_map.insert(smt_key, (*id, *commitment)) {
-            if prev_commitment != *commitment {
+            if prev_commitment == *commitment {
+                tracing::warn!(
+                    target: COMPONENT,
+                    smt_key = %smt_key,
+                    account_id = %id,
+                    "Duplicate account ID with same commitment found (this might be a database issue)"
+                );
+            } else {
                 tracing::error!(
                     target: COMPONENT,
                     smt_key = %smt_key,
@@ -1156,13 +1163,6 @@ async fn load_account_tree(
                     "DUPLICATE SMT KEY DETECTED: Two different accounts map to the same SMT key with different commitments"
                 );
                 duplicate_detected = true;
-            } else {
-                tracing::warn!(
-                    target: COMPONENT,
-                    smt_key = %smt_key,
-                    account_id = %id,
-                    "Duplicate account ID with same commitment found (this might be a database issue)"
-                );
             }
         }
     }

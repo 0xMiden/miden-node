@@ -215,10 +215,10 @@ impl Coordinator {
     }
 
     /// Caches any mempool events containing notes that don't have a corresponding actor.
-    // If an actor does not exist for the account, it is assumed that the account has not been
-    // created yet.
-    //
-    // Cached events will be fed to the corresponding actor upon account creation.
+    /// If an actor does not exist for the account, it is assumed that the account has not been
+    /// created yet.
+    ///
+    /// Cached events will be fed to the corresponding actor upon account creation.
     pub fn cache_predating_events(&mut self, event: &Arc<MempoolEvent>) {
         if let MempoolEvent::TransactionAdded { id, network_notes, .. } = event.as_ref() {
             // Cache an event for every note that doesn't have a corresponding actor.

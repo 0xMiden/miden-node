@@ -11,6 +11,7 @@ use.miden::input_note
 use.miden::tx
 
 use.std::sys
+use.miden::active_note
 
 # Increment function with note authentication
 # => []

@@ -42,14 +42,14 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
 
     // Create the counter program account
     let init_seed: [u8; 32] = rand::random();
-    let counter_program = AccountBuilder::new(init_seed)
+    let counter_account = AccountBuilder::new(init_seed)
         .account_type(AccountType::RegularAccountUpdatableCode)
         .storage_mode(AccountStorageMode::Network)
         .with_component(account_code)
         .with_auth_component(incr_nonce_auth)
         .build()?;
 
-    Ok(counter_program)
+    Ok(counter_account)
 }
 
 /// Save counter program account to disk without extra auth material.

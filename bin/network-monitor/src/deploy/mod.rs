@@ -15,7 +15,7 @@ use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageSlot};
 use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};
-use miden_objects::asset::{AssetWitness, VaultKey};
+use miden_objects::asset::{AssetVaultKey, AssetWitness};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
 use miden_objects::note::NoteScript;
@@ -31,7 +31,6 @@ use miden_tx::{
     TransactionExecutor,
     TransactionMastStore,
 };
-use rand_chacha::ChaCha20Rng;
 use tokio::sync::Mutex;
 use tracing::instrument;
 use url::Url;
@@ -140,7 +139,7 @@ pub async fn deploy_accounts(
         genesis_chain_mmr,
     ));
 
-    let executor: TransactionExecutor<'_, '_, _, BasicAuthenticator<ChaCha20Rng>> =
+    let executor: TransactionExecutor<'_, '_, _, BasicAuthenticator> =
         TransactionExecutor::new(data_store.as_ref());
 
     let script_builder = ScriptBuilder::new(true)
@@ -301,7 +300,7 @@ impl DataStore for MonitorDataStore {
         &self,
         account_id: AccountId,
         vault_root: Word,
-        vault_key: VaultKey,
+        vault_key: AssetVaultKey,
     ) -> Result<AssetWitness, DataStoreError> {
         let account = self.wallet_account.lock().await;
 

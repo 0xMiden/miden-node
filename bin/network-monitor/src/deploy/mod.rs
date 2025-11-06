@@ -106,10 +106,6 @@ pub async fn deploy_accounts(
         .await
         .context("Failed to connect to RPC server")?;
 
-    let mast_store = TransactionMastStore::new();
-    mast_store.load_account_code(wallet_account.code());
-    mast_store.load_account_code(counter_account.code());
-
     let block_header_request = BlockHeaderByNumberRequest {
         block_num: Some(BlockNumber::GENESIS.as_u32()),
         include_mmr_proof: None,

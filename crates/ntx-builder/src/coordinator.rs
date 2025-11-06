@@ -152,7 +152,7 @@ impl Coordinator {
     /// message channel and can process it accordingly.
     ///
     /// If an actor fails to receive the event, it will be canceled.
-    pub async fn broadcast_event(&mut self, event: Arc<MempoolEvent>) {
+    pub async fn broadcast(&mut self, event: Arc<MempoolEvent>) {
         tracing::debug!(
             actor_count = self.actor_registry.len(),
             "broadcasting event to all actors"
@@ -214,24 +214,42 @@ impl Coordinator {
         }
     }
 
-    /// Caches any mempool events containing notes that don't have a corresponding actor.
-    /// If an actor does not exist for the account, it is assumed that the account has not been
-    /// created yet.
+    /// Sends a mempool event to all network account actors that are found in the corresponding
+    /// transaction's notes.
     ///
-    /// Cached events will be fed to the corresponding actor upon account creation.
-    pub fn cache_predating_events(&mut self, event: &Arc<MempoolEvent>) {
+    /// Caches the mempool event for each network account found in the transaction's notes that does
+    /// not currently have a corresponding actor.
+    ///
+    /// If an actor does not exist for the account, it is assumed that the account has not been
+    /// created on the chain yet.
+    ///
+    /// Cached events will be fed to the corresponding actor when the account creation transaction
+    /// is processed.
+    pub async fn send_targeted(
+        &mut self,
+        event: &Arc<MempoolEvent>,
+    ) -> Result<(), SendError<MempoolEvent>> {
+        let mut target_actors = HashMap::new();
         if let MempoolEvent::TransactionAdded { id, network_notes, .. } = event.as_ref() {
-            // Cache an event for every note that doesn't have a corresponding actor.
+            // Determine target actors for each note.
             for note in network_notes {
                 if let NetworkNote::SingleTarget(note) = note {
-                    // Only cache if no actor exists for this prefix.
                     let prefix = note.account_prefix();
-                    if !self.actor_registry.contains_key(&prefix) {
+                    if let Some(actor) = self.actor_registry.get(&prefix) {
+                        // Register actor as target.
+                        target_actors.insert(prefix, actor);
+                    } else {
+                        // Cache event for every note that doesn't have a corresponding actor.
                         self.predating_events.entry(prefix).or_default().insert(*id, event.clone());
                     }
                 }
             }
         }
+        // Send event to target actors.
+        for actor in target_actors.values() {
+            Self::send(actor, event.clone()).await?;
+        }
+        Ok(())
     }
 
     /// Removes any cached events for a given transaction ID from all account prefix caches.

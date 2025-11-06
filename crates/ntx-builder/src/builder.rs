@@ -189,16 +189,14 @@ impl NetworkTransactionBuilder {
                     }
                     Ok(())
                 } else {
-                    // Cache notes that predate corresponding accounts if there are any.
-                    self.coordinator.cache_predating_events(&event);
-                    self.coordinator.broadcast_event(event.clone()).await;
+                    self.coordinator.send_targeted(&event).await?;
                     Ok(())
                 }
             },
             // Update chain state and broadcast.
             MempoolEvent::BlockCommitted { header, txs } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
-                self.coordinator.broadcast_event(event.clone()).await;
+                self.coordinator.broadcast(event.clone()).await;
                 for tx_id in txs {
                     self.coordinator.drain_predating_events(tx_id);
                 }
@@ -207,7 +205,7 @@ impl NetworkTransactionBuilder {
             // Broadcast to all actors.
             MempoolEvent::TransactionsReverted(_) => {
                 // TODO (current pr): Do we need to cache these?
-                self.coordinator.broadcast_event(event).await;
+                self.coordinator.broadcast(event).await;
                 Ok(())
             },
         }

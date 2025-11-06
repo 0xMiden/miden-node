@@ -21,6 +21,7 @@
 - Add optional `TransactionInputs` field to `SubmitProvenTransaction` endpoint for transaction re-execution (#[1278](https://github.com/0xMiden/miden-node/pull/1278)).
 - Implement `DataStore::get_note_script()` for `NtxDataStore` (#[1332](https://github.com/0xMiden/miden-node/pull/1332)).
 - [BREAKING] Added `AccountTreeWithHistory` and integrate historical queries into `GetAccountProof` ([#1292](https://github.com/0xMiden/miden-node/pull/1292)).
+- Started validating notes by their commitment instead of ID before entering the mempool ([#1338](https://github.com/0xMiden/miden-node/pull/1338)).
 
 ## v0.11.3 (2025-11-04)
 

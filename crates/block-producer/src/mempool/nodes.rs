@@ -145,12 +145,12 @@ pub(super) trait Node {
     /// the transactions within them.
     fn nullifiers(&self) -> Box<dyn Iterator<Item = Nullifier> + '_>;
 
-    /// All output notes created by this node, **including** erased notes. This may not be strictly
-    /// necessary but it removes having to worry about reverting batches and blocks with erased
-    /// notes -- since these would otherwise have different state impact than the transactions
-    /// within them.
-    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
-    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_>;
+    /// All output note commitments created by this node, **including** erased notes. This may not
+    /// be strictly necessary but it removes having to worry about reverting batches and blocks
+    /// with erased notes -- since these would otherwise have different state impact than the
+    /// transactions within them.
+    fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_>;
+    fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_>;
     /// The account state commitment updates caused by this node.
     ///
     /// Output tuple represents each updates `(account ID, initial commitment, final commitment)`.
@@ -163,12 +163,12 @@ impl Node for TransactionNode {
         Box::new(self.0.nullifiers())
     }
 
-    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.output_note_ids())
+    fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
+        Box::new(self.0.output_note_commitments())
     }
 
-    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.unauthenticated_notes())
+    fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
+        Box::new(self.0.unauthenticated_note_commitments())
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
@@ -190,12 +190,12 @@ impl Node for ProposedBatchNode {
         Box::new(self.0.iter().flat_map(|tx| tx.nullifiers()))
     }
 
-    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.output_note_ids()))
+    fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
+        Box::new(self.0.iter().flat_map(|tx| tx.output_note_commitments()))
     }
 
-    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.0.iter().flat_map(|tx| tx.unauthenticated_notes()))
+    fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
+        Box::new(self.0.iter().flat_map(|tx| tx.unauthenticated_note_commitments()))
     }
 
     fn account_updates(&self) -> Box<dyn Iterator<Item = (AccountId, Word, Word)> + '_> {
@@ -222,17 +222,20 @@ impl Node for ProvenBatchNode {
         )
     }
 
-    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.tx_headers().flat_map(|tx| tx.output_notes().iter().map(NoteHeader::id)))
+    fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
+        Box::new(
+            self.tx_headers()
+                .flat_map(|tx| tx.output_notes().iter().map(NoteHeader::commitment)),
+        )
     }
 
-    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+    fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
         Box::new(
             self.inner
                 .input_notes()
                 .iter()
                 .filter_map(|note| note.header())
-                .map(NoteHeader::id),
+                .map(NoteHeader::commitment),
         )
     }
 
@@ -256,13 +259,20 @@ impl Node for BlockNode {
         Box::new(self.txs.iter().flat_map(|tx| tx.nullifiers()))
     }
 
-    fn output_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
-        Box::new(self.txs.iter().flat_map(|tx| tx.output_note_ids()))
+    fn output_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
+        Box::new(
+            self.txs
+                .iter()
+                .flat_map(|tx: &Arc<AuthenticatedTransaction>| tx.output_note_commitments()),
+        )
     }
 
-    fn unauthenticated_notes(&self) -> Box<dyn Iterator<Item = NoteId> + '_> {
+    fn unauthenticated_note_commitments(&self) -> Box<dyn Iterator<Item = Word> + '_> {
         Box::new(self.batches.iter().flat_map(|batch| {
-            batch.input_notes().iter().filter_map(|note| note.header().map(NoteHeader::id))
+            batch
+                .input_notes()
+                .iter()
+                .filter_map(|note| note.header().map(NoteHeader::commitment))
         }))
     }
 

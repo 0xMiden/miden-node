@@ -44,12 +44,12 @@ pub enum VerifyTxError {
     /// Unauthenticated transaction notes were not found in the store or in outputs of in-flight
     /// transactions
     #[error(
-        "unauthenticated transaction notes were not found in the store or in outputs of in-flight transactions: {0:?}"
+        "unauthenticated transaction note commitments were not found in the store or in outputs of in-flight transactions: {0:?}"
     )]
-    UnauthenticatedNotesNotFound(Vec<NoteId>),
+    UnauthenticatedNotesNotFound(Vec<Word>),
 
-    #[error("output note IDs already used: {0:?}")]
-    OutputNotesAlreadyExist(Vec<NoteId>),
+    #[error("output note commitments already used: {0:?}")]
+    OutputNotesAlreadyExist(Vec<Word>),
 
     /// The account's initial commitment did not match the current account's commitment
     #[error(
@@ -83,12 +83,12 @@ pub enum AddTransactionError {
     InputNotesAlreadyConsumed(Vec<Nullifier>),
 
     #[error(
-        "unauthenticated transaction notes were not found in the store or in outputs of in-flight transactions: {0:?}"
+        "unauthenticated transaction note commitments were not found in the store or in outputs of in-flight transactions: {0:?}"
     )]
-    UnauthenticatedNotesNotFound(Vec<NoteId>),
+    UnauthenticatedNotesNotFound(Vec<Word>),
 
-    #[error("output note IDs already used: {0:?}")]
-    OutputNotesAlreadyExist(Vec<NoteId>),
+    #[error("output note commitments already used: {0:?}")]
+    OutputNotesAlreadyExist(Vec<Word>),
 
     #[error(
         "transaction's initial state commitment {tx_initial_account_commitment} does not match the account's current value of {current_account_commitment}"
@@ -132,11 +132,11 @@ impl From<VerifyTxError> for AddTransactionError {
             VerifyTxError::InputNotesAlreadyConsumed(nullifiers) => {
                 Self::InputNotesAlreadyConsumed(nullifiers)
             },
-            VerifyTxError::UnauthenticatedNotesNotFound(note_ids) => {
-                Self::UnauthenticatedNotesNotFound(note_ids)
+            VerifyTxError::UnauthenticatedNotesNotFound(note_commitments) => {
+                Self::UnauthenticatedNotesNotFound(note_commitments)
             },
-            VerifyTxError::OutputNotesAlreadyExist(note_ids) => {
-                Self::OutputNotesAlreadyExist(note_ids)
+            VerifyTxError::OutputNotesAlreadyExist(note_commitments) => {
+                Self::OutputNotesAlreadyExist(note_commitments)
             },
             VerifyTxError::IncorrectAccountInitialCommitment {
                 tx_initial_account_commitment,

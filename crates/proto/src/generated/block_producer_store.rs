@@ -63,9 +63,9 @@ pub mod block_inputs {
 /// Returns the inputs for a transaction batch.
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct BatchInputsRequest {
-    /// List of unauthenticated notes to be queried from the database.
+    /// List of unauthenticated note commitments to be queried from the database.
     #[prost(message, repeated, tag = "1")]
-    pub note_ids: ::prost::alloc::vec::Vec<super::primitives::Digest>,
+    pub note_commitments: ::prost::alloc::vec::Vec<super::primitives::Digest>,
     /// Set of block numbers referenced by transactions.
     #[prost(fixed32, repeated, tag = "2")]
     pub reference_blocks: ::prost::alloc::vec::Vec<u32>,
@@ -96,7 +96,7 @@ pub struct TransactionInputsRequest {
     /// Set of nullifiers consumed by this transaction.
     #[prost(message, repeated, tag = "2")]
     pub nullifiers: ::prost::alloc::vec::Vec<super::primitives::Digest>,
-    /// Set of unauthenticated notes to check for existence on-chain.
+    /// Set of unauthenticated note commitments to check for existence on-chain.
     ///
     /// These are notes which were not on-chain at the state the transaction was proven,
     /// but could by now be present.

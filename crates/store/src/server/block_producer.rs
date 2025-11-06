@@ -130,10 +130,10 @@ impl block_producer_server::BlockProducer for StoreApi {
     ) -> Result<Response<proto::block_producer_store::BatchInputs>, Status> {
         let request = request.into_inner();
 
-        let note_ids: Vec<Word> = try_convert(request.note_ids)
+        let note_commitments: Vec<Word> = try_convert(request.note_commitments)
             .collect::<Result<_, _>>()
             .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
-        let note_ids = note_ids.into_iter().map(NoteId::from).collect();
+        let note_ids = note_commitments.into_iter().map(NoteId::from).collect();
 
         let reference_blocks: Vec<u32> =
             try_convert::<_, Infallible, _, _>(request.reference_blocks)

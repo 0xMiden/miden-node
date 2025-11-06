@@ -34,10 +34,10 @@ pub struct TransactionInputs {
     ///
     /// We use `NonZeroU32` as the wire format uses 0 to encode none.
     pub nullifiers: HashMap<Nullifier, Option<NonZeroU32>>,
-    /// Unauthenticated notes which are present in the store.
+    /// Unauthenticated note commitments which are present in the store.
     ///
     /// These are notes which were committed _after_ the transaction was created.
-    pub found_unauthenticated_notes: HashSet<NoteId>,
+    pub found_unauthenticated_notes: HashSet<Word>,
     /// The current block height.
     pub current_block_height: BlockNumber,
 }
@@ -167,7 +167,7 @@ impl StoreClient {
             nullifiers: proven_tx.nullifiers().map(Into::into).collect(),
             unauthenticated_notes: proven_tx
                 .unauthenticated_notes()
-                .map(|note| note.id().into())
+                .map(|note| note.commitment().into())
                 .collect(),
         };
 
@@ -228,11 +228,11 @@ impl StoreClient {
     pub async fn get_batch_inputs(
         &self,
         block_references: impl Iterator<Item = (BlockNumber, Word)> + Send,
-        notes: impl Iterator<Item = NoteId> + Send,
+        note_commitments: impl Iterator<Item = Word> + Send,
     ) -> Result<BatchInputs, StoreError> {
         let request = tonic::Request::new(proto::block_producer_store::BatchInputsRequest {
             reference_blocks: block_references.map(|(block_num, _)| block_num.as_u32()).collect(),
-            note_ids: notes.map(proto::primitives::Digest::from).collect(),
+            note_commitments: note_commitments.map(proto::primitives::Digest::from).collect(),
         });
 
         let store_response = self.client.clone().get_batch_inputs(request).await?.into_inner();

@@ -37,7 +37,7 @@ opt-level = 2
 [workspace.dependencies]
 # Workspace crates.
 miden-node-block-producer   = { path = "crates/block-producer", version = "0.12" }
-miden-node-grpc-error-macro = { path = "crates/grpc-error-macro" }
+miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.12" }
 miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.12" }
 miden-node-proto            = { path = "crates/proto", version = "0.12" }
 miden-node-proto-build      = { path = "proto", version = "0.12" }

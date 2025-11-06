@@ -96,6 +96,7 @@ pub struct MonitorConfig {
     )]
     pub enable_otel: bool,
 
+    /// Path for the wallet account file.
     #[arg(
         long = "wallet-filepath",
         env = "MIDEN_MONITOR_WALLET_FILEPATH",

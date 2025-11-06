@@ -1,15 +1,15 @@
-name: Release-plz (dry-run)
+name: Publish (dry-run)
 
 permissions:
   contents: read
 
 on:
   push:
-    branches: [main, next]
+    branches: [main]
 
 jobs:
-  release-plz-dry-run-release:
-    name: Release-plz dry-run
+  publish-dry-run:
+    name: Cargo publish dry-run
     runs-on: ubuntu-latest
     if: ${{ github.repository_owner == '0xMiden' }}
     steps:
@@ -20,10 +20,7 @@ jobs:
       - name: Update Rust toolchain
         run: |
           rustup update --no-self-update
-      - name: Run release-plz
-        uses: release-plz/action@v0.5
-        with:
-          command: release --dry-run
+      - name: Run cargo publish dry-run
+        run: cargo publish --workspace --dry-run
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

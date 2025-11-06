@@ -2802,6 +2802,7 @@ dependencies = [
  "futures",
  "http",
  "mediatype",
+ "miden-air",
  "miden-lib",
  "miden-node-proto",
  "miden-node-proto-build",

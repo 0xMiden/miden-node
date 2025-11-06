@@ -37,9 +37,10 @@ tracing                = { workspace = true }
 url                    = { workspace = true }
 
 [dev-dependencies]
+miden-air        = { features = ["testing"], workspace = true }
 miden-lib        = { workspace = true }
 miden-node-store = { workspace = true }
-miden-node-utils = { features = ["tracing-forest"], workspace = true }
+miden-node-utils = { features = ["testing", "tracing-forest"], workspace = true }
 miden-objects    = { default-features = true, features = ["testing"], workspace = true }
 reqwest          = { version = "0.12" }
 rstest           = { workspace = true }

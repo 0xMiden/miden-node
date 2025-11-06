@@ -11,8 +11,8 @@ use anyhow::{Context, Result};
 use miden_node_proto::clients::{Builder, Rpc, RpcClient};
 use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
-use miden_objects::account::{Account, AccountId, PartialAccount, StorageSlot};
-use miden_objects::asset::{AssetVaultKey, AssetWitness};
+use miden_objects::account::{Account, AccountId, PartialAccount, PartialStorage};
+use miden_objects::asset::{AssetVaultKey, AssetWitness, PartialVault};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
 use miden_objects::note::NoteScript;
@@ -215,40 +215,28 @@ impl DataStore for MonitorDataStore {
             self.counter_account.lock().await.to_owned()
         };
 
-        Ok(((&account).into(), self.block_header.clone(), self.partial_block_chain.clone()))
+        let partial_storage = PartialStorage::new_full(account.storage().clone());
+        let assert_vault = PartialVault::new_full(account.vault().clone());
+        let partial_account = PartialAccount::new(
+            account_id,
+            account.nonce(),
+            account.code().clone(),
+            partial_storage,
+            assert_vault,
+            account.seed(),
+        )
+        .expect("Partial account be valid");
+
+        Ok((partial_account, self.block_header.clone(), self.partial_block_chain.clone()))
     }
 
     async fn get_storage_map_witness(
         &self,
-        account_id: AccountId,
-        map_root: Word,
-        map_key: Word,
+        _account_id: AccountId,
+        _map_root: Word,
+        _map_key: Word,
     ) -> Result<miden_objects::account::StorageMapWitness, DataStoreError> {
-        let account = self.wallet_account.lock().await;
-
-        let account = if account_id == account.id() {
-            account.to_owned()
-        } else {
-            self.counter_account.lock().await.to_owned()
-        };
-
-        let mut map_witness = None;
-        for slot in account.storage().slots() {
-            if let StorageSlot::Map(map) = slot {
-                if map.root() == map_root {
-                    map_witness = Some(map.open(&map_key));
-                }
-            }
-        }
-
-        if let Some(map_witness) = map_witness {
-            Ok(map_witness)
-        } else {
-            Err(DataStoreError::Other {
-                error_msg: "account storage does not contain the expected root".into(),
-                source: None,
-            })
-        }
+        unimplemented!("Not needed")
     }
 
     async fn get_foreign_account_inputs(

@@ -105,7 +105,7 @@ pub struct MonitorConfig {
         long = "wallet-filepath",
         env = "MIDEN_MONITOR_WALLET_FILEPATH",
         default_value = "wallet_account.mac",
-        help = "Path where the wallet account will be saved"
+        help = "Path where the wallet account is located"
     )]
     pub wallet_filepath: PathBuf,
 
@@ -114,7 +114,7 @@ pub struct MonitorConfig {
         long = "counter-filepath",
         env = "MIDEN_MONITOR_COUNTER_FILEPATH",
         default_value = "counter_program.mac",
-        help = "Path where the counter program account will be saved"
+        help = "Path where the counter account is located"
     )]
     pub counter_filepath: PathBuf,
 }

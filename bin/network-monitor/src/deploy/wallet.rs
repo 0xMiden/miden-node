@@ -11,10 +11,14 @@ use miden_objects::account::{Account, AccountFile, AccountStorageMode, AccountTy
 use miden_objects::crypto::dsa::rpo_falcon512::SecretKey;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use tracing::instrument;
+
+use crate::COMPONENT;
 
 /// Create a wallet account with `RpoFalcon512` authentication.
 ///
 /// Returns the created account and the secret key for authentication.
+#[instrument(target = COMPONENT, name = "create-wallet-account", skip_all, ret(level = "debug"))]
 pub fn create_wallet_account() -> Result<(Account, SecretKey)> {
     let mut rng = ChaCha20Rng::from_seed(rand::random());
     let secret_key = SecretKey::with_rng(&mut get_rpo_random_coin(&mut rng));

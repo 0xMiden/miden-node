@@ -166,7 +166,10 @@ async fn setup_counter_increment(
         .auth_secret_keys
         .first()
         .expect("wallet account file should have one auth secret key")
-        .clone();
+        .clone()
+    else {
+        anyhow::bail!("Failed to load wallet account, auth secret key not found")
+    };
 
     let counter_account = match load_counter_account(&config.counter_filepath) {
         Ok(account) => account,

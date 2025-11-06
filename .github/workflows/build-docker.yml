@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         component: [node]
-    runs-on: ubuntu-latest
+    runs-on: Linux-ARM64-Runner
     name: Build ${{ matrix.component }}
     steps:
       - name: Checkout code

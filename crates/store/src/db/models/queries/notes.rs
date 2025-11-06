@@ -314,6 +314,7 @@ pub(crate) fn select_all_notes(
 ///     note_id IN (?1)
 /// ORDER BY
 ///     committed_at ASC
+///```
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
     note_commitments: &BTreeSet<Word>,

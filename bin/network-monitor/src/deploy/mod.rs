@@ -8,13 +8,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
-use miden_lib::transaction::TransactionKernel;
-use miden_lib::utils::ScriptBuilder;
 use miden_node_proto::clients::{Builder, Rpc, RpcClient};
 use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::{Account, AccountId, PartialAccount, StorageSlot};
-use miden_objects::assembly::{DefaultSourceManager, Library, LibraryPath, Module, ModuleKind};
 use miden_objects::asset::{AssetVaultKey, AssetWitness};
 use miden_objects::block::{BlockHeader, BlockNumber};
 use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
@@ -138,18 +135,7 @@ pub async fn deploy_accounts(
     let executor: TransactionExecutor<'_, '_, _, BasicAuthenticator> =
         TransactionExecutor::new(data_store.as_ref());
 
-    let script_builder = ScriptBuilder::new(true)
-        .with_dynamically_linked_library(&get_library()?)
-        .context("Failed to create script builder with library")?;
-
-    let tx_args = TransactionArgs::default().with_tx_script(
-        script_builder
-            .compile_tx_script(include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/src/assets/deploy_counter.masm"
-            )))
-            .context("Failed to compile transaction script")?,
-    );
+    let tx_args = TransactionArgs::default();
 
     let executed_tx = executor
         .execute_transaction(
@@ -176,25 +162,6 @@ pub async fn deploy_accounts(
         .context("Failed to submit proven transaction to RPC")?;
 
     Ok(())
-}
-
-fn get_library() -> Result<Library> {
-    let assembler = TransactionKernel::assembler().with_debug_mode(true);
-    let source_manager = Arc::new(DefaultSourceManager::default());
-    let script =
-        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/assets/counter_program.masm"));
-
-    let library_path = LibraryPath::new("external_contract::counter_contract")
-        .context("Failed to create library path")?;
-
-    let module = Module::parser(ModuleKind::Library)
-        .parse_str(library_path, script, &source_manager)
-        .map_err(|e| anyhow::anyhow!("Failed to parse module: {e}"))?;
-
-    assembler
-        .clone()
-        .assemble_library([module])
-        .map_err(|e| anyhow::anyhow!("Failed to assemble library: {e}"))
 }
 
 // MONITOR DATA STORE

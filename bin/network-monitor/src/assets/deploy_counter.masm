@@ -1,8 +1,0 @@
-# Transaction script used during deployment to bump the counter contract nonce
-# without changing the counter value.
-
-use.external_contract::counter_contract
-
-begin
-    call.counter_contract::get_count
-end

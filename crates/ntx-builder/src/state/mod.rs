@@ -344,13 +344,17 @@ impl State {
             tx_impact.account_delta = Some(prefix);
         }
         for note in network_notes {
-            tx_impact.notes.insert(note.nullifier());
             let prefix = note.account_prefix();
+            tx_impact.notes.insert(note.nullifier());
+
+            // Skip and ignore nullifier if note targets a non-existent network account
+            let Some(account) = self.fetch_account(prefix).await? else {
+                tracing::warn!("could not fetch account from network: {:?}", prefix);
+                continue;
+            };
+
+            account.add_note(note.clone());
             self.nullifier_idx.insert(note.nullifier(), prefix);
-            // Skip notes which target a non-existent network account.
-            if let Some(account) = self.fetch_account(prefix).await? {
-                account.add_note(note);
-            }
         }
         for nullifier in nullifiers {
             // Ignore nullifiers that aren't network note nullifiers.
@@ -359,7 +363,8 @@ impl State {
             };
             tx_impact.nullifiers.insert(nullifier);
             // We don't use the entry wrapper here because the account must already exist.
-            self.accounts
+            let _res = self
+                .accounts
                 .get_mut(account)
                 .expect("nullifier account must exist")
                 .add_nullifier(nullifier);

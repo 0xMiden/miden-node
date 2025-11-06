@@ -518,9 +518,6 @@ impl ProxyHttp for LoadBalancer {
         // Timeout settings
         peer_opts.total_connection_timeout = Some(self.0.timeout);
         peer_opts.connection_timeout = Some(self.0.connection_timeout);
-        peer_opts.read_timeout = Some(self.0.timeout);
-        peer_opts.write_timeout = Some(self.0.timeout);
-        peer_opts.idle_timeout = Some(self.0.timeout);
 
         // Enable HTTP/2
         peer_opts.alpn = ALPN::H2;

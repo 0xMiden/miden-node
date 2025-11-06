@@ -6,7 +6,6 @@ use miden_node_proto::try_convert;
 use miden_node_utils::ErrorReport;
 use miden_objects::Word;
 use miden_objects::block::{BlockNumber, ProvenBlock};
-use miden_objects::note::NoteId;
 use miden_objects::utils::Deserializable;
 use tonic::{Request, Response, Status};
 use tracing::{debug, info, instrument};
@@ -19,7 +18,7 @@ use crate::server::api::{
     read_account_id,
     read_account_ids,
     read_block_numbers,
-    validate_notes,
+    validate_note_commitments,
     validate_nullifiers,
 };
 
@@ -101,12 +100,19 @@ impl block_producer_server::BlockProducer for StoreApi {
         let account_ids = read_account_ids::<Status>(&request.account_ids)?;
         let nullifiers = validate_nullifiers(&request.nullifiers)
             .map_err(|err| conversion_error_to_status(&err))?;
-        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
+        let unauthenticated_note_commitments =
+            validate_note_commitments(&request.unauthenticated_notes)?;
         let reference_blocks = read_block_numbers(&request.reference_blocks);
-        let unauthenticated_notes = unauthenticated_notes.into_iter().collect();
+        let unauthenticated_note_commitments =
+            unauthenticated_note_commitments.into_iter().collect();
 
         self.state
-            .get_block_inputs(account_ids, nullifiers, unauthenticated_notes, reference_blocks)
+            .get_block_inputs(
+                account_ids,
+                nullifiers,
+                unauthenticated_note_commitments,
+                reference_blocks,
+            )
             .await
             .map(proto::block_producer_store::BlockInputs::from)
             .map(Response::new)
@@ -132,8 +138,7 @@ impl block_producer_server::BlockProducer for StoreApi {
 
         let note_commitments: Vec<Word> = try_convert(request.note_commitments)
             .collect::<Result<_, _>>()
-            .map_err(|err| Status::invalid_argument(format!("Invalid NoteId: {err}")))?;
-        let note_ids = note_commitments.into_iter().map(NoteId::from).collect();
+            .map_err(|err| Status::invalid_argument(format!("Invalid note commitment: {err}")))?;
 
         let reference_blocks: Vec<u32> =
             try_convert::<_, Infallible, _, _>(request.reference_blocks)
@@ -142,7 +147,7 @@ impl block_producer_server::BlockProducer for StoreApi {
         let reference_blocks = reference_blocks.into_iter().map(BlockNumber::from).collect();
 
         self.state
-            .get_batch_inputs(reference_blocks, note_ids)
+            .get_batch_inputs(reference_blocks, note_commitments.into_iter().collect())
             .await
             .map(Into::into)
             .map(Response::new)
@@ -168,11 +173,12 @@ impl block_producer_server::BlockProducer for StoreApi {
         let account_id = read_account_id::<Status>(request.account_id)?;
         let nullifiers = validate_nullifiers(&request.nullifiers)
             .map_err(|err| conversion_error_to_status(&err))?;
-        let unauthenticated_notes = validate_notes(&request.unauthenticated_notes)?;
+        let unauthenticated_note_commitments =
+            validate_note_commitments(&request.unauthenticated_notes)?;
 
         let tx_inputs = self
             .state
-            .get_transaction_inputs(account_id, &nullifiers, unauthenticated_notes)
+            .get_transaction_inputs(account_id, &nullifiers, unauthenticated_note_commitments)
             .await?;
 
         let block_height = self.state.latest_block_num().await.as_u32();

@@ -5,7 +5,7 @@ use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::batch::{BatchId, ProvenBatch};
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteHeader, NoteId, Nullifier};
+use miden_objects::note::{NoteHeader, Nullifier};
 use miden_objects::transaction::{InputNoteCommitment, TransactionHeader, TransactionId};
 
 use crate::domain::transaction::AuthenticatedTransaction;

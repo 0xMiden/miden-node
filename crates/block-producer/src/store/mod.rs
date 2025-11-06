@@ -11,7 +11,7 @@ use miden_node_utils::formatting::format_opt;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::{BlockHeader, BlockInputs, BlockNumber, ProvenBlock};
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 use miden_objects::transaction::ProvenTransaction;
 use miden_objects::utils::Serializable;
 use tracing::{debug, info, instrument};
@@ -97,7 +97,7 @@ impl TryFrom<proto::block_producer_store::TransactionInputs> for TransactionInpu
         let found_unauthenticated_notes = response
             .found_unauthenticated_notes
             .into_iter()
-            .map(|digest| Ok(Word::try_from(digest)?.into()))
+            .map(Word::try_from)
             .collect::<Result<_, ConversionError>>()?;
 
         let current_block_height = response.block_height.into();
@@ -207,7 +207,7 @@ impl StoreClient {
         &self,
         updated_accounts: impl Iterator<Item = AccountId> + Send,
         created_nullifiers: impl Iterator<Item = Nullifier> + Send,
-        unauthenticated_notes: impl Iterator<Item = NoteId> + Send,
+        unauthenticated_notes: impl Iterator<Item = Word> + Send,
         reference_blocks: impl Iterator<Item = BlockNumber> + Send,
     ) -> Result<BlockInputs, StoreError> {
         let request = tonic::Request::new(proto::block_producer_store::BlockInputsRequest {

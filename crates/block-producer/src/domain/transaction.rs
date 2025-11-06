@@ -6,7 +6,7 @@ use std::sync::Arc;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 use miden_objects::transaction::{OutputNote, ProvenTransaction, TransactionId, TxAccountUpdate};
 
 use crate::errors::VerifyTxError;

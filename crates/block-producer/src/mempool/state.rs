@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 
 use crate::mempool::nodes::{Node, NodeId};
 

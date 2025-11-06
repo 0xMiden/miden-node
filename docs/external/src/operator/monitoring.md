@@ -57,7 +57,7 @@ block_builder.build_block
 │        ┕━ store.server.get_block_inputs
 │           ┝━ validate_nullifiers
 │           ┝━ read_account_ids
-│           ┝━ validate_notes
+│           ┝━ validate_note_commitments
 │           ┝━ select_block_header_by_block_num
 │           ┝━ select_note_inclusion_proofs
 │           ┕━ select_block_headers

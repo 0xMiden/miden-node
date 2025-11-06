@@ -547,16 +547,9 @@ impl State {
         // First we grab note inclusion proofs for the known notes. These proofs only
         // prove that the note was included in a given block. We then also need to prove that
         // each of those blocks is included in the chain.
-        let note_records = self
-            .db
-            .select_notes_by_commitment(unauthenticated_note_commitments.into_iter().collect())
-            .await
-            .map_err(GetBatchInputsError::SelectNoteInclusionProofError)?;
-        let unauthenticated_note_ids =
-            note_records.iter().map(|note| NoteId::from(note.note_id)).collect();
         let note_proofs = self
             .db
-            .select_note_inclusion_proofs(unauthenticated_note_ids)
+            .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBatchInputsError::SelectNoteInclusionProofError)?;
 
@@ -733,16 +726,9 @@ impl State {
         // Get the note inclusion proofs from the DB.
         // We do this first so we have to acquire the lock to the state just once. There we need the
         // reference blocks of the note proofs to get their authentication paths in the chain MMR.
-        let note_records = self
-            .db
-            .select_notes_by_commitment(unauthenticated_note_commitments.into_iter().collect())
-            .await
-            .map_err(GetBlockInputsError::SelectNoteInclusionProofError)?;
-        let unauthenticated_note_ids =
-            note_records.iter().map(|note| NoteId::from(note.note_id)).collect();
         let unauthenticated_note_proofs = self
             .db
-            .select_note_inclusion_proofs(unauthenticated_note_ids)
+            .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBlockInputsError::SelectNoteInclusionProofError)?;
 

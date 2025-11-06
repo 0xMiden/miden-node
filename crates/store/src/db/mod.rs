@@ -455,7 +455,7 @@ impl Db {
         .await
     }
 
-    /// Loads all the [`miden_objects::note::Note`]s matching a certain note commitment from the
+    /// Loads all the [`NoteRecord`]s matching a certain note commitment from the
     /// database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_notes_by_commitment(
@@ -468,14 +468,14 @@ impl Db {
         .await
     }
 
-    /// Loads inclusion proofs for notes matching the given IDs.
+    /// Loads inclusion proofs for notes matching the given note commitments.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
     pub async fn select_note_inclusion_proofs(
         &self,
-        note_ids: BTreeSet<NoteId>,
+        note_commitments: BTreeSet<Word>,
     ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
-        self.transact("block note inclusion proofs", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_ids)
+        self.transact("block note inclusion proofs by commitment", move |conn| {
+            models::queries::select_note_inclusion_proofs(conn, &note_commitments)
         })
         .await
     }

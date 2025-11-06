@@ -156,7 +156,7 @@ where
 pub fn validate_note_commitments(notes: &[proto::primitives::Digest]) -> Result<Vec<Word>, Status> {
     notes
         .iter()
-        .map(|digest| Word::try_from(digest).map_err(|_| ()))
+        .map(|digest| Word::try_from(digest))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }

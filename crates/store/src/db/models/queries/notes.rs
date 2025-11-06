@@ -29,7 +29,7 @@ use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
-    QueryParamNoteIdLimit,
+    QueryParamNoteCommitmentLimit,
     QueryParamNoteTagLimit,
 };
 use miden_objects::account::AccountId;
@@ -288,7 +288,7 @@ pub(crate) fn select_all_notes(
     Ok(records)
 }
 
-/// Select note inclusion proofs matching the `NoteId`s.
+/// Select note inclusion proofs matching the note commitments.
 ///
 /// # Parameters
 /// * `note_ids`: Set of note IDs to query
@@ -314,14 +314,13 @@ pub(crate) fn select_all_notes(
 ///     note_id IN (?1)
 /// ORDER BY
 ///     committed_at ASC
-/// ```
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
-    note_ids: &BTreeSet<NoteId>,
+    note_commitments: &BTreeSet<Word>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
-    QueryParamNoteIdLimit::check(note_ids.len())?;
+    QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
 
-    let noted_ids_serialized = serialize_vec(note_ids.iter());
+    let note_commitments = serialize_vec(note_commitments.iter());
 
     let raw_notes = SelectDsl::select(
         schema::notes::table,
@@ -333,7 +332,7 @@ pub(crate) fn select_note_inclusion_proofs(
             schema::notes::inclusion_path,
         ),
     )
-    .filter(schema::notes::note_id.eq_any(noted_ids_serialized))
+    .filter(schema::notes::note_commitment.eq_any(note_commitments))
     .order_by(schema::notes::committed_at.asc())
     .load::<(i64, Vec<u8>, i32, i32, Vec<u8>)>(conn)?;
 

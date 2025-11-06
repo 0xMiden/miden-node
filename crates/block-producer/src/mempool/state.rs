@@ -123,9 +123,12 @@ impl InflightState {
     /// parent and child relationship lookups.
     pub(super) fn insert(&mut self, id: NodeId, node: &dyn Node) {
         self.nullifiers.extend(node.nullifiers());
-        self.output_notes.extend(node.output_note_commitments().map(|note| (note, id)));
-        self.unauthenticated_notes
-            .extend(node.unauthenticated_note_commitments().map(|note| (note, id)));
+        self.output_notes
+            .extend(node.output_note_commitments().map(|note_commitment| (note_commitment, id)));
+        self.unauthenticated_notes.extend(
+            node.unauthenticated_note_commitments()
+                .map(|note_commitment| (note_commitment, id)),
+        );
 
         for (account, from, to) in node.account_updates() {
             self.accounts.entry(account).or_default().insert(id, from, to);

@@ -8,7 +8,6 @@ use tracing::{info, instrument, warn};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
-use crate::deploy::ensure_accounts_exist;
 use crate::frontend::ServerState;
 use crate::monitor::tasks::Tasks;
 
@@ -51,11 +50,7 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
     let ntx_service_rx = if config.disable_ntx_service {
         None
     } else {
-        // Ensure accounts exist before starting monitoring tasks
-        ensure_accounts_exist(&config.wallet_filepath, &config.counter_filepath, &config.rpc_url)
-            .await?;
-
-        Some(tasks.spawn_ntx_service(&config))
+        Some(tasks.spawn_ntx_service(&config).await?)
     };
 
     // Initialize HTTP server.

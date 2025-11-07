@@ -13,6 +13,7 @@ use tracing::{debug, instrument};
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
 use crate::counter::run_ntx_service_task;
+use crate::deploy::ensure_accounts_exist;
 use crate::faucet::run_faucet_test_task;
 use crate::frontend::{ServerState, serve};
 use crate::remote_prover::{ProofType, generate_prover_test_payload, run_remote_prover_test_task};
@@ -221,7 +222,14 @@ impl Tasks {
 
     /// Spawn the network transaction service checker task.
     #[instrument(target = COMPONENT, name = "tasks.spawn-ntx-service", skip_all)]
-    pub fn spawn_ntx_service(&mut self, config: &MonitorConfig) -> Receiver<ServiceStatus> {
+    pub async fn spawn_ntx_service(
+        &mut self,
+        config: &MonitorConfig,
+    ) -> Result<Receiver<ServiceStatus>> {
+        // Ensure accounts exist before starting monitoring tasks
+        ensure_accounts_exist(&config.wallet_filepath, &config.counter_filepath, &config.rpc_url)
+            .await?;
+
         let current_time = current_unix_timestamp_secs();
 
         // Create initial counter increment status
@@ -253,7 +261,7 @@ impl Tasks {
             .id();
         self.names.insert(id, "ntx-service".to_string());
 
-        ntx_service_rx
+        Ok(ntx_service_rx)
     }
 
     /// Spawn the HTTP frontend server.

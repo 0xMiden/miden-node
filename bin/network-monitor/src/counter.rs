@@ -145,6 +145,22 @@ async fn fetch_counter_value(
     }
 }
 
+async fn fetch_wallet_account(
+    rpc_client: &mut RpcClient,
+    account_id: AccountId,
+) -> Result<Option<Account>> {
+    let id_bytes: [u8; 15] = account_id.into();
+    let req = miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
+    let resp = rpc_client.get_account_details(req).await?.into_inner();
+    let Some(account_details) = resp.details else {
+        return Ok(None);
+    };
+    let account = Account::read_from_bytes(&account_details)
+        .map_err(|e| anyhow::anyhow!("failed to deserialize account details: {e}"))?;
+
+    Ok(Some(account))
+}
+
 async fn setup_counter_increment(
     config: MonitorConfig,
     rpc_client: &mut RpcClient,
@@ -161,7 +177,10 @@ async fn setup_counter_increment(
     // Load accounts from files
     let wallet_account_file =
         AccountFile::read(config.wallet_filepath).context("Failed to read wallet account file")?;
-    let wallet_account = wallet_account_file.account.clone();
+    let wallet_account = fetch_wallet_account(rpc_client, wallet_account_file.account.id())
+        .await?
+        .unwrap_or(wallet_account_file.account.clone());
+
     let AuthSecretKey::RpoFalcon512(secret_key) = wallet_account_file
         .auth_secret_keys
         .first()

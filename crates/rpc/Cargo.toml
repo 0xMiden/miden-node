@@ -19,10 +19,11 @@ anyhow                 = { workspace = true }
 futures                = { version = "0.3" }
 http                   = { workspace = true }
 mediatype              = { version = "0.21" }
+miden-air              = { workspace = true }
 miden-node-proto       = { workspace = true }
 miden-node-proto-build = { workspace = true }
-miden-node-utils       = { workspace = true }
-miden-objects          = { default-features = true, workspace = true }
+miden-node-utils       = { features = ["testing"], workspace = true }
+miden-objects          = { default-features = true, features = ["testing"], workspace = true }
 miden-tx               = { default-features = true, workspace = true }
 semver                 = { version = "1.0" }
 thiserror              = { workspace = true }
@@ -37,7 +38,6 @@ tracing                = { workspace = true }
 url                    = { workspace = true }
 
 [dev-dependencies]
-miden-air        = { features = ["testing"], workspace = true }
 miden-lib        = { workspace = true }
 miden-node-store = { workspace = true }
 miden-node-utils = { features = ["testing", "tracing-forest"], workspace = true }

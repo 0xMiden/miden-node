@@ -1,5 +1,5 @@
 use protox::prost::Message;
-use tonic_build::FileDescriptorSet;
+use tonic_prost_build::FileDescriptorSet;
 
 /// Returns the Protobuf file descriptor for the RPC API.
 pub fn rpc_api_descriptor() -> FileDescriptorSet {

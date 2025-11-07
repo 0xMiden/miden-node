@@ -11,7 +11,7 @@ use futures::FutureExt;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::ErrorReport;
-use miden_objects::account::Account;
+use miden_objects::account::{Account, AccountDelta};
 use miden_objects::block::BlockNumber;
 use miden_objects::transaction::TransactionId;
 use miden_remote_prover_client::remote_prover::tx_prover::RemoteTransactionProver;
@@ -74,7 +74,8 @@ pub enum AccountOrigin {
 
 impl AccountOrigin {
     /// Returns an [`AccountOrigin::Transaction`] if the account is a network account.
-    pub fn transaction(account: &Account) -> Option<Self> {
+    pub fn transaction(delta: &AccountDelta) -> Option<Self> {
+        let account = Account::try_from(delta).ok()?;
         if account.is_network() {
             Some(AccountOrigin::Transaction(account.clone().into()))
         } else {
@@ -268,6 +269,7 @@ impl AccountActor {
         let context = execute::NtxContext {
             block_producer: self.block_producer.clone(),
             prover: self.prover.clone(),
+            store: self.store.clone(),
         };
 
         let execution_result = context.execute_transaction(tx_candidate).await;

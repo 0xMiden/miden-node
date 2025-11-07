@@ -3,26 +3,27 @@ use std::time::Duration;
 
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
+use miden_lib::account::wallets::BasicWallet;
 use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
 use miden_node_store::genesis::config::GenesisConfig;
 use miden_node_utils::fee::test_fee;
+use miden_objects::Word;
 use miden_objects::account::delta::AccountUpdateDetails;
 use miden_objects::account::{
+    AccountBuilder,
     AccountDelta,
     AccountId,
     AccountIdVersion,
-    AccountStorageDelta,
     AccountStorageMode,
     AccountType,
-    AccountVaultDelta,
 };
+use miden_objects::testing::noop_auth_component::NoopAuthComponent;
 use miden_objects::transaction::ProvenTransactionBuilder;
 use miden_objects::utils::Serializable;
 use miden_objects::vm::ExecutionProof;
-use miden_objects::{Felt, Word};
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tokio::runtime::{self, Runtime};
@@ -216,31 +217,51 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
         AccountType::RegularAccountImmutableCode,
         AccountStorageMode::Public,
     );
+
+    let account = AccountBuilder::new([0; 32])
+        .account_type(AccountType::RegularAccountImmutableCode)
+        .storage_mode(AccountStorageMode::Public)
+        .with_assets(vec![])
+        .with_component(BasicWallet)
+        .with_auth_component(NoopAuthComponent)
+        .build_existing()
+        .unwrap();
+
+    let other_account = AccountBuilder::new([1; 32])
+        .account_type(AccountType::RegularAccountUpdatableCode)
+        .storage_mode(AccountStorageMode::Private)
+        .with_assets(vec![])
+        .with_component(BasicWallet)
+        .with_auth_component(NoopAuthComponent)
+        .build_existing()
+        .unwrap();
+    let incorrect_commitment_delta: AccountDelta = other_account.try_into().unwrap();
+    let incorrect_commitment_delta_bytes = incorrect_commitment_delta.to_commitment().as_bytes();
+
+    let account_delta: AccountDelta = account.clone().try_into().unwrap();
+
     // Send any request to the RPC.
     let tx = ProvenTransactionBuilder::new(
         account_id,
         [8; 32].try_into().unwrap(),
-        [3; 32].try_into().unwrap(),
-        [22; 32].try_into().unwrap(), // delta commitment
+        account.commitment(),
+        account_delta.clone().to_commitment(), // delta commitment
         0.into(),
         Word::default(),
         test_fee(),
         u32::MAX.into(),
         ExecutionProof::new_dummy(),
     )
-    .account_update_details(AccountUpdateDetails::Delta(
-        AccountDelta::new(
-            account_id,
-            AccountStorageDelta::new(),
-            AccountVaultDelta::default(),
-            Felt::default(),
-        )
-        .unwrap(),
-    ))
+    .account_update_details(AccountUpdateDetails::Delta(account_delta))
     .build()
     .unwrap();
+
+    let mut tx_bytes = tx.to_bytes();
+    let offset = 15 + 32 + 32;
+    tx_bytes[offset..offset + 32].copy_from_slice(&incorrect_commitment_delta_bytes);
+
     let request = proto::transaction::ProvenTransaction {
-        transaction: tx.to_bytes(),
+        transaction: tx_bytes,
         transaction_inputs: None,
     };
 
@@ -256,7 +277,7 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
             .err()
             .unwrap()
             .message()
-            .contains("Account delta commitment does not match the actual account delta"),
+            .contains("failed to validate account delta in transaction account update"),
     );
 
     // Shutdown to avoid runtime drop error.

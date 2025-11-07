@@ -3,6 +3,7 @@
 //! This module contains the configuration structures and constants for the network monitor.
 //! Configuration for the monitor.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use clap::Parser;
@@ -11,7 +12,7 @@ use url::Url;
 // MONITOR CONFIGURATION CONSTANTS
 // ================================================================================================
 
-const DEFAULT_RPC_URL: &str = "http://localhost:50051";
+const DEFAULT_RPC_URL: &str = "http://0.0.0.0:57291";
 const DEFAULT_REMOTE_PROVER_URLS: &str = "http://localhost:50052";
 const DEFAULT_FAUCET_URL: &str = "http://localhost:8080";
 const DEFAULT_PORT: u16 = 3000;
@@ -20,9 +21,6 @@ const DEFAULT_PORT: u16 = 3000;
 ///
 /// This struct contains the configuration for the monitor.
 #[derive(Debug, Clone, Parser)]
-#[command(name = "miden-network-monitor")]
-#[command(about = "A network monitor for Miden node services")]
-#[command(version)]
 pub struct MonitorConfig {
     /// The URL of the RPC service.
     #[arg(
@@ -101,4 +99,22 @@ pub struct MonitorConfig {
         help = "Whether to enable OpenTelemetry"
     )]
     pub enable_otel: bool,
+
+    /// Path for the wallet account file.
+    #[arg(
+        long = "wallet-filepath",
+        env = "MIDEN_MONITOR_WALLET_FILEPATH",
+        default_value = "wallet_account.mac",
+        help = "Path where the wallet account is located"
+    )]
+    pub wallet_filepath: PathBuf,
+
+    /// Path for the counter program account file.
+    #[arg(
+        long = "counter-filepath",
+        env = "MIDEN_MONITOR_COUNTER_FILEPATH",
+        default_value = "counter_program.mac",
+        help = "Path where the counter account is located"
+    )]
+    pub counter_filepath: PathBuf,
 }

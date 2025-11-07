@@ -10,6 +10,7 @@ use miden_lib::account::faucets::BasicFungibleFaucet;
 use miden_lib::account::wallets::create_basic_wallet;
 use miden_lib::transaction::memory;
 use miden_node_utils::crypto::get_rpo_random_coin;
+use miden_objects::account::auth::AuthSecretKey;
 use miden_objects::account::{
     Account,
     AccountBuilder,
@@ -20,7 +21,6 @@ use miden_objects::account::{
     AccountStorageMode,
     AccountType,
     AccountVaultDelta,
-    AuthSecretKey,
     FungibleAssetDelta,
     NonFungibleAssetDelta,
 };

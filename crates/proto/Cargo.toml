@@ -24,6 +24,7 @@ miden-objects               = { workspace = true }
 prost                       = { workspace = true }
 thiserror                   = { workspace = true }
 tonic                       = { workspace = true }
+tonic-prost                 = { workspace = true }
 url                         = { workspace = true }
 
 [dev-dependencies]
@@ -33,7 +34,4 @@ proptest = { version = "1.7" }
 fs-err                 = { workspace = true }
 miden-node-proto-build = { features = ["internal"], workspace = true }
 miette                 = { version = "7.6" }
-prost                  = { workspace = true }
-prost-build            = { version = "0.13" }
-protox                 = { version = "0.8" }
-tonic-build            = { version = "0.13" }
+tonic-prost-build      = { workspace = true }

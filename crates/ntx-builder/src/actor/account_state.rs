@@ -13,7 +13,7 @@ use miden_objects::transaction::{PartialBlockchain, TransactionId};
 use tracing::instrument;
 
 use super::ActorShutdownReason;
-use super::note_state::{NetworkAccountNoteState, NetworkAccountUpdate};
+use super::note_state::{NetworkAccountEffect, NetworkAccountNoteState};
 use crate::COMPONENT;
 use crate::actor::inflight_note::InflightNetworkNote;
 use crate::builder::ChainState;
@@ -206,14 +206,14 @@ impl NetworkAccountState {
         }
 
         let mut tx_impact = TransactionImpact::default();
-        if let Some(update) = account_delta.and_then(NetworkAccountUpdate::from_protocol) {
+        if let Some(update) = account_delta.and_then(NetworkAccountEffect::from_protocol) {
             let account_prefix = update.prefix();
             if account_prefix == self.account_prefix {
                 match update {
-                    NetworkAccountUpdate::Delta(account_delta) => {
+                    NetworkAccountEffect::Updated(account_delta) => {
                         self.account.add_delta(&account_delta);
                     },
-                    NetworkAccountUpdate::New(_) => {},
+                    NetworkAccountEffect::Created(_) => {},
                 }
                 tx_impact.account_delta = Some(account_prefix);
             }
@@ -235,7 +235,7 @@ impl NetworkAccountState {
             }
             tx_impact.nullifiers.insert(nullifier);
             // We don't use the entry wrapper here because the account must already exist.
-            self.account.add_nullifier(nullifier);
+            let _ = self.account.add_nullifier(nullifier);
         }
 
         if !tx_impact.is_empty() {

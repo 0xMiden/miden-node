@@ -180,10 +180,16 @@ impl NetworkTransactionBuilder {
     ) {
         match &event {
             MempoolEvent::TransactionAdded { account_delta, .. } => {
-                if let Some(AccountUpdateDetails::New(account)) = account_delta {
-                    // Spawn new actors if a transaction creates a new network account
-                    if let Some(network_account) = AccountOrigin::transaction(account) {
-                        self.coordinator.spawn_actor(network_account, account_actor_config);
+                if let Some(AccountUpdateDetails::Delta(delta)) = account_delta {
+                    // Handle network accounts only.
+                    if let Some(network_account) = AccountOrigin::transaction(delta) {
+                        // Spawn new actors if a transaction creates a new network account
+                        let is_creating_account = delta.is_full_state();
+                        if is_creating_account {
+                            self.coordinator.spawn_actor(network_account, account_actor_config);
+                        } else {
+                            self.coordinator.broadcast_event(&event).await;
+                        }
                     }
                 } else {
                     self.coordinator.broadcast_event(&event).await;

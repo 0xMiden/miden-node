@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   typos:
-    runs-on: ubuntu-latest
+    runs-on: Linux-ARM64-Runner
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4

@@ -42,6 +42,11 @@ pub enum NegotiationGenesis {
 pub struct AcceptHeaderLayer {
     supported_versions: VersionReq,
     genesis_commitment: Word,
+    /// RPC method names for which the `genesis` parameter is mandatory.
+    ///
+    /// These should be gRPC method names (e.g. `SubmitProvenTransaction`),
+    /// matched against the end of the request path like "/rpc.Api/<method>".
+    require_genesis_methods: Vec<&'static str>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -77,7 +82,17 @@ impl AcceptHeaderLayer {
             }],
         };
 
-        AcceptHeaderLayer { supported_versions, genesis_commitment }
+        AcceptHeaderLayer {
+            supported_versions,
+            genesis_commitment,
+            require_genesis_methods: Vec::new(),
+        }
+    }
+
+    /// Mark a gRPC method as requiring a `genesis` parameter in the Accept header.
+    pub fn with_genesis_enforced_method(mut self, method: &'static str) -> Self {
+        self.require_genesis_methods.push(method);
+        self
     }
 }
 
@@ -229,8 +244,8 @@ where
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         // Determine if this RPC method requires the `genesis` parameter.
         let path = request.uri().path();
-        let requires_genesis =
-            matches!(path, "/rpc.Api/SubmitProvenTransaction" | "/rpc.Api/SubmitProvenBatch");
+        let method_name = path.rsplit('/').next().unwrap_or("");
+        let requires_genesis = self.verifier.require_genesis_methods.contains(&method_name);
 
         // If `genesis` is required but the header is missing entirely, reject early.
         let Some(header) = request.headers().get(ACCEPT) else {

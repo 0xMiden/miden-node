@@ -265,6 +265,49 @@ impl NtxDataStore {
     /// Each cached script contains the deserialized `NoteScript` object, so the actual memory usage
     /// depends on the complexity of the scripts being cached.
     const DEFAULT_SCRIPT_CACHE_SIZE: usize = 1000;
+    /// Env var to override the default cache size for note scripts.
+    ///
+    /// Expected to be a positive integer (> 0). If the variable is not present, the default is
+    /// used. If the value is invalid (non-integer, zero, or non-unicode), a warning is logged
+    /// and the default is used.
+    const ENV_SCRIPT_CACHE_SIZE: &str = "MIDEN_NODE_NTX_SCRIPT_CACHE_SIZE";
+
+    /// Resolve script cache capacity from the environment or fall back to the default.
+    fn script_cache_capacity_from_env() -> std::num::NonZeroUsize {
+        match std::env::var(Self::ENV_SCRIPT_CACHE_SIZE) {
+            Ok(value) => {
+                if let Some(capacity) =
+                    value.parse::<usize>().ok().and_then(std::num::NonZeroUsize::new)
+                {
+                    capacity
+                } else {
+                    tracing::warn!(
+                        target: crate::COMPONENT,
+                        "Invalid {}='{}': using default {}",
+                        Self::ENV_SCRIPT_CACHE_SIZE,
+                        value,
+                        Self::DEFAULT_SCRIPT_CACHE_SIZE
+                    );
+                    std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
+                        .expect("default script cache size is non-zero")
+                }
+            },
+            Err(std::env::VarError::NotPresent) => {
+                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
+                    .expect("default script cache size is non-zero")
+            },
+            Err(std::env::VarError::NotUnicode(_)) => {
+                tracing::warn!(
+                    target: crate::COMPONENT,
+                    "{} contained non-unicode: using default {}",
+                    Self::ENV_SCRIPT_CACHE_SIZE,
+                    Self::DEFAULT_SCRIPT_CACHE_SIZE
+                );
+                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
+                    .expect("default script cache size is non-zero")
+            },
+        }
+    }
 
     /// Creates a new `NtxDataStore` with default cache size.
     fn new(
@@ -283,8 +326,7 @@ impl NtxDataStore {
             mast_store,
             store,
             script_cache: Arc::new(Mutex::new(LruCache::new(
-                std::num::NonZeroUsize::new(Self::DEFAULT_SCRIPT_CACHE_SIZE)
-                    .expect("default script cache size is non-zero"),
+                Self::script_cache_capacity_from_env(),
             ))),
         }
     }

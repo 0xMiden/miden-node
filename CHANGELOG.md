@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.12.1 (2025-11-07)
+
+### Changes
+
+- Added support for network transaction service in `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).
+
 ## v0.12.0 (2025-11-06)
 
 ### Changes

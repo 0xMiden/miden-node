@@ -21,9 +21,9 @@ The monitor application supports configuration through both command-line argumen
 miden-network-monitor --help
 
 # Common usage examples
-miden-network-monitor --port 8080 --rpc-url http://localhost:50051
-miden-network-monitor --remote-prover-urls http://prover1.com:50052,http://prover2.com:50053
-miden-network-monitor --faucet-url http://localhost:8080 --enable-otel
+miden-network-monitor start --port 8080 --rpc-url http://localhost:50051
+miden-network-monitor start --remote-prover-urls http://prover1.com:50052,http://prover2.com:50053
+miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 ```
 
 **Available Options:**
@@ -35,6 +35,8 @@ miden-network-monitor --faucet-url http://localhost:8080 --enable-otel
 - `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
+- `--wallet-filepath`: Path where the wallet account are located (default: `wallet_account.mac`)
+- `--counter-filepath`: Path where the counter program account are located (default: `counter_program.mac`)
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -50,6 +52,41 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_STATUS_CHECK_INTERVAL`: Interval at which to check the status of the services
 - `MIDEN_MONITOR_PORT`: Web server port
 - `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing
+- `MIDEN_MONITOR_WALLET_FILEPATH`: Path where the wallet account are located
+- `MIDEN_MONITOR_COUNTER_FILEPATH`: Path where the counter program account are located
+
+## Commands
+
+The monitor application supports one main command:
+
+### Start Monitor
+
+Starts the network monitoring service with the web dashboard. The monitor automatically creates and deploys Miden accounts if they don't already exist.
+
+```bash
+# Start with default configuration
+miden-network-monitor start
+
+# Start with custom configuration
+miden-network-monitor start --port 8080 --rpc-url http://localhost:50051
+
+# Start with custom account file paths
+miden-network-monitor start \
+  --wallet-filepath my_wallet.mac \
+  --counter-filepath my_counter.mac \
+  --rpc-url https://testnet.miden.io:443
+```
+
+**Automatic Account Management:**
+The monitor automatically handles account creation and deployment:
+1. Checks if wallet and counter account files exist
+2. If files don't exist, creates new accounts:
+   - A wallet account with RpoFalcon512 authentication
+   - A counter program account with custom MASM script
+3. Saves both accounts to the specified files using the Miden AccountFile format
+4. Deploys the accounts to the network via RPC
+5. The counter program includes authentication logic that only allows the wallet account to increment the counter
+6. Both accounts are ready for use in Miden transactions
 
 ## Usage
 
@@ -57,16 +94,18 @@ If command-line arguments are not provided, the application falls back to enviro
 
 ```bash
 # Single remote prover
-miden-network-monitor --remote-prover-urls http://localhost:50052
+miden-network-monitor start --remote-prover-urls http://localhost:50052
 
 # Multiple remote provers and custom configuration
-miden-network-monitor \
+miden-network-monitor start \
   --remote-prover-urls http://localhost:50052,http://localhost:50053,http://localhost:50054 \
   --faucet-url http://localhost:8080 \
   --remote-prover-test-interval 2m \
   --faucet-test-interval 2m \
   --status-check-interval 3s \
   --port 8080 \
+  --wallet-filepath my_wallet.mac \
+  --counter-filepath my_counter.mac \
   --enable-otel
 
 # Get help
@@ -77,12 +116,14 @@ miden-network-monitor --help
 
 ```bash
 # Single remote prover
-MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor
+MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor start
 
 # Multiple remote provers and faucet testing
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" \
 MIDEN_MONITOR_FAUCET_URL="http://localhost:8080" \
-miden-network-monitor
+MIDEN_MONITOR_WALLET_FILEPATH="my_wallet.mac" \
+MIDEN_MONITOR_COUNTER_FILEPATH="my_counter.mac" \
+miden-network-monitor start
 ```
 
 Once running, the monitor will be available at `http://localhost:3000` (or the configured port).
@@ -136,6 +177,48 @@ The web dashboard provides a clean, responsive interface with the following feat
 - **Visual Health Indicators**: Color-coded status indicators and clear success/failure metrics
 - **Interactive Elements**: Copy-to-clipboard functionality for genesis commitments, transaction IDs, and note IDs
 - **Responsive Design**: Optimized for both desktop and mobile viewing
+
+## Account Management
+
+The monitor automatically manages Miden accounts for testing and monitoring purposes:
+
+### Created Accounts
+
+**Wallet Account:**
+- Uses RpoFalcon512 authentication scheme
+- Contains authentication keys for transaction signing
+- Automatically created if not present
+
+**Counter Program Account:**
+- Implements a simple counter with increment functionality
+- Includes authentication logic that restricts access to the wallet account
+- Uses custom MASM script with account ID-based authorization
+- Automatically created if not present
+
+### Account File Management
+
+The monitor automatically:
+1. Checks for existing account files on startup
+2. Creates new accounts if files don't exist
+3. Deploys accounts to the network via RPC
+4. Saves the wallet and counter contract account in the specified file paths (default: `wallet_account.mac` and `counter_program.mac`)
+
+### Example Usage
+
+```bash
+# Start monitor with default account files
+miden-network-monitor start --rpc-url https://testnet.miden.io:443
+
+# Start monitor with custom account file paths
+miden-network-monitor start \
+  --rpc-url https://testnet.miden.io:443 \
+  --wallet-filepath my_wallet.mac \
+  --counter-filepath my_counter.mac
+
+# The generated files can be loaded in Miden applications:
+# - wallet_account.mac: Contains the wallet account with authentication keys
+# - counter_program.mac: Contains the counter program account
+```
 
 ## Future Monitor Items
 

@@ -7,11 +7,12 @@ use miden_node_utils::ErrorReport;
 use miden_objects::block::BlockNumber;
 use miden_objects::note::Note;
 use tonic::{Request, Response, Status};
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::db::models::Page;
-use crate::server::api::{StoreApi, internal_error, invalid_argument};
+use crate::errors::GetNoteScriptByRootError;
+use crate::server::api::{StoreApi, internal_error, invalid_argument, read_root};
 
 // NTX BUILDER ENDPOINTS
 // ================================================================================================
@@ -168,5 +169,32 @@ impl ntx_builder_server::NtxBuilder for StoreApi {
             account_ids.into_iter().map(Into::into).collect();
 
         Ok(Response::new(proto::ntx_builder_store::NetworkAccountIdList { account_ids }))
+    }
+
+    #[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "store.ntx_builder_server.get_note_script_by_root",
+    skip_all,
+    ret(level = "debug"),
+    err
+    )]
+    async fn get_note_script_by_root(
+        &self,
+        request: Request<proto::note::NoteRoot>,
+    ) -> Result<Response<proto::shared::MaybeNoteScript>, Status> {
+        debug!(target: COMPONENT, request = ?request);
+
+        let root = read_root::<GetNoteScriptByRootError>(request.into_inner().root, "NoteRoot")?;
+
+        let note_script = self
+            .state
+            .get_note_script_by_root(root)
+            .await
+            .map_err(GetNoteScriptByRootError::from)?;
+
+        Ok(Response::new(proto::shared::MaybeNoteScript {
+            script: note_script.map(Into::into),
+        }))
     }
 }

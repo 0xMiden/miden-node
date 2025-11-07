@@ -34,3 +34,12 @@ message BlockHeaderByNumberResponse {
     // Current chain length.
     optional fixed32 chain_length = 3;
 }
+
+// GET NOTE SCRIPT BY ROOT
+// ================================================================================================
+
+// Represents a note script or nothing.
+message MaybeNoteScript {
+    // The script for a note by its root.
+    optional note.NoteScript script = 1;
+}

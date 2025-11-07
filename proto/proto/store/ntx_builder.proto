@@ -31,6 +31,9 @@ service NtxBuilder {
 
     // Returns a list of all network account ids.
     rpc GetNetworkAccountIds(google.protobuf.Empty) returns (NetworkAccountIdList) {}
+
+    // Returns the script for a note by its root.
+    rpc GetNoteScriptByRoot(note.NoteRoot) returns (shared.MaybeNoteScript) {}
 }
 
 // GET NETWORK ACCOUNT DETAILS BY PREFIX

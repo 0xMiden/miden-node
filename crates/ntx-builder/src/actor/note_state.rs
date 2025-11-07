@@ -118,27 +118,27 @@ impl NetworkAccountNoteState {
     ///
     /// The note data is retained until the nullifier is committed.
     ///
-    /// # Panics
-    ///
-    /// Panics if the note does not exist or was already nullified.
-    pub fn add_nullifier(&mut self, nullifier: Nullifier) {
-        let note = self
-            .available_notes
-            .remove(&nullifier)
-            .expect("note must be available to nullify");
-
-        self.nullified_notes.insert(nullifier, note);
+    /// Returns `Err(())` if the note does not exist or was already nullified.
+    pub fn add_nullifier(&mut self, nullifier: Nullifier) -> Result<(), ()> {
+        if let Some(note) = self.available_notes.remove(&nullifier) {
+            self.nullified_notes.insert(nullifier, note);
+            Ok(())
+        } else {
+            tracing::warn!(%nullifier, "note must be available to nullify");
+            Err(())
+        }
     }
 
     /// Marks a nullifier as being committed, removing the associated note data entirely.
     ///
-    /// # Panics
-    ///
-    /// Panics if the associated note is not marked as nullified.
+    /// Silently ignores the request if the nullifier is not present, which can happen
+    /// if the note's transaction wasn't available when the nullifier was added.
     pub fn commit_nullifier(&mut self, nullifier: Nullifier) {
-        self.nullified_notes
-            .remove(&nullifier)
-            .expect("committed nullified note should be in the nullified set");
+        // we might not have this if we didn't add it with `add_nullifier`
+        // in case it's transaction wasn't available in the first place.
+        // It shouldn't happen practically, since we skip them if the
+        // relevant account cannot be retrieved via `fetch`.
+        let _ = self.nullified_notes.remove(&nullifier);
     }
 
     /// Reverts a nullifier, marking the associated note as available again.
@@ -191,17 +191,22 @@ impl NetworkAccountNoteState {
 // ================================================================================================
 
 #[derive(Clone)]
-pub enum NetworkAccountUpdate {
-    New(Account),
-    Delta(AccountDelta),
+pub enum NetworkAccountEffect {
+    Created(Account),
+    Updated(AccountDelta),
 }
 
-impl NetworkAccountUpdate {
+impl NetworkAccountEffect {
     pub fn from_protocol(update: AccountUpdateDetails) -> Option<Self> {
         let update = match update {
             AccountUpdateDetails::Private => return None,
-            AccountUpdateDetails::New(update) => Self::New(update),
-            AccountUpdateDetails::Delta(update) => Self::Delta(update),
+            AccountUpdateDetails::Delta(update) if update.is_full_state() => {
+                NetworkAccountEffect::Created(
+                    Account::try_from(&update)
+                        .expect("Account should be derivable by full state AccountDelta"),
+                )
+            },
+            AccountUpdateDetails::Delta(update) => NetworkAccountEffect::Updated(update),
         };
 
         update.account_id().is_network().then_some(update)
@@ -214,8 +219,8 @@ impl NetworkAccountUpdate {
 
     fn account_id(&self) -> AccountId {
         match self {
-            NetworkAccountUpdate::New(account) => account.id(),
-            NetworkAccountUpdate::Delta(account_delta) => account_delta.id(),
+            NetworkAccountEffect::Created(acc) => acc.id(),
+            NetworkAccountEffect::Updated(delta) => delta.id(),
         }
     }
 }

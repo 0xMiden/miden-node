@@ -24,7 +24,7 @@ use crate::{COMPONENT, current_unix_timestamp_secs};
 // ================================================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) enum Status {
+pub enum Status {
     Healthy,
     Unhealthy,
     Unknown,

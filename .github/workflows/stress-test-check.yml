@@ -34,7 +34,7 @@ jobs:
       - name: Create directory for stress test store
         run: mkdir -p stress-test-store
       - name: Seed stress test store
-        run: miden-node-stress-test seed-store --data-directory stress-test-store --num-accounts 10 --public-accounts-percentage 50
+        run: miden-node-stress-test seed-store --data-directory stress-test-store --num-accounts 500 --public-accounts-percentage 50
       - name: Run sync state benchmark
         run: miden-node-stress-test benchmark-store --data-directory stress-test-store --iterations 10 --concurrency 1 sync-state
       - name: Run sync notes benchmark

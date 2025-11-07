@@ -402,10 +402,13 @@ impl rpc_server::Rpc for StoreApi {
 
         let updates = updates
             .into_iter()
-            .map(|update| proto::rpc_store::AccountVaultUpdate {
-                vault_key: Some(update.vault_key.into()),
-                asset: update.asset.map(Into::into),
-                block_num: update.block_num.as_u32(),
+            .map(|update| {
+                let vault_key: Word = update.vault_key.into();
+                proto::rpc_store::AccountVaultUpdate {
+                    vault_key: Some(vault_key.into()),
+                    asset: update.asset.map(Into::into),
+                    block_num: update.block_num.as_u32(),
+                }
             })
             .collect();
 
@@ -506,7 +509,7 @@ impl rpc_server::Rpc for StoreApi {
     async fn get_note_script_by_root(
         &self,
         request: Request<proto::note::NoteRoot>,
-    ) -> Result<Response<proto::rpc_store::MaybeNoteScript>, Status> {
+    ) -> Result<Response<proto::shared::MaybeNoteScript>, Status> {
         debug!(target: COMPONENT, request = ?request);
 
         let root = read_root::<GetNoteScriptByRootError>(request.into_inner().root, "NoteRoot")?;
@@ -517,7 +520,7 @@ impl rpc_server::Rpc for StoreApi {
             .await
             .map_err(GetNoteScriptByRootError::from)?;
 
-        Ok(Response::new(proto::rpc_store::MaybeNoteScript {
+        Ok(Response::new(proto::shared::MaybeNoteScript {
             script: note_script.map(Into::into),
         }))
     }

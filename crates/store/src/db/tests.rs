@@ -249,6 +249,7 @@ fn sql_select_notes() {
             block_num,
             note_index: BlockNoteIndex::new(0, i.try_into().unwrap()).unwrap(),
             note_id: num_to_word(u64::try_from(i).unwrap()),
+            note_commitment: num_to_word(u64::try_from(i).unwrap()),
             metadata: *new_note.metadata(),
             details: Some(NoteDetails::from(&new_note)),
             inclusion_path: SparseMerklePath::default(),
@@ -298,6 +299,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 0).unwrap(),
         note_id: num_to_word(0),
+        note_commitment: num_to_word(0),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -323,6 +325,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 1).unwrap(),
         note_id: num_to_word(1),
+        note_commitment: num_to_word(1),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -346,6 +349,7 @@ fn sql_select_notes_different_execution_hints() {
         block_num,
         note_index: BlockNoteIndex::new(0, 2).unwrap(),
         note_id: num_to_word(2),
+        note_commitment: num_to_word(2),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -388,6 +392,7 @@ fn sql_select_note_script_by_root() {
         block_num,
         note_index: BlockNoteIndex::new(0, 0.try_into().unwrap()).unwrap(),
         note_id: num_to_word(0),
+        note_commitment: num_to_word(0),
         metadata: *new_note.metadata(),
         details: Some(NoteDetails::from(&new_note)),
         inclusion_path: SparseMerklePath::default(),
@@ -468,6 +473,7 @@ fn sql_unconsumed_network_notes() {
                 block_num,
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
                 note_id: num_to_word(i),
+                note_commitment: num_to_word(i),
                 metadata: NoteMetadata::new(
                     account_notes[index].0,
                     NoteType::Public,
@@ -590,6 +596,7 @@ fn sql_unconsumed_network_notes_for_account() {
                 block_num: 0.into(), // Created on same block.
                 note_index: BlockNoteIndex::new(0, i as usize).unwrap(),
                 note_id: num_to_word(i.into()),
+                note_commitment: num_to_word(i.into()),
                 metadata: NoteMetadata::new(
                     account_note.0,
                     NoteType::Public,
@@ -1146,6 +1153,7 @@ fn notes() {
         block_num: block_num_1,
         note_index,
         note_id: new_note.id().into(),
+        note_commitment: new_note.commitment(),
         metadata: NoteMetadata::new(
             sender,
             NoteType::Public,
@@ -1192,6 +1200,7 @@ fn notes() {
         block_num: block_num_2,
         note_index: note.note_index,
         note_id: new_note.id().into(),
+        note_commitment: new_note.commitment(),
         metadata: note.metadata,
         details: None,
         inclusion_path: inclusion_path.clone(),

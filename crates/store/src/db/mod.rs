@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
@@ -133,6 +133,7 @@ pub struct NoteRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
     pub note_id: Word,
+    pub note_commitment: Word,
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
     pub inclusion_path: SparseMerklePath,
@@ -454,24 +455,29 @@ impl Db {
         .await
     }
 
-    /// Loads inclusion proofs for notes matching the given IDs.
+    /// Loads all the [`NoteRecord`]s matching a certain note commitment from the
+    /// database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_inclusion_proofs(
+    pub async fn select_notes_by_commitment(
         &self,
-        note_ids: BTreeSet<NoteId>,
-    ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
-        self.transact("block note inclusion proofs", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_ids)
+        note_commitments: Vec<Word>,
+    ) -> Result<Vec<NoteRecord>> {
+        self.transact("note by commitment", move |conn| {
+            queries::select_notes_by_commitment(conn, note_commitments.as_slice())
         })
         .await
     }
 
-    /// Loads all note IDs matching a certain [`NoteId`] from the database.
+    /// Loads inclusion proofs for notes matching the given note commitments.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<HashSet<NoteId>> {
-        self.select_notes_by_id(note_ids)
-            .await
-            .map(|notes| notes.into_iter().map(|note| note.note_id.into()).collect())
+    pub async fn select_note_inclusion_proofs(
+        &self,
+        note_commitments: BTreeSet<Word>,
+    ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
+        self.transact("block note inclusion proofs by commitment", move |conn| {
+            models::queries::select_note_inclusion_proofs(conn, &note_commitments)
+        })
+        .await
     }
 
     /// Inserts the data of a new block into the DB.

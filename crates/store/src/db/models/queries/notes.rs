@@ -29,7 +29,7 @@ use miden_lib::utils::{Deserializable, Serializable};
 use miden_node_utils::limiter::{
     QueryParamAccountIdLimit,
     QueryParamLimiter,
-    QueryParamNoteIdLimit,
+    QueryParamNoteCommitmentLimit,
     QueryParamNoteTagLimit,
 };
 use miden_objects::account::AccountId;
@@ -217,6 +217,28 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
+pub(crate) fn select_notes_by_commitment(
+    conn: &mut SqliteConnection,
+    note_commitments: &[Word],
+) -> Result<Vec<NoteRecord>, DatabaseError> {
+    let note_commitments = serialize_vec(note_commitments.iter());
+    let q = schema::notes::table
+        .left_join(
+            schema::note_scripts::table
+                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
+        )
+        .filter(schema::notes::note_commitment.eq_any(&note_commitments));
+    let raw: Vec<_> = SelectDsl::select(
+        q,
+        (NoteRecordRawRow::as_select(), schema::note_scripts::script.nullable()),
+    )
+    .load::<(NoteRecordRawRow, Option<Vec<u8>>)>(conn)?;
+    let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRawJoined>(
+        raw.into_iter().map(NoteRecordWithScriptRawJoined::from),
+    )?;
+    Ok(records)
+}
+
 /// Select all notes from the DB using the given [`SqliteConnection`].
 ///
 ///
@@ -266,7 +288,7 @@ pub(crate) fn select_all_notes(
     Ok(records)
 }
 
-/// Select note inclusion proofs matching the `NoteId`s.
+/// Select note inclusion proofs matching the note commitments.
 ///
 /// # Parameters
 /// * `note_ids`: Set of note IDs to query
@@ -295,11 +317,11 @@ pub(crate) fn select_all_notes(
 /// ```
 pub(crate) fn select_note_inclusion_proofs(
     conn: &mut SqliteConnection,
-    note_ids: &BTreeSet<NoteId>,
+    note_commitments: &BTreeSet<Word>,
 ) -> Result<BTreeMap<NoteId, NoteInclusionProof>, DatabaseError> {
-    QueryParamNoteIdLimit::check(note_ids.len())?;
+    QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
 
-    let noted_ids_serialized = serialize_vec(note_ids.iter());
+    let note_commitments = serialize_vec(note_commitments.iter());
 
     let raw_notes = SelectDsl::select(
         schema::notes::table,
@@ -311,7 +333,7 @@ pub(crate) fn select_note_inclusion_proofs(
             schema::notes::inclusion_path,
         ),
     )
-    .filter(schema::notes::note_id.eq_any(noted_ids_serialized))
+    .filter(schema::notes::note_commitment.eq_any(note_commitments))
     .order_by(schema::notes::committed_at.asc())
     .load::<(i64, Vec<u8>, i32, i32, Vec<u8>)>(conn)?;
 
@@ -663,6 +685,7 @@ pub struct NoteRecordWithScriptRawJoined {
     // #[diesel(embed)]
     // pub note_index: BlockNoteIndexRaw,
     pub note_id: Vec<u8>,
+    pub note_commitment: Vec<u8>,
 
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
@@ -688,6 +711,7 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             batch_index,
             note_index,
             note_id,
+            note_commitment,
             note_type,
             sender,
             tag,
@@ -703,6 +727,7 @@ impl From<(NoteRecordRawRow, Option<Vec<u8>>)> for NoteRecordWithScriptRawJoined
             batch_index,
             note_index,
             note_id,
+            note_commitment,
             note_type,
             sender,
             tag,
@@ -729,6 +754,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             note_index,
             // block note index ^^^
             note_id,
+            note_commitment,
 
             note_type,
             sender,
@@ -757,6 +783,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
         let metadata = metadata.try_into()?;
         let committed_at = BlockNumber::from_raw_sql(committed_at)?;
         let note_id = Word::read_from_bytes(&note_id[..])?;
+        let note_commitment = Word::read_from_bytes(&note_commitment[..])?;
         let script = script.map(|script| NoteScript::read_from_bytes(&script[..])).transpose()?;
         let details = if let NoteDetailsRawRow {
             assets: Some(assets),
@@ -781,6 +808,7 @@ impl TryInto<NoteRecord> for NoteRecordWithScriptRawJoined {
             block_num: committed_at,
             note_index,
             note_id,
+            note_commitment,
             metadata,
             details,
             inclusion_path,
@@ -797,6 +825,7 @@ pub struct NoteRecordRawRow {
     pub batch_index: i32,
     pub note_index: i32, // index within batch
     pub note_id: Vec<u8>,
+    pub note_commitment: Vec<u8>,
 
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
@@ -921,6 +950,7 @@ pub struct NoteInsertRowInsert {
     pub note_index: i32, // index within batch
 
     pub note_id: Vec<u8>,
+    pub note_commitment: Vec<u8>,
 
     pub note_type: i32,
     pub sender: Vec<u8>, // AccountId
@@ -945,6 +975,7 @@ impl From<(NoteRecord, Option<Nullifier>)> for NoteInsertRowInsert {
             batch_index: idx_to_raw_sql(note.note_index.batch_idx()),
             note_index: idx_to_raw_sql(note.note_index.note_idx_in_batch()),
             note_id: note.note_id.to_bytes(),
+            note_commitment: note.note_commitment.to_bytes(),
             note_type: note_type_to_raw_sql(note.metadata.note_type() as u8),
             sender: note.metadata.sender().to_bytes(),
             tag: note.metadata.tag().to_raw_sql(),

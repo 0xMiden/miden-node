@@ -7,7 +7,7 @@ use miden_node_utils::ErrorReport;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::block::BlockNumber;
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 use tonic::{Request, Response, Status};
 use tracing::{info, instrument};
 
@@ -153,11 +153,11 @@ where
 
 #[allow(clippy::result_large_err)]
 #[instrument(level = "debug", target = COMPONENT, skip_all, err)]
-pub fn validate_notes(notes: &[proto::primitives::Digest]) -> Result<Vec<NoteId>, Status> {
+pub fn validate_note_commitments(notes: &[proto::primitives::Digest]) -> Result<Vec<Word>, Status> {
     notes
         .iter()
-        .map(|digest| Ok(Word::try_from(digest)?.into()))
-        .collect::<Result<_, ConversionError>>()
+        .map(Word::try_from)
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|_| invalid_argument("Digest field is not in the modulus range"))
 }
 

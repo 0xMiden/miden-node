@@ -198,11 +198,11 @@ impl Mempool {
         if !double_spend.is_empty() {
             return Err(VerifyTxError::InputNotesAlreadyConsumed(double_spend).into());
         }
-        let duplicates = self.state.output_notes_exist(tx.output_note_ids());
+        let duplicates = self.state.output_notes_exist(tx.output_note_commitments());
         if !duplicates.is_empty() {
             return Err(VerifyTxError::OutputNotesAlreadyExist(duplicates).into());
         }
-        let missing = self.state.output_notes_missing(tx.unauthenticated_notes());
+        let missing = self.state.output_notes_missing(tx.unauthenticated_note_commitments());
         if !missing.is_empty() {
             return Err(VerifyTxError::UnauthenticatedNotesNotFound(missing).into());
         }

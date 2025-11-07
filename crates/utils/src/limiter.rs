@@ -79,6 +79,13 @@ impl QueryParamLimiter for QueryParamNoteIdLimit {
     const LIMIT: usize = 1000;
 }
 
+/// Used for internal queries retrieving note inclusion proofs by commitment.
+pub struct QueryParamNoteCommitmentLimit;
+impl QueryParamLimiter for QueryParamNoteCommitmentLimit {
+    const PARAM_NAME: &str = "note_commitment";
+    const LIMIT: usize = 1000;
+}
+
 /// Only used internally, not exposed via public RPC.
 pub struct QueryParamBlockLimit;
 impl QueryParamLimiter for QueryParamBlockLimit {

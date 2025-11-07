@@ -475,7 +475,7 @@ async fn get_batch_inputs(
     let batch_inputs = store_client
         .get_batch_inputs(
             vec![(block_ref.block_num(), block_ref.commitment())].into_iter(),
-            notes.iter().map(Note::id),
+            notes.iter().map(Note::commitment),
         )
         .await
         .unwrap();
@@ -498,7 +498,7 @@ async fn get_block_inputs(
                 batch
                     .input_notes()
                     .into_iter()
-                    .filter_map(|note| note.header().map(NoteHeader::id))
+                    .filter_map(|note| note.header().map(NoteHeader::commitment))
             }),
             batches.iter().map(ProvenBatch::reference_block_num),
         )

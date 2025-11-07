@@ -218,10 +218,8 @@ impl Coordinator {
     /// transaction's notes.
     ///
     /// Caches the mempool event for each network account found in the transaction's notes that does
-    /// not currently have a corresponding actor.
-    ///
-    /// If an actor does not exist for the account, it is assumed that the account has not been
-    /// created on the chain yet.
+    /// not currently have a corresponding actor. If an actor does not exist for the account, it is
+    /// assumed that the account has not been created on the chain yet.
     ///
     /// Cached events will be fed to the corresponding actor when the account creation transaction
     /// is processed.

@@ -151,8 +151,15 @@ async fn fetch_wallet_account(
 ) -> Result<Option<Account>> {
     let id_bytes: [u8; 15] = account_id.into();
     let req = miden_node_proto::generated::account::AccountId { id: id_bytes.to_vec() };
-    let resp = rpc_client.get_account_details(req).await?.into_inner();
-    let Some(account_details) = resp.details else {
+    let resp = rpc_client.get_account_details(req).await;
+
+    // If the RPC call fails, return None
+    if resp.is_err() {
+        return Ok(None);
+    }
+
+    let Some(account_details) = resp.expect("Previously checked for error").into_inner().details
+    else {
         return Ok(None);
     };
     let account = Account::read_from_bytes(&account_details)
@@ -381,6 +388,7 @@ fn load_counter_account(file_path: &Path) -> Result<Account> {
 
 /// Create and submit a network note that targets the counter account.
 #[allow(clippy::too_many_arguments)]
+#[instrument(target = COMPONENT, name = "create-and-submit-network-note", skip_all, ret)]
 async fn create_and_submit_network_note(
     wallet_account: &Account,
     counter_account: &Account,

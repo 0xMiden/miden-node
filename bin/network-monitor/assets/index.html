@@ -255,27 +255,27 @@
                                     </div>
                                 </div>
                             ` : ''}
-                            ${details.CounterIncrement ? `
+                            ${details.NtxService ? `
                                 <div class="nested-status">
-                                    <strong>Counter Increment:</strong>
+                                    <strong>Network Transaction Service:</strong>
                                     <div class="test-metrics ${service.status === 'Healthy' ? 'healthy' : 'unhealthy'}">
                                         <div class="metric-row">
                                             <span class="metric-label">Current Value:</span>
-                                            <span class="metric-value">${details.CounterIncrement.current_value ?? '-'}</span>
+                                            <span class="metric-value">${details.NtxService.current_value ?? '-'}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Successes:</span>
-                                            <span class="metric-value">${details.CounterIncrement.success_count}</span>
+                                            <span class="metric-value">${details.NtxService.success_count}</span>
                                         </div>
                                         <div class="metric-row">
                                             <span class="metric-label">Failures:</span>
-                                            <span class="metric-value">${details.CounterIncrement.failure_count}</span>
+                                            <span class="metric-value">${details.NtxService.failure_count}</span>
                                         </div>
-                                        ${details.CounterIncrement.last_tx_id ? `
+                                        ${details.NtxService.last_tx_id ? `
                                             <div class="metric-row">
                                                 <span class="metric-label">Last TX ID:</span>
-                                                <span class="metric-value">${details.CounterIncrement.last_tx_id.substring(0, 16)}...
-                                                    <button class="copy-button" onclick="copyToClipboard('${details.CounterIncrement.last_tx_id}', event)" title="Copy full TX ID">
+                                                <span class="metric-value">${details.NtxService.last_tx_id.substring(0, 16)}...
+                                                    <button class="copy-button" onclick="copyToClipboard('${details.NtxService.last_tx_id}', event)" title="Copy full TX ID">
                                                         <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                                             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>

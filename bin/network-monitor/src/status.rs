@@ -75,7 +75,7 @@ pub enum ServiceDetails {
     RemoteProverStatus(RemoteProverStatusDetails),
     RemoteProverTest(ProverTestDetails),
     FaucetTest(FaucetTestDetails),
-    CounterIncrement(CounterIncrementDetails),
+    NtxService(CounterIncrementDetails),
     Error,
 }
 

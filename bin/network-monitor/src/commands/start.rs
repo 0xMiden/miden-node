@@ -48,14 +48,14 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
     };
 
     // Initialize the counter increment task only if enabled.
-    let counter_rx = if config.enable_counter {
+    let ntx_service_rx = if config.disable_ntx_service {
+        None
+    } else {
         // Ensure accounts exist before starting monitoring tasks
         ensure_accounts_exist(&config.wallet_filepath, &config.counter_filepath, &config.rpc_url)
             .await?;
 
-        Some(tasks.spawn_counter_increment(&config))
-    } else {
-        None
+        Some(tasks.spawn_ntx_service(&config))
     };
 
     // Initialize HTTP server.
@@ -63,7 +63,7 @@ pub async fn start_monitor(config: MonitorConfig) -> Result<()> {
         rpc: rpc_rx,
         provers: prover_rxs,
         faucet: faucet_rx,
-        counter: counter_rx,
+        ntx_service: ntx_service_rx,
     };
     tasks.spawn_http_server(server_state, &config);
 

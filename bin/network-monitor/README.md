@@ -30,15 +30,15 @@ miden-network-monitor start --faucet-url http://localhost:8080 --enable-otel
 - `--rpc-url`: RPC service URL (default: `http://localhost:50051`)
 - `--remote-prover-urls`: Comma-separated list of remote prover URLs. If omitted or empty, prover tasks are disabled.
 - `--faucet-url`: Faucet service URL for testing. If omitted, faucet testing is disabled.
-- `--enable-counter`: Enable the counter increment task. If set, the monitor ensures the counter account exist (creating and deploying them if missing).
+- `--disable-ntx-service`: Disable the network transaction service checks (enabled by default). The network transaction service is a network account with a counter deployed at startup and incremented by sending a transaction to it.
 - `--remote-prover-test-interval`: Interval at which to test the remote provers services (default: `2m`)
 - `--faucet-test-interval`: Interval at which to test the faucet services (default: `2m`)
 - `--status-check-interval`: Interval at which to check the status of the services (default: `3s`)
 - `--port, -p`: Web server port (default: `3000`)
 - `--enable-otel`: Enable OpenTelemetry tracing
-- `--wallet-filepath`: Path where the wallet account are located (default: `wallet_account.mac`)
-- `--counter-filepath`: Path where the counter program account are located (default: `counter_program.mac`)
-- `--counter-increment-interval`: Interval at which to increment the counter (default: `30s`)
+- `--wallet-filepath`: Path where the wallet account is located (default: `wallet_account.mac`)
+- `--counter-filepath`: Path where the network account is located (default: `counter_program.mac`)
+- `--counter-increment-interval`: Interval at which to send the increment counter transaction (default: `30s`)
 - `--help, -h`: Show help information
 - `--version, -V`: Show version information
 
@@ -49,15 +49,15 @@ If command-line arguments are not provided, the application falls back to enviro
 - `MIDEN_MONITOR_RPC_URL`: RPC service URL
 - `MIDEN_MONITOR_REMOTE_PROVER_URLS`: Comma-separated list of remote prover URLs. If unset or empty, prover tasks are disabled.
 - `MIDEN_MONITOR_FAUCET_URL`: Faucet service URL for testing. If unset, faucet testing is disabled.
-- `MIDEN_MONITOR_ENABLE_COUNTER`: Set to `true` to enable the counter increment task (default: disabled)
+- `MIDEN_MONITOR_DISABLE_NTX_SERVICE`: Set to `true` to disable the network transaction service checks (enabled by default).
 - `MIDEN_MONITOR_REMOTE_PROVER_TEST_INTERVAL`: Interval at which to test the remote provers services
 - `MIDEN_MONITOR_FAUCET_TEST_INTERVAL`: Interval at which to test the faucet services
 - `MIDEN_MONITOR_STATUS_CHECK_INTERVAL`: Interval at which to check the status of the services
 - `MIDEN_MONITOR_PORT`: Web server port
 - `MIDEN_MONITOR_ENABLE_OTEL`: Enable OpenTelemetry tracing
-- `MIDEN_MONITOR_WALLET_FILEPATH`: Path where the wallet account are located
-- `MIDEN_MONITOR_COUNTER_FILEPATH`: Path where the counter program account are located
-- `MIDEN_MONITOR_COUNTER_INCREMENT_INTERVAL`: Interval at which to increment the counter
+- `MIDEN_MONITOR_WALLET_FILEPATH`: Path where the wallet account is located
+- `MIDEN_MONITOR_COUNTER_FILEPATH`: Path where the network account is located
+- `MIDEN_MONITOR_COUNTER_INCREMENT_INTERVAL`: Interval at which to send the increment counter transaction
 
 ## Commands
 
@@ -69,7 +69,7 @@ Starts the network monitoring service with the web dashboard. RPC status is alwa
 
 - Prover checks/tests: enabled when `--remote-prover-urls` (or `MIDEN_MONITOR_REMOTE_PROVER_URLS`) is provided
 - Faucet testing: enabled when `--faucet-url` (or `MIDEN_MONITOR_FAUCET_URL`) is provided
-- Counter increment: enabled when `--enable-counter` (or `MIDEN_MONITOR_ENABLE_COUNTER=true`) is set
+- Network transaction service: enabled when `--disable-ntx-service=false` or unset (or `MIDEN_MONITOR_DISABLE_NTX_SERVICE=false` or unset)
 
 ```bash
 # Start with default configuration (RPC only)
@@ -78,21 +78,20 @@ miden-network-monitor start
 # Start with custom configuration
 miden-network-monitor start --port 8080 --rpc-url http://localhost:50051
 
-# Enable counter task with custom account file paths
+# Enable network transaction service with custom account file paths
 miden-network-monitor start \
   --wallet-filepath my_wallet.mac \
-  --counter-filepath my_counter.mac \
-  --enable-counter \
+  --counter-filepath my_network_account.mac \
   --rpc-url https://testnet.miden.io:443
 ```
 
 **Optional Counter Account Management (only when counter is enabled):**
-When `--enable-counter` is set, the monitor ensures required counter account exists before starting the task:
+When `--disable-ntx-service=false` or unset, the monitor ensures required network transaction service account exists before starting the task:
 1. If file is missing, creates new counter account:
-   - Counter program account with the increment procedure
-2. Saves counter account to the specified file using the Miden AccountFile format
+   - Network account with the increment procedure
+2. Saves network account to the specified file using the Miden `AccountFile` format
 3. Deploys accounts to the network via RPC (if not already deployed)
-4. The counter contract authorizes increments only from the counter account
+4. The network account contract authorizes increments only from a whitelisted wallet account
 
 ## Usage
 
@@ -106,7 +105,7 @@ miden-network-monitor start --remote-prover-urls http://localhost:50052
 miden-network-monitor start \
   --remote-prover-urls http://localhost:50052,http://localhost:50053,http://localhost:50054 \
   --faucet-url http://localhost:8080 \
-  --enable-counter \
+  --disable-ntx-service=false \
   --remote-prover-test-interval 2m \
   --faucet-test-interval 2m \
   --status-check-interval 3s \
@@ -125,12 +124,12 @@ miden-network-monitor --help
 # Single remote prover
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052" miden-network-monitor start
 
-# Multiple remote provers, faucet testing, and counter task
+# Multiple remote provers, faucet testing, and network transaction service
 MIDEN_MONITOR_REMOTE_PROVER_URLS="http://localhost:50052,http://localhost:50053,http://localhost:50054" \
 MIDEN_MONITOR_FAUCET_URL="http://localhost:8080" \
 MIDEN_MONITOR_WALLET_FILEPATH="my_wallet.mac" \
 MIDEN_MONITOR_COUNTER_FILEPATH="my_counter.mac" \
-MIDEN_MONITOR_ENABLE_COUNTER=true \
+MIDEN_MONITOR_DISABLE_NTX_SERVICE=false \
 miden-network-monitor start
 ```
 
@@ -174,10 +173,10 @@ The monitor application provides real-time status monitoring for the following M
   - Transaction and note ID tracking from successful mints
   - Automated testing on a configurable interval to verify faucet functionality
 
-### Counter Increment
+### Network Transaction Service
 - **Service Health**: End-to-end transaction submission and on-chain state query
 - **Metrics**:
-  - Current counter value (queried from RPC one block after submission)
+  - Current network account counter value (queried from RPC one block after submission)
   - Success/Failure counts
   - Last TX ID with copy-to-clipboard
 
@@ -195,13 +194,13 @@ The web dashboard provides a clean, responsive interface with the following feat
 
 ## Account Management
 
-When the counter task is enabled, the monitor manages the necessary Miden accounts:
+When the network transaction service is enabled, the monitor manages the necessary Miden accounts:
 
 ### Created Accounts
 
-**Counter Program Account:**
+**Network Account:**
 - Implements a simple counter with increment functionality
-- Includes authentication logic that restricts access to the counter account
+- Includes authentication logic that restricts access to the network account
 - Uses custom MASM script with account ID-based authorization
 - Automatically created if not present
 
@@ -222,11 +221,11 @@ The monitor automatically:
 
 ```bash
 # Start monitor with counter task and default account files
-miden-network-monitor start --enable-counter --rpc-url https://testnet.miden.io:443
+miden-network-monitor start --rpc-url https://testnet.miden.io:443
 
 # Start monitor with custom account file paths
 miden-network-monitor start \
-  --enable-counter \
+  --disable-ntx-service=false \
   --rpc-url https://testnet.miden.io:443 \
   --wallet-filepath my_wallet.mac \
   --counter-filepath my_counter.mac

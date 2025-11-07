@@ -202,10 +202,10 @@ async fn setup_counter_increment(
     ))
 }
 
-/// Run the counter increment task.
+/// Run the network transaction service task.
 ///
-/// This function periodically creates network notes that target the counter account
-/// and execute the increment procedure.
+/// This function periodically creates network notes that target the network transaction service
+/// account and sends a transaction to it to increment the counter.
 ///
 /// # Arguments
 ///
@@ -215,8 +215,8 @@ async fn setup_counter_increment(
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
-#[instrument(target = COMPONENT, name = "run-counter-increment-task", skip_all, ret(level = "debug"))]
-pub async fn run_counter_increment_task(
+#[instrument(target = COMPONENT, name = "run-ntx-service-task", skip_all, ret(level = "debug"))]
+pub async fn run_ntx_service_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
 ) -> Result<()> {
@@ -339,7 +339,7 @@ fn build_status(details: &CounterIncrementDetails, last_error: Option<String>) -
         status,
         last_checked: crate::monitor::tasks::current_unix_timestamp_secs(),
         error: last_error,
-        details: ServiceDetails::CounterIncrement(details.clone()),
+        details: ServiceDetails::NtxService(details.clone()),
     }
 }
 

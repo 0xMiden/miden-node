@@ -96,6 +96,29 @@ pub struct MonitorConfig {
     )]
     pub enable_otel: bool,
 
+    /// Whether to disable the network transaction service checks (enabled by default). The network
+    /// transaction service is a network account with a counter deployed at startup and incremented
+    /// by sending a transaction to it.
+    #[arg(
+        long = "disable-ntx-service",
+        env = "MIDEN_MONITOR_DISABLE_NTX_SERVICE",
+        action = clap::ArgAction::SetTrue,
+        default_value_t = false,
+        help = "Whether to disable the network transaction service checks (enabled by default). The
+        network transaction service is a network account with a counter deployed at startup and
+        incremented by sending a transaction to it."
+    )]
+    pub disable_ntx_service: bool,
+
+    /// Path for the counter program network account file.
+    #[arg(
+        long = "counter-filepath",
+        env = "MIDEN_MONITOR_COUNTER_FILEPATH",
+        default_value = "counter_program.mac",
+        help = "Path where the counter account is located"
+    )]
+    pub counter_filepath: PathBuf,
+
     /// Path for the wallet account file.
     #[arg(
         long = "wallet-filepath",
@@ -105,32 +128,13 @@ pub struct MonitorConfig {
     )]
     pub wallet_filepath: PathBuf,
 
-    /// Enable the counter increment task (optional; disabled by default).
-    #[arg(
-        long = "enable-counter",
-        env = "MIDEN_MONITOR_ENABLE_COUNTER",
-        action = clap::ArgAction::SetTrue,
-        default_value_t = false,
-        help = "Whether to enable the counter increment task"
-    )]
-    pub enable_counter: bool,
-
-    /// Path for the counter program account file.
-    #[arg(
-        long = "counter-filepath",
-        env = "MIDEN_MONITOR_COUNTER_FILEPATH",
-        default_value = "counter_program.mac",
-        help = "Path where the counter account is located"
-    )]
-    pub counter_filepath: PathBuf,
-
-    /// The interval at which to increment the counter.
+    /// The interval at which to send the increment counter transaction.
     #[arg(
         long = "counter-increment-interval",
         env = "MIDEN_MONITOR_COUNTER_INCREMENT_INTERVAL",
         default_value = "30s",
         value_parser = humantime::parse_duration,
-        help = "The interval at which to increment the counter"
+        help = "The interval at which to send the increment counter transaction"
     )]
     pub counter_increment_interval: Duration,
 }

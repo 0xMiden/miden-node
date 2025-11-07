@@ -5,6 +5,7 @@
 ### Changes
 
 - Added support for network transaction service in `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).
+- Improves `.env` file example in for the `miden-network-monitor` binary ([#1345](https://github.com/0xMiden/miden-node/pull/1345)).
 
 ## v0.12.0 (2025-11-06)
 

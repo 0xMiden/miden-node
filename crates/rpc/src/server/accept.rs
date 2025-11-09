@@ -11,7 +11,7 @@ use semver::{Comparator, Version, VersionReq};
 use tower::{Layer, Service};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum NegotiationGenesis {
+pub enum GenesisNegotiation {
     Optional,
     Mandatory,
 }
@@ -114,7 +114,7 @@ impl AcceptHeaderLayer {
     fn negotiate(
         &self,
         accept: &str,
-        genesis_mode: NegotiationGenesis,
+        genesis_mode: GenesisNegotiation,
     ) -> Result<(), AcceptHeaderError> {
         let mut media_types = mediatype::MediaTypeList::new(accept).peekable();
 
@@ -122,7 +122,7 @@ impl AcceptHeaderLayer {
         // gracious if the client want's to be weird.
         if media_types.peek().is_none() {
             // If there are no media types provided and genesis is required, reject.
-            if matches!(genesis_mode, NegotiationGenesis::Mandatory) {
+            if matches!(genesis_mode, GenesisNegotiation::Mandatory) {
                 return Err(AcceptHeaderError::NoSupportedMediaRange);
             }
             return Ok(());
@@ -187,7 +187,7 @@ impl AcceptHeaderLayer {
                 .map_err(AcceptHeaderError::InvalidGenesis)?;
 
             match genesis_mode {
-                NegotiationGenesis::Mandatory => {
+                GenesisNegotiation::Mandatory => {
                     match genesis {
                         None => {
                             // For write methods, the genesis parameter must be present.
@@ -200,10 +200,11 @@ impl AcceptHeaderLayer {
                         _ => {},
                     }
                 },
-                NegotiationGenesis::Optional => {
+                GenesisNegotiation::Optional => {
                     if let Some(genesis) = genesis
                         && genesis != self.genesis_commitment
                     {
+                        // Present but mismatched.
                         continue;
                     }
                 },
@@ -264,9 +265,9 @@ where
             .map_err(AcceptHeaderError::InvalidUtf8)
             .map(|header| {
                 let mode = if requires_genesis {
-                    NegotiationGenesis::Mandatory
+                    GenesisNegotiation::Mandatory
                 } else {
-                    NegotiationGenesis::Optional
+                    GenesisNegotiation::Optional
                 };
                 self.verifier.negotiate(header, mode)
             })
@@ -410,7 +411,7 @@ mod tests {
     #[test]
     fn request_should_pass(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests()
-            .negotiate(accept, super::NegotiationGenesis::Optional)
+            .negotiate(accept, super::GenesisNegotiation::Optional)
             .unwrap();
     }
 
@@ -426,7 +427,7 @@ mod tests {
     #[test]
     fn request_should_be_rejected(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests()
-            .negotiate(accept, super::NegotiationGenesis::Optional)
+            .negotiate(accept, super::GenesisNegotiation::Optional)
             .unwrap_err();
     }
 
@@ -437,16 +438,16 @@ mod tests {
         // Missing genesis parameter
         assert!(
             layer
-                .negotiate("application/vnd.miden", super::NegotiationGenesis::Mandatory)
+                .negotiate("application/vnd.miden", super::GenesisNegotiation::Mandatory)
                 .is_err()
         );
 
         // Empty header value
-        assert!(layer.negotiate("", super::NegotiationGenesis::Mandatory).is_err());
+        assert!(layer.negotiate("", super::GenesisNegotiation::Mandatory).is_err());
 
         // Present but mismatched genesis parameter
         let mismatched = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeee";
-        assert!(layer.negotiate(mismatched, super::NegotiationGenesis::Mandatory).is_err());
+        assert!(layer.negotiate(mismatched, super::GenesisNegotiation::Mandatory).is_err());
     }
 
     #[test]
@@ -455,11 +456,11 @@ mod tests {
 
         // Matching genesis only
         let accept = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
-        assert!(layer.negotiate(accept, super::NegotiationGenesis::Mandatory).is_ok());
+        assert!(layer.negotiate(accept, super::GenesisNegotiation::Mandatory).is_ok());
 
         // Matching genesis with version
         let accept = "application/vnd.miden; version=0.2.3; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
-        assert!(layer.negotiate(accept, super::NegotiationGenesis::Mandatory).is_ok());
+        assert!(layer.negotiate(accept, super::GenesisNegotiation::Mandatory).is_ok());
     }
 
     #[rstest::rstest]

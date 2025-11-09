@@ -892,10 +892,9 @@ impl State {
 
         let found_unauthenticated_notes = self
             .db
-            .select_notes_by_commitment(unauthenticated_note_commitments)
+            .select_existing_note_commitments(unauthenticated_note_commitments)
             .await?
             .into_iter()
-            .map(|note| note.note_commitment)
             .collect();
 
         Ok(TransactionInputs {

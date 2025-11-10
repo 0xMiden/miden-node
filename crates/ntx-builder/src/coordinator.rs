@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_proto::domain::note::NetworkNote;
@@ -87,7 +88,7 @@ pub struct Coordinator {
 
     /// Cache of events received from the mempool that predate corresponding network accounts.
     /// Grouped by account prefix to allow targeted event delivery to actors upon creation.
-    predating_events: HashMap<NetworkAccountPrefix, HashMap<TransactionId, Arc<MempoolEvent>>>,
+    predating_events: HashMap<NetworkAccountPrefix, IndexMap<TransactionId, Arc<MempoolEvent>>>,
 }
 
 impl Coordinator {
@@ -254,7 +255,7 @@ impl Coordinator {
     pub fn drain_predating_events(&mut self, tx_id: &TransactionId) {
         // Remove the transaction from all prefix caches.
         self.predating_events.retain(|_, prefix_event| {
-            prefix_event.remove(tx_id);
+            prefix_event.shift_remove(tx_id);
             // Remove entries for account prefixes with no more cached events.
             !prefix_event.is_empty()
         });

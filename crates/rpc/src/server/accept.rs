@@ -227,7 +227,7 @@ where
     fn call(&mut self, request: http::Request<B>) -> Self::Future {
         // Determine if this RPC method requires the `genesis` parameter.
         let path = request.uri().path();
-        let method_name = path.rsplit('/').next().unwrap_or("");
+        let method_name = path.rsplit('/').next().unwrap_or_default();
         let requires_genesis = self.verifier.require_genesis_methods.contains(&method_name);
 
         // If `genesis` is required but the header is missing entirely, reject early.

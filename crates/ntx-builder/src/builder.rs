@@ -202,15 +202,22 @@ impl NetworkTransactionBuilder {
             MempoolEvent::BlockCommitted { header, txs } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
                 self.coordinator.broadcast(event.clone()).await;
+
+                // All transactions pertaining to predating events should now be available through
+                // the store. So we can now drain them.
                 for tx_id in txs {
                     self.coordinator.drain_predating_events(tx_id);
                 }
                 Ok(())
             },
             // Broadcast to all actors.
-            MempoolEvent::TransactionsReverted(_) => {
-                // TODO (current pr): Do we need to cache these?
-                self.coordinator.broadcast(event).await;
+            MempoolEvent::TransactionsReverted(txs) => {
+                self.coordinator.broadcast(event.clone()).await;
+
+                // Reverted predating transactions need not be processed.
+                for tx_id in txs {
+                    self.coordinator.drain_predating_events(tx_id);
+                }
                 Ok(())
             },
         }

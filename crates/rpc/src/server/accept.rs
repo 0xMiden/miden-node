@@ -185,29 +185,11 @@ impl AcceptHeaderLayer {
                 .map(|value| Word::try_from(value.unquoted_str().as_ref()))
                 .transpose()
                 .map_err(AcceptHeaderError::InvalidGenesis)?;
-
-            match genesis_mode {
-                GenesisNegotiation::Mandatory => {
-                    match genesis {
-                        None => {
-                            // For write methods, the genesis parameter must be present.
-                            continue;
-                        },
-                        Some(genesis) if genesis != self.genesis_commitment => {
-                            // Present but mismatched.
-                            continue;
-                        },
-                        _ => {},
-                    }
-                },
-                GenesisNegotiation::Optional => {
-                    if let Some(genesis) = genesis
-                        && genesis != self.genesis_commitment
-                    {
-                        // Present but mismatched.
-                        continue;
-                    }
-                },
+            match (genesis_mode, genesis) {
+                (_, Some(value)) if value != self.genesis_commitment => continue,
+                (GenesisNegotiation::Mandatory, None) => continue,
+                _ => {},
+            }
             }
 
             // All preconditions met, this is a valid media type that we can serve.

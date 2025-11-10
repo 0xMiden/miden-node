@@ -2,6 +2,8 @@
 
 ## v0.13.0 (TBD)
 
+- [BREAKING] Renamed `ProxyWorkerStatus::address` to `ProxyWorkerStatus::name` ([#1348](https://github.com/0xMiden/miden-node/pull/1348)).
+
 ## v0.12.1 (2025-11-08)
 
 - Added support for network transaction service in `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).

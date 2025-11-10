@@ -140,14 +140,14 @@ impl Worker {
     /// - `Ok(())` if the client was successfully created
     /// - `Err(RemoteProverError)` if the client creation failed
     async fn recreate_status_client(&mut self) -> Result<(), RemoteProverError> {
-        let address = self.address();
-        match create_status_client(&address, self.connection_timeout, self.total_timeout).await {
+        let name = self.name();
+        match create_status_client(&name, self.connection_timeout, self.total_timeout).await {
             Ok(client) => {
                 self.status_client = Some(client);
                 Ok(())
             },
             Err(err) => {
-                error!("Failed to recreate status client for worker {}: {}", address, err);
+                error!("Failed to recreate status client for worker {}: {}", name, err);
                 Err(err)
             },
         }
@@ -170,7 +170,7 @@ impl Worker {
         if self.status_client.is_none() {
             match self.recreate_status_client().await {
                 Ok(()) => {
-                    info!("Successfully recreated status client for worker {}", self.address());
+                    info!("Successfully recreated status client for worker {}", self.name());
                 },
                 Err(err) => {
                     return Err(err.as_report_context("failed to recreate status client"));
@@ -181,7 +181,7 @@ impl Worker {
         let worker_status = match self.status_client.as_mut().unwrap().status(()).await {
             Ok(response) => response.into_inner(),
             Err(e) => {
-                error!("Failed to check worker status ({}): {}", self.address(), e);
+                error!("Failed to check worker status ({}): {}", self.name(), e);
                 return Err(e.message().to_string());
             },
         };
@@ -198,7 +198,7 @@ impl Worker {
 
         let worker_supported_proof_type = ProofType::try_from(worker_status.supported_proof_type)
             .inspect_err(|err| {
-            error!(%err, address=%self.address(), "Failed to convert worker supported proof type");
+            error!(%err, name=%self.name(), "Failed to convert worker supported proof type");
         })?;
 
         if supported_proof_type != worker_supported_proof_type {
@@ -271,8 +271,8 @@ impl Worker {
         self.is_available
     }
 
-    /// Returns the worker address.
-    pub fn address(&self) -> String {
+    /// Returns the worker name.
+    pub fn name(&self) -> String {
         self.backend.addr.to_string()
     }
 
@@ -325,7 +325,7 @@ impl Worker {
                 }
             },
             WorkerHealthStatus::Unhealthy { .. } => {
-                WORKER_UNHEALTHY.with_label_values(&[&self.address()]).inc();
+                WORKER_UNHEALTHY.with_label_values(&[&self.name()]).inc();
                 self.is_available = false;
             },
         }
@@ -349,7 +349,7 @@ impl From<&Worker> for ProxyWorkerStatus {
     fn from(worker: &Worker) -> Self {
         use miden_remote_prover::generated::remote_prover::WorkerHealthStatus as ProtoWorkerHealthStatus;
         Self {
-            address: worker.address(),
+            name: worker.name(),
             version: worker.version().to_string(),
             status: match worker.health_status() {
                 WorkerHealthStatus::Healthy => ProtoWorkerHealthStatus::Healthy,

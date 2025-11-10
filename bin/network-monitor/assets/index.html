@@ -212,7 +212,7 @@
                                             <strong>Workers (${details.RemoteProverStatus.workers.length}):</strong>
                                             ${details.RemoteProverStatus.workers.map(worker => `
                                                 <div class="worker-status">
-                                                    <span class="worker-address">${worker.address}</span> -
+                                                    <span class="worker-name">${worker.name}</span> -
                                                     <span class="worker-version">${worker.version}</span> -
                                                     <span class="worker-status-badge ${worker.status === 'Healthy' ? 'healthy' : worker.status === 'Unhealthy' ? 'unhealthy' : 'unknown'}">${worker.status}</span>
                                                 </div>

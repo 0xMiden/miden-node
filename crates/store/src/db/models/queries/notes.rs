@@ -3,7 +3,7 @@
     reason = "We will not approach the item count where i64 and usize cause issues"
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{
@@ -220,7 +220,7 @@ pub(crate) fn select_notes_by_id(
 pub(crate) fn select_existing_note_commitments(
     conn: &mut SqliteConnection,
     note_commitments: &[Word],
-) -> Result<Vec<Word>, DatabaseError> {
+) -> Result<HashSet<Word>, DatabaseError> {
     QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
 
     let note_commitments = serialize_vec(note_commitments.iter());
@@ -232,7 +232,7 @@ pub(crate) fn select_existing_note_commitments(
     let commitments = raw_commitments
         .into_iter()
         .map(|commitment| Word::read_from_bytes(&commitment[..]))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<HashSet<_>, _>>()?;
 
     Ok(commitments)
 }

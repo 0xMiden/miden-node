@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
@@ -460,7 +460,7 @@ impl Db {
     pub async fn select_existing_note_commitments(
         &self,
         note_commitments: Vec<Word>,
-    ) -> Result<Vec<Word>> {
+    ) -> Result<HashSet<Word>> {
         self.transact("note by commitment", move |conn| {
             queries::select_existing_note_commitments(conn, note_commitments.as_slice())
         })

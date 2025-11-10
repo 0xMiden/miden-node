@@ -139,7 +139,9 @@ impl NetworkTransactionBuilder {
         let account_ids = store.get_network_account_ids().await?;
         for account_id in account_ids {
             if let Ok(account_prefix) = NetworkAccountPrefix::try_from(account_id) {
-                self.coordinator.spawn_actor(AccountOrigin::store(account_prefix), &config);
+                self.coordinator
+                    .spawn_actor(AccountOrigin::store(account_prefix), &config)
+                    .await?;
             }
         }
 
@@ -157,10 +159,10 @@ impl NetworkTransactionBuilder {
                         .context("mempool event stream failed")?;
 
                     self.handle_mempool_event(
-                        event,
+                        event.into(),
                         &config,
                         chain_state.clone(),
-                    ).await;
+                    ).await?;
                 },
             }
         }
@@ -174,35 +176,49 @@ impl NetworkTransactionBuilder {
     )]
     async fn handle_mempool_event(
         &mut self,
-        event: MempoolEvent,
+        event: Arc<MempoolEvent>,
         account_actor_config: &AccountActorConfig,
         chain_state: Arc<RwLock<ChainState>>,
-    ) {
-        match &event {
+    ) -> Result<(), anyhow::Error> {
+        match event.as_ref() {
             MempoolEvent::TransactionAdded { account_delta, .. } => {
+                // Handle account deltas in case an account is being created.
                 if let Some(AccountUpdateDetails::Delta(delta)) = account_delta {
-                    // Handle network accounts only.
+                    // Handle account deltas for network accounts only.
                     if let Some(network_account) = AccountOrigin::transaction(delta) {
                         // Spawn new actors if a transaction creates a new network account
                         let is_creating_account = delta.is_full_state();
                         if is_creating_account {
-                            self.coordinator.spawn_actor(network_account, account_actor_config);
-                        } else {
-                            self.coordinator.broadcast_event(&event).await;
+                            self.coordinator
+                                .spawn_actor(network_account, account_actor_config)
+                                .await?;
                         }
                     }
-                } else {
-                    self.coordinator.broadcast_event(&event).await;
                 }
+                self.coordinator.send_targeted(&event).await?;
+                Ok(())
             },
             // Update chain state and broadcast.
-            MempoolEvent::BlockCommitted { header, .. } => {
+            MempoolEvent::BlockCommitted { header, txs } => {
                 self.update_chain_tip(header.clone(), chain_state).await;
-                self.coordinator.broadcast_event(&event).await;
+                self.coordinator.broadcast(event.clone()).await;
+
+                // All transactions pertaining to predating events should now be available through
+                // the store. So we can now drain them.
+                for tx_id in txs {
+                    self.coordinator.drain_predating_events(tx_id);
+                }
+                Ok(())
             },
             // Broadcast to all actors.
-            MempoolEvent::TransactionsReverted(_) => {
-                self.coordinator.broadcast_event(&event).await;
+            MempoolEvent::TransactionsReverted(txs) => {
+                self.coordinator.broadcast(event.clone()).await;
+
+                // Reverted predating transactions need not be processed.
+                for tx_id in txs {
+                    self.coordinator.drain_predating_events(tx_id);
+                }
+                Ok(())
             },
         }
     }

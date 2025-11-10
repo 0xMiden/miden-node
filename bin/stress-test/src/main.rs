@@ -3,7 +3,13 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use miden_node_utils::logging::OpenTelemetry;
 use seeding::seed_store;
-use store::{bench_sync_notes, bench_sync_nullifiers, bench_sync_state, load_state};
+use store::{
+    bench_sync_notes,
+    bench_sync_nullifiers,
+    bench_sync_state,
+    bench_sync_transactions,
+    load_state,
+};
 
 mod seeding;
 mod store;
@@ -58,13 +64,26 @@ pub enum Command {
 
 #[derive(Subcommand, Clone, Copy)]
 pub enum Endpoint {
+    #[command(name = "sync-nullifiers")]
     SyncNullifiers {
         /// Number of prefixes to send in each request.
         #[arg(short, long, value_name = "PREFIXES", default_value = "10")]
         prefixes: usize,
     },
+    #[command(name = "sync-state")]
     SyncState,
+    #[command(name = "sync-notes")]
     SyncNotes,
+    #[command(name = "sync-transactions")]
+    SyncTransactions {
+        /// Number of accounts to sync transactions for in each request.
+        #[arg(short, long, value_name = "ACCOUNTS", default_value = "5")]
+        accounts: usize,
+        /// Block range size for each request (number of blocks to query).
+        #[arg(short, long, value_name = "BLOCK_RANGE", default_value = "100")]
+        block_range: u32,
+    },
+    #[command(name = "load-state")]
     LoadState,
 }
 
@@ -97,6 +116,16 @@ async fn main() {
             },
             Endpoint::SyncNotes => {
                 bench_sync_notes(data_directory, iterations, concurrency).await;
+            },
+            Endpoint::SyncTransactions { accounts, block_range } => {
+                bench_sync_transactions(
+                    data_directory,
+                    iterations,
+                    concurrency,
+                    accounts,
+                    block_range,
+                )
+                .await;
             },
             Endpoint::LoadState => {
                 load_state(&data_directory).await;

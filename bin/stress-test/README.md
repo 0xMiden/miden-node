@@ -23,6 +23,7 @@ The endpoints that you can test are:
 - `sync_state`
 - `sync_notes`
 - `sync_nullifiers`
+- `sync_transactions`
 
 Most benchmarks accept options to control the number of iterations and concurrency level. The `load_state` endpoint is different - it simply measures the one-time startup cost of loading the state from disk.
 
@@ -151,6 +152,23 @@ P95 request latency: 747.333µs
 P99 request latency: 873.083µs
 P99.9 request latency: 2.289709ms
 Average nullifiers per response: 21.0348
+```
+
+- sync-transactions
+``` bash
+$ miden-node-stress-test benchmark-store --data-directory ./data --iterations 10000 --concurrency 16 sync-transactions --accounts 5 --block-range 100
+
+Average request latency: 1.61454ms
+P50 request latency: 1.439584ms
+P95 request latency: 3.195001ms
+P99 request latency: 4.068709ms
+P99.9 request latency: 6.888542ms
+Average transactions per response: 1.547
+Pagination statistics:
+  Total runs: 10000
+  Runs triggering pagination: 9971
+  Pagination rate: 99.71%
+  Average pages per run: 2.00
 ```
 
 ## License

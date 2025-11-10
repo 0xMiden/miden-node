@@ -3,6 +3,7 @@
 ## v0.13.0 (TBD)
 
 - [BREAKING] Renamed `ProxyWorkerStatus::address` to `ProxyWorkerStatus::name` ([#1348](https://github.com/0xMiden/miden-node/pull/1348)).
+- Added `SyncTransactions` stress test to `miden-node-stress-test` binary ([#1294](https://github.com/0xMiden/miden-node/pull/1294)).
 
 ## v0.12.1 (2025-11-08)
 

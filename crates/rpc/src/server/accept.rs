@@ -432,17 +432,21 @@ mod tests {
         assert!(layer.negotiate(mismatched, super::GenesisNegotiation::Mandatory).is_err());
     }
 
+    #[rstest]
+    #[case::matching_network(
+        "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef"
+    )]
+    #[case::matching_network_and_version(
+        "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=0.2.3"
+    )]
     #[test]
-    fn write_accepts_matching_genesis_param() {
-        let layer = AcceptHeaderLayer::for_tests();
-
-        // Matching genesis only
-        let accept = "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
-        assert!(layer.negotiate(accept, super::GenesisNegotiation::Mandatory).is_ok());
-
-        // Matching genesis with version
-        let accept = "application/vnd.miden; version=0.2.3; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef";
-        assert!(layer.negotiate(accept, super::GenesisNegotiation::Mandatory).is_ok());
+    fn request_with_mandadory_genesis_should_pass(
+        #[case] accept: &'static str
+    ) {
+        AcceptHeaderLayer::for_tests()
+            .negotiate(accept, super::GenesisNegotiation::Mandatory)
+            .unwrap();
+    }
     }
 
     #[rstest::rstest]

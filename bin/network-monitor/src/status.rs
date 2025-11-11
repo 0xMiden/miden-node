@@ -85,6 +85,10 @@ pub struct CounterTrackingDetails {
     pub current_value: Option<u64>,
     /// Last time the counter value was successfully updated.
     pub last_updated: Option<u64>,
+    /// Latency between increment transaction and value update (in milliseconds).
+    pub last_latency_ms: Option<u64>,
+    /// Average latency over recent updates (in milliseconds).
+    pub avg_latency_ms: Option<u64>,
 }
 
 /// Details of a service.

@@ -1,6 +1,8 @@
 //! Task management for the network monitor.
 
 use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
@@ -240,6 +242,9 @@ impl Tasks {
 
         let current_time = current_unix_timestamp_secs();
 
+        // Create shared atomic timestamp for tracking increment latency
+        let last_increment_timestamp = Arc::new(AtomicU64::new(0));
+
         // Create initial increment status
         let initial_increment_status = ServiceStatus {
             name: "Counter Increment".to_string(),
@@ -260,17 +265,23 @@ impl Tasks {
             last_checked: current_time,
             error: None,
             details: crate::status::ServiceDetails::NtxTracking(
-                crate::status::CounterTrackingDetails { current_value: None, last_updated: None },
+                crate::status::CounterTrackingDetails {
+                    current_value: None,
+                    last_updated: None,
+                    last_latency_ms: None,
+                    avg_latency_ms: None,
+                },
             ),
         };
 
         // Spawn the increment task
         let (increment_tx, increment_rx) = watch::channel(initial_increment_status);
         let config_clone = config.clone();
+        let timestamp_clone = Arc::clone(&last_increment_timestamp);
         let increment_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_increment_task(config_clone, increment_tx))
+                Box::pin(run_increment_task(config_clone, increment_tx, timestamp_clone))
                     .await
                     .expect("Counter increment task runs indefinitely");
             })
@@ -280,10 +291,11 @@ impl Tasks {
         // Spawn the tracking task
         let (tracking_tx, tracking_rx) = watch::channel(initial_tracking_status);
         let config_clone = config.clone();
+        let timestamp_clone = Arc::clone(&last_increment_timestamp);
         let tracking_id = self
             .handles
             .spawn(async move {
-                Box::pin(run_counter_tracking_task(config_clone, tracking_tx))
+                Box::pin(run_counter_tracking_task(config_clone, tracking_tx, timestamp_clone))
                     .await
                     .expect("Counter tracking task runs indefinitely");
             })

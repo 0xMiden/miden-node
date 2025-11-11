@@ -186,6 +186,8 @@ The monitor application provides real-time status monitoring for the following M
 - **Metrics**:
   - Current network account counter value (queried from RPC periodically)
   - Last updated timestamp
+  - Last latency: Time between increment transaction submission and value update
+  - Average latency: Average of the last 10 latency measurements
 
 ## User Interface
 

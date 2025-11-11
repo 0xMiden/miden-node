@@ -71,9 +71,7 @@ use crate::errors::DatabaseError;
 ///     account_codes ON accounts.code_commitment = account_codes.code_commitment
 /// WHERE
 ///     account_id = ?1
-/// ORDER BY
-///     block_num DESC
-/// LIMIT 1
+///     AND is_latest = 1
 /// ```
 pub(crate) fn select_account(
     conn: &mut SqliteConnection,
@@ -86,8 +84,7 @@ pub(crate) fn select_account(
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
     .filter(schema::accounts::account_id.eq(account_id.to_bytes()))
-    .order_by(schema::accounts::block_num.desc())
-    .limit(1)
+    .filter(schema::accounts::is_latest.eq(true))
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()?
     .ok_or(DatabaseError::AccountNotFoundInDb(account_id))?;

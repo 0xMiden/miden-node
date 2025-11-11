@@ -283,8 +283,8 @@ impl DataStore for MonitorDataStore {
         })
     }
 
-    async fn get_note_script(&self, script_root: Word) -> Result<NoteScript, DataStoreError> {
-        Err(DataStoreError::NoteScriptNotFound(script_root))
+    async fn get_note_script(&self, _script_root: Word) -> Result<Option<NoteScript>, DataStoreError> {
+        Ok(None)
     }
 }
 

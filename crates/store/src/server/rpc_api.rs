@@ -6,7 +6,7 @@ use miden_objects::Word;
 use miden_objects::account::AccountId;
 use miden_objects::note::NoteId;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, instrument};
+use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::errors::{
@@ -270,7 +270,7 @@ impl rpc_server::Rpc for StoreApi {
         &self,
         request: Request<proto::note::NoteIdList>,
     ) -> Result<Response<proto::note::CommittedNoteList>, Status> {
-        info!(target: COMPONENT, ?request);
+        debug!(target: COMPONENT, ?request);
 
         let note_ids = request.into_inner().ids;
 

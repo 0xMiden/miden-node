@@ -8,7 +8,7 @@ use miden_objects::Word;
 use miden_objects::block::{BlockNumber, ProvenBlock};
 use miden_objects::utils::Deserializable;
 use tonic::{Request, Response, Status};
-use tracing::{debug, info, instrument};
+use tracing::{debug, instrument};
 
 use crate::COMPONENT;
 use crate::server::api::{
@@ -68,7 +68,7 @@ impl block_producer_server::BlockProducer for StoreApi {
 
         let block_num = block.header().block_num().as_u32();
 
-        info!(
+        debug!(
             target: COMPONENT,
             block_num,
             block_commitment = %block.commitment(),

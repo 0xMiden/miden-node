@@ -171,7 +171,7 @@ impl StoreClient {
                 .collect(),
         };
 
-        info!(target: COMPONENT, tx_id = %proven_tx.id().to_hex());
+        debug!(target: COMPONENT, tx_id = %proven_tx.id().to_hex());
         debug!(target: COMPONENT, ?message);
 
         let request = tonic::Request::new(message);

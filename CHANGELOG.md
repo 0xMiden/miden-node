@@ -8,6 +8,9 @@
 ## v0.12.2 (2025-11-12)
 
 - Fixed `PoW` challenge solving in `miden-network-monitor` binary ([#1363](https://github.com/0xMiden/miden-node/pull/1363)).
+## v0.12.2 (TBD)
+
+- Split counter increment and tracking services in `miden-network-monitor` binary ([#1362](https://github.com/0xMiden/miden-node/pull/1362)).
 
 ## v0.12.1 (2025-11-08)
 

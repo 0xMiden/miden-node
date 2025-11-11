@@ -456,8 +456,8 @@ impl ProxyHttp for LoadBalancer {
 
         let queue_len = QUEUE.len().await;
 
-        info!("New request with ID: {}", ctx.request_id);
-        info!("Queue length: {}", queue_len);
+        debug!("New request with ID: {}", ctx.request_id);
+        debug!("Queue length: {}", queue_len);
 
         // Check if the queue is full
         if queue_len >= self.0.max_queue_items {

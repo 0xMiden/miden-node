@@ -1,12 +1,43 @@
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 
 use miden_node_proto::domain::mempool::MempoolEvent;
+use miden_node_utils::fee::test_fee_params;
 use miden_objects::Word;
+use miden_objects::block::BlockHeader;
+use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
 use miden_objects::note::Nullifier;
-use miden_objects::transaction::TransactionId;
+use miden_objects::transaction::{PartialBlockchain, TransactionId};
 
 use crate::state::State;
 use crate::store::StoreClient;
+
+/// Helper function to create a mock State for testing without needing a real store.
+fn create_mock_state() -> State {
+    // Create a minimal genesis block header
+    let chain_tip_header = BlockHeader::new(
+        1_u8.into(),       // version
+        Word::default(),   // prev_hash
+        0_u32.into(),      // block_num (genesis)
+        Word::default(),   // chain_root
+        Word::default(),   // account_root
+        Word::default(),   // nullifier_root
+        Word::default(),   // note_root
+        Word::default(),   // tx_hash
+        Word::default(),   // kernel_root
+        Word::default(),   // proof_hash
+        test_fee_params(), // fee_parameters
+        0_u32,             // timestamp
+    );
+
+    // Create an empty partial blockchain
+    let chain_mmr = PartialBlockchain::new(PartialMmr::from_peaks(MmrPeaks::default()), Vec::new())
+        .expect("Failed to create empty PartialBlockchain");
+
+    // Create a mock store client (it won't be used in this test)
+    let store = StoreClient::new("http://localhost:9999".parse().unwrap());
+
+    State::new_for_testing(chain_tip_header, chain_mmr, store)
+}
 
 /// Regression test for issue #1312
 ///
@@ -22,8 +53,7 @@ use crate::store::StoreClient;
 /// 4. subsequent operations continue to work correctly
 #[tokio::test]
 async fn issue_1312_nullifier_without_note() {
-    let store = StoreClient::new("http://example.com:1111".parse().unwrap());
-    let mut state = State::load(store).await.unwrap();
+    let mut state = create_mock_state();
 
     let initial_chain_tip = state.chain_tip();
 
@@ -50,7 +80,7 @@ async fn issue_1312_nullifier_without_note() {
 
     // Revert transaction.
     let revert_event =
-        MempoolEvent::TransactionsReverted(std::iter::once(tx_id).collect::<BTreeSet<_>>());
+        MempoolEvent::TransactionsReverted(std::iter::once(tx_id).collect::<HashSet<_>>());
     state.mempool_update(revert_event).await.unwrap();
 
     assert_eq!(state.chain_tip(), initial_chain_tip);

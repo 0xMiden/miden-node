@@ -32,5 +32,6 @@ url                        = { workspace = true }
 [dev-dependencies]
 miden-lib             = { workspace = true }
 miden-node-test-macro = { path = "../test-macro" }
+miden-node-utils      = { features = ["testing"], workspace = true }
 miden-objects         = { default-features = true, features = ["testing"], workspace = true }
 rstest                = { workspace = true }

@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{Queryable, QueryableByName};
@@ -32,7 +31,7 @@ use miden_objects::account::{
     NonFungibleDeltaAction,
     StorageSlot,
 };
-use miden_objects::asset::{Asset, AssetVault, FungibleAsset, VaultKey};
+use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
@@ -552,7 +551,7 @@ impl TryFrom<AccountVaultUpdateRaw> for AccountVaultValue {
     type Error = DatabaseError;
 
     fn try_from(raw: AccountVaultUpdateRaw) -> Result<Self, Self::Error> {
-        let vault_key = Word::read_from_bytes(&raw.vault_key)?;
+        let vault_key = AssetVaultKey::new_unchecked(Word::read_from_bytes(&raw.vault_key)?);
         let asset = raw.asset.map(|bytes| Asset::read_from_bytes(&bytes)).transpose()?;
         let block_num = BlockNumber::from_raw_sql(raw.block_num)?;
 
@@ -663,20 +662,20 @@ pub(crate) fn insert_account_vault_asset(
     conn: &mut SqliteConnection,
     account_id: AccountId,
     block_num: BlockNumber,
-    vault_key: VaultKey,
+    vault_key: AssetVaultKey,
     asset: Option<Asset>,
 ) -> Result<usize, DatabaseError> {
-    let vault_key_word: Word = vault_key.into();
-    let record = AccountAssetRowInsert::new(&account_id, &vault_key_word, block_num, asset, true);
+    let record = AccountAssetRowInsert::new(&account_id, &vault_key, block_num, asset, true);
 
     diesel::Connection::transaction(conn, |conn| {
         // First, update any existing rows with the same (account_id, vault_key) to set
         // is_latest=false
+        let vault_key: Word = vault_key.into();
         let update_count = diesel::update(schema::account_vault_assets::table)
             .filter(
                 schema::account_vault_assets::account_id
                     .eq(&account_id.to_bytes())
-                    .and(schema::account_vault_assets::vault_key.eq(&vault_key_word.to_bytes()))
+                    .and(schema::account_vault_assets::vault_key.eq(&vault_key.to_bytes()))
                     .and(schema::account_vault_assets::is_latest.eq(true)),
             )
             .set(schema::account_vault_assets::is_latest.eq(false))
@@ -784,9 +783,10 @@ pub(crate) fn upsert_accounts(
             None
         };
 
-        let full_account = match update.details() {
+        let full_account: Option<Account> = match update.details() {
             AccountUpdateDetails::Private => None,
-            AccountUpdateDetails::New(account) => {
+            AccountUpdateDetails::Delta(delta) if delta.is_full_state() => {
+                let account = Account::try_from(delta)?;
                 debug_assert_eq!(account_id, account.id());
 
                 if account.commitment() != update.final_state_commitment() {
@@ -816,7 +816,7 @@ pub(crate) fn upsert_accounts(
                     }
                 }
 
-                Some(Cow::Borrowed(account))
+                Some(account)
             },
             AccountUpdateDetails::Delta(delta) => {
                 let mut rows = select_details_stmt(conn, account_id)?.into_iter();
@@ -875,11 +875,11 @@ pub(crate) fn upsert_accounts(
                     )?;
                 }
 
-                Some(Cow::Owned(account))
+                Some(account)
             },
         };
 
-        if let Some(code) = full_account.as_ref().map(|account| account.code()) {
+        if let Some(code) = full_account.as_ref().map(Account::code) {
             let code_value = AccountCodeRowInsert {
                 code_commitment: code.commitment().to_bytes(),
                 code: code.to_bytes(),
@@ -980,12 +980,13 @@ pub(crate) struct AccountAssetRowInsert {
 impl AccountAssetRowInsert {
     pub(crate) fn new(
         account_id: &AccountId,
-        vault_key: &Word,
+        vault_key: &AssetVaultKey,
         block_num: BlockNumber,
         asset: Option<Asset>,
         is_latest: bool,
     ) -> Self {
         let account_id = account_id.to_bytes();
+        let vault_key: Word = (*vault_key).into();
         let vault_key = vault_key.to_bytes();
         let block_num = block_num.to_raw_sql();
         let asset = asset.map(|asset| asset.to_bytes());

@@ -86,7 +86,7 @@ use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory, InMemoryAccountTre
 pub struct TransactionInputs {
     pub account_commitment: Word,
     pub nullifiers: Vec<NullifierInfo>,
-    pub found_unauthenticated_notes: HashSet<NoteId>,
+    pub found_unauthenticated_notes: HashSet<Word>,
     pub new_account_id_prefix_is_unique: Option<bool>,
 }
 
@@ -344,6 +344,7 @@ impl State {
                     block_num,
                     note_index,
                     note_id: note.id().into(),
+                    note_commitment: note.commitment(),
                     metadata: *note.metadata(),
                     details,
                     inclusion_path,
@@ -517,10 +518,10 @@ impl State {
     ///
     /// The function takes as input:
     /// - The tx reference blocks are the set of blocks referenced by transactions in the batch.
-    /// - The unauthenticated note ids are the set of IDs of unauthenticated notes consumed by all
-    ///   transactions in the batch. For these notes, we attempt to find note inclusion proofs. Not
-    ///   all notes will exist in the DB necessarily, as some notes can be created and consumed
-    ///   within the same batch.
+    /// - The unauthenticated note commitments are the set of commitments of unauthenticated notes
+    ///   consumed by all transactions in the batch. For these notes, we attempt to find inclusion
+    ///   proofs. Not all notes will exist in the DB necessarily, as some notes can be created and
+    ///   consumed within the same batch.
     ///
     /// ## Outputs
     ///
@@ -532,7 +533,7 @@ impl State {
     pub async fn get_batch_inputs(
         &self,
         tx_reference_blocks: BTreeSet<BlockNumber>,
-        unauthenticated_note_ids: BTreeSet<NoteId>,
+        unauthenticated_note_commitments: BTreeSet<Word>,
     ) -> Result<BatchInputs, GetBatchInputsError> {
         if tx_reference_blocks.is_empty() {
             return Err(GetBatchInputsError::TransactionBlockReferencesEmpty);
@@ -543,7 +544,7 @@ impl State {
         // each of those blocks is included in the chain.
         let note_proofs = self
             .db
-            .select_note_inclusion_proofs(unauthenticated_note_ids)
+            .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBatchInputsError::SelectNoteInclusionProofError)?;
 
@@ -714,7 +715,7 @@ impl State {
         &self,
         account_ids: Vec<AccountId>,
         nullifiers: Vec<Nullifier>,
-        unauthenticated_notes: BTreeSet<NoteId>,
+        unauthenticated_note_commitments: BTreeSet<Word>,
         reference_blocks: BTreeSet<BlockNumber>,
     ) -> Result<BlockInputs, GetBlockInputsError> {
         // Get the note inclusion proofs from the DB.
@@ -722,7 +723,7 @@ impl State {
         // reference blocks of the note proofs to get their authentication paths in the chain MMR.
         let unauthenticated_note_proofs = self
             .db
-            .select_note_inclusion_proofs(unauthenticated_notes)
+            .select_note_inclusion_proofs(unauthenticated_note_commitments)
             .await
             .map_err(GetBlockInputsError::SelectNoteInclusionProofError)?;
 
@@ -854,7 +855,7 @@ impl State {
         &self,
         account_id: AccountId,
         nullifiers: &[Nullifier],
-        unauthenticated_notes: Vec<NoteId>,
+        unauthenticated_note_commitments: Vec<Word>,
     ) -> Result<TransactionInputs, DatabaseError> {
         info!(target: COMPONENT, account_id = %account_id.to_string(), nullifiers = %format_array(nullifiers));
 
@@ -884,8 +885,13 @@ impl State {
             })
             .collect();
 
-        let found_unauthenticated_notes =
-            self.db.select_note_ids(unauthenticated_notes.clone()).await?;
+        let found_unauthenticated_notes = self
+            .db
+            .select_notes_by_commitment(unauthenticated_note_commitments)
+            .await?
+            .into_iter()
+            .map(|note| note.note_commitment)
+            .collect();
 
         Ok(TransactionInputs {
             account_commitment,

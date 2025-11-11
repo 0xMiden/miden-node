@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
@@ -9,7 +9,7 @@ use miden_node_proto::domain::account::{AccountInfo, AccountSummary, NetworkAcco
 use miden_node_proto::generated as proto;
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::asset::Asset;
+use miden_objects::asset::{Asset, AssetVaultKey};
 use miden_objects::block::{BlockHeader, BlockNoteIndex, BlockNumber, ProvenBlock};
 use miden_objects::crypto::merkle::SparseMerklePath;
 use miden_objects::note::{
@@ -57,7 +57,7 @@ pub struct Db {
 #[derive(Debug, Clone)]
 pub struct AccountVaultValue {
     pub block_num: BlockNumber,
-    pub vault_key: Word,
+    pub vault_key: AssetVaultKey,
     /// None if the asset was removed
     pub asset: Option<Asset>,
 }
@@ -65,9 +65,10 @@ pub struct AccountVaultValue {
 impl AccountVaultValue {
     pub fn from_raw_row(row: (i64, Vec<u8>, Option<Vec<u8>>)) -> Result<Self, DatabaseError> {
         let (block_num, vault_key, asset) = row;
+        let vault_key = Word::read_from_bytes(&vault_key)?;
         Ok(Self {
             block_num: BlockNumber::from_raw_sql(block_num)?,
-            vault_key: Word::read_from_bytes(&vault_key)?,
+            vault_key: AssetVaultKey::new_unchecked(vault_key),
             asset: asset.map(|b| Asset::read_from_bytes(&b)).transpose()?,
         })
     }
@@ -132,6 +133,7 @@ pub struct NoteRecord {
     pub block_num: BlockNumber,
     pub note_index: BlockNoteIndex,
     pub note_id: Word,
+    pub note_commitment: Word,
     pub metadata: NoteMetadata,
     pub details: Option<NoteDetails>,
     pub inclusion_path: SparseMerklePath,
@@ -466,24 +468,29 @@ impl Db {
         .await
     }
 
-    /// Loads inclusion proofs for notes matching the given IDs.
+    /// Loads all the [`NoteRecord`]s matching a certain note commitment from the
+    /// database.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_inclusion_proofs(
+    pub async fn select_notes_by_commitment(
         &self,
-        note_ids: BTreeSet<NoteId>,
-    ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
-        self.transact("block note inclusion proofs", move |conn| {
-            models::queries::select_note_inclusion_proofs(conn, &note_ids)
+        note_commitments: Vec<Word>,
+    ) -> Result<Vec<NoteRecord>> {
+        self.transact("note by commitment", move |conn| {
+            queries::select_notes_by_commitment(conn, note_commitments.as_slice())
         })
         .await
     }
 
-    /// Loads all note IDs matching a certain [`NoteId`] from the database.
+    /// Loads inclusion proofs for notes matching the given note commitments.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_note_ids(&self, note_ids: Vec<NoteId>) -> Result<HashSet<NoteId>> {
-        self.select_notes_by_id(note_ids)
-            .await
-            .map(|notes| notes.into_iter().map(|note| note.note_id.into()).collect())
+    pub async fn select_note_inclusion_proofs(
+        &self,
+        note_commitments: BTreeSet<Word>,
+    ) -> Result<BTreeMap<NoteId, NoteInclusionProof>> {
+        self.transact("block note inclusion proofs by commitment", move |conn| {
+            models::queries::select_note_inclusion_proofs(conn, &note_commitments)
+        })
+        .await
     }
 
     /// Inserts the data of a new block into the DB.
@@ -514,7 +521,9 @@ impl Db {
 
             // XXX FIXME TODO free floating mutex MUST NOT exist
             // it doesn't bind it properly to the data locked!
-            let _ = allow_acquire.send(());
+            if allow_acquire.send(()).is_err() {
+                tracing::warn!(target: COMPONENT, "failed to send notification for successful block application, potential deadlock");
+            }
 
             acquire_done.blocking_recv()?;
 

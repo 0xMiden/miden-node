@@ -27,22 +27,39 @@ use crate::transaction::NtxError;
 /// transactions that consume them (reaching out to the store to retrieve state as necessary).
 pub struct NetworkTransactionBuilder {
     /// Address of the store gRPC server.
-    pub store_url: Url,
+    store_url: Url,
     /// Address of the block producer gRPC server.
-    pub block_producer_url: Url,
+    block_producer_url: Url,
     /// Address of the remote prover. If `None`, transactions will be proven locally, which is
     /// undesirable due to the perofmrance impact.
-    pub tx_prover_url: Option<Url>,
+    tx_prover_url: Option<Url>,
     /// Interval for checking pending notes and executing network transactions.
-    pub ticker_interval: Duration,
+    ticker_interval: Duration,
     /// A checkpoint used to sync start-up process with the block-producer.
     ///
     /// This informs the block-producer when we have subscribed to mempool events and that it is
     /// safe to begin block-production.
-    pub bp_checkpoint: Arc<Barrier>,
+    bp_checkpoint: Arc<Barrier>,
 }
 
 impl NetworkTransactionBuilder {
+    /// Creates a new instance of the network transaction builder.
+    pub fn new(
+        store_url: Url,
+        block_producer_url: Url,
+        tx_prover_url: Option<Url>,
+        ticker_interval: Duration,
+        bp_checkpoint: Arc<Barrier>,
+    ) -> Self {
+        Self {
+            store_url,
+            block_producer_url,
+            tx_prover_url,
+            ticker_interval,
+            bp_checkpoint,
+        }
+    }
+
     pub async fn serve_new(self) -> anyhow::Result<()> {
         let store = StoreClient::new(self.store_url);
         let block_producer = BlockProducerClient::new(self.block_producer_url);
@@ -77,6 +94,7 @@ impl NetworkTransactionBuilder {
         let context = crate::transaction::NtxContext {
             block_producer: block_producer.clone(),
             prover,
+            store,
         };
 
         loop {

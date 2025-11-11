@@ -16,6 +16,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, instrument};
 use url::Url;
 
+use crate::counter::CounterIncrementDetails;
 use crate::faucet::FaucetTestDetails;
 use crate::remote_prover::{ProofType, ProverTestDetails};
 use crate::{COMPONENT, current_unix_timestamp_secs};
@@ -24,7 +25,7 @@ use crate::{COMPONENT, current_unix_timestamp_secs};
 // ================================================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) enum Status {
+pub enum Status {
     Healthy,
     Unhealthy,
     Unknown,
@@ -74,6 +75,7 @@ pub enum ServiceDetails {
     RemoteProverStatus(RemoteProverStatusDetails),
     RemoteProverTest(ProverTestDetails),
     FaucetTest(FaucetTestDetails),
+    NtxService(CounterIncrementDetails),
     Error,
 }
 

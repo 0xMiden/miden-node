@@ -294,7 +294,7 @@ pub async fn generate_mock_transaction() -> anyhow::Result<TransactionInputs> {
 
     // Execute the transaction
     let executed_transaction =
-        Box::pin(tx_context.execute()).await.context("Failed to execute transaction")?;
+        tx_context.execute().await.context("Failed to execute transaction")?;
     Ok(executed_transaction.into())
 }
 

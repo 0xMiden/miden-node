@@ -27,8 +27,8 @@ homepage     = "https://miden.xyz"
 license      = "MIT"
 readme       = "README.md"
 repository   = "https://github.com/0xMiden/miden-node"
-rust-version = "1.89"
-version      = "0.12.0"
+rust-version = "1.90"
+version      = "0.13.0"
 
 # Optimize the cryptography for faster tests involving account creation.
 [profile.test.package.miden-crypto]
@@ -36,28 +36,28 @@ opt-level = 2
 
 [workspace.dependencies]
 # Workspace crates.
-miden-node-block-producer   = { path = "crates/block-producer", version = "0.12" }
-miden-node-grpc-error-macro = { path = "crates/grpc-error-macro" }
-miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.12" }
-miden-node-proto            = { path = "crates/proto", version = "0.12" }
-miden-node-proto-build      = { path = "proto", version = "0.12" }
-miden-node-rpc              = { path = "crates/rpc", version = "0.12" }
-miden-node-store            = { path = "crates/store", version = "0.12" }
+miden-node-block-producer   = { path = "crates/block-producer", version = "0.13" }
+miden-node-grpc-error-macro = { path = "crates/grpc-error-macro", version = "0.13" }
+miden-node-ntx-builder      = { path = "crates/ntx-builder", version = "0.13" }
+miden-node-proto            = { path = "crates/proto", version = "0.13" }
+miden-node-proto-build      = { path = "proto", version = "0.13" }
+miden-node-rpc              = { path = "crates/rpc", version = "0.13" }
+miden-node-store            = { path = "crates/store", version = "0.13" }
 miden-node-test-macro       = { path = "crates/test-macro" }
-miden-node-utils            = { path = "crates/utils", version = "0.12" }
-miden-node-validator        = { path = "crates/validator", version = "0.12" }
-miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.12" }
+miden-node-utils            = { path = "crates/utils", version = "0.13" }
+miden-node-validator        = { path = "crates/validator", version = "0.13" }
+miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.13" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
-miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base" }
-miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base" }
+miden-block-prover    = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
+miden-lib             = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
+miden-objects         = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-testing         = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx              = { branch = "next", default-features = false, git = "https://github.com/0xMiden/miden-base.git" }
+miden-tx-batch-prover = { branch = "next", git = "https://github.com/0xMiden/miden-base.git" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
-miden-air = { features = ["std", "testing"], version = "0.18.1" }
+miden-air = { features = ["std", "testing"], version = "0.19" }
 
 # External dependencies
 anyhow             = { version = "1.0" }
@@ -71,6 +71,7 @@ http               = { version = "1.3" }
 humantime          = { version = "2.2" }
 indexmap           = { version = "2.12" }
 itertools          = { version = "0.14" }
+lru                = { default-features = false, version = "0.16" }
 pretty_assertions  = { version = "1.4" }
 prost              = { version = "0.14" }
 protox             = { version = "0.9" }

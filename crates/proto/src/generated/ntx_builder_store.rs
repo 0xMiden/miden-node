@@ -323,6 +323,36 @@ pub mod ntx_builder_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Returns the script for a note by its root.
+        pub async fn get_note_script_by_root(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::note::NoteRoot>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::shared::MaybeNoteScript>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/ntx_builder_store.NtxBuilder/GetNoteScriptByRoot",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "ntx_builder_store.NtxBuilder",
+                        "GetNoteScriptByRoot",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -379,6 +409,14 @@ pub mod ntx_builder_server {
             request: tonic::Request<super::AccountIdPrefix>,
         ) -> std::result::Result<
             tonic::Response<super::MaybeAccountDetails>,
+            tonic::Status,
+        >;
+        /// Returns the script for a note by its root.
+        async fn get_note_script_by_root(
+            &self,
+            request: tonic::Request<super::super::note::NoteRoot>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::shared::MaybeNoteScript>,
             tonic::Status,
         >;
     }
@@ -702,6 +740,52 @@ pub mod ntx_builder_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = GetNetworkAccountDetailsByPrefixSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/ntx_builder_store.NtxBuilder/GetNoteScriptByRoot" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetNoteScriptByRootSvc<T: NtxBuilder>(pub Arc<T>);
+                    impl<
+                        T: NtxBuilder,
+                    > tonic::server::UnaryService<super::super::note::NoteRoot>
+                    for GetNoteScriptByRootSvc<T> {
+                        type Response = super::super::shared::MaybeNoteScript;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::super::note::NoteRoot>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as NtxBuilder>::get_note_script_by_root(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetNoteScriptByRootSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

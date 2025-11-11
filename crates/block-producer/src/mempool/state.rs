@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 
 use miden_objects::Word;
 use miden_objects::account::AccountId;
-use miden_objects::note::{NoteId, Nullifier};
+use miden_objects::note::Nullifier;
 
 use crate::mempool::nodes::{Node, NodeId};
 
@@ -32,7 +32,7 @@ pub(super) struct InflightState {
     /// All created notes and the ID of the node that created it.
     ///
     /// This _includes_ erased notes, see `nullifiers` for more information.
-    output_notes: HashMap<NoteId, NodeId>,
+    output_notes: HashMap<Word, NodeId>,
 
     /// Maps all unauthenticated notes to the node ID that consumed them.
     ///
@@ -41,7 +41,7 @@ pub(super) struct InflightState {
     ///
     /// It is the callers responsibility to ensure that all unauthenticated notes exist as output
     /// notes at the time when a new transaction or batch node is inserted.
-    unauthenticated_notes: HashMap<NoteId, NodeId>,
+    unauthenticated_notes: HashMap<Word, NodeId>,
 
     /// All inflight account commitment transitions.
     accounts: HashMap<AccountId, AccountUpdates>,
@@ -56,14 +56,19 @@ impl InflightState {
         nullifiers.filter(|nullifier| self.nullifiers.contains(nullifier)).collect()
     }
 
-    /// Returns all output notes which already exist.
-    pub(super) fn output_notes_exist(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
-        notes.filter(|note| self.output_notes.contains_key(note)).collect()
+    /// Returns all output note commitments which already exist.
+    pub(super) fn output_notes_exist(&self, notes: impl Iterator<Item = Word>) -> Vec<Word> {
+        notes
+            .filter(|note_commitment| self.output_notes.contains_key(note_commitment))
+            .collect()
     }
 
     /// Returns all output notes which don't exist.
-    pub(super) fn output_notes_missing(&self, notes: impl Iterator<Item = NoteId>) -> Vec<NoteId> {
-        notes.filter(|note| !self.output_notes.contains_key(note)).collect()
+    pub(super) fn output_notes_missing(
+        &self,
+        note_commitments: impl Iterator<Item = Word>,
+    ) -> Vec<Word> {
+        note_commitments.filter(|note| !self.output_notes.contains_key(note)).collect()
     }
 
     /// The latest account commitment tracked by the inflight state.
@@ -87,14 +92,14 @@ impl InflightState {
             );
         }
 
-        for note in node.output_notes() {
+        for note in node.output_note_commitments() {
             assert!(
                 self.output_notes.remove(&note).is_some(),
                 "Output note {note} was not present for removal"
             );
         }
 
-        for note in node.unauthenticated_notes() {
+        for note in node.unauthenticated_note_commitments() {
             assert!(
                 self.unauthenticated_notes.remove(&note).is_some(),
                 "Unauthenticated note {note} was not present for removal"
@@ -118,9 +123,12 @@ impl InflightState {
     /// parent and child relationship lookups.
     pub(super) fn insert(&mut self, id: NodeId, node: &dyn Node) {
         self.nullifiers.extend(node.nullifiers());
-        self.output_notes.extend(node.output_notes().map(|note| (note, id)));
-        self.unauthenticated_notes
-            .extend(node.unauthenticated_notes().map(|note| (note, id)));
+        self.output_notes
+            .extend(node.output_note_commitments().map(|note_commitment| (note_commitment, id)));
+        self.unauthenticated_notes.extend(
+            node.unauthenticated_note_commitments()
+                .map(|note_commitment| (note_commitment, id)),
+        );
 
         for (account, from, to) in node.account_updates() {
             self.accounts.entry(account).or_default().insert(id, from, to);
@@ -131,8 +139,9 @@ impl InflightState {
     ///
     /// Note that the result is invalidated by mutating the state.
     pub(super) fn parents(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
-        let note_parents =
-            node.unauthenticated_notes().filter_map(|note| self.output_notes.get(&note));
+        let note_parents = node
+            .unauthenticated_note_commitments()
+            .filter_map(|note| self.output_notes.get(&note));
 
         let account_parents = node
             .account_updates()
@@ -154,8 +163,9 @@ impl InflightState {
     ///
     /// Note that the result is invalidated by mutating the state.
     pub(super) fn children(&self, id: NodeId, node: &dyn Node) -> HashSet<NodeId> {
-        let note_children =
-            node.output_notes().filter_map(|note| self.unauthenticated_notes.get(&note));
+        let note_children = node
+            .output_note_commitments()
+            .filter_map(|note| self.unauthenticated_notes.get(&note));
 
         let account_children = node
             .account_updates()

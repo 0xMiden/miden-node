@@ -1,7 +1,7 @@
 use miden_lib::transaction::TransactionKernel;
 use miden_objects::Word;
-use miden_objects::account::Account;
 use miden_objects::account::delta::AccountUpdateDetails;
+use miden_objects::account::{Account, AccountDelta};
 use miden_objects::block::account_tree::{AccountTree, account_id_to_smt_key};
 use miden_objects::block::{
     BlockAccountUpdate,
@@ -68,14 +68,21 @@ impl GenesisState {
             .iter()
             .map(|account| {
                 let account_update_details = if account.id().is_public() {
-                    AccountUpdateDetails::New(account.clone())
+                    AccountUpdateDetails::Delta(
+                        AccountDelta::try_from(account.clone())
+                            .map_err(GenesisError::AccountDelta)?,
+                    )
                 } else {
                     AccountUpdateDetails::Private
                 };
 
-                BlockAccountUpdate::new(account.id(), account.commitment(), account_update_details)
+                Ok(BlockAccountUpdate::new(
+                    account.id(),
+                    account.commitment(),
+                    account_update_details,
+                ))
             })
-            .collect();
+            .collect::<Result<Vec<_>, GenesisError>>()?;
 
         // Convert account updates to SMT entries using account_id_to_smt_key
         let smt_entries = accounts.iter().map(|update| {

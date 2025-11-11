@@ -40,7 +40,7 @@ service Rpc {
     rpc GetNotesById(note.NoteIdList) returns (note.CommittedNoteList) {}
 
     // Returns the script for a note by its root.
-    rpc GetNoteScriptByRoot(note.NoteRoot) returns (MaybeNoteScript) {}
+    rpc GetNoteScriptByRoot(note.NoteRoot) returns (shared.MaybeNoteScript) {}
 
     // Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
     //
@@ -439,15 +439,6 @@ message StorageMapUpdate {
 
     // The storage map value.
     primitives.Digest value = 4;
-}
-
-// GET NOTE SCRIPT BY ROOT
-// ================================================================================================
-
-// Represents a note script or nothing.
-message MaybeNoteScript {
-    // The script for a note by its root.
-    optional note.NoteScript script = 1;
 }
 
 // BLOCK RANGE

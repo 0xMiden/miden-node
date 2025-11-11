@@ -62,6 +62,7 @@ diesel::table! {
         batch_index -> Integer,
         note_index -> Integer,
         note_id -> Binary,
+        note_commitment -> Binary,
         note_type -> Integer,
         sender -> Binary,
         tag -> Integer,

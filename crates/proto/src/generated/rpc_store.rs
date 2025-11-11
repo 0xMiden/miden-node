@@ -398,13 +398,6 @@ pub struct StorageMapUpdate {
     #[prost(message, optional, tag = "4")]
     pub value: ::core::option::Option<super::primitives::Digest>,
 }
-/// Represents a note script or nothing.
-#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-pub struct MaybeNoteScript {
-    /// The script for a note by its root.
-    #[prost(message, optional, tag = "1")]
-    pub script: ::core::option::Option<super::note::NoteScript>,
-}
 /// Represents a block range.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BlockRange {
@@ -739,7 +732,7 @@ pub mod rpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::super::note::NoteRoot>,
         ) -> std::result::Result<
-            tonic::Response<super::MaybeNoteScript>,
+            tonic::Response<super::super::shared::MaybeNoteScript>,
             tonic::Status,
         > {
             self.inner
@@ -1000,7 +993,10 @@ pub mod rpc_server {
         async fn get_note_script_by_root(
             &self,
             request: tonic::Request<super::super::note::NoteRoot>,
-        ) -> std::result::Result<tonic::Response<super::MaybeNoteScript>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<super::super::shared::MaybeNoteScript>,
+            tonic::Status,
+        >;
         /// Returns a list of nullifiers that match the specified prefixes and are recorded in the node.
         ///
         /// Note that only 16-bit prefixes are supported at this time.
@@ -1469,7 +1465,7 @@ pub mod rpc_server {
                         T: Rpc,
                     > tonic::server::UnaryService<super::super::note::NoteRoot>
                     for GetNoteScriptByRootSvc<T> {
-                        type Response = super::MaybeNoteScript;
+                        type Response = super::super::shared::MaybeNoteScript;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,

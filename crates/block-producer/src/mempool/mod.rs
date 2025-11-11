@@ -282,7 +282,7 @@ impl Mempool {
             let node =
                 self.nodes.txs.remove(&tx.id()).expect("selected transaction node must exist");
             self.state.remove(&node);
-            tracing::info!(
+            tracing::debug!(
                 batch.id = %batch_id,
                 transaction.id = %tx.id(),
                 "Transaction selected for inclusion in batch"
@@ -322,7 +322,7 @@ impl Mempool {
                 let tx_id = tx.id();
                 self.state.insert(NodeId::Transaction(tx_id), &tx);
                 self.nodes.txs.insert(tx_id, tx);
-                tracing::info!(
+                tracing::debug!(
                     batch.id = %batch,
                     transaction.id = %tx_id,
                     "Transaction requeued as part of batch rollback"
@@ -410,7 +410,7 @@ impl Mempool {
             // SAFETY: Selected batches came from nodes, and are unique.
             let batch = self.nodes.proven_batches.remove(&batch.id()).unwrap();
             self.state.remove(&batch);
-            tracing::info!(
+            tracing::debug!(
                 block.number = %block_number,
                 batch.id = %batch.id(),
                 "Batch selected for inclusion in block",
@@ -514,7 +514,7 @@ impl Mempool {
         for (id, node) in reverted {
             match id {
                 NodeId::ProposedBatch(batch_id) | NodeId::ProvenBatch(batch_id) => {
-                    tracing::info!(
+                    tracing::debug!(
                         block.number=%block,
                         batch.id=%batch_id,
                         "Reverted batch as part of block rollback"
@@ -525,7 +525,7 @@ impl Mempool {
 
             for tx in node.transactions() {
                 reverted_txs.insert(tx.id());
-                tracing::info!(
+                tracing::debug!(
                     block.number=%block,
                     transaction.id=%tx.id(),
                     "Reverted transaction as part of block rollback"
@@ -589,7 +589,7 @@ impl Mempool {
             for (id, node) in reverted {
                 match id {
                     NodeId::ProposedBatch(batch_id) | NodeId::ProvenBatch(batch_id) => {
-                        tracing::info!(
+                        tracing::debug!(
                             ancestor=?expired_id,
                             batch.id=%batch_id,
                             "Reverted batch due to expiration of ancestor"
@@ -603,7 +603,7 @@ impl Mempool {
 
                 for tx in node.transactions() {
                     reverted_txs.insert(tx.id());
-                    tracing::info!(
+                    tracing::debug!(
                         ancestor=?expired_id,
                         transaction.id=%tx.id(),
                         "Reverted transaction due to expiration of ancestor"

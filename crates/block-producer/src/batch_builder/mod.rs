@@ -163,7 +163,7 @@ struct BatchJob {
 impl BatchJob {
     async fn build_batch(&self) {
         let Some(batch) = self.select_batch().instrument(Span::current()).await else {
-            tracing::info!("No transactions available.");
+            tracing::debug!("No transactions available.");
             return;
         };
 

@@ -388,7 +388,7 @@ impl DataStore for NtxDataStore {
     fn get_note_script(
         &self,
         script_root: Word,
-    ) -> impl FutureMaybeSend<Result<NoteScript, DataStoreError>> {
+    ) -> impl FutureMaybeSend<Result<Option<NoteScript>, DataStoreError>> {
         let store = self.store.clone();
         let cache = self.script_cache.clone();
 
@@ -398,7 +398,7 @@ impl DataStore for NtxDataStore {
                 let mut cache_guard = cache.lock().await;
                 cache_guard.get(&script_root).cloned()
             } {
-                return Ok(cached_script);
+                return Ok(Some(cached_script));
             }
 
             // Retrieve the script from the store.
@@ -409,20 +409,12 @@ impl DataStore for NtxDataStore {
                 }
             })?;
             // Handle response.
-            match maybe_script {
-                Some(script) => {
-                    // Cache the retrieved script.
-                    {
-                        let mut cache_guard = cache.lock().await;
-                        cache_guard.put(script_root, script.clone());
-                    }
-                    // Return script.
-                    Ok(script)
-                },
-                None => {
-                    // Response did not contain the note script.
-                    Err(DataStoreError::NoteScriptNotFound(script_root))
-                },
+            if let Some(script) = maybe_script {
+                let mut cache_guard = cache.lock().await;
+                cache_guard.put(script_root, script.clone());
+                Ok(Some(script))
+            } else {
+                Ok(None)
             }
         }
     }

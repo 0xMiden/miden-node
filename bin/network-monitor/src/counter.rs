@@ -4,6 +4,8 @@
 //! of the network account deployed at startup by creating and submitting network notes.
 
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -51,6 +53,9 @@ use crate::status::{
     ServiceStatus,
     Status,
 };
+
+/// The maximum number of latency measurements to keep for averaging.
+const MAX_LATENCY_SAMPLES: usize = 10; // Keep last 10 latency measurements for averaging
 
 async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
     Builder::new(config.rpc_url.clone())
@@ -201,6 +206,7 @@ async fn setup_increment_task(
 ///
 /// * `config` - The monitor configuration containing file paths and intervals.
 /// * `tx` - The watch channel sender for status updates.
+/// * `last_increment_timestamp` - Shared atomic timestamp for tracking when increments are sent.
 ///
 /// # Returns
 ///
@@ -209,6 +215,7 @@ async fn setup_increment_task(
 pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
+    last_increment_timestamp: Arc<AtomicU64>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client = create_rpc_client(&config).await?;
@@ -244,6 +251,7 @@ pub async fn run_increment_task(
                 &mut data_store,
                 &mut details,
                 tx_id,
+                &last_increment_timestamp,
             )?,
             Err(e) => Some(handle_increment_failure(&mut details, &e)),
         };
@@ -262,6 +270,7 @@ fn handle_increment_success(
     data_store: &mut MonitorDataStore,
     details: &mut IncrementDetails,
     tx_id: String,
+    last_increment_timestamp: &Arc<AtomicU64>,
 ) -> Result<Option<String>> {
     let updated_wallet = Account::new(
         wallet_account.id(),
@@ -276,6 +285,10 @@ fn handle_increment_success(
 
     details.success_count += 1;
     details.last_tx_id = Some(tx_id);
+
+    // Record the timestamp when the increment transaction was sent
+    last_increment_timestamp
+        .store(crate::monitor::tasks::current_unix_timestamp_secs(), Ordering::Relaxed);
 
     Ok(None)
 }
@@ -324,6 +337,7 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 ///
 /// * `config` - The monitor configuration containing file paths and intervals.
 /// * `tx` - The watch channel sender for status updates.
+/// * `last_increment_timestamp` - Shared atomic timestamp for tracking when increments are sent.
 ///
 /// # Returns
 ///
@@ -332,6 +346,7 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
+    last_increment_timestamp: Arc<AtomicU64>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client = create_rpc_client(&config).await?;
@@ -346,15 +361,33 @@ pub async fn run_counter_tracking_task(
     };
 
     let mut details = CounterTrackingDetails::default();
+    let mut recent_latencies = Vec::new();
 
     loop {
+        let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
         let last_error = match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
             Ok(Some(value)) => {
-                // Only update the timestamp if the counter value actually changed
+                // Only update if the counter value actually changed
                 if details.current_value != Some(value) {
                     details.current_value = Some(value);
-                    details.last_updated =
-                        Some(crate::monitor::tasks::current_unix_timestamp_secs());
+                    details.last_updated = Some(current_time);
+
+                    // Calculate latency if we have a recent increment timestamp
+                    let increment_timestamp = last_increment_timestamp.load(Ordering::Relaxed);
+                    if increment_timestamp > 0 {
+                        let latency_ms = (current_time - increment_timestamp) * 1000;
+                        details.last_latency_ms = Some(latency_ms);
+
+                        // Add to recent latencies and calculate average
+                        recent_latencies.push(latency_ms);
+                        if recent_latencies.len() > MAX_LATENCY_SAMPLES {
+                            recent_latencies.remove(0);
+                        }
+                        if !recent_latencies.is_empty() {
+                            let sum: u64 = recent_latencies.iter().sum();
+                            details.avg_latency_ms = Some(sum / recent_latencies.len() as u64);
+                        }
+                    }
                 }
                 None
             },
@@ -371,7 +404,8 @@ pub async fn run_counter_tracking_task(
         let status = build_tracking_status(&details, last_error);
         send_status(&tx, status)?;
 
-        sleep(config.counter_increment_interval).await;
+        // Fetch faster than the increment interval to ensure we don't miss any increments
+        sleep(config.counter_increment_interval / 2).await;
     }
 }
 

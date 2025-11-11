@@ -297,6 +297,18 @@
                                                 <span class="metric-value">${new Date(details.NtxTracking.last_updated * 1000).toLocaleString()}</span>
                                             </div>
                                         ` : ''}
+                                        ${details.NtxTracking.last_latency_ms ? `
+                                            <div class="metric-row">
+                                                <span class="metric-label">Last Latency:</span>
+                                                <span class="metric-value">${details.NtxTracking.last_latency_ms}ms</span>
+                                            </div>
+                                        ` : ''}
+                                        ${details.NtxTracking.avg_latency_ms ? `
+                                            <div class="metric-row">
+                                                <span class="metric-label">Avg Latency:</span>
+                                                <span class="metric-value">${details.NtxTracking.avg_latency_ms}ms</span>
+                                            </div>
+                                        ` : ''}
                                     </div>
                                 </div>
                             ` : ''}

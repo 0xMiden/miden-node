@@ -52,7 +52,7 @@ use miden_objects::transaction::{OutputNote, PartialBlockchain};
 use miden_objects::utils::Serializable;
 use miden_objects::{AccountError, Word};
 use tokio::sync::{Mutex, RwLock, oneshot};
-use tracing::{info, info_span, instrument};
+use tracing::{debug, info_span, instrument};
 
 use crate::blocks::BlockStore;
 use crate::db::models::Page;
@@ -423,7 +423,7 @@ impl State {
             inner.blockchain.push(block_commitment);
         }
 
-        info!(%block_commitment, block_num = block_num.as_u32(), COMPONENT, "apply_block successful");
+        debug!(target: COMPONENT, %block_commitment, block_num = block_num.as_u32(), "apply_block successful");
 
         Ok(())
     }
@@ -862,7 +862,7 @@ impl State {
         nullifiers: &[Nullifier],
         unauthenticated_note_commitments: Vec<Word>,
     ) -> Result<TransactionInputs, DatabaseError> {
-        info!(target: COMPONENT, account_id = %account_id.to_string(), nullifiers = %format_array(nullifiers));
+        debug!(target: COMPONENT, account_id = %account_id.to_string(), nullifiers = %format_array(nullifiers));
 
         let inner = self.inner.read().await;
 

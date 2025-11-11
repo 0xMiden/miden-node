@@ -2,6 +2,9 @@
 
 ## v0.13.0 (TBD)
 
+- [BREAKING] Renamed `SyncTransactions` response fields ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
+- Normalize response size in endpoints to 4 MB ([#1357](https://github.com/0xMiden/miden-node/pull/1357)).
+
 ## v0.12.1 (2025-11-08)
 
 - Added support for network transaction service in `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).

@@ -449,7 +449,7 @@ pub struct SyncTransactionsResponse {
     pub pagination_info: ::core::option::Option<PaginationInfo>,
     /// List of transaction records.
     #[prost(message, repeated, tag = "2")]
-    pub transaction_records: ::prost::alloc::vec::Vec<TransactionRecord>,
+    pub transactions: ::prost::alloc::vec::Vec<TransactionRecord>,
 }
 /// Represents a transaction record.
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -459,9 +459,7 @@ pub struct TransactionRecord {
     pub block_num: u32,
     /// A transaction header.
     #[prost(message, optional, tag = "2")]
-    pub transaction_header: ::core::option::Option<
-        super::transaction::TransactionHeader,
-    >,
+    pub header: ::core::option::Option<super::transaction::TransactionHeader>,
 }
 /// Generated client implementations.
 pub mod rpc_client {

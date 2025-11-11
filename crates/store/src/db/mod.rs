@@ -100,8 +100,8 @@ pub struct TransactionRecord {
     pub account_id: AccountId,
     pub initial_state_commitment: Word,
     pub final_state_commitment: Word,
-    pub input_notes: Vec<Nullifier>, // Store nullifiers for input notes
-    pub output_notes: Vec<NoteId>,   // Store note IDs for output notes
+    pub nullifiers: Vec<Nullifier>, // Store nullifiers for input notes
+    pub output_notes: Vec<NoteId>,  // Store note IDs for output notes
 }
 
 impl TransactionRecord {
@@ -116,11 +116,11 @@ impl TransactionRecord {
             note_records.into_iter().map(Into::into).collect();
 
         proto::rpc_store::TransactionRecord {
-            transaction_header: Some(proto::transaction::TransactionHeader {
+            header: Some(proto::transaction::TransactionHeader {
                 account_id: Some(self.account_id.into()),
                 initial_state_commitment: Some(self.initial_state_commitment.into()),
                 final_state_commitment: Some(self.final_state_commitment.into()),
-                input_notes: self.input_notes.into_iter().map(From::from).collect(),
+                nullifiers: self.nullifiers.into_iter().map(From::from).collect(),
                 output_notes,
             }),
             block_num: self.block_num.as_u32(),

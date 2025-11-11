@@ -97,7 +97,8 @@ CREATE TABLE account_storage_map_values (
     is_latest           BOOLEAN NOT NULL,
 
     PRIMARY KEY (account_id, block_num, slot, key),
-    CONSTRAINT slot_is_u8 CHECK (slot BETWEEN 0 AND 0xFF)
+    CONSTRAINT slot_is_u8 CHECK (slot BETWEEN 0 AND 0xFF),
+    FOREIGN KEY (account_id, block_num) REFERENCES accounts(account_id, block_num) ON DELETE CASCADE
 ) WITHOUT ROWID;
 
 -- Index for joining with accounts table on compound key
@@ -112,7 +113,8 @@ CREATE TABLE account_vault_assets (
     asset               BLOB,
     is_latest           BOOLEAN NOT NULL,
 
-    PRIMARY KEY (account_id, block_num, vault_key)
+    PRIMARY KEY (account_id, block_num, vault_key),
+    FOREIGN KEY (account_id, block_num) REFERENCES accounts(account_id, block_num) ON DELETE CASCADE
 ) WITHOUT ROWID;
 
 -- Index for joining with accounts table on compound key

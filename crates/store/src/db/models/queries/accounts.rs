@@ -184,6 +184,7 @@ pub(crate) fn select_account_by_id_prefix(
         )),
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
+    .filter(schema::accounts::is_latest.eq(true))
     .filter(schema::accounts::network_account_id_prefix.eq(Some(i64::from(id_prefix))))
     .get_result::<(AccountRaw, Option<Vec<u8>>)>(conn)
     .optional()
@@ -399,6 +400,7 @@ pub(crate) fn select_all_accounts(
         )),
         (AccountRaw::as_select(), schema::account_codes::code.nullable()),
     )
+    .filter(schema::accounts::is_latest.eq(true))
     .load::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
     let account_infos = vec_raw_try_into::<AccountInfo, AccountWithCodeRawJoined>(
         accounts_raw.into_iter().map(AccountWithCodeRawJoined::from),
@@ -760,6 +762,7 @@ pub(crate) fn upsert_accounts(
             (AccountRaw::as_select(), schema::account_codes::code.nullable()),
         )
         .filter(schema::accounts::account_id.eq(account_id))
+        .filter(schema::accounts::is_latest.eq(true))
         .get_results::<(AccountRaw, Option<Vec<u8>>)>(conn)?;
 
         // SELECT .. FROM accounts LEFT JOIN account_codes

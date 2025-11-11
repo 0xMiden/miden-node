@@ -77,7 +77,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory, InMemoryAccountTree};
+use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
 
 // STRUCTURES
 // ================================================================================================
@@ -97,7 +97,7 @@ where
 {
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: AccountTreeWithHistory<AccountTree<LargeSmt<S>>>,
+    account_tree: AccountTreeWithHistory<S>,
 }
 
 impl<S> InnerState<S>
@@ -1130,7 +1130,7 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 async fn load_account_tree(
     db: &mut Db,
     block_number: BlockNumber,
-) -> Result<AccountTreeWithHistory<InMemoryAccountTree>, StateInitializationError> {
+) -> Result<AccountTreeWithHistory<MemoryStorage>, StateInitializationError> {
     let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     // Convert account_data to use account_id_to_smt_key

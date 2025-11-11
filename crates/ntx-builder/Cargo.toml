@@ -30,5 +30,7 @@ tracing                    = { workspace = true }
 url                        = { workspace = true }
 
 [dev-dependencies]
+miden-lib             = { workspace = true }
 miden-node-test-macro = { path = "../test-macro" }
+miden-objects         = { default-features = true, features = ["testing"], workspace = true }
 rstest                = { workspace = true }

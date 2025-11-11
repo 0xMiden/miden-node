@@ -20,6 +20,9 @@ use crate::store::{StoreClient, StoreError};
 
 mod account;
 
+#[cfg(test)]
+mod tests;
+
 // CONSTANTS
 // =================================================================================================
 

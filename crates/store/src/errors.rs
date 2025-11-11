@@ -112,8 +112,6 @@ pub enum DatabaseError {
     InteractError(String),
     #[error("invalid Felt: {0}")]
     InvalidFelt(String),
-    #[error("note script with root {0:?} not found")]
-    NoteScriptNotFound(Word),
     #[error(
         "unsupported database version. There is no migration chain from/to this version. \
         Remove all database files and try again."
@@ -161,8 +159,7 @@ impl From<DatabaseError> for Status {
         match err {
             DatabaseError::AccountNotFoundInDb(_)
             | DatabaseError::AccountsNotFoundInDb(_)
-            | DatabaseError::AccountNotPublic(_)
-            | DatabaseError::NoteScriptNotFound(_) => Status::not_found(err.to_string()),
+            | DatabaseError::AccountNotPublic(_) => Status::not_found(err.to_string()),
 
             _ => Status::internal(err.to_string()),
         }

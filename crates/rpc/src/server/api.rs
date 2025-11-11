@@ -203,7 +203,7 @@ impl api_server::Api for RpcService {
         &self,
         request: Request<proto::shared::BlockHeaderByNumberRequest>,
     ) -> Result<Response<proto::shared::BlockHeaderByNumberResponse>, Status> {
-        info!(target: COMPONENT, request = ?request.get_ref());
+        debug!(target: COMPONENT, request = ?request.get_ref());
 
         self.store.clone().get_block_header_by_number(request).await
     }

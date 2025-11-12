@@ -3,7 +3,7 @@
     reason = "We will not approach the item count where i64 and usize cause issues"
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 
 use diesel::prelude::{
@@ -217,26 +217,34 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
-pub(crate) fn select_notes_by_commitment(
+/// Select the subset of note commitments that already exist in the notes table
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     notes.note_commitment
+/// FROM notes
+/// WHERE note_commitment IN (?1)
+/// ```
+pub(crate) fn select_existing_note_commitments(
     conn: &mut SqliteConnection,
     note_commitments: &[Word],
-) -> Result<Vec<NoteRecord>, DatabaseError> {
+) -> Result<HashSet<Word>, DatabaseError> {
+    QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
+
     let note_commitments = serialize_vec(note_commitments.iter());
-    let q = schema::notes::table
-        .left_join(
-            schema::note_scripts::table
-                .on(schema::notes::script_root.eq(schema::note_scripts::script_root.nullable())),
-        )
-        .filter(schema::notes::note_commitment.eq_any(&note_commitments));
-    let raw: Vec<_> = SelectDsl::select(
-        q,
-        (NoteRecordRawRow::as_select(), schema::note_scripts::script.nullable()),
-    )
-    .load::<(NoteRecordRawRow, Option<Vec<u8>>)>(conn)?;
-    let records = vec_raw_try_into::<NoteRecord, NoteRecordWithScriptRawJoined>(
-        raw.into_iter().map(NoteRecordWithScriptRawJoined::from),
-    )?;
-    Ok(records)
+
+    let raw_commitments = SelectDsl::select(schema::notes::table, schema::notes::note_commitment)
+        .filter(schema::notes::note_commitment.eq_any(&note_commitments))
+        .load::<Vec<u8>>(conn)?;
+
+    let commitments = raw_commitments
+        .into_iter()
+        .map(|commitment| Word::read_from_bytes(&commitment[..]))
+        .collect::<Result<HashSet<_>, _>>()?;
+
+    Ok(commitments)
 }
 
 /// Select all notes from the DB using the given [`SqliteConnection`].

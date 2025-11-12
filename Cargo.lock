@@ -2263,9 +2263,9 @@ dependencies = [
 
 [[package]]
 name = "libz-ng-sys"
-version = "1.1.22"
+version = "1.1.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7118c2c2a3c7b6edc279a8b19507672b9c4d716f95e671172dfa4e23f9fd824"
+checksum = "7bf914b7dd154ca9193afec311d8e39345c1bd93b48b3faa77329f0db8f553c0"
 dependencies = [
  "cmake",
  "libc",
@@ -2472,7 +2472,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#c532ae91fdf711ac2f8b253342c253ee2eac0bed"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2569,7 +2569,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#c532ae91fdf711ac2f8b253342c253ee2eac0bed"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2928,7 +2928,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#c532ae91fdf711ac2f8b253342c253ee2eac0bed"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -3067,7 +3067,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#c532ae91fdf711ac2f8b253342c253ee2eac0bed"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3085,7 +3085,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#c532ae91fdf711ac2f8b253342c253ee2eac0bed"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -3098,7 +3098,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#c532ae91fdf711ac2f8b253342c253ee2eac0bed"
+source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
 dependencies = [
  "miden-objects",
  "miden-tx",

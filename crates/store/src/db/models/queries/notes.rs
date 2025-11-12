@@ -217,6 +217,16 @@ pub(crate) fn select_notes_by_id(
     Ok(records)
 }
 
+/// Select the subset of note commitments that already exist in the notes table
+///
+/// # Raw SQL
+///
+/// ```sql
+/// SELECT
+///     notes.note_commitment
+/// FROM notes
+/// WHERE note_commitment IN (?1)
+/// ```
 pub(crate) fn select_existing_note_commitments(
     conn: &mut SqliteConnection,
     note_commitments: &[Word],

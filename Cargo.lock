@@ -2472,7 +2472,7 @@ dependencies = [
 [[package]]
 name = "miden-block-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-1353-largesmt-for-nullifier-tree#753761651daddd3a7d4ddee1d7d0886e506cf265"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2569,7 +2569,7 @@ dependencies = [
 [[package]]
 name = "miden-lib"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-1353-largesmt-for-nullifier-tree#753761651daddd3a7d4ddee1d7d0886e506cf265"
 dependencies = [
  "fs-err",
  "miden-assembly",
@@ -2929,7 +2929,7 @@ dependencies = [
 [[package]]
 name = "miden-objects"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-1353-largesmt-for-nullifier-tree#753761651daddd3a7d4ddee1d7d0886e506cf265"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -3068,7 +3068,7 @@ dependencies = [
 [[package]]
 name = "miden-testing"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-1353-largesmt-for-nullifier-tree#753761651daddd3a7d4ddee1d7d0886e506cf265"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3086,7 +3086,7 @@ dependencies = [
 [[package]]
 name = "miden-tx"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-1353-largesmt-for-nullifier-tree#753761651daddd3a7d4ddee1d7d0886e506cf265"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -3099,7 +3099,7 @@ dependencies = [
 [[package]]
 name = "miden-tx-batch-prover"
 version = "0.13.0"
-source = "git+https://github.com/0xMiden/miden-base.git?branch=next#31a1f22bc5ccb17c1e1a4c55a892a4b700ca4a3e"
+source = "git+https://github.com/0xMiden/miden-base?branch=bernhard-1353-largesmt-for-nullifier-tree#753761651daddd3a7d4ddee1d7d0886e506cf265"
 dependencies = [
  "miden-objects",
  "miden-tx",

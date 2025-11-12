@@ -54,6 +54,7 @@ impl RemoteBatchProver {
     /// # Returns
     ///
     /// A new [`RemoteBatchProver`] instance with the configured timeout.
+    #[must_use]
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self

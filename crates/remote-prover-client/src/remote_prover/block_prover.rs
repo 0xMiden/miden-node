@@ -32,6 +32,7 @@ pub struct RemoteBlockProver {
     client: Arc<Mutex<Option<ApiClient<tonic::transport::Channel>>>>,
 
     endpoint: String,
+    timeout: Duration,
 }
 
 impl RemoteBlockProver {
@@ -41,7 +42,22 @@ impl RemoteBlockProver {
         RemoteBlockProver {
             endpoint: endpoint.into(),
             client: Arc::new(Mutex::new(None)),
+            timeout: Duration::from_secs(10),
         }
+    }
+
+    /// Configures the timeout for requests to the remote prover server.
+    ///
+    /// # Arguments
+    ///
+    /// * `timeout` - The timeout duration for requests.
+    ///
+    /// # Returns
+    ///
+    /// A new [`RemoteBlockProver`] instance with the configured timeout.
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Establishes a connection to the remote block prover server. The connection is
@@ -63,7 +79,7 @@ impl RemoteBlockProver {
         let new_client = {
             let endpoint = tonic::transport::Endpoint::try_from(self.endpoint.clone())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?
-                .timeout(Duration::from_millis(10000));
+                .timeout(self.timeout);
             let channel = endpoint
                 .tls_config(tonic::transport::ClientTlsConfig::new().with_native_roots())
                 .map_err(|err| RemoteProverClientError::ConnectionFailed(err.into()))?

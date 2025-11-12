@@ -137,4 +137,14 @@ pub struct MonitorConfig {
         help = "The interval at which to send the increment counter transaction"
     )]
     pub counter_increment_interval: Duration,
+
+    /// The timeout for the outgoing requests.
+    #[arg(
+        long = "request-timeout",
+        env = "MIDEN_MONITOR_REQUEST_TIMEOUT",
+        default_value = "10s",
+        value_parser = humantime::parse_duration,
+        help = "The timeout for the outgoing requests"
+    )]
+    pub request_timeout: Duration,
 }

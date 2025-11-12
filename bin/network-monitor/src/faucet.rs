@@ -80,8 +80,12 @@ pub async fn run_faucet_test_task(
     faucet_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
     test_interval: Duration,
+    request_timeout: Duration,
 ) {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(request_timeout)
+        .build()
+        .expect("Failed to create HTTP client with timeout");
     let mut success_count = 0u64;
     let mut failure_count = 0u64;
     let mut last_tx_id = None;

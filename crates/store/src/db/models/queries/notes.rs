@@ -223,21 +223,16 @@ pub(crate) fn select_existing_note_commitments(
 ) -> Result<HashSet<Word>, DatabaseError> {
     QueryParamNoteCommitmentLimit::check(note_commitments.len())?;
 
-    let serialized = serialize_vec(note_commitments.iter());
+    let note_commitments = serialize_vec(note_commitments.iter());
 
-    let existing_bytes: HashSet<Vec<u8>> =
-        SelectDsl::select(schema::notes::table, schema::notes::note_commitment)
-            .filter(schema::notes::note_commitment.eq_any(&serialized))
-            .load_iter::<Vec<u8>, _>(conn)?
-            .collect::<diesel::QueryResult<_>>()?;
+    let raw_commitments = SelectDsl::select(schema::notes::table, schema::notes::note_commitment)
+        .filter(schema::notes::note_commitment.eq_any(&note_commitments))
+        .load::<Vec<u8>>(conn)?;
 
-    let commitments: HashSet<Word> = note_commitments
-        .iter()
-        .zip(&serialized)
-        .filter_map(|(&word, serialized)| {
-            existing_bytes.contains(serialized.as_slice()).then_some(word)
-        })
-        .collect();
+    let commitments = raw_commitments
+        .into_iter()
+        .map(|commitment| Word::read_from_bytes(&commitment[..]))
+        .collect::<Result<HashSet<_>, _>>()?;
 
     Ok(commitments)
 }

@@ -49,12 +49,12 @@ miden-node-validator        = { path = "crates/validator", version = "0.13" }
 miden-remote-prover-client  = { path = "crates/remote-prover-client", version = "0.13" }
 
 # miden-base aka protocol dependencies. These should be updated in sync.
-miden-block-prover    = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-block-prover" }
-miden-lib             = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-lib" }
-miden-objects         = { default-features = false, path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-objects" }
-miden-testing         = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-testing" }
-miden-tx              = { default-features = false, path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-tx" }
-miden-tx-batch-prover = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-tx-batch-prover" }
+miden-block-prover    = { git = "https://github.com/0xMiden/miden-base", branch = "bernhard-1353-largesmt-for-nullifier-tree" }
+miden-lib             = { git = "https://github.com/0xMiden/miden-base", branch = "bernhard-1353-largesmt-for-nullifier-tree" }
+miden-objects         = { default-features = false, git = "https://github.com/0xMiden/miden-base", branch = "bernhard-1353-largesmt-for-nullifier-tree" }
+miden-testing         = { git = "https://github.com/0xMiden/miden-base", branch = "bernhard-1353-largesmt-for-nullifier-tree" }
+miden-tx              = { default-features = false, git = "https://github.com/0xMiden/miden-base", branch = "bernhard-1353-largesmt-for-nullifier-tree" }
+miden-tx-batch-prover = { git = "https://github.com/0xMiden/miden-base", branch = "bernhard-1353-largesmt-for-nullifier-tree" }
 
 # Other miden dependencies. These should align with those expected by miden-base.
 miden-air = { features = ["std", "testing"], version = "0.19" }

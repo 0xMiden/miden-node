@@ -51,9 +51,9 @@ miden-remote-prover-client  = { path = "crates/remote-prover-client", version = 
 # miden-base aka protocol dependencies. These should be updated in sync.
 miden-block-prover    = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-block-prover" }
 miden-lib             = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-lib" }
-miden-objects         = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-objects", default-features = false }
+miden-objects         = { default-features = false, path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-objects" }
 miden-testing         = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-testing" }
-miden-tx              = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-tx", default-features = false }
+miden-tx              = { default-features = false, path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-tx" }
 miden-tx-batch-prover = { path = "../miden-base-bernhard-1353-largesmt-for-nullifier-tree/crates/miden-tx-batch-prover" }
 
 # Other miden dependencies. These should align with those expected by miden-base.

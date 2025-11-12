@@ -95,7 +95,7 @@ struct InnerState<S = MemoryStorage>
 where
     S: SmtStorage,
 {
-    nullifier_tree: NullifierTree,
+    nullifier_tree: NullifierTree<LargeSmt<S>>,
     blockchain: Blockchain,
     account_tree: AccountTreeWithHistory<S>,
 }
@@ -1104,11 +1104,22 @@ impl State {
 // ================================================================================================
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]
-async fn load_nullifier_tree(db: &mut Db) -> Result<NullifierTree, StateInitializationError> {
+async fn load_nullifier_tree(
+    db: &mut Db,
+) -> Result<NullifierTree<LargeSmt<MemoryStorage>>, StateInitializationError> {
+    use miden_objects::block::nullifier_tree::block_num_to_leaf_value;
+
     let nullifiers = db.select_all_nullifiers().await?;
 
-    NullifierTree::with_entries(nullifiers.into_iter().map(|info| (info.nullifier, info.block_num)))
-        .map_err(StateInitializationError::FailedToCreateNullifierTree)
+    // Convert nullifier data to SMT entries
+    let smt_entries = nullifiers
+        .into_iter()
+        .map(|info| (info.nullifier.as_word(), block_num_to_leaf_value(info.block_num)));
+
+    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
+        .expect("Failed to create LargeSmt from database nullifier data");
+
+    Ok(NullifierTree::new(smt))
 }
 
 #[instrument(level = "info", target = COMPONENT, skip_all)]

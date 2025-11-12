@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.12.2 (TBD)
+
+### Fixes
+
+- Fixed `PoW` challenge solving in `miden-network-monitor` binary ([#1363](https://github.com/0xMiden/miden-node/pull/1363)).
+
 ## v0.12.1 (2025-11-08)
 
 - Added support for network transaction service in `miden-network-monitor` binary ([#1295](https://github.com/0xMiden/miden-node/pull/1295)).

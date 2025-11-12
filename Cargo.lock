@@ -2657,6 +2657,7 @@ dependencies = [
  "anyhow",
  "axum",
  "clap 4.5.51",
+ "hex",
  "humantime",
  "miden-lib",
  "miden-node-proto",

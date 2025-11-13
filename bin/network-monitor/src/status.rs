@@ -130,7 +130,7 @@ pub struct RemoteProverStatusDetails {
 /// worker service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatusDetails {
-    pub address: String,
+    pub name: String,
     pub version: String,
     pub status: Status,
 }
@@ -175,7 +175,7 @@ impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
             proto::remote_prover::WorkerHealthStatus::try_from(value.status).unwrap().into();
 
         Self {
-            address: value.address,
+            name: value.name,
             version: value.version,
             status,
         }

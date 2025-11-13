@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::ops::RangeInclusive;
 use std::path::PathBuf;
 
@@ -455,15 +455,14 @@ impl Db {
         .await
     }
 
-    /// Loads all the [`NoteRecord`]s matching a certain note commitment from the
-    /// database.
+    /// Returns all note commitments from the DB that match the provided ones.
     #[instrument(level = "debug", target = COMPONENT, skip_all, ret(level = "debug"), err)]
-    pub async fn select_notes_by_commitment(
+    pub async fn select_existing_note_commitments(
         &self,
         note_commitments: Vec<Word>,
-    ) -> Result<Vec<NoteRecord>> {
+    ) -> Result<HashSet<Word>> {
         self.transact("note by commitment", move |conn| {
-            queries::select_notes_by_commitment(conn, note_commitments.as_slice())
+            queries::select_existing_note_commitments(conn, note_commitments.as_slice())
         })
         .await
     }

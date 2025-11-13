@@ -42,7 +42,7 @@ impl RemoteTransactionProver {
         RemoteTransactionProver {
             endpoint: endpoint.into(),
             client: Arc::new(Mutex::new(None)),
-            timeout: Duration::from_millis(10000), // 10 seconds default
+            timeout: Duration::from_secs(10),
         }
     }
 

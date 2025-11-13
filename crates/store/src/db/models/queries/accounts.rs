@@ -35,6 +35,7 @@ use miden_objects::asset::{Asset, AssetVault, AssetVaultKey, FungibleAsset};
 use miden_objects::block::{BlockAccountUpdate, BlockNumber};
 use miden_objects::{Felt, Word};
 
+use crate::constants::MAX_PAYLOAD_BYTES;
 use crate::db::models::conv::{
     SqlTypeConvert,
     nonce_to_raw_sql,
@@ -211,7 +212,6 @@ pub(crate) fn select_account_vault_assets(
     use schema::account_vault_assets as t;
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
-    const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     const ROW_OVERHEAD_BYTES: usize = 2 * size_of::<Word>() + size_of::<u32>(); // key + asset + block_num
     const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;
 
@@ -426,7 +426,6 @@ pub(crate) fn select_account_storage_map_values(
 
     // TODO: These limits should be given by the protocol.
     // See miden-base/issues/1770 for more details
-    pub const MAX_PAYLOAD_BYTES: usize = 2 * 1024 * 1024; // 2 MB
     pub const ROW_OVERHEAD_BYTES: usize =
         2 * size_of::<Word>() + size_of::<u32>() + size_of::<u8>(); // key + value + block_num + slot_idx
     pub const MAX_ROWS: usize = MAX_PAYLOAD_BYTES / ROW_OVERHEAD_BYTES;

@@ -496,7 +496,7 @@ message SyncTransactionsResponse {
     PaginationInfo pagination_info = 1;
 
     // List of transaction records.
-    repeated TransactionRecord transaction_records = 2;
+    repeated TransactionRecord transactions = 2;
 }
 
 // Represents a transaction record.
@@ -505,5 +505,5 @@ message TransactionRecord {
     fixed32 block_num = 1;
 
     // A transaction header.
-    transaction.TransactionHeader transaction_header = 2;
+    transaction.TransactionHeader header = 2;
 }

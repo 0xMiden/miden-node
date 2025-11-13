@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.12.3 (TBD)
+
+- Improved tracing in `miden-network-monitor` binary ([#1366](https://github.com/0xMiden/miden-node/pull/1366)).
+
 ## v0.12.2 (2025-11-12)
 
 - Fixed `PoW` challenge solving in `miden-network-monitor` binary ([#1363](https://github.com/0xMiden/miden-node/pull/1363)).

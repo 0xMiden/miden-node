@@ -560,15 +560,16 @@ impl rpc_server::Rpc for StoreApi {
             .map_err(SyncTransactionsError::from)?;
 
         // Collect all note IDs from all transactions to make a single query
-        let mut all_note_ids = Vec::new();
-        for tx_record in &transaction_records_db {
-            all_note_ids.extend(tx_record.output_notes.iter().copied());
-        }
+        let all_notes_ids = transaction_records_db
+            .iter()
+            .flat_map(|tx| tx.output_notes.iter())
+            .copied()
+            .collect::<Vec<_>>();
 
         // Retrieve all note data in a single query
         let all_note_records = self
             .state
-            .get_notes_by_id(all_note_ids)
+            .get_notes_by_id(all_notes_ids)
             .await
             .map_err(SyncTransactionsError::from)?;
 

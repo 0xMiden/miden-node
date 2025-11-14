@@ -88,7 +88,7 @@ pub struct CounterTrackingDetails {
     /// Latency between increment transaction and value update (in milliseconds).
     pub last_latency_ms: Option<u64>,
     /// Average latency over recent updates (in milliseconds).
-    pub avg_latency_ms: Option<u64>,
+    pub avg_latency_ms: Option<f64>,
 }
 
 /// Details of a service.

@@ -54,12 +54,6 @@ use crate::status::{
     Status,
 };
 
-/// The smoothing factor used when calculating the exponentially weighted average latency.
-///
-/// Lower values mean the average reacts more slowly to new latency samples. A value of `0.9`
-/// roughly mimics averaging over the last 10 samples.
-const LATENCY_SMOOTHING_FACTOR: f64 = 0.9;
-
 async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
     Builder::new(config.rpc_url.clone())
         .with_tls()
@@ -209,7 +203,8 @@ async fn setup_increment_task(
 ///
 /// * `config` - The monitor configuration containing file paths and intervals.
 /// * `tx` - The watch channel sender for status updates.
-/// * `last_increment_timestamp` - Shared atomic timestamp for tracking when increments are sent.
+/// * `expected_counter_value` - Shared atomic counter for tracking expected value based on
+///   successful increments.
 ///
 /// # Returns
 ///
@@ -218,7 +213,7 @@ async fn setup_increment_task(
 pub async fn run_increment_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
-    last_increment_timestamp: Arc<AtomicU64>,
+    expected_counter_value: Arc<AtomicU64>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client = create_rpc_client(&config).await?;
@@ -254,7 +249,7 @@ pub async fn run_increment_task(
                 &mut data_store,
                 &mut details,
                 tx_id,
-                &last_increment_timestamp,
+                &expected_counter_value,
             )?,
             Err(e) => Some(handle_increment_failure(&mut details, &e)),
         };
@@ -273,7 +268,7 @@ fn handle_increment_success(
     data_store: &mut MonitorDataStore,
     details: &mut IncrementDetails,
     tx_id: String,
-    last_increment_timestamp: &Arc<AtomicU64>,
+    expected_counter_value: &Arc<AtomicU64>,
 ) -> Result<Option<String>> {
     let updated_wallet = Account::new(
         wallet_account.id(),
@@ -289,9 +284,8 @@ fn handle_increment_success(
     details.success_count += 1;
     details.last_tx_id = Some(tx_id);
 
-    // Record the timestamp when the increment transaction was sent
-    last_increment_timestamp
-        .store(crate::monitor::tasks::current_unix_timestamp_secs(), Ordering::Relaxed);
+    // Increment the expected counter value
+    expected_counter_value.fetch_add(1, Ordering::Relaxed);
 
     Ok(None)
 }
@@ -340,17 +334,17 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 ///
 /// * `config` - The monitor configuration containing file paths and intervals.
 /// * `tx` - The watch channel sender for status updates.
-/// * `last_increment_timestamp` - Shared atomic timestamp for tracking when increments are sent.
+/// * `expected_counter_value` - Shared atomic counter for tracking expected value based on
+///   successful increments.
 ///
 /// # Returns
 ///
 /// This function runs indefinitely, only returning on error.
 #[instrument(target = COMPONENT, name = "run-counter-tracking-task", skip_all, ret(level = "debug"))]
-#[allow(clippy::cast_precision_loss)]
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
-    last_increment_timestamp: Arc<AtomicU64>,
+    expected_counter_value: Arc<AtomicU64>,
 ) -> Result<()> {
     // Create RPC client
     let mut rpc_client = create_rpc_client(&config).await?;
@@ -370,29 +364,23 @@ pub async fn run_counter_tracking_task(
         let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
         let last_error = match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
             Ok(Some(value)) => {
-                // Only update if the counter value actually changed
-                if details.current_value != Some(value) {
-                    details.current_value = Some(value);
-                    details.last_updated = Some(current_time);
+                // Update current value and timestamp
+                details.current_value = Some(value);
+                details.last_updated = Some(current_time);
 
-                    // Calculate latency if we have a recent increment timestamp
-                    let increment_timestamp = last_increment_timestamp.load(Ordering::Relaxed);
-                    if increment_timestamp > 0 {
-                        let latency_ms = (current_time - increment_timestamp) * 1000;
-                        details.last_latency_ms = Some(latency_ms);
-
-                        // Update the exponentially weighted moving average latency
-                        // EWMA(t) = (α * x(t)) + ((1 - α) * EWMA(t-1))
-                        let avg_latency_ms = match details.avg_latency_ms {
-                            Some(avg) => {
-                                (avg * LATENCY_SMOOTHING_FACTOR)
-                                    + ((1.0 - LATENCY_SMOOTHING_FACTOR) * latency_ms as f64)
-                            },
-                            _ => latency_ms as f64,
-                        };
-                        details.avg_latency_ms = Some(avg_latency_ms);
-                    }
+                // Get expected value and calculate pending increments
+                let expected = expected_counter_value.load(Ordering::Relaxed);
+                if expected > 0 {
+                    details.expected_value = Some(expected);
+                    // Calculate how many increments are pending (expected - current)
+                    // Use saturating_sub to avoid negative values if current > expected (shouldn't
+                    // happen normally)
+                    details.pending_increments = Some(expected.saturating_sub(value));
+                } else {
+                    details.expected_value = None;
+                    details.pending_increments = None;
                 }
+
                 None
             },
             Ok(None) => {

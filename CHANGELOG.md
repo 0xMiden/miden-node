@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.12.2 (TBD)
+
+- Split counter increment and tracking services in `miden-network-monitor` binary ([#1362](https://github.com/0xMiden/miden-node/pull/1362)).
 ## v0.12.3 (TBD)
 
 ### Enhancements

@@ -54,8 +54,11 @@ use crate::status::{
     Status,
 };
 
-/// The maximum number of latency measurements to keep for averaging.
-const MAX_LATENCY_SAMPLES: usize = 10; // Keep last 10 latency measurements for averaging
+/// The smoothing factor used when calculating the exponentially weighted average latency.
+///
+/// Lower values mean the average reacts more slowly to new latency samples. A value of `0.9`
+/// roughly mimics averaging over the last 10 samples.
+const LATENCY_SMOOTHING_FACTOR: f64 = 0.9;
 
 async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
     Builder::new(config.rpc_url.clone())
@@ -343,6 +346,7 @@ fn send_status(tx: &watch::Sender<ServiceStatus>, status: ServiceStatus) -> Resu
 ///
 /// This function runs indefinitely, only returning on error.
 #[instrument(target = COMPONENT, name = "run-counter-tracking-task", skip_all, ret(level = "debug"))]
+#[allow(clippy::cast_precision_loss)]
 pub async fn run_counter_tracking_task(
     config: MonitorConfig,
     tx: watch::Sender<ServiceStatus>,
@@ -361,7 +365,6 @@ pub async fn run_counter_tracking_task(
     };
 
     let mut details = CounterTrackingDetails::default();
-    let mut recent_latencies = Vec::new();
 
     loop {
         let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
@@ -378,15 +381,16 @@ pub async fn run_counter_tracking_task(
                         let latency_ms = (current_time - increment_timestamp) * 1000;
                         details.last_latency_ms = Some(latency_ms);
 
-                        // Add to recent latencies and calculate average
-                        recent_latencies.push(latency_ms);
-                        if recent_latencies.len() > MAX_LATENCY_SAMPLES {
-                            recent_latencies.remove(0);
-                        }
-                        if !recent_latencies.is_empty() {
-                            let sum: u64 = recent_latencies.iter().sum();
-                            details.avg_latency_ms = Some(sum / recent_latencies.len() as u64);
-                        }
+                        // Update the exponentially weighted moving average latency
+                        // EWMA(t) = (α * x(t)) + ((1 - α) * EWMA(t-1))
+                        let avg_latency_ms = match details.avg_latency_ms {
+                            Some(avg) => {
+                                (avg * LATENCY_SMOOTHING_FACTOR)
+                                    + ((1.0 - LATENCY_SMOOTHING_FACTOR) * latency_ms as f64)
+                            },
+                            _ => latency_ms as f64,
+                        };
+                        details.avg_latency_ms = Some(avg_latency_ms);
                     }
                 }
                 None

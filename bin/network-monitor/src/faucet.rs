@@ -75,7 +75,14 @@ struct GetTokensResponse {
 /// # Returns
 ///
 /// `Ok(())` if the task completes successfully, or an error if the task fails.
-#[instrument(target = COMPONENT, name = "faucet-test-task", skip_all)]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.faucet.run_faucet_test_task",
+    skip_all,
+    level = "info",
+    ret(level = "debug")
+)]
 pub async fn run_faucet_test_task(
     faucet_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
@@ -154,6 +161,15 @@ pub async fn run_faucet_test_task(
 /// # Returns
 ///
 /// The response from the faucet if successful, or an error if the test fails.
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.faucet.perform_faucet_test",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 async fn perform_faucet_test(
     client: &Client,
     faucet_url: &Url,
@@ -225,7 +241,15 @@ async fn perform_faucet_test(
 ///
 /// The nonce that solves the challenge, or an error if no solution is found within reasonable
 /// bounds.
-#[instrument(target = COMPONENT, name = "solve-pow-challenge", skip_all, ret(level = "debug"))]
+#[instrument(
+    parent = None,
+    target = COMPONENT,
+    name = "network_monitor.faucet.solve_pow_challenge",
+    skip_all,
+    level = "info",
+    ret(level = "debug"),
+    err
+)]
 fn solve_pow_challenge(challenge: &str, target: u64) -> anyhow::Result<u64> {
     let challenge_bytes = hex::decode(challenge).context("Failed to decode challenge from hex")?;
 

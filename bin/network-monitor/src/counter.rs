@@ -6,7 +6,6 @@
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
 
 use anyhow::{Context, Result};
 use miden_lib::AuthScheme;
@@ -41,7 +40,7 @@ use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use tokio::sync::watch;
 use tokio::time::sleep;
-use tracing::{error, info, instrument};
+use tracing::{error, info, instrument, warn};
 
 use crate::COMPONENT;
 use crate::config::MonitorConfig;
@@ -360,6 +359,28 @@ pub async fn run_counter_tracking_task(
 
     let mut details = CounterTrackingDetails::default();
 
+    // Initialize the expected counter value by fetching the current value from the node
+    match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
+        Ok(Some(initial_value)) => {
+            // Set the expected value to the current value from the node
+            expected_counter_value.store(initial_value, Ordering::Relaxed);
+            details.current_value = Some(initial_value);
+            details.expected_value = Some(initial_value);
+            details.last_updated = Some(crate::monitor::tasks::current_unix_timestamp_secs());
+            info!("Initialized counter tracking with value: {}", initial_value);
+        },
+        Ok(None) => {
+            // Counter doesn't exist yet, initialize to 0
+            expected_counter_value.store(0, Ordering::Relaxed);
+            warn!("Counter account not found, initializing expected value to 0");
+        },
+        Err(e) => {
+            // Failed to fetch, initialize to 0 but log the error
+            expected_counter_value.store(0, Ordering::Relaxed);
+            error!("Failed to fetch initial counter value, initializing to 0: {:?}", e);
+        },
+    }
+
     loop {
         let current_time = crate::monitor::tasks::current_unix_timestamp_secs();
         let last_error = match fetch_counter_value(&mut rpc_client, counter_account.id()).await {
@@ -370,15 +391,20 @@ pub async fn run_counter_tracking_task(
 
                 // Get expected value and calculate pending increments
                 let expected = expected_counter_value.load(Ordering::Relaxed);
-                if expected > 0 {
-                    details.expected_value = Some(expected);
-                    // Calculate how many increments are pending (expected - current)
-                    // Use saturating_sub to avoid negative values if current > expected (shouldn't
-                    // happen normally)
-                    details.pending_increments = Some(expected.saturating_sub(value));
+                details.expected_value = Some(expected);
+
+                // Calculate how many increments are pending (expected - current)
+                // Use saturating_sub to avoid negative values if current > expected (shouldn't
+                // happen normally, but could due to race conditions)
+                if expected >= value {
+                    details.pending_increments = Some(expected - value);
                 } else {
-                    details.expected_value = None;
-                    details.pending_increments = None;
+                    // This shouldn't happen, but log it if it does
+                    warn!(
+                        "Expected counter value ({}) is less than current value ({}), setting pending to 0",
+                        expected, value
+                    );
+                    details.pending_increments = Some(0);
                 }
 
                 None

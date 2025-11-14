@@ -67,7 +67,7 @@ async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
         .with_tls()
         .context("Failed to configure TLS for RPC client")
         .expect("TLS is enabled")
-        .with_timeout(Duration::from_secs(30))
+        .with_timeout(config.request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
         .connect::<Rpc>()

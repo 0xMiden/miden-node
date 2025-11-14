@@ -53,7 +53,7 @@ impl Tasks {
         let mut rpc = ClientBuilder::new(config.rpc_url.clone())
             .with_tls()
             .expect("TLS is enabled")
-            .with_timeout(Duration::from_secs(10))
+            .with_timeout(config.request_timeout)
             .without_metadata_version()
             .without_metadata_genesis()
             .connect_lazy::<Rpc>();
@@ -65,10 +65,11 @@ impl Tasks {
         let (rpc_tx, rpc_rx) = watch::channel(initial_rpc_status);
         let rpc_url = config.rpc_url.clone();
         let status_check_interval = config.status_check_interval;
+        let request_timeout = config.request_timeout;
         let id = self
             .handles
             .spawn(async move {
-                run_rpc_status_task(rpc_url, rpc_tx, status_check_interval).await;
+                run_rpc_status_task(rpc_url, rpc_tx, status_check_interval, request_timeout).await;
             })
             .id();
         self.names.insert(id, "rpc-checker".to_string());
@@ -90,7 +91,7 @@ impl Tasks {
             let mut remote_prover = ClientBuilder::new(prover_url.clone())
                 .with_tls()
                 .expect("TLS is enabled")
-                .with_timeout(Duration::from_secs(10))
+                .with_timeout(config.request_timeout)
                 .without_metadata_version()
                 .without_metadata_genesis()
                 .connect_lazy::<RemoteProverProxy>();
@@ -113,6 +114,7 @@ impl Tasks {
             let prover_url_clone = prover_url.clone();
             let name_clone = name.clone();
             let status_check_interval = config.status_check_interval;
+            let request_timeout = config.request_timeout;
             let id = self
                 .handles
                 .spawn(async move {
@@ -121,6 +123,7 @@ impl Tasks {
                         name_clone,
                         prover_status_tx,
                         status_check_interval,
+                        request_timeout,
                     )
                     .await;
                 })
@@ -152,6 +155,7 @@ impl Tasks {
                 let prover_url_clone = prover_url.clone();
                 let name_clone = name.clone();
                 let proof_type = proof_type.expect("proof type is Some");
+                let remote_prover_interval = config.remote_prover_test_interval;
 
                 let id = self
                     .handles
@@ -162,6 +166,8 @@ impl Tasks {
                             proof_type,
                             payload,
                             prover_test_tx,
+                            request_timeout,
+                            remote_prover_interval,
                         )
                         .await;
                     })
@@ -211,10 +217,12 @@ impl Tasks {
         // SAFETY: config.faucet_url is Some
         let faucet_url = config.faucet_url.clone().unwrap();
         let faucet_test_interval = config.faucet_test_interval;
+        let request_timeout = config.request_timeout;
         let id = self
             .handles
             .spawn(async move {
-                run_faucet_test_task(faucet_url, faucet_tx, faucet_test_interval).await;
+                run_faucet_test_task(faucet_url, faucet_tx, faucet_test_interval, request_timeout)
+                    .await;
             })
             .id();
         self.names.insert(id, "faucet-test".to_string());

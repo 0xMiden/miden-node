@@ -3,6 +3,18 @@
 ## v0.12.2 (TBD)
 
 - Split counter increment and tracking services in `miden-network-monitor` binary ([#1362](https://github.com/0xMiden/miden-node/pull/1362)).
+## v0.12.3 (TBD)
+
+### Enhancements
+
+- Added configurable timeout support to `RemoteBatchProver`, `RemoteBlockProver`, and `RemoteTransactionProver` clients ([#1365](https://github.com/0xMiden/miden-node/pull/1365)).
+- Added configurable timeout support to `miden-network-monitor` binary ([#1365](https://github.com/0xMiden/miden-node/pull/1365)).
+
+## v0.12.2 (2025-11-12)
+
+### Fixes
+
+- Fixed `PoW` challenge solving in `miden-network-monitor` binary ([#1363](https://github.com/0xMiden/miden-node/pull/1363)).
 
 ## v0.12.1 (2025-11-08)
 

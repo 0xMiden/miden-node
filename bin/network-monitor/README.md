@@ -185,9 +185,9 @@ The monitor application provides real-time status monitoring for the following M
 - **Service Health**: Real-time monitoring of counter value changes
 - **Metrics**:
   - Current network account counter value (queried from RPC periodically)
+  - Expected counter value based on successful increments sent
+  - Pending increments: How many transactions are queued/unprocessed
   - Last updated timestamp
-  - Last latency: Time between increment transaction submission and value update
-  - Average latency: Average of the last 10 latency measurements
 
 ## User Interface
 

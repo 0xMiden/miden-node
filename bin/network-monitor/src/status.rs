@@ -81,14 +81,14 @@ pub struct IncrementDetails {
 /// Details of the counter tracking service.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CounterTrackingDetails {
-    /// Current counter value (if available).
+    /// Current counter value observed on-chain (if available).
     pub current_value: Option<u64>,
+    /// Expected counter value based on successful increments sent.
+    pub expected_value: Option<u64>,
     /// Last time the counter value was successfully updated.
     pub last_updated: Option<u64>,
-    /// Latency between increment transaction and value update (in milliseconds).
-    pub last_latency_ms: Option<u64>,
-    /// Average latency over recent updates (in milliseconds).
-    pub avg_latency_ms: Option<f64>,
+    /// Number of pending increments (expected - current).
+    pub pending_increments: Option<u64>,
 }
 
 /// Details of a service.

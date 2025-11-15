@@ -1143,23 +1143,24 @@ async fn load_account_tree(
         .into_iter()
         .map(|(id, commitment)| (account_id_to_smt_key(id), commitment));
 
-    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries).map_err(|e| {
-        tracing::error!(
-            target: COMPONENT,
-            error = ?e,
-            "Failed to create LargeSmt from database account data"
-        );
-        match e {
+    let smt = LargeSmt::with_entries(MemoryStorage::default(), smt_entries)
+        .inspect_err(|e| {
+            tracing::error!(
+                target: COMPONENT,
+                error = ?e,
+                "Failed to create LargeSmt from database account data"
+            );
+        })
+        .map_err(|e| match e {
             miden_objects::crypto::merkle::LargeSmtError::Merkle(merkle_error) => {
                 StateInitializationError::DatabaseError(DatabaseError::MerkleError(merkle_error))
             },
             miden_objects::crypto::merkle::LargeSmtError::Storage(err) => {
                 // large_smt::StorageError is not `Sync` and hence `context` cannot be called
                 // which we want to and do
-                StateInitializationError::FailedToAccountTreeWrite(err.to_string())
+                StateInitializationError::AccountTreeIoError(format!("{err:?}"))
             },
-        }
-    })?;
+        })?;
 
     let account_tree =
         AccountTree::new(smt).map_err(StateInitializationError::FailedToCreateAccountsTree)?;

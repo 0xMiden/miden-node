@@ -949,6 +949,7 @@ impl State {
             let witness = inner_state.account_tree.open_latest(account_id);
             (block_num, witness)
         };
+        drop(inner_state);
 
         let account_details = if let Some(AccountDetailRequest {
             code_commitment,

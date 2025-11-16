@@ -130,7 +130,7 @@ pub struct RemoteProverStatusDetails {
 /// worker service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerStatusDetails {
-    pub address: String,
+    pub name: String,
     pub version: String,
     pub status: Status,
 }
@@ -175,7 +175,7 @@ impl From<proto::remote_prover::ProxyWorkerStatus> for WorkerStatusDetails {
             proto::remote_prover::WorkerHealthStatus::try_from(value.status).unwrap().into();
 
         Self {
-            address: value.address,
+            name: value.name,
             version: value.version,
             status,
         }
@@ -233,11 +233,12 @@ pub async fn run_rpc_status_task(
     rpc_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
     status_check_interval: Duration,
+    request_timeout: Duration,
 ) {
     let mut rpc = ClientBuilder::new(rpc_url)
         .with_tls()
         .expect("TLS is enabled")
-        .with_timeout(Duration::from_secs(10))
+        .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
         .connect_lazy::<Rpc>();
@@ -324,12 +325,13 @@ pub async fn run_remote_prover_status_task(
     name: String,
     status_sender: watch::Sender<ServiceStatus>,
     status_check_interval: Duration,
+    request_timeout: Duration,
 ) {
     let url_str = prover_url.to_string();
     let mut remote_prover = ClientBuilder::new(prover_url)
         .with_tls()
         .expect("TLS is enabled")
-        .with_timeout(Duration::from_secs(10))
+        .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
         .connect_lazy::<RemoteProverProxy>();

@@ -77,7 +77,7 @@ use crate::errors::{
     StateInitializationError,
     StateSyncError,
 };
-use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory, InMemoryAccountTree};
+use crate::{AccountTreeWithHistory, COMPONENT, DataDirectory};
 
 // STRUCTURES
 // ================================================================================================
@@ -97,7 +97,7 @@ where
 {
     nullifier_tree: NullifierTree,
     blockchain: Blockchain,
-    account_tree: AccountTreeWithHistory<AccountTree<LargeSmt<S>>>,
+    account_tree: AccountTreeWithHistory<S>,
 }
 
 impl<S> InnerState<S>
@@ -887,11 +887,8 @@ impl State {
 
         let found_unauthenticated_notes = self
             .db
-            .select_notes_by_commitment(unauthenticated_note_commitments)
-            .await?
-            .into_iter()
-            .map(|note| note.note_commitment)
-            .collect();
+            .select_existing_note_commitments(unauthenticated_note_commitments)
+            .await?;
 
         Ok(TransactionInputs {
             account_commitment,
@@ -1137,8 +1134,8 @@ async fn load_mmr(db: &mut Db) -> Result<Mmr, StateInitializationError> {
 async fn load_account_tree(
     db: &mut Db,
     block_number: BlockNumber,
-) -> Result<AccountTreeWithHistory<InMemoryAccountTree>, StateInitializationError> {
-    let account_data = db.select_all_account_commitments().await?;
+) -> Result<AccountTreeWithHistory<MemoryStorage>, StateInitializationError> {
+    let account_data = db.select_all_account_commitments().await?.into_iter().collect::<Vec<_>>();
 
     let smt_entries = account_data
         .into_iter()

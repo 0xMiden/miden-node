@@ -190,7 +190,6 @@ impl AcceptHeaderLayer {
                 (GenesisNegotiation::Mandatory, None) => continue,
                 _ => {},
             }
-            }
 
             // All preconditions met, this is a valid media type that we can serve.
             return Ok(());
@@ -229,6 +228,8 @@ where
         let path = request.uri().path();
         let method_name = path.rsplit('/').next().unwrap_or_default();
         let requires_genesis = self.verifier.require_genesis_methods.contains(&method_name);
+
+        dbg!(request.headers());
 
         // If `genesis` is required but the header is missing entirely, reject early.
         let Some(header) = request.headers().get(ACCEPT) else {
@@ -432,7 +433,7 @@ mod tests {
         assert!(layer.negotiate(mismatched, super::GenesisNegotiation::Mandatory).is_err());
     }
 
-    #[rstest]
+    #[rstest::rstest]
     #[case::matching_network(
         "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef"
     )]
@@ -440,13 +441,20 @@ mod tests {
         "application/vnd.miden; genesis=0x00000000000000000000000000000000000000000000000000000000deadbeef; version=0.2.3"
     )]
     #[test]
-    fn request_with_mandadory_genesis_should_pass(
-        #[case] accept: &'static str
-    ) {
+    fn request_with_mandadory_genesis_should_pass(#[case] accept: &'static str) {
         AcceptHeaderLayer::for_tests()
             .negotiate(accept, super::GenesisNegotiation::Mandatory)
             .unwrap();
     }
+
+    #[rstest::rstest]
+    #[case::missing_network("application/vnd.miden;")]
+    #[case::missing_network_wildcard("*/*")]
+    #[test]
+    fn request_with_mandadory_genesis_should_be_rejected(#[case] accept: &'static str) {
+        AcceptHeaderLayer::for_tests()
+            .negotiate(accept, super::GenesisNegotiation::Mandatory)
+            .unwrap_err();
     }
 
     #[rstest::rstest]

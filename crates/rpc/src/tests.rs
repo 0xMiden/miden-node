@@ -35,7 +35,7 @@ use crate::Rpc;
 async fn rpc_server_accepts_requests_without_accept_header() {
     // Start the RPC.
     let (_, rpc_addr, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
     // Override the client so that the ACCEPT header is not set.
     let mut rpc_client = {
@@ -62,7 +62,7 @@ async fn rpc_server_accepts_requests_without_accept_header() {
 async fn rpc_server_accepts_requests_with_accept_header() {
     // Start the RPC.
     let (mut rpc_client, _, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
     // Send any request to the RPC.
     let response = send_request(&mut rpc_client).await;
@@ -79,7 +79,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
     for version in ["1.9.0", "0.8.1", "0.8.0", "0.999.0", "99.0.0"] {
         // Start the RPC.
         let (_, rpc_addr, store_addr) = start_rpc().await;
-        let (store_runtime, _data_directory) = start_store(store_addr).await;
+        let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
         // Recreate the RPC client with an invalid version.
         let url = rpc_addr.to_string();
@@ -120,7 +120,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
     assert!(response.is_err());
 
     // Start the store.
-    let (store_runtime, data_directory) = start_store(store_addr).await;
+    let (store_runtime, data_directory, _genesis) = start_store(store_addr).await;
 
     // Test: send request against RPC api and should succeed
     let response = send_request(&mut rpc_client).await;
@@ -158,7 +158,7 @@ async fn rpc_startup_is_robust_to_network_failures() {
 async fn rpc_server_has_web_support() {
     // Start server
     let (_, rpc_addr, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, _genesis) = start_store(store_addr).await;
 
     // Send a status request
     let client = reqwest::Client::new();
@@ -201,14 +201,16 @@ async fn rpc_server_has_web_support() {
 async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     // Start the RPC.
     let (_, rpc_addr, store_addr) = start_rpc().await;
-    let (store_runtime, _data_directory) = start_store(store_addr).await;
+    let (store_runtime, _data_directory, genesis) = start_store(store_addr).await;
 
     // Override the client so that the ACCEPT header is not set.
-    let mut rpc_client = {
-        let endpoint = tonic::transport::Endpoint::try_from(format!("http://{rpc_addr}")).unwrap();
-
-        ProtoClient::connect(endpoint).await.unwrap()
-    };
+    let mut rpc_client =
+        miden_node_proto::clients::Builder::new(Url::parse(&format!("http://{rpc_addr}")).unwrap())
+            .without_tls()
+            .with_timeout(Duration::from_secs(5))
+            .without_metadata_version()
+            .with_metadata_genesis(genesis.to_hex())
+            .connect_lazy::<miden_node_proto::clients::Rpc>();
 
     let account_id = AccountId::dummy(
         [0; 15],
@@ -247,13 +249,10 @@ async fn rpc_server_rejects_proven_transactions_with_invalid_commitment() {
     assert!(response.is_err());
 
     // Assert that the error is due to the invalid account delta commitment.
+    let err = response.as_ref().unwrap_err().message();
     assert!(
-        response
-            .as_ref()
-            .err()
-            .unwrap()
-            .message()
-            .contains("Account delta commitment does not match the actual account delta"),
+        err.contains("Account delta commitment does not match the actual account delta"),
+        "expected error message to contain delta commitment error but got: {err}"
     );
 
     // Shutdown to avoid runtime drop error.
@@ -321,7 +320,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
     (rpc_client, rpc_addr, store_addr)
 }
 
-async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
+async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir, Word) {
     // Start the store.
     let data_directory = tempfile::tempdir().expect("tempdir should be created");
 
@@ -351,5 +350,9 @@ async fn start_store(store_addr: SocketAddr) -> (Runtime, TempDir) {
         .await
         .expect("store should start serving");
     });
-    (store_runtime, data_directory)
+    (
+        store_runtime,
+        data_directory,
+        genesis_state.into_block().unwrap().inner().commitment(),
+    )
 }

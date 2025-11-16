@@ -4,7 +4,6 @@ use miden_node_proto::domain::mempool::MempoolEvent;
 use miden_node_utils::fee::test_fee_params;
 use miden_objects::Word;
 use miden_objects::block::BlockHeader;
-use miden_objects::crypto::merkle::{MmrPeaks, PartialMmr};
 use miden_objects::note::Nullifier;
 use miden_objects::transaction::{PartialBlockchain, TransactionId};
 

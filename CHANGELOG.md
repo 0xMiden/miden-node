@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.12.4 (TBD)
+
+- Updated the counter account from the `miden-network-monitor` to start at 0 ([#1367](https://github.com/0xMiden/miden-node/pull/1367)).
+
 ## v0.12.3 (2025-11-15)
 
 - Added configurable timeout support to `RemoteBatchProver`, `RemoteBlockProver`, and `RemoteTransactionProver` clients ([#1365](https://github.com/0xMiden/miden-node/pull/1365)).

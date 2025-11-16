@@ -30,9 +30,7 @@ fn create_mock_state() -> State {
     );
 
     // Create an empty partial blockchain
-    let chain_mmr = PartialBlockchain::new(PartialMmr::from_peaks(MmrPeaks::default()), Vec::new())
-        .expect("Failed to create empty PartialBlockchain");
-
+    let chain_mmr = PartialBlockchain::default();
     // Create a mock store client (it won't be used in this test)
     let store = StoreClient::new("http://localhost:9999".parse().unwrap());
 

@@ -6,6 +6,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use hex;
 use miden_objects::account::AccountId;
 use miden_objects::testing::account_id::ACCOUNT_ID_SENDER;
 use reqwest::Client;
@@ -79,8 +80,12 @@ pub async fn run_faucet_test_task(
     faucet_url: Url,
     status_sender: watch::Sender<ServiceStatus>,
     test_interval: Duration,
+    request_timeout: Duration,
 ) {
-    let client = Client::new();
+    let client = Client::builder()
+        .timeout(request_timeout)
+        .build()
+        .expect("Failed to create HTTP client with timeout");
     let mut success_count = 0u64;
     let mut failure_count = 0u64;
     let mut last_tx_id = None;
@@ -162,7 +167,11 @@ async fn perform_faucet_test(
 
     // Step 1: Request PoW challenge
     let pow_url = faucet_url.join("/pow")?;
-    let response = client.get(pow_url).query(&[("account_id", &account_id)]).send().await?;
+    let response = client
+        .get(pow_url)
+        .query(&[("account_id", &account_id), ("amount", &MINT_AMOUNT.to_string())])
+        .send()
+        .await?;
 
     let response_text = response.text().await?;
     debug!("Faucet PoW response: {}", response_text);
@@ -216,17 +225,14 @@ async fn perform_faucet_test(
 ///
 /// The nonce that solves the challenge, or an error if no solution is found within reasonable
 /// bounds.
+#[instrument(target = COMPONENT, name = "solve-pow-challenge", skip_all, ret(level = "debug"))]
 fn solve_pow_challenge(challenge: &str, target: u64) -> anyhow::Result<u64> {
-    debug!(
-        "Solving PoW challenge: challenge={}, target={} (~{} bits)",
-        challenge,
-        target,
-        target.leading_zeros(),
-    );
+    let challenge_bytes = hex::decode(challenge).context("Failed to decode challenge from hex")?;
+
     // Try up to 100 million nonces.
     for nonce in 0..MAX_CHALLENGE_ATTEMPTS {
         let mut hasher = Sha256::new();
-        hasher.update(challenge.as_bytes());
+        hasher.update(&challenge_bytes);
         hasher.update(nonce.to_be_bytes());
         let hash_result = hasher.finalize();
 

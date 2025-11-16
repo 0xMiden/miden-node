@@ -127,22 +127,22 @@ dependencies = [
 
 [[package]]
 name = "anstyle-query"
-version = "1.1.4"
+version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e231f6134f61b71076a3eab506c379d4f36122f2af15a9ff04415ea4c3339e2"
+checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
 name = "anstyle-wincon"
-version = "3.0.10"
+version = "3.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e0633414522a32ffaac8ac6cc8f748e090c5717661fddeea04219e2344f5f2a"
+checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -254,9 +254,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "axum"
-version = "0.8.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a18ed336352031311f4e0b4dd2ff392d4fbb370777c9d18d7fc9d7359f73871"
+checksum = "5b098575ebe77cb6d14fc7f32749631a6e44edbef6b796f89b020e99ba20d425"
 dependencies = [
  "axum-core",
  "bytes",
@@ -470,9 +470,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.10.1"
+version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
+checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
 
 [[package]]
 name = "camino"
@@ -514,9 +514,9 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cc"
-version = "1.2.45"
+version = "1.2.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35900b6c8d709fb1d854671ae27aeaa9eec2f8b01b364e1619a40da3e6fe2afe"
+checksum = "b97463e1064cb1b1c1384ad0a0b9c8abd0988e2a91f52606c80ef14aadb63e36"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -1388,9 +1388,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "52051878f80a721bb68ebfbc930e07b65ba72f2da88968ea5c06fd6ca3d3a127"
+checksum = "3a3076410a55c90011c298b04d0cfa770b00fa04e1e3c97d3f6c9de105a03844"
 
 [[package]]
 name = "fixedbitset"
@@ -1465,9 +1465,9 @@ dependencies = [
 
 [[package]]
 name = "fs-err"
-version = "3.1.3"
+version = "3.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ad492b2cf1d89d568a43508ab24f98501fe03f2f31c01e1d0fe7366a71745d2"
+checksum = "62d91fd049c123429b018c47887d3f75a265540dd3c30ba9cb7bae9197edb03a"
 dependencies = [
  "autocfg",
 ]
@@ -1818,9 +1818,9 @@ checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 
 [[package]]
 name = "hyper"
-version = "1.8.0"
+version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1744436df46f0bde35af3eda22aeaba453aada65d8f1c171cd8a5f59030bd69f"
+checksum = "2ab2d4f250c3d7b1c9fcdff1cece94ea4e2dfbec68614f7b87cb205f24ca9d11"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1886,9 +1886,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.17"
+version = "0.1.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c6995591a8f1380fcb4ba966a252a4b29188d51d2b89e3a252f5305be65aea8"
+checksum = "52e9a2a24dc5c6821e71a7030e1e14b7b632acac55c40e9d2e082c621261bb56"
 dependencies = [
  "base64",
  "bytes",
@@ -2481,9 +2481,9 @@ dependencies = [
 
 [[package]]
 name = "miden-block-prover"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac5f55d7f81fbe584b95c95951502c69fcbf1e657bb4befa56395142577a773e"
+checksum = "abd33a60630977df766a901e9c89342e1632673071e13fb5711410a25610aa3e"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -2579,9 +2579,9 @@ dependencies = [
 
 [[package]]
 name = "miden-lib"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2af7e35b52afadba83d50b614cbc2493b7ca1ad9a876033d0706c09a75a78cb"
+checksum = "015992e9a31a4a2667adf2ee795d5f02927a6e9f4e21490ce02fb6395eb6bd41"
 dependencies = [
  "Inflector",
  "fs-err",
@@ -2652,7 +2652,7 @@ dependencies = [
 
 [[package]]
 name = "miden-network-monitor"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -2679,7 +2679,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "clap 4.5.51",
@@ -2699,7 +2699,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-block-producer"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2735,7 +2735,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-grpc-error-macro"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "quote",
  "syn 2.0.110",
@@ -2743,7 +2743,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-ntx-builder"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "futures",
@@ -2765,7 +2765,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "fs-err",
@@ -2787,7 +2787,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-proto-build"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "fs-err",
  "miette",
@@ -2797,7 +2797,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-rpc"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "futures",
@@ -2829,7 +2829,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-store"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "assert_matches",
@@ -2866,7 +2866,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-stress-test"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "clap 4.5.51",
  "fs-err",
@@ -2896,7 +2896,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-utils"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2925,7 +2925,7 @@ dependencies = [
 
 [[package]]
 name = "miden-node-validator"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "miden-node-proto",
@@ -2941,9 +2941,9 @@ dependencies = [
 
 [[package]]
 name = "miden-objects"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97ec6ccdb9b1276635efa2ed74bc663eddeae01e31f9155c8af584188a260f3b"
+checksum = "57ea15ca33d7735e08e81afd9c9f4f02fc0259ec019fcb4ec44192c205743553"
 dependencies = [
  "bech32",
  "getrandom 0.3.4",
@@ -3001,7 +3001,7 @@ dependencies = [
 
 [[package]]
 name = "miden-remote-prover"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3046,7 +3046,7 @@ dependencies = [
 
 [[package]]
 name = "miden-remote-prover-client"
-version = "0.12.2"
+version = "0.12.3"
 dependencies = [
  "getrandom 0.3.4",
  "miden-node-proto-build",
@@ -3081,9 +3081,9 @@ dependencies = [
 
 [[package]]
 name = "miden-testing"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f05865766cbce5f780d44452f8557ff801ded2466e54b14e0056bb88e9a09e4"
+checksum = "8107f897f415813a85677f49a9b4470d0562b13ada3d0bbaaa161e53a4a665d0"
 dependencies = [
  "anyhow",
  "itertools 0.14.0",
@@ -3101,9 +3101,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7aa5a43b436e6f518af15692faeab82108ae572c67e05cb0a6758e55ca835229"
+checksum = "94f5295f8646bc84829ebda923448aebffa2a36f88ef2112b7b4538901e1b34b"
 dependencies = [
  "miden-lib",
  "miden-objects",
@@ -3117,9 +3117,9 @@ dependencies = [
 
 [[package]]
 name = "miden-tx-batch-prover"
-version = "0.12.2"
+version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "838d42f047770031200b89054436e979a9ddb6a106851b30dbf42d4a7b74c2ad"
+checksum = "6b4a7e1a2a2fd9224f5048b69181c1aaaad796b671efa4fdda2bae5c76ad83e6"
 dependencies = [
  "miden-objects",
  "miden-tx",
@@ -6428,13 +6428,13 @@ dependencies = [
 
 [[package]]
 name = "windows-registry"
-version = "0.5.3"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b8a9ed28765efc97bbc954883f4e6796c33a06546ebafacbabee9696967499e"
+checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
 dependencies = [
- "windows-link 0.1.3",
- "windows-result 0.3.4",
- "windows-strings 0.4.2",
+ "windows-link 0.2.1",
+ "windows-result 0.4.1",
+ "windows-strings 0.5.1",
 ]
 
 [[package]]

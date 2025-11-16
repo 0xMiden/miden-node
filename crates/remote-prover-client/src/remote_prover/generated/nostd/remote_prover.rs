@@ -28,9 +28,9 @@ pub struct Proof {
 /// Status of an individual worker in the proxy.
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ProxyWorkerStatus {
-    /// The address of the worker.
+    /// The name of the worker.
     #[prost(string, tag = "1")]
-    pub address: ::prost::alloc::string::String,
+    pub name: ::prost::alloc::string::String,
     /// The version of the worker.
     #[prost(string, tag = "2")]
     pub version: ::prost::alloc::string::String,

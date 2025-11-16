@@ -27,78 +27,6 @@ mod tests;
 /// Convenience for an in-memory-only account tree.
 pub type InMemoryAccountTree = AccountTree<LargeSmt<MemoryStorage>>;
 
-// ACCOUNT TREE STORAGE TRAIT
-// ================================================================================================
-
-/// Trait abstracting operations over different account tree backends.
-pub trait AccountTreeStorage {
-    /// Returns the root hash of the tree.
-    fn root(&self) -> Word;
-
-    /// Returns the number of accounts in the tree.
-    fn num_accounts(&self) -> usize;
-
-    /// Opens an account and returns its witness.
-    fn open(&self, account_id: AccountId) -> AccountWitness;
-
-    /// Gets the account state commitment.
-    fn get(&self, account_id: AccountId) -> Word;
-
-    /// Computes mutations for applying account updates.
-    fn compute_mutations(
-        &self,
-        accounts: impl IntoIterator<Item = (AccountId, Word)>,
-    ) -> Result<AccountMutationSet, AccountTreeError>;
-
-    /// Applies mutations with reversion data.
-    fn apply_mutations_with_reversion(
-        &mut self,
-        mutations: AccountMutationSet,
-    ) -> Result<AccountMutationSet, AccountTreeError>;
-
-    /// Checks if the tree contains an account with the given prefix.
-    fn contains_account_id_prefix(&self, prefix: AccountIdPrefix) -> bool;
-}
-
-impl<S> AccountTreeStorage for AccountTree<LargeSmt<S>>
-where
-    S: SmtStorage,
-{
-    fn root(&self) -> Word {
-        self.root()
-    }
-
-    fn num_accounts(&self) -> usize {
-        self.num_accounts()
-    }
-
-    fn open(&self, account_id: AccountId) -> AccountWitness {
-        self.open(account_id)
-    }
-
-    fn get(&self, account_id: AccountId) -> Word {
-        self.get(account_id)
-    }
-
-    fn compute_mutations(
-        &self,
-        accounts: impl IntoIterator<Item = (AccountId, Word)>,
-    ) -> Result<AccountMutationSet, AccountTreeError> {
-        self.compute_mutations(accounts)
-    }
-
-    fn apply_mutations_with_reversion(
-        &mut self,
-        mutations: AccountMutationSet,
-    ) -> Result<AccountMutationSet, AccountTreeError> {
-        self.apply_mutations_with_reversion(mutations)
-    }
-
-    fn contains_account_id_prefix(&self, prefix: AccountIdPrefix) -> bool {
-        self.contains_account_id_prefix(prefix)
-    }
-}
-
 // HISTORICAL ERROR TYPES
 // ================================================================================================
 
@@ -178,23 +106,17 @@ impl HistoricalOverlay {
 /// This structure maintains a sliding window of historical account states by storing
 /// reversion data (mutations that undo changes). Historical witnesses are reconstructed
 /// by starting from the latest state and applying reversion overlays backwards in time.
-#[derive(Debug, Clone)]
-pub struct AccountTreeWithHistory<S>
-where
-    S: AccountTreeStorage,
-{
+#[derive(Debug)]
+pub struct AccountTreeWithHistory<S: SmtStorage> {
     /// The current block number (latest state).
     block_number: BlockNumber,
     /// The latest account tree state.
-    latest: S,
+    latest: AccountTree<LargeSmt<S>>,
     /// Historical overlays indexed by block number, storing reversion data.
     overlays: BTreeMap<BlockNumber, HistoricalOverlay>,
 }
 
-impl<S> AccountTreeWithHistory<S>
-where
-    S: AccountTreeStorage,
-{
+impl<S: SmtStorage> AccountTreeWithHistory<S> {
     /// Maximum number of historical blocks to maintain.
     pub const MAX_HISTORY: usize = 33;
 
@@ -202,7 +124,7 @@ where
     // --------------------------------------------------------------------------------------------
 
     /// Creates a new historical tree starting at the given block number.
-    pub fn new(account_tree: S, block_number: BlockNumber) -> Self {
+    pub fn new(account_tree: AccountTree<LargeSmt<S>>, block_number: BlockNumber) -> Self {
         Self {
             block_number,
             latest: account_tree,

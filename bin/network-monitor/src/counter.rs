@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use miden_lib::AuthScheme;
 use miden_lib::account::interface::AccountInterface;
 use miden_lib::utils::ScriptBuilder;
-use miden_node_proto::clients::{Builder, Rpc, RpcClient};
+use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::auth::AuthSecretKey;
@@ -70,7 +70,7 @@ async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
         .with_timeout(config.request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect::<Rpc>()
+        .connect()
         .await
 }
 

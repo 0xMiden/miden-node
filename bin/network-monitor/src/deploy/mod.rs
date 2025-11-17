@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use miden_lib::transaction::TransactionKernel;
-use miden_node_proto::clients::{Builder, Rpc, RpcClient};
+use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::shared::BlockHeaderByNumberRequest;
 use miden_node_proto::generated::transaction::ProvenTransaction;
 use miden_objects::account::{Account, AccountId, PartialAccount, PartialStorage};
@@ -96,7 +96,7 @@ pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) ->
         .with_timeout(Duration::from_secs(5))
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect::<Rpc>()
+        .connect()
         .await
         .context("Failed to connect to RPC server")?;
 

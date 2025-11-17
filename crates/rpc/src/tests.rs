@@ -4,7 +4,7 @@ use std::time::Duration;
 use http::header::{ACCEPT, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
 use miden_lib::account::wallets::BasicWallet;
-use miden_node_proto::clients::{Builder, Rpc as RpcClientMarker, RpcClient};
+use miden_node_proto::clients::{Builder, RpcClient};
 use miden_node_proto::generated::rpc::api_client::ApiClient as ProtoClient;
 use miden_node_proto::generated::{self as proto};
 use miden_node_store::Store;
@@ -91,7 +91,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
             .with_timeout(Duration::from_secs(10))
             .with_metadata_version(version.to_string())
             .without_metadata_genesis()
-            .connect::<RpcClientMarker>()
+            .connect::<RpcClient>()
             .await
             .unwrap();
 
@@ -338,7 +338,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         .with_timeout(Duration::from_secs(10))
         .without_metadata_version()
         .without_metadata_genesis()
-        .connect::<RpcClientMarker>()
+        .connect::<RpcClient>()
         .await
         .expect("Failed to build client");
 

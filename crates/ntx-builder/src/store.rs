@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use miden_node_proto::clients::{Builder, StoreNtxBuilder, StoreNtxBuilderClient};
+use miden_node_proto::clients::{Builder, StoreNtxBuilderClient};
 use miden_node_proto::domain::account::NetworkAccountPrefix;
 use miden_node_proto::domain::note::NetworkNote;
 use miden_node_proto::errors::ConversionError;
@@ -39,7 +39,7 @@ impl StoreClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<StoreNtxBuilder>();
+            .connect_lazy::<StoreNtxBuilderClient>();
 
         Self { inner: store }
     }

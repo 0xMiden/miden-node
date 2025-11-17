@@ -4,7 +4,11 @@ use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-use miden_node_proto::clients::{Builder as ClientBuilder, RemoteProverProxy, Rpc};
+use miden_node_proto::clients::{
+    Builder as ClientBuilder,
+    RemoteProverProxyStatusClient,
+    RpcClient,
+};
 use tokio::sync::watch;
 use tokio::sync::watch::Receiver;
 use tokio::task::{Id, JoinSet};
@@ -54,7 +58,7 @@ impl Tasks {
             .with_timeout(config.request_timeout)
             .without_metadata_version()
             .without_metadata_genesis()
-            .connect_lazy::<Rpc>();
+            .connect_lazy::<RpcClient>();
 
         let current_time = current_unix_timestamp_secs();
         let initial_rpc_status = check_rpc_status(&mut rpc, current_time).await;
@@ -92,7 +96,7 @@ impl Tasks {
                 .with_timeout(config.request_timeout)
                 .without_metadata_version()
                 .without_metadata_genesis()
-                .connect_lazy::<RemoteProverProxy>();
+                .connect_lazy::<RemoteProverProxyStatusClient>();
 
             let current_time = current_unix_timestamp_secs();
 

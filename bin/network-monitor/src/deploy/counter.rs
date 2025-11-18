@@ -38,8 +38,7 @@ pub fn create_counter_account(owner_account_id: AccountId) -> Result<Account> {
         owner_account_id_prefix,
     ]));
 
-    let counter_slot =
-        StorageSlot::Value(Word::from([Felt::ZERO, Felt::ZERO, Felt::ZERO, Felt::ONE]));
+    let counter_slot = StorageSlot::Value(Word::empty());
 
     let account_code = AccountComponent::compile(
         script,

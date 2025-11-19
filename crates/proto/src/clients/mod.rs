@@ -411,13 +411,13 @@ impl Builder<WantsVersion> {
 
 impl Builder<WantsGenesis> {
     /// Do not include genesis commitment in request metadata.
-    pub fn without_metadata_genesis(mut self) -> Builder<WantsConnection> {
+    pub fn without_metadata_genesis(mut self) -> Builder<WantsOTel> {
         self.metadata_genesis = None;
         self.next_state()
     }
 
     /// Include a specific genesis commitment string in request metadata.
-    pub fn with_metadata_genesis(mut self, genesis: String) -> Builder<WantsConnection> {
+    pub fn with_metadata_genesis(mut self, genesis: String) -> Builder<WantsOTel> {
         self.metadata_genesis = Some(genesis);
         self.next_state()
     }

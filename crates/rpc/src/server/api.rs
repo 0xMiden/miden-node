@@ -53,6 +53,7 @@ impl RpcService {
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
+                .enable_otel_context_injection()
                 .connect_lazy::<StoreRpcClient>()
         };
 
@@ -67,6 +68,7 @@ impl RpcService {
                 .without_timeout()
                 .without_metadata_version()
                 .without_metadata_genesis()
+                .enable_otel_context_injection()
                 .connect_lazy::<BlockProducerClient>()
         });
 

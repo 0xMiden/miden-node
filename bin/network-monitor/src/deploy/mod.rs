@@ -96,6 +96,7 @@ pub async fn deploy_counter_account(counter_account: &Account, rpc_url: &Url) ->
         .with_timeout(Duration::from_secs(5))
         .without_metadata_version()
         .without_metadata_genesis()
+        .disable_otel_context_injection()
         .connect()
         .await
         .context("Failed to connect to RPC server")?;

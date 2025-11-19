@@ -254,6 +254,52 @@
                                         ` : ''}
                                     </div>
                                 </div>
+                                ${details.FaucetTest.faucet_metadata ? `
+                                    <div class="nested-status">
+                                        <strong>Faucet Token Info:</strong>
+                                        <div class="test-metrics ${service.status === "Healthy" ? "healthy" : "unhealthy"}">
+                                            <div class="metric-row">
+                                                <span class="metric-label">Token ID:</span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.id.substring(0, 16)}...
+                                                    <button class="copy-button" onclick="copyToClipboard('${details.FaucetTest.faucet_metadata.id}', event)" title="Copy full token ID">
+                                                        <svg class="copy-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                                        </svg>
+                                                    </button>
+                                                </span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Current Issuance:</span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.issuance.toLocaleString()}</span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Max Supply:</span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.max_supply.toLocaleString()}</span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Decimals:</span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.decimals}</span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Base Amount:</span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.base_amount.toLocaleString()}</span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">PoW Difficulty:</span>
+                                                <span class="metric-value">${details.FaucetTest.faucet_metadata.pow_load_difficulty}</span>
+                                            </div>
+                                            <div class="metric-row">
+                                                <span class="metric-label">Explorer URL:</span>
+                                                <span class="metric-value">
+                                                    <a href="${details.FaucetTest.faucet_metadata.explorer_url}" target="_blank" rel="noopener noreferrer">
+                                                        ${details.FaucetTest.faucet_metadata.explorer_url}
+                                                    </a>
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                  ` : ''}
                             ` : ''}
                             ${details.NtxService ? `
                                 <div class="nested-status">

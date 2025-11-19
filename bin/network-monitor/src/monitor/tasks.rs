@@ -206,7 +206,7 @@ impl Tasks {
                 success_count: 0,
                 failure_count: 0,
                 last_tx_id: None,
-                challenge_difficulty: None,
+                faucet_metadata: None,
             }),
         };
 

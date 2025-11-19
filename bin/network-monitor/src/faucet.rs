@@ -38,7 +38,7 @@ pub struct FaucetTestDetails {
     pub success_count: u64,
     pub failure_count: u64,
     pub last_tx_id: Option<String>,
-    pub challenge_difficulty: Option<u32>,
+    pub faucet_metadata: Option<GetMetadataResponse>,
 }
 
 /// Response from the faucet's `/pow` endpoint.
@@ -56,6 +56,20 @@ struct GetTokensResponse {
     tx_id: String,
     #[allow(dead_code)] // Note ID is part of API response but not used in monitoring
     note_id: String,
+}
+
+/// Response from the faucet's `/get_metadata` endpoint.
+///
+/// TODO: We need to add `faucet_version` once available.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GetMetadataResponse {
+    id: String,
+    issuance: u64,
+    max_supply: u64,
+    decimals: u8,
+    explorer_url: String,
+    pow_load_difficulty: u32,
+    base_amount: u64,
 }
 
 // FAUCET TEST TASK
@@ -89,7 +103,7 @@ pub async fn run_faucet_test_task(
     let mut success_count = 0u64;
     let mut failure_count = 0u64;
     let mut last_tx_id = None;
-    let mut last_challenge_difficulty = None;
+    let mut faucet_metadata = None;
 
     let mut interval = tokio::time::interval(test_interval);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
@@ -102,11 +116,11 @@ pub async fn run_faucet_test_task(
         let start_time = std::time::Instant::now();
 
         match perform_faucet_test(&client, &faucet_url).await {
-            Ok((result, challenge_difficulty)) => {
+            Ok((minted_tokens, metadata)) => {
                 success_count += 1;
-                last_tx_id = Some(result.tx_id.clone());
-                last_challenge_difficulty = Some(challenge_difficulty);
-                info!("Faucet test successful: tx_id={}", result.tx_id);
+                last_tx_id = Some(minted_tokens.tx_id.clone());
+                faucet_metadata = Some(metadata);
+                info!("Faucet test successful: tx_id={}", minted_tokens.tx_id);
             },
             Err(e) => {
                 failure_count += 1;
@@ -121,7 +135,7 @@ pub async fn run_faucet_test_task(
             success_count,
             failure_count,
             last_tx_id: last_tx_id.clone(),
-            challenge_difficulty: last_challenge_difficulty,
+            faucet_metadata: faucet_metadata.clone(),
         };
 
         let status = ServiceStatus {
@@ -157,7 +171,7 @@ pub async fn run_faucet_test_task(
 async fn perform_faucet_test(
     client: &Client,
     faucet_url: &Url,
-) -> anyhow::Result<(GetTokensResponse, u32)> {
+) -> anyhow::Result<(GetTokensResponse, GetMetadataResponse)> {
     // Use a test account ID - convert to AccountId and format properly
     let account_id = AccountId::try_from(ACCOUNT_ID_SENDER)
         .context("Failed to create AccountId from test constant")?;
@@ -211,7 +225,17 @@ async fn perform_faucet_test(
     let tokens_response: GetTokensResponse = serde_json::from_str(&response_text)
         .with_context(|| format!("Failed to parse tokens response: {response_text}"))?;
 
-    Ok((tokens_response, challenge_response.target.leading_zeros()))
+    // Step 4: Get faucet metadata
+    let metadata_url = faucet_url.join("/get_metadata")?;
+
+    let response = client.get(metadata_url).send().await?;
+
+    let response_text = response.text().await?;
+
+    let metadata: GetMetadataResponse = serde_json::from_str(&response_text)
+        .with_context(|| format!("Failed to parse metadata response: {response_text}"))?;
+
+    Ok((tokens_response, metadata))
 }
 
 /// Solves a proof-of-work challenge using SHA-256 hashing.

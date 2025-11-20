@@ -245,7 +245,7 @@ pub async fn run_rpc_status_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .disable_otel_context_injection()
+        .without_otel_context_injection()
         .connect_lazy::<RpcClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);
@@ -339,7 +339,7 @@ pub async fn run_remote_prover_status_task(
         .with_timeout(request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .disable_otel_context_injection()
+        .without_otel_context_injection()
         .connect_lazy::<RemoteProverProxyStatusClient>();
 
     let mut interval = tokio::time::interval(status_check_interval);

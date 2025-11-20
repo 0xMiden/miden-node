@@ -29,7 +29,7 @@ use tower::{Layer, Service};
 ///
 /// Parameters are optional and order is not important.
 ///
-/// ```
+/// ```text
 /// application/vnd.miden; version=<version-req>; genesis=0x1234
 /// ```
 #[derive(Clone)]

@@ -133,7 +133,7 @@ impl StoreClient {
             .without_timeout()
             .without_metadata_version()
             .without_metadata_genesis()
-            .enable_otel_context_injection()
+            .with_otel_context_injection()
             .connect_lazy::<StoreBlockProducerClient>();
 
         Self { client: store }

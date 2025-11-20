@@ -5,16 +5,19 @@
 //!
 //! # Examples
 //!
-//! ```rust,no_run
-//! use miden_node_proto::clients::{Builder, WantsTls, StoreNtxBuilderClient, StoreNtxBuilder};
+//! ```rust
+//! # use miden_node_proto::clients::{Builder, WantsTls, StoreNtxBuilderClient};
+//! # use url::Url;
 //!
 //! # async fn example() -> anyhow::Result<()> {
 //! // Create a store client with OTEL and TLS
-//! let client: StoreNtxBuilderClient = Builder::new("https://store.example.com")?
-//!     .with_tls()?                 // or `.without_tls()`
-//!     .without_timeout()           // or `.with_timeout(Duration::from_secs(10))`
-//!     .without_metadata_version()  // or `.with_metadata_version("1.0".into())`
-//!     .without_metadata_genesis()  // or `.with_metadata_genesis(genesis)`
+//! let url = Url::parse("https://example.com:8080")?;
+//! let client: StoreNtxBuilderClient = Builder::new(url)
+//!     .with_tls()?                   // or `.without_tls()`
+//!     .without_timeout()             // or `.with_timeout(Duration::from_secs(10))`
+//!     .without_metadata_version()    // or `.with_metadata_version("1.0".into())`
+//!     .without_metadata_genesis()    // or `.with_metadata_genesis(genesis)`
+//!     .with_otel_context_injection() // or `.without_otel_context_injection()`
 //!     .connect::<StoreNtxBuilderClient>()
 //!     .await?;
 //! # Ok(())
@@ -300,16 +303,19 @@ impl GrpcClient for RemoteProverClient {
 ///
 /// Usage example:
 ///
-/// ```rust,no_run
-/// use miden_node_proto::clients::{Builder, WantsTls, Rpc, RpcClient};
-/// use std::time::Duration;
+/// ```rust
+/// # use miden_node_proto::clients::{Builder, WantsTls, RpcClient};
+/// # use url::Url;
+/// # use std::time::Duration;
 ///
 /// # async fn example() -> anyhow::Result<()> {
-/// let client: RpcClient = Builder::new("https://rpc.example.com:8080")?
-///     .with_tls()?                        // or `.without_tls()`
+/// let url = Url::parse("https://rpc.example.com:8080")?;
+/// let client: RpcClient = Builder::new(url)
+///     .with_tls()?                          // or `.without_tls()`
 ///     .with_timeout(Duration::from_secs(5)) // or `.without_timeout()`
-///     .with_metadata_version("1.0".into()) // or `.without_metadata_version()`
+///     .with_metadata_version("1.0".into())  // or `.without_metadata_version()`
 ///     .without_metadata_genesis()           // or `.with_metadata_genesis(genesis)`
+///     .with_otel_context_injection()        // or `.without_otel_context_injection()`
 ///     .connect::<RpcClient>()
 ///     .await?;
 /// # Ok(())
@@ -424,12 +430,18 @@ impl Builder<WantsGenesis> {
 }
 
 impl Builder<WantsOTel> {
-    pub fn enable_otel_context_injection(mut self) -> Builder<WantsConnection> {
+    /// Enables OpenTelemetry context propagation via gRPC.
+    ///
+    /// This is used to by OpenTelemetry to connect traces across network boundaries. The server on
+    /// the other end must be configured to receive and use the injected trace context.
+    pub fn with_otel_context_injection(mut self) -> Builder<WantsConnection> {
         self.enable_otel = true;
         self.next_state()
     }
 
-    pub fn disable_otel_context_injection(mut self) -> Builder<WantsConnection> {
+    /// Disables OpenTelemetry context propagation. This should be disabled when interfacing with
+    /// external third party gRPC servers.
+    pub fn without_otel_context_injection(mut self) -> Builder<WantsConnection> {
         self.enable_otel = false;
         self.next_state()
     }

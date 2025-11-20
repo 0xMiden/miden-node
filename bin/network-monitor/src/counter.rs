@@ -70,7 +70,7 @@ async fn create_rpc_client(config: &MonitorConfig) -> Result<RpcClient> {
         .with_timeout(config.request_timeout)
         .without_metadata_version()
         .without_metadata_genesis()
-        .disable_otel_context_injection()
+        .without_otel_context_injection()
         .connect()
         .await
 }

@@ -91,7 +91,7 @@ async fn rpc_server_rejects_requests_with_accept_header_invalid_version() {
             .with_timeout(Duration::from_secs(10))
             .with_metadata_version(version.to_string())
             .without_metadata_genesis()
-            .disable_otel_context_injection()
+            .without_otel_context_injection()
             .connect::<RpcClient>()
             .await
             .unwrap();
@@ -339,7 +339,7 @@ async fn start_rpc() -> (RpcClient, std::net::SocketAddr, std::net::SocketAddr) 
         .with_timeout(Duration::from_secs(10))
         .without_metadata_version()
         .without_metadata_genesis()
-        .disable_otel_context_injection()
+        .without_otel_context_injection()
         .connect::<RpcClient>()
         .await
         .expect("Failed to build client");

@@ -31,7 +31,7 @@ impl BlockStore {
         fields(path = %store_dir.display()),
     )]
     pub fn bootstrap(store_dir: PathBuf, genesis_block: &GenesisBlock) -> std::io::Result<Self> {
-        std::fs::create_dir(&store_dir)?;
+        fs_err::create_dir(&store_dir)?;
 
         let block_store = Self { store_dir };
         block_store.save_block_blocking(BlockNumber::GENESIS, &genesis_block.inner().to_bytes())?;
@@ -55,7 +55,7 @@ impl BlockStore {
     ///
     /// See also: [`std::fs::metadata`].
     pub fn load(store_dir: PathBuf) -> std::io::Result<Self> {
-        let meta = std::fs::metadata(&store_dir)?;
+        let meta = fs_err::metadata(&store_dir)?;
         if meta.is_dir().not() {
             return Err(ErrorKind::NotADirectory.into());
         }
@@ -101,10 +101,10 @@ impl BlockStore {
     ) -> Result<(), std::io::Error> {
         let (epoch_path, block_path) = self.epoch_block_path(block_num)?;
         if !epoch_path.exists() {
-            std::fs::create_dir_all(epoch_path)?;
+            fs_err::create_dir_all(epoch_path)?;
         }
 
-        std::fs::write(block_path, data)
+        fs_err::write(block_path, data)
     }
 
     // HELPER FUNCTIONS

@@ -180,8 +180,8 @@ impl StoreCommand {
 
         // Create directories if they do not already exist.
         for directory in &[accounts_directory, data_directory] {
-            if directory.exists() {
-                let is_empty = directory.read_dir()?.next().is_none();
+            if fs_err::exists(directory)? {
+                let is_empty = fs_err::read_dir(directory)?.next().is_none();
                 // If the directory exists and is empty, we store the files there
                 if !is_empty {
                     anyhow::bail!(format!("{} exists but it is not empty.", directory.display()));

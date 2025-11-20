@@ -2889,6 +2889,7 @@ dependencies = [
  "anyhow",
  "bytes",
  "figment",
+ "fs-err",
  "http",
  "http-body-util",
  "itertools 0.14.0",
@@ -3035,6 +3036,7 @@ dependencies = [
 name = "miden-remote-prover-client"
 version = "0.13.0"
 dependencies = [
+ "fs-err",
  "getrandom 0.3.4",
  "miden-node-proto-build",
  "miden-objects",
